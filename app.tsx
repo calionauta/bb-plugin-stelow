@@ -200,6 +200,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
 
   useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
   useRealtime("card-state", () => { void load(boardProjectId ?? routeProjectId); });
+  useRealtime("board-changed", () => { void load(boardProjectId ?? routeProjectId); });
 
   const activeProjectId = boardProjectId ?? routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
@@ -767,6 +768,7 @@ function DocumentReview({ path, source }: PluginFileOpenerProps) {
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => { const result = await rpc.call("readDocument", { projectId, path }); setContent(result.content); setSha256(result.sha256); setError(result.error); }, [path, projectId, rpc]);
   useEffect(() => { void load(); }, [load]);
+  useRealtime("board-changed", () => { void load(); });
 
   async function saveComment() {
     const result = await rpc.call("addComment", { projectId, path, expectedSha256: sha256, selectedText: selection, comment });

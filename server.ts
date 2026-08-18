@@ -814,6 +814,7 @@ export default async function plugin(bb: BbPluginApi) {
       if (!card) return { ok: false };
       const column = kind === "error" ? "last_seen_error_at" : kind === "question" ? "last_seen_question_at" : "last_seen_completed_at";
       db.prepare(`UPDATE cards SET ${column} = @ts WHERE id = @id`).run({ id: cardId, ts: now() });
+      bb.realtime.publish("card-state", { cardId });
       return { ok: true };
     },
 
