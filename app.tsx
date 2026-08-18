@@ -276,7 +276,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">Stelow board</h1>
               <span className="text-xs text-muted-foreground">· {cards.length} cards · {inbox.length} need attention</span>
-              <Button size="sm" variant="outline" className="ml-auto" onClick={() => void load(activeProjectId)}>Refresh</Button>
             </div>
             <p className="text-sm text-muted-foreground">Describe a request below to start a workflow. The agent runs in the background and posts updates here.</p>
           </div>
@@ -712,7 +711,6 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
       </div>
       <footer className="flex flex-wrap gap-1 border-t p-3">
         {card?.workerThreadId ? <Button size="sm" variant="outline" onClick={() => navigate.toThread(card.workerThreadId ?? "")}>Open thread</Button> : null}
-        <Button size="sm" variant="outline" onClick={() => void load()}>Refresh</Button>
         {showRepair ? (
           <Button size="sm" variant={confirmingRepair ? "destructive" : "outline"} onClick={() => void repair()}>
             {confirmingRepair ? "Confirm repair" : "Repair"}
