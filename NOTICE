@@ -1,0 +1,10 @@
+bb-plugin-stelow ships vendored copies of two files from the upstream Stelow
+repository (https://github.com/calionauta/stelow):
+
+- data/stelow (from scripts/stelow at upstream) — the stage transition helper.
+  License: same as upstream Stelow (MIT).
+- references/transitions.md — the stage transitions table.
+
+These files are upstream by the Stelow authors; bb-plugin-stelow embeds them so
+that a fresh project can advance stages without first installing the Stelow
+skill. If you change Stelow's transitions.md upstream, mirror the change here.
