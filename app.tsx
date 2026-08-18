@@ -271,27 +271,27 @@ function BoardPanel({ subPath }: { subPath: string }) {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">Stelow board</h1>
-              <p className="text-sm text-muted-foreground">
-                {activeProject ? activeProject.name : "Pick a project to view its cards."}{" "}
-                <span className="text-xs">· {cards.length} cards · {inbox.length} need attention</span>
-              </p>
-            </div>
+          <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
-              <ProjectSelector value={activeProjectId} onChange={setBoardProjectId} projects={projects} />
-              <Button size="sm" variant="outline" onClick={() => void load(activeProjectId)}>Refresh</Button>
+              <h1 className="text-2xl font-semibold tracking-tight">Stelow board</h1>
+              <span className="text-xs text-muted-foreground">· {cards.length} cards · {inbox.length} need attention</span>
+              <Button size="sm" variant="outline" className="ml-auto" onClick={() => void load(activeProjectId)}>Refresh</Button>
             </div>
+            <p className="text-sm text-muted-foreground">Describe a request below to start a workflow. The agent runs in the background and posts updates here.</p>
           </div>
 
-          <div className="grid gap-3 rounded-xl border bg-card/60 p-4 md:grid-cols-[1fr_auto_auto]">
-            <Input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe a product request to start with Stelow…" onKeyDown={(event) => { if (event.key === "Enter" && !reason) void start(); }} className="h-10" />
+          <form
+            onSubmit={(event) => { event.preventDefault(); if (!reason) void start(); }}
+            className="grid items-stretch gap-2 rounded-xl border bg-card/60 p-3 md:grid-cols-[1fr_2fr_auto_auto]"
+          >
+            <ProjectPill value={activeProjectId} onChange={setBoardProjectId} projects={projects} />
+            <Input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe a product request to start with Stelow…" className="h-10" />
             <select className="h-10 rounded-md border bg-background px-3 text-sm" value={intent} onChange={(event) => setIntent(event.target.value as typeof intent)} aria-label="Intent">
               {Object.entries(INTENT_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <Button disabled={Boolean(reason)} onClick={() => void start()} className="h-10">{reason ? "Locked" : "Start card"}</Button>
-          </div>
+            <span title={reason ?? "Start a Stelow workflow"}><Button type="submit" disabled={Boolean(reason)} className="h-10 px-5">Start</Button></span>
+          </form>
+          {reason ? <p className="-mt-2 px-1 text-xs text-muted-foreground">{reason}</p> : null}
 
           <FilterBar
             projects={projects}
@@ -332,9 +332,15 @@ function BoardPanel({ subPath }: { subPath: string }) {
   );
 }
 
-function ProjectSelector({ value, onChange, projects }: { value: string | null; onChange: (v: string | null) => void; projects: Project[] }) {
+function ProjectPill({ value, onChange, projects }: { value: string | null; onChange: (v: string | null) => void; projects: Project[] }) {
+  const selected = projects.find((project) => project.id === value);
   return (
-    <select className="h-10 rounded-md border bg-background px-3 text-sm" value={value ?? ""} onChange={(event) => onChange(event.target.value || null)} aria-label="Project">
+    <select
+      value={value ?? ""}
+      onChange={(event) => onChange(event.target.value || null)}
+      aria-label="Project"
+      className={`h-10 cursor-pointer rounded-md border px-3 text-sm ${selected ? "border-primary/40 bg-primary/5 text-foreground" : "border-border bg-background text-muted-foreground"}`}
+    >
       <option value="">Choose a project</option>
       {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
     </select>
