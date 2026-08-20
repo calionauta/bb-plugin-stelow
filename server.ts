@@ -33,6 +33,7 @@ const statusSchema = z.enum([
   "planning",
   "approved",
   "in-progress",
+  "awaiting-answer",
   "completed",
   "archived",
   "pending",
@@ -115,16 +116,16 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), actionRequired: z.boolean(), updatedAt: z.number() })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), actionRequired: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
   },
   createCard: {
-    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate"]) }).strict(),
+    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate"]), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), updatedAt: z.number() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), presetName: z.string().nullable(), updatedAt: z.number() }),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
@@ -140,7 +141,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ archived: z.boolean() }),
   },
   reseedCard: {
-    input: z.object({ cardId: z.string() }).strict(),
+    input: z.object({ cardId: z.string(), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ reseeded: z.boolean(), error: z.string().nullable() }),
   },
   moveCard: {
@@ -180,6 +181,33 @@ export const rpcContract = defineRpcContract({
   ensureWorkflow: {
     input: z.object({ projectId: z.string().nullable(), name: z.string().min(1).max(120), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate"]) }).strict(),
     output: z.object({ rootPath: z.string().nullable(), statePath: z.string().nullable(), error: z.string().nullable() }),
+  },
+  listPresets: {
+    input: z.object({}).strict(),
+    output: z.object({ presets: z.array(z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string(), environmentKind: z.string(), baseBranch: z.string().nullable(), machineId: z.string().nullable(), instructions: z.string(), isDefault: z.boolean(), builtIn: z.boolean() })) }),
+  },
+  upsertPreset: {
+    input: z.object({
+      id: z.string().nullable().optional(),
+      name: z.string().min(1).max(60),
+      providerId: z.string().min(1).max(60),
+      modelId: z.string().min(1).max(120),
+      reasoningLevel: z.string().min(1).max(20),
+      permissionMode: z.enum(["accept-edits", "auto", "full"]),
+      environmentKind: z.enum(["project-default", "new-worktree"]).default("project-default"),
+      baseBranch: z.string().nullable().optional(),
+      machineId: z.string().nullable().optional(),
+      instructions: z.string().max(8_000).default(""),
+    }).strict(),
+    output: z.object({ preset: z.object({ id: z.string(), name: z.string() }) }),
+  },
+  deletePreset: {
+    input: z.object({ id: z.string() }).strict(),
+    output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
+  },
+  assignPreset: {
+    input: z.object({ cardId: z.string(), presetId: z.string().nullable() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
 });
 
@@ -483,6 +511,29 @@ export default async function plugin(bb: BbPluginApi) {
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
     )`,
     `CREATE INDEX IF NOT EXISTS idx_comments_card ON comments(card_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS presets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      provider_id TEXT NOT NULL,
+      model_id TEXT NOT NULL,
+      reasoning_level TEXT NOT NULL,
+      permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
+      environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
+      base_branch TEXT,
+      machine_id TEXT,
+      instructions TEXT NOT NULL DEFAULT '',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      built_in INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS card_presets (
+      card_id TEXT PRIMARY KEY,
+      preset_id TEXT NOT NULL,
+      assigned_at INTEGER NOT NULL,
+      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+      FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+    )`,
   ]);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
@@ -492,12 +543,77 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "display_name")) {
     db.exec("ALTER TABLE cards ADD COLUMN display_name TEXT");
   }
+  if (!cardColumns.some((column) => column.name === "last_seen_error_at")) {
+    db.exec("ALTER TABLE cards ADD COLUMN last_seen_error_at INTEGER");
+  }
+  if (!cardColumns.some((column) => column.name === "last_seen_question_at")) {
+    db.exec("ALTER TABLE cards ADD COLUMN last_seen_question_at INTEGER");
+  }
+
+  const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
+  if (!presetColumns.some((column) => column.name === "environment_kind")) {
+    db.exec("ALTER TABLE presets ADD COLUMN environment_kind TEXT NOT NULL DEFAULT 'project-default'");
+  }
+  if (!presetColumns.some((column) => column.name === "base_branch")) {
+    db.exec("ALTER TABLE presets ADD COLUMN base_branch TEXT");
+  }
+  if (!presetColumns.some((column) => column.name === "machine_id")) {
+    db.exec("ALTER TABLE presets ADD COLUMN machine_id TEXT");
+  }
+
+  const defaultPresetId = "preset_default";
+  if (!db.prepare("SELECT id FROM presets WHERE id = ?").get(defaultPresetId)) {
+    db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+      defaultPresetId, "Default", "codex", "gpt-5", "medium", "accept-edits", "project-default", "", 1, 1, now(), now(),
+    );
+  }
 
   function now(): number { return Date.now(); }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
 
   type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
+  type PresetRow = {
+    id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
+    permission_mode: string; environment_kind: string; base_branch: string | null; machine_id: string | null;
+    instructions: string; is_default: number; built_in: number; created_at: number; updated_at: number;
+  };
+
+  function getDefaultPreset(): PresetRow {
+    const row = db.prepare("SELECT * FROM presets WHERE is_default = 1 ORDER BY created_at ASC LIMIT 1").get() as PresetRow | undefined;
+    if (row) return row;
+    const fallback = db.prepare("SELECT * FROM presets ORDER BY created_at ASC LIMIT 1").get() as PresetRow | undefined;
+    if (fallback) return fallback;
+    db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+      "preset_default", "Default", "codex", "gpt-5", "medium", "accept-edits", "project-default", "", 1, 1, now(), now(),
+    );
+    return db.prepare("SELECT * FROM presets WHERE id = ?").get("preset_default") as PresetRow;
+  }
+
+  function getPresetById(id: string): PresetRow | null {
+    const row = db.prepare("SELECT * FROM presets WHERE id = ?").get(id) as PresetRow | undefined;
+    return row ?? null;
+  }
+
+  function getPresetForCard(cardId: string): PresetRow {
+    const row = db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined;
+    if (!row) return getDefaultPreset();
+    const preset = getPresetById(row.preset_id);
+    return preset ?? getDefaultPreset();
+  }
+
+  function presetAttachmentParams(preset: PresetRow): { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; baseBranch: string | null; machineId: string | null; instructions: string } {
+    return {
+      providerId: preset.provider_id,
+      modelId: preset.model_id,
+      reasoningLevel: preset.reasoning_level,
+      permissionMode: preset.permission_mode,
+      environmentKind: preset.environment_kind,
+      baseBranch: preset.base_branch,
+      machineId: preset.machine_id,
+      instructions: preset.instructions,
+    };
+  }
 
   function getCard(cardId: string): CardRow | undefined {
     return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
@@ -540,7 +656,12 @@ export default async function plugin(bb: BbPluginApi) {
       const lastOutput = (await bb.sdk.threads.output({ threadId: card.worker_thread_id }).catch(() => null))?.output ?? null;
       if (status === "active") {
         const pending = await fetchPendingQuestions(card.worker_thread_id);
-        updateCard(cardId, { activity: pending.length > 0 ? "awaiting-answer" : "running", last_assistant_text: lastOutput, status: "in-progress" });
+        if (pending.length > 0) {
+          updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
+        } else {
+          const nextStatus = card.status === "draft" || card.status === "awaiting-answer" ? "in-progress" : card.status;
+          updateCard(cardId, { activity: "running", last_assistant_text: lastOutput, status: nextStatus });
+        }
       } else if (status === "idle") {
         updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput });
         if (lastOutput && lastOutput !== card.last_assistant_text) {
@@ -671,6 +792,7 @@ export default async function plugin(bb: BbPluginApi) {
           || (Boolean(row.last_error) && (row.last_seen_error_at ?? 0) < row.updated_at)
           || (activity === "error" && (row.last_seen_error_at ?? 0) < row.updated_at)
           || (normalizeStatus(row.status) === "completed" && (row.last_seen_completed_at ?? 0) < row.updated_at);
+        const preset = getPresetForCard(row.id);
         return {
           id: row.id,
           name: row.name,
@@ -685,13 +807,14 @@ export default async function plugin(bb: BbPluginApi) {
           activity,
           lastError: row.last_error,
           actionRequired,
+          presetName: preset.name,
           updatedAt: row.updated_at,
         };
       }));
       return { cards: enriched };
     },
 
-    async createCard({ projectId, prompt, intent }) {
+    async createCard({ projectId, prompt, intent, presetId }) {
       const rootPath = await projectRoot(bb, projectId);
       if (!rootPath) throw new Error("Project workspace path is unavailable.");
       const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
@@ -699,15 +822,35 @@ export default async function plugin(bb: BbPluginApi) {
       const seed = await seedWorkflow(bb, rootPath, slug, intent);
       if (seed.error) throw new Error(seed.error);
       const cardId = randomId("card");
+      const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
+      const params = presetAttachmentParams(preset);
       const thread = await bb.sdk.threads.spawn({
         projectId,
         environment: { type: "project-default" },
         visibility: "hidden",
         title: `Stelow: ${displayName}`,
-        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded state.md, transitions.md, and stelow.json. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Start with /sw-start. Preserve every gate (product, interface, tech plan, diff). When you need user input, call bb.ui.requestInput via the stelow-question renderer id; if the host's primitive is unavailable, ask inline in chat so the worker thread surfaces the question. Stop when the user archives the card or the workflow reaches \`audit\`.\n\nRequest:\n${prompt}`,
+        providerId: params.providerId,
+        model: params.modelId,
+        reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+        permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
+        executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded state.md, transitions.md, and stelow.json. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Start with /sw-start. Preserve every gate (product, interface, tech plan, diff).
+
+CRITICAL — User input contract:
+ANY time you need user input (intent selection, ambiguity, approval, scope, interface choice, etc.), you MUST call the structured form, NEVER just write text like "waiting for your choice":
+
+    bb stelow ask --thread <this_thread_id> \\
+      --question "<a single clear question>" \\
+      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
+
+Do not skip the triage stage. Do not start shaping before the user has answered the intent/ambiguity question. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
+
+${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
+${prompt}`,
       });
       const ts = now();
-      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "in-progress", "triage", "running", thread.id, null, null, null, ts, ts);
+      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, null, null, null, ts, ts);
+      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
       bb.realtime.publish("card-state", { cardId });
       return { cardId, threadId: thread.id };
     },
@@ -726,8 +869,9 @@ export default async function plugin(bb: BbPluginApi) {
       } catch { /* project removed; keep card viewable */ }
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.name);
+      const preset = getPresetForCard(card.id);
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: card.activity as "idle" | "running" | "awaiting-answer" | "error", lastError: card.last_error, updatedAt: card.updated_at },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: card.activity as "idle" | "running" | "awaiting-answer" | "error", lastError: card.last_error, presetName: preset.name, updatedAt: card.updated_at },
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
         pendingQuestions: pending,
@@ -764,7 +908,7 @@ export default async function plugin(bb: BbPluginApi) {
       return { archived: true };
     },
 
-    async reseedCard({ cardId }) {
+    async reseedCard({ cardId, presetId }) {
       const card = getCard(cardId);
       if (!card) return { reseeded: false, error: "Card not found." };
       let source: Awaited<ReturnType<typeof bb.sdk.projects.get>>["sources"][number] | undefined;
@@ -797,7 +941,46 @@ export default async function plugin(bb: BbPluginApi) {
       } catch (error) {
         return { reseeded: false, error: error instanceof Error ? error.message : "Unable to write stelow.json." };
       }
-      updateCard(cardId, { stage: "triage", activity: "idle", last_error: null });
+      let preset: PresetRow;
+      if (presetId) {
+        const found = getPresetById(presetId);
+        if (!found) return { reseeded: false, error: "Preset not found." };
+        preset = found;
+        db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, now());
+      } else {
+        preset = getPresetForCard(cardId);
+      }
+      if (card.worker_thread_id) {
+        try { await bb.sdk.threads.archive({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
+        try { await bb.sdk.threads.stop({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
+      }
+      const params = presetAttachmentParams(preset);
+      const newThread = await bb.sdk.threads.spawn({
+        projectId: card.project_id,
+        environment: { type: "project-default" },
+        visibility: "hidden",
+        title: `Stelow: ${card.display_name ?? card.name}`,
+        providerId: params.providerId,
+        model: params.modelId,
+        reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+        permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
+        executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded state.md, transitions.md, and stelow.json. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Start with /sw-start. Preserve every gate (product, interface, tech plan, diff).
+
+CRITICAL — User input contract:
+ANY time you need user input, you MUST call the structured form:
+
+    bb stelow ask --thread <this_thread_id> \\
+      --question "<a single clear question>" \\
+      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
+
+Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
+
+${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
+${card.prompt}`,
+      });
+      const ts = now();
+      db.prepare("UPDATE cards SET stage = ?, activity = ?, last_error = ?, worker_thread_id = ?, last_assistant_text = ?, updated_at = ? WHERE id = ?").run("triage", "running", null, newThread.id, null, ts, cardId);
       bb.realtime.publish("card-state", { cardId });
       return { reseeded: true, error: null };
     },
@@ -848,6 +1031,73 @@ export default async function plugin(bb: BbPluginApi) {
       bb.realtime.publish("board-changed", { stage });
       return { stage, stdout: result.stdout, error: null };
     },
+
+    async listPresets() {
+      const rows = db.prepare("SELECT * FROM presets ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[];
+      return {
+        presets: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          providerId: row.provider_id,
+          modelId: row.model_id,
+          reasoningLevel: row.reasoning_level,
+          permissionMode: row.permission_mode,
+          environmentKind: row.environment_kind,
+          baseBranch: row.base_branch,
+          machineId: row.machine_id,
+          instructions: row.instructions,
+          isDefault: row.is_default === 1,
+          builtIn: row.built_in === 1,
+        })),
+      };
+    },
+
+    async upsertPreset({ id, name, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch, machineId, instructions }) {
+      const trimmed = name.trim();
+      if (!trimmed) return { preset: { id: "", name: "" } };
+      const effectiveId = id ?? `preset_${Math.random().toString(36).slice(2, 10)}`;
+      const collision = db.prepare("SELECT id FROM presets WHERE LOWER(name) = LOWER(?) AND id != ?").get(trimmed, effectiveId) as { id: string } | undefined;
+      if (collision) throw new Error(`A preset named "${trimmed}" already exists.`);
+      const existing = db.prepare("SELECT id, built_in FROM presets WHERE id = ?").get(effectiveId) as { id: string; built_in: number } | undefined;
+      if (existing?.built_in === 1 && (!id || id !== effectiveId)) {
+        throw new Error("Built-in presets cannot be renamed or duplicated; create a new one instead.");
+      }
+      const ts = now();
+      if (existing) {
+        db.prepare("UPDATE presets SET name = ?, provider_id = ?, model_id = ?, reasoning_level = ?, permission_mode = ?, environment_kind = ?, base_branch = ?, machine_id = ?, instructions = ?, updated_at = ? WHERE id = ?").run(
+          trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, effectiveId,
+        );
+      } else {
+        db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(
+          effectiveId, trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, ts,
+        );
+      }
+      return { preset: { id: effectiveId, name: trimmed } };
+    },
+
+    async deletePreset({ id }) {
+      const row = db.prepare("SELECT built_in FROM presets WHERE id = ?").get(id) as { built_in: number } | undefined;
+      if (!row) return { deleted: false, error: "Preset not found." };
+      if (row.built_in === 1) return { deleted: false, error: "Built-in presets cannot be deleted." };
+      const inUse = db.prepare("SELECT COUNT(*) AS count FROM card_presets WHERE preset_id = ?").get(id) as { count: number };
+      if (inUse.count > 0) return { deleted: false, error: `Preset is assigned to ${inUse.count} card(s). Unassign first.` };
+      db.prepare("DELETE FROM presets WHERE id = ?").run(id);
+      return { deleted: true, error: null };
+    },
+
+    async assignPreset({ cardId, presetId }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, error: "Card not found." };
+      if (presetId === null) {
+        db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
+      } else {
+        const preset = getPresetById(presetId);
+        if (!preset) return { ok: false, error: "Preset not found." };
+        db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
+      }
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, error: null };
+    },
   });
 
   bb.cli.register({
@@ -858,6 +1108,7 @@ export default async function plugin(bb: BbPluginApi) {
       { name: "ask", summary: "Ask a blocking structured question", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] <stage>" },
+      { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
       if (argv[0] === "status") {
@@ -902,9 +1153,92 @@ export default async function plugin(bb: BbPluginApi) {
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
         return { exitCode: 0, stdout: result.stdout };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance" };
+      if (argv[0] === "preset") {
+        const sub = argv[1];
+        const flag = (name: string, list: string[]) => { const index = list.indexOf(name); return index >= 0 ? list[index + 1] : undefined; };
+        const rows = (db.prepare("SELECT * FROM presets ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[]);
+        if (!sub || sub === "list") {
+          return { exitCode: 0, stdout: rows.map((row) => `${row.id}\t${row.is_default === 1 ? "*" : " "}${row.built_in === 1 ? "B" : " "}\t${row.name}\t${row.provider_id}/${row.model_id}\t${row.reasoning_level}\t${row.permission_mode}`).join("\n") };
+        }
+        if (sub === "add") {
+          const args = argv.slice(2);
+          const name = flag("--name", args);
+          const providerId = flag("--provider", args) ?? "codex";
+          const modelId = flag("--model", args) ?? "gpt-5";
+          const reasoningLevel = flag("--reasoning", args) ?? "medium";
+          const permissionMode = flag("--permission", args) ?? "accept-edits";
+          const environmentKind = (flag("--workspace", args) ?? "project-default") as "project-default" | "new-worktree";
+          const instructions = flag("--instructions", args) ?? "";
+          if (!name) return { exitCode: 2, stderr: "Usage: bb stelow preset add --name <name> [--provider <id>] [--model <id>] [--reasoning <level>] [--permission <mode>] [--workspace <kind>] [--instructions <text>]" };
+          try {
+            const result = await upsertPresetHandler({ id: null, name, providerId, modelId, reasoningLevel, permissionMode: permissionMode as "accept-edits" | "auto" | "full", environmentKind, baseBranch: null, machineId: null, instructions });
+            return { exitCode: 0, stdout: `OK ${result.preset.id} ${result.preset.name}` };
+          } catch (error) {
+            return { exitCode: 1, stderr: error instanceof Error ? error.message : "Unable to add preset." };
+          }
+        }
+        if (sub === "remove") {
+          const id = argv[2];
+          if (!id) return { exitCode: 2, stderr: "Usage: bb stelow preset remove <id>" };
+          const result = await deletePresetHandler({ id });
+          if (!result.deleted) return { exitCode: 1, stderr: result.error ?? "Could not remove preset." };
+          return { exitCode: 0, stdout: `Removed ${id}` };
+        }
+        if (sub === "assign") {
+          const args = argv.slice(2);
+          const cardId = flag("--card", args);
+          const presetId = flag("--preset", args);
+          if (!cardId || !presetId) return { exitCode: 2, stderr: "Usage: bb stelow preset assign --card <card_id> --preset <preset_id>" };
+          const result = await assignPresetHandler({ cardId, presetId });
+          if (!result.ok) return { exitCode: 1, stderr: result.error ?? "Could not assign preset." };
+          return { exitCode: 0, stdout: `Assigned ${presetId} to ${cardId}` };
+        }
+        return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
+      }
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|preset" };
     },
   });
+
+  const upsertPresetHandler = async ({ id, name, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch, machineId, instructions }: { id: string | null; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: "accept-edits" | "auto" | "full"; environmentKind: "project-default" | "new-worktree"; baseBranch: string | null; machineId: string | null; instructions: string }) => {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("Preset name is required.");
+    const effectiveId = id ?? `preset_${Math.random().toString(36).slice(2, 10)}`;
+    const collision = db.prepare("SELECT id FROM presets WHERE LOWER(name) = LOWER(?) AND id != ?").get(trimmed, effectiveId) as { id: string } | undefined;
+    if (collision) throw new Error(`A preset named "${trimmed}" already exists.`);
+    const existing = db.prepare("SELECT id, built_in FROM presets WHERE id = ?").get(effectiveId) as { id: string; built_in: number } | undefined;
+    if (existing?.built_in === 1 && (!id || id !== effectiveId)) throw new Error("Built-in presets cannot be renamed or duplicated; create a new one instead.");
+    const ts = now();
+    if (existing) {
+      db.prepare("UPDATE presets SET name = ?, provider_id = ?, model_id = ?, reasoning_level = ?, permission_mode = ?, environment_kind = ?, base_branch = ?, machine_id = ?, instructions = ?, updated_at = ? WHERE id = ?").run(trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, effectiveId);
+    } else {
+      db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(effectiveId, trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, ts);
+    }
+    return { preset: { id: effectiveId, name: trimmed } };
+  };
+
+  const deletePresetHandler = async ({ id }: { id: string }) => {
+    const row = db.prepare("SELECT built_in FROM presets WHERE id = ?").get(id) as { built_in: number } | undefined;
+    if (!row) return { deleted: false, error: "Preset not found." };
+    if (row.built_in === 1) return { deleted: false, error: "Built-in presets cannot be deleted." };
+    const inUse = db.prepare("SELECT COUNT(*) AS count FROM card_presets WHERE preset_id = ?").get(id) as { count: number };
+    if (inUse.count > 0) return { deleted: false, error: `Preset is assigned to ${inUse.count} card(s). Unassign first.` };
+    db.prepare("DELETE FROM presets WHERE id = ?").run(id);
+    return { deleted: true, error: null };
+  };
+
+  const assignPresetHandler = async ({ cardId, presetId }: { cardId: string; presetId: string | null }) => {
+    const card = getCard(cardId);
+    if (!card) return { ok: false, error: "Card not found." };
+    if (presetId === null) {
+      db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
+    } else {
+      const preset = getPresetById(presetId);
+      if (!preset) return { ok: false, error: "Preset not found." };
+      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
+    }
+    bb.realtime.publish("card-state", { cardId });
+    return { ok: true, error: null };
+  };
 
   bb.ui.registerMentionProvider({
     id: "workflow",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Markdown,
   definePluginApp,
@@ -16,11 +16,20 @@ import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type ProjectList = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][number];
 
-type ProjectsResult = Awaited<ReturnType<typeof useRpc<typeof rpcContract>>["call"]> extends infer R ? Extract<R, { projects?: unknown }> : never;
+type ProjectsResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R ? Extract<R, { projects?: unknown }> : never;
 
 const COLUMNS = ["draft", "planning", "awaiting-answer", "in-progress", "completed", "blocked", "archived"] as const;
 const COLUMN_LABELS: Record<string, string> = {
@@ -84,6 +93,16 @@ function stageLabel(stage: string) {
   return STAGE_LABELS[stage] ?? stage;
 }
 
+const FILTER_INTENT_OPTIONS = [{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))];
+const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
+const FILTER_ACTIVITY_OPTIONS = [
+  { value: "all", label: "Any activity" },
+  { value: "idle", label: "idle" },
+  { value: "running", label: "running" },
+  { value: "awaiting-answer", label: "awaiting-answer" },
+  { value: "error", label: "error" },
+];
+
 type BoardResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 type Workflow = Extract<BoardResult, { workflows: unknown }>["workflows"][number];
 type ProjectsResponse = Extract<BoardResult, { projects: unknown }>;
@@ -93,13 +112,6 @@ type CardItem = CardsResponse["cards"][number];
 type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
 type CardComment = CardDetailResponse["comments"][number];
 type CardQuestion = CardDetailResponse["pendingQuestions"][number];
-
-function startReason(projectId: string | null, prompt: string, rootPath: string | null): string | null {
-  if (!projectId) return "Select a normal bb project (not the singleton Personal project) in the sidebar.";
-  if (!prompt.trim()) return "Describe a product request to start the workflow.";
-  if (!rootPath) return "The selected bb project has no workspace source. Add one with `bb project add`.";
-  return null;
-}
 
 function activityGlyph(activity: CardItem["activity"]) {
   if (activity === "running") return "▶";
@@ -128,6 +140,7 @@ function activityTone(activity: CardItem["activity"]) {
 function statusTone(status: string) {
   if (["completed", "done"].includes(status)) return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
   if (["in-progress", "approved"].includes(status)) return "bg-primary/15 text-primary";
+  if (["awaiting-answer"].includes(status)) return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
   if (["blocked", "failed"].includes(status)) return "bg-destructive/15 text-destructive";
   if (["escalated"].includes(status)) return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
   if (["skipped", "archived"].includes(status)) return "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300";
@@ -141,12 +154,75 @@ function statusGlyph(status: string) {
   if (status === "escalated") return "↑";
   if (status === "failed") return "✗";
   if (status === "in-progress" || status === "approved") return "▶";
+  if (status === "awaiting-answer") return "?";
   if (status === "archived") return "○";
   return "·";
 }
 
 function Pill({ children, tone = "bg-muted text-muted-foreground", className = "" }: { children: React.ReactNode; tone?: string; className?: string }) {
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
+}
+
+const DEBOUNCE_MS = 250;
+
+function useDebouncedRealtime(channels: readonly string[], handler: () => void, delayMs = DEBOUNCE_MS) {
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+  const schedule = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      handlerRef.current();
+    }, delayMs);
+  }, [delayMs]);
+  for (const channel of channels) {
+    useRealtime(channel, schedule);
+  }
+}
+
+interface RunningAccessoryHandle {
+  count: number;
+  tone: string;
+  label: string;
+}
+
+function useRunningAccessory(): RunningAccessoryHandle {
+  const rpc = useRpc<typeof rpcContract>();
+  const [count, setCount] = useState(0);
+  const reload = useCallback(async () => {
+    try {
+      const result = await rpc.call("listCards", { projectId: null });
+      const live = result.cards.filter((card) => card.status === "in-progress" || card.status === "awaiting-answer" || card.status === "draft" || card.status === "planning").length;
+      setCount(live);
+    } catch {
+      /* host will show stale silently */
+    }
+  }, [rpc]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+  useDebouncedRealtime(["card-state", "board-changed"], () => void reload());
+  const tone = count > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground";
+  return { count, tone, label: count > 0 ? `${count} live` : "0" };
+}
+
+function StelowSidebarAccessory() {
+  const { count, tone, label } = useRunningAccessory();
+  return (
+    <span
+      aria-label={`${count} Stelow cards in progress`}
+      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${tone}`}
+    >
+      {label}
+    </span>
+  );
 }
 
 function BoardPanel({ subPath }: { subPath: string }) {
@@ -158,14 +234,14 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [cards, setCards] = useState<CardItem[]>([]);
   const [boardProjectId, setBoardProjectId] = useState<string | null>(routeProjectId);
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
-  if (typeof window === "undefined") return { archived: true };
-  try {
-    const raw = window.localStorage.getItem("stelow-columns-collapsed-v1");
-    if (!raw) return { archived: true };
-    const parsed = JSON.parse(raw) as Record<string, boolean>;
-    return typeof parsed === "object" && parsed ? parsed : { archived: true };
-  } catch { return { archived: true }; }
-});
+    if (typeof window === "undefined") return { archived: true };
+    try {
+      const raw = window.localStorage.getItem("stelow-columns-collapsed-v1");
+      if (!raw) return { archived: true };
+      const parsed = JSON.parse(raw) as Record<string, boolean>;
+      return typeof parsed === "object" && parsed ? parsed : { archived: true };
+    } catch { return { archived: true }; }
+  });
   useEffect(() => {
     if (typeof window === "undefined") return;
     try { window.localStorage.setItem("stelow-columns-collapsed-v1", JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
@@ -179,6 +255,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [filterStatus, setFilterStatus] = useState<string | "all">("all");
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
+  const [restartFocusKey, setRestartFocusKey] = useState(0);
 
   const load = useCallback(async (targetId: string | null) => {
     setLoading(true);
@@ -199,8 +276,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
   }, [rpc]);
 
   useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
-  useRealtime("card-state", () => { void load(boardProjectId ?? routeProjectId); });
-  useRealtime("board-changed", () => { void load(boardProjectId ?? routeProjectId); });
+  useDebouncedRealtime(["card-state", "board-changed"], () => void load(boardProjectId ?? routeProjectId));
 
   const activeProjectId = boardProjectId ?? routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
@@ -234,7 +310,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
       const result = await rpc.call("createCard", { projectId: activeProjectId, prompt: prompt.trim(), intent });
       setPrompt("");
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Card created. The agent is working in the background.");
+      toast.success("Card created in Triage. The agent will ask the intent question next.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to create the card.");
     }
@@ -246,12 +322,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
-  function prefillAnswerInThread(question: CardQuestion, card: CardItem) {
-    const draft = `${question.title}\n\n${question.question}\n\n${question.options.map((option) => `- ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n")}\n\nMy answer: `;
-    composer?.setText(draft);
-    if (card.workerThreadId) navigate.toThread(card.workerThreadId);
-  }
-
   const cardMatch = subPath.match(/^card\/(card_[A-Za-z0-9]+)\/?$/);
   if (cardMatch && cardMatch[1]) {
     const cardId = cardMatch[1];
@@ -259,6 +329,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
       <div className="flex h-full flex-col overflow-hidden bg-background">
         <CardDetailHeader
           cardId={cardId}
+          restartFocusKey={restartFocusKey}
           onBack={() => navigate.toPluginPanel("board", { subPath: "" })}
         />
         <div className="flex-1 overflow-auto">
@@ -293,7 +364,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
           </form>
           {reason ? <p className="-mt-2 px-1 text-xs text-muted-foreground">{reason}</p> : null}
 
-          <FilterBar
+          <FiltersBar
             projects={projects}
             stageOptions={stageOptions}
             filterProjectId={filterProjectId}
@@ -326,6 +397,8 @@ function BoardPanel({ subPath }: { subPath: string }) {
               />
             ))}
           </div>
+
+          <button onClick={() => setRestartFocusKey((k) => k + 1)} className="sr-only" aria-hidden="true" tabIndex={-1}>refresh focus</button>
         </div>
       </div>
     </div>
@@ -347,7 +420,7 @@ function ProjectPill({ value, onChange, projects }: { value: string | null; onCh
   );
 }
 
-function FilterBar({ projects, stageOptions, filterProjectId, filterStage, filterIntent, filterStatus, filterActivity, filterAttention, onProject, onStage, onIntent, onStatus, onActivity, onAttention, onReset }: {
+function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filterIntent, filterStatus, filterActivity, filterAttention, onProject, onStage, onIntent, onStatus, onActivity, onAttention, onReset }: {
   projects: Project[];
   stageOptions: string[];
   filterProjectId: string;
@@ -364,41 +437,62 @@ function FilterBar({ projects, stageOptions, filterProjectId, filterStage, filte
   onAttention: (v: boolean) => void;
   onReset: () => void;
 }) {
-  const filtersActive = filterProjectId !== "all" || filterStage !== "all" || filterIntent !== "all" || filterStatus !== "all" || filterActivity !== "all" || filterAttention;
+  const [open, setOpen] = useState(false);
+  const projectOptions = useMemo(() => [{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))], [projects]);
+  const stageOptionsList = useMemo(() => [{ value: "all", label: "Any stage" }, ...stageOptions.map((stage) => ({ value: stage, label: stage }))], [stageOptions]);
+  const activeCount = (filterProjectId !== "all" ? 1 : 0) + (filterStage !== "all" ? 1 : 0) + (filterIntent !== "all" ? 1 : 0) + (filterStatus !== "all" ? 1 : 0) + (filterActivity !== "all" ? 1 : 0) + (filterAttention ? 1 : 0);
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-      <FilterChip label="Project" value={filterProjectId} onChange={onProject} options={[{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))]} />
-      <FilterChip label="Type" value={filterIntent} onChange={onIntent} options={[{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))]} />
-      <FilterChip label="Status" value={filterStatus} onChange={onStatus} options={[{ value: "all", label: "Any status" }, ...COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))]} />
-      <FilterChip label="Stage" value={filterStage} onChange={onStage} options={[{ value: "all", label: "Any stage" }, ...stageOptions.map((stage) => ({ value: stage, label: stage }))]} />
-      <FilterChip label="Activity" value={filterActivity} onChange={onActivity} options={[{ value: "all", label: "Any activity" }, { value: "idle", label: "idle" }, { value: "running", label: "running" }, { value: "awaiting-answer", label: "awaiting-answer" }, { value: "error", label: "error" }]} />
-      <button onClick={() => onAttention(!filterAttention)} className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${filterAttention ? "border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300" : "border-border bg-background text-muted-foreground hover:text-foreground"}`}>
-        <span aria-hidden className={`size-1.5 rounded-full ${filterAttention ? "bg-amber-500" : "bg-muted-foreground"}`} />
-        Needs attention
+    <div className="relative flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${activeCount > 0 ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground"}`}
+      >
+        <span aria-hidden>⚙</span>
+        <span>Filters</span>
+        {activeCount > 0 ? <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{activeCount}</span> : null}
       </button>
-      {filtersActive ? <button onClick={onReset} className="inline-flex h-7 items-center rounded-full border bg-background px-3 text-xs text-muted-foreground hover:text-foreground">Clear</button> : null}
+      {filterAttention ? <button onClick={() => onAttention(!filterAttention)} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-500 bg-amber-500/15 px-3 text-xs font-medium text-amber-700 dark:text-amber-300" aria-label="Remove attention filter" aria-pressed="true">
+        <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
+        Needs attention
+        <span aria-hidden className="ml-1">×</span>
+      </button> : null}
+      {activeCount > 0 ? <button onClick={onReset} className="inline-flex h-7 items-center rounded-full border bg-background px-3 text-xs text-muted-foreground hover:text-foreground">Clear</button> : null}
+      {open ? (
+        <div role="dialog" aria-label="Filters" className="absolute left-3 top-10 z-20 w-[min(36rem,calc(100vw-2rem))] rounded-md border bg-card p-3 shadow-lg">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FilterSelect label="Project" value={filterProjectId} onChange={onProject} options={projectOptions} />
+            <FilterSelect label="Type" value={filterIntent} onChange={onIntent} options={FILTER_INTENT_OPTIONS} />
+            <FilterSelect label="Status" value={filterStatus} onChange={onStatus} options={FILTER_STATUS_OPTIONS} />
+            <FilterSelect label="Stage" value={filterStage} onChange={onStage} options={stageOptionsList} />
+            <FilterSelect label="Activity" value={filterActivity} onChange={onActivity} options={FILTER_ACTIVITY_OPTIONS} />
+            <label className="flex items-center gap-2 self-end text-sm">
+              <input type="checkbox" checked={filterAttention} onChange={(event) => onAttention(event.target.checked)} aria-label="Needs attention" />
+              <span className="text-xs text-muted-foreground">Needs attention</span>
+            </label>
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={onReset}>Reset</Button>
+            <Button size="sm" onClick={() => setOpen(false)}>Done</Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function FilterChip({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
   const selected = options.find((option) => option.value === value);
   const isAll = value === "all";
   return (
-    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className={`h-7 rounded-full border px-3 text-xs ${isAll ? "border-border bg-background text-muted-foreground" : "border-primary bg-primary/10 text-foreground"}`}>
-      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      {isAll ? null : selected ? null : null}
-    </select>
-  );
-}
-
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
-  return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="rounded-md border bg-background px-2 py-1 text-sm text-foreground">
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={`rounded-md border px-2 py-1 text-sm ${isAll ? "border-border bg-background text-muted-foreground" : "border-primary bg-primary/10 text-foreground"}`}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
+      {selected ? null : null}
     </label>
   );
 }
@@ -428,7 +522,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
         )}
       </button>
       {!collapsed ? (
-        <div className="space-y-2">
+        <div className="space-y-2" role="list" aria-label={`${COLUMN_LABELS[column]} cards`}>
           {cards.map((card) => <BoardCard key={card.id} card={card} />)}
         </div>
       ) : null}
@@ -445,15 +539,30 @@ function BoardCard({ card }: { card: CardItem }) {
     : attention
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
+  const open = useCallback(() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` }), [navigate, card.id]);
+  const openWorker = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
+  const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      open();
+      return;
+    }
+    if ((event.key === "w" || event.key === "W") && card.workerThreadId) {
+      event.preventDefault();
+      openWorker();
+    }
+  }, [open, openWorker, card.workerThreadId]);
   return (
     <button
+      role="listitem"
       draggable
       onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
-      onClick={() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` })}
-      onDoubleClick={() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }}
-      title="Click to inspect · double-click to open the worker thread"
+      onClick={open}
+      onDoubleClick={openWorker}
+      onKeyDown={onKeyDown}
+      title="Click to inspect · double-click or W to open the worker thread"
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
-      aria-label={`Open card ${card.displayName}`}
+      aria-label={`Open card ${card.displayName}. Press Enter to inspect, W to open the worker thread.`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
@@ -483,9 +592,10 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   return <CardDetailBody cardId={cardId} onClose={() => { /* host tab close */ }} composer={composer} navigate={navigate} />;
 }
 
-function CardDetailHeader({ cardId, onBack }: { cardId: string; onBack: () => void }) {
+function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string; onBack: () => void; restartFocusKey?: number }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     let cancelled = false;
     void rpc.call("listCards", { projectId: null }).then((result) => {
@@ -494,7 +604,7 @@ function CardDetailHeader({ cardId, onBack }: { cardId: string; onBack: () => vo
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [cardId, rpc]);
-  useRealtime("card-state", () => {
+  useDebouncedRealtime(["card-state"], () => {
     void rpc.call("listCards", { projectId: null }).then((result) => {
       setCard(result.cards.find((entry) => entry.id === cardId) ?? null);
     }).catch(() => undefined);
@@ -504,6 +614,10 @@ function CardDetailHeader({ cardId, onBack }: { cardId: string; onBack: () => vo
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
+  useEffect(() => {
+    if (restartFocusKey === undefined) return;
+    closeRef.current?.focus();
+  }, [restartFocusKey]);
   return (
     <header className="flex items-center gap-2 border-b bg-card/80 px-3 py-1.5">
       <button onClick={onBack} title="Back to board (Esc)" className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
@@ -520,7 +634,7 @@ function CardDetailHeader({ cardId, onBack }: { cardId: string; onBack: () => vo
         <Pill tone={activityTone(card.activity)}><span className="mr-1">{activityGlyph(card.activity)}</span>{activityLabel(card.activity)}</Pill>
         <Pill tone={statusTone(card.status)}><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill>
       </> : null}
-      <button onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
+      <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
         <span aria-hidden>×</span>
       </button>
     </header>
@@ -572,21 +686,63 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   );
 }
 
+function AwaitingAnswerBanner({ question, onAnswer }: { question: CardQuestion; onAnswer: () => void }) {
+  return (
+    <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="mt-0.5 inline-flex size-6 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
+        <div className="flex-1">
+          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{question.title}</div>
+          <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
+          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">The agent is waiting for your answer. The structured form should appear in the composer. If you don't see it, click below to open the thread and reply.</p>
+          <Button size="sm" className="mt-2" onClick={onAnswer}>Open in thread</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLabel, confirmTone, onConfirm }: { open: boolean; onOpenChange: (next: boolean) => void; title: string; description: string; confirmLabel: string; confirmTone?: "destructive" | "default"; onConfirm: () => void | Promise<void> }) {
+  const [pending, setPending] = useState(false);
+  useEffect(() => { if (!open) setPending(false); }, [open]);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={pending}>Cancel</Button>
+          </DialogClose>
+          <Button variant={confirmTone === "destructive" ? "destructive" : "default"} disabled={pending} onClick={async () => { setPending(true); try { await onConfirm(); } finally { setPending(false); } }}>{pending ? "Working…" : confirmLabel}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: string; onClose: () => void; composer: ReturnType<typeof useComposer>; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
+  const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean }>>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState<string | null>(null);
-  const [confirmingRepair, setConfirmingRepair] = useState(false);
+  const [repairOpen, setRepairOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [presetSwitching, setPresetSwitching] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const detailResult = await rpc.call("cardDetail", { cardId });
       const listResult = await rpc.call("listCards", { projectId: detailResult.card.projectId });
+      const presetsResult = await rpc.call("listPresets", {}).catch(() => ({ presets: [] }));
       setDetail(detailResult);
       setCard(listResult.cards.find((entry) => entry.id === cardId) ?? null);
+      setPresets(presetsResult.presets);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load card.");
@@ -594,7 +750,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
   }, [cardId, rpc]);
 
   useEffect(() => { void load(); void rpc.call("markCardSeen", { cardId }); }, [cardId, load, rpc]);
-  useRealtime("card-state", () => { void load(); });
+  useDebouncedRealtime(["card-state"], () => { void load(); });
 
   async function submitComment() {
     if (!comment.trim()) return;
@@ -607,24 +763,45 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
     await load();
   }
 
-  async function archive() {
-    await rpc.call("cancelCard", { cardId });
+  async function doArchive() {
+    setArchiveOpen(false);
+    try {
+      await rpc.call("cancelCard", { cardId });
+      toast.success("Card archived.");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Archive failed.");
+    }
   }
 
-  async function repair() {
-    if (!confirmingRepair) {
-      setConfirmingRepair(true);
-      setTimeout(() => setConfirmingRepair(false), 4000);
-      return;
-    }
+  async function doRepair() {
+    setRepairOpen(false);
     const result = await rpc.call("reseedCard", { cardId });
-    setConfirmingRepair(false);
     if (!result.reseeded) {
       toast.error(result.error ?? "Repair failed");
       return;
     }
     toast.success("Workflow repaired. Agent restarts from triage.");
     await load();
+  }
+
+  async function switchPreset(presetId: string | null) {
+    setPresetSwitching(true);
+    try {
+      const result = await rpc.call("assignPreset", { cardId, presetId });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not switch preset.");
+        return;
+      }
+      if (presetId) {
+        toast.success("Preset assigned. Repair to restart the worker thread with the new preset.");
+      } else {
+        toast.success("Preset cleared. Card will use the default preset on next start.");
+      }
+      await load();
+    } finally {
+      setPresetSwitching(false);
+    }
   }
 
   async function advance(stage: string) {
@@ -639,8 +816,6 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
     }
   }
 
-  
-
   function prefillAnswerInThread(question: CardQuestion) {
     const draft = `${question.title}\n\n${question.question}\n\n${question.options.map((option) => `- ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n")}\n\nMy answer: `;
     composer?.setText(draft);
@@ -648,6 +823,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
   }
 
   const showRepair = Boolean(card?.lastError) || (card?.activity === "idle" && card ? Date.now() - card.updatedAt > 60 * 60 * 1000 : false);
+  const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
 
   return (
     <div className="flex h-full flex-col">
@@ -661,6 +837,8 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
               <Meta label="Updated" value={new Date(card.updatedAt).toLocaleString()} />
             </div>
             {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
+
+            {pendingFirst && card.activity === "awaiting-answer" ? <AwaitingAnswerBanner question={pendingFirst} onAnswer={() => prefillAnswerInThread(pendingFirst)} /> : null}
 
             {detail && detail.pendingQuestions.length > 0 ? (
               <section className="space-y-2">
@@ -691,6 +869,24 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
             ) : null}
 
             <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Agent preset</h3>
+              <p className="text-xs text-muted-foreground">Changes the provider/model/permission mode used on the next worker start. Repair to restart the worker now.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  aria-label="Agent preset"
+                  className="h-8 rounded-md border bg-background px-2 text-sm"
+                  value={presets.find((preset) => preset.name === detail?.card.presetName)?.id ?? ""}
+                  onChange={(event) => void switchPreset(event.target.value || null)}
+                  disabled={presetSwitching}
+                >
+                  {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}{preset.isDefault ? " · default" : ""} — {preset.providerId}/{preset.modelId}</option>)}
+                </select>
+                {detail?.card.presetName ? <Pill>{detail.card.presetName}</Pill> : null}
+              </div>
+              {presets.length === 0 ? <p className="text-xs text-muted-foreground">No presets yet. Add one via <code>bb stelow preset list</code>.</p> : null}
+            </section>
+
+            <section className="space-y-2">
               <h3 className="text-sm font-semibold">Comments</h3>
               <div className="space-y-2 rounded-md border bg-muted/30 p-2">
                 {detail?.comments.length ? detail.comments.map((entry) => (
@@ -712,12 +908,30 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
       <footer className="flex flex-wrap gap-1 border-t p-3">
         {card?.workerThreadId ? <Button size="sm" variant="outline" onClick={() => navigate.toThread(card.workerThreadId ?? "")}>Open thread</Button> : null}
         {showRepair ? (
-          <Button size="sm" variant={confirmingRepair ? "destructive" : "outline"} onClick={() => void repair()}>
-            {confirmingRepair ? "Confirm repair" : "Repair"}
+          <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)}>
+            Repair
           </Button>
         ) : null}
-        <Button size="sm" variant="outline" onClick={() => void archive()}>Archive</Button>
+        <Button size="sm" variant="outline" onClick={() => setArchiveOpen(true)}>Archive</Button>
       </footer>
+      <ConfirmActionDialog
+        open={repairOpen}
+        onOpenChange={setRepairOpen}
+        title="Repair this workflow?"
+        description="Reseed state.md and stelow.json so the agent restarts from the triage stage. Existing scope work and comments are kept."
+        confirmLabel="Repair"
+        confirmTone="default"
+        onConfirm={doRepair}
+      />
+      <ConfirmActionDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        title="Archive this card?"
+        description="The card is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
+        confirmLabel="Archive"
+        confirmTone="destructive"
+        onConfirm={doArchive}
+      />
     </div>
   );
 }
@@ -755,7 +969,7 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
   );
 }
 
-function DocumentReview({ path, source }: PluginFileOpenerProps) {
+function DocumentReviewImpl({ path, source }: { path: string; source: PluginFileOpenerProps["source"] }) {
   const { projectId: routeProjectId } = useBbContext();
   const projectId = source.projectId ?? routeProjectId;
   const rpc = useRpc<typeof rpcContract>();
@@ -766,7 +980,7 @@ function DocumentReview({ path, source }: PluginFileOpenerProps) {
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => { const result = await rpc.call("readDocument", { projectId, path }); setContent(result.content); setSha256(result.sha256); setError(result.error); }, [path, projectId, rpc]);
   useEffect(() => { void load(); }, [load]);
-  useRealtime("board-changed", () => { void load(); });
+  useDebouncedRealtime(["board-changed"], () => { void load(); });
 
   async function saveComment() {
     const result = await rpc.call("addComment", { projectId, path, expectedSha256: sha256, selectedText: selection, comment });
@@ -781,9 +995,13 @@ function DocumentReview({ path, source }: PluginFileOpenerProps) {
   </div>;
 }
 
+function DocumentReview(props: PluginFileOpenerProps) {
+  return <DocumentReviewImpl path={props.path} source={props.source} />;
+}
+
 function ThreadDocumentPanel({ params }: { params: unknown }) {
   const path = typeof params === "object" && params && "path" in params && typeof params.path === "string" ? params.path : "";
-  return path ? <DocumentReview path={path} source={{ kind: "workspace", threadId: null, environmentId: null, projectId: null }} /> : <p className="text-sm text-muted-foreground">Choose an artifact from the Stelow board.</p>;
+  return path ? <DocumentReviewImpl path={path} source={{ kind: "workspace", threadId: null, environmentId: null, projectId: null }} /> : <p className="text-sm text-muted-foreground">Choose an artifact from the Stelow board.</p>;
 }
 
 function OpenStelowBoardAction() {
@@ -792,7 +1010,14 @@ function OpenStelowBoardAction() {
 }
 
 export default definePluginApp((app) => {
-  app.slots.navPanel({ id: "board", title: "Stelow", icon: "Columns", path: "board", component: (props) => { PillsyStyles(); return <BoardPanel subPath={props.subPath} />; } });
+  app.slots.navPanel({
+    id: "board",
+    title: "Stelow",
+    icon: "Columns",
+    path: "board",
+    component: (props) => { PillsyStyles(); return <BoardPanel subPath={props.subPath} />; },
+    experimental_sidebarAccessory: StelowSidebarAccessory,
+  });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
   app.slots.fileOpener({ id: "stelow-markdown-review", title: "Review with Stelow", extensions: ["md"], component: DocumentReview });
   app.slots.threadPanelAction({ id: "review-document", title: "Review Stelow document", icon: "FileText", component: ThreadDocumentPanel });
