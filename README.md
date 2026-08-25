@@ -110,6 +110,21 @@ bb stelow ask \
 bb stelow preset list|add|remove|assign
 ```
 
+## Deploy / hot-reload (CRITICAL)
+
+Deploying plugin changes is ** only**. The bb server
+hot-reloads the plugin when  becomes newer than the source.
+
+**NEVER run  as a deploy step.**
+A daemon restart SIGTERMs every running thread and each one is marked
+"Thread interrupted because the host daemon disconnected". On 2026-08-25 this
+exact pattern killed this thread four times in one day (16:22, 16:33, 18:22,
+18:51 UTC) — the agent resumed, ran its deploy playbook with a daemon restart,
+and terminated itself.
+
+If a full daemon restart is ever truly required, do it outside of any active
+thread and expect live threads to be interrupted.
+
 ## Gate behavior
 
 | Stelow gate | Artifact | Receipt |
