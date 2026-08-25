@@ -24,16 +24,24 @@ and this project adheres to a single-version-per-release tag format
 - **Workspace-file mention provider** (`@` + filename resolves to
   `Workspace file: <path>` when the route has a project context).
 - **Timed-out questions are answerable later.** If a `bb stelow ask` times
-  out (user away), the question is persisted and the card shows
-  "Question timed out" with the original options still clickable. Answering
-  records it as a card comment and delivers the late answer to the worker
-  thread, which the agent picks up on its next turn.
+  out (user away), the question is persisted and the card **stays in Gate
+  pending** — it does not look abandoned. The agent is told to STOP and wait
+  (never guess, never re-ask); the card shows "Waiting for your answer — the
+  agent paused" with the original options still clickable. Answering records
+  it as a card comment and delivers the answer to the worker thread, which
+  resumes the workflow.
 
 ### Changed
 
-- **Agent guidance on ask timeouts.** The worker prompt now tells the agent:
-  on timeout, proceed with best judgment; re-ask at most once if still
-  blocking; late answers arrive as comments.
+- **Ask timeout stops the agent.** Previously the worker was told to proceed
+  with best judgment on timeout. Now the ask command returns a STOP instruction
+  and the worker prompt says: on timeout, do not proceed; the question stays
+  pending and answerable; the answer resumes the workflow. `syncThreadState`
+  keeps an idle card in Gate pending while a question remains unanswered.
+- **Card header de-duplicated.** When activity and status agree (e.g. both
+  `awaiting-answer`) only one tag shows; the breadcrumb shows the column
+  state (`Gate pending`) plus the workflow stage (`Triage`) instead of only
+  the stage. The intent label now shows the current intent next to the select.
 - **Ask timeout is configurable** via `STELOW_ASK_TIMEOUT_MS` (default 1h)
   for testing and tuning.
 
