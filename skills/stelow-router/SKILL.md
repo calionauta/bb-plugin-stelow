@@ -33,6 +33,14 @@ Output:
 - The next stage's `SKILL.md` loaded for the next agent turn
 - A new `## Hand-off (router)` block appended to `state.md`
 
+> **bb plugin integration (bb-plugin-stelow):** the board's columns mirror
+> `state.md` (Triage → Shaping → Gate pending → Running → Done). A
+> `bb stelow ask` in any stage parks the card in Gate pending until the user
+> answers; on timeout the router still advances with the agent's best
+> judgment, and any late answer is delivered as a card comment the agent
+> reads on its next turn. The plugin never edits `state.md` — advancing
+> always happens through `scripts/stelow` here.
+
 ## Algorithm
 
 ```bash

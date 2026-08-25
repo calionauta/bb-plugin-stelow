@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [Unreleased]
+
+### Added
+
+- **Full bb composer on the board.** The new-card form now uses bb's own
+  `NewThreadComposer` (tiptap editor): type `@` for mentions, use the `+`
+  action menu to attach files, skills, automations, or a plugin reference,
+  and pick project/provider/model right in the form. Attached files are
+  copied to the thread storage and listed as `Attached files:` in the card
+  prompt — same behavior as bb threads.
+- **Bundled Stelow skills.** The plugin ships the 27 `stelow-*` skills in
+  `skills/` and declares them via `bb.skills`, so a fresh install no longer
+  depends on `~/.claude/skills/stelow-*` symlinks or the
+  `calionauta/stelow` repo being checked out. The agent prompt now reads the
+  stage guides from the plugin's own skills directory.
+- **Workspace-file mention provider** (`@` + filename resolves to
+  `Workspace file: <path>` when the route has a project context).
+- **Timed-out questions are answerable later.** If a `bb stelow ask` times
+  out (user away), the question is persisted and the card shows
+  "Question timed out" with the original options still clickable. Answering
+  records it as a card comment and delivers the late answer to the worker
+  thread, which the agent picks up on its next turn.
+
+### Changed
+
+- **Agent guidance on ask timeouts.** The worker prompt now tells the agent:
+  on timeout, proceed with best judgment; re-ask at most once if still
+  blocking; late answers arrive as comments.
+- **Ask timeout is configurable** via `STELOW_ASK_TIMEOUT_MS` (default 1h)
+  for testing and tuning.
+
 ## [0.1.4] - 2026-08-20
 
 ### Fixed

@@ -19,7 +19,9 @@ The plugin does **not** maintain a second workflow database. `stelow.json` and `
 ## Requirements
 
 1. A normal bb project backed by a local workspace source.
-2. Stelow installed as skills (`npx skills add calionauta/stelow -g` or Stelow's installer).
+2. Stelow skills: **bundled with the plugin** (shipped in `skills/`), so no
+   external install step is required. The worker agent loads the stage guides
+   from the plugin's own skills directory.
 3. A `stelow.json` created by a Stelow workflow for board data.
 
 The singleton bb personal project has no workspace source, so the board asks you to select/create a normal project.
@@ -43,17 +45,23 @@ bb plugin dev
 Open **Stelow** in bb's left navigation (the row shows a live badge of cards in
 Triage/Shaping/Running/Gate pending). Select a project with Stelow state, then:
 
-1. Enter a product request and choose **Start workflow**. The card is created
-   in **Triage** and the agent begins there.
+1. Enter a product request in the **composer** (bb's full new-thread editor):
+   type `@` to mention, or use the `+` menu to attach files/skills before
+   starting. Choose the project and provider/model in the form. The card is
+   created in **Triage** and the agent begins there.
 2. The agent runs the triage → select → … pipeline and, the moment it needs a
    decision, opens a structured question. While a question is pending the card
    sits in **Gate pending**. Reply in the form, in the thread, or from the card
    detail's "Answer in thread" action.
-3. Open product specs, interface proposals, and technical plans from the board.
-4. Select text in a document and add a review comment.
-5. Approve the matching gate only after review; the plugin creates the portable
+3. If nobody answers before the ask timeout, the card shows the question as
+   **timed out** with the options still clickable — the agent proceeds with
+   its best judgment, and any late answer is delivered to the worker thread
+   for its next turn.
+4. Open product specs, interface proposals, and technical plans from the board.
+5. Select text in a document and add a review comment.
+6. Approve the matching gate only after review; the plugin creates the portable
    receipt.
-6. Track planned scopes and execution tasks in the board.
+7. Track planned scopes and execution tasks in the board.
 
 ### Cards and keyboard
 
