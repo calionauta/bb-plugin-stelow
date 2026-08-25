@@ -8,6 +8,18 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Added
+
+- **Per-workflow state: stelow is now multi-card per project.** Each card owns
+  its own state file at `<root>/.stelow/<date>/<dirHash>/state.md` (plus
+  `invariants.json` and `lock`) instead of sharing a single project-root
+  `state.md`. The card stores its `dir_hash`; the helper resolves the dir from
+  `STELOW_STATEDIR` (set per workflow by the server), so `advance`/`status`
+  touch only that card's state. Removed the old one-active-card-per-project
+  guard — N cards can now run concurrently in the same project without
+  colliding. Legacy cards (no `dir_hash`) keep working via the root `state.md`
+  fallback.
+
 ### Fixed
 
 - **Realtime now works over Tailscale (port 8096).** The bb-tcp-proxy was a
