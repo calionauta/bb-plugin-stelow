@@ -122,7 +122,7 @@ function activityGlyph(activity: CardItem["activity"]) {
 }
 
 function activityLabel(activity: CardItem["activity"]) {
-  if (activity === "idle") return "Waiting for agent";
+  if (activity === "idle") return "Paused";
   if (activity === "running") return "Agent working";
   if (activity === "awaiting-answer") return "Question for you";
   if (activity === "error") return "Failed";
@@ -684,16 +684,18 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   );
 }
 
-function AwaitingAnswerBanner({ question, onAnswer }: { question: CardQuestion; onAnswer: () => void }) {
+function AwaitingAnswerBanner({ question, onAnswer }: { question: CardQuestion; onAnswer: (answer: string) => void }) {
   return (
     <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
       <div className="flex items-start gap-3">
-        <span aria-hidden className="mt-0.5 inline-flex size-6 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
-        <div className="flex-1">
+        <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{question.title}</div>
           <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
-          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">The agent is waiting for your answer. The structured form should appear in the composer. If you don't see it, click below to open the thread and reply.</p>
-          <Button size="sm" className="mt-2" onClick={onAnswer}>Open in thread</Button>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" className="bg-background/60" onClick={() => onAnswer(option.label)}>{option.label}</Button>)}
+          </div>
+          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">Picking an option opens the thread with your answer pre-filled — press Enter to send.</p>
         </div>
       </div>
     </div>
@@ -946,8 +948,8 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
     }
   }
 
-  function prefillAnswerInThread(question: CardQuestion) {
-    const draft = `${question.title}\n\n${question.question}\n\n${question.options.map((option) => `- ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n")}\n\nMy answer: `;
+  function prefillAnswerInThread(question: CardQuestion, answer?: string) {
+    const draft = `${question.title}\n\n${question.question}\n\n${question.options.map((option) => `- ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n")}\n\nMy answer: ${answer ?? ""}`;
     composer?.setText(draft);
     if (card?.workerThreadId) navigate.toThread(card.workerThreadId);
   }
@@ -1011,17 +1013,18 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
             </div>
             {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
 
-            {pendingFirst && card.activity === "awaiting-answer" ? <AwaitingAnswerBanner question={pendingFirst} onAnswer={() => prefillAnswerInThread(pendingFirst)} /> : null}
+            {pendingFirst && card.activity === "awaiting-answer" ? <AwaitingAnswerBanner question={pendingFirst} onAnswer={(answer) => prefillAnswerInThread(pendingFirst, answer)} /> : null}
 
-            {detail && detail.pendingQuestions.length > 0 ? (
+            {detail && card.activity === "awaiting-answer" && detail.pendingQuestions.length > 1 ? (
               <section className="space-y-2">
-                <h3 className="text-sm font-semibold">Pending questions</h3>
-                {detail.pendingQuestions.map((question) => (
+                <h3 className="text-sm font-semibold">More pending questions</h3>
+                {detail.pendingQuestions.slice(1).map((question) => (
                   <div key={question.id} className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
                     <div className="text-sm font-medium">{question.title}</div>
                     <p className="mt-1 text-sm text-muted-foreground">{question.question}</p>
-                    <ul className="mt-2 space-y-1 text-xs text-muted-foreground">{question.options.map((option) => <li key={option.label}><span className="font-medium text-foreground">{option.label}</span>{option.description ? ` — ${option.description}` : ""}</li>)}</ul>
-                    <Button size="sm" className="mt-2" onClick={() => prefillAnswerInThread(question)}>Answer in thread</Button>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" onClick={() => prefillAnswerInThread(question, option.label)}>{option.label}</Button>)}
+                    </div>
                   </div>
                 ))}
               </section>

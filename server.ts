@@ -745,6 +745,10 @@ export default async function plugin(bb: BbPluginApi) {
     if (row) updateCard(row.id, { activity: "error", last_error: error ?? "Worker thread failed." });
   });
 
+  // Reconcile card states with their worker threads after reloads (events only fire on transitions).
+  const liveCards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
+  for (const row of liveCards) void syncThreadState(row.id);
+
   bb.onDispose(async () => {
     const rows = db.prepare("SELECT id, worker_thread_id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string; worker_thread_id: string }>;
     for (const row of rows) {
@@ -1233,8 +1237,12 @@ ${card.prompt}`,
         // Move the owning card to Gate pending while the question is open.
         const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
         if (cardRow) updateCard(cardRow.id, { activity: "awaiting-answer", status: "awaiting-answer" });
-        const result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", payload: { question, multiple: argv.includes("--multiple"), options: labels.map((label) => ({ label, description: "" })) } }, { signal: ctx.signal });
-        if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
+        let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
+        try {
+          result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", timeoutMs: 60 * 60 * 1000, payload: { question, multiple: argv.includes("--multiple"), options: labels.map((label) => ({ label, description: "" })) } }, { signal: ctx.signal });
+        } finally {
+          if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
+        }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }
       if (argv[0] === "seed") {
