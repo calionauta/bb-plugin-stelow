@@ -16,8 +16,12 @@ const HELPER_SCRIPT = (() => {
   }
   return candidates[0]!;
 })();
+const PLUGIN_SKILLS_DIR = nodeJoin(pluginDir, "skills");
+const PLUGIN_ORCHESTRATOR_REF = nodeJoin(PLUGIN_SKILLS_DIR, "stelow-product-orchestrator", "references");
+
 const TRANSITIONS_REF = (() => {
   const candidates = [
+    nodeJoin(PLUGIN_ORCHESTRATOR_REF, "transitions.md"),
     nodeJoin(pluginDir, "references", "transitions.md"),
     nodeJoin(pluginDir, "..", "references", "transitions.md"),
   ];
@@ -822,7 +826,7 @@ export default async function plugin(bb: BbPluginApi) {
         projectId,
         environment: { type: "project-default" },
         title: `Stelow: ${prompt.slice(0, 70)}`,
-        prompt: `Use the stelow workflow to shape and execute this request. The helper \`scripts/stelow\` is provided by bb-plugin-stelow. Use \`bb stelow advance <stage>\` to change stages; do NOT hand-write stage transitions. Start with /sw-start, preserve every gate (product, interface, tech plan, diff).\n\nRequest:\n${prompt}`,
+        prompt: `Use the stelow workflow to shape and execute this request. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by bb-plugin-stelow — load them first. Use \`bb stelow advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserve every gate (product, interface, tech plan, diff).\n\nRequest:\n${prompt}`,
       });
       return { threadId: thread.id };
     },
@@ -895,7 +899,7 @@ export default async function plugin(bb: BbPluginApi) {
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded state.md, transitions.md, and stelow.json. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Start with /sw-start. Preserve every gate (product, interface, tech plan, diff).
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded state.md, transitions.md, and stelow.json. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 The user already classified this request as intent=\`${intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
 
@@ -1051,7 +1055,7 @@ ${prompt}`,
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded state.md, transitions.md, and stelow.json. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Start with /sw-start. Preserve every gate (product, interface, tech plan, diff).
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded state.md, transitions.md, and stelow.json. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 The user already classified this request as intent=\`${card.intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${card.intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
 
@@ -1373,6 +1377,25 @@ ${card.prompt}`,
         if (workflow) return { context: `Stelow workflow ${workflow.name}: stage=${workflow.stage}, status=${workflow.status}, appetite=${workflow.appetite}, review_mode=${workflow.reviewMode}. Scopes: ${workflow.scopes.map((scope) => `${scope.id}:${scope.status}`).join(", ") || "none"}.` };
       }
       throw new Error("Stelow workflow no longer exists.");
+    },
+  });
+
+  // File mentions: type @ + filename in any composer (including the Stelow
+  // board) to insert a workspace file reference the agent can open/read.
+  bb.ui.registerMentionProvider({
+    id: "file",
+    label: "Workspace files",
+    triggers: ["@"],
+    async search({ query, projectId }) {
+      if (!projectId) return [];
+      const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
+      const root = project?.sources.find((entry) => entry.isDefault)?.path ?? null;
+      if (!root) return [];
+      const listed = await bb.sdk.files.list({ path: root, query, limit: 20 }).catch(() => null);
+      return (listed?.files ?? []).slice(0, 20).map((file) => ({ id: file.path, title: file.path.split("/").pop() ?? file.path, subtitle: file.path }));
+    },
+    async resolve(itemId) {
+      return { context: `Workspace file: ${itemId}` };
     },
   });
 }

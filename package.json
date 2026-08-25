@@ -13,7 +13,8 @@
       "icon": "Columns"
     },
     "server": "./server.ts",
-    "app": "./app.tsx"
+    "app": "./app.tsx",
+    "skills": ["skills/"]
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.1.3",

@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Markdown,
   definePluginApp,
+  experimental_NewThreadComposer as NewThreadComposer,
   useBbContext,
   useBbNavigate,
   useComposer,
   useRealtime,
   useRpc,
+  type NewThreadRequest,
   type PluginFileOpenerProps,
   type PluginPendingInteractionProps,
   type PluginThreadPanelProps,
@@ -304,10 +306,24 @@ function BoardPanel({ subPath }: { subPath: string }) {
     return groups;
   }, [filteredCards]);
 
-  async function start() {
-    if (!activeProjectId || !prompt.trim()) return;
+  async function start(request: NewThreadRequest) {
+    const targetProjectId = request.projectId || activeProjectId;
+    if (!targetProjectId) return;
+    // Compose the prompt from the composer's text + attached files, so the
+    // agent sees the same content the user does (including inline file links).
+    const textPart = request.input.find((part) => part.type === "text");
+    const text = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
+    const fileParts = request.input.filter((part) => part.type === "localFile" || part.type === "image" || part.type === "localImage");
+    const attached = fileParts
+      .map((part) => {
+        if (part.type === "image" || part.type === "localImage") return `[image: ${(part as { url?: string; path?: string }).url ?? (part as { path?: string }).path ?? ""}]`;
+        return (part as { path?: string; name?: string }).path ?? (part as { name?: string }).name ?? "";
+      })
+      .filter(Boolean) as string[];
+    const prompt = [text, ...(attached.length > 0 ? [`\n\nAttached files:\n${attached.map((path) => `- ${path}`).join("\n")}`] : [])].join("\n");
+    if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: activeProjectId, prompt: prompt.trim(), intent });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent });
       setPrompt("");
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success("Card created in Triage. The agent will triage it.");
@@ -351,14 +367,15 @@ function BoardPanel({ subPath }: { subPath: string }) {
             <p className="text-sm text-muted-foreground">Describe a request below to start a workflow. The agent runs in the background and posts updates here.</p>
           </div>
 
-          <form
-            onSubmit={(event) => { event.preventDefault(); if (!reason) void start(); }}
-            className="grid items-stretch gap-2 rounded-xl border bg-card/60 p-3 md:grid-cols-[1fr_2fr_auto]"
-          >
-            <ProjectPill value={activeProjectId} onChange={setBoardProjectId} projects={projects} />
-            <Input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe a product request to start with Stelow…" className="h-10" />
-            <span title={reason ?? "Start a Stelow workflow"}><Button type="submit" disabled={Boolean(reason)} className="h-10 px-5">Start</Button></span>
-          </form>
+          <div className="rounded-xl border bg-card/60 p-3">
+            <NewThreadComposer
+              defaultProjectId={activeProjectId ?? undefined}
+              initialPrompt={prompt}
+              layout="contained"
+              draftKey="stelow-board-create"
+              onSubmit={(request) => void start(request)}
+            />
+          </div>
           {reason ? <p className="-mt-2 px-1 text-xs text-muted-foreground">{reason}</p> : null}
 
           <FiltersBar
