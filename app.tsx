@@ -56,6 +56,7 @@ const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
   planning: "Planning",
   approved: "Approved",
+  "awaiting-answer": "Gate pending",
   "in-progress": "In progress",
   completed: "Completed",
   archived: "Archived",
@@ -644,10 +645,10 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? <span className="ml-2 text-muted-foreground">· {stageLabel(card.stage)}</span> : null}
+        {card ? <span className="ml-2 text-muted-foreground">· {statusLabel(card.status)}{card.status !== card.stage ? ` · ${stageLabel(card.stage)}` : ""}</span> : null}
       </nav>
       {card ? <>
-        <Pill tone={activityTone(card.activity)}><span className="mr-1">{activityGlyph(card.activity)}</span>{activityLabel(card.activity)}</Pill>
+        {card.activity !== card.status ? <Pill tone={activityTone(card.activity)}><span className="mr-1">{activityGlyph(card.activity)}</span>{activityLabel(card.activity)}</Pill> : null}
         <Pill tone={statusTone(card.status)}><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill>
       </> : null}
       <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
@@ -722,16 +723,16 @@ function AwaitingAnswerBanner({ question, onAnswer }: { question: CardQuestion; 
 
 function ExpiredQuestionBanner({ question, onAnswer, answering }: { question: ExpiredQuestion; onAnswer: (answer: string) => void; answering: boolean }) {
   return (
-    <div role="alert" className="rounded-md border border-muted-foreground/30 bg-muted/40 p-3">
+    <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
       <div className="flex items-start gap-3">
-        <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15 text-muted-foreground">⏰</span>
+        <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium">Question timed out — agent proceeded without an answer</div>
-          <p className="mt-1 text-sm text-muted-foreground">{question.question}</p>
+          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">Waiting for your answer — the agent paused</div>
+          <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
           <div className="mt-2 flex flex-wrap gap-1">
             {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" disabled={answering} onClick={() => onAnswer(option.label)}>{option.label}</Button>)}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">Answering sends this to the worker thread — the agent picks it up on its next turn. You can also type a free-form answer in the thread directly.</p>
+          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">The ask timed out, but the agent is waiting — answering here resumes the workflow.</p>
         </div>
       </div>
     </div>
@@ -756,7 +757,7 @@ function ExpiredQuestionsSection({ cardId, questions }: { cardId: string; questi
   if (remaining.length === 0) return null;
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-muted-foreground">Questions that timed out{answered.size > 0 ? " — answered, agent will pick them up" : ""}</h3>
+      <h3 className="text-sm font-semibold">Timed-out questions waiting for your answer</h3>
       {remaining.map((question) => <ExpiredQuestionBanner key={question.id} question={question} onAnswer={(option) => answer(question, option)} answering={answering === question.id} />)}
     </section>
   );
@@ -1045,9 +1046,10 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
             <div className="grid grid-cols-2 gap-2 text-sm">
               <Meta label="Stage" value={stageLabel(card.stage)} />
               <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">Intent</span>
+                <span className="text-xs text-muted-foreground">Intent {card.intent && card.intent !== "unknown" ? `· ${INTENT_LABEL[card.intent] ?? card.intent}` : ""}</span>
                 <select
                   aria-label="Intent"
+                  title="Change intent"
                   className="h-7 rounded-md border bg-background px-1.5 text-xs font-medium"
                   value={card.intent}
                   onChange={async (event) => {

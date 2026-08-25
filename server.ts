@@ -740,7 +740,15 @@ export default async function plugin(bb: BbPluginApi) {
           updateCard(cardId, { activity: "running", last_assistant_text: lastOutput, status: nextStatus });
         }
       } else if (status === "idle") {
-        updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput });
+        const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(cardId) as { id: string } | undefined;
+        if (expiredPending) {
+          // The worker stopped (likely a timed-out ask) but a question is
+          // still unanswered — keep the card in Gate pending so it does not
+          // look abandoned. Answering it on the card resumes the thread.
+          updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
+        } else {
+          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput });
+        }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
           db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
         }
@@ -926,7 +934,7 @@ ANY time you need user input (ambiguity, approval, scope, interface choice, etc.
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), proceed using your best judgment based on the context so far; you may re-ask the same question once later if it is still genuinely blocking, otherwise do not repeat it. Late answers arrive as card comments mentioning the question. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}`,
@@ -1085,7 +1093,7 @@ ANY time you need user input, you MUST call the structured form:
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), proceed using your best judgment based on the context so far; you may re-ask the same question once later if it is still genuinely blocking, otherwise do not repeat it. Late answers arrive as card comments mentioning the question. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}`,
@@ -1119,13 +1127,17 @@ ${card.prompt}`,
       const commentId = randomId("cmt");
       db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${question.question}\nA: ${answer}`, now());
       db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
-      // Deliver the answer to the worker thread so the agent picks it up on its next turn.
+      // The question is answered — leave Gate pending. The threads.send below
+      // resumes the worker (thread.active → syncThreadState → running); if the
+      // thread fails to resume, idle is honest and the comment still records it.
+      updateCard(cardId, { activity: "running", status: "in-progress" });
+      bb.realtime.publish("card-state", { cardId });
+      // Deliver the answer to the worker thread so the agent picks it up and continues.
       try {
-        await bb.sdk.threads.send({ threadId: question.thread_id, mode: "auto", input: [{ type: "text", text: `Late answer to the question that timed out — the card shows it as answered now.\n\nQ: ${question.question}\nA: ${answer}`, mentions: [] }] });
+        await bb.sdk.threads.send({ threadId: question.thread_id, mode: "auto", input: [{ type: "text", text: `Answer to the question that timed out — continue the workflow now.\n\nQ: ${question.question}\nA: ${answer}`, mentions: [] }] });
       } catch (error) {
         // Thread may be stopped; the comment still records the answer.
       }
-      bb.realtime.publish("card-state", { cardId });
       return { ok: true, error: null };
     },
 
@@ -1286,17 +1298,18 @@ ${card.prompt}`,
           if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
         }
         if (result.outcome === "cancelled" && result.reason === "timeout") {
-          // The user never answered. Persist the question so the card can show
-          // it as expired (and still answerable later) instead of silently
-          // dropping it — the worker thread keeps running and the answer, if
-          // it ever comes, is delivered as a comment the agent picks up on its
-          // next turn.
+          // The user never answered within the window. Keep the card in
+          // "Gate pending" (awaiting-answer) so it is obvious a decision is
+          // still outstanding, and tell the agent to STOP and wait rather
+          // than guessing. The answer, when it arrives via the card, is
+          // delivered as a comment that resumes the thread.
           if (cardRow) {
             db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(randomId("qexp"), cardRow.id, threadId, question, argv.includes("--multiple") ? 1 : 0, JSON.stringify(options), askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), 0);
+            updateCard(cardRow.id, { activity: "awaiting-answer", status: "awaiting-answer" });
             bb.realtime.publish("card-state", { cardId: cardRow.id });
           }
           const elapsed = Math.round((Date.now() - askedAt) / 1e3);
-          return { exitCode: 1, stdout: `No response after ${elapsed}s — the user may be away from keyboard. Proceed using your best judgment based on the context so far; you can re-ask this question in a new bb stelow ask call if it is still needed. The question remains visible on the card; if the user answers it later, the answer arrives as a card comment.` };
+          return { exitCode: 1, stdout: `No response after ${elapsed}s — the user is away. STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (Gate pending) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };
         }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }
