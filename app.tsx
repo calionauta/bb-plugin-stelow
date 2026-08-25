@@ -574,6 +574,7 @@ function BoardCard({ card }: { card: CardItem }) {
         <span className="ml-auto truncate rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">{stageLabel(card.stage)}</span>
       </div>
       {attention ? <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"><span aria-hidden className="size-1.5 rounded-full bg-amber-500" />Needs your attention</div> : null}
+      {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
       {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
     </button>
   );
@@ -702,6 +703,137 @@ function AwaitingAnswerBanner({ question, onAnswer }: { question: CardQuestion; 
   );
 }
 
+type PresetManagerPreset = { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean };
+
+function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  rpc: ReturnType<typeof useRpc<typeof rpcContract>>;
+  presets: PresetManagerPreset[];
+  onChanged: () => Promise<void>;
+}) {
+  const [form, setForm] = useState({ id: "" as string | null, name: "", providerId: "pi", modelId: "bifrost/harness-coding", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" });
+  const [options, setOptions] = useState<{ providers: { id: string; displayName: string }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setMessage(null);
+    void rpc.call("listProviderModels", {}).then(setOptions).catch(() => setOptions({ providers: [], models: [] }));
+  }, [open, rpc]);
+
+  const providerModels = options.models.filter((model) => model.providerId === form.providerId);
+  const startNew = () => { setForm({ id: null, name: "", providerId: "pi", modelId: "bifrost/harness-coding", reasoningLevel: "medium", permissionMode: "full", environmentKind: "project-default" }); setMessage(null); };
+  const startEdit = (preset: PresetManagerPreset) => { setForm({ id: preset.id, name: preset.name, providerId: preset.providerId, modelId: preset.modelId, reasoningLevel: preset.reasoningLevel, permissionMode: preset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: preset.environmentKind as "project-default" | "new-worktree" }); setMessage(null); };
+
+  async function save() {
+    if (!form.name.trim()) { setMessage("Name is required."); return; }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await rpc.call("upsertPreset", { id: form.id, name: form.name.trim(), providerId: form.providerId, modelId: form.modelId, reasoningLevel: form.reasoningLevel, permissionMode: form.permissionMode, environmentKind: form.environmentKind, baseBranch: null, machineId: null, instructions: "" });
+      setMessage(`Saved ${result.preset.name}.`);
+      await onChanged();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(preset: PresetManagerPreset) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await rpc.call("deletePreset", { id: preset.id });
+      setMessage(result.error ?? `Removed ${preset.name}.`);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setDefault(preset: PresetManagerPreset) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await rpc.call("setDefaultPreset", { id: preset.id });
+      setMessage(result.error ?? `${preset.name} is now the default.`);
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Manage agent presets</DialogTitle>
+          <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a card starts its worker thread.</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
+          {presets.length === 0 ? <p className="text-sm text-muted-foreground">No presets yet. Create one below.</p> : null}
+          {presets.map((preset) => (
+            <div key={preset.id} className="flex items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+              <span className="min-w-0 flex-1 truncate">
+                <span className="font-medium">{preset.name}</span>
+                <span className="ml-2 text-muted-foreground">{preset.providerId}/{preset.modelId} · {preset.reasoningLevel} · {preset.permissionMode}</span>
+              </span>
+              {preset.isDefault ? <Pill tone="bg-primary/15 text-primary">default</Pill> : null}
+              {preset.builtIn ? <Pill>built-in</Pill> : null}
+              <div className="flex shrink-0 gap-1">
+                {!preset.isDefault ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void setDefault(preset)}>Set default</Button> : null}
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => startEdit(preset)}>Edit</Button>
+                {!preset.builtIn ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void remove(preset)}>Delete</Button> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-md border bg-muted/30 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
+            {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New instead</Button> : null}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
+              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.providerId} onChange={(event) => { setForm({ ...form, providerId: event.target.value, modelId: options.models.find((model) => model.providerId === event.target.value)?.model ?? "" }); }}>
+                {options.providers.length === 0 ? <option value="pi">pi</option> : null}
+                {options.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName} ({provider.id})</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2"><span>Model</span>
+              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
+                {providerModels.length === 0 ? <option value={form.modelId}>{form.modelId}</option> : null}
+                {providerModels.map((model) => <option key={model.model} value={model.model}>{model.displayName} ({model.model})</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Reasoning</span>
+              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.reasoningLevel} onChange={(event) => setForm({ ...form, reasoningLevel: event.target.value })}>
+                {["low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Permission mode</span>
+              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.permissionMode} onChange={(event) => setForm({ ...form, permissionMode: event.target.value as "accept-edits" | "auto" | "full" })}>
+                <option value="accept-edits">accept-edits</option>
+                <option value="auto">auto</option>
+                <option value="full">full</option>
+              </select>
+            </label>
+          </div>
+          {message ? <p className="mt-2 text-xs text-muted-foreground">{message}</p> : null}
+          <div className="mt-3 flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+            <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLabel, confirmTone, onConfirm }: { open: boolean; onOpenChange: (next: boolean) => void; title: string; description: string; confirmLabel: string; confirmTone?: "destructive" | "default"; onConfirm: () => void | Promise<void> }) {
   const [pending, setPending] = useState(false);
   useEffect(() => { if (!open) setPending(false); }, [open]);
@@ -734,6 +866,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
   const [repairOpen, setRepairOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [presetSwitching, setPresetSwitching] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -856,13 +989,13 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
 
             {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : null}
 
-            {detail && detail.nextStages.length > 0 ? (
+            {detail && detail.nextStages.filter((stage) => stage && !stage.includes("(")).length > 0 ? (
               <section className="space-y-2">
                 <h3 className="text-sm font-semibold">Advance stage</h3>
-                <p className="text-xs text-muted-foreground">Drives <code>bb stelow advance</code>. Use to override.</p>
+                <p className="text-xs text-muted-foreground">Moves the workflow to a stage now (same as <code>bb stelow advance</code>). The agent usually advances on its own — only use this to override or unstick a card.</p>
                 <div className="flex flex-wrap gap-1">
-                  {detail.nextStages.map((stage) => (
-                    <span key={stage} title={stage}><Button size="sm" variant="outline" disabled={advancing !== null} onClick={() => void advance(stage)}>{advancing === stage ? "…" : stageLabel(stage)}</Button></span>
+                  {detail.nextStages.filter((stage) => stage && !stage.includes("(")).map((stage) => (
+                    <span key={stage} title={`Advance to ${stageLabel(stage)}`}><Button size="sm" variant="outline" disabled={advancing !== null} onClick={() => void advance(stage)}>{advancing === stage ? "…" : stageLabel(stage)}</Button></span>
                   ))}
                 </div>
               </section>
@@ -882,8 +1015,16 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
                   {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}{preset.isDefault ? " · default" : ""} — {preset.providerId}/{preset.modelId}</option>)}
                 </select>
                 {detail?.card.presetName ? <Pill>{detail.card.presetName}</Pill> : null}
+                <Button size="sm" variant="outline" onClick={() => setPresetsOpen(true)}>Manage presets</Button>
               </div>
-              {presets.length === 0 ? <p className="text-xs text-muted-foreground">No presets yet. Add one via <code>bb stelow preset list</code>.</p> : null}
+              {presets.length === 0 ? <p className="text-xs text-muted-foreground">No presets yet. Create one below.</p> : null}
+              <PresetManagerDialog
+                open={presetsOpen}
+                onOpenChange={setPresetsOpen}
+                rpc={rpc}
+                presets={presets}
+                onChanged={async () => { const result = await rpc.call("listPresets", {}).catch(() => ({ presets: [] })); setPresets(result.presets); }}
+              />
             </section>
 
             <section className="space-y-2">

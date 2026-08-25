@@ -209,6 +209,17 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  setDefaultPreset: {
+    input: z.object({ id: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  listProviderModels: {
+    input: z.object({}).strict(),
+    output: z.object({
+      providers: z.array(z.object({ id: z.string(), displayName: z.string() })),
+      models: z.array(z.object({ providerId: z.string(), model: z.string(), displayName: z.string() })),
+    }),
+  },
 });
 
 type FilesApi = BbPluginApi["sdk"]["files"];
@@ -324,7 +335,8 @@ function parseNextStages(rootPath: string | null, currentStage: string): string[
       if (!match) continue;
       for (const token of match[1].split(",")) {
         const stage = token.replace(/[\[\]\s"']/g, "");
-        if (stage) stages.add(stage);
+        // Parenthesized tokens are markers ((none), (done), …), not stages.
+        if (stage && !stage.includes("(")) stages.add(stage);
       }
     }
   }
@@ -562,11 +574,23 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   const defaultPresetId = "preset_default";
-  if (!db.prepare("SELECT id FROM presets WHERE id = ?").get(defaultPresetId)) {
+  const existingDefault = db.prepare("SELECT * FROM presets WHERE id = ?").get(defaultPresetId) as PresetRow | undefined;
+  if (existingDefault) {
+    // Migrate the built-in default preset: codex is not installed on this host;
+    // the pi provider routes to Bifrost harness-coding.
+    if (existingDefault.provider_id === "codex") {
+      db.prepare("UPDATE presets SET provider_id = ?, model_id = ?, permission_mode = ?, updated_at = ? WHERE id = ?").run("pi", "bifrost/harness-coding", "full", now(), defaultPresetId);
+    } else if (existingDefault.permission_mode !== "full" && existingDefault.provider_id === "pi") {
+      // pi only supports full permission mode.
+      db.prepare("UPDATE presets SET permission_mode = ?, updated_at = ? WHERE id = ?").run("full", now(), defaultPresetId);
+    }
+  } else {
     db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-      defaultPresetId, "Default", "codex", "gpt-5", "medium", "accept-edits", "project-default", "", 1, 1, now(), now(),
+      defaultPresetId, "Default", "pi", "bifrost/harness-coding", "medium", "full", "project-default", "", 1, 1, now(), now(),
     );
   }
+  // Drop non-built-in presets that reference codex (unusable without the Codex CLI).
+  db.prepare("DELETE FROM presets WHERE built_in = 0 AND provider_id = 'codex'").run();
 
   function now(): number { return Date.now(); }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
@@ -585,7 +609,7 @@ export default async function plugin(bb: BbPluginApi) {
     const fallback = db.prepare("SELECT * FROM presets ORDER BY created_at ASC LIMIT 1").get() as PresetRow | undefined;
     if (fallback) return fallback;
     db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-      "preset_default", "Default", "codex", "gpt-5", "medium", "accept-edits", "project-default", "", 1, 1, now(), now(),
+      "preset_default", "Default", "pi", "bifrost/harness-coding", "medium", "full", "project-default", "", 1, 1, now(), now(),
     );
     return db.prepare("SELECT * FROM presets WHERE id = ?").get("preset_default") as PresetRow;
   }
@@ -1098,6 +1122,27 @@ ${card.prompt}`,
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, error: null };
     },
+
+    async setDefaultPreset({ id }) {
+      const preset = getPresetById(id);
+      if (!preset) return { ok: false, error: "Preset not found." };
+      db.prepare("UPDATE presets SET is_default = 0").run();
+      db.prepare("UPDATE presets SET is_default = 1 WHERE id = ?").run(id);
+      bb.realtime.publish("board-changed", { presetId: id });
+      return { ok: true, error: null };
+    },
+
+    async listProviderModels() {
+      const providers = await bb.sdk.providers.list().catch(() => []);
+      const models: Array<{ providerId: string; model: string; displayName: string }> = [];
+      for (const provider of providers) {
+        const result = await bb.sdk.providers.models({ providerId: provider.id }).catch(() => null);
+        for (const model of result?.models ?? []) {
+          models.push({ providerId: provider.id, model: model.model, displayName: model.displayName });
+        }
+      }
+      return { providers: providers.map((provider) => ({ id: provider.id, displayName: provider.displayName })), models };
+    },
   });
 
   bb.cli.register({
@@ -1163,10 +1208,10 @@ ${card.prompt}`,
         if (sub === "add") {
           const args = argv.slice(2);
           const name = flag("--name", args);
-          const providerId = flag("--provider", args) ?? "codex";
-          const modelId = flag("--model", args) ?? "gpt-5";
+          const providerId = flag("--provider", args) ?? "pi";
+          const modelId = flag("--model", args) ?? "bifrost/harness-coding";
           const reasoningLevel = flag("--reasoning", args) ?? "medium";
-          const permissionMode = flag("--permission", args) ?? "accept-edits";
+          const permissionMode = flag("--permission", args) ?? "full";
           const environmentKind = (flag("--workspace", args) ?? "project-default") as "project-default" | "new-worktree";
           const instructions = flag("--instructions", args) ?? "";
           if (!name) return { exitCode: 2, stderr: "Usage: bb stelow preset add --name <name> [--provider <id>] [--model <id>] [--reasoning <level>] [--permission <mode>] [--workspace <kind>] [--instructions <text>]" };
