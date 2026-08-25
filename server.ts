@@ -700,6 +700,9 @@ export default async function plugin(bb: BbPluginApi) {
     return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
   }
   function updateCard(cardId: string, fields: Partial<Omit<CardRow, "id" | "project_id" | "intent" | "prompt" | "name" | "created_at">>): void {
+    // Hot-reload race: bb closes the plugin DB while syncThreadState callbacks
+    // are still in flight; writing then crashes the whole server process.
+    if (!(db as unknown as { open?: boolean }).open) return;
     const next = { updated_at: now(), ...fields };
     const keys = Object.keys(next);
     if (keys.length === 0) return;
