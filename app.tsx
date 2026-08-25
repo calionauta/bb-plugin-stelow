@@ -196,14 +196,19 @@ interface RunningAccessoryHandle {
   tone: string;
 }
 
+// Canonical "live" definition shared by the sidebar badge and the board header:
+// cards that are actively being worked or waiting on the user. Archived,
+// completed, and blocked cards are excluded.
+const LIVE_STATUSES = new Set(["in-progress", "awaiting-answer", "draft", "planning"]);
+const isLiveCard = (card: { status: string }) => LIVE_STATUSES.has(card.status);
+
 function useRunningAccessory(): RunningAccessoryHandle {
   const rpc = useRpc<typeof rpcContract>();
   const [count, setCount] = useState(0);
   const reload = useCallback(async () => {
     try {
       const result = await rpc.call("listCards", { projectId: null });
-      const live = result.cards.filter((card) => card.status === "in-progress" || card.status === "awaiting-answer" || card.status === "draft" || card.status === "planning").length;
-      setCount(live);
+      setCount(result.cards.filter(isLiveCard).length);
     } catch {
       /* host will show stale silently */
     }
@@ -363,7 +368,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">Stelow board</h1>
-              <span className="text-xs text-muted-foreground">· {cards.length} cards · {inbox.length} need attention</span>
+              <span className="text-xs text-muted-foreground">· {cards.filter(isLiveCard).length} cards · {inbox.length} need attention</span>
             </div>
             <p className="text-sm text-muted-foreground">Describe a request below to start a workflow. The agent runs in the background and posts updates here.</p>
           </div>

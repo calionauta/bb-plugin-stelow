@@ -36,6 +36,10 @@ and this project adheres to a single-version-per-release tag format
   first — preventing two cards from fighting over the same state.
 - **Sidebar badge shows a number only.** The count pill now renders just the
   number, matching bb's own sidebar accessory styling, instead of "N live".
+- **Board header counts live cards only.** "N cards" in the board header now
+  uses the same live definition as the sidebar badge (in-progress / draft /
+  planning / awaiting-answer), so archived, completed, and blocked cards are
+  excluded and the two counters stay coherent.
 
 ### Added
 
