@@ -15,12 +15,18 @@ set -euo pipefail
 
 PROG="${0##*/}"
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || { echo "$PROG: not in a git repo" >&2; exit 2; })"
-STATE="${STELOW_STATE:-$ROOT/state.md}"
+# State is PER-WORKFLOW: each card owns a dir .stelow/<date>/<dirHash> holding
+# its own state.md, invariants.json, and lock. The server sets STELOW_STATEDIR
+# to that workflow dir. When unset (manual/legacy CLI use from repo root), fall
+# back to the old single root state.md + .stelow/invariants.json.
+STATEDIR="${STELOW_STATEDIR:-$ROOT/.stelow}"
+STATE="${STELOW_STATE:-$STATEDIR/state.md}"
+INVARIANTS="$STATEDIR/invariants.json"
 TRANSITIONS="${STELOW_TRANSITIONS:-$ROOT/skills/stelow-product-orchestrator/references/transitions.md}"
-LOCKDIR="$ROOT/.stelow/lock"
+LOCKDIR="$STATEDIR/lock"
 LOCK_TTL_SEC="${STELOW_LOCK_TTL_SEC:-120}"
 
-mkdir -p "$ROOT/.stelow"
+mkdir -p "$STATEDIR"
 
 # --- shared helpers ---------------------------------------------------------
 
@@ -73,11 +79,9 @@ EOF
 }
 
 status_json() {
-  python3 - "$ROOT" <<'PY'
+  python3 - "$STATE" "$INVARIANTS" <<'PY'
 import json, os, sys, re
-root = sys.argv[1]
-state = os.path.join(root, "state.md")
-inv   = os.path.join(root, ".stelow/invariants.json")
+state, inv = sys.argv[1:3]
 out = {"workflow": None, "intent": None, "current_stage": None, "status": None, "config": {}}
 def get_top(blob, key):
     m = re.match(r"^---\n(.*?)\n---", blob, re.DOTALL)
@@ -257,10 +261,9 @@ open(path, "w").write(new_blob)
 PY
 
   # append invariants
-  python3 - "$candidate" "$ROOT" <<'PY'
+  python3 - "$candidate" "$INVARIANTS" <<'PY'
 import sys, os, json, datetime
-candidate, root = sys.argv[1], sys.argv[2]
-inv_path = os.path.join(root, ".stelow/invariants.json")
+candidate, inv_path = sys.argv[1], sys.argv[2]
 os.makedirs(os.path.dirname(inv_path), exist_ok=True)
 data = {}
 if os.path.exists(inv_path):

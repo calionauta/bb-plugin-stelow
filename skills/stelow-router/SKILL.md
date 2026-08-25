@@ -29,7 +29,9 @@ Input:
 
 Output:
 
-- `state.md` advanced (via `scripts/stelow advance <next-candidate>`)
+- `state.md` advanced via the **plugin CLI** `bb stelow advance <next-candidate>`
+  (server-routes per-card to your own state dir; in the standalone skills-only
+  setup without the plugin, use `scripts/stelow advance <next-candidate>`)
 - The next stage's `SKILL.md` loaded for the next agent turn
 - A new `## Hand-off (router)` block appended to `state.md`
 

@@ -275,6 +275,22 @@ async function projectRoot(bb: BbPluginApi, projectId: string | null): Promise<s
   }
 }
 
+// Resolve the per-workflow state dir (.stelow/<date>/<dirHash>) that owns a
+// card's state.md. dirHash is stored on the card; the workflow's created date
+// comes from stelow.json. Returns null if the workflow entry is missing.
+async function workflowStateDir(bb: BbPluginApi, rootPath: string, dirHash: string): Promise<string | null> {
+  try {
+    const tracking = await readJson(bb.sdk.files, join(rootPath, "stelow.json"));
+    const workflow = array(tracking?.workflows).find((raw) => text(record(raw).dirHash) === dirHash);
+    if (!workflow) return null;
+    const created = text(record(workflow).created).slice(0, 10);
+    if (!created) return null;
+    return join(rootPath, `.stelow/${created}/${dirHash}`);
+  } catch {
+    return null;
+  }
+}
+
 function join(root: string, relative: string): string {
   return `${root.replace(/\/$/, "")}/${relative.replace(/^\//, "")}`;
 }
@@ -286,8 +302,7 @@ function safeRelative(path: string): string {
   return path;
 }
 
-async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, intent: string): Promise<{ statePath: string | null; error: string | null }> {
-  const statePath = join(rootPath, "state.md");
+async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, intent: string): Promise<{ statePath: string | null; stateDir: string | null; dirHash: string | null; error: string | null }> {
   const transitionsPath = join(rootPath, "skills/stelow-product-orchestrator/references/transitions.md");
   const trackingPath = join(rootPath, "stelow.json");
   try {
@@ -301,23 +316,29 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
     try { trackingData = JSON.parse(readFileSync(trackingPath, "utf8")) as LooseRecord; } catch { /* create fresh */ }
     if (!Array.isArray(trackingData.workflows)) trackingData.workflows = [];
 
-    let stateExists = false;
-    let stateOwner = "";
+    let trackingOwner = "";
     try {
-      const existing = await bb.sdk.files.read({ path: statePath });
-      stateExists = existing.content.includes("current_stage:");
-      stateOwner = text(existing.content.match(/^name:\s*(\S+)/m)?.[1]);
-    } catch { /* missing */ }
+      const existing = await bb.sdk.files.read({ path: trackingPath });
+      const parsed = JSON.parse(existing.content) as LooseRecord;
+      trackingOwner = text((Array.isArray(parsed.workflows) && parsed.workflows.find((w) => text(record(w).name) === name) ? record(parsed.workflows.find((w) => text(record(w).name) === name)) : {}).name);
+    } catch { /* fresh file */ }
 
-    if (stateExists && stateOwner === name) {
-      const match = (trackingData.workflows as Array<LooseRecord>).find((workflow) => workflow.name === name);
-      dirHash = text(match?.dirHash) || `pw-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+    // Each card/workflow owns its state at .stelow/<date>/<dirHash>/state.md.
+    // Reuse an existing dirHash when a workflow entry already exists for this
+    // name AND its state file still lives there (same card re-seeded); otherwise
+    // mint a fresh dirHash so two cards never share a state file.
+    const entry = (trackingData.workflows as Array<LooseRecord>).find((workflow) => text(workflow.name) === name && text(workflow.dirHash));
+    if (entry && entry.dirHash && (await bb.sdk.files.read({ path: join(rootPath, `.stelow/${text(entry.created).slice(0, 10)}/${text(entry.dirHash)}/state.md`) }).then((f) => f.content.includes("current_stage:")).catch(() => false))) {
+      dirHash = text(entry.dirHash);
     } else {
-      // (Re)write state.md for THIS card: a single state.md lives per project, so
-      // when it belongs to another card (or is missing), re-seed it for this one.
       dirHash = `pw-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
-      const stateDir = join(rootPath, `.stelow/${date}/${dirHash}`);
-      mkdirSync(stateDir, { recursive: true });
+    }
+    const stateDir = join(rootPath, `.stelow/${date}/${dirHash}`);
+    mkdirSync(stateDir, { recursive: true });
+    const statePath = join(stateDir, "state.md");
+    const stateBlob = await bb.sdk.files.read({ path: statePath }).then((f) => f.content).catch(() => "");
+    const stateOwner = text(stateBlob.match(/^name:\s*(\S+)/m)?.[1]);
+    if (!stateBlob.includes("current_stage:") || stateOwner !== name) {
       const body = STATE_TEMPLATE.replace("<workflow-name>", name).replace("<new-product|feature|bugfix|refactor|investigate|unknown>", intent);
       writeFileSync(statePath, body, "utf8");
     }
@@ -331,9 +352,9 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
       (trackingData.workflows as unknown[]).push({ name, description: "", status: "in-progress", cwd: rootPath, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite: "Core", review_mode: "Auto" } });
       writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
     }
-    return { statePath, error: null };
+    return { statePath, stateDir, dirHash, error: null };
   } catch (error) {
-    return { statePath: null, error: error instanceof Error ? error.message : "Unable to seed workflow." };
+    return { statePath: null, stateDir: null, dirHash: null, error: error instanceof Error ? error.message : "Unable to seed workflow." };
   }
 }
 
@@ -401,10 +422,10 @@ function loadCardScopes(rootPath: string | null, name: string): Awaited<ReturnTy
   return workflowScopes(match);
 }
 
-async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string): Promise<string | null> {
+async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string, stateDir?: string | null): Promise<string | null> {
   const tracking = join(rootPath, "stelow.json");
   const transitions = join(rootPath, "skills/stelow-product-orchestrator/references/transitions.md");
-  const state = join(rootPath, "state.md");
+  const state = stateDir ? join(stateDir, "state.md") : join(rootPath, "state.md");
   if (!existsSync(transitions)) {
     mkdirSync(dirname(transitions), { recursive: true });
     writeFileSync(transitions, readFileSync(TRANSITIONS_REF, "utf8"), "utf8");
@@ -418,9 +439,17 @@ async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string): Promis
   return null;
 }
 
-function runHelper(args: string[], cwd: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
+function runHelper(args: string[], cwd: string, stateDir?: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolveRun) => {
-    const child = spawn("bash", [HELPER_SCRIPT, ...args], { cwd, env: { ...process.env, STELOW_STATE: nodeJoin(cwd, "state.md"), STELOW_TRANSITIONS: nodeJoin(cwd, "skills/stelow-product-orchestrator/references/transitions.md") }, stdio: ["ignore", "pipe", "pipe"] });
+    const env: Record<string, string> = { ...(process.env as Record<string, string>), STELOW_TRANSITIONS: nodeJoin(cwd, "skills/stelow-product-orchestrator/references/transitions.md") };
+    if (stateDir) {
+      env.STELOW_STATEDIR = stateDir;
+      env.STELOW_STATE = nodeJoin(stateDir, "state.md");
+    } else {
+      // Legacy fallback: single root state.md.
+      env.STELOW_STATE = nodeJoin(cwd, "state.md");
+    }
+    const child = spawn("bash", [HELPER_SCRIPT, ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
@@ -503,12 +532,6 @@ async function loadBoard(bb: BbPluginApi, projectId: string | null) {
   const tracking = await readJson(bb.sdk.files, join(rootPath, "stelow.json"));
   if (!tracking) return { rootPath, workflows: [], error: "No stelow.json found in this project. Start a Stelow workflow first." };
 
-  let stateStage = "";
-  try {
-    const stateBlob = await bb.sdk.files.read({ path: join(rootPath, "state.md") });
-    stateStage = text(stateBlob.content.match(/current_stage:\s*(\S+)/)?.[1]);
-  } catch { /* state.md not yet written */ }
-
   const workflows: Workflow[] = [];
   for (const [index, value] of array(tracking.workflows).entries()) {
     const raw = record(value);
@@ -522,12 +545,25 @@ async function loadBoard(bb: BbPluginApi, projectId: string | null) {
         status: normalizeStatus(phase.status),
       };
     });
+    // Each workflow owns its own state.md (per-card); read it for the real
+    // stage instead of a single project-level stateStage.
+    let workflowStage = "";
+    const dirHash = text(raw.dirHash);
+    if (dirHash) {
+      const created = text(raw.created).slice(0, 10);
+      if (created) {
+        try {
+          const stateBlob = await bb.sdk.files.read({ path: join(rootPath, `.stelow/${created}/${dirHash}/state.md`) });
+          workflowStage = text(stateBlob.content.match(/current_stage:\s*(\S+)/)?.[1]);
+        } catch { /* no per-workflow state yet */ }
+      }
+    }
     workflows.push({
       id: text(raw.dirHash, text(raw.name, `workflow-${index + 1}`)),
       name: text(raw.name, `Workflow ${index + 1}`),
       description: text(raw.description),
       status: normalizeStatus(raw.status),
-      stage: stateStage || text(stage.current_stage, phases.find((phase) => phase.status === "in-progress")?.name ?? "Not started"),
+      stage: workflowStage || text(stage.current_stage, phases.find((phase) => phase.status === "in-progress")?.name ?? "Not started"),
       appetite: text(config.appetite, "Core"),
       reviewMode: text(config.review_mode, "Auto"),
       ...(typeof raw.dirHash === "string" ? { dirHash: raw.dirHash } : {}),
@@ -553,6 +589,7 @@ export default async function plugin(bb: BbPluginApi) {
       stage TEXT NOT NULL,
       activity TEXT NOT NULL,
       worker_thread_id TEXT,
+      dir_hash TEXT,
       last_error TEXT,
       last_assistant_text TEXT,
       created_at INTEGER NOT NULL,
@@ -652,7 +689,7 @@ export default async function plugin(bb: BbPluginApi) {
   function now(): number { return Date.now(); }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; dir_hash: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type PresetRow = {
     id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
@@ -737,21 +774,28 @@ export default async function plugin(bb: BbPluginApi) {
     const card = getCard(cardId);
     if (!card?.worker_thread_id) return;
     try {
-      // Sync intent from state.md if the agent recorded a decision during triage.
-      if (card.intent === "unknown") {
-        try {
-          const projectPath = await projectRoot(bb, card.project_id);
-          if (projectPath) {
-            const stateBlob = await bb.sdk.files.read({ path: join(projectPath, "state.md") });
-            const stateName = text(stateBlob.content.match(/^name:\s*(\S+)/m)?.[1]);
-            const stateIntent = text(stateBlob.content.match(/^intent:\s*(\S+)/m)?.[1]);
-            // Only adopt the intent if this state.md belongs to this card.
-            if (stateName === card.name && stateIntent && (INTENT_VALUES as readonly string[]).includes(stateIntent)) {
-              const ts = now();
-              db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(stateIntent, ts, cardId);
-            }
+      // Resolve this card's own per-workflow state file (not a shared root state.md).
+      const projectPath = await projectRoot(bb, card.project_id);
+      const stateBlob = await (async () => {
+        if (!projectPath) return null;
+        if (card.dir_hash) {
+          const stateDir = await workflowStateDir(bb, projectPath, card.dir_hash);
+          if (stateDir) {
+            return await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
           }
-        } catch { /* state.md sync is best-effort */ }
+        }
+        return await bb.sdk.files.read({ path: join(projectPath, "state.md") }).then((f) => f.content).catch(() => null);
+      })();
+
+      // Sync intent from state.md if the agent recorded a decision during triage.
+      if (card.intent === "unknown" && stateBlob) {
+        const stateName = text(stateBlob.match(/^name:\s*(\S+)/m)?.[1]);
+        const stateIntent = text(stateBlob.match(/^intent:\s*(\S+)/m)?.[1]);
+        // Only adopt the intent if this state.md belongs to this card.
+        if (stateName === card.name && stateIntent && (INTENT_VALUES as readonly string[]).includes(stateIntent)) {
+          const ts = now();
+          db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(stateIntent, ts, cardId);
+        }
       }
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id });
       const status = thread.status as string;
@@ -759,13 +803,9 @@ export default async function plugin(bb: BbPluginApi) {
       // Stage source of truth is state.md (the agent advances it via `bb stelow
       // advance`); the DB `stage` is only written by the manual advanceCard RPC.
       let currentStage = card.stage;
-      try {
-        const projectPath = await projectRoot(bb, card.project_id);
-        if (projectPath) {
-          const stateBlob = await bb.sdk.files.read({ path: join(projectPath, "state.md") });
-          currentStage = text(stateBlob.content.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
-        }
-      } catch { /* keep DB stage */ }
+      if (stateBlob) {
+        currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+      }
       if (status === "active") {
         const pending = await fetchPendingQuestions(card.worker_thread_id);
         if (pending.length > 0) {
@@ -949,13 +989,6 @@ export default async function plugin(bb: BbPluginApi) {
     async createCard({ projectId, prompt, intent, presetId }) {
       const rootPath = await projectRoot(bb, projectId);
       if (!rootPath) throw new Error("Project workspace path is unavailable.");
-      // Guard: one active card per project — state.md is a single per-project file
-      // (state-contract: "one canonical state path per project"), so two active
-      // cards would fight over the same state. Archive/pause the current one first.
-      const activeInProject = db.prepare("SELECT id, name FROM cards WHERE project_id = ? AND status != 'archived' LIMIT 1").get(projectId) as { id: string; name: string } | undefined;
-      if (activeInProject) {
-        throw new Error(`Project already has an active card ("${activeInProject.name}"). Archive or pause it before creating a new one.`);
-      }
       const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
       const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
       const seed = await seedWorkflow(bb, rootPath, slug, intent);
@@ -973,7 +1006,9 @@ export default async function plugin(bb: BbPluginApi) {
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded state.md, transitions.md, and stelow.json. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
+
+The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 The user already classified this request as intent=\`${intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
 
@@ -990,7 +1025,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${prompt}`,
       });
       const ts = now();
-      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, null, null, null, ts, ts);
+      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, dir_hash, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, seed.dirHash, null, null, null, ts, ts);
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
       bb.realtime.publish("card-state", { cardId });
       return { cardId, threadId: thread.id };
@@ -1086,27 +1121,11 @@ ${prompt}`,
         return { reseeded: false, error: "Project no longer exists. Archive this card to remove it." };
       }
       if (!source?.path) return { reseeded: false, error: "Project workspace path is unavailable." };
-      const statePath = join(source.path, "state.md");
-      const trackingPath = join(source.path, "stelow.json");
-      const transitionsPath = join(source.path, "skills/stelow-product-orchestrator/references/transitions.md");
-      try { mkdirSync(dirname(transitionsPath), { recursive: true }); writeFileSync(transitionsPath, readFileSync(TRANSITIONS_REF, "utf8"), "utf8"); } catch { /* already there */ }
-      try { mkdirSync(join(source.path, ".stelow/approvals"), { recursive: true }); } catch { /* already there */ }
-      try {
-        writeFileSync(statePath, STATE_TEMPLATE.replace("<workflow-name>", card.name).replace("<new-product|feature|bugfix|refactor|investigate|unknown>", card.intent), "utf8");
-      } catch (error) {
-        return { reseeded: false, error: error instanceof Error ? error.message : "Unable to write state.md." };
-      }
-      try {
-        let trackingData: LooseRecord = {};
-        try { trackingData = JSON.parse(readFileSync(trackingPath, "utf8")) as LooseRecord; } catch { trackingData = { workflows: [] }; }
-        if (!Array.isArray(trackingData.workflows)) trackingData.workflows = [];
-        const date = new Date().toISOString().slice(0, 10);
-        const dirHash = `pw-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
-        mkdirSync(join(source.path, `.stelow/${date}/${dirHash}`), { recursive: true });
-        (trackingData.workflows as unknown[]).push({ name: card.name, description: "", status: "in-progress", cwd: source.path, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite: "Core", review_mode: "Auto" } });
-        writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
-      } catch (error) {
-        return { reseeded: false, error: error instanceof Error ? error.message : "Unable to write stelow.json." };
+      // Re-seed into a fresh per-workflow dir so the card gets a clean state file.
+      const seed = await seedWorkflow(bb, source.path, card.name, card.intent);
+      if (seed.error) return { reseeded: false, error: seed.error };
+      if (seed.dirHash) {
+        db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(seed.dirHash, now(), cardId);
       }
       let preset: PresetRow;
       if (presetId) {
@@ -1132,7 +1151,7 @@ ${prompt}`,
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded state.md, transitions.md, and stelow.json. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(card.dir_hash ? ".stelow/<date>/" + card.dir_hash : "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 The user already classified this request as intent=\`${card.intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${card.intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
 
@@ -1202,9 +1221,10 @@ ${card.prompt}`,
         return { ok: false, stdout: "", error: "Project no longer exists. Archive this card to remove it." };
       }
       if (!source?.path) return { ok: false, stdout: "", error: "Project workspace path is unavailable." };
-      const guard = await ensureProjectArtifacts(bb, source.path);
+      const guard = await ensureProjectArtifacts(bb, source.path, card.dir_hash);
       if (guard) return { ok: false, stdout: "", error: guard };
-      const result = await runHelper(["advance", stage], source.path);
+      const stateDir = card.dir_hash ? await workflowStateDir(bb, source.path, card.dir_hash) : null;
+      const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
       if (result.code !== 0) return { ok: false, stdout: result.stdout, error: result.stderr || "stelow advance failed" };
       updateCard(cardId, { stage });
       bb.realtime.publish("card-state", { cardId });
@@ -1382,9 +1402,13 @@ ${card.prompt}`,
         if (!projectId || !stage) return { exitCode: 2, stderr: "Usage: bb stelow advance [--project <proj_id>] [--stage <stage>] <stage>" };
         const rootPath = await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Project workspace path is unavailable." };
+        // The agent runs this from within its worker thread; resolve the owning
+        // card so advance targets that card's per-workflow state file.
+        const cliCard = ctx.threadId ? db.prepare("SELECT id, dir_hash FROM cards WHERE worker_thread_id = ?").get(ctx.threadId) as { id: string; dir_hash: string | null } | undefined : undefined;
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
         const guard = await ensureProjectArtifacts(bb, rootPath);
         if (guard) return { exitCode: 1, stderr: guard };
-        const result = await runHelper(["advance", stage], rootPath);
+        const result = await runHelper(["advance", stage], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
         return { exitCode: 0, stdout: result.stdout };
       }

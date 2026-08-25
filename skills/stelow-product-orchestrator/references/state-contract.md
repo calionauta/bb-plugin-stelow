@@ -8,13 +8,22 @@ reading workflow state files.
 
 ## Files
 
+State is **per-workflow** (per-card): each stelow workflow/card owns its own
+state file and invariants, so multiple cards can be active in one project
+without colliding. The workflow's `dirHash` and creation date identify its dir.
+
 | File | Location | Authored by |
 |---|---|---|
-| `state.md` | `<git-root>/state.md` | LLM (content fields) + `stelow advance` (stage transitions) |
-| `invariants.json` | `<git-root>/.stelow/invariants.json` | `stelow advance` only |
+| `state.md` | `<git-root>/.stelow/<date>/<dirHash>/state.md` | LLM (content fields) + `stelow advance` (stage transitions) |
+| `invariants.json` | `<git-root>/.stelow/<date>/<dirHash>/invariants.json` | `stelow advance` only |
+| lock | `<git-root>/.stelow/<date>/<dirHash>/lock` | `stelow advance` (advisory) |
 
-Both files live at the project root. The project root is a git repository —
-`git log` is the ledger/audit trail.
+The plugin routes each card to its own dir via the card's `dir_hash` (stored on
+cards). The helper resolves the dir from `STELOW_STATEDIR` (set per workflow by
+the server). Legacy: when no dir is known, the helper falls back to the old
+single root files (`<git-root>/state.md` + `<git-root>/.stelow/invariants.json`).
+
+The project root is a git repository — `git log` is the ledger/audit trail.
 
 ---
 
