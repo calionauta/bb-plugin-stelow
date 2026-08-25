@@ -8,6 +8,35 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Realtime now works over Tailscale (port 8096).** The bb-tcp-proxy was a
+  plain HTTP forwarder that never upgraded WebSocket, so the board, the
+  sidebar count, and card state only refreshed on manual reload. Rewrote it as
+  a Node proxy in `~/bin/bb-tcp-proxy.js` with `upgrade` support — board
+  updates, drag-and-drop moves, and archives now reflect live without a
+  refresh.
+- **Card stays in Triage until triage is done.** A freshly-created card was
+  immediately promoted `draft → in-progress` as soon as its worker thread went
+  active, so it never showed in the Triage column and "jumped" to Running.
+  The sync now reads `current_stage` from `state.md` and keeps the card in
+  `draft` (Triage) while the stage is `triage`, only moving to Running after
+  the agent advances.
+- **intent and stage sync from state.md.** If a card is created with
+  `intent=unknown`, the sync adopts the intent the agent records in the
+  project's `state.md` (only when that state.md belongs to this card). The
+  reported `stage` also follows `current_stage` from `state.md`.
+- **state.md re-seeded per card.** A single `state.md` lives per project, so
+  creating a card reused an existing `state.md` that belonged to a *different*
+  card (wrong name/intent). The seed now re-writes `state.md` for the card
+  being created when it belongs to another card (or is missing).
+- **One active card per project.** Because `state.md` is a single per-project
+  file (per the state-contract), creating a card now blocks if the project
+  already has a non-archived card, with a clear message to archive/pause it
+  first — preventing two cards from fighting over the same state.
+- **Sidebar badge shows a number only.** The count pill now renders just the
+  number, matching bb's own sidebar accessory styling, instead of "N live".
+
 ### Added
 
 - **Full bb composer on the board.** The new-card form now uses bb's own
