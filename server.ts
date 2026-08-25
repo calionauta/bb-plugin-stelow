@@ -138,6 +138,7 @@ export const rpcContract = defineRpcContract({
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
+      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
       nextStages: z.array(z.string()),
     }),
   },
@@ -160,6 +161,10 @@ export const rpcContract = defineRpcContract({
   markCardSeen: {
     input: z.object({ cardId: z.string(), kind: z.enum(["completed", "error", "question"]).optional() }).strict(),
     output: z.object({ ok: z.boolean() }),
+  },
+  answerExpiredQuestion: {
+    input: z.object({ cardId: z.string(), questionId: z.string(), answer: z.string().min(1).max(10_000) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   advanceCard: {
     input: z.object({ cardId: z.string(), stage: z.string().min(1).max(40) }).strict(),
@@ -583,6 +588,17 @@ export default async function plugin(bb: BbPluginApi) {
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
       FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
     )`,
+    `CREATE TABLE IF NOT EXISTS expired_questions (
+      id TEXT PRIMARY KEY,
+      card_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      question TEXT NOT NULL,
+      multiple INTEGER NOT NULL DEFAULT 0,
+      options TEXT NOT NULL,
+      expired_at INTEGER NOT NULL,
+      answered INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+    )`,
   ]);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
@@ -910,7 +926,7 @@ ANY time you need user input (ambiguity, approval, scope, interface choice, etc.
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), proceed using your best judgment based on the context so far; you may re-ask the same question once later if it is still genuinely blocking, otherwise do not repeat it. Late answers arrive as card comments mentioning the question. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}`,
@@ -927,6 +943,8 @@ ${prompt}`,
       if (!card) throw new Error("Card not found");
       const comments = db.prepare("SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as CommentRow[];
       const pending = await fetchPendingQuestions(card.worker_thread_id);
+      const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; options: string; expired_at: number }>;
+      const expiredQuestions = expiredRows.map((row) => ({ id: row.id, question: row.question, multiple: Boolean(row.multiple), options: JSON.parse(row.options) as Array<{ label: string; description: string }>, expiredAt: row.expired_at }));
       let projectName = card.project_id;
       let sourcePath: string | null = null;
       try {
@@ -944,6 +962,7 @@ ${prompt}`,
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
         pendingQuestions: pending,
+        expiredQuestions,
         nextStages,
       };
     },
@@ -1066,7 +1085,7 @@ ANY time you need user input, you MUST call the structured form:
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), proceed using your best judgment based on the context so far; you may re-ask the same question once later if it is still genuinely blocking, otherwise do not repeat it. Late answers arrive as card comments mentioning the question. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}`,
@@ -1091,6 +1110,23 @@ ${card.prompt}`,
       db.prepare(`UPDATE cards SET ${column} = @ts WHERE id = @id`).run({ id: cardId, ts: now() });
       bb.realtime.publish("card-state", { cardId });
       return { ok: true };
+    },
+
+    async answerExpiredQuestion({ cardId, questionId, answer }) {
+      const card = getCard(cardId);
+      const question = card ? db.prepare("SELECT * FROM expired_questions WHERE id = ? AND card_id = ? AND answered = 0").get(questionId, cardId) as { thread_id: string; question: string; multiple: number; options: string } | undefined : undefined;
+      if (!card || !question) return { ok: false, error: "Question not found or already answered." };
+      const commentId = randomId("cmt");
+      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${question.question}\nA: ${answer}`, now());
+      db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
+      // Deliver the answer to the worker thread so the agent picks it up on its next turn.
+      try {
+        await bb.sdk.threads.send({ threadId: question.thread_id, mode: "auto", input: [{ type: "text", text: `Late answer to the question that timed out — the card shows it as answered now.\n\nQ: ${question.question}\nA: ${answer}`, mentions: [] }] });
+      } catch (error) {
+        // Thread may be stopped; the comment still records the answer.
+      }
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, error: null };
     },
 
     async advanceCard({ cardId, stage }) {
@@ -1242,10 +1278,25 @@ ${card.prompt}`,
         const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
         if (cardRow) updateCard(cardRow.id, { activity: "awaiting-answer", status: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
+        const askedAt = Date.now();
+        const options = labels.map((label) => ({ label, description: "" }));
         try {
-          result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", timeoutMs: 60 * 60 * 1000, payload: { question, multiple: argv.includes("--multiple"), options: labels.map((label) => ({ label, description: "" })) } }, { signal: ctx.signal });
+          result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", timeoutMs: Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), payload: { question, multiple: argv.includes("--multiple"), options } }, { signal: ctx.signal });
         } finally {
           if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
+        }
+        if (result.outcome === "cancelled" && result.reason === "timeout") {
+          // The user never answered. Persist the question so the card can show
+          // it as expired (and still answerable later) instead of silently
+          // dropping it — the worker thread keeps running and the answer, if
+          // it ever comes, is delivered as a comment the agent picks up on its
+          // next turn.
+          if (cardRow) {
+            db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(randomId("qexp"), cardRow.id, threadId, question, argv.includes("--multiple") ? 1 : 0, JSON.stringify(options), askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), 0);
+            bb.realtime.publish("card-state", { cardId: cardRow.id });
+          }
+          const elapsed = Math.round((Date.now() - askedAt) / 1e3);
+          return { exitCode: 1, stdout: `No response after ${elapsed}s — the user may be away from keyboard. Proceed using your best judgment based on the context so far; you can re-ask this question in a new bb stelow ask call if it is still needed. The question remains visible on the card; if the user answers it later, the answer arrives as a card comment.` };
         }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }

@@ -114,6 +114,7 @@ type CardItem = CardsResponse["cards"][number];
 type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
 type CardComment = CardDetailResponse["comments"][number];
 type CardQuestion = CardDetailResponse["pendingQuestions"][number];
+type ExpiredQuestion = CardDetailResponse["expiredQuestions"][number];
 
 function activityGlyph(activity: CardItem["activity"]) {
   if (activity === "running") return "▶";
@@ -719,6 +720,48 @@ function AwaitingAnswerBanner({ question, onAnswer }: { question: CardQuestion; 
   );
 }
 
+function ExpiredQuestionBanner({ question, onAnswer, answering }: { question: ExpiredQuestion; onAnswer: (answer: string) => void; answering: boolean }) {
+  return (
+    <div role="alert" className="rounded-md border border-muted-foreground/30 bg-muted/40 p-3">
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted-foreground/15 text-muted-foreground">⏰</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">Question timed out — agent proceeded without an answer</div>
+          <p className="mt-1 text-sm text-muted-foreground">{question.question}</p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" disabled={answering} onClick={() => onAnswer(option.label)}>{option.label}</Button>)}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">Answering sends this to the worker thread — the agent picks it up on its next turn. You can also type a free-form answer in the thread directly.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExpiredQuestionsSection({ cardId, questions }: { cardId: string; questions: ExpiredQuestion[] }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [answering, setAnswering] = useState<string | null>(null);
+  const [answered, setAnswered] = useState<Set<string>>(new Set());
+  const answer = async (question: ExpiredQuestion, option: string) => {
+    setAnswering(question.id);
+    try {
+      const result = await rpc.call("answerExpiredQuestion", { cardId, questionId: question.id, answer: option });
+      void result;
+      setAnswered((prev) => new Set(prev).add(question.id));
+    } finally {
+      setAnswering(null);
+    }
+  };
+  const remaining = questions.filter((question) => !answered.has(question.id));
+  if (remaining.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-semibold text-muted-foreground">Questions that timed out{answered.size > 0 ? " — answered, agent will pick them up" : ""}</h3>
+      {remaining.map((question) => <ExpiredQuestionBanner key={question.id} question={question} onAnswer={(option) => answer(question, option)} answering={answering === question.id} />)}
+    </section>
+  );
+}
+
 type PresetManagerPreset = { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean };
 
 function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
@@ -1031,6 +1074,8 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
             {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
 
             {pendingFirst && card.activity === "awaiting-answer" ? <AwaitingAnswerBanner question={pendingFirst} onAnswer={(answer) => prefillAnswerInThread(pendingFirst, answer)} /> : null}
+
+            {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
 
             {detail && card.activity === "awaiting-answer" && detail.pendingQuestions.length > 1 ? (
               <section className="space-y-2">
