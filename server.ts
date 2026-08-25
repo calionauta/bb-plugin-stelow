@@ -119,13 +119,18 @@ export const rpcContract = defineRpcContract({
     output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), actionRequired: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
   },
   createCard: {
-    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate"]), presetId: z.string().nullable().optional() }).strict(),
+    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
+  },
+  updateCardIntent: {
+    input: z.object({ cardId: z.string(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), presetName: z.string().nullable(), updatedAt: z.number() }),
+      mentionedFiles: z.array(z.object({ path: z.string(), display: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
@@ -317,6 +322,34 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
   } catch (error) {
     return { statePath: null, error: error instanceof Error ? error.message : "Unable to seed workflow." };
   }
+}
+
+async function detectMentionedFiles(bb: BbPluginApi, rootPath: string | null, text: string): Promise<Array<{ path: string; display: string }>> {
+  if (!rootPath) return [];
+  const candidates = new Set<string>();
+  // Match file-ish tokens: path/to/file.ext (no spaces, may include -_./)
+  for (const match of text.matchAll(/\b(?:(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:md|markdown|txt|json|yaml|yml|toml|ts|tsx|js|jsx|py|go|rs|sh|css|html|env))(?:\b|(?=[\s,.;:)]))/g)) {
+    const token = match[0]!.replace(/[.,;:)]+$/, "");
+    if (token.length >= 3 && token.length <= 120) candidates.add(token);
+  }
+  const found: Array<{ path: string; display: string }> = [];
+  for (const candidate of candidates) {
+    try {
+      await bb.sdk.files.read({ path: join(rootPath, candidate) });
+      found.push({ path: candidate, display: candidate });
+    } catch { /* not found in workspace root */ }
+  }
+  if (found.length === 0) {
+    // Fall back: check the raw basename anywhere under the workspace.
+    for (const candidate of candidates) {
+      const basename = candidate.split("/").pop()!;
+      if (!basename) continue;
+      const listed = await bb.sdk.files.list({ path: rootPath, query: basename }).catch(() => null);
+      const hit = (listed?.files ?? []).find((entry) => entry.path.endsWith(basename));
+      if (hit) found.push({ path: hit.path, display: hit.path });
+    }
+  }
+  return found.slice(0, 6);
 }
 
 function parseNextStages(rootPath: string | null, currentStage: string): string[] {
@@ -860,14 +893,16 @@ export default async function plugin(bb: BbPluginApi) {
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
         prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded state.md, transitions.md, and stelow.json. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Start with /sw-start. Preserve every gate (product, interface, tech plan, diff).
 
+The user already classified this request as intent=\`${intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+
 CRITICAL — User input contract:
-ANY time you need user input (intent selection, ambiguity, approval, scope, interface choice, etc.), you MUST call the structured form, NEVER just write text like "waiting for your choice":
+ANY time you need user input (ambiguity, approval, scope, interface choice, etc.), you MUST call the structured form, NEVER just write text like "waiting for your choice":
 
     bb stelow ask --thread <this_thread_id> \\
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Do not skip the triage stage. Do not start shaping before the user has answered the intent/ambiguity question. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}`,
@@ -891,16 +926,39 @@ ${prompt}`,
         projectName = project.name;
         sourcePath = project.sources.find((entry) => entry.isDefault)?.path ?? null;
       } catch { /* project removed; keep card viewable */ }
+      const mentionedFiles = await detectMentionedFiles(bb, sourcePath, card.prompt);
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.name);
       const preset = getPresetForCard(card.id);
       return {
         card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: card.activity as "idle" | "running" | "awaiting-answer" | "error", lastError: card.last_error, presetName: preset.name, updatedAt: card.updated_at },
+        mentionedFiles,
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
         pendingQuestions: pending,
         nextStages,
       };
+    },
+
+    async updateCardIntent({ cardId, intent }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, error: "Card not found." };
+      const ts = now();
+      db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, ts, cardId);
+      // Keep state.md intent in sync so the agent sees the corrected intent.
+      try {
+        const project = await bb.sdk.projects.get({ projectId: card.project_id });
+        const source = project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
+        if (source?.path) {
+          const statePath = join(source.path, "state.md");
+          const existing = await bb.sdk.files.read({ path: statePath }).catch(() => null);
+          if (existing) {
+            await bb.sdk.files.write({ path: statePath, content: existing.content.replace(/^intent:.*$/m, `intent: ${intent}`) });
+          }
+        }
+      } catch { /* state.md sync is best-effort */ }
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, error: null };
     },
 
     async addCardComment({ cardId, target, targetId, body }) {
@@ -991,6 +1049,8 @@ ${prompt}`,
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
         prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded state.md, transitions.md, and stelow.json. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Start with /sw-start. Preserve every gate (product, interface, tech plan, diff).
 
+The user already classified this request as intent=\`${card.intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${card.intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form:
 
@@ -998,7 +1058,7 @@ ANY time you need user input, you MUST call the structured form:
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}`,
@@ -1170,7 +1230,11 @@ ${card.prompt}`,
         const question = flag("--question");
         const labels = argv.flatMap((arg, index) => arg === "--option" && argv[index + 1] ? [argv[index + 1]!] : []);
         if (!threadId || !question || labels.length < 2) return { exitCode: 2, stderr: "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." };
+        // Move the owning card to Gate pending while the question is open.
+        const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
+        if (cardRow) updateCard(cardRow.id, { activity: "awaiting-answer", status: "awaiting-answer" });
         const result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", payload: { question, multiple: argv.includes("--multiple"), options: labels.map((label) => ({ label, description: "" })) } }, { signal: ctx.signal });
+        if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }
       if (argv[0] === "seed") {

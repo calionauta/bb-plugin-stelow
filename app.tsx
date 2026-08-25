@@ -248,7 +248,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
   const [prompt, setPrompt] = useState("");
-  const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate">("feature");
+  const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterStage, setFilterStage] = useState<string>("all");
   const [filterIntent, setFilterIntent] = useState<string | "all">("all");
@@ -310,7 +310,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
       const result = await rpc.call("createCard", { projectId: activeProjectId, prompt: prompt.trim(), intent });
       setPrompt("");
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Card created in Triage. The agent will ask the intent question next.");
+      toast.success("Card created in Triage. The agent will triage it.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to create the card.");
     }
@@ -353,13 +353,10 @@ function BoardPanel({ subPath }: { subPath: string }) {
 
           <form
             onSubmit={(event) => { event.preventDefault(); if (!reason) void start(); }}
-            className="grid items-stretch gap-2 rounded-xl border bg-card/60 p-3 md:grid-cols-[1fr_2fr_auto_auto]"
+            className="grid items-stretch gap-2 rounded-xl border bg-card/60 p-3 md:grid-cols-[1fr_2fr_auto]"
           >
             <ProjectPill value={activeProjectId} onChange={setBoardProjectId} projects={projects} />
             <Input value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Describe a product request to start with Stelow…" className="h-10" />
-            <select className="h-10 rounded-md border bg-background px-3 text-sm" value={intent} onChange={(event) => setIntent(event.target.value as typeof intent)} aria-label="Intent">
-              {Object.entries(INTENT_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
             <span title={reason ?? "Start a Stelow workflow"}><Button type="submit" disabled={Boolean(reason)} className="h-10 px-5">Start</Button></span>
           </form>
           {reason ? <p className="-mt-2 px-1 text-xs text-muted-foreground">{reason}</p> : null}
@@ -965,8 +962,51 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
         {card ? (
           <>
             <p className="text-sm text-foreground">{card.prompt}</p>
+            {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Mentioned files:</span>
+                <div className="flex flex-wrap gap-1">
+                  {detail.mentionedFiles.map((file) => (
+                    <button
+                      key={file.path}
+                      onClick={() => navigate.openThreadPanel({ actionId: "review-document", title: file.display, params: { path: file.path } })}
+                      className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs text-foreground hover:bg-muted"
+                      title={`Open ${file.path}`}
+                    >
+                      <span>📄</span>
+                      <span>{file.display}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-2 text-sm">
               <Meta label="Stage" value={stageLabel(card.stage)} />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">Intent</span>
+                <select
+                  aria-label="Intent"
+                  className="h-7 rounded-md border bg-background px-1.5 text-xs font-medium"
+                  value={card.intent}
+                  onChange={async (event) => {
+                    const nextIntent = event.target.value as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown";
+                    const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent });
+                    if (result.ok) {
+                      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
+                      await load();
+                    } else {
+                      toast.error(result.error ?? "Could not change intent.");
+                    }
+                  }}
+                >
+                  <option value="new-product">New Product</option>
+                  <option value="feature">Feature</option>
+                  <option value="bugfix">Bugfix</option>
+                  <option value="refactor">Refactor</option>
+                  <option value="investigate">Investigate</option>
+                  <option value="unknown">Unknown (agent decides)</option>
+                </select>
+              </div>
               <Meta label="Updated" value={new Date(card.updatedAt).toLocaleString()} />
             </div>
             {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
