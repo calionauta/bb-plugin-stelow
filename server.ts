@@ -302,15 +302,19 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
     if (!Array.isArray(trackingData.workflows)) trackingData.workflows = [];
 
     let stateExists = false;
+    let stateOwner = "";
     try {
       const existing = await bb.sdk.files.read({ path: statePath });
       stateExists = existing.content.includes("current_stage:");
+      stateOwner = text(existing.content.match(/^name:\s*(\S+)/m)?.[1]);
     } catch { /* missing */ }
 
-    if (stateExists) {
+    if (stateExists && stateOwner === name) {
       const match = (trackingData.workflows as Array<LooseRecord>).find((workflow) => workflow.name === name);
       dirHash = text(match?.dirHash) || `pw-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
     } else {
+      // (Re)write state.md for THIS card: a single state.md lives per project, so
+      // when it belongs to another card (or is missing), re-seed it for this one.
       dirHash = `pw-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
       const stateDir = join(rootPath, `.stelow/${date}/${dirHash}`);
       mkdirSync(stateDir, { recursive: true });
@@ -724,20 +728,56 @@ export default async function plugin(bb: BbPluginApi) {
     } catch { return []; }
   }
 
+  const INTENT_VALUES = ["new-product", "feature", "bugfix", "refactor", "investigate"] as const;
+
   async function syncThreadState(cardId: string): Promise<void> {
     const card = getCard(cardId);
     if (!card?.worker_thread_id) return;
     try {
+      // Sync intent from state.md if the agent recorded a decision during triage.
+      if (card.intent === "unknown") {
+        try {
+          const projectPath = await projectRoot(bb, card.project_id);
+          if (projectPath) {
+            const stateBlob = await bb.sdk.files.read({ path: join(projectPath, "state.md") });
+            const stateName = text(stateBlob.content.match(/^name:\s*(\S+)/m)?.[1]);
+            const stateIntent = text(stateBlob.content.match(/^intent:\s*(\S+)/m)?.[1]);
+            // Only adopt the intent if this state.md belongs to this card.
+            if (stateName === card.name && stateIntent && (INTENT_VALUES as readonly string[]).includes(stateIntent)) {
+              const ts = now();
+              db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(stateIntent, ts, cardId);
+            }
+          }
+        } catch { /* state.md sync is best-effort */ }
+      }
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id });
       const status = thread.status as string;
       const lastOutput = (await bb.sdk.threads.output({ threadId: card.worker_thread_id }).catch(() => null))?.output ?? null;
+      // Stage source of truth is state.md (the agent advances it via `bb stelow
+      // advance`); the DB `stage` is only written by the manual advanceCard RPC.
+      let currentStage = card.stage;
+      try {
+        const projectPath = await projectRoot(bb, card.project_id);
+        if (projectPath) {
+          const stateBlob = await bb.sdk.files.read({ path: join(projectPath, "state.md") });
+          currentStage = text(stateBlob.content.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+        }
+      } catch { /* keep DB stage */ }
       if (status === "active") {
         const pending = await fetchPendingQuestions(card.worker_thread_id);
         if (pending.length > 0) {
           updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
         } else {
-          const nextStatus = card.status === "draft" || card.status === "awaiting-answer" ? "in-progress" : card.status;
-          updateCard(cardId, { activity: "running", last_assistant_text: lastOutput, status: nextStatus });
+          // Keep freshly-created cards in the Triage column (draft) while the
+          // workflow is still at the triage stage, even though the thread is
+          // already active. Only move to Running (in-progress) once the agent
+          // has advanced past triage (current_stage != triage) or resumed from
+          // a gate (status was awaiting-answer).
+          const stillTriaging = currentStage === "triage" && card.status === "draft";
+          const nextStatus = stillTriaging ? "draft" : card.status === "draft" || card.status === "awaiting-answer" ? "in-progress" : card.status;
+          const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput, status: nextStatus };
+          if (currentStage !== card.stage) updates.stage = currentStage;
+          updateCard(cardId, updates);
         }
       } else if (status === "idle") {
         const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(cardId) as { id: string } | undefined;
@@ -906,6 +946,13 @@ export default async function plugin(bb: BbPluginApi) {
     async createCard({ projectId, prompt, intent, presetId }) {
       const rootPath = await projectRoot(bb, projectId);
       if (!rootPath) throw new Error("Project workspace path is unavailable.");
+      // Guard: one active card per project — state.md is a single per-project file
+      // (state-contract: "one canonical state path per project"), so two active
+      // cards would fight over the same state. Archive/pause the current one first.
+      const activeInProject = db.prepare("SELECT id, name FROM cards WHERE project_id = ? AND status != 'archived' LIMIT 1").get(projectId) as { id: string; name: string } | undefined;
+      if (activeInProject) {
+        throw new Error(`Project already has an active card ("${activeInProject.name}"). Archive or pause it before creating a new one.`);
+      }
       const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
       const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
       const seed = await seedWorkflow(bb, rootPath, slug, intent);

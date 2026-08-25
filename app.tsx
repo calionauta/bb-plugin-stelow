@@ -194,7 +194,6 @@ function useDebouncedRealtime(channels: readonly string[], handler: () => void, 
 interface RunningAccessoryHandle {
   count: number;
   tone: string;
-  label: string;
 }
 
 function useRunningAccessory(): RunningAccessoryHandle {
@@ -214,17 +213,17 @@ function useRunningAccessory(): RunningAccessoryHandle {
   }, [reload]);
   useDebouncedRealtime(["card-state", "board-changed"], () => void reload());
   const tone = count > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground";
-  return { count, tone, label: count > 0 ? `${count} live` : "0" };
+  return { count, tone };
 }
 
 function StelowSidebarAccessory() {
-  const { count, tone, label } = useRunningAccessory();
+  const { count, tone } = useRunningAccessory();
   return (
     <span
       aria-label={`${count} Stelow cards in progress`}
-      className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${tone}`}
+      className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${tone}`}
     >
-      {label}
+      {count}
     </span>
   );
 }
