@@ -112,10 +112,10 @@ bb stelow preset list|add|remove|assign
 
 ## Deploy / hot-reload (CRITICAL)
 
-Deploying plugin changes is ** only**. The bb server
-hot-reloads the plugin when  becomes newer than the source.
+Deploying plugin changes is **`npm run build` only**. The bb server
+hot-reloads the plugin when `dist/` becomes newer than the source.
 
-**NEVER run  as a deploy step.**
+**NEVER run `systemctl --user restart bb-daemon.service` as a deploy step.**
 A daemon restart SIGTERMs every running thread and each one is marked
 "Thread interrupted because the host daemon disconnected". On 2026-08-25 this
 exact pattern killed this thread four times in one day (16:22, 16:33, 18:22,
