@@ -1049,6 +1049,14 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
             ) : null}
             <div className="grid grid-cols-2 gap-2 text-sm">
               <Meta label="Stage" value={stageLabel(card.stage)} />
+              {card.stage === "select" ? (
+                <p className="col-span-2 text-xs text-muted-foreground">
+                  Stage <strong>select</strong> (<em>Item Selection</em>) invites you to choose which item / group from the
+                  triage inbox to work on. It is <strong>not</strong> asking for the intent type (that is the Intent dropdown
+                  above, already set). Pick the item in the thread; when done the agent advances on its own — or use
+                  <em> Advance stage</em> below to move on now.
+                </p>
+              ) : null}
               <div className="flex flex-col gap-0.5">
                 <span className="text-xs text-muted-foreground">Intent {card.intent && card.intent !== "unknown" ? `· ${INTENT_LABEL[card.intent] ?? card.intent}` : ""}</span>
                 <select

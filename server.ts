@@ -858,6 +858,29 @@ export default async function plugin(bb: BbPluginApi) {
     const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(thread.id) as { id: string } | undefined;
     if (row) updateCard(row.id, { activity: "error", last_error: error ?? "Worker thread failed." });
   });
+  // A thread can be interrupted mid-turn (manual stop, host daemon restart, or
+  // the provider going idle) without the worker completing its step. Surface
+  // that clearly on the card so it does not sit as an unexplained "Paused":
+  // the user should know the card stopped and how to resume (Repair).
+  // A thread can be interrupted mid-turn (manual stop, host daemon restart, or
+  // the provider going idle) without the worker completing its step. Surface
+  // that clearly on the card so it does not sit as an unexplained "Paused": the
+  // user should know the card stopped and how to resume (Repair). The SDK's
+  // events.on type only knows thread.* payloads, but the runtime emits
+  // system/thread/interrupted with { threadId, reason }.
+  bb.events.on("system/thread/interrupted" as typeof bb extends never ? never : "thread.failed", (payload) => {
+    const { threadId, reason } = payload as unknown as { threadId: string; reason?: string };
+    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
+    if (!row) return;
+    const message = reason === "host-daemon-restarted"
+      ? "Worker was interrupted because the host daemon restarted (e.g. plugin reload or host restart) before it finished this step. Use Repair to resume."
+      : reason === "manual-stop"
+        ? "Worker was stopped manually mid-turn before it finished this step. Use Repair to resume."
+        : reason === "provider-turn-idle"
+          ? "Worker's provider went idle before it finished this step (possible model/provider interruption). Use Repair to resume."
+          : "Worker was interrupted before it finished this step. Use Repair to resume.";
+    updateCard(row.id, { activity: "error", last_error: message });
+  });
 
   // Reconcile card states with their worker threads after reloads (events only fire on transitions).
   const liveCards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
