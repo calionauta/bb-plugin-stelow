@@ -120,7 +120,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), actionRequired: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), actionRequired: z.boolean(), needsRepair: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
   },
   createCard: {
     input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), presetId: z.string().nullable().optional() }).strict(),
@@ -133,7 +133,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), presetName: z.string().nullable(), updatedAt: z.number() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsRepair: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() }),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
@@ -860,10 +860,6 @@ export default async function plugin(bb: BbPluginApi) {
   });
   // A thread can be interrupted mid-turn (manual stop, host daemon restart, or
   // the provider going idle) without the worker completing its step. Surface
-  // that clearly on the card so it does not sit as an unexplained "Paused":
-  // the user should know the card stopped and how to resume (Repair).
-  // A thread can be interrupted mid-turn (manual stop, host daemon restart, or
-  // the provider going idle) without the worker completing its step. Surface
   // that clearly on the card so it does not sit as an unexplained "Paused": the
   // user should know the card stopped and how to resume (Repair). The SDK's
   // events.on type only knows thread.* payloads, but the runtime emits
@@ -990,6 +986,12 @@ export default async function plugin(bb: BbPluginApi) {
           || (Boolean(row.last_error) && (row.last_seen_error_at ?? 0) < row.updated_at)
           || (activity === "error" && (row.last_seen_error_at ?? 0) < row.updated_at)
           || (normalizeStatus(row.status) === "completed" && (row.last_seen_completed_at ?? 0) < row.updated_at);
+        // A worker that is not actively running on a card that is not finished
+        // (in-progress/draft/awaiting, never completed/archived/blocked) may have
+        // stopped without completing a step. Surface Repair so the user can resume.
+        const needsRepair = activity !== "running"
+          && row.worker_thread_id !== null
+          && !["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
         const preset = getPresetForCard(row.id);
         return {
           id: row.id,
@@ -1005,6 +1007,7 @@ export default async function plugin(bb: BbPluginApi) {
           activity,
           lastError: row.last_error,
           actionRequired,
+          needsRepair,
           presetName: preset.name,
           updatedAt: row.updated_at,
         };
@@ -1076,7 +1079,7 @@ ${prompt}`,
       const scopes = loadCardScopes(sourcePath, card.name);
       const preset = getPresetForCard(card.id);
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: card.activity as "idle" | "running" | "awaiting-answer" | "error", lastError: card.last_error, presetName: preset.name, updatedAt: card.updated_at },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: card.activity as "idle" | "running" | "awaiting-answer" | "error", lastError: card.last_error, needsRepair: card.activity !== "running" && card.worker_thread_id !== null && !["completed", "archived", "blocked"].includes(normalizeStatus(card.status)), presetName: preset.name, updatedAt: card.updated_at },
         mentionedFiles,
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),

@@ -92,6 +92,27 @@ const STAGE_LABELS: Record<string, string> = {
   audit: "Audit",
 };
 
+// What each stage produces / does, for the confirmation preview before advancing.
+const STAGE_PRODUCES: Record<string, string> = {
+  triage: "Reviews the current state and picks what to work on next.",
+  select: "Chooses an item / group from the triage inbox to turn into a workflow.",
+  setup: "Prepares the repo and environment the workflow will run in.",
+  context: "Gathers project context the shaping step needs.",
+  shape: "Writes a Shape Up proposal (spec-product_vN.md) for the chosen item.",
+  critique: "Challenges the proposal before it is gated.",
+  gate: "Product gate: decides whether the shaped idea is accepted, rejected, or reworked.",
+  scope: "Breaks the approved idea into a concrete scope of work.",
+  interface: "Designs the user-facing interface for the scope.",
+  "int-gate": "Interface gate: accepts, rejects, or reworks the interface design.",
+  selection: "Selects which interface variant to implement.",
+  planning: "Writes the technical plan (PLAN.md) from the interface and scope.",
+  "plan-gate": "Plan gate: accepts, rejects, or reworks the tech plan.",
+  execution: "Implements the plan across the defined scope.",
+  verification: "Verifies the implementation against the plan.",
+  "diff-gate": "Diff gate: checks the implementation diff before completion.",
+  audit: "Final audit of the finished work.",
+};
+
 function stageLabel(stage: string) {
   return STAGE_LABELS[stage] ?? stage;
 }
@@ -927,6 +948,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState<string | null>(null);
+  const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [presetSwitching, setPresetSwitching] = useState(false);
@@ -1019,7 +1041,10 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
     if (card?.workerThreadId) navigate.toThread(card.workerThreadId);
   }
 
-  const showRepair = Boolean(card?.lastError) || (card?.activity === "idle" && card ? Date.now() - card.updatedAt > 60 * 60 * 1000 : false);
+  // Repair is available whenever the worker is not running on an unfinished
+  // card — a stopped worker may have left a step incomplete. Server computes
+  // needsRepair so this never depends on a timing heuristic.
+  const showRepair = Boolean(card?.needsRepair);
   const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
 
   return (
@@ -1114,7 +1139,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
                 <p className="text-xs text-muted-foreground">Moves the workflow to a stage now (same as <code>bb stelow advance</code>). The agent usually advances on its own — only use this to override or unstick a card.</p>
                 <div className="flex flex-wrap gap-1">
                   {detail.nextStages.filter((stage) => stage && !stage.includes("(")).map((stage) => (
-                    <span key={stage} title={`Advance to ${stageLabel(stage)}`}><Button size="sm" variant="outline" disabled={advancing !== null} onClick={() => void advance(stage)}>{advancing === stage ? "…" : stageLabel(stage)}</Button></span>
+                    <Button key={stage} size="sm" variant="outline" disabled={advancing !== null} onClick={() => setPendingAdvance(stage)}>{stageLabel(stage)}</Button>
                   ))}
                 </div>
               </section>
@@ -1183,6 +1208,33 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
         confirmTone="default"
         onConfirm={doRepair}
       />
+      {/* Advance preview: never jump stages blindly — show where you are, where
+          you'd go, and what the target stage produces before confirming. */}
+      <Dialog open={pendingAdvance !== null} onOpenChange={(next) => { if (!next) setPendingAdvance(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Advance to {pendingAdvance ? stageLabel(pendingAdvance) : ""}?</DialogTitle>
+            <DialogDescription className="space-y-2">
+              <p>
+                Move this card from <strong>{stageLabel(card?.stage ?? "")}</strong> to <strong>{pendingAdvance ? stageLabel(pendingAdvance) : ""}</strong>.
+              </p>
+              <p className="rounded-md bg-muted p-2 text-xs">
+                {pendingAdvance ? STAGE_PRODUCES[pendingAdvance] ?? "The agent works on this stage and advances on its own once done." : ""}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This is a manual override — the agent usually advances on its own. Use it to unstick a card or move decided work forward. 
+                Stage gates (product, interface, plan, diff) still apply on the next advance.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={advancing !== null}>Cancel</Button>
+            </DialogClose>
+            <Button disabled={advancing !== null || !pendingAdvance} onClick={() => { const target = pendingAdvance; setPendingAdvance(null); if (target) void advance(target); }}>{advancing ? "Advancing…" : "Advance"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
