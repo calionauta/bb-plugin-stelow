@@ -655,6 +655,9 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "last_seen_question_at")) {
     db.exec("ALTER TABLE cards ADD COLUMN last_seen_question_at INTEGER");
   }
+  if (!cardColumns.some((column) => column.name === "dir_hash")) {
+    db.exec("ALTER TABLE cards ADD COLUMN dir_hash TEXT");
+  }
 
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
