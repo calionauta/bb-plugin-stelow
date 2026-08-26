@@ -32,6 +32,13 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Artifacts are clickable right in the agent's message.** Stage skills now
+  emit a `::stelow-artifact{path="…" display="…"}` message directive per
+  artifact, rendered by a new plugin `messageDirective` as a clickable chip
+  that opens the file in the workspace viewer. This fixes the old bare
+  `plans/…` references in comments, which resolved against the project root
+  and 404'd (real files live under `.stelow/<date>/<dir>/`).
+
 - **Card ask questions are now real interactive forms.** An open Stelow
   question on a card rendered as buttons that only pre-filled the thread
   composer (easy to miss, required a manual send, and offered no multi-select).

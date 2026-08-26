@@ -635,6 +635,24 @@ Workflow mode: emit the above Hand-off block verbatim, then stop. The
 router skill consumes the next-candidate field and calls
 `scripts/stelow advance <next-candidate>` to move state forward.
 
+### Emit clickable artifact directives
+
+For every artifact **created or modified** in this stage, emit a
+`::stelow-artifact` message directive as its own block in your final
+workflow-mode message (right after the Hand-off block), with a
+**repo-root-relative** path (including the `.stelow/<date>/<dir>/` prefix):
+
+```text
+::stelow-artifact{path=".stelow/2026-08-13/abc123/plans/spec-product_v1.md" display="spec-product_v1"}
+```
+
+- Path must be repo-root-relative (no leading `/`, no `..`). Never use a bare
+  `plans/...` in prose — it 404s against the project root.
+- One directive per line, only after the file exists. Do not wrap in backticks
+  or a code fence, or it stays literal.
+- See `skills/stelow-product-orchestrator/references/state-contract.md`
+  (`Referencing artifacts in agent messages`) for details.
+
 ### Workflow slice
 
 Workflow mode for the **planning** stage. Standalone behavior lives in

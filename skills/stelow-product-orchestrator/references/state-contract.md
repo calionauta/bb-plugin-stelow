@@ -194,6 +194,38 @@ See `assets/invariants-example.json` for a complete `invariants.json` example.
 
 ---
 
+## Referencing artifacts in agent messages
+
+When a stage finishes and produces an artifact (spec, critique, scope report,
+interface, tech plan, test strategy, diff summary), the agent **must** make
+every produced file clickable in its visible message — the user reads the
+card/thread comments, not just `state.md`. Do **not** use bare relative paths
+like `plans/spec-product_v1.md` in prose: bb resolves those against the
+project root and they 404 (the real files live under `.stelow/<date>/<dir>/`).
+
+Emit one **message directive** per artifact, as its own block (not inside a
+code fence), with a **repo-root-relative** `path` (relative to `<git-root>`,
+including the `.stelow/<date>/<dir>/` prefix):
+
+```text
+::stelow-artifact{path=".stelow/2026-08-13/abc123/plans/spec-product_v1.md" display="spec-product_v1"}
+```
+
+- `path` is required and must be repo-root-relative (no leading `/`, no `..`).
+  It is exactly the path that appears in `state.md#artifacts` / the Hand-off
+  block.
+- `display` is optional; defaults to the basename of `path`.
+- Emit the directive only after the file exists on disk.
+- Do **not** put the directive inside backticks or a markdown code fence, or it
+  stays literal.
+- The bb app replaces it with a clickable chip that opens the file in the
+  workspace file viewer. If the plugin is disabled or the path is invalid, the
+  user sees the directive source or an inline error.
+- One directive per line, each on its own line — list them under the Hand-off
+  block right after the `artifacts :` field.
+
+---
+
 ## Locking
 
 Concurrent session safety: `stelow advance` acquires a POSIX `mkdir`-based

@@ -10,6 +10,7 @@ import {
   useRpc,
   type NewThreadRequest,
   type PluginFileOpenerProps,
+  type PluginMessageDirectiveProps,
   type PluginPendingInteractionProps,
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
@@ -1366,6 +1367,26 @@ function OpenStelowBoardAction() {
   return <button onClick={() => navigate.toPluginPanel("board", { subPath: "" })} className="rounded-md border bg-card px-2 py-1 text-xs shadow-sm hover:border-primary/50">Stelow board</button>;
 }
 
+function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {
+  const rawPath = attributes.path ?? "";
+  const display = attributes.display || rawPath.split("/").pop() || "artifact";
+  const path = rawPath.replace(/^\.\//, "");
+  if (!path) return <span className="text-sm text-destructive">{source}</span>;
+  const openFile = () => { openWorkspaceFile?.(path); };
+  return (
+    <button
+      onClick={openFile}
+      disabled={!openWorkspaceFile}
+      className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+      title={path}
+    >
+      <span>📎</span>
+      <span className="text-muted-foreground">artefato</span>
+      <span className="font-medium">{display}</span>
+    </button>
+  );
+}
+
 export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "board",
@@ -1380,4 +1401,9 @@ export default definePluginApp((app) => {
   app.slots.threadPanelAction({ id: "review-document", title: "Review Stelow document", icon: "FileText", component: ThreadDocumentPanel });
   app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns", component: CardDrawerAdapter });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Stelow board", component: OpenStelowBoardAction });
+
+  app.slots.messageDirective({
+    id: "stelow-artifact",
+    component: StelowArtifactDirective,
+  });
 });
