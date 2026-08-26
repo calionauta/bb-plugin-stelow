@@ -32,6 +32,21 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Pending stelow ask questions now surface on the card.** The card only
+  showed an awaiting-answer banner when `activity` was exactly
+  `awaiting-answer`, and `listCards`/`cardDetail` only promoted to it when the
+  thread was `running`. A card whose worker is `idle` with a pending
+  interaction (the normal state after `bb stelow ask` parks the workflow) hid
+  the question entirely. Both now detect pending interactions regardless of the
+  stored/thread activity, so an open question is always visible and answerable.
+- **Repair only shows on idle, unfinished cards** (not when there is an open
+  question to answer or an active error — those already have a clear action).
+- **Comments render as Markdown** (bb's chat renderer) instead of raw text, so
+  agent comments keep bold, lists, and clickable file references.
+- **Artifacts use repo-root-relative paths** so the review file opener resolves
+  them under the project (absolute paths containing `/` were rejected by the
+  workspace-safety check and 404'd).
+
 - **Realtime now works over Tailscale (port 8096).** The bb-tcp-proxy was a
   plain HTTP forwarder that never upgraded WebSocket, so the board, the
   sidebar count, and card state only refreshed on manual reload. Rewrote it as

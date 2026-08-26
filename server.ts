@@ -979,7 +979,11 @@ export default async function plugin(bb: BbPluginApi) {
       const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
       const enriched = await Promise.all(rows.map(async (row) => {
         let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";
-        if (activity === "running" && row.worker_thread_id) {
+        if (activity !== "error" && row.worker_thread_id) {
+          // A pending stelow ask interaction must surface regardless of whether
+          // the thread currently reports running or idle: an ask parks the card
+          // until answered, and idle (vs "waiting") is indistinguishable from a
+          // prompt otherwise. Promote to awaiting-answer so the question shows.
           const pending = await fetchPendingQuestions(row.worker_thread_id);
           if (pending.length > 0) activity = "awaiting-answer";
         }
@@ -987,10 +991,10 @@ export default async function plugin(bb: BbPluginApi) {
           || (Boolean(row.last_error) && (row.last_seen_error_at ?? 0) < row.updated_at)
           || (activity === "error" && (row.last_seen_error_at ?? 0) < row.updated_at)
           || (normalizeStatus(row.status) === "completed" && (row.last_seen_completed_at ?? 0) < row.updated_at);
-        // A worker that is not actively running on a card that is not finished
-        // (in-progress/draft/awaiting, never completed/archived/blocked) may have
-        // stopped without completing a step. Surface Repair so the user can resume.
-        const needsRepair = activity !== "running"
+        // A worker that stopped idle on an unfinished card (no pending ask, no
+        // error) may have left a step incomplete. Show Repair only then — an
+        // awaiting-answer or error card already has a clear action (answer/repair).
+        const needsRepair = activity === "idle"
           && row.worker_thread_id !== null
           && !["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
         const preset = getPresetForCard(row.id);
@@ -1095,15 +1099,21 @@ ${prompt}`,
         for (const raw of (String(stateBlob.match(/^artifacts:\s*$/m) ? stateBlob.split(/^artifacts:\s*$/m)[1] ?? "" : "").split(/\n(?=^\S)/m)[0] ?? "").split(/\n/)) {
           const m = raw.match(/^\s{2}([\w-]+):\s*(\.?\S+)\s*$/);
           if (!m) continue;
-          const path = m[2];
-          const full = path.startsWith("/") ? path : join(sourcePath, path);
+          const relPath = m[2];
+          // Keep repo-root-relative (no leading /) so safeRelative() in
+          // readDocument resolves it under the project root.
+          const full = relPath.startsWith("/") ? join(sourcePath, relPath.slice(1)) : join(sourcePath, relPath);
           const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
-          if (exists) list.push({ stage: m[1], path: full, display: basename(full) });
+          if (exists) list.push({ stage: m[1], path: relPath, display: basename(full) });
         }
         return list;
       })();
+      // Surface pending stelow ask interactions regardless of the stored activity:
+      // an ask parks the card awaiting an answer even when the thread is idle.
+      const effectiveActivity = (card.activity === "error" ? "error" : pending.length > 0 ? "awaiting-answer" : card.activity as "idle" | "running" | "awaiting-answer" | "error");
+      const pendingFirst = pending[0] ?? null;
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: card.activity as "idle" | "running" | "awaiting-answer" | "error", lastError: card.last_error, needsRepair: card.activity !== "running" && card.worker_thread_id !== null && !["completed", "archived", "blocked"].includes(normalizeStatus(card.status)), presetName: preset.name, updatedAt: card.updated_at },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsRepair: effectiveActivity === "idle" && card.worker_thread_id !== null && !["completed", "archived", "blocked"].includes(normalizeStatus(card.status)), presetName: preset.name, updatedAt: card.updated_at },
         mentionedFiles,
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),

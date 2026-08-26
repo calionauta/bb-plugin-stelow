@@ -1199,7 +1199,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
                       <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
                       <span>{new Date(entry.createdAt).toLocaleString()}</span>
                     </div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{entry.body}</p>
+                    <p className="mt-1 text-sm"><Markdown content={entry.body} /></p>
                   </div>
                 )) : <p className="text-xs text-muted-foreground">No comments yet.</p>}
               </div>
