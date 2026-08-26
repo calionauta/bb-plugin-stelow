@@ -1255,7 +1255,11 @@ ${card.prompt}`,
       const stateDir = card.dir_hash ? await workflowStateDir(bb, source.path, card.dir_hash) : null;
       const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
       if (result.code !== 0) return { ok: false, stdout: result.stdout, error: result.stderr || "stelow advance failed" };
-      updateCard(cardId, { stage });
+      // Sync status so the board column follows the new stage: past triage a
+      // card becomes in-progress (leaves the Triage/draft column); a resumed
+      // gate card returns to in-progress too.
+      const nextStatus = stage === "triage" ? "draft" : normalizeStatus(stage) === "completed" ? normalizeStatus("completed") : "in-progress";
+      updateCard(cardId, { stage, status: nextStatus, activity: "running" });
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, stdout: result.stdout, error: null };
     },
