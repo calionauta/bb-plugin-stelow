@@ -1072,6 +1072,25 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
                 </div>
               </div>
             ) : null}
+            {detail?.artifacts && detail.artifacts.length > 0 ? (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Assets produced by the workflow:</span>
+                <div className="flex flex-wrap gap-1">
+                  {detail.artifacts.map((asset) => (
+                    <button
+                      key={asset.path}
+                      onClick={() => navigate.openThreadPanel({ actionId: "review-document", title: asset.display, params: { path: asset.path } })}
+                      className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20"
+                      title={`${asset.stage}: ${asset.path}`}
+                    >
+                      <span>📎</span>
+                      <span className="text-muted-foreground">{asset.stage}</span>
+                      <span>{asset.display}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-2 text-sm">
               <Meta label="Stage" value={stageLabel(card.stage)} />
               {card.stage === "select" ? (

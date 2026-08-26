@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join as nodeJoin, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join as nodeJoin, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -139,6 +139,7 @@ export const rpcContract = defineRpcContract({
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
+      artifacts: z.array(z.object({ stage: z.string(), path: z.string(), display: z.string() })),
       nextStages: z.array(z.string()),
     }),
   },
@@ -1078,6 +1079,29 @@ ${prompt}`,
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.name);
       const preset = getPresetForCard(card.id);
+      // Read the card's per-workflow state.md to surface produced artifacts
+      // (spec, plan, scope reports, …) as clickable assets on the card.
+      const artifacts = await (async () => {
+        if (!sourcePath) return [];
+        const stateBlob = await (async () => {
+          if (card.dir_hash) {
+            const stateDir = await workflowStateDir(bb, sourcePath, card.dir_hash);
+            if (stateDir) return await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+          }
+          return await bb.sdk.files.read({ path: join(sourcePath, "state.md") }).then((f) => f.content).catch(() => null);
+        })();
+        if (!stateBlob) return [];
+        const list: Array<{ stage: string; path: string; display: string }> = [];
+        for (const raw of (String(stateBlob.match(/^artifacts:\s*$/m) ? stateBlob.split(/^artifacts:\s*$/m)[1] ?? "" : "").split(/\n(?=^\S)/m)[0] ?? "").split(/\n/)) {
+          const m = raw.match(/^\s{2}([\w-]+):\s*(\.?\S+)\s*$/);
+          if (!m) continue;
+          const path = m[2];
+          const full = path.startsWith("/") ? path : join(sourcePath, path);
+          const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
+          if (exists) list.push({ stage: m[1], path: full, display: basename(full) });
+        }
+        return list;
+      })();
       return {
         card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: card.activity as "idle" | "running" | "awaiting-answer" | "error", lastError: card.last_error, needsRepair: card.activity !== "running" && card.worker_thread_id !== null && !["completed", "archived", "blocked"].includes(normalizeStatus(card.status)), presetName: preset.name, updatedAt: card.updated_at },
         mentionedFiles,
@@ -1085,6 +1109,7 @@ ${prompt}`,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
         pendingQuestions: pending,
         expiredQuestions,
+        artifacts,
         nextStages,
       };
     },

@@ -10,6 +10,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Artifacts flow: cards now surface the documents the workflow produces.**
+  `transitions.md` declares a per-stage `artifact:` glob (e.g. shape →
+  `plans/spec-product_*.md`, planning → `plans/spec-tech_*.md`, scope →
+  `scopes/scope-report_*.md`). `stelow advance` now (a) **blocks** the transition
+  when the required artifact file is missing, and (b) **records** the produced
+  path into `state.md` → `artifacts.<stage>` (repo-root-relative, merged so
+  earlier artifacts are preserved). The card detail reads those artifacts and
+  shows a new **“Assets produced by the workflow”** section with each file as a
+  clickable chip (opens the document in the review panel).
+
 - **Per-workflow state: stelow is now multi-card per project.** Each card owns
   its own state file at `<root>/.stelow/<date>/<dirHash>/state.md` (plus
   `invariants.json` and `lock`) instead of sharing a single project-root

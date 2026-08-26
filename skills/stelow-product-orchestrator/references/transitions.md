@@ -89,6 +89,7 @@ accept:    critique
 reject:    context
 rework:    shape    (shape rework — same stage)
 gate:      (none)
+artifact:  plans/spec-product_*.md
 ```
 
 ### critique
@@ -122,6 +123,7 @@ accept:    interface
 reject:    gate
 rework:    (none)
 gate:      (none)
+artifact:  scopes/scope-report_*.md
 ```
 
 ### interface
@@ -164,6 +166,7 @@ accept:    plan-gate
 reject:    scope
 rework:    (none)
 gate:      (none)
+artifact:  plans/spec-tech_*.md
 ```
 
 ### plan-gate
