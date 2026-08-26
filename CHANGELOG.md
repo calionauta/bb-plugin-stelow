@@ -32,6 +32,19 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Card ask questions are now real interactive forms.** An open Stelow
+  question on a card rendered as buttons that only pre-filled the thread
+  composer (easy to miss, required a manual send, and offered no multi-select).
+  The card now shows the same option-picker as the thread's native interaction
+  and answers through `threads.interactions.respond` — picking option(s) and
+  pressing **Submit answer** forwards a structured response to the worker, no
+  manual composer edit needed. `More pending questions` reuses the same form.
+- **Artifacts and mentioned files open as dedicated plugin tabs.** The chips
+  previously called `openThreadPanel`, which can be declined when the card
+  detail is itself a plugin tab (no thread side panel). They now navigate to a
+  `review-document/<path>` tab that renders the full markdown reviewer (read,
+  inline comment, selection), reachable from the board or the card.
+
 - **Pending stelow ask questions now surface on the card.** The card only
   showed an awaiting-answer banner when `activity` was exactly
   `awaiting-answer`, and `listCards`/`cardDetail` only promoted to it when the

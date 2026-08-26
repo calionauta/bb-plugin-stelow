@@ -118,6 +118,10 @@ export const rpcContract = defineRpcContract({
     }).strict(),
     output: z.object({ saved: z.boolean(), sha256: z.string().optional(), error: z.string().nullable() }),
   },
+  answerQuestion: {
+    input: z.object({ cardId: z.string(), answers: z.array(z.string()) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
     output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), actionRequired: z.boolean(), needsRepair: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
@@ -942,6 +946,20 @@ export default async function plugin(bb: BbPluginApi) {
       if (result.outcome === "cancelled") return { outcome: "cancelled" as const, answers: [] };
       const value = record(result.value);
       return { outcome: "submitted" as const, answers: array(value.answers).filter((answer): answer is string => typeof answer === "string") };
+    },
+
+    async answerQuestion({ cardId, answers }) {
+      const card = getCard(cardId);
+      if (!card?.worker_thread_id) return { ok: false as const, error: "This card has no worker thread." };
+      try {
+        const list = await bb.sdk.threads.interactions.list({ threadId: card.worker_thread_id });
+        const pending = list.find((entry) => entry.origin?.kind === "plugin" && entry.status === "pending");
+        if (!pending) return { ok: false as const, error: "No open question awaits an answer on this card." };
+        await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId: pending.id, value: { answers } });
+        return { ok: true as const, error: null };
+      } catch (error) {
+        return { ok: false as const, error: error instanceof Error ? error.message : "Unable to answer the question." };
+      }
     },
 
     async startWorkflow({ projectId, prompt }) {

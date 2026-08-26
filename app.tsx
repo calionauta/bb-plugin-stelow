@@ -257,7 +257,6 @@ function StelowSidebarAccessory() {
 function BoardPanel({ subPath }: { subPath: string }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
-  const composer = useComposer();
   const rpc = useRpc<typeof rpcContract>();
   const [projects, setProjects] = useState<Project[]>([]);
   const [cards, setCards] = useState<CardItem[]>([]);
@@ -376,7 +375,23 @@ function BoardPanel({ subPath }: { subPath: string }) {
           onBack={() => navigate.toPluginPanel("board", { subPath: "" })}
         />
         <div className="flex-1 overflow-auto">
-          <CardDetailBody cardId={cardId} onClose={() => navigate.toPluginPanel("board", { subPath: "" })} composer={composer} navigate={navigate} />
+          <CardDetailBody cardId={cardId} onClose={() => navigate.toPluginPanel("board", { subPath: "" })} navigate={navigate} />
+        </div>
+      </div>
+    );
+  }
+
+  const reviewMatch = subPath.match(/^review-document\/(.+)$/);
+  if (reviewMatch && reviewMatch[1]) {
+    const path = decodeURIComponent(reviewMatch[1]);
+    return (
+      <div className="flex h-full flex-col overflow-hidden bg-background">
+        <div className="flex items-center justify-between border-b px-3 py-2">
+          <button onClick={() => navigate.toPluginPanel("board", { subPath: "" })} className="text-xs text-muted-foreground hover:text-foreground">← Stelow board</button>
+          <span className="truncate pl-2 text-xs font-medium text-muted-foreground" title={path}>{path.split("/").pop()}</span>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <DocumentReviewImpl path={path} source={{ kind: "workspace", threadId: null, environmentId: null, projectId: boardProjectId ?? routeProjectId ?? null }} />
         </div>
       </div>
     );
@@ -629,9 +644,8 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   const params = props.params;
   const cardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
   const navigate = useBbNavigate();
-  const composer = useComposer();
   if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a card from the Stelow board to see its detail here.</p>;
-  return <CardDetailBody cardId={cardId} onClose={() => { /* host tab close */ }} composer={composer} navigate={navigate} />;
+  return <CardDetailBody cardId={cardId} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
 function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string; onBack: () => void; restartFocusKey?: number }) {
@@ -728,18 +742,44 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   );
 }
 
-function AwaitingAnswerBanner({ question, onAnswer }: { question: CardQuestion; onAnswer: (answer: string) => void }) {
+function AwaitingAnswerBanner({ cardId, question, onAnswered }: { cardId: string; question: CardQuestion; onAnswered: () => void }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const toggle = (label: string) => setAnswers((current) => question.multiple ? current.includes(label) ? current.filter((item) => item !== label) : [...current, label] : [label]);
+  async function submitAnswer() {
+    if (answers.length === 0) return;
+    setBusy(true); setError(null);
+    const result = await rpc.call("answerQuestion", { cardId, answers });
+    if (!result.ok) setError(result.error ?? "Could not send the answer.");
+    else { setAnswers([]); onAnswered(); }
+    setBusy(false);
+  }
   return (
     <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
       <div className="flex items-start gap-3">
         <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{question.title}</div>
-          <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" className="bg-background/60" onClick={() => onAnswer(option.label)}>{option.label}</Button>)}
+          <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
+          <div className="grid gap-1">
+            {question.options.map((option) => (
+              <button
+                key={option.label}
+                onClick={() => toggle(option.label)}
+                className={`rounded-md border p-2 text-left text-sm ${answers.includes(option.label) ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
+              >
+                <div className="font-medium">{option.label}</div>
+                {option.description ? <div className="text-xs text-muted-foreground">{option.description}</div> : null}
+              </button>
+            ))}
           </div>
-          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">Picking an option opens the thread with your answer pre-filled — press Enter to send.</p>
+          {error ? <p className="text-xs text-destructive">{error}</p> : null}
+          {question.multiple ? <p className="text-xs text-amber-900/60 dark:text-amber-200/60">Pick one or more, then submit.</p> : null}
+          <div className="flex gap-2">
+            <Button size="sm" disabled={answers.length === 0 || busy} onClick={() => void submitAnswer()}>{busy ? "Sending…" : "Submit answer"}</Button>
+          </div>
         </div>
       </div>
     </div>
@@ -940,7 +980,7 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
   );
 }
 
-function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: string; onClose: () => void; composer: ReturnType<typeof useComposer>; navigate: ReturnType<typeof useBbNavigate> }) {
+function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
@@ -1035,12 +1075,6 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
     }
   }
 
-  function prefillAnswerInThread(question: CardQuestion, answer?: string) {
-    const draft = `${question.title}\n\n${question.question}\n\n${question.options.map((option) => `- ${option.label}${option.description ? ` — ${option.description}` : ""}`).join("\n")}\n\nMy answer: ${answer ?? ""}`;
-    composer?.setText(draft);
-    if (card?.workerThreadId) navigate.toThread(card.workerThreadId);
-  }
-
   // Repair is available whenever the worker is not running on an unfinished
   // card — a stopped worker may have left a step incomplete. Server computes
   // needsRepair so this never depends on a timing heuristic.
@@ -1061,7 +1095,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
                   {detail.mentionedFiles.map((file) => (
                     <button
                       key={file.path}
-                      onClick={() => navigate.openThreadPanel({ actionId: "review-document", title: file.display, params: { path: file.path } })}
+                      onClick={() => navigate.toPluginPanel("review-document", { subPath: file.path })}
                       className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs text-foreground hover:bg-muted"
                       title={`Open ${file.path}`}
                     >
@@ -1079,7 +1113,7 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
                   {detail.artifacts.map((asset) => (
                     <button
                       key={asset.path}
-                      onClick={() => navigate.openThreadPanel({ actionId: "review-document", title: asset.display, params: { path: asset.path } })}
+                      onClick={() => navigate.toPluginPanel("review-document", { subPath: asset.path })}
                       className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20"
                       title={`${asset.stage}: ${asset.path}`}
                     >
@@ -1131,22 +1165,14 @@ function CardDetailBody({ cardId, onClose, composer, navigate }: { cardId: strin
             </div>
             {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
 
-            {pendingFirst && card.activity === "awaiting-answer" ? <AwaitingAnswerBanner question={pendingFirst} onAnswer={(answer) => prefillAnswerInThread(pendingFirst, answer)} /> : null}
+            {pendingFirst && card.activity === "awaiting-answer" ? <AwaitingAnswerBanner cardId={card.id} question={pendingFirst} onAnswered={() => void load()} /> : null}
 
             {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
 
             {detail && card.activity === "awaiting-answer" && detail.pendingQuestions.length > 1 ? (
               <section className="space-y-2">
                 <h3 className="text-sm font-semibold">More pending questions</h3>
-                {detail.pendingQuestions.slice(1).map((question) => (
-                  <div key={question.id} className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
-                    <div className="text-sm font-medium">{question.title}</div>
-                    <p className="mt-1 text-sm text-muted-foreground">{question.question}</p>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" onClick={() => prefillAnswerInThread(question, option.label)}>{option.label}</Button>)}
-                    </div>
-                  </div>
-                ))}
+                {detail.pendingQuestions.slice(1).map((question) => <AwaitingAnswerBanner key={question.id} cardId={card.id} question={question} onAnswered={() => void load()} />)}
               </section>
             ) : null}
 
