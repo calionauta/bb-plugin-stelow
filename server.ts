@@ -799,10 +799,13 @@ export default async function plugin(bb: BbPluginApi) {
       const project = await bb.sdk.projects.get({ projectId: row.project_id });
       projectPath = project.sources.find((s) => s.isDefault)?.path ?? project.sources[0]?.path ?? "";
     } catch { /* project gone; still respawn */ }
-    if (row.worker_thread_id) {
-      try { await bb.sdk.threads.archive({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
-      try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
+    // Resolve the real per-workflow state dir (stelow.json -> created date), so
+    // the respawned worker is told the correct path — never a guessed date.
+    let stateDir: string | null = null;
+    if (row.dir_hash && projectPath) {
+      stateDir = await workflowStateDir(bb, projectPath, row.dir_hash).catch(() => null);
     }
+    const stateHint = stateDir ?? (row.dir_hash ? ".stelow/<date>/" + row.dir_hash : "<project>/.stelow/<date>/<dirHash>");
     try {
       const newThread = await bb.sdk.threads.spawn({
         projectId: row.project_id,
@@ -814,7 +817,7 @@ export default async function plugin(bb: BbPluginApi) {
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(row.dir_hash ? ".stelow/<date>/" + row.dir_hash : "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 The user already classified this request as intent=\`${row.intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${row.intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
 
@@ -831,12 +834,23 @@ Before asking a question, first summarize what you read (files, plan, codebase) 
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`,
       });
+      // The new worker is live — only now retire the old one (archive+stop), so a
+      // spawn failure never leaves the card with no worker. If the old worker is
+      // the one that just called advance, it has already returned its CLI output.
+      if (row.worker_thread_id) {
+        try { await bb.sdk.threads.archive({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
+        try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
+      }
       const ts = now();
       db.prepare("UPDATE cards SET worker_thread_id = ?, worker_preset_id = ?, activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run(newThread.id, preset.id, "running", null, ts, cardId);
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, threadId: newThread.id };
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : "Respawn failed." };
+      // Spawn failed — surface it instead of leaving a silent zombie card.
+      const msg = error instanceof Error ? error.message : "Respawn failed.";
+      db.prepare("UPDATE cards SET activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run("error", msg, now(), cardId);
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: false, error: msg };
     }
   }
 
@@ -1139,7 +1153,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (seed.error) throw new Error(seed.error);
       const cardId = randomId("card");
       const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
-      const params = presetAttachmentParams(preset);
+      // A card always spawns into the analysis band (triage). Honor a configured
+      // analysis band preset at first spawn (band override wins), else fall back
+      // to the card/dedicated preset. `worker_preset_id` records the actual
+      // spawn preset so later band transitions compare correctly.
+      const analysisRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = 'analysis'").get() as { preset_id: string } | undefined;
+      const spawnPreset = analysisRow ? (getPresetById(analysisRow.preset_id) ?? preset) : preset;
+      const params = presetAttachmentParams(spawnPreset);
       const thread = await bb.sdk.threads.spawn({
         projectId,
         environment: { type: "project-default" },
@@ -1169,7 +1189,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${prompt}`,
       });
       const ts = now();
-      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, preset.id, seed.dirHash, null, null, null, ts, ts);
+      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, null, null, null, ts, ts);
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
       bb.realtime.publish("card-state", { cardId });
       return { cardId, threadId: thread.id };
@@ -1400,6 +1420,15 @@ ${card.prompt}`,
       const stateDir = card.dir_hash ? await workflowStateDir(bb, source.path, card.dir_hash) : null;
       const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
       if (result.code !== 0) return { ok: false, stdout: result.stdout, error: result.stderr || "stelow advance failed" };
+      // Band-preset swap, mirroring the CLI advance path: if the phase of the
+      // stage just advanced to defines a preset different from this worker's,
+      // respawn with the phase preset on the same state dir.
+      const band = STAGE_TO_BAND[stage];
+      const bandPreset = band ? getPresetForBand(band, card.id) : null;
+      const currentPresetId = card.worker_preset_id ?? getPresetForCard(card.id).id;
+      if (band && bandPreset && bandPreset.id !== currentPresetId) {
+        await respawnWorkerForBand(card.id, bandPreset.id);
+      }
       // Sync status so the board column follows the new stage: past triage a
       // card becomes in-progress (leaves the Triage/draft column); a resumed
       // gate card returns to in-progress too.

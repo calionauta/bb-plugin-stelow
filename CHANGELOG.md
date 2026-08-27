@@ -10,6 +10,14 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Respawn reliability for phase-preset transitions.** The band-boundary
+  respawn now resolves the real per-workflow state dir (from `stelow.json`)
+  instead of guessing the current date, retires the old worker only after the
+  new spawn succeeds, and marks the card `error` (with `last_error`) if the
+  spawn fails — no more zombie cards with no worker and a stale `running`
+  state. The board `advance` path triggers the phase-preset swap too, matching
+  the CLI path.
+
 - **Worker preset per workflow phase.** Presets can now be configured per
   stage phase (analysis / planning / execution / review) in the preset
   manager. When a card advances into a phase whose preset differs from the
