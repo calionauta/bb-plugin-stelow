@@ -32,6 +32,19 @@ const TRANSITIONS_REF = (() => {
 })();
 const STATE_TEMPLATE = `---\nname: <workflow-name>\nintent: <new-product|feature|bugfix|refactor|investigate|unknown>\ncurrent_stage: triage\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\n  product_type: software\nstages:\n  triage: pending\n  select: pending\n  setup: pending\n  context: pending\n  shape: pending\n  critique: pending\n  gate: pending\n  scope: pending\n  interface: pending\n  int-gate: pending\n  selection: pending\n  planning: pending\n  plan-gate: pending\n  execution: pending\n  verification: pending\n  diff-gate: pending\n  audit: pending\nartifacts: {}\nhistory: []\n---\n`;
 
+// Stage bands: groups of workflow stages that share a worker preset. A card's
+// worker swaps presets only at band boundaries (analysis -> planning -> execution
+// -> review), so context continuity is preserved within a band.
+const STAGE_BANDS: Record<string, string[]> = {
+  analysis: ["triage", "select", "setup", "context", "shape"],
+  planning: ["critique", "scope", "interface", "int-gate", "selection", "planning", "plan-gate"],
+  execution: ["execution", "verification"],
+  review: ["diff-gate", "audit"],
+};
+const STAGE_TO_BAND: Record<string, string> = Object.fromEntries(
+  Object.entries(STAGE_BANDS).flatMap(([band, stages]) => stages.map((stage) => [stage, band])),
+);
+
 const statusSchema = z.enum([
   "draft",
   "planning",
@@ -223,6 +236,14 @@ export const rpcContract = defineRpcContract({
   deletePreset: {
     input: z.object({ id: z.string() }).strict(),
     output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
+  },
+  listBandPresets: {
+    input: z.object({}).strict(),
+    output: z.object({ bands: z.array(z.object({ band: z.string(), presetId: z.string().nullable(), stages: z.array(z.string()) })) }),
+  },
+  setBandPreset: {
+    input: z.object({ band: z.string(), presetId: z.string().nullable() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   assignPreset: {
     input: z.object({ cardId: z.string(), presetId: z.string().nullable() }).strict(),
@@ -594,6 +615,7 @@ export default async function plugin(bb: BbPluginApi) {
       stage TEXT NOT NULL,
       activity TEXT NOT NULL,
       worker_thread_id TEXT,
+      worker_preset_id TEXT,
       dir_hash TEXT,
       last_error TEXT,
       last_assistant_text TEXT,
@@ -663,6 +685,17 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "dir_hash")) {
     db.exec("ALTER TABLE cards ADD COLUMN dir_hash TEXT");
   }
+  if (!cardColumns.some((column) => column.name === "worker_preset_id")) {
+    db.exec("ALTER TABLE cards ADD COLUMN worker_preset_id TEXT");
+  }
+  // stage_presets may not be applied by bb.storage.migrate on existing DBs,
+  // so ensure it idempotently here as well.
+  db.exec(`CREATE TABLE IF NOT EXISTS stage_presets (
+    band TEXT PRIMARY KEY CHECK (band IN ('analysis','planning','execution','review')),
+    preset_id TEXT NOT NULL,
+    assigned_at INTEGER NOT NULL,
+    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+  )`);
 
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
@@ -697,7 +730,7 @@ export default async function plugin(bb: BbPluginApi) {
   function now(): number { return Date.now(); }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; dir_hash: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type PresetRow = {
     id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
@@ -728,6 +761,16 @@ export default async function plugin(bb: BbPluginApi) {
     return preset ?? getDefaultPreset();
   }
 
+  // Resolve the worker preset for a stage band. A configured band preset
+  // overrides the card's preset; otherwise fall back to the card preset so
+  // existing cards (with no band preset) behave exactly as before.
+  function getPresetForBand(band: string, cardId: string): PresetRow {
+    const row = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(band) as { preset_id: string } | undefined;
+    if (!row) return getPresetForCard(cardId);
+    const preset = getPresetById(row.preset_id);
+    return preset ?? getPresetForCard(cardId);
+  }
+
   function presetAttachmentParams(preset: PresetRow): { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; baseBranch: string | null; machineId: string | null; instructions: string } {
     return {
       providerId: preset.provider_id,
@@ -739,6 +782,62 @@ export default async function plugin(bb: BbPluginApi) {
       machineId: preset.machine_id,
       instructions: preset.instructions,
     };
+  }
+
+  // Respawn a card's worker with a new preset at a band boundary. Kept on the
+  // same per-workflow state dir (dir_hash) so the new worker re-reads the
+  // already-advanced state.md and continues from the current stage — no context
+  // is re-created or reset. The old worker is archived/stopped by this helper.
+  async function respawnWorkerForBand(cardId: string, presetId: string): Promise<{ ok: boolean; error?: string; threadId?: string }> {
+    const row = getCard(cardId);
+    if (!row) return { ok: false, error: "Card not found." };
+    const preset = getPresetById(presetId);
+    if (!preset) return { ok: false, error: "Preset not found." };
+    const params = presetAttachmentParams(preset);
+    let projectPath = "";
+    try {
+      const project = await bb.sdk.projects.get({ projectId: row.project_id });
+      projectPath = project.sources.find((s) => s.isDefault)?.path ?? project.sources[0]?.path ?? "";
+    } catch { /* project gone; still respawn */ }
+    if (row.worker_thread_id) {
+      try { await bb.sdk.threads.archive({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
+      try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
+    }
+    try {
+      const newThread = await bb.sdk.threads.spawn({
+        projectId: row.project_id,
+        environment: { type: "project-default" },
+        visibility: "hidden",
+        title: `Stelow: ${row.display_name ?? row.name}`,
+        providerId: params.providerId,
+        model: params.modelId,
+        reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+        permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
+        executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(row.dir_hash ? ".stelow/<date>/" + row.dir_hash : "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+
+The user already classified this request as intent=\`${row.intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${row.intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+
+You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. Read your state.md and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already settled in state.md. Pick up exactly where the workflow left off.
+
+CRITICAL — User input contract:
+ANY time you need user input, you MUST call the structured form:
+
+    bb stelow ask --thread <this_thread_id> \\\\
+      --question "<a single clear question>" \\\\
+      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
+
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Never re-ask the same question. Stop when the user archives the card or the workflow reaches \`audit\`.
+
+${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`,
+      });
+      const ts = now();
+      db.prepare("UPDATE cards SET worker_thread_id = ?, worker_preset_id = ?, activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run(newThread.id, preset.id, "running", null, ts, cardId);
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, threadId: newThread.id };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Respawn failed." };
+    }
   }
 
   function getCard(cardId: string): CardRow | undefined {
@@ -1070,7 +1169,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${prompt}`,
       });
       const ts = now();
-      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, dir_hash, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, seed.dirHash, null, null, null, ts, ts);
+      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, preset.id, seed.dirHash, null, null, null, ts, ts);
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
       bb.realtime.publish("card-state", { cardId });
       return { cardId, threadId: thread.id };
@@ -1243,7 +1342,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${card.prompt}`,
       });
       const ts = now();
-      db.prepare("UPDATE cards SET stage = ?, activity = ?, last_error = ?, worker_thread_id = ?, last_assistant_text = ?, updated_at = ? WHERE id = ?").run("triage", "running", null, newThread.id, null, ts, cardId);
+      db.prepare("UPDATE cards SET stage = ?, activity = ?, last_error = ?, worker_thread_id = ?, worker_preset_id = ?, last_assistant_text = ?, updated_at = ? WHERE id = ?").run("triage", "running", null, newThread.id, preset.id, null, ts, cardId);
       bb.realtime.publish("card-state", { cardId });
       return { reseeded: true, error: null };
     },
@@ -1374,6 +1473,24 @@ ${card.prompt}`,
       return { deleted: true, error: null };
     },
 
+    async listBandPresets() {
+      const rows = db.prepare("SELECT band, preset_id FROM stage_presets").all() as Array<{ band: string; preset_id: string }>;
+      const map: Record<string, string> = {};
+      for (const row of rows) map[row.band] = row.preset_id;
+      return { bands: Object.keys(STAGE_BANDS).map((band) => ({ band, presetId: map[band] ?? null, stages: STAGE_BANDS[band] })) };
+    },
+
+    async setBandPreset({ band, presetId }) {
+      if (!STAGE_BANDS[band]) return { ok: false, error: `Unknown band: ${band}` };
+      if (presetId) {
+        if (!getPresetById(presetId)) return { ok: false, error: "Preset not found." };
+        db.prepare("INSERT OR REPLACE INTO stage_presets (band, preset_id, assigned_at) VALUES (?, ?, ?)").run(band, presetId, now());
+      } else {
+        db.prepare("DELETE FROM stage_presets WHERE band = ?").run(band);
+      }
+      return { ok: true, error: null };
+    },
+
     async assignPreset({ cardId, presetId }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, error: "Card not found." };
@@ -1483,12 +1600,27 @@ ${card.prompt}`,
         if (!rootPath) return { exitCode: 1, stderr: "Project workspace path is unavailable." };
         // The agent runs this from within its worker thread; resolve the owning
         // card so advance targets that card's per-workflow state file.
-        const cliCard = ctx.threadId ? db.prepare("SELECT id, dir_hash FROM cards WHERE worker_thread_id = ?").get(ctx.threadId) as { id: string; dir_hash: string | null } | undefined : undefined;
+        const cliCard = ctx.threadId ? db.prepare("SELECT id, dir_hash, worker_preset_id FROM cards WHERE worker_thread_id = ?").get(ctx.threadId) as { id: string; dir_hash: string | null; worker_preset_id: string | null } | undefined : undefined;
         const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
         const guard = await ensureProjectArtifacts(bb, rootPath);
         if (guard) return { exitCode: 1, stderr: guard };
         const result = await runHelper(["advance", stage], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
+        // Band-preset swap: if the band of the stage just advanced to defines a
+        // preset different from the one this worker was spawned with, respawn the
+        // worker with that band preset on the same state dir. Deferred (setTimeout)
+        // so the current handle returns its output before the worker is replaced.
+        if (cliCard) {
+          const band = STAGE_TO_BAND[stage];
+          if (band) {
+            const bandPreset = getPresetForBand(band, cliCard.id);
+            const currentPresetId = cliCard.worker_preset_id ?? getPresetForCard(cliCard.id).id;
+            if (bandPreset.id !== currentPresetId) {
+              const targetId = cliCard.id;
+              setTimeout(() => { respawnWorkerForBand(targetId, bandPreset.id).catch(() => {}); }, 10);
+            }
+          }
+        }
         return { exitCode: 0, stdout: result.stdout };
       }
       if (argv[0] === "preset") {

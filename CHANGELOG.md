@@ -10,6 +10,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Worker preset per workflow phase.** Presets can now be configured per
+  stage phase (analysis / planning / execution / review) in the preset
+  manager. When a card advances into a phase whose preset differs from the
+  one its worker was spawned with, the worker is automatically respawned with
+  that phase's preset on the same state dir (state.md is preserved, so the
+  new worker continues from the current stage — no context reset). A phase
+  with no configured preset falls back to the card's preset (or the default),
+  so existing cards behave exactly as before. Add `test_bands.mjs` to verify
+  the stage-phase mapping and fallback.
+
 - **Artifacts flow: cards now surface the documents the workflow produces.**
   `transitions.md` declares a per-stage `artifact:` glob (e.g. shape →
   `plans/spec-product_*.md`, planning → `plans/spec-tech_*.md`, scope →

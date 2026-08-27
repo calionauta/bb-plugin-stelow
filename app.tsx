@@ -855,6 +855,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
 }) {
   const [form, setForm] = useState({ id: "" as string | null, name: "", providerId: "pi", modelId: "bifrost/harness-coding", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" });
   const [options, setOptions] = useState<{ providers: { id: string; displayName: string }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
+  const [bandPresets, setBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -862,6 +863,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
     if (!open) return;
     setMessage(null);
     void rpc.call("listProviderModels", {}).then(setOptions).catch(() => setOptions({ providers: [], models: [] }));
+    void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([]));
   }, [open, rpc]);
 
   const providerModels = options.models.filter((model) => model.providerId === form.providerId);
@@ -932,7 +934,31 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
             </div>
           ))}
         </div>
-        <div className="rounded-md border bg-muted/30 p-3">
+        <div className="mt-3 rounded-md border bg-muted/30 p-3">
+          <h4 className="mb-2 text-sm font-semibold">Worker preset per workflow phase</h4>
+          <p className="mb-2 text-xs text-muted-foreground">Each phase uses its own preset. The worker is switched automatically when the card reaches a phase with a different preset; cards with no phase preset use the card's preset (or default).</p>
+          <div className="grid gap-2">
+            {bandPresets.map((band) => (
+              <div key={band.band} className="flex items-center gap-2 text-sm">
+                <span className="w-24 shrink-0 capitalize">{band.band}</span>
+                <select
+                  className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                  value={band.presetId ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value || null;
+                    setBusy(true);
+                    void rpc.call("setBandPreset", { band: band.band, presetId: value }).then(() => { void onChanged(); void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([])); }).catch(() => setMessage("Failed to set phase preset.")).finally(() => setBusy(false));
+                  }}
+                >
+                  <option value="">— Card default —</option>
+                  {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </select>
+                <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title={band.stages.join(", ")}>{band.stages.join(", ")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
             {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New instead</Button> : null}
