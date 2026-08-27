@@ -299,6 +299,8 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [filterStatus, setFilterStatus] = useState<string | "all">("all");
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
+  const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
+  const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [restartFocusKey, setRestartFocusKey] = useState(0);
 
   const load = useCallback(async (targetId: string | null) => {
@@ -309,8 +311,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
         rpc.call("listCards", { projectId: targetId }).catch(() => ({ cards: [] })),
       ]);
       setProjects(projectsResult?.projects ?? []);
-      setCards(cardsResult.cards);
-    } catch (error) {
+      setCards(cardsResult.cards);    } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       setProjects([]);
       setCards([]);
@@ -421,7 +422,25 @@ function BoardPanel({ subPath }: { subPath: string }) {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">Stelow board</h1>
               <span className="text-xs text-muted-foreground">· {cards.filter(isLiveCard).length} cards · {inbox.length} need attention</span>
+              <div className="flex-1" />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void rpc.call("listPresets", {}).then((result) => setBoardPresets(result.presets)).catch(() => setBoardPresets([]));
+                  setBoardPresetsOpen(true);
+                }}
+              >
+                Presets
+              </Button>
             </div>
+            <PresetManagerDialog
+              open={boardPresetsOpen}
+              onOpenChange={setBoardPresetsOpen}
+              rpc={rpc}
+              presets={boardPresets}
+              onChanged={async () => { const result = await rpc.call("listPresets", {}).catch(() => ({ presets: [] })); setBoardPresets(result.presets); }}
+            />
             <p className="text-sm text-muted-foreground">Describe a request below to start a workflow. The agent runs in the background and posts updates here.</p>
           </div>
 

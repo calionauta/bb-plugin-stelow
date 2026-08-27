@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Presets are configurable from the board header.** A **Presets** button in
+  the Stelow board header opens the preset manager (create/edit/delete,
+  set default, and the per-workflow-phase presets) without digging into a
+  single card's drawer. The card-drawer entry point is unchanged.
+
 - **Respawn reliability for phase-preset transitions.** The band-boundary
   respawn now resolves the real per-workflow state dir (from `stelow.json`)
   instead of guessing the current date, retires the old worker only after the
