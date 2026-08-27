@@ -32,6 +32,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Status vs. activity: distinct, non-competing visuals.** `status` (the
+  workflow's column anchor, e.g. "In progress") stays a solid pill; `activity`
+  (the transient worker state) is subordinated as a dashed pill with its own
+  glyphs — working (breathing dot), waiting-for-you (amber hourglass), error
+  (red X). A worker resting in the normal idle state renders **no** activity
+  badge, so a card no longer shows a jarring "Paused" beside "In progress".
+  The play glyph is now reserved for the working state only; `in-progress`
+  uses a solid dot instead, removing the play-icon collision that made a card
+  read as both running and paused at once.
+
 - **Artifacts are clickable right in the agent's message.** Stage skills now
   emit a `::stelow-artifact{path="…" display="…"}` message directive per
   artifact, rendered by a new plugin `messageDirective` as a clickable chip

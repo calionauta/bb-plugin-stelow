@@ -139,28 +139,12 @@ type CardComment = CardDetailResponse["comments"][number];
 type CardQuestion = CardDetailResponse["pendingQuestions"][number];
 type ExpiredQuestion = CardDetailResponse["expiredQuestions"][number];
 
-function activityGlyph(activity: CardItem["activity"]) {
-  if (activity === "running") return "▶";
-  if (activity === "awaiting-answer") return "?";
-  if (activity === "error") return "✗";
-  if (activity === "idle") return "⏸";
-  return "✓";
-}
-
 function activityLabel(activity: CardItem["activity"]) {
   if (activity === "idle") return "Paused";
-  if (activity === "running") return "Agent working";
-  if (activity === "awaiting-answer") return "Question for you";
+  if (activity === "running") return "Working";
+  if (activity === "awaiting-answer") return "Waiting for you";
   if (activity === "error") return "Failed";
   return activity;
-}
-
-function activityTone(activity: CardItem["activity"]) {
-  if (activity === "running") return "bg-primary/15 text-primary";
-  if (activity === "awaiting-answer") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
-  if (activity === "error") return "bg-destructive/15 text-destructive";
-  if (activity === "idle") return "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300";
-  return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
 }
 
 function statusTone(status: string) {
@@ -179,7 +163,7 @@ function statusGlyph(status: string) {
   if (status === "blocked") return "⚠";
   if (status === "escalated") return "↑";
   if (status === "failed") return "✗";
-  if (status === "in-progress" || status === "approved") return "▶";
+  if (status === "in-progress" || status === "approved") return "●";
   if (status === "awaiting-answer") return "?";
   if (status === "archived") return "○";
   return "·";
@@ -187,6 +171,37 @@ function statusGlyph(status: string) {
 
 function Pill({ children, tone = "bg-muted text-muted-foreground", className = "" }: { children: React.ReactNode; tone?: string; className?: string }) {
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
+}
+
+// Activity is a transient worker state — subordinated to the status pill and
+// given a distinct (dashed) visual so it reads as "suspended/transient", never
+// as a competing solid state. Repose (idle with nothing pending) renders
+// nothing: a paused worker is the normal resting state, not an alert.
+const ACTIVITY_PILL_CLASS: Record<string, string> = {
+  running: "stelow-activity-working",
+  "awaiting-answer": "stelow-activity-waiting",
+  error: "stelow-activity-error",
+};
+const ACTIVITY_GLYPH: Record<string, string> = {
+  running: "●",
+  "awaiting-answer": "⏳",
+  error: "✗",
+};
+const ACTIVITY_TITLE: Record<string, string> = {
+  running: "Worker is actively working",
+  "awaiting-answer": "Waiting for your answer",
+  error: "Worker failed — needs attention",
+};
+
+function ActivityPill({ activity }: { activity: CardItem["activity"] }) {
+  const cls = ACTIVITY_PILL_CLASS[activity];
+  if (!cls) return null; // idle (repose) renders nothing
+  return (
+    <span className={`stelow-activity-pill ${cls}`} title={ACTIVITY_TITLE[activity]}>
+      <span aria-hidden>{ACTIVITY_GLYPH[activity]}</span>
+      {activityLabel(activity)}
+    </span>
+  );
 }
 
 const DEBOUNCE_MS = 250;
@@ -623,7 +638,7 @@ function BoardCard({ card }: { card: CardItem }) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
-        <Pill tone={activityTone(card.activity)} className="shrink-0 whitespace-nowrap"><span className={`mr-1 inline-block ${running ? "stelow-pill-working rounded-full px-1" : ""}`}>{activityGlyph(card.activity)}</span>{activityLabel(card.activity)}</Pill>
+        <ActivityPill activity={card.activity} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <Pill className="whitespace-nowrap">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
@@ -688,7 +703,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         {card ? <span className="ml-2 text-muted-foreground">· {statusLabel(card.status)}{card.status !== card.stage ? ` · ${stageLabel(card.stage)}` : ""}</span> : null}
       </nav>
       {card ? <>
-        {card.activity !== card.status ? <Pill tone={activityTone(card.activity)}><span className="mr-1">{activityGlyph(card.activity)}</span>{activityLabel(card.activity)}</Pill> : null}
+        <ActivityPill activity={card.activity} />
         <Pill tone={statusTone(card.status)}><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill>
       </> : null}
       <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
@@ -1306,6 +1321,16 @@ function PillsyStyles() {
     ".stelow-board-card.stelow-border-attention { border-color: hsl(38 92% 50% / 0.85) !important; box-shadow: 0 0 0 3px hsl(38 92% 50% / 0.12); }",
     "@keyframes stelow-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }",
     ".stelow-pill-working { background: linear-gradient(90deg, hsl(220 90% 60% / 0.18), hsl(280 80% 60% / 0.45), hsl(220 90% 60% / 0.18)); background-size: 200% 100%; animation: stelow-shimmer 1.6s linear infinite; color: hsl(220 90% 40%); }",
+    "@keyframes stelow-breathe { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }",
+    ".stelow-activity-pill { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 9999px; padding: 0.125rem 0.5rem; font-size: 11px; line-height: 18px; font-weight: 500; border-width: 1px; border-style: dashed; }",
+    ".stelow-activity-onhold { border-color: hsl(240 5% 55% / 0.55); color: hsl(240 3% 45%); background: transparent; }",
+    ".stelow-activity-waiting { border-color: hsl(38 92% 45% / 0.7); color: hsl(38 80% 28%); background: hsl(38 92% 45% / 0.10); }",
+    ".stelow-activity-error { border-color: hsl(0 84% 55% / 0.7); color: hsl(0 70% 40%); background: hsl(0 84% 55% / 0.08); }",
+    ".stelow-activity-working { border-color: hsl(220 90% 60% / 0.6); color: hsl(220 60% 40%); background: hsl(220 90% 60% / 0.08); animation: stelow-breathe 1.8s ease-in-out infinite; }",
+    ".dark .stelow-activity-onhold { border-color: hsl(240 5% 60% / 0.5); color: hsl(240 10% 70%); }",
+    ".dark .stelow-activity-waiting { border-color: hsl(38 92% 55% / 0.65); color: hsl(40 80% 75%); }",
+    ".dark .stelow-activity-error { border-color: hsl(0 84% 60% / 0.65); color: hsl(0 80% 80%); }",
+    ".dark .stelow-activity-working { border-color: hsl(220 90% 65% / 0.6); color: hsl(220 70% 80%); }",
   ].join("\n");
   document.head.appendChild(style);
   return null;
