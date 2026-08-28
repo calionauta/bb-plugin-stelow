@@ -172,7 +172,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ reseeded: z.boolean(), error: z.string().nullable() }),
   },
   moveCard: {
-    input: z.object({ cardId: z.string(), status: statusSchema }).strict(),
+    input: z.object({ cardId: z.string(), status: z.enum(["analysis", "planning", "execution", "review", "completed", "archived"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   markCardSeen: {
@@ -1402,7 +1402,17 @@ ${card.prompt}`,
     async moveCard({ cardId, status }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, error: "Card not found." };
-      updateCard(cardId, { status });
+      // Board columns are phases + terminals. Moving to a phase sets the card's
+      // stage to that phase's entry stage (stage drives the column); moving to a
+      // terminal sets status.
+      const BAND_ENTRY_STAGE: Record<string, string> = { analysis: "triage", planning: "critique", execution: "execution", review: "diff-gate" };
+      if (status === "completed" || status === "archived") {
+        updateCard(cardId, { status });
+      } else {
+        const entry = BAND_ENTRY_STAGE[status];
+        if (!entry) return { ok: false, error: "Unknown phase." };
+        updateCard(cardId, { stage: entry, status: entry === "triage" ? "draft" : "in-progress" });
+      }
       return { ok: true, error: null };
     },
 

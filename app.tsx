@@ -34,16 +34,6 @@ type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][numbe
 
 type ProjectsResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R ? Extract<R, { projects?: unknown }> : never;
 
-const COLUMNS = ["draft", "planning", "in-progress", "completed", "blocked", "archived"] as const;
-const COLUMN_LABELS: Record<string, string> = {
-  draft: "Triage",
-  planning: "Shaping",
-  "in-progress": "Running",
-  completed: "Done",
-  blocked: "Blocked",
-  archived: "Archived",
-};
-
 const INTENT_LABEL: Record<string, string> = {
   "new-product": "New product",
   feature: "Feature",
@@ -131,6 +121,27 @@ const STAGE_BAND: Record<string, string> = {
   "diff-gate": "review", audit: "review",
 };
 const BAND_LABEL: Record<string, string> = { analysis: "Analyse", planning: "Plan", execution: "Execute", review: "Review" };
+// Board columns ARE the workflow phases + terminals. Active cards sit in the
+// column of their current phase (STAGE_BAND[stage]); a card is a board column,
+// not a status. Terminals: completed / archived. Blocked was removed because
+// stelow never records a card-level blocked status (only scope/task-level
+// dependencies).
+const BOARD_COLUMNS = ["analysis", "planning", "execution", "review", "completed", "archived"] as const;
+const COLUMNS = BOARD_COLUMNS;
+const COLUMN_LABELS: Record<string, string> = {
+  analysis: BAND_LABEL.analysis,
+  planning: BAND_LABEL.planning,
+  execution: BAND_LABEL.execution,
+  review: BAND_LABEL.review,
+  completed: "Done",
+  archived: "Archived",
+};
+// Which board column a card belongs to: terminal for archived/completed,
+// otherwise its stage's phase.
+function boardColumnOf(card: Pick<CardItem, "status" | "stage">): string {
+  if (card.status === "archived" || card.status === "completed") return card.status;
+  return STAGE_BAND[card.stage] ?? "analysis";
+}
 
 function stageLabel(stage: string) {
   return STAGE_LABELS[stage] ?? stage;}
@@ -259,11 +270,8 @@ interface RunningAccessoryHandle {
   tone: string;
 }
 
-// Canonical "live" definition shared by the sidebar badge and the board header:
-// cards that are actively being worked or waiting on the user. Archived,
-// completed, and blocked cards are excluded.
-const LIVE_STATUSES = new Set(["in-progress", "awaiting-answer", "draft", "planning"]);
-const isLiveCard = (card: { status: string }) => LIVE_STATUSES.has(card.status);
+// 'Live' = in any workflow phase (not a terminal). Archived/completed excluded.
+const isLiveCard = (card: { status: string }) => card.status !== "archived" && card.status !== "completed";
 
 function useRunningAccessory(): RunningAccessoryHandle {
   const rpc = useRpc<typeof rpcContract>();
@@ -356,7 +364,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const filteredCards = useMemo(() => cards.filter((card) => {
     if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
     if (filterIntent !== "all" && card.intent !== filterIntent) return false;
-    if (filterStatus !== "all" && card.status !== filterStatus) return false;
+    if (filterStatus !== "all" && boardColumnOf(card) !== filterStatus) return false;
     if (filterActivity !== "all" && card.activity !== filterActivity) return false;
     if (filterStage !== "all" && card.stage !== filterStage) return false;
     if (filterAttention && !card.needsAttention) return false;
@@ -366,8 +374,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const grouped = useMemo(() => {
     const groups: Record<string, CardItem[]> = Object.fromEntries(COLUMNS.map((column) => [column, []]));
     for (const card of filteredCards) {
-      const column = (COLUMNS as readonly string[]).includes(card.status) ? card.status : "draft";
-      (groups[column] ?? groups.draft).push(card);
+      (groups[boardColumnOf(card)] ?? groups.analysis).push(card);
     }
     for (const column of Object.keys(groups)) {
       groups[column]!.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -403,7 +410,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
 
   async function moveCard(cardId: string, target: string) {
     if (!(COLUMNS as readonly string[]).includes(target)) return;
-    const result = await rpc.call("moveCard", { cardId, status: target as CardItem["status"] });
+    const result = await rpc.call("moveCard", { cardId, status: target as "analysis" | "planning" | "execution" | "review" | "completed" | "archived" });
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 

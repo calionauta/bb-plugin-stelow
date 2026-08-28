@@ -10,9 +10,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
-### Added
-
-### Added
+- **Board columns are the workflow phases.** Columns are now
+  Analysis → Planning → Execution → Review (+ Done, Archived) instead of
+  abstract lifecycle states (Triage/Shaping/Running). An active card sits in
+  the column of its current phase (derived from its stage), so the board
+  visualizes exactly where in the workflow each card is. The `blocked` column
+  is removed — stelow never records card-level `blocked` status (only
+  scope/task dependencies, which stay in the card). Drag & drop a card to a
+  phase column moves it to that phase's entry stage; dropping on Done/Archived
+  sets the terminal status. Needs-attention remains an overlay (badge + count)
+  across any phase column.
 
 - **Workflow timeline in the card detail.** The 17 stages now render as a
   vertical timeline grouped by phase (Analyse / Plan / Execute / Review),
