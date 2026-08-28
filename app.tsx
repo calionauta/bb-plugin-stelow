@@ -206,6 +206,17 @@ function ActivityPill({ activity }: { activity: CardItem["activity"] }) {
 
 const DEBOUNCE_MS = 250;
 
+// Unified attention: ONE flag (needsAttention) + the reason (kind). All four
+// causes read as "needs you" with a different primary action — never a
+// separate visual state.
+type AttentionKind = "question" | "error" | "completed" | "idle";
+const ATTENTION_LABEL: Record<AttentionKind, string> = {
+  question: "Answer required",
+  error: "Worker failed",
+  completed: "Ready to review",
+  idle: "Paused — resume it",
+};
+
 function useDebouncedRealtime(channels: readonly string[], handler: () => void, delayMs = DEBOUNCE_MS) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
@@ -326,14 +337,14 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const activeProjectId = boardProjectId ?? routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const reason = !activeProjectId ? "Select a normal bb project (not the singleton Personal project) in the sidebar." : !prompt.trim() ? "Describe a product request to start the workflow." : null;
-  const inbox = cards.filter((card) => card.actionRequired && card.status !== "archived");
+  const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
   const filteredCards = useMemo(() => cards.filter((card) => {
     if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
     if (filterIntent !== "all" && card.intent !== filterIntent) return false;
     if (filterStatus !== "all" && card.status !== filterStatus) return false;
     if (filterActivity !== "all" && card.activity !== filterActivity) return false;
     if (filterStage !== "all" && card.stage !== filterStage) return false;
-    if (filterAttention && !card.actionRequired) return false;
+    if (filterAttention && !card.needsAttention) return false;
     return true;
   }), [cards, filterProjectId, filterIntent, filterStatus, filterActivity, filterStage, filterAttention]);
   const stageOptions = useMemo(() => Array.from(new Set(cards.map((card) => card.stage))).sort(), [cards]);
@@ -623,7 +634,8 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
 
 function BoardCard({ card }: { card: CardItem }) {
   const navigate = useBbNavigate();
-  const attention = card.actionRequired;
+  const attention = card.needsAttention;
+  const kind = card.attentionKind;
   const running = card.activity === "running";
   const borderClass = running
     ? "stelow-border-running"
@@ -664,7 +676,12 @@ function BoardCard({ card }: { card: CardItem }) {
         <Pill tone={statusTone(card.status)} className="whitespace-nowrap"><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill>
         <span className="ml-auto truncate rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">{stageLabel(card.stage)}</span>
       </div>
-      {attention ? <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"><span aria-hidden className="size-1.5 rounded-full bg-amber-500" />Needs your attention</div> : null}
+      {attention && kind ? (
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+          <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
+          <span>{ATTENTION_LABEL[kind]}</span>
+        </div>
+      ) : null}
       {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
       {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
     </button>
@@ -1136,10 +1153,10 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
     }
   }
 
-  // Repair is available whenever the worker is not running on an unfinished
-  // card — a stopped worker may have left a step incomplete. Server computes
-  // needsRepair so this never depends on a timing heuristic.
-  const showRepair = Boolean(card?.needsRepair);
+  // Resume (formerly Repair) is the primary action whenever the worker is
+  // idle on an unfinished card — a stopped worker may have left a step
+  // incomplete. Derived from the unified attentionKind.
+  const showResume = card?.attentionKind === "idle";
   const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
 
   return (
@@ -1298,9 +1315,9 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
       </div>
       <footer className="flex flex-wrap gap-1 border-t p-3">
         {card?.workerThreadId ? <Button size="sm" variant="outline" onClick={() => navigate.toThread(card.workerThreadId ?? "")}>Open thread</Button> : null}
-        {showRepair ? (
+        {showResume ? (
           <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)}>
-            Repair
+            Resume
           </Button>
         ) : null}
         <Button size="sm" variant="outline" onClick={() => setArchiveOpen(true)}>Archive</Button>

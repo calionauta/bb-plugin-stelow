@@ -10,6 +10,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Attention is unified.** The board no longer distinguishes "needs
+  attention" from "needs repair" as separate visual states. A single flag
+  (`needsAttention`) answers "does this card need a human now?", and a `kind`
+  (`question` / `error` / `completed` / `idle`) picks the reason and its action.
+  Idle-stuck cards now count as needing attention, so a stopped worker on an
+  active card is no longer invisible on the board. Idle only surfaces after
+  the worker has sat idle ~90s (two reconcile cycles), so a card that merely
+  finished a turn is not falsely flagged. The card detail's "Repair" is now
+  "Resume".
+
 - **Presets are configurable from the board header.** A **Presets** button in
   the Stelow board header opens the preset manager (create/edit/delete,
   set default, and the per-workflow-phase presets) without digging into a

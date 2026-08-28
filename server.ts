@@ -137,7 +137,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), actionRequired: z.boolean(), needsRepair: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), attentionKind: z.enum(["question", "error", "completed", "idle"]).nullable(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
   },
   createCard: {
     input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), presetId: z.string().nullable().optional() }).strict(),
@@ -150,7 +150,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsRepair: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), attentionKind: z.enum(["question", "error", "completed", "idle"]).nullable(), presetName: z.string().nullable(), updatedAt: z.number() }),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
@@ -682,6 +682,9 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "last_seen_question_at")) {
     db.exec("ALTER TABLE cards ADD COLUMN last_seen_question_at INTEGER");
   }
+  if (!cardColumns.some((column) => column.name === "last_idle_at")) {
+    db.exec("ALTER TABLE cards ADD COLUMN last_idle_at INTEGER");
+  }
   if (!cardColumns.some((column) => column.name === "dir_hash")) {
     db.exec("ALTER TABLE cards ADD COLUMN dir_hash TEXT");
   }
@@ -730,7 +733,7 @@ export default async function plugin(bb: BbPluginApi) {
   function now(): number { return Date.now(); }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type PresetRow = {
     id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
@@ -945,13 +948,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
       } else if (status === "idle") {
         const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(cardId) as { id: string } | undefined;
+        const transitioningIntoIdle = card.activity !== "idle";
         if (expiredPending) {
           // The worker stopped (likely a timed-out ask) but a question is
           // still unanswered — keep the card in Gate pending so it does not
           // look abandoned. Answering it on the card resumes the thread.
           updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
         } else {
-          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput });
+          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: transitioningIntoIdle ? now() : card.last_idle_at });
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
           db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
@@ -984,6 +988,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // plugin event API): periodically reconcile live cards so interrupts,
   // missed transitions and stale states self-heal without event delivery.
   const RECONCILE_MS = 45_000;
+  // An idle card needs attention only after it has sat idle continuously for
+  // this long (two reconcile cycles). A worker that just finished a turn is
+  // idle for a few seconds before being resumed — not an attention item.
+  const IDLE_ATTENTION_MS = 90_000;
   const reconcileTimer = setInterval(() => {
     if (!(db as unknown as { open?: boolean }).open) return;
     try {
@@ -1102,8 +1110,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const projectsList = await bb.sdk.projects.list();
       const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
       const enriched = await Promise.all(rows.map(async (row) => {
-        let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";
-        if (activity !== "error" && row.worker_thread_id) {
+        let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";        if (activity !== "error" && row.worker_thread_id) {
           // A pending stelow ask interaction must surface regardless of whether
           // the thread currently reports running or idle: an ask parks the card
           // until answered, and idle (vs "waiting") is indistinguishable from a
@@ -1111,16 +1118,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           const pending = await fetchPendingQuestions(row.worker_thread_id);
           if (pending.length > 0) activity = "awaiting-answer";
         }
-        const actionRequired = (activity === "awaiting-answer" && (row.last_seen_question_at ?? 0) < row.updated_at)
-          || (Boolean(row.last_error) && (row.last_seen_error_at ?? 0) < row.updated_at)
-          || (activity === "error" && (row.last_seen_error_at ?? 0) < row.updated_at)
-          || (normalizeStatus(row.status) === "completed" && (row.last_seen_completed_at ?? 0) < row.updated_at);
-        // A worker that stopped idle on an unfinished card (no pending ask, no
-        // error) may have left a step incomplete. Show Repair only then — an
-        // awaiting-answer or error card already has a clear action (answer/repair).
-        const needsRepair = activity === "idle"
+        // Unified attention signal: ONE flag answering "does this card need a
+        // human right now?", plus the reason (kind) that decides the primary
+        // action (answer / inspect / review / retake). The four causes are
+        // surfaced identically — only the verb differs — so idle-stuck,
+        // question, error and completion all count as "needs attention".
+        const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
+        const idleStuck = activity === "idle"
           && row.worker_thread_id !== null
-          && !["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
+          && !termStatus
+          && (row.last_idle_at ?? 0) > 0
+          && now() - (row.last_idle_at ?? 0) >= IDLE_ATTENTION_MS;
+        const questionPending = activity === "awaiting-answer" && (row.last_seen_question_at ?? 0) < row.updated_at;
+        const errorPending = (Boolean(row.last_error) || activity === "error") && (row.last_seen_error_at ?? 0) < row.updated_at;
+        const completedPending = normalizeStatus(row.status) === "completed" && (row.last_seen_completed_at ?? 0) < row.updated_at;
+        const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : completedPending ? "completed" : null) as "question" | "error" | "completed" | "idle" | null;
+        const needsAttention = attentionKind !== null;
         const preset = getPresetForCard(row.id);
         return {
           id: row.id,
@@ -1135,8 +1148,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           workerThreadId: row.worker_thread_id,
           activity,
           lastError: row.last_error,
-          actionRequired,
-          needsRepair,
+          needsAttention,
+          attentionKind,
           presetName: preset.name,
           updatedAt: row.updated_at,
         };
@@ -1241,9 +1254,20 @@ ${prompt}`,
       // Surface pending stelow ask interactions regardless of the stored activity:
       // an ask parks the card awaiting an answer even when the thread is idle.
       const effectiveActivity = (card.activity === "error" ? "error" : pending.length > 0 ? "awaiting-answer" : card.activity as "idle" | "running" | "awaiting-answer" | "error");
+      const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(card.status));
+      const idleStuck = effectiveActivity === "idle"
+        && card.worker_thread_id !== null
+        && !termStatus
+        && (card.last_idle_at ?? 0) > 0
+        && now() - (card.last_idle_at ?? 0) >= IDLE_ATTENTION_MS;
+      const attentionKind = (idleStuck ? "idle"
+        : (effectiveActivity === "awaiting-answer" && (card.last_seen_question_at ?? 0) < card.updated_at) ? "question"
+        : ((Boolean(card.last_error) || effectiveActivity === "error") && (card.last_seen_error_at ?? 0) < card.updated_at) ? "error"
+        : (normalizeStatus(card.status) === "completed" && (card.last_seen_completed_at ?? 0) < card.updated_at) ? "completed"
+        : null) as "question" | "error" | "completed" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsRepair: effectiveActivity === "idle" && card.worker_thread_id !== null && !["completed", "archived", "blocked"].includes(normalizeStatus(card.status)), presetName: preset.name, updatedAt: card.updated_at },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, attentionKind, presetName: preset.name, updatedAt: card.updated_at },
         mentionedFiles,
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
