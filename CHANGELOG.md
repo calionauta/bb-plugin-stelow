@@ -10,6 +10,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Scopes/tasks are ordered and dependencies are explicit.** The card's
+  Scopes list is now sorted **topologically by dependency** — a scope that
+  depends on or is blocked by another appears after it, so reading top→bottom
+  follows execution order. Tasks within a scope are sorted by progress
+  (in-progress → pending → blocked → done). A scope waiting on an unfinished
+  dependency gets a ⛔ "waiting on N" badge and an amber border; dependency
+  chips show the scope's real name and turn amber when its dependency isn't
+  done yet (missing deps shown as dashed). No framework, all client-side
+  (topological sort + status rank).
+
 - **Board columns are the workflow phases.** Columns are now
   Analysis → Planning → Execution → Review (+ Done, Archived) instead of
   abstract lifecycle states (Triage/Shaping/Running). An active card sits in

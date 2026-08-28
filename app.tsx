@@ -836,36 +836,97 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
   );
 }
 
+
+// Status rank for sorting work (tasks): active first, then committed, then
+// blocked, then finished. Used to give a sensible vertical reading.
+const STATUS_RANK: Record<string, number> = {
+  "in-progress": 0,
+  draft: 1,
+  planning: 1,
+  pending: 1,
+  blocked: 2,
+  failed: 2,
+  skipped: 3,
+  done: 4,
+  completed: 4,
+};
+const statusRank = (s: string | undefined) => STATUS_RANK[s ?? ""] ?? 3;
+
+// Topological order of scopes by dependency. A scope that depends on / is
+// blocked by another comes AFTER its dependency, so reading top→bottom follows
+// execution order. Ties keep the original (state.md) order — deterministic.
+// Returns scopes in dependency-order plus a map of scope-id → ids it is
+// waiting on (dependencies not yet finished).
+function orderScopes(scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]): { ordered: typeof scopes; waitingOn: Map<string, string[]> } {
+  const byId = new Map(scopes.map((s) => [s.id, s]));
+  const done = new Set(scopes.filter((s) => ["done", "completed"].includes(s.status ?? "")).map((s) => s.id));
+  // dependency ids: dependsOn must precede; blockedBy must precede
+  const deps = (s: (typeof scopes)[number]) => [
+    ...(s.dependsOn ?? []).filter((id) => byId.has(id)),
+    ...(s.blockedBy ?? []).filter((id) => byId.has(id)),
+  ];
+  const ordered: typeof scopes = [];
+  const placed = new Set<string>();
+  const chain = new Set<string>();
+  const waitingOn = new Map<string, string[]>();
+  const visit = (s: (typeof scopes)[number]): void => {
+    if (placed.has(s.id)) return;
+    if (chain.has(s.id)) return; // cycle guard: keep original position
+    chain.add(s.id);
+    // visit each live dependency first (finished deps are fine in any order)
+    for (const depId of deps(s)) {
+      const dep = byId.get(depId);
+      if (dep && !done.has(depId)) visit(dep); // still-pending deps push order
+    }
+    chain.delete(s.id);
+    placed.add(s.id);
+    ordered.push(s);
+    const wait = deps(s).filter((id) => !done.has(id));
+    if (wait.length) waitingOn.set(s.id, wait);
+  };
+  scopes.forEach(visit);
+  return { ordered, waitingOn };
+}
+
 function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"] }) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set(scopes.filter((scope) => scope.status === "in-progress").map((scope) => scope.id)));
+  const { ordered, waitingOn } = orderScopes(scopes);
+  const byId = new Map(scopes.map((s) => [s.id, s]));
+  const finished = (id: string) => ["done", "completed"].includes(byId.get(id)?.status ?? "");
   return (
     <section className="space-y-2">
       <h3 className="text-sm font-semibold">Scopes ({scopes.length})</h3>
-      {scopes.map((scope) => {
+      {scopes.length > 1 ? <p className="text-[11px] text-muted-foreground">Ordered by dependency — a scope that depends on another appears after it; ⛔ marks one waiting on an unfinished dependency.</p> : null}
+      {ordered.map((scope) => {
         const isOpen = openIds.has(scope.id);
+        const wait = waitingOn.get(scope.id) ?? [];
+        const blockedNow = wait.length > 0;
+        const tasksSorted = [...scope.tasks].sort((a, b) => statusRank(a.status) - statusRank(b.status));
         return (
-          <details key={scope.id} open={isOpen} onToggle={(event) => { const next = new Set(openIds); if ((event.currentTarget as HTMLDetailsElement).open) next.add(scope.id); else next.delete(scope.id); setOpenIds(next); }} className={`rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : "border-border"}`}>
+          <details key={scope.id} open={isOpen} onToggle={(event) => { const next = new Set(openIds); if ((event.currentTarget as HTMLDetailsElement).open) next.add(scope.id); else next.delete(scope.id); setOpenIds(next); }} className={`rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
             <summary className="cursor-pointer list-none space-y-1">
               <div className="flex flex-wrap items-center gap-1">
                 <span className="font-mono text-xs text-muted-foreground">{scope.id}</span>
                 <span className="font-medium">{scope.name}</span>
                 {scope.type ? <Pill>{scope.type}</Pill> : null}
                 <Pill tone={statusTone(scope.status)}><span className="mr-1">{statusGlyph(scope.status)}</span>{statusLabel(scope.status)}</Pill>
+                {blockedNow ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={wait.join(", ")}>⛔ waiting on {wait.length}</span> : null}
               </div>
               {(scope.blockedBy?.length || scope.dependsOn?.length) ? (
                 <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-                  {scope.blockedBy?.map((dep) => <span key={dep} className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5">blocked by {dep}</span>)}
-                  {scope.dependsOn?.map((dep) => <span key={dep} className="rounded-md border px-2 py-0.5">after {dep}</span>)}
+                  {scope.dependsOn?.filter((id) => byId.has(id)).map((dep) => <span key={dep} className={`rounded-md border px-2 py-0.5 ${finished(dep) ? "border-border" : "border-amber-500/40 bg-amber-500/10"}`}>after {byId.get(dep)!.name}</span>)}
+                  {scope.blockedBy?.filter((id) => byId.has(id)).map((dep) => <span key={dep} className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5">blocked by {byId.get(dep)!.name}</span>)}
+                  {scope.dependsOn?.filter((id) => !byId.has(id)).map((dep) => <span key={dep} className="rounded-md border border-dashed px-2 py-0.5">after {dep} (missing)</span>)}
                 </div>
               ) : null}
             </summary>
             <div className="mt-3 space-y-1 border-l pl-3">
-              {scope.tasks.length === 0 ? <p className="text-xs text-muted-foreground">No tasks tracked.</p> : scope.tasks.map((task) => (
+              {tasksSorted.length === 0 ? <p className="text-xs text-muted-foreground">No tasks tracked.</p> : tasksSorted.map((task) => (
                 <div key={task.id} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 font-mono">{statusGlyph(task.status)}</span>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span>{task.name}</span>
+                      <span className={statusRank(task.status) === 4 ? "line-through text-muted-foreground" : ""}>{task.name}</span>
                       <span className="text-xs text-muted-foreground">({statusLabel(task.status)})</span>
                       {task.source ? <Pill>{task.source}</Pill> : null}
                     </div>
