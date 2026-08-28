@@ -81,6 +81,10 @@ A preset is a named provider/model reasoning/permission (plus optional
 environment, base branch, machine, and instructions) profile. Cards remember
 their preset; the worker thread is spawned with that profile.
 
+When the provider is **Pi**, the preset picker intentionally shows only the
+configured Bifrost routes: Harness Coding, GPT-5.6 Sol, Terra, and Luna. It
+does not expose Pi's unrelated OpenCode/OpenRouter route catalog.
+
 ```bash
 bb stelow preset list
 bb stelow preset add --name "Deep shape" --model gpt-5 --reasoning high

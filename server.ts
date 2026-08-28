@@ -45,6 +45,16 @@ const STAGE_TO_BAND: Record<string, string> = Object.fromEntries(
   Object.entries(STAGE_BANDS).flatMap(([band, stages]) => stages.map((stage) => [stage, band])),
 );
 
+// Pi exposes every route it can delegate to (OpenRouter, OpenCode, Bifrost,
+// etc.). Stelow's Pi presets intentionally offer only the configured Bifrost
+// routes used by this installation, keeping the picker actionable.
+const PI_BIFROST_PRESET_MODELS = [
+  { model: "bifrost/harness-coding", displayName: "Harness Coding (Bifrost)" },
+  { model: "bifrost/gpt-5.6-sol", displayName: "GPT-5.6 Sol (ChatGPT via Bifrost)" },
+  { model: "bifrost/gpt-5.6-terra", displayName: "GPT-5.6 Terra (ChatGPT via Bifrost)" },
+  { model: "bifrost/gpt-5.6-luna", displayName: "GPT-5.6 Luna (ChatGPT via Bifrost)" },
+] as const;
+
 const statusSchema = z.enum([
   "draft",
   "planning",
@@ -1633,6 +1643,13 @@ ${card.prompt}`,
       const models: Array<{ providerId: string; model: string; displayName: string }> = [];
       for (const provider of providers) {
         const result = await bb.sdk.providers.models({ providerId: provider.id }).catch(() => null);
+        if (provider.id === "pi") {
+          const catalog = new Map((result?.models ?? []).map((model) => [model.model, model.displayName]));
+          for (const model of PI_BIFROST_PRESET_MODELS) {
+            models.push({ providerId: "pi", model: model.model, displayName: catalog.get(model.model) ?? model.displayName });
+          }
+          continue;
+        }
         for (const model of result?.models ?? []) {
           models.push({ providerId: provider.id, model: model.model, displayName: model.displayName });
         }

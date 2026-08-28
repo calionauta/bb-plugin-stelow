@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Focused Pi preset routes.** The Pi model picker now lists only its intended
+  Bifrost routes — Harness Coding plus GPT-5.6 Sol, Terra, and Luna — instead
+  of exposing Pi's unrelated OpenCode/OpenRouter catalog. The selected
+  Harness Coding route remains present when the picker opens.
+
 - **Reliable preset create/edit mode.** New presets now begin with a `null`
   identifier, immediately switch to edit mode after creation, and expose a
   clear **New preset** action. Existing accidental empty-ID presets are
