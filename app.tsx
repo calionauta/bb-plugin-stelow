@@ -144,7 +144,13 @@ function boardColumnOf(card: Pick<CardItem, "status" | "stage">): string {
 }
 
 function stageLabel(stage: string) {
-  return STAGE_LABELS[stage] ?? stage;}
+  return STAGE_LABELS[stage] ?? stage;
+}
+// Position of a stage in the canonical sequence (-1 if unknown).
+function stageIndex(stage: string) {
+  return STAGE_SEQUENCE.indexOf(stage);
+}
+
 
 const FILTER_INTENT_OPTIONS = [{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))];
 const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
@@ -744,8 +750,7 @@ function StageTimeline({ currentStage, nextStages, onPick }: { currentStage: str
                 const idx = STAGE_SEQUENCE.indexOf(stage);
                 const passed = idx >= 0 && idx < current;
                 const isCurrent = stage === currentStage;
-                const upcoming = idx > current;
-                const canAdvance = upcoming && legal.has(stage);
+                const canAdvance = idx === current + 1 && legal.has(stage);
                 const canRegress = passed && !isCurrent;
                 const clickable = canAdvance || canRegress;
                 return (
@@ -775,7 +780,7 @@ function StageTimeline({ currentStage, nextStages, onPick }: { currentStage: str
           </div>
         );
       })}
-      <p className="text-[11px] text-muted-foreground">Click a future stage to advance, a passed one to go back — one step at a time. The agent usually advances on its own.</p>
+      <p className="text-[11px] text-muted-foreground">→ advance one step at a time (gates apply); ← go back any number of steps. The agent usually advances on its own.</p>
     </div>
   );
 }
@@ -1210,24 +1215,19 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
-  const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean }>>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [presetSwitching, setPresetSwitching] = useState(false);
-  const [presetsOpen, setPresetsOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const detailResult = await rpc.call("cardDetail", { cardId });
       const listResult = await rpc.call("listCards", { projectId: detailResult.card.projectId });
-      const presetsResult = await rpc.call("listPresets", {}).catch(() => ({ presets: [] }));
       setDetail(detailResult);
       setCard(listResult.cards.find((entry) => entry.id === cardId) ?? null);
-      setPresets(presetsResult.presets);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load card.");
@@ -1268,25 +1268,6 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
     }
     toast.success("Workflow repaired. Agent restarts from triage.");
     await load();
-  }
-
-  async function switchPreset(presetId: string | null) {
-    setPresetSwitching(true);
-    try {
-      const result = await rpc.call("assignPreset", { cardId, presetId });
-      if (!result.ok) {
-        toast.error(result.error ?? "Could not switch preset.");
-        return;
-      }
-      if (presetId) {
-        toast.success("Preset assigned. Repair to restart the worker thread with the new preset.");
-      } else {
-        toast.success("Preset cleared. Card will use the default preset on next start.");
-      }
-      await load();
-    } finally {
-      setPresetSwitching(false);
-    }
   }
 
   async function advance(stage: string) {
@@ -1415,30 +1396,12 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
               </section>
             ) : null}
 
-            <section className="space-y-2">
+            <section className="space-y-1">
               <h3 className="text-sm font-semibold">Agent preset</h3>
-              <p className="text-xs text-muted-foreground">Changes the provider/model/permission mode used on the next worker start. Repair to restart the worker now.</p>
+              <p className="text-xs text-muted-foreground">Presets are configured globally per workflow phase from the board's <strong>Presets</strong> button — not per card. This card is in the <strong>{stageLabel(card.stage)}</strong> phase.</p>
               <div className="flex flex-wrap items-center gap-2">
-                <select
-                  aria-label="Agent preset"
-                  className="h-8 rounded-md border bg-background px-2 text-sm"
-                  value={presets.find((preset) => preset.name === detail?.card.presetName)?.id ?? ""}
-                  onChange={(event) => void switchPreset(event.target.value || null)}
-                  disabled={presetSwitching}
-                >
-                  {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}{preset.isDefault ? " · default" : ""} — {preset.providerId}/{preset.modelId}</option>)}
-                </select>
-                {detail?.card.presetName ? <Pill>{detail.card.presetName}</Pill> : null}
-                <Button size="sm" variant="outline" onClick={() => setPresetsOpen(true)}>Manage presets</Button>
+                {card.stage ? <Pill tone="bg-muted text-muted-foreground">{BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · {detail?.card.presetName ?? "default"}</Pill> : null}
               </div>
-              {presets.length === 0 ? <p className="text-xs text-muted-foreground">No presets yet. Create one below.</p> : null}
-              <PresetManagerDialog
-                open={presetsOpen}
-                onOpenChange={setPresetsOpen}
-                rpc={rpc}
-                presets={presets}
-                onChanged={async () => { const result = await rpc.call("listPresets", {}).catch(() => ({ presets: [] })); setPresets(result.presets); }}
-              />
             </section>
 
             <section className="space-y-2">
@@ -1483,7 +1446,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
       <Dialog open={pendingAdvance !== null} onOpenChange={(next) => { if (!next) setPendingAdvance(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Advance to {pendingAdvance ? stageLabel(pendingAdvance) : ""}?</DialogTitle>
+            <DialogTitle>{pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage) ? "Advance to" : "Return to"} {pendingAdvance ? stageLabel(pendingAdvance) : ""}?</DialogTitle>
             <DialogDescription className="space-y-2">
               <p>
                 Move this card from <strong>{stageLabel(card?.stage ?? "")}</strong> to <strong>{pendingAdvance ? stageLabel(pendingAdvance) : ""}</strong>.
@@ -1492,8 +1455,9 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
                 {pendingAdvance ? STAGE_PRODUCES[pendingAdvance] ?? "The agent works on this stage and advances on its own once done." : ""}
               </p>
               <p className="text-xs text-muted-foreground">
-                This is a manual override — the agent usually advances on its own. Use it to unstick a card or move decided work forward. 
-                Stage gates (product, interface, plan, diff) still apply on the next advance.
+                {pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage)
+                  ? "This is a manual override — the agent usually advances on its own. Stage gates (product, interface, plan, diff) still apply on the next advance."
+                  : "Going back is safe and reversible — the workflow will re-run earlier stages as needed."}
               </p>
             </DialogDescription>
           </DialogHeader>
@@ -1501,7 +1465,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
             <DialogClose asChild>
               <Button variant="outline" disabled={advancing !== null}>Cancel</Button>
             </DialogClose>
-            <Button disabled={advancing !== null || !pendingAdvance} onClick={() => { const target = pendingAdvance; setPendingAdvance(null); if (target) void advance(target); }}>{advancing ? "Advancing…" : "Advance"}</Button>
+            <Button disabled={advancing !== null || !pendingAdvance} onClick={() => { const target = pendingAdvance; setPendingAdvance(null); if (target) void advance(target); }}>{advancing ? "Applying…" : pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage) ? "Advance" : "Return"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

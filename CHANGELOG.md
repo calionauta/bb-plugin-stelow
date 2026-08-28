@@ -10,6 +10,18 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Stage timeline: advance one step, return many — with correct verbs.**
+  Clicking a passed stage now opens a "Return to X?" dialog (was always
+  "Advance to X?", wrong directionally). Forward movement is restricted to
+  one stage at a time (the next legal stage — gates apply); going back is
+  allowed for any number of stages and labeled as safe/reversible.
+
+- **Per-card preset removed from the card detail.** Presets are configured
+  once, globally, per workflow phase from the board's **Presets** button. The
+  card's per-preset dropdown/assign (which could conflict with the phase
+  preset) is gone; the card now just shows an informative chip of the phase's
+  active preset. Dead `switchPreset`/`presets`/`presetSwitching` code removed.
+
 - **Scopes/tasks are ordered and dependencies are explicit.** The card's
   Scopes list is now sorted **topologically by dependency** — a scope that
   depends on or is blocked by another appears after it, so reading top→bottom
