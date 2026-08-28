@@ -382,6 +382,14 @@ function BoardPanel({ subPath }: { subPath: string }) {
 
   useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
   useDebouncedRealtime(["card-state", "board-changed"], () => void load(boardProjectId ?? routeProjectId));
+  useEffect(() => {
+    void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewMode: savedReviewMode }) => {
+      setAppetite(savedAppetite);
+      setReviewMode(savedReviewMode);
+    }).catch(() => {
+      /* Keep Lean/Auto when stored preferences cannot be read. */
+    });
+  }, [rpc]);
 
   const activeProjectId = boardProjectId ?? routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;

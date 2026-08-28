@@ -18,6 +18,11 @@ and this project adheres to a single-version-per-release tag format
   worker receives the declared values and does not re-ask for them during
   setup.
 
+- **Last-used workflow defaults.** After a card is created successfully, its
+  Appetite and Review Mode become the preselected choices for the next card.
+  This is stored as plugin UI preference data, never in a workflow's canonical
+  files; a fresh installation still starts at Lean + Auto.
+
 - **Stage timeline: advance one step, return many — with correct verbs.**
   Clicking a passed stage now opens a "Return to X?" dialog (was always
   "Advance to X?", wrong directionally). Forward movement is restricted to

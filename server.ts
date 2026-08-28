@@ -69,6 +69,7 @@ const reviewModeSchema = z.enum([
   "Product Spec + Interface + Tech Review",
   "Product Spec + Interface + Tech Review + Code Diff",
 ]);
+const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewMode: reviewModeSchema }).strict();
 
 const taskSchema = z.object({
   id: z.string(),
@@ -147,6 +148,10 @@ export const rpcContract = defineRpcContract({
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
     output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() })) }),
+  },
+  boardWorkflowDefaults: {
+    input: z.object({}).strict(),
+    output: boardWorkflowDefaultsSchema,
   },
   createCard: {
     input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional() }).strict(),
@@ -1029,6 +1034,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
     },
+    async boardWorkflowDefaults() {
+      const stored = await bb.storage.kv.get<unknown>("board-workflow-defaults");
+      const parsed = boardWorkflowDefaultsSchema.safeParse(stored);
+      return parsed.success ? parsed.data : { appetite: "Lean" as const, reviewMode: "Auto" as const };
+    },
 
     async readDocument({ projectId, path }) {
       const root = await projectRoot(bb, projectId);
@@ -1224,6 +1234,7 @@ ${prompt}`,
       const ts = now();
       db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, null, null, null, ts, ts);
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
+      await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
       bb.realtime.publish("card-state", { cardId });
       return { cardId, threadId: thread.id };
     },

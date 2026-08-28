@@ -50,8 +50,9 @@ Triage/Shaping/Running/Gate pending). Select a project with Stelow state, then:
    **composer** (bb's full new-thread editor): type `@` to mention, or use the
    `+` menu to attach files/skills before starting. Those choices are written
    to the new workflow's `state.md` and `stelow.json`, so the worker does not
-   ask for them again. The card is created in **Triage** and the agent begins
-   there.
+   ask for them again. After a successful creation, they also become the
+   board's defaults for your next card. The card is created in **Triage** and
+   the agent begins there.
 2. The agent runs the triage → select → … pipeline and, the moment it needs a
    decision, opens a structured question. While a question is pending the card
    sits in **Gate pending**. Reply in the form, in the thread, or from the card
