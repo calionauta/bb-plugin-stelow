@@ -60,6 +60,16 @@ const statusSchema = z.enum([
   "failed",
 ]);
 
+const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
+const reviewModeSchema = z.enum([
+  "Auto",
+  "Product Spec Gate",
+  "Product Spec + Interface Gates",
+  "Product Spec + Interface + Scopes",
+  "Product Spec + Interface + Tech Review",
+  "Product Spec + Interface + Tech Review + Code Diff",
+]);
+
 const taskSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -139,7 +149,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() })) }),
   },
   createCard: {
-    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), presetId: z.string().nullable().optional() }).strict(),
+    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
   updateCardIntent: {
@@ -327,7 +337,7 @@ function safeRelative(path: string): string {
   return path;
 }
 
-async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, intent: string): Promise<{ statePath: string | null; stateDir: string | null; dirHash: string | null; error: string | null }> {
+async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, intent: string, appetite = "Core", reviewMode = "Auto"): Promise<{ statePath: string | null; stateDir: string | null; dirHash: string | null; error: string | null }> {
   const transitionsPath = join(rootPath, "skills/stelow-product-orchestrator/references/transitions.md");
   const trackingPath = join(rootPath, "stelow.json");
   try {
@@ -365,7 +375,7 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
     const stateOwner = text(stateBlob.match(/^name:\s*(\S+)/m)?.[1]);
     if (!stateBlob.includes("current_stage:") || stateOwner !== name) {
       const body = STATE_TEMPLATE.replace("<workflow-name>", name).replace("<new-product|feature|bugfix|refactor|investigate|unknown>", intent);
-      writeFileSync(statePath, body, "utf8");
+      writeFileSync(statePath, body.replace("appetite: Core", `appetite: ${appetite}`).replace("review_mode: Auto", `review_mode: ${reviewMode}`), "utf8");
     }
 
     if (!existsSync(transitionsPath)) {
@@ -374,7 +384,7 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
 
     const hasEntry = (trackingData.workflows as Array<LooseRecord>).some((workflow) => workflow.name === name && workflow.dirHash === dirHash);
     if (!hasEntry) {
-      (trackingData.workflows as unknown[]).push({ name, description: "", status: "in-progress", cwd: rootPath, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite: "Core", review_mode: "Auto" } });
+      (trackingData.workflows as unknown[]).push({ name, description: "", status: "in-progress", cwd: rootPath, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite, review_mode: reviewMode } });
       writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
     }
     return { statePath, stateDir, dirHash, error: null };
@@ -1167,12 +1177,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { cards: enriched };
     },
 
-    async createCard({ projectId, prompt, intent, presetId }) {
+    async createCard({ projectId, prompt, intent, appetite, reviewMode, presetId }) {
       const rootPath = await projectRoot(bb, projectId);
       if (!rootPath) throw new Error("Project workspace path is unavailable.");
       const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
       const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
-      const seed = await seedWorkflow(bb, rootPath, slug, intent);
+      const seed = await seedWorkflow(bb, rootPath, slug, intent, appetite, reviewMode);
       if (seed.error) throw new Error(seed.error);
       const cardId = randomId("card");
       const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
@@ -1197,7 +1207,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
 The Stelow workflow skills (stelow-entry, stelow-router, stelow-product-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
-The user already classified this request as intent=\`${intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+The user already classified this request as intent=\`${intent}\`, appetite=\`${appetite}\`, and review mode=\`${reviewMode}\` (all recorded in state.md and stelow.json). Use these declarations — do NOT ask the user to pick or confirm intent, appetite, or review mode again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
 
 CRITICAL — User input contract:
 ANY time you need user input (ambiguity, approval, scope, interface choice, etc.), you MUST call the structured form, NEVER just write text like "waiting for your choice":

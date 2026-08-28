@@ -238,6 +238,24 @@ function ActivityPill({ activity }: { activity: CardItem["activity"] }) {
 
 const DEBOUNCE_MS = 250;
 
+const APPETITE_OPTIONS = [
+  { value: "Lean", label: "Lean", description: "Smallest useful cycle: 1–2 scopes and one direct direction." },
+  { value: "Core", label: "Core", description: "Standard cycle: main job, obvious edge cases, and 3–5 scopes." },
+  { value: "Complete", label: "Complete", description: "Broad exploration and deeper validation across the whole request." },
+] as const;
+
+const REVIEW_MODE_OPTIONS = [
+  { value: "Auto", label: "Auto", description: "The agent resolves gaps and proceeds without review gates." },
+  { value: "Product Spec Gate", label: "Product Spec Gate", description: "Review the shaped product specification." },
+  { value: "Product Spec + Interface Gates", label: "Product Spec + Interface Gates", description: "Review the product specification and interface direction." },
+  { value: "Product Spec + Interface + Scopes", label: "Product Spec + Interface + Scopes", description: "Also confirm the planned delivery scopes." },
+  { value: "Product Spec + Interface + Tech Review", label: "Product Spec + Interface + Tech Review", description: "Add technical-plan review before execution." },
+  { value: "Product Spec + Interface + Tech Review + Code Diff", label: "Product Spec + Interface + Tech Review + Code Diff", description: "Use every review gate, including the final code diff." },
+] as const;
+
+type Appetite = (typeof APPETITE_OPTIONS)[number]["value"];
+type ReviewMode = (typeof REVIEW_MODE_OPTIONS)[number]["value"];
+
 // Unified attention: ONE flag (needsAttention) + the reason (kind). All four
 // Attention label derived from the card's own activity/status — no separate
 // kind enum. One flag (needsAttention) says "a human is needed"; the label
@@ -333,6 +351,8 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [loading, setLoading] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
+  const [appetite, setAppetite] = useState<Appetite>("Lean");
+  const [reviewMode, setReviewMode] = useState<ReviewMode>("Auto");
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterStage, setFilterStage] = useState<string>("all");
   const [filterIntent, setFilterIntent] = useState<string | "all">("all");
@@ -405,7 +425,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
     const prompt = [text, ...(attached.length > 0 ? [`\n\nAttached files:\n${attached.map((path) => `- ${path}`).join("\n")}`] : [])].join("\n");
     if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent, appetite, reviewMode });
       setPrompt("");
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success("Card created in Triage. The agent will triage it.");
@@ -484,6 +504,11 @@ function BoardPanel({ subPath }: { subPath: string }) {
           </div>
 
           <div className="rounded-xl border bg-card/60 p-3">
+            <div className="mb-3 grid gap-3 border-b pb-3 sm:grid-cols-2">
+              <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
+              <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+              <p className="sm:col-span-2 text-xs text-muted-foreground">These choices are saved with the new workflow. Leave the defaults for a lean, fully automatic first pass.</p>
+            </div>
             <NewThreadComposer
               defaultProjectId={activeProjectId ?? undefined}
               initialPrompt={prompt}
@@ -532,6 +557,19 @@ function BoardPanel({ subPath }: { subPath: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function WorkflowChoiceSelect<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void }) {
+  const selected = options.find((option) => option.value === value);
+  return (
+    <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value as T)} className="h-9 rounded-md border bg-background px-2 text-sm text-foreground" aria-label={label}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <span>{selected?.description}</span>
+    </label>
   );
 }
 

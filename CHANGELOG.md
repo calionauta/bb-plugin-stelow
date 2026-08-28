@@ -10,6 +10,14 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **New-card workflow controls.** The board now lets the user set the two
+  canonical workflow axes before creating a card: Appetite (`Lean`, `Core`, or
+  `Complete`) and Review Mode (from `Auto` through the full code-diff gate).
+  They default to **Lean** and **Auto**, are validated by the RPC contract, and
+  are persisted to both the seeded `state.md` and `stelow.json`. The spawned
+  worker receives the declared values and does not re-ask for them during
+  setup.
+
 - **Stage timeline: advance one step, return many — with correct verbs.**
   Clicking a passed stage now opens a "Return to X?" dialog (was always
   "Advance to X?", wrong directionally). Forward movement is restricted to
