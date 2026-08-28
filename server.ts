@@ -955,7 +955,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // look abandoned. Answering it on the card resumes the thread.
           updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
         } else {
-          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: transitioningIntoIdle ? now() : card.last_idle_at });
+          // Backfill last_idle_at on the first poll that observes an already-idle
+          // card missing it (legacy cards idled before the column existed), so
+          // it starts its own idle-stuck clock instead of falling through.
+          const backfillIdle = transitioningIntoIdle || !card.last_idle_at;
+          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: backfillIdle ? now() : card.last_idle_at });
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
           db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
@@ -1124,11 +1128,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // surfaced identically — only the verb differs — so idle-stuck,
         // question, error and completion all count as "needs attention".
         const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
+        // Idle-stuck uses last_idle_at when present (set on transition into
+        // idle). For cards that were already idle before that column existed
+        // (legacy), fall back to updated_at as the idle-onset proxy so they
+        // still surface as needing attention instead of staying invisible.
+        const idleAt = (row.last_idle_at && row.last_idle_at > 0) ? row.last_idle_at : row.updated_at;
         const idleStuck = activity === "idle"
           && row.worker_thread_id !== null
           && !termStatus
-          && (row.last_idle_at ?? 0) > 0
-          && now() - (row.last_idle_at ?? 0) >= IDLE_ATTENTION_MS;
+          && now() - idleAt >= IDLE_ATTENTION_MS;
         const questionPending = activity === "awaiting-answer" && (row.last_seen_question_at ?? 0) < row.updated_at;
         const errorPending = (Boolean(row.last_error) || activity === "error") && (row.last_seen_error_at ?? 0) < row.updated_at;
         const completedPending = normalizeStatus(row.status) === "completed" && (row.last_seen_completed_at ?? 0) < row.updated_at;
@@ -1255,11 +1263,11 @@ ${prompt}`,
       // an ask parks the card awaiting an answer even when the thread is idle.
       const effectiveActivity = (card.activity === "error" ? "error" : pending.length > 0 ? "awaiting-answer" : card.activity as "idle" | "running" | "awaiting-answer" | "error");
       const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(card.status));
+      const idleAt = (card.last_idle_at && card.last_idle_at > 0) ? card.last_idle_at : card.updated_at;
       const idleStuck = effectiveActivity === "idle"
         && card.worker_thread_id !== null
         && !termStatus
-        && (card.last_idle_at ?? 0) > 0
-        && now() - (card.last_idle_at ?? 0) >= IDLE_ATTENTION_MS;
+        && now() - idleAt >= IDLE_ATTENTION_MS;
       const attentionKind = (idleStuck ? "idle"
         : (effectiveActivity === "awaiting-answer" && (card.last_seen_question_at ?? 0) < card.updated_at) ? "question"
         : ((Boolean(card.last_error) || effectiveActivity === "error") && (card.last_seen_error_at ?? 0) < card.updated_at) ? "error"

@@ -18,7 +18,10 @@ and this project adheres to a single-version-per-release tag format
   active card is no longer invisible on the board. Idle only surfaces after
   the worker has sat idle ~90s (two reconcile cycles), so a card that merely
   finished a turn is not falsely flagged. The card detail's "Repair" is now
-  "Resume".
+  "Resume". Cards that were already idle before the `last_idle_at` column
+  existed are backfilled on the next reconcile poll (with `updated_at` as a
+  fallback onset proxy), so legacy idle cards surface too instead of never
+  counting as attention.
 
 - **Presets are configurable from the board header.** A **Presets** button in
   the Stelow board header opens the preset manager (create/edit/delete,
