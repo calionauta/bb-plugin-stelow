@@ -12,6 +12,19 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+### Added
+
+- **Workflow timeline in the card detail.** The 17 stages now render as a
+  vertical timeline grouped by phase (Analyse / Plan / Execute / Review),
+  replacing the loose "Advance stage" buttons. Each stage is a chip showing
+  passed ✓ / current (highlighted) / upcoming, with the phase as a visual
+  group label — so the card's position in the flow is clear at a glance. The
+  timeline doubles as the advance control: click a future stage to advance, a
+  passed one to go back, one step at a time (the confirm dialog and its per-
+  stage preview still apply). Phase groupings live in a single `STAGE_BAND`
+  map (cross-referenced with server `STAGE_BANDS` for presets), so phases are
+  an aggregation of stages, not a rival axis.
+
 - **[KISS/DRY] Attention is a single flag; "Gate pending" is no longer a
   column.** A pending question is now purely an *activity* signal — the card
   stays in its real stage column (e.g. Running) and shows the attention badge

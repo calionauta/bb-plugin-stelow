@@ -112,9 +112,28 @@ const STAGE_PRODUCES: Record<string, string> = {
   audit: "Final audit of the finished work.",
 };
 
+// Canonical linear order of the 17 workflow stages (mirrors stages.yaml). The
+// timeline uses this to give position (passed / current / upcoming); legal
+// transitions still come from nextStages (parsed from transitions.md).
+const STAGE_SEQUENCE: string[] = [
+  "triage", "select", "setup", "context", "shape", "critique", "gate",
+  "scope", "interface", "int-gate", "selection", "planning", "plan-gate",
+  "execution", "verification", "diff-gate", "audit",
+];
+// Which phase (band) each stage belongs to — shown as a visual group label on
+// the timeline. This is the SINGLE place in the client that names phase
+// groupings: they are an aggregation of stages, not a rival axis. KEEP IN SYNC
+// with server.ts STAGE_BANDS (preset routing) and test_bands.mjs.
+const STAGE_BAND: Record<string, string> = {
+  triage: "analysis", select: "analysis", setup: "analysis", context: "analysis", shape: "analysis",
+  critique: "planning", gate: "planning", scope: "planning", interface: "planning", "int-gate": "planning", selection: "planning", planning: "planning", "plan-gate": "planning",
+  execution: "execution", verification: "execution",
+  "diff-gate": "review", audit: "review",
+};
+const BAND_LABEL: Record<string, string> = { analysis: "Analyse", planning: "Plan", execution: "Execute", review: "Review" };
+
 function stageLabel(stage: string) {
-  return STAGE_LABELS[stage] ?? stage;
-}
+  return STAGE_LABELS[stage] ?? stage;}
 
 const FILTER_INTENT_OPTIONS = [{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))];
 const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
@@ -686,6 +705,74 @@ function Meta({ label, value }: { label: string; value: string }) {
   return <div className="rounded-md bg-muted p-2"><div className="text-[10px] uppercase text-muted-foreground">{label}</div><div className="truncate font-medium">{value}</div></div>;
 }
 
+// Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a
+// chip: passed / current / upcoming. Clicking an allowed target advances or
+// regresses ONE stage — the timeline is the position context AND the advance
+// control, so the user always sees where the card is and what it can move to.
+function StageTimeline({ currentStage, nextStages, onPick }: { currentStage: string; nextStages: string[]; onPick: (stage: string) => void }) {
+  const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
+  const current = curIdx >= 0 ? curIdx : 0;
+  const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
+  // group consecutive STAGE_SEQUENCE entries by STAGE_BAND
+  const bands = new Map<string, string[]>();
+  for (const stage of STAGE_SEQUENCE) {
+    const band = STAGE_BAND[stage] ?? "other";
+    if (!bands.has(band)) bands.set(band, []);
+    bands.get(band)!.push(stage);
+  }
+  return (
+    <div className="space-y-3">
+      {Array.from(bands.entries()).map(([band, stages]) => {
+        const bandActive = stages.some((stage) => stage === currentStage);
+        const hasAnyPassed = stages.some((stage) => STAGE_SEQUENCE.indexOf(stage) < current);
+        const hasAnyUpcoming = stages.some((stage) => STAGE_SEQUENCE.indexOf(stage) > current);
+        return (
+          <div key={band}>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{BAND_LABEL[band] ?? band}</span>
+              <span className={`h-px flex-1 ${bandActive ? "bg-primary/40" : hasAnyPassed ? "bg-emerald-500/30" : "bg-border"}`} />
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {stages.map((stage) => {
+                const idx = STAGE_SEQUENCE.indexOf(stage);
+                const passed = idx >= 0 && idx < current;
+                const isCurrent = stage === currentStage;
+                const upcoming = idx > current;
+                const canAdvance = upcoming && legal.has(stage);
+                const canRegress = passed && !isCurrent;
+                const clickable = canAdvance || canRegress;
+                return (
+                  <button
+                    key={stage}
+                    type="button"
+                    disabled={!clickable || isCurrent}
+                    title={STAGE_PRODUCES[stage]}
+                    onClick={() => onPick(stage)}
+                    className={`relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      isCurrent
+                        ? "bg-primary/15 text-primary ring-2 ring-primary/60"
+                        : passed
+                        ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                        : canAdvance
+                        ? "cursor-pointer border border-primary/40 text-primary hover:bg-primary/10"
+                        : "cursor-pointer border border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    }`}
+                  >
+                    {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : canAdvance ? "·" : "·"}
+                    {stageLabel(stage)}
+                    {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-muted-foreground">Click a future stage to advance, a passed one to go back — one step at a time. The agent usually advances on its own.</p>
+    </div>
+  );
+}
+
 function CardDrawerAdapter(props: PluginThreadPanelProps) {
   const params = props.params;
   const cardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
@@ -1249,15 +1336,14 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
 
             {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : null}
 
-            {detail && detail.nextStages.filter((stage) => stage && !stage.includes("(")).length > 0 ? (
+            {detail && card ? (
               <section className="space-y-2">
-                <h3 className="text-sm font-semibold">Advance stage</h3>
-                <p className="text-xs text-muted-foreground">Moves the workflow to a stage now (same as <code>bb stelow advance</code>). The agent usually advances on its own — only use this to override or unstick a card.</p>
-                <div className="flex flex-wrap gap-1">
-                  {detail.nextStages.filter((stage) => stage && !stage.includes("(")).map((stage) => (
-                    <Button key={stage} size="sm" variant="outline" disabled={advancing !== null} onClick={() => setPendingAdvance(stage)}>{stageLabel(stage)}</Button>
-                  ))}
-                </div>
+                <h3 className="text-sm font-semibold">Workflow</h3>
+                <StageTimeline
+                  currentStage={card.stage}
+                  nextStages={detail.nextStages}
+                  onPick={(stage) => setPendingAdvance(stage)}
+                />
               </section>
             ) : null}
 
