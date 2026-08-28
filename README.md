@@ -53,6 +53,9 @@ Triage/Shaping/Running/Gate pending). Select a project with Stelow state, then:
    ask for them again. After a successful creation, they also become the
    board's defaults for your next card. The card is created in **Triage** and
    the agent begins there.
+   Choose the **Worker preset** there as well: that preset is the authoritative
+   provider/model/reasoning/permission selection for the Stelow worker. If no
+   custom preset exists, the built-in default is used.
 2. The agent runs the triage → select → … pipeline and, the moment it needs a
    decision, opens a structured question. While a question is pending the card
    sits in **Gate pending**. Reply in the form, in the thread, or from the card

@@ -10,6 +10,15 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Authoritative worker-preset selector.** New-card creation now presents the
+  configured Stelow presets directly. The selected preset, falling back to the
+  built-in default, determines the worker's provider/model/reasoning/permission
+  independently of the general BB composer controls.
+
+- **Preset editor derives real defaults.** Opening the new-preset form now
+  seeds provider, model, reasoning, and permission mode from the configured
+  default preset instead of relying on a stale hardcoded UI value.
+
 - **Focused Pi preset routes.** The Pi model picker now lists only its intended
   Bifrost routes — Harness Coding plus GPT-5.6 Sol, Terra, and Luna — instead
   of exposing Pi's unrelated OpenCode/OpenRouter catalog. The selected

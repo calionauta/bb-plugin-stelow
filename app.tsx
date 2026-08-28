@@ -360,18 +360,22 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
+  const [workerPresetId, setWorkerPresetId] = useState<string | null>(null);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [restartFocusKey, setRestartFocusKey] = useState(0);
 
   const load = useCallback(async (targetId: string | null) => {
     setLoading(true);
     try {
-      const [projectsResult, cardsResult] = await Promise.all([
+      const [projectsResult, cardsResult, presetsResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
         rpc.call("listCards", { projectId: targetId }).catch(() => ({ cards: [] })),
+        rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
       ]);
       setProjects(projectsResult?.projects ?? []);
-      setCards(cardsResult.cards);    } catch (error) {
+      setCards(cardsResult.cards);
+      setBoardPresets(presetsResult.presets);
+    } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       setProjects([]);
       setCards([]);
@@ -383,6 +387,10 @@ function BoardPanel({ subPath }: { subPath: string }) {
   useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
   useDebouncedRealtime(["card-state", "board-changed"], () => void load(boardProjectId ?? routeProjectId));
   useEffect(() => {
+    if (boardPresets.length === 0 || boardPresets.some((preset) => preset.id === workerPresetId)) return;
+    setWorkerPresetId(boardPresets.find((preset) => preset.isDefault)?.id ?? boardPresets[0]!.id);
+  }, [boardPresets, workerPresetId]);
+  useEffect(() => {
     void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewMode: savedReviewMode }) => {
       setAppetite(savedAppetite);
       setReviewMode(savedReviewMode);
@@ -393,6 +401,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
 
   const activeProjectId = boardProjectId ?? routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const selectedWorkerPreset = boardPresets.find((preset) => preset.id === workerPresetId) ?? boardPresets.find((preset) => preset.isDefault) ?? null;
   const reason = !activeProjectId ? "Select a normal bb project (not the singleton Personal project) in the sidebar." : !prompt.trim() ? "Describe a product request to start the workflow." : null;
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
   const filteredCards = useMemo(() => cards.filter((card) => {
@@ -433,7 +442,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
     const prompt = [text, ...(attached.length > 0 ? [`\n\nAttached files:\n${attached.map((path) => `- ${path}`).join("\n")}`] : [])].join("\n");
     if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent, appetite, reviewMode });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent, appetite, reviewMode, presetId: workerPresetId });
       setPrompt("");
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success("Card created in Triage. The agent will triage it.");
@@ -515,10 +524,15 @@ function BoardPanel({ subPath }: { subPath: string }) {
             <div className="mb-3 grid gap-3 border-b pb-3 sm:grid-cols-2">
               <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
               <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+              <WorkerPresetSelect presets={boardPresets} value={workerPresetId} onChange={setWorkerPresetId} />
               <p className="sm:col-span-2 text-xs text-muted-foreground">These choices are saved with the new workflow. Leave the defaults for a lean, fully automatic first pass.</p>
             </div>
             <NewThreadComposer
               defaultProjectId={activeProjectId ?? undefined}
+              defaultProviderId={selectedWorkerPreset?.providerId}
+              defaultModel={selectedWorkerPreset?.modelId}
+              defaultReasoningLevel={selectedWorkerPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+              defaultPermissionMode={selectedWorkerPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
               initialPrompt={prompt}
               layout="contained"
               draftKey="stelow-board-create"
@@ -577,6 +591,20 @@ function WorkflowChoiceSelect<T extends string>({ label, value, options, onChang
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <span>{selected?.description}</span>
+    </label>
+  );
+}
+
+function WorkerPresetSelect({ presets, value, onChange }: { presets: PresetManagerPreset[]; value: string | null; onChange: (value: string | null) => void }) {
+  const selected = presets.find((preset) => preset.id === value) ?? presets.find((preset) => preset.isDefault) ?? null;
+  return (
+    <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">Worker preset</span>
+      <select value={selected?.id ?? ""} onChange={(event) => onChange(event.target.value || null)} className="h-9 rounded-md border bg-background px-2 text-sm text-foreground" aria-label="Worker preset">
+        {presets.length === 0 ? <option value="">Default preset</option> : null}
+        {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}{preset.isDefault ? " (default)" : ""}</option>)}
+      </select>
+      <span>{selected ? `${selected.providerId}/${selected.modelId} · ${selected.reasoningLevel} · ${selected.permissionMode}` : "Uses Stelow's default preset."}</span>
     </label>
   );
 }
@@ -1097,14 +1125,19 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
 
   useEffect(() => {
     if (!open) return;
-    setForm(EMPTY_PRESET_FORM);
+    const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
+    setForm(defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM);
     setMessage(null);
     void rpc.call("listProviderModels", {}).then(setOptions).catch(() => setOptions({ providers: [], models: [] }));
     void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([]));
   }, [open, rpc]);
 
   const providerModels = options.models.filter((model) => model.providerId === form.providerId);
-  const startNew = () => { setForm(EMPTY_PRESET_FORM); setMessage(null); };
+  const newPresetForm = () => {
+    const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
+    return defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM;
+  };
+  const startNew = () => { setForm(newPresetForm()); setMessage(null); };
   const startEdit = (preset: PresetManagerPreset) => { setForm({ id: preset.id, name: preset.name, providerId: preset.providerId, modelId: preset.modelId, reasoningLevel: preset.reasoningLevel, permissionMode: preset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: preset.environmentKind as "project-default" | "new-worktree" }); setMessage(null); };
 
   async function save() {
