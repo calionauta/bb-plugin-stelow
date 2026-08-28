@@ -10,6 +10,13 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Board card: removed the redundant status pill.** On the board, the
+  column already communicates the card's status, so the status pill was noise.
+  A board card now shows intent + stage (the phase, which differentiates cards
+  within a column) + the activity pill. Status remains in the card detail,
+  where the column is not visible; the detail also drops the now-duplicated
+  status pill (its breadcrumb already shows status + stage).
+
 - **Attention is unified.** The board no longer distinguishes "needs
   attention" from "needs repair" as separate visual states. A single flag
   (`needsAttention`) answers "does this card need a human now?", and a `kind`

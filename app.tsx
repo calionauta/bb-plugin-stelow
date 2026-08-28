@@ -673,7 +673,6 @@ function BoardCard({ card }: { card: CardItem }) {
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <Pill className="whitespace-nowrap">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
-        <Pill tone={statusTone(card.status)} className="whitespace-nowrap"><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill>
         <span className="ml-auto truncate rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">{stageLabel(card.stage)}</span>
       </div>
       {attention && kind ? (
@@ -740,7 +739,6 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />
-        <Pill tone={statusTone(card.status)}><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill>
       </> : null}
       <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
         <span aria-hidden>×</span>
