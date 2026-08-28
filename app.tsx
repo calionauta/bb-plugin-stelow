@@ -34,11 +34,10 @@ type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][numbe
 
 type ProjectsResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R ? Extract<R, { projects?: unknown }> : never;
 
-const COLUMNS = ["draft", "planning", "awaiting-answer", "in-progress", "completed", "blocked", "archived"] as const;
+const COLUMNS = ["draft", "planning", "in-progress", "completed", "blocked", "archived"] as const;
 const COLUMN_LABELS: Record<string, string> = {
   draft: "Triage",
   planning: "Shaping",
-  "awaiting-answer": "Gate pending",
   "in-progress": "Running",
   completed: "Done",
   blocked: "Blocked",
@@ -57,7 +56,6 @@ const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
   planning: "Planning",
   approved: "Approved",
-  "awaiting-answer": "Gate pending",
   "in-progress": "In progress",
   completed: "Completed",
   archived: "Archived",
@@ -150,7 +148,6 @@ function activityLabel(activity: CardItem["activity"]) {
 function statusTone(status: string) {
   if (["completed", "done"].includes(status)) return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
   if (["in-progress", "approved"].includes(status)) return "bg-primary/15 text-primary";
-  if (["awaiting-answer"].includes(status)) return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
   if (["blocked", "failed"].includes(status)) return "bg-destructive/15 text-destructive";
   if (["escalated"].includes(status)) return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
   if (["skipped", "archived"].includes(status)) return "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300";
@@ -164,7 +161,6 @@ function statusGlyph(status: string) {
   if (status === "escalated") return "↑";
   if (status === "failed") return "✗";
   if (status === "in-progress" || status === "approved") return "●";
-  if (status === "awaiting-answer") return "?";
   if (status === "archived") return "○";
   return "·";
 }
@@ -207,15 +203,15 @@ function ActivityPill({ activity }: { activity: CardItem["activity"] }) {
 const DEBOUNCE_MS = 250;
 
 // Unified attention: ONE flag (needsAttention) + the reason (kind). All four
-// causes read as "needs you" with a different primary action — never a
-// separate visual state.
-type AttentionKind = "question" | "error" | "completed" | "idle";
-const ATTENTION_LABEL: Record<AttentionKind, string> = {
-  question: "Answer required",
-  error: "Worker failed",
-  completed: "Ready to review",
-  idle: "Paused — resume it",
-};
+// Attention label derived from the card's own activity/status — no separate
+// kind enum. One flag (needsAttention) says "a human is needed"; the label
+// comes from state the card already carries.
+function attentionLabel(card: CardItem): string {
+  if (card.activity === "awaiting-answer") return "Answer required";
+  if (card.activity === "error") return "Worker failed";
+  if (card.status === "completed") return "Ready to review";
+  return "Paused — resume it";
+}
 
 function useDebouncedRealtime(channels: readonly string[], handler: () => void, delayMs = DEBOUNCE_MS) {
   const handlerRef = useRef(handler);
@@ -635,7 +631,6 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
 function BoardCard({ card }: { card: CardItem }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
-  const kind = card.attentionKind;
   const running = card.activity === "running";
   const borderClass = running
     ? "stelow-border-running"
@@ -675,10 +670,10 @@ function BoardCard({ card }: { card: CardItem }) {
         <Pill className="whitespace-nowrap">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
         <span className="ml-auto truncate rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">{stageLabel(card.stage)}</span>
       </div>
-      {attention && kind ? (
+      {attention ? (
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
           <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
-          <span>{ATTENTION_LABEL[kind]}</span>
+          <span>{attentionLabel(card)}</span>
         </div>
       ) : null}
       {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
@@ -1153,8 +1148,8 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
 
   // Resume (formerly Repair) is the primary action whenever the worker is
   // idle on an unfinished card — a stopped worker may have left a step
-  // incomplete. Derived from the unified attentionKind.
-  const showResume = card?.attentionKind === "idle";
+  // incomplete. Read off the card's own activity (no separate kind).
+  const showResume = card?.activity === "idle" && card.workerThreadId != null;
   const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
 
   return (

@@ -10,6 +10,17 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+### Added
+
+- **[KISS/DRY] Attention is a single flag; "Gate pending" is no longer a
+  column.** A pending question is now purely an *activity* signal — the card
+  stays in its real stage column (e.g. Running) and shows the attention badge
+  "Answer required". The "Gate pending" column is gone (it misrepresented
+  workflow position: gates can occur at any stage, not after planning).
+  Server returns exactly one `needsAttention` boolean; the label is derived
+  client-side from the card's own `activity`/`status` (a single
+  `attentionLabel()` helper) rather than a parallel enum.
+
 - **Board card: removed the redundant status pill.** On the board, the
   column already communicates the card's status, so the status pill was noise.
   A board card now shows intent + stage (the phase, which differentiates cards

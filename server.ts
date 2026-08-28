@@ -50,7 +50,6 @@ const statusSchema = z.enum([
   "planning",
   "approved",
   "in-progress",
-  "awaiting-answer",
   "completed",
   "archived",
   "pending",
@@ -137,7 +136,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), attentionKind: z.enum(["question", "error", "completed", "idle"]).nullable(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() })) }),
   },
   createCard: {
     input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), presetId: z.string().nullable().optional() }).strict(),
@@ -150,7 +149,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), attentionKind: z.enum(["question", "error", "completed", "idle"]).nullable(), presetName: z.string().nullable(), updatedAt: z.number() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), updatedAt: z.number() }),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
@@ -941,7 +940,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // has advanced past triage (current_stage != triage) or resumed from
           // a gate (status was awaiting-answer).
           const stillTriaging = currentStage === "triage" && card.status === "draft";
-          const nextStatus = stillTriaging ? "draft" : card.status === "draft" || card.status === "awaiting-answer" ? "in-progress" : card.status;
+          const nextStatus = stillTriaging ? "draft" : card.status === "draft" ? "in-progress" : card.status;
           const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput, status: nextStatus };
           if (currentStage !== card.stage) updates.stage = currentStage;
           updateCard(cardId, updates);
@@ -951,9 +950,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const transitioningIntoIdle = card.activity !== "idle";
         if (expiredPending) {
           // The worker stopped (likely a timed-out ask) but a question is
-          // still unanswered — keep the card in Gate pending so it does not
-          // look abandoned. Answering it on the card resumes the thread.
-          updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
+          // still unanswered. Keep the question surfaced via activity, but the
+          // card stays in its real stage column (no Gate-pending column) —
+          // the attention flag from listCards/cardDetail signals it. Answering
+          // on the card resumes the thread.
+          updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput });
         } else {
           // Backfill last_idle_at on the first poll that observes an already-idle
           // card missing it (legacy cards idled before the column existed), so
@@ -1157,7 +1158,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           activity,
           lastError: row.last_error,
           needsAttention,
-          attentionKind,
           presetName: preset.name,
           updatedAt: row.updated_at,
         };
@@ -1275,7 +1275,7 @@ ${prompt}`,
         : null) as "question" | "error" | "completed" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, attentionKind, presetName: preset.name, updatedAt: card.updated_at },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, updatedAt: card.updated_at },
         mentionedFiles,
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
@@ -1613,9 +1613,10 @@ ${card.prompt}`,
         const question = flag("--question");
         const labels = argv.flatMap((arg, index) => arg === "--option" && argv[index + 1] ? [argv[index + 1]!] : []);
         if (!threadId || !question || labels.length < 2) return { exitCode: 2, stderr: "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." };
-        // Move the owning card to Gate pending while the question is open.
+        // Signal the pending question via activity (drives the attention flag);
+        // the card stays in its real stage column.
         const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
-        if (cardRow) updateCard(cardRow.id, { activity: "awaiting-answer", status: "awaiting-answer" });
+        if (cardRow) updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
         const askedAt = Date.now();
         const options = labels.map((label) => ({ label, description: "" }));
@@ -1623,8 +1624,7 @@ ${card.prompt}`,
           result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", timeoutMs: Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), payload: { question, multiple: argv.includes("--multiple"), options } }, { signal: ctx.signal });
         } finally {
           if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
-        }
-        if (result.outcome === "cancelled" && result.reason === "timeout") {
+        }        if (result.outcome === "cancelled" && result.reason === "timeout") {
           // The user never answered within the window. Keep the card in
           // "Gate pending" (awaiting-answer) so it is obvious a decision is
           // still outstanding, and tell the agent to STOP and wait rather
@@ -1632,7 +1632,7 @@ ${card.prompt}`,
           // delivered as a comment that resumes the thread.
           if (cardRow) {
             db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(randomId("qexp"), cardRow.id, threadId, question, argv.includes("--multiple") ? 1 : 0, JSON.stringify(options), askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), 0);
-            updateCard(cardRow.id, { activity: "awaiting-answer", status: "awaiting-answer" });
+            updateCard(cardRow.id, { activity: "awaiting-answer" });
             bb.realtime.publish("card-state", { cardId: cardRow.id });
           }
           const elapsed = Math.round((Date.now() - askedAt) / 1e3);
