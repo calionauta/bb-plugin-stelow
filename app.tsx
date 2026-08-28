@@ -1131,6 +1131,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   useEffect(() => {
     if (!open) {
       setForm(EMPTY_PRESET_FORM);
+      setOptions({ providers: [], models: [] });
       return;
     }
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
@@ -1141,6 +1142,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   }, [open, rpc]);
 
   const providerModels = options.models.filter((model) => model.providerId === form.providerId);
+  const formCatalogReady = options.providers.length > 0 && options.models.length > 0;
   const newPresetForm = () => {
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
     return defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM;
@@ -1238,42 +1240,46 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           </div>
         </div>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
-            {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
-              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.providerId} onChange={(event) => { setForm({ ...form, providerId: event.target.value, modelId: options.models.find((model) => model.providerId === event.target.value)?.model ?? "" }); }}>
-                {options.providers.length === 0 ? <option value={form.providerId}>{form.providerId || "Loading providers…"}</option> : null}
-                {options.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName} ({provider.id})</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2"><span>Model</span>
-              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
-                {providerModels.length === 0 ? <option value={form.modelId}>{form.modelId || "Loading models…"}</option> : null}
-                {providerModels.map((model) => <option key={model.model} value={model.model}>{model.displayName} ({model.model})</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Reasoning</span>
-              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.reasoningLevel} onChange={(event) => setForm({ ...form, reasoningLevel: event.target.value })}>
-                {["low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Permission mode</span>
-              <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.permissionMode} onChange={(event) => setForm({ ...form, permissionMode: event.target.value as "accept-edits" | "auto" | "full" })}>
-                <option value="accept-edits">accept-edits</option>
-                <option value="auto">auto</option>
-                <option value="full">full</option>
-              </select>
-            </label>
-          </div>
-          {message ? <p className="mt-2 text-xs text-muted-foreground">{message}</p> : null}
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-            <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
-          </div>
+          {formCatalogReady ? <>
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
+              {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
+                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.providerId} onChange={(event) => { setForm({ ...form, providerId: event.target.value, modelId: options.models.find((model) => model.providerId === event.target.value)?.model ?? "" }); }}>
+                  {options.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName} ({provider.id})</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2"><span>Model</span>
+                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
+                  {providerModels.length === 0 ? <option value={form.modelId}>{form.modelId}</option> : null}
+                  {providerModels.map((model) => <option key={model.model} value={model.model}>{model.displayName} ({model.model})</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Reasoning</span>
+                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.reasoningLevel} onChange={(event) => setForm({ ...form, reasoningLevel: event.target.value })}>
+                  {["low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Permission mode</span>
+                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.permissionMode} onChange={(event) => setForm({ ...form, permissionMode: event.target.value as "accept-edits" | "auto" | "full" })}>
+                  <option value="accept-edits">accept-edits</option>
+                  <option value="auto">auto</option>
+                  <option value="full">full</option>
+                </select>
+              </label>
+            </div>
+            {message ? <p className="mt-2 text-xs text-muted-foreground">{message}</p> : null}
+            <div className="mt-3 flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+              <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
+            </div>
+          </> : <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
+            <span className="size-6 animate-spin rounded-full border-2 border-muted border-t-primary" aria-hidden />
+            <div><p className="text-sm font-medium">Preparing your preset form</p><p className="mt-1 text-xs text-muted-foreground">Loading the configured providers and models…</p></div>
+          </div>}
         </div>
       </DialogContent>
     </Dialog>

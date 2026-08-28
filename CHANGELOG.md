@@ -10,6 +10,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Delightful preset-form loading.** While the real provider/model catalog is
+  loading, Manage presets shows a purposeful preparation state instead of
+  provisional fields. The editor appears only with the configured options.
+
 - **No provisional preset editor values.** The preset modal waits for its
   preset data before opening; its new-preset form begins neutral while provider
   data is loading, then seeds from the actual configured default. The board
