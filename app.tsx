@@ -1400,7 +1400,14 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
               <h3 className="text-sm font-semibold">Agent preset</h3>
               <p className="text-xs text-muted-foreground">Presets are configured globally per workflow phase from the board's <strong>Presets</strong> button — not per card. This card is in the <strong>{stageLabel(card.stage)}</strong> phase.</p>
               <div className="flex flex-wrap items-center gap-2">
-                {card.stage ? <Pill tone="bg-muted text-muted-foreground">{BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · {detail?.card.presetName ?? "default"}</Pill> : null}
+                {card.stage ? (
+                  <Pill tone="bg-muted text-muted-foreground">
+                    {BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · {detail?.card.presetName ?? "default"}
+                    {detail?.card.presetProviderId && detail?.card.presetModelId ? (
+                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
+                    ) : null}
+                  </Pill>
+                ) : null}
               </div>
             </section>
 
