@@ -502,9 +502,14 @@ function BoardPanel({ subPath }: { subPath: string }) {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  void rpc.call("listPresets", {}).then((result) => setBoardPresets(result.presets)).catch(() => setBoardPresets([]));
-                  setBoardPresetsOpen(true);
+                onClick={async () => {
+                  try {
+                    const result = await rpc.call("listPresets", {});
+                    setBoardPresets(result.presets);
+                    setBoardPresetsOpen(true);
+                  } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Unable to load presets.");
+                  }
                 }}
               >
                 Presets
@@ -525,7 +530,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
               <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
               <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
               <WorkerPresetSelect presets={boardPresets} value={workerPresetId} onChange={setWorkerPresetId} />
-              <p className="sm:col-span-2 text-xs text-muted-foreground">These choices are saved with the new workflow. Leave the defaults for a lean, fully automatic first pass.</p>
+              <p className="sm:col-span-2 text-xs text-muted-foreground">These choices are saved with the new workflow. The Worker preset is authoritative for execution; changing the BB provider/model controls in the composer below does not change this card's worker.</p>
             </div>
             <NewThreadComposer
               defaultProjectId={activeProjectId ?? undefined}
@@ -1108,7 +1113,7 @@ function ExpiredQuestionsSection({ cardId, questions }: { cardId: string; questi
 }
 
 type PresetManagerPreset = { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean };
-const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "pi", modelId: "bifrost/harness-coding", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" };
+const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "", modelId: "", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" };
 
 function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   open: boolean;
@@ -1124,7 +1129,10 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setForm(EMPTY_PRESET_FORM);
+      return;
+    }
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
     setForm(defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM);
     setMessage(null);
@@ -1238,13 +1246,13 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
             <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
             <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
               <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.providerId} onChange={(event) => { setForm({ ...form, providerId: event.target.value, modelId: options.models.find((model) => model.providerId === event.target.value)?.model ?? "" }); }}>
-                {options.providers.length === 0 ? <option value="pi">pi</option> : null}
+                {options.providers.length === 0 ? <option value={form.providerId}>{form.providerId || "Loading providers…"}</option> : null}
                 {options.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName} ({provider.id})</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2"><span>Model</span>
               <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
-                {providerModels.length === 0 ? <option value={form.modelId}>{form.modelId}</option> : null}
+                {providerModels.length === 0 ? <option value={form.modelId}>{form.modelId || "Loading models…"}</option> : null}
                 {providerModels.map((model) => <option key={model.model} value={model.model}>{model.displayName} ({model.model})</option>)}
               </select>
             </label>

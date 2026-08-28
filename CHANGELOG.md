@@ -10,6 +10,12 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **No provisional preset editor values.** The preset modal waits for its
+  preset data before opening; its new-preset form begins neutral while provider
+  data is loading, then seeds from the actual configured default. The board
+  also states plainly that its Worker preset, not BB's general composer picker,
+  controls execution.
+
 - **Authoritative worker-preset selector.** New-card creation now presents the
   configured Stelow presets directly. The selected preset, falling back to the
   built-in default, determines the worker's provider/model/reasoning/permission
