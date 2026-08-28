@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Reliable preset create/edit mode.** New presets now begin with a `null`
+  identifier, immediately switch to edit mode after creation, and expose a
+  clear **New preset** action. Existing accidental empty-ID presets are
+  repaired automatically while retaining their card and workflow-phase links.
+
 - **New-card workflow controls.** The board now lets the user set the two
   canonical workflow axes before creating a card: Appetite (`Lean`, `Core`, or
   `Complete`) and Review Mode (from `Auto` through the full code-diff gate).

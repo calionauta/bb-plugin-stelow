@@ -234,7 +234,7 @@ export const rpcContract = defineRpcContract({
   },
   upsertPreset: {
     input: z.object({
-      id: z.string().nullable().optional(),
+      id: z.string().min(1).nullable().optional(),
       name: z.string().min(1).max(60),
       providerId: z.string().min(1).max(60),
       modelId: z.string().min(1).max(120),
@@ -723,6 +723,26 @@ export default async function plugin(bb: BbPluginApi) {
   }
   if (!presetColumns.some((column) => column.name === "machine_id")) {
     db.exec("ALTER TABLE presets ADD COLUMN machine_id TEXT");
+  }
+
+  // v0.1.5's preset form sent an empty string instead of null for a new
+  // preset. SQLite accepts that as a primary key, but React treats it as
+  // falsey and can no longer distinguish editing it from creating a new one.
+  // Give any affected row a real id and preserve its card/phase assignments.
+  const legacyBlankPreset = db.prepare("SELECT * FROM presets WHERE id = ''").get() as PresetRow | undefined;
+  if (legacyBlankPreset) {
+    const replacementId = `preset_${Math.random().toString(36).slice(2, 10)}`;
+    const temporaryName = `__stelow_migrating_${Date.now()}__`;
+    db.transaction(() => {
+      // Free the unique name before copying the legacy row under its new id.
+      db.prepare("UPDATE presets SET name = ? WHERE id = ''").run(temporaryName);
+      db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+        replacementId, legacyBlankPreset.name, legacyBlankPreset.provider_id, legacyBlankPreset.model_id, legacyBlankPreset.reasoning_level, legacyBlankPreset.permission_mode, legacyBlankPreset.environment_kind, legacyBlankPreset.base_branch, legacyBlankPreset.machine_id, legacyBlankPreset.instructions, legacyBlankPreset.is_default, legacyBlankPreset.built_in, legacyBlankPreset.created_at, legacyBlankPreset.updated_at,
+      );
+      db.prepare("UPDATE card_presets SET preset_id = ? WHERE preset_id = ''").run(replacementId);
+      db.prepare("UPDATE stage_presets SET preset_id = ? WHERE preset_id = ''").run(replacementId);
+      db.prepare("DELETE FROM presets WHERE id = ''").run();
+    })();
   }
 
   const defaultPresetId = "preset_default";

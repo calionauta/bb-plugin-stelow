@@ -1080,6 +1080,7 @@ function ExpiredQuestionsSection({ cardId, questions }: { cardId: string; questi
 }
 
 type PresetManagerPreset = { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean };
+const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "pi", modelId: "bifrost/harness-coding", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" };
 
 function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   open: boolean;
@@ -1088,7 +1089,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   presets: PresetManagerPreset[];
   onChanged: () => Promise<void>;
 }) {
-  const [form, setForm] = useState({ id: "" as string | null, name: "", providerId: "pi", modelId: "bifrost/harness-coding", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" });
+  const [form, setForm] = useState(EMPTY_PRESET_FORM);
   const [options, setOptions] = useState<{ providers: { id: string; displayName: string }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
   const [bandPresets, setBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -1096,13 +1097,14 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
 
   useEffect(() => {
     if (!open) return;
+    setForm(EMPTY_PRESET_FORM);
     setMessage(null);
     void rpc.call("listProviderModels", {}).then(setOptions).catch(() => setOptions({ providers: [], models: [] }));
     void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([]));
   }, [open, rpc]);
 
   const providerModels = options.models.filter((model) => model.providerId === form.providerId);
-  const startNew = () => { setForm({ id: null, name: "", providerId: "pi", modelId: "bifrost/harness-coding", reasoningLevel: "medium", permissionMode: "full", environmentKind: "project-default" }); setMessage(null); };
+  const startNew = () => { setForm(EMPTY_PRESET_FORM); setMessage(null); };
   const startEdit = (preset: PresetManagerPreset) => { setForm({ id: preset.id, name: preset.name, providerId: preset.providerId, modelId: preset.modelId, reasoningLevel: preset.reasoningLevel, permissionMode: preset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: preset.environmentKind as "project-default" | "new-worktree" }); setMessage(null); };
 
   async function save() {
@@ -1111,6 +1113,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
     setMessage(null);
     try {
       const result = await rpc.call("upsertPreset", { id: form.id, name: form.name.trim(), providerId: form.providerId, modelId: form.modelId, reasoningLevel: form.reasoningLevel, permissionMode: form.permissionMode, environmentKind: form.environmentKind, baseBranch: null, machineId: null, instructions: "" });
+      setForm((current) => ({ ...current, id: result.preset.id }));
       setMessage(`Saved ${result.preset.name}.`);
       await onChanged();
     } catch (err) {
@@ -1196,7 +1199,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
-            {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New instead</Button> : null}
+            {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
