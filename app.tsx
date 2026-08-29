@@ -360,21 +360,23 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
-  const [workerPresetId, setWorkerPresetId] = useState<string | null>(null);
+  const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [restartFocusKey, setRestartFocusKey] = useState(0);
 
   const load = useCallback(async (targetId: string | null) => {
     setLoading(true);
     try {
-      const [projectsResult, cardsResult, presetsResult] = await Promise.all([
+      const [projectsResult, cardsResult, presetsResult, bandPresetsResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
         rpc.call("listCards", { projectId: targetId }).catch(() => ({ cards: [] })),
         rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
+        rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
       ]);
       setProjects(projectsResult?.projects ?? []);
       setCards(cardsResult.cards);
       setBoardPresets(presetsResult.presets);
+      setBoardBandPresets(bandPresetsResult.bands);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       setProjects([]);
@@ -387,10 +389,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
   useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
   useDebouncedRealtime(["card-state", "board-changed"], () => void load(boardProjectId ?? routeProjectId));
   useEffect(() => {
-    if (boardPresets.length === 0 || boardPresets.some((preset) => preset.id === workerPresetId)) return;
-    setWorkerPresetId(boardPresets.find((preset) => preset.isDefault)?.id ?? boardPresets[0]!.id);
-  }, [boardPresets, workerPresetId]);
-  useEffect(() => {
     void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewMode: savedReviewMode }) => {
       setAppetite(savedAppetite);
       setReviewMode(savedReviewMode);
@@ -401,7 +399,13 @@ function BoardPanel({ subPath }: { subPath: string }) {
 
   const activeProjectId = boardProjectId ?? routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
-  const selectedWorkerPreset = boardPresets.find((preset) => preset.id === workerPresetId) ?? boardPresets.find((preset) => preset.isDefault) ?? null;
+  const defaultWorkerPreset = boardPresets.find((preset) => preset.isDefault) ?? boardPresets[0] ?? null;
+  const presetForBand = (band: string) => {
+    const assignment = boardBandPresets.find((entry) => entry.band === band);
+    return boardPresets.find((preset) => preset.id === assignment?.presetId) ?? defaultWorkerPreset;
+  };
+  const analysisWorkerPreset = presetForBand("analysis");
+  const workerPolicy = ["analysis", "planning", "execution", "review"].map((band) => ({ band, preset: presetForBand(band) }));
   const reason = !activeProjectId ? "Select a normal bb project (not the singleton Personal project) in the sidebar." : !prompt.trim() ? "Describe a product request to start the workflow." : null;
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
   const filteredCards = useMemo(() => cards.filter((card) => {
@@ -442,7 +446,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
     const prompt = [text, ...(attached.length > 0 ? [`\n\nAttached files:\n${attached.map((path) => `- ${path}`).join("\n")}`] : [])].join("\n");
     if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent, appetite, reviewMode, presetId: workerPresetId });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent, appetite, reviewMode });
       setPrompt("");
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success("Card created in Triage. The agent will triage it.");
@@ -504,8 +508,9 @@ function BoardPanel({ subPath }: { subPath: string }) {
                 variant="outline"
                 onClick={async () => {
                   try {
-                    const result = await rpc.call("listPresets", {});
-                    setBoardPresets(result.presets);
+                    const [presetsResult, bandPresetsResult] = await Promise.all([rpc.call("listPresets", {}), rpc.call("listBandPresets", {})]);
+                    setBoardPresets(presetsResult.presets);
+                    setBoardBandPresets(bandPresetsResult.bands);
                     setBoardPresetsOpen(true);
                   } catch (error) {
                     toast.error(error instanceof Error ? error.message : "Unable to load presets.");
@@ -520,7 +525,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
               onOpenChange={setBoardPresetsOpen}
               rpc={rpc}
               presets={boardPresets}
-              onChanged={async () => { const result = await rpc.call("listPresets", {}).catch(() => ({ presets: [] })); setBoardPresets(result.presets); }}
+              onChanged={() => load(boardProjectId ?? routeProjectId)}
             />
             <p className="text-sm text-muted-foreground">Describe a request below to start a workflow. The agent runs in the background and posts updates here.</p>
           </div>
@@ -529,15 +534,19 @@ function BoardPanel({ subPath }: { subPath: string }) {
             <div className="mb-3 grid gap-3 border-b pb-3 sm:grid-cols-2">
               <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
               <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
-              <WorkerPresetSelect presets={boardPresets} value={workerPresetId} onChange={setWorkerPresetId} />
-              <p className="sm:col-span-2 text-xs text-muted-foreground">These choices are saved with the new workflow. The Worker preset is authoritative for execution; changing the BB provider/model controls in the composer below does not change this card's worker.</p>
+              <div className="sm:col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Worker policy</span>
+                <span>{workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ")}</span>
+                <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-xs" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>
+              </div>
+              <p className="sm:col-span-2 text-xs text-muted-foreground">These choices are saved with the new workflow. Its worker follows this shared phase policy, starting with the Analysis preset.</p>
             </div>
             <NewThreadComposer
               defaultProjectId={activeProjectId ?? undefined}
-              defaultProviderId={selectedWorkerPreset?.providerId}
-              defaultModel={selectedWorkerPreset?.modelId}
-              defaultReasoningLevel={selectedWorkerPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-              defaultPermissionMode={selectedWorkerPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+              defaultProviderId={analysisWorkerPreset?.providerId}
+              defaultModel={analysisWorkerPreset?.modelId}
+              defaultReasoningLevel={analysisWorkerPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+              defaultPermissionMode={analysisWorkerPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
               initialPrompt={prompt}
               layout="contained"
               draftKey="stelow-board-create"
@@ -596,20 +605,6 @@ function WorkflowChoiceSelect<T extends string>({ label, value, options, onChang
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <span>{selected?.description}</span>
-    </label>
-  );
-}
-
-function WorkerPresetSelect({ presets, value, onChange }: { presets: PresetManagerPreset[]; value: string | null; onChange: (value: string | null) => void }) {
-  const selected = presets.find((preset) => preset.id === value) ?? presets.find((preset) => preset.isDefault) ?? null;
-  return (
-    <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">Worker preset</span>
-      <select value={selected?.id ?? ""} onChange={(event) => onChange(event.target.value || null)} className="h-9 rounded-md border bg-background px-2 text-sm text-foreground" aria-label="Worker preset">
-        {presets.length === 0 ? <option value="">Default preset</option> : null}
-        {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}{preset.isDefault ? " (default)" : ""}</option>)}
-      </select>
-      <span>{selected ? `${selected.providerId}/${selected.modelId} · ${selected.reasoningLevel} · ${selected.permissionMode}` : "Uses Stelow's default preset."}</span>
     </label>
   );
 }

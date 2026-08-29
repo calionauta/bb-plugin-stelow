@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Shared worker policy at creation.** New cards no longer ask for a
+  per-card Worker preset. The composer now summarizes the board's effective
+  preset per phase and links directly to configuration; cards always begin
+  with the shared Analysis preset and follow phase assignments thereafter.
+
 - **Delightful preset-form loading.** While the real provider/model catalog is
   loading, Manage presets shows a purposeful preparation state instead of
   provisional fields. The editor appears only with the configured options.
