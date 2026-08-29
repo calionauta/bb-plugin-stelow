@@ -503,22 +503,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
               <h1 className="text-2xl font-semibold tracking-tight">Stelow board</h1>
               <span className="text-xs text-muted-foreground">· {cards.filter(isLiveCard).length} cards · {inbox.length} need attention</span>
               <div className="flex-1" />
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    const [presetsResult, bandPresetsResult] = await Promise.all([rpc.call("listPresets", {}), rpc.call("listBandPresets", {})]);
-                    setBoardPresets(presetsResult.presets);
-                    setBoardBandPresets(bandPresetsResult.bands);
-                    setBoardPresetsOpen(true);
-                  } catch (error) {
-                    toast.error(error instanceof Error ? error.message : "Unable to load presets.");
-                  }
-                }}
-              >
-                Presets
-              </Button>
             </div>
             <PresetManagerDialog
               open={boardPresetsOpen}

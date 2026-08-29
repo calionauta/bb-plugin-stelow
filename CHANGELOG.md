@@ -10,6 +10,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Contextual preset configuration.** Removed the duplicate board-header
+  Presets button. **Configure presets** now lives only beside Worker policy,
+  where its phase assignments directly explain what a new card will use.
+
 - **Shared worker policy at creation.** New cards no longer ask for a
   per-card Worker preset. The composer now summarizes the board's effective
   preset per phase and links directly to configuration; cards always begin
