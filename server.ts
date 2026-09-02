@@ -1179,9 +1179,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
         // Unified attention signal: ONE flag answering "does this card need a
         // human right now?", plus the reason (kind) that decides the primary
-        // action (answer / inspect / review / retake). The four causes are
-        // surfaced identically — only the verb differs — so idle-stuck,
-        // question, error and completion all count as "needs attention".
+        // action (answer / inspect / retake). A terminal completion is not a
+        // request for human action; idle-stuck, question and error are.
         const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
         // Idle-stuck uses last_idle_at when present (set on transition into
         // idle). For cards that were already idle before that column existed
@@ -1194,8 +1193,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           && now() - idleAt >= IDLE_ATTENTION_MS;
         const questionPending = activity === "awaiting-answer" && (row.last_seen_question_at ?? 0) < row.updated_at;
         const errorPending = (Boolean(row.last_error) || activity === "error") && (row.last_seen_error_at ?? 0) < row.updated_at;
-        const completedPending = normalizeStatus(row.status) === "completed" && (row.last_seen_completed_at ?? 0) < row.updated_at;
-        const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : completedPending ? "completed" : null) as "question" | "error" | "completed" | "idle" | null;
+        const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
         const needsAttention = attentionKind !== null;
         const preset = getPresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
         return {
@@ -1338,8 +1336,7 @@ ${prompt}` }, ...workerAttachments],
       const attentionKind = (idleStuck ? "idle"
         : (effectiveActivity === "awaiting-answer" && (card.last_seen_question_at ?? 0) < card.updated_at) ? "question"
         : ((Boolean(card.last_error) || effectiveActivity === "error") && (card.last_seen_error_at ?? 0) < card.updated_at) ? "error"
-        : (normalizeStatus(card.status) === "completed" && (card.last_seen_completed_at ?? 0) < card.updated_at) ? "completed"
-        : null) as "question" | "error" | "completed" | "idle" | null;
+        : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       return {
         card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, updatedAt: card.updated_at },

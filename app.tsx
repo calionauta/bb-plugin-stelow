@@ -263,7 +263,6 @@ type ReviewMode = (typeof REVIEW_MODE_OPTIONS)[number]["value"];
 function attentionLabel(card: CardItem): string {
   if (card.activity === "awaiting-answer") return "Answer required";
   if (card.activity === "error") return "Worker failed";
-  if (card.status === "completed") return "Ready to review";
   return "Paused — resume it";
 }
 
