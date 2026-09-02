@@ -1,6 +1,6 @@
 # Transitions Reference
 
-This file is a **data-only mirror** of `skills/stelow-product-orchestrator/stages.yaml`.
+This file is a **data-only mirror** of `skills/stelow-workflow-orchestrator/stages.yaml`.
 It is the single source of truth used by the `stelow advance` helper and the
 `router` skill to validate stage transitions.
 
