@@ -874,7 +874,7 @@ export default async function plugin(bb: BbPluginApi) {
       bb.sdk.plugins.callRpc<{ ghOk: boolean; ghState: string; repos: Array<{ repo: string; projectId: string | null }>; lastSyncedAt: string | null }>({
         pluginId: "github",
         method: "status",
-        input: {},
+        input: null,
         outputSchema: z.any(),
       }),
     listItems: (input: { kind?: "issue" | "pr"; state?: "open" | "closed"; repo?: string }) =>
