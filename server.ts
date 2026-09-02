@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { parseArtifactManifest } from "./lib/artifact-manifest.mjs";
+import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
 const HELPER_SCRIPT = (() => {
@@ -150,6 +151,26 @@ export const rpcContract = defineRpcContract({
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
     output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() })) }),
+  },
+  listNotifications: {
+    input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
+    output: z.object({ notifications: z.array(z.object({ id: z.string(), cardId: z.string(), cardName: z.string(), projectName: z.string(), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number(), readAt: z.number().nullable(), archivedAt: z.number().nullable() })) }),
+  },
+  markNotificationRead: {
+    input: z.object({ notificationId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean() }),
+  },
+  archiveNotification: {
+    input: z.object({ notificationId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean() }),
+  },
+  restoreNotification: {
+    input: z.object({ notificationId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean() }),
+  },
+  getNotification: {
+    input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
+    output: z.object({ notification: z.object({ id: z.string(), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number() }).nullable() }),
   },
   boardWorkflowDefaults: {
     input: z.object({}).strict(),
@@ -743,6 +764,23 @@ export default async function plugin(bb: BbPluginApi) {
     assigned_at INTEGER NOT NULL,
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
   )`);
+  // This table is deliberately created outside the historical migration array:
+  // older local installations have different recorded migration lengths.
+  db.exec(`CREATE TABLE IF NOT EXISTS inbox_events (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('question','error','paused','completed')),
+    summary TEXT NOT NULL,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    occurred_at INTEGER NOT NULL,
+    read_at INTEGER,
+    archived_at INTEGER,
+    resolved_at INTEGER,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_inbox_events_visible ON inbox_events(archived_at, occurred_at DESC);`);
+  const inboxColumns = db.prepare("PRAGMA table_info(inbox_events)").all() as Array<{ name: string }>;
+  if (!inboxColumns.some((column) => column.name === "resolved_at")) db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
 
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
@@ -799,6 +837,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; attachments: string; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
+  type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null };
   type PresetRow = {
     id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
     permission_mode: string; environment_kind: string; base_branch: string | null; machine_id: string | null;
@@ -911,14 +950,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
       }
       const ts = now();
-      db.prepare("UPDATE cards SET worker_thread_id = ?, worker_preset_id = ?, activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run(newThread.id, preset.id, "running", null, ts, cardId);
-      bb.realtime.publish("card-state", { cardId });
+      updateCard(cardId, { worker_thread_id: newThread.id, worker_preset_id: preset.id, activity: "running", last_error: null, updated_at: ts });
       return { ok: true, threadId: newThread.id };
     } catch (error) {
       // Spawn failed — surface it instead of leaving a silent zombie card.
       const msg = error instanceof Error ? error.message : "Respawn failed.";
-      db.prepare("UPDATE cards SET activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run("error", msg, now(), cardId);
-      bb.realtime.publish("card-state", { cardId });
+      updateCard(cardId, { activity: "error", last_error: msg });
       return { ok: false, error: msg };
     }
   }
@@ -930,11 +967,29 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     // Hot-reload race: bb closes the plugin DB while syncThreadState callbacks
     // are still in flight; writing then crashes the whole server process.
     if (!(db as unknown as { open?: boolean }).open) return;
+    const previous = getCard(cardId);
     const next = { updated_at: now(), ...fields };
     const keys = Object.keys(next);
     if (keys.length === 0) return;
     db.prepare(`UPDATE cards SET ${keys.map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...next });
+    const current = getCard(cardId);
+    if (previous && current) {
+      if (current.status === "archived" || current.status === "completed" || current.activity === "running") resolveInboxEvents(cardId, current.updated_at);
+      if (previous.status !== "completed" && current.status === "completed") recordInboxEvent(current, "completed", "Work completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
+      if (previous.activity !== "error" && current.activity === "error") recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
+      if (previous.activity !== "awaiting-answer" && current.activity === "awaiting-answer") recordInboxEvent(current, "question", "Needs your decision to continue.", `question:${cardId}:${current.updated_at}`, current.updated_at);
+    }
     bb.realtime.publish("card-state", { cardId });
+  }
+
+  function recordInboxEvent(card: CardRow, kind: InboxEventRow["kind"], summary: string, dedupeKey: string, occurredAt: number): void {
+    if (insertInboxEvent(db, { id: randomId("evt"), cardId: card.id, kind, summary, dedupeKey, occurredAt })) {
+      bb.realtime.publish("inbox-changed", { cardId: card.id });
+    }
+  }
+
+  function resolveInboxEvents(cardId: string, resolvedAt: number): void {
+    if (resolveActionInboxEvents(db, cardId, resolvedAt) > 0) bb.realtime.publish("inbox-changed", { cardId });
   }
 
   async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {
@@ -1034,7 +1089,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // card missing it (legacy cards idled before the column existed), so
           // it starts its own idle-stuck clock instead of falling through.
           const backfillIdle = transitioningIntoIdle || !card.last_idle_at;
-          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: backfillIdle ? now() : card.last_idle_at });
+          const idleAt = backfillIdle ? now() : card.last_idle_at;
+          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
+          // The Inbox must be driven by lifecycle transitions, never by a UI
+          // read. The scheduled sync revisits idle cards after the grace
+          // period, producing exactly one durable event per idle period.
+          const current = getCard(cardId);
+          if (current && current.status !== "archived" && current.status !== "completed" && idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
+            recordInboxEvent(current, "paused", "Work paused and may need a restart.", `paused:${cardId}:${idleAt}`, idleAt);
+          }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
           db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
@@ -1218,6 +1281,38 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         };
       }));
       return { cards: enriched };
+    },
+
+    async listNotifications({ includeArchived }) {
+      const rows = listInboxEvents(db, includeArchived) as Array<InboxEventRow & { display_name: string | null; name: string; project_id: string }>;
+      const projects = await bb.sdk.projects.list();
+      const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+      return {
+        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, archivedAt: row.archived_at })),
+      };
+    },
+
+    async markNotificationRead({ notificationId }) {
+      const result = db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL").run(now(), notificationId);
+      if (result.changes > 0) bb.realtime.publish("inbox-changed", { notificationId });
+      return { ok: result.changes > 0 };
+    },
+
+    async archiveNotification({ notificationId }) {
+      const result = db.prepare("UPDATE inbox_events SET archived_at = ? WHERE id = ? AND archived_at IS NULL").run(now(), notificationId);
+      if (result.changes > 0) bb.realtime.publish("inbox-changed", { notificationId });
+      return { ok: result.changes > 0 };
+    },
+
+    async restoreNotification({ notificationId }) {
+      const result = db.prepare("UPDATE inbox_events SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL").run(notificationId);
+      if (result.changes > 0) bb.realtime.publish("inbox-changed", { notificationId });
+      return { ok: result.changes > 0 };
+    },
+
+    async getNotification({ notificationId, cardId }) {
+      const row = db.prepare("SELECT id, kind, summary, occurred_at FROM inbox_events WHERE id = ? AND card_id = ?").get(notificationId, cardId) as { id: string; kind: InboxEventRow["kind"]; summary: string; occurred_at: number } | undefined;
+      return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at } : null };
     },
 
     async createCard({ projectId, prompt, attachments, intent, appetite, reviewMode, presetId }) {
@@ -1460,9 +1555,7 @@ Before asking a question, first summarize what you read (files, plan, codebase) 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}` }, ...cardAttachments(card.attachments)],
       });
-      const ts = now();
-      db.prepare("UPDATE cards SET stage = ?, activity = ?, last_error = ?, worker_thread_id = ?, worker_preset_id = ?, last_assistant_text = ?, updated_at = ? WHERE id = ?").run("triage", "running", null, newThread.id, preset.id, null, ts, cardId);
-      bb.realtime.publish("card-state", { cardId });
+      updateCard(cardId, { stage: "triage", activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, last_assistant_text: null });
       return { reseeded: true, error: null };
     },
 

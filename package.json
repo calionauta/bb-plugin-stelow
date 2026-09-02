@@ -43,7 +43,9 @@
     "build": "bb plugin build && node scripts/postbuild.mjs",
     "reload": "bb plugin reload stelow",
     "build:reload": "npm run build && npm run reload",
+    "test": "npm run test:artifacts && npm run test:inbox",
     "test:artifacts": "node tests/artifact-manifest.test.mjs",
+    "test:inbox": "node tests/inbox-flows.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "files": [

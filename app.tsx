@@ -294,16 +294,13 @@ interface RunningAccessoryHandle {
   tone: string;
 }
 
-// 'Live' = in any workflow phase (not a terminal). Archived/completed excluded.
-const isLiveCard = (card: { status: string }) => card.status !== "archived" && card.status !== "completed";
-
 function useRunningAccessory(): RunningAccessoryHandle {
   const rpc = useRpc<typeof rpcContract>();
   const [count, setCount] = useState(0);
   const reload = useCallback(async () => {
     try {
-      const result = await rpc.call("listCards", { projectId: null });
-      setCount(result.cards.filter(isLiveCard).length);
+      const result = await rpc.call("listNotifications", { includeArchived: false });
+      setCount(result.notifications.filter((entry) => entry.kind !== "completed").length);
     } catch {
       /* host will show stale silently */
     }
@@ -311,7 +308,7 @@ function useRunningAccessory(): RunningAccessoryHandle {
   useEffect(() => {
     void reload();
   }, [reload]);
-  useDebouncedRealtime(["card-state", "board-changed"], () => void reload());
+  useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void reload());
   const tone = count > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground";
   return { count, tone };
 }
@@ -320,12 +317,87 @@ function StelowSidebarAccessory() {
   const { count, tone } = useRunningAccessory();
   return (
     <span
-      aria-label={`${count} Stelow work items in progress`}
+      aria-label={`${count} Stelow Inbox items need attention`}
       className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${tone}`}
     >
       {count}
     </span>
   );
+}
+
+type InboxNotification = {
+  id: string; cardId: string; cardName: string; projectName: string;
+  kind: "question" | "error" | "paused" | "completed";
+  summary: string; occurredAt: number; readAt: number | null; archivedAt: number | null;
+};
+
+const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
+  question: { icon: "?", label: "Needs a decision", tone: "bg-amber-500/15 text-amber-700" },
+  error: { icon: "!", label: "Worker failed", tone: "bg-destructive/15 text-destructive" },
+  paused: { icon: "Ⅱ", label: "Work paused", tone: "bg-amber-500/15 text-amber-700" },
+  completed: { icon: "✓", label: "Completed", tone: "bg-emerald-500/15 text-emerald-700" },
+};
+
+function relativeTime(timestamp: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
+  if (seconds < 60) return "Just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "Yesterday" : `${days}d ago`;
+}
+
+function InboxPanel() {
+  const rpc = useRpc<typeof rpcContract>();
+  const navigate = useBbNavigate();
+  const [notifications, setNotifications] = useState<InboxNotification[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setNotifications((await rpc.call("listNotifications", { includeArchived: showArchived })).notifications);
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load Stelow Inbox.");
+    }
+    finally { setLoading(false); }
+  }, [rpc, showArchived]);
+  useEffect(() => { void load(); }, [load]);
+  useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
+  const action = notifications.filter((entry) => entry.archivedAt === null && ["question", "error", "paused"].includes(entry.kind));
+  const updates = notifications.filter((entry) => entry.archivedAt === null && entry.kind === "completed");
+  async function open(entry: InboxNotification) {
+    if (!entry.readAt) {
+      try { await rpc.call("markNotificationRead", { notificationId: entry.id }); }
+      catch { /* navigation must remain available if acknowledgement fails */ }
+    }
+    navigate.toPluginPanel("board", { subPath: `card/${entry.cardId}/event/${entry.id}` });
+  }
+  async function archive(entry: InboxNotification) { await rpc.call("archiveNotification", { notificationId: entry.id }); await load(); }
+  async function restore(entry: InboxNotification) { await rpc.call("restoreNotification", { notificationId: entry.id }); await load(); }
+  const Section = ({ title, entries }: { title: string; entries: InboxNotification[] }) => !entries.length ? null : (
+    <section className="space-y-2" aria-label={title}>
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
+      <div className="divide-y rounded-md border">
+        {entries.map((entry) => {
+          const copy = INBOX_COPY[entry.kind];
+          return <div key={entry.id} className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
+            <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+              <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${copy.tone}`}>{copy.icon}</span>
+              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{copy.label}. {entry.summary}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(entry.occurredAt).toLocaleString()}>{entry.projectName} · {relativeTime(entry.occurredAt)}</span></span>
+            </button>
+            <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
+          </div>;
+        })}
+      </div>
+    </section>
+  );
+  const archived = notifications.filter((entry) => entry.archivedAt !== null);
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.</p></div><button onClick={() => setShowArchived((value) => !value)} className="min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{loading ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : loadError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
 function BoardPanel({ subPath }: { subPath: string }) {
@@ -361,6 +433,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [filterStatus, setFilterStatus] = useState<string | "all">("all");
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
+  const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
@@ -459,7 +532,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
-  const cardMatch = subPath.match(/^card\/(card_[A-Za-z0-9]+)\/?$/);
+  const cardMatch = subPath.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?\/?$/);
   if (cardMatch && cardMatch[1]) {
     const cardId = cardMatch[1];
     return (
@@ -470,7 +543,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
           onBack={() => navigate.toPluginPanel("board", { subPath: "" })}
         />
         <div className="flex-1 overflow-auto">
-          <CardDetailBody cardId={cardId} onClose={() => navigate.toPluginPanel("board", { subPath: "" })} navigate={navigate} />
+          <CardDetailBody cardId={cardId} inboxEventId={cardMatch[2] ?? null} onClose={() => navigate.toPluginPanel("board", { subPath: "" })} navigate={navigate} />
         </div>
       </div>
     );
@@ -484,12 +557,18 @@ function BoardPanel({ subPath }: { subPath: string }) {
             <div className="min-w-0">
               <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h1 className="text-xl font-semibold tracking-tight">Stelow Board</h1>
+                <h1 className="text-xl font-semibold tracking-tight">Work</h1>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">About Stelow <span aria-hidden="true">↗</span></UrlLink>
               </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
-            <Button className="w-full sm:mt-0.5 sm:w-auto" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+            <div className="flex w-full gap-2 sm:mt-0.5 sm:w-auto">
+              <div role="group" aria-label="Work view" className="flex rounded-md border p-0.5">
+                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`min-h-11 rounded px-3 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-muted font-medium" : "text-muted-foreground"}`}>Board</button>
+                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`min-h-11 rounded px-3 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-muted font-medium" : "text-muted-foreground"}`}>List</button>
+              </div>
+              <Button className="flex-1 sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+            </div>
           </header>
 
           <Dialog open={createWorkOpen} onOpenChange={setCreateWorkOpen}>
@@ -567,11 +646,11 @@ function BoardPanel({ subPath }: { subPath: string }) {
             </section>
           ) : null}
 
-          <p className="text-xs text-muted-foreground">
+          {viewMode === "board" ? <p className="text-xs text-muted-foreground">
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
-          </p>
-          <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
+          </p> : null}
+          {viewMode === "list" ? <WorkList groups={grouped} navigate={navigate} /> : <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
             {COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
@@ -582,7 +661,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
                 onDrop={(cardId) => moveCard(cardId, column)}
               />
             ))}
-          </div>
+          </div>}
 
           <button onClick={() => setRestartFocusKey((k) => k + 1)} className="sr-only" aria-hidden="true" tabIndex={-1}>refresh focus</button>
         </div>
@@ -694,6 +773,14 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
       {selected ? null : null}
     </label>
   );
+}
+
+function WorkList({ groups, navigate }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate> }) {
+  return <div className="space-y-5">{COLUMNS.map((column) => {
+    const cards = groups[column] ?? [];
+    if (!cards.length) return null;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` })} className="flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
+  })}</div>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void }) {
@@ -872,8 +959,8 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   const params = props.params;
   const cardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
   const navigate = useBbNavigate();
-  if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a work item from the Stelow Board to see its details here.</p>;
-  return <CardDetailBody cardId={cardId} onClose={() => { /* host tab close */ }} navigate={navigate} />;
+  if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a work item from Stelow Work to see its details here.</p>;
+  return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
 function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string; onBack: () => void; restartFocusKey?: number }) {
@@ -1311,7 +1398,7 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
   );
 }
 
-function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
+function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
@@ -1321,21 +1408,30 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
+  const inboxEventRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async () => {
     try {
       const detailResult = await rpc.call("cardDetail", { cardId });
       const listResult = await rpc.call("listCards", { projectId: detailResult.card.projectId });
+      const eventResult = inboxEventId ? await rpc.call("getNotification", { notificationId: inboxEventId, cardId }) : null;
       setDetail(detailResult);
       setCard(listResult.cards.find((entry) => entry.id === cardId) ?? null);
+      setInboxEvent(eventResult?.notification ?? null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load card.");
     }
-  }, [cardId, rpc]);
+  }, [cardId, inboxEventId, rpc]);
 
-  useEffect(() => { void load(); void rpc.call("markCardSeen", { cardId }); }, [cardId, load, rpc]);
+  useEffect(() => { void load(); }, [load]);
   useDebouncedRealtime(["card-state"], () => { void load(); });
+  useEffect(() => {
+    if (!inboxEventId || !inboxEvent) return;
+    inboxEventRef.current?.scrollIntoView({ block: "nearest" });
+    inboxEventRef.current?.focus({ preventScroll: true });
+  }, [inboxEventId, inboxEvent]);
 
   async function submitComment() {
     if (!comment.trim()) return;
@@ -1394,6 +1490,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {card ? (
           <>
+            {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="font-medium">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
             <p className="text-sm text-foreground">{card.prompt}</p>
             {detail?.attachments && detail.attachments.length > 0 ? (
               <div className="space-y-1">
@@ -1636,7 +1733,7 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
 
 function OpenStelowBoardAction() {
   const navigate = useBbNavigate();
-  return <button onClick={() => navigate.toPluginPanel("board", { subPath: "" })} className="rounded-md border bg-card px-2 py-1 text-xs shadow-sm hover:border-primary/50">Stelow board</button>;
+  return <button onClick={() => navigate.toPluginPanel("board", { subPath: "" })} className="min-h-11 rounded-md border bg-card px-3 py-2 text-xs shadow-sm hover:border-primary/50">Stelow Work</button>;
 }
 
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {
@@ -1661,16 +1758,23 @@ function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: Plug
 
 export default definePluginApp((app) => {
   app.slots.navPanel({
+    id: "inbox",
+    title: "Stelow Inbox",
+    icon: "Inbox",
+    path: "inbox",
+    component: InboxPanel,
+    experimental_sidebarAccessory: StelowSidebarAccessory,
+  });
+  app.slots.navPanel({
     id: "board",
-    title: "Stelow",
+    title: "Stelow Work",
     icon: "Columns",
     path: "board",
     component: (props) => { PillsyStyles(); return <BoardPanel subPath={props.subPath} />; },
-    experimental_sidebarAccessory: StelowSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
   app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Columns", component: CardDrawerAdapter });
-  app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Stelow board", component: OpenStelowBoardAction });
+  app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Open Stelow Work", component: OpenStelowBoardAction });
 
   app.slots.messageDirective({
     id: "stelow-artifact",
