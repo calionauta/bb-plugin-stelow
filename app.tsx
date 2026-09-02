@@ -432,21 +432,17 @@ function BoardPanel({ subPath }: { subPath: string }) {
   async function start(request: NewThreadRequest) {
     const targetProjectId = request.projectId || activeProjectId;
     if (!targetProjectId) return;
-    // Compose the prompt from the composer's text + attached files, so the
-    // agent sees the same content the user does (including inline file links).
+    // Keep files structured: a path printed in a prompt is not an attachment,
+    // so BB cannot render or open it in the worker thread.
     const textPart = request.input.find((part) => part.type === "text");
     const text = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
-    const fileParts = request.input.filter((part) => part.type === "localFile" || part.type === "image" || part.type === "localImage");
-    const attached = fileParts
-      .map((part) => {
-        if (part.type === "image" || part.type === "localImage") return `[image: ${(part as { url?: string; path?: string }).url ?? (part as { path?: string }).path ?? ""}]`;
-        return (part as { path?: string; name?: string }).path ?? (part as { name?: string }).name ?? "";
-      })
-      .filter(Boolean) as string[];
-    const prompt = [text, ...(attached.length > 0 ? [`\n\nAttached files:\n${attached.map((path) => `- ${path}`).join("\n")}`] : [])].join("\n");
+    const attachments = request.input
+      .filter((part): part is { type: "localFile" | "localImage"; path: string } => (part.type === "localFile" || part.type === "localImage") && "path" in part && typeof part.path === "string" && part.path.length > 0)
+      .map((part) => ({ type: part.type, path: part.path }));
+    const prompt = text;
     if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, intent, appetite, reviewMode });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, attachments, intent, appetite, reviewMode });
       setPrompt("");
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success("Card created in Triage. The agent will triage it.");
@@ -1370,6 +1366,25 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
         {card ? (
           <>
             <p className="text-sm text-foreground">{card.prompt}</p>
+            {detail?.attachments && detail.attachments.length > 0 ? (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Attachments (open in BB worker):</span>
+                <div className="flex flex-wrap gap-1">
+                  {detail.attachments.map((attachment) => (
+                    <button
+                      key={`${attachment.type}:${attachment.path}`}
+                      onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}
+                      disabled={!card.workerThreadId}
+                      className="inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-sky-500/20 disabled:opacity-50"
+                      title="Open the worker thread; BB renders this original attachment there."
+                    >
+                      <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
+                      <span>{attachment.display}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
               <div className="space-y-1">
                 <span className="text-xs font-medium text-muted-foreground">Mentioned files:</span>
