@@ -21,4 +21,5 @@ function copyTree(src, dest) {
 
 copyTree(join(pluginRoot, "data"), join(dist, "data"));
 copyTree(join(pluginRoot, "references"), join(dist, "references"));
-console.log("postbuild: data/ and references/ copied to dist/");
+copyTree(join(pluginRoot, "skills"), join(dist, "skills"));
+console.log("postbuild: data/, reference/ and skills/ copied to dist/");

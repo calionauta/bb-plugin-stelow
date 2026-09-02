@@ -43,8 +43,9 @@
     "build": "bb plugin build && node scripts/postbuild.mjs",
     "reload": "bb plugin reload stelow",
     "build:reload": "npm run build && npm run reload",
-    "test": "npm run test:artifacts && npm run test:inbox",
+    "test": "npm run test:artifacts && npm run test:inbox && npm run test:skills-sync",
     "test:artifacts": "node tests/artifact-manifest.test.mjs",
+    "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",
     "test:inbox": "node tests/inbox-flows.test.mjs",
     "typecheck": "tsc --noEmit"
   },

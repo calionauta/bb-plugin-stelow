@@ -8,7 +8,7 @@ description: >
   Loaded by host-levers.md on every stage hand-off.
 metadata:
   frequency: per-stage
-  category: product
+  category: workflow
   context-cost: low
   author: calionauta
 ---
@@ -29,19 +29,9 @@ Input:
 
 Output:
 
-- `state.md` advanced via the **plugin CLI** `bb stelow advance <next-candidate>`
-  (server-routes per-card to your own state dir; in the standalone skills-only
-  setup without the plugin, use `scripts/stelow advance <next-candidate>`)
+- `state.md` advanced (via `scripts/stelow advance <next-candidate>`)
 - The next stage's `SKILL.md` loaded for the next agent turn
 - A new `## Hand-off (router)` block appended to `state.md`
-
-> **bb plugin integration (bb-plugin-stelow):** the board's columns mirror
-> `state.md` (Triage → Shaping → Gate pending → Running → Done). A
-> `bb stelow ask` in any stage parks the card in Gate pending until the user
-> answers; on timeout the router still advances with the agent's best
-> judgment, and any late answer is delivered as a card comment the agent
-> reads on its next turn. The plugin never edits `state.md` — advancing
-> always happens through `scripts/stelow` here.
 
 ## Algorithm
 
@@ -51,7 +41,7 @@ current=$(scripts/stelow status --json | jq -r .current_stage)
 next=$(extract_hand_off_field next-candidate)
 
 # 2. Validate next against transitions.md.
-transitions=skills/stelow-product-orchestrator/references/transitions.md
+transitions=skills/stelow-workflow-orchestrator/references/transitions.md
 allowed=$(awk "/^### $current\$/,/^### |\$/" "$transitions" \
             | grep -E "^(next|accept|rework):" \
             | head -1 | awk "{print \$2}" | tr -d "[],\"")

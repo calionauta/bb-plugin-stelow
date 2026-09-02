@@ -8,6 +8,24 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Architecture
+
+- **DRY: stop duplicating Stelow skills.** The plugin dropped the 13
+  `stelow-product-*` playbooks from its bundle (consumed from the agent skills
+  hub via `npx skills add calionauta/stelow`) and renamed the vendored workflow
+  guides to the repo-authoritative `stelow-workflow-*` prefix.
+
+- **Auto-sync vendored workflow skills.** `lib/workflow-skills-sync.mjs`
+  fetches the `calionauta/stelow` repo tree, compares git blob hashes against a
+  `.sync-state.json`, and rewrites only the changed core skills
+  (`stelow-*` + `stelow-workflow-*`) into the plugin's skills dir. Registered on
+  `bb.background.schedule` every 6h (`STELOW_SKILLS_SYNC_CRON` overrides;
+  default `33 */6 * * *`). Fail-soft: network/API errors just log and keep the
+  current skills — the board never breaks.
+
+- **Worker prompt updated** to load workflow skills from the plugin and product
+  playbooks from the stelow repo hub, matching the split distribution.
+
 ### Security
 
 - **Artifact manifest path hardening.** Absolute paths and parent-directory
