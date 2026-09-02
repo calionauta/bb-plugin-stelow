@@ -41,6 +41,7 @@
   },
   "scripts": {
     "build": "bb plugin build && node scripts/postbuild.mjs",
+    "test:artifacts": "node tests/artifact-manifest.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "files": [

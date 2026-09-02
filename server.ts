@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } fr
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { parseArtifactManifest } from "./lib/artifact-manifest.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
 const HELPER_SCRIPT = (() => {
@@ -1312,9 +1313,7 @@ ${prompt}` }, ...workerAttachments],
         })();
         if (!stateBlob) return [];
         const list: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }> = [];
-        const block = String(stateBlob.match(/^artifacts:\s*$/m) ? stateBlob.split(/^artifacts:\s*$/m)[1] ?? "" : "").split(/\n(?=^\S)/m)[0] ?? "";
-        for (const rawEntry of block.split(/^  - /m).slice(1)) {
-          const fields = Object.fromEntries(Array.from(rawEntry.matchAll(/^\s*([a-z_]+):\s*(.+)\s*$/gm)).map((match) => [match[1], match[2].trim()]));
+        for (const fields of parseArtifactManifest(stateBlob)) {
           const stage = fields.stage;
           const relPath = fields.path;
           if (!stage || !relPath) continue;
