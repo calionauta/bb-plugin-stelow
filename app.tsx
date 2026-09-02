@@ -479,16 +479,16 @@ function BoardPanel({ subPath }: { subPath: string }) {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
-          <header className="flex items-center justify-between gap-3">
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Stelow Board</h1>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
-            <Button onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+            <Button className="w-full sm:w-auto" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
           </header>
 
           <Dialog open={createWorkOpen} onOpenChange={setCreateWorkOpen}>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new work</DialogTitle>
                 <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and delivery process.</DialogDescription>
@@ -506,7 +506,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
                 onSubmit={(request) => void start(request)}
               />
               <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
-                <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">Customize defaults</summary>
+                <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-muted-foreground hover:text-foreground">Customize defaults</summary>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
                   <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
@@ -550,6 +550,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
           {loading ? <p className="text-sm text-muted-foreground">Loading Stelow…</p> : null}
           {cards.length === 0 && !loading ? <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">No work yet. Start new work to add an item to the board.</p> : null}
 
+          <p className="sm:hidden text-xs text-muted-foreground">Swipe sideways to view every stage.</p>
           <div className="grid gap-3 overflow-x-auto" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
             {COLUMNS.map((column) => (
               <BoardColumn
@@ -639,7 +640,7 @@ function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filt
       </button> : null}
       {activeCount > 0 ? <button onClick={onReset} className="inline-flex h-7 items-center rounded-full border bg-background px-3 text-xs text-muted-foreground hover:text-foreground">Clear</button> : null}
       {open ? (
-        <div role="dialog" aria-label="Filters" className="absolute left-3 top-10 z-20 w-[min(36rem,calc(100vw-2rem))] rounded-md border bg-card p-3 shadow-lg">
+        <div role="dialog" aria-label="Filters" className="absolute left-0 top-10 z-20 w-[min(36rem,calc(100vw-2rem))] rounded-md border bg-card p-3 shadow-lg">
           <div className="grid gap-3 sm:grid-cols-2">
             <FilterSelect label="Project" value={filterProjectId} onChange={onProject} options={projectOptions} />
             <FilterSelect label="Type" value={filterIntent} onChange={onIntent} options={FILTER_INTENT_OPTIONS} />
@@ -679,7 +680,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
   const [over, setOver] = useState(false);
   return (
     <section onDragOver={(event) => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(event) => { event.preventDefault(); setOver(false); const id = event.dataTransfer.getData("text/stelow-card"); if (id) onDrop(id); }} className={`flex min-h-40 flex-col rounded-lg border bg-muted/30 p-2 transition ${over ? "border-primary bg-primary/5" : "border-border"} ${collapsed ? "items-center" : ""}`}>
-      <button onClick={onToggleCollapsed} className={`${collapsed ? "flex h-full w-full cursor-pointer flex-col items-center gap-2 py-2 hover:bg-foreground/5" : "mb-2 flex cursor-pointer items-center justify-between gap-2 rounded-md px-1 py-0.5 hover:bg-foreground/5"} text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground`} title={collapsed ? `Expand ${COLUMN_LABELS[column]}` : `Collapse ${COLUMN_LABELS[column]}`} aria-label={collapsed ? `Expand ${COLUMN_LABELS[column]}` : `Collapse ${COLUMN_LABELS[column]}`}>
+      <button onClick={onToggleCollapsed} className={`${collapsed ? "flex h-full w-full cursor-pointer flex-col items-center gap-2 py-2 hover:bg-foreground/5" : "mb-2 flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-md px-1 py-0.5 hover:bg-foreground/5"} text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground`} title={collapsed ? `Expand ${COLUMN_LABELS[column]}` : `Collapse ${COLUMN_LABELS[column]}`} aria-label={collapsed ? `Expand ${COLUMN_LABELS[column]}` : `Collapse ${COLUMN_LABELS[column]}`}>
         {collapsed ? (
           <>
             <span className="rounded-md bg-foreground/10 px-1.5 text-foreground">{cards.length}</span>
