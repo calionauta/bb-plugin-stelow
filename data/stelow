@@ -299,6 +299,30 @@ for line in fm.splitlines():
 merged = dict(prev)
 merged.update(art_map)
 
+# A workflow manifest must name every material Markdown artifact, not just the
+# one required by the transition guard. This is what lets host UIs enumerate
+# the completed work without a separate filesystem index.
+def artifact_stage(relative):
+    name = os.path.basename(relative)
+    if name.startswith("spec-product"): return "shape"
+    if name.startswith("spec-tech") or name == "testing-strategy.md": return "planning"
+    if relative.startswith("interfaces/"): return "interface"
+    if relative.startswith("critiques/"): return "critique"
+    if relative.startswith("scopes/"): return "scope"
+    if name == "execution.md": return "execution"
+    if name.startswith("verification"): return "verification"
+    if name == "audit.md": return "audit"
+    return None
+
+for walk_root, _, filenames in os.walk(statedir):
+    for filename in filenames:
+        if not filename.endswith(".md") or filename == "state.md":
+            continue
+        full = os.path.join(walk_root, filename)
+        stage = artifact_stage(os.path.relpath(full, statedir).replace(os.sep, "/"))
+        if stage:
+            merged[stage] = os.path.relpath(full, root).replace(os.sep, "/")
+
 out = []
 in_artifacts = False
 cur_found = False
