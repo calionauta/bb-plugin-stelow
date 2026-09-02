@@ -8,6 +8,30 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Security
+
+- **Artifact manifest path hardening.** Absolute paths and parent-directory
+  traversal (`..`) in artifact manifests are now rejected; every resolved
+  artifact path is verified to stay inside the project workspace
+  (`resolveArtifactPath` in `lib/artifact-manifest.mjs`, used by the server's
+  document-read path).
+
+- **Optional third-party CLIs are user-installed only.** References under
+  `skills/stelow-product-orchestrator/references/cli-tools/` (`pi-tasks`,
+  `rpiv-todo`, thermo-nuclear code-quality review, and safe-change) no longer
+  instruct the agent to run unpinned third-party installers automatically.
+  They are framed as optional tools the user installs and pins/verifies
+  themselves; absent them, the guidance falls back to built-in workflow steps.
+
+- **Replace unsupported `Columns` host icon** with the valid `Columns2` icon
+  in the board nav, thread panel action, and manifest metadata.
+
+### Design
+
+- **Board/List filter spacing.** The view toggle (Board/List) and the "New
+  work" CTA now sit `gap-3` apart on desktop so they read as two distinct
+  controls, keeping `gap-2` on mobile to preserve width.
+
 ### Added
 
 - **Contextual preset configuration.** Removed the duplicate board-header
