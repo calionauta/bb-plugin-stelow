@@ -35,6 +35,28 @@ type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][numbe
 
 type ProjectsResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R ? Extract<R, { projects?: unknown }> : never;
 
+type GithubStatus = {
+  ok: boolean;
+  pluginAvailable: boolean;
+  ghOk: boolean;
+  repos: Array<{ repo: string; projectId: string | null }>;
+};
+
+type GithubCandidate = {
+  repo: string;
+  number: number;
+  title: string;
+  labels: string[];
+  author: string;
+  url: string;
+  body: string;
+  updatedAt: string;
+  projectId: string | null;
+  alreadyImported: boolean;
+  cardId: string | null;
+  cardName: string | null;
+};
+
 const INTENT_LABEL: Record<string, string> = {
   "new-product": "New product",
   feature: "Feature",
@@ -42,6 +64,18 @@ const INTENT_LABEL: Record<string, string> = {
   refactor: "Refactor",
   investigate: "Investigate",
 };
+
+// Map a tagged GitHub issue onto a Stelow intent from its labels/title. Falls
+// back to investigate (the permissive triage intent). This is a heuristic the
+// user can correct on the card afterwards via updateCardIntent.
+function githubIntentFor(issue: { labels: string[]; title: string }): "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" {
+  const lower = [...issue.labels, issue.title].join(" ").toLowerCase();
+  if (/\bbugs?\b|\bdefects?\b|\bregression\b/.test(lower)) return "bugfix";
+  if (/\brefactor\b|\bclean(up)?\b|\bdebt\b|\bsimplify\b/.test(lower)) return "refactor";
+  if (/\bfeature\b|\benhancement\b|\bfeat\b|\bnew\b/.test(lower)) return "feature";
+  if (/\bnew\s+product\b|\bproduct\b/.test(lower)) return "new-product";
+  return "investigate";
+}
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
@@ -464,20 +498,28 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [restartFocusKey, setRestartFocusKey] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importLabel, setImportLabel] = useState("stelow-work");
+  const [importCandidates, setImportCandidates] = useState<GithubCandidate[]>([]);
+  const [importSelected, setImportSelected] = useState<Record<string, boolean>>({});
+  const [importBusy, setImportBusy] = useState(false);
+  const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
 
   const load = useCallback(async (targetId: string | null) => {
     setLoading(true);
     try {
-      const [projectsResult, cardsResult, presetsResult, bandPresetsResult] = await Promise.all([
+      const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
         rpc.call("listCards", { projectId: targetId }).catch(() => ({ cards: [] })),
         rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
         rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
+        rpc.call("board", { projectId: targetId }).catch(() => null),
       ]);
       setProjects(projectsResult?.projects ?? []);
       setCards(cardsResult.cards);
       setBoardPresets(presetsResult.presets);
       setBoardBandPresets(bandPresetsResult.bands);
+      if (boardResult?.githubStatus) setGithubStatus(boardResult.githubStatus);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       setProjects([]);
@@ -558,6 +600,48 @@ function BoardPanel({ subPath }: { subPath: string }) {
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
+  async function listGithubIssues() {
+    setImportBusy(true);
+    setImportCandidates([]);
+    setImportSelected({});
+    try {
+      const { issues } = await rpc.call("listGithubCandidates", { label: importLabel.trim() });
+      setImportCandidates(issues);
+      // Preselect only issues not yet imported, so the flow is a one-click
+      // "bring in everything tagged" rather than a long checklist.
+      const fresh: Record<string, boolean> = {};
+      for (const issue of issues) if (!issue.alreadyImported) fresh[`${issue.repo}#${issue.number}`] = true;
+      setImportSelected(fresh);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to list GitHub issues.");
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  async function importSelectedIssues() {
+    const chosen = importCandidates.filter((issue) => importSelected[`${issue.repo}#${issue.number}`]);
+    if (chosen.length === 0) return toast.error("No issues selected.");
+    setImportBusy(true);
+    let imported = 0;
+    for (const issue of chosen) {
+      try {
+        // The server resolves each issue's owning project from its repo; no
+        // project picker needed. If it cannot, the import reports that per-issue.
+        const result = await rpc.call("importGithubIssue", { repo: issue.repo, number: issue.number, label: importLabel.trim(), intent: githubIntentFor(issue) });
+        if (result.ok) imported += 1;
+      } catch (error) {
+        toast.error(`Issue ${issue.repo}#${issue.number}: ${error instanceof Error ? error.message : "import failed"}`);
+      }
+    }
+    setImportBusy(false);
+    setImportOpen(false);
+    if (imported > 0) {
+      toast.success(`Imported ${imported} issue${imported === 1 ? "" : "s"} into Stelow Triage.`);
+      void load(boardProjectId ?? routeProjectId);
+    }
+  }
+
   const cardMatch = subPath.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?\/?$/);
   if (cardMatch && cardMatch[1]) {
     const cardId = cardMatch[1];
@@ -594,8 +678,17 @@ function BoardPanel({ subPath }: { subPath: string }) {
                 <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
               </div>
               <Button className="h-9 flex-1 max-md:pointer-coarse:h-10 sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+              {githubStatus?.pluginAvailable ? (
+                <Button className="h-9 flex-1 max-md:pointer-coarse:h-10 sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
+              ) : null}
             </div>
           </header>
+          {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
+            <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
+              <span className="text-amber-700 dark:text-amber-300">Import issues needs a GitHub account linked in the <span className="font-medium">github</span> plugin.</span>
+              <a className="text-primary underline underline-offset-2" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">Set up GitHub auth</a>
+            </div>
+          ) : null}
 
           <Dialog open={createWorkOpen} onOpenChange={setCreateWorkOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
@@ -630,6 +723,60 @@ function BoardPanel({ subPath }: { subPath: string }) {
                   </div>
                 </div>
               </details>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={importOpen} onOpenChange={(open) => { setImportOpen(open); if (!open) setImportCandidates([]); }}>
+            <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Import GitHub issues</DialogTitle>
+                <DialogDescription>Issues tagged with the Stelow label land in Triage as work cards. Tag the issue with the label on GitHub, then import it here — nothing is auto-imported.</DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-3 py-2">
+                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="import-label">Label</label>
+                    <Input id="import-label" value={importLabel} onChange={(event) => setImportLabel(event.target.value)} placeholder="stelow-work" aria-label="Stelow GitHub label" className="sm:w-52" />
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => void listGithubIssues()} disabled={importBusy}>Refresh</Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Each issue is imported into the bb project that owns its repository — no picker needed. Tag issues with this label on GitHub; nothing is auto-imported.</p>
+                {importBusy ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
+                {!importBusy && importCandidates.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No open issues carry the label “{importLabel}” yet. Tag an issue on GitHub with this label, then Refresh.</p>
+                ) : null}
+                {importCandidates.length > 0 ? (
+                  <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-md border">
+                    {importCandidates.map((issue) => {
+                      const key = `${issue.repo}#${issue.number}`;
+                      return (
+                        <li key={key} className="flex items-start gap-2 p-2">
+                          <input
+                            className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
+                            type="checkbox"
+                            checked={Boolean(importSelected[key])}
+                            onChange={() => setImportSelected((prev) => ({ ...prev, [key]: !prev[key] }))}
+                            disabled={issue.alreadyImported}
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm leading-5">
+                              <span className="font-medium">{issue.title}</span>
+                              <span className="ml-2 text-xs text-muted-foreground">{issue.repo}#{issue.number}</span>
+                            </p>
+                            <p className="text-xs text-muted-foreground">{issue.labels.join(" · ") || "no labels"}{issue.projectId ? ` → ${projects.find((project) => project.id === issue.projectId)?.name ?? issue.projectId}` : ""}{issue.alreadyImported ? " · already imported" : ""}</p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="ghost" disabled={importBusy}>Cancel</Button>
+                </DialogClose>
+                <Button onClick={() => void importSelectedIssues()} disabled={importBusy}>Import selected into Triage</Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
 

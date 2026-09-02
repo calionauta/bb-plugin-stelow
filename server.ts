@@ -139,6 +139,7 @@ export const rpcContract = defineRpcContract({
       rootPath: z.string().nullable(),
       workflows: z.array(workflowSchema),
       error: z.string().nullable(),
+      githubStatus: z.object({ ok: z.boolean(), pluginAvailable: z.boolean(), ghOk: z.boolean(), repos: z.array(z.object({ repo: z.string(), projectId: z.string().nullable() })) }),
     }),
   },
   projects: {
@@ -148,6 +149,18 @@ export const rpcContract = defineRpcContract({
   answerQuestion: {
     input: z.object({ cardId: z.string(), answers: z.array(z.string()) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  listGithubCandidates: {
+    input: z.object({ label: z.string().min(1).max(60) }).strict(),
+    output: z.object({
+      issues: z.array(z.object({
+        repo: z.string(), number: z.number().int().positive(), title: z.string(), labels: z.array(z.string()), author: z.string(), url: z.string(), body: z.string(), updatedAt: z.string(), projectId: z.string().nullable(), alreadyImported: z.boolean(), cardId: z.string().nullable(), cardName: z.string().nullable(),
+      })),
+    }),
+  },
+  importGithubIssue: {
+    input: z.object({ projectId: z.string().nullable().optional(), repo: z.string(), number: z.number().int().positive(), label: z.string().min(1).max(60), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("investigate") }).strict(),
+    output: z.object({ ok: z.boolean(), cardId: z.string().nullable(), skipped: z.string().nullable(), error: z.string().nullable() }),
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
@@ -783,6 +796,21 @@ export default async function plugin(bb: BbPluginApi) {
   const inboxColumns = db.prepare("PRAGMA table_info(inbox_events)").all() as Array<{ name: string }>;
   if (!inboxColumns.some((column) => column.name === "resolved_at")) db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
 
+  // github_imports tracks which tagged GitHub issues have been pulled into
+  // cards. Created outside the historical migration array (the recorded
+  // _bb_migrations has a legacy-unknown sentinel at id 6), matching the
+  // stage_presets / inbox_events pattern.
+  db.exec(`CREATE TABLE IF NOT EXISTS github_imports (
+    issue_key TEXT PRIMARY KEY,
+    repo TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    card_id TEXT,
+    imported_at INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE SET NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_github_imports_label ON github_imports(label);`);
+
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
     db.exec("ALTER TABLE presets ADD COLUMN environment_kind TEXT NOT NULL DEFAULT 'project-default'");
@@ -835,6 +863,127 @@ export default async function plugin(bb: BbPluginApi) {
 
   function now(): number { return Date.now(); }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
+
+  // Thin typed wrapper over the builtin `github` plugin's RPC. The github
+  // plugin owns its auth/sync/cache; Stelow only reads tagged issues and
+  // (optionally) clears the tag after import. Requires the github plugin to be
+  // running (bb plugin list shows it); if absent, calls reject and we surface
+  // that as a clear error rather than a silent no-op.
+  const g = {
+    status: () =>
+      bb.sdk.plugins.callRpc<{ ghOk: boolean; ghState: string; repos: Array<{ repo: string; projectId: string | null }>; lastSyncedAt: string | null }>({
+        pluginId: "github",
+        method: "status",
+        input: {},
+        outputSchema: z.any(),
+      }),
+    listItems: (input: { kind?: "issue" | "pr"; state?: "open" | "closed"; repo?: string }) =>
+      bb.sdk.plugins.callRpc<{ items: Array<{ repo: string; number: number; kind: string; title: string; state: string; author: string; labels: string[]; url: string; body: string; updatedAt: string }> }>({
+        pluginId: "github",
+        method: "listItems",
+        input: { state: "open", ...input },
+        outputSchema: z.any(),
+      }),
+    getIssue: (input: { repo: string; number: number }) =>
+      bb.sdk.plugins.callRpc<{ issue: { repo: string; number: number; title: string; state: string; author: string; body: string; labels: string[]; url: string; updatedAt: string; comments: Array<{ author: string; body: string; createdAt: string }> } }>({
+        pluginId: "github",
+        method: "getIssue",
+        input,
+        outputSchema: z.any(),
+      }),
+    setLabels: (input: { repo: string; number: number; labels: string[] }) =>
+      bb.sdk.plugins.callRpc<{ ok: boolean; labels: string[] }>({
+        pluginId: "github",
+        method: "setLabels",
+        input,
+        outputSchema: z.any(),
+      }),
+  };
+
+  // A curated issue reference for the card prompt, so the worker reads the
+  // issue without re-fetching GitHub. Body + comments give the triage context.
+  function githubIssuePrompt(issue: { repo: string; number: number; title: string; author: string; body: string; url: string; labels: string[] }, comments: Array<{ author: string; body: string; createdAt: string }> = []): string {
+    const lines = [
+      `GitHub issue ${issue.repo}#${issue.number}: ${issue.title}`,
+      `Author: ${issue.author}`,
+      `Labels: ${issue.labels.join(", ") || "none"}`,
+      `URL: ${issue.url}`,
+      "",
+      issue.body.trim() ? `Description:\n${issue.body.trim()}` : "(no description)",
+    ];
+    if (comments.length > 0) {
+      lines.push("", "Comments:");
+      for (const comment of comments) lines.push(`- ${comment.author}: ${comment.body.trim()}`);
+    }
+    return lines.join("\n");
+  }
+
+  // Availability + auth of the builtin `github` plugin. Distinguishes the three
+  // cases the UI cares about: plugin not installed (callRpc rejects), installed
+  // but not authenticated (ghOk false), or ready. Never throws.
+  async function githubStatusResolved() {
+    try {
+      const status = await g.status();
+      return { ok: true, pluginAvailable: true, ghOk: Boolean(status.ghOk), repos: status.repos ?? [] };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const pluginMissing = /plugin.*(not.*found|missing|unavailable)|github.*not/i.test(message);
+      return { ok: pluginMissing, pluginAvailable: false, ghOk: false, repos: [] };
+    }
+  }
+
+  // Shared card-creation path for both the UI "start work" handler and the
+  // GitHub import. Replicates createCard's seeding + hidden worker spawn.
+  async function createCardInternal({ projectId, prompt, attachments, intent, appetite, reviewMode, presetId }: { projectId: string; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null }): Promise<{ cardId: string; threadId: string }> {
+    const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
+    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
+    const rootPath = source?.path;
+    if (!rootPath || !source) throw new Error("Project workspace path is unavailable.");
+    const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
+    const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
+    const seed = await seedWorkflow(bb, rootPath, slug, intent, appetite, reviewMode);
+    if (seed.error) throw new Error(seed.error);
+    const cardId = randomId("card");
+    const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
+    const analysisRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = 'analysis'").get() as { preset_id: string } | undefined;
+    const spawnPreset = analysisRow ? (getPresetById(analysisRow.preset_id) ?? preset) : preset;
+    const params = presetAttachmentParams(spawnPreset);
+    const workerAttachments = attachments.map((attachment) => ({ type: attachment.type, path: attachment.path }));
+    const thread = await bb.sdk.threads.spawn({
+      projectId,
+      environment: workerEnvironment(source, params),
+      visibility: "hidden",
+      title: `Stelow: ${displayName}`,
+      providerId: params.providerId,
+      model: params.modelId,
+      reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+      permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
+      executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+      input: [{ type: "text", mentions: [], text: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
+
+The Stelow workflow skills (stelow-entry, stelow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+
+The user already classified this request as intent=\`${intent}\`, appetite=\`${appetite}\`, and review mode=\`${reviewMode}\` (all recorded in state.md and stelow.json). Use these declarations — do NOT ask the user to pick or confirm intent, appetite, or review mode again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+
+CRITICAL — User input contract:
+ANY time you need user input (ambiguity, approval, scope, interface choice, etc.), you MUST call the structured form, NEVER just write text like "waiting for your choice":
+
+    bb stelow ask --thread <this_thread_id> \\
+      --question "<a single clear question>" \\
+      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
+
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Stop when the user archives the card or the workflow reaches \`audit\`.
+
+${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
+${prompt}` }, ...workerAttachments],
+    });
+    const ts = now();
+    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), null, null, null, ts, ts);
+    db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
+    await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
+    bb.realtime.publish("card-state", { cardId });
+    return { cardId, threadId: thread.id };
+  }
 
   type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; attachments: string; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
@@ -1165,7 +1314,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   });
 
   bb.rpc.register(rpcContract, {
-    board: ({ projectId }) => loadBoard(bb, projectId),
+    board: async ({ projectId }) => {
+      const board = await loadBoard(bb, projectId);
+      const githubStatus = await githubStatusResolved().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] }));
+      return { ...board, githubStatus };
+    },
     projects: async () => {
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
@@ -1237,6 +1390,79 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (result.error) return { rootPath, statePath: null, error: result.error };
       bb.realtime.publish("board-changed", { reason: "seeded" });
       return { rootPath, statePath: result.statePath, error: null };
+    },
+
+    async listGithubCandidates({ label }) {
+      // Safely reject when the github plugin is not available so the UI can
+      // show a real reason instead of an empty list. The wrapper's rejection
+      // message carries the pluginId/method for the user.
+      const items = await g.listItems({ kind: "issue", state: "open" }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "GitHub plugin unavailable";
+        throw new Error(`GitHub import unavailable: ${message}`);
+      });
+      // Resolve each issue to the bb project that owns its repo (GitHub plugin
+      // maps repo -> projectId from git remotes), so the UI needs no project
+      // picker. Unmapped repos fall back to the caller's active project.
+      const status = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
+      const repoToProject = new Map(status.repos.map((entry) => [entry.repo, entry.projectId]));
+      const issues = items.items
+        .filter((item) => item.labels.includes(label))
+        .sort((a, b) => Number(b.number) - Number(a.number));
+      return {
+        issues: issues.map((issue) => {
+          const key = `${issue.repo}#${issue.number}`;
+          const link = db.prepare("SELECT card_id, imported_at FROM github_imports WHERE issue_key = ?").get(key) as { card_id: string | null; imported_at: number } | undefined;
+          const card = link?.card_id ? (getCard(link.card_id) ?? null) : null;
+          return {
+            repo: issue.repo,
+            number: issue.number,
+            title: issue.title,
+            labels: issue.labels,
+            author: issue.author,
+            url: issue.url,
+            body: issue.body,
+            updatedAt: issue.updatedAt,
+            projectId: repoToProject.get(issue.repo) ?? null,
+            alreadyImported: Boolean(link),
+            cardId: card?.id ?? null,
+            cardName: card ? (card.display_name ?? card.name) : null,
+          };
+        }),
+      };
+    },
+
+    async importGithubIssue({ projectId, repo, number: numberValue, label, intent }) {
+      const key = `${repo}#${numberValue}`;
+      const existing = db.prepare("SELECT card_id, imported_at FROM github_imports WHERE issue_key = ?").get(key) as { card_id: string | null; imported_at: number } | undefined;
+      if (existing?.card_id) {
+        const card = getCard(existing.card_id);
+        if (card) return { ok: true, cardId: card.id, skipped: "already-imported", error: null };
+      }
+      // Resolve the owning project from the repo (fall back to the caller's
+      // active project) when the caller didn't pass one explicitly.
+      let resolvedProjectId = projectId;
+      if (!resolvedProjectId) {
+        const status = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
+        const match = status.repos.find((entry) => entry.repo === repo);
+        resolvedProjectId = match?.projectId ?? null;
+      }
+      if (!resolvedProjectId) throw new Error(`Cannot determine the bb project for repo ${repo}; open it as a project in bb first.`);
+      // Pull live detail (body + comments) to seed the card prompt.
+      const { issue } = await g.getIssue({ repo, number: numberValue }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "GitHub plugin unavailable";
+        throw new Error(`GitHub import unavailable: ${message}`);
+      });
+      const prompt = githubIssuePrompt(issue, issue.comments);
+      const card = await createCardInternal({ projectId: resolvedProjectId, prompt, attachments: [], intent, appetite: "Lean", reviewMode: "Auto" });
+      const cardId = card.cardId;
+      const ts = now();
+      db.prepare("INSERT OR REPLACE INTO github_imports (issue_key, repo, number, label, card_id, imported_at) VALUES (?, ?, ?, ?, ?, ?)").run(key, repo, numberValue, label, cardId, ts);
+      // Clear the stelow tag after import so the loop is pull-once: the issue is
+      // now tracked by its card, and re-importing would just find the card.
+      // Best-effort: a failure to clear the label is not fatal to the import.
+      await g.setLabels({ repo, number: numberValue, labels: issue.labels.filter((item) => item !== label) }).catch(() => {});
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, cardId, skipped: null, error: null };
     },
 
     async listCards({ projectId }) {
@@ -1330,58 +1556,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async createCard({ projectId, prompt, attachments, intent, appetite, reviewMode, presetId }) {
-      const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
-      const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-      const rootPath = source?.path;
-      if (!rootPath || !source) throw new Error("Project workspace path is unavailable.");
-      const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
-      const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
-      const seed = await seedWorkflow(bb, rootPath, slug, intent, appetite, reviewMode);
-      if (seed.error) throw new Error(seed.error);
-      const cardId = randomId("card");
-      const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
-      // A card always spawns into the analysis band (triage). Honor a configured
-      // analysis band preset at first spawn (band override wins), else fall back
-      // to the card/dedicated preset. `worker_preset_id` records the actual
-      // spawn preset so later band transitions compare correctly.
-      const analysisRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = 'analysis'").get() as { preset_id: string } | undefined;
-      const spawnPreset = analysisRow ? (getPresetById(analysisRow.preset_id) ?? preset) : preset;
-      const params = presetAttachmentParams(spawnPreset);
-      const workerAttachments = attachments.map((attachment) => ({ type: attachment.type, path: attachment.path }));
-      const thread = await bb.sdk.threads.spawn({
-        projectId,
-        environment: workerEnvironment(source, params),
-        visibility: "hidden",
-        title: `Stelow: ${displayName}`,
-        providerId: params.providerId,
-        model: params.modelId,
-        reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-        permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
-        executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
-
-The Stelow workflow skills (stelow-entry, stelow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
-
-The user already classified this request as intent=\`${intent}\`, appetite=\`${appetite}\`, and review mode=\`${reviewMode}\` (all recorded in state.md and stelow.json). Use these declarations — do NOT ask the user to pick or confirm intent, appetite, or review mode again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
-
-CRITICAL — User input contract:
-ANY time you need user input (ambiguity, approval, scope, interface choice, etc.), you MUST call the structured form, NEVER just write text like "waiting for your choice":
-
-    bb stelow ask --thread <this_thread_id> \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Stop when the user archives the card or the workflow reaches \`audit\`.
-
-${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
-${prompt}` }, ...workerAttachments],
-      });
-      const ts = now();
-      db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), null, null, null, ts, ts);
-      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
-      await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
-      bb.realtime.publish("card-state", { cardId });
-      return { cardId, threadId: thread.id };
+      return createCardInternal({ projectId, prompt, attachments, intent, appetite, reviewMode, presetId });
     },
 
     async cardDetail({ cardId }) {
