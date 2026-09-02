@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Markdown,
   definePluginApp,
+  UrlLink,
   experimental_FileLink as FileLink,
   experimental_NewThreadComposer as NewThreadComposer,
   useBbContext,
@@ -481,7 +482,10 @@ function BoardPanel({ subPath }: { subPath: string }) {
         <div className="mx-auto max-w-[1500px] space-y-4">
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">Stelow Board</h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h1 className="text-xl font-semibold tracking-tight">Stelow Board</h1>
+                <UrlLink href="https://github.com/calionauta/stelow" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">About Stelow <span aria-hidden="true">↗</span></UrlLink>
+              </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
             <Button className="w-full sm:w-auto" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
@@ -506,12 +510,15 @@ function BoardPanel({ subPath }: { subPath: string }) {
                 onSubmit={(request) => void start(request)}
               />
               <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
-                <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-muted-foreground hover:text-foreground">Customize defaults</summary>
+                <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 text-sm font-medium text-foreground sm:flex-row sm:items-center sm:justify-between">
+                  <span>Work settings</span>
+                  <span className="text-xs font-normal text-muted-foreground">Planning depth, review checkpoints, and agent configuration</span>
+                </summary>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
-                  <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+                  <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
+                  <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
                   <div className="sm:col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Worker policy</span>
+                    <span className="font-medium text-foreground">Agent configuration</span>
                     <span>{workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ")}</span>
                     <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>
                   </div>
@@ -548,7 +555,16 @@ function BoardPanel({ subPath }: { subPath: string }) {
             />
           </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading Stelow…</p> : null}
-          {cards.length === 0 && !loading ? <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">No work yet. Start new work to add an item to the board.</p> : null}
+          {cards.length === 0 && !loading ? (
+            <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
+              <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Stelow is an opinionated product workflow for humans and AI agents. Start with an outcome or problem; it guides the work through framing, critique, planning, execution, and review.</p>
+              <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
+                <Button onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>Start new work</Button>
+                <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Learn about Stelow <span aria-hidden="true">↗</span></UrlLink>
+              </div>
+            </section>
+          ) : null}
 
           <p className="sm:hidden text-xs text-muted-foreground">Swipe sideways to view every stage.</p>
           <div className="grid gap-3 overflow-x-auto" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
