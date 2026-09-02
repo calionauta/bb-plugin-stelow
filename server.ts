@@ -142,20 +142,6 @@ export const rpcContract = defineRpcContract({
     input: z.object({}).strict(),
     output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() })) }),
   },
-  readDocument: {
-    input: z.object({ projectId: z.string().nullable(), path: z.string() }).strict(),
-    output: z.object({ content: z.string(), sha256: z.string(), error: z.string().nullable() }),
-  },
-  addComment: {
-    input: z.object({
-      projectId: z.string().nullable(),
-      path: z.string(),
-      expectedSha256: z.string(),
-      selectedText: z.string().max(10_000),
-      comment: z.string().min(1).max(10_000),
-    }).strict(),
-    output: z.object({ saved: z.boolean(), sha256: z.string().optional(), error: z.string().nullable() }),
-  },
   answerQuestion: {
     input: z.object({ cardId: z.string(), answers: z.array(z.string()) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
@@ -1110,30 +1096,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const stored = await bb.storage.kv.get<unknown>("board-workflow-defaults");
       const parsed = boardWorkflowDefaultsSchema.safeParse(stored);
       return parsed.success ? parsed.data : { appetite: "Lean" as const, reviewMode: "Auto" as const };
-    },
-
-    async readDocument({ projectId, path }) {
-      const root = await projectRoot(bb, projectId);
-      if (!root) return { content: "", sha256: "", error: "Project workspace path is unavailable." };
-      try {
-        const file = await bb.sdk.files.read({ path: join(root, safeRelative(path)) });
-        return { content: file.content, sha256: file.sha256, error: null };
-      } catch (error) {
-        return { content: "", sha256: "", error: error instanceof Error ? error.message : "Unable to read document." };
-      }
-    },
-
-    async addComment({ projectId, path, expectedSha256, selectedText, comment }) {
-      const root = await projectRoot(bb, projectId);
-      if (!root) return { saved: false, error: "Project workspace path is unavailable." };
-      const absolute = join(root, safeRelative(path));
-      const file = await bb.sdk.files.read({ path: absolute });
-      const quote = selectedText.trim() ? `\n> ${selectedText.trim().replace(/\n/g, "\n> ")}\n` : "";
-      const block = `\n\n<!-- stelow-review-comment -->\n### Review comment\n${quote}\n${comment.trim()}\n`;
-      const result = await bb.sdk.files.write({ path: absolute, rootPath: root, expectedSha256, content: `${file.content.replace(/\s*$/, "")}\n${block}` });
-      if (result.outcome === "conflict") return { saved: false, error: "The document changed. Reload before commenting." };
-      bb.realtime.publish("board-changed", { path });
-      return { saved: true, sha256: result.sha256, error: null };
     },
 
     async approveGate({ projectId, workflowId, gate }) {

@@ -10,7 +10,6 @@ import {
   useRealtime,
   useRpc,
   type NewThreadRequest,
-  type PluginFileOpenerProps,
   type PluginMessageDirectiveProps,
   type PluginPendingInteractionProps,
   type PluginThreadPanelProps,
@@ -1609,41 +1608,6 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
   );
 }
 
-function DocumentReviewImpl({ path, source }: { path: string; source: PluginFileOpenerProps["source"] }) {
-  const { projectId: routeProjectId } = useBbContext();
-  const projectId = source.projectId ?? routeProjectId;
-  const rpc = useRpc<typeof rpcContract>();
-  const [content, setContent] = useState("");
-  const [sha256, setSha256] = useState("");
-  const [selection, setSelection] = useState("");
-  const [comment, setComment] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => { const result = await rpc.call("readDocument", { projectId, path }); setContent(result.content); setSha256(result.sha256); setError(result.error); }, [path, projectId, rpc]);
-  useEffect(() => { void load(); }, [load]);
-  useDebouncedRealtime(["board-changed"], () => { void load(); });
-
-  async function saveComment() {
-    const result = await rpc.call("addComment", { projectId, path, expectedSha256: sha256, selectedText: selection, comment });
-    if (!result.saved) return toast.error(result.error ?? "Comment failed");
-    setComment(""); setSelection(""); toast.success("Review comment added"); await load();
-  }
-
-  return <div className="space-y-4">
-    <div className="text-xs text-muted-foreground">{path}</div>
-    {error ? <p className="text-sm text-destructive">{error}</p> : <div onMouseUp={() => setSelection(window.getSelection()?.toString() ?? "")} className="rounded-md border bg-card p-4"><Markdown content={content} /></div>}
-    <Card><CardHeader><CardTitle className="text-base">Inline review comment</CardTitle></CardHeader><CardContent className="space-y-2">{selection ? <blockquote className="line-clamp-3 border-l pl-3 text-sm text-muted-foreground">{selection}</blockquote> : <p className="text-xs text-muted-foreground">Select text above to quote it, or comment on the whole document.</p>}<textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm" placeholder="Request a change or leave context…" /><Button disabled={!comment.trim()} onClick={() => void saveComment()}>Add comment</Button></CardContent></Card>
-  </div>;
-}
-
-function DocumentReview(props: PluginFileOpenerProps) {
-  return <DocumentReviewImpl path={props.path} source={props.source} />;
-}
-
-function ThreadDocumentPanel({ params }: { params: unknown }) {
-  const path = typeof params === "object" && params && "path" in params && typeof params.path === "string" ? params.path : "";
-  return path ? <DocumentReviewImpl path={path} source={{ kind: "workspace", threadId: null, environmentId: null, projectId: null }} /> : <p className="text-sm text-muted-foreground">Choose an artifact from the Stelow board.</p>;
-}
-
 function OpenStelowBoardAction() {
   const navigate = useBbNavigate();
   return <button onClick={() => navigate.toPluginPanel("board", { subPath: "" })} className="rounded-md border bg-card px-2 py-1 text-xs shadow-sm hover:border-primary/50">Stelow board</button>;
@@ -1679,8 +1643,6 @@ export default definePluginApp((app) => {
     experimental_sidebarAccessory: StelowSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
-  app.slots.fileOpener({ id: "stelow-markdown-review", title: "Review with Stelow", extensions: ["md"], component: DocumentReview });
-  app.slots.threadPanelAction({ id: "review-document", title: "Review Stelow document", icon: "FileText", component: ThreadDocumentPanel });
   app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns", component: CardDrawerAdapter });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Stelow board", component: OpenStelowBoardAction });
 
