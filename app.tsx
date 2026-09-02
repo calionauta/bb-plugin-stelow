@@ -521,7 +521,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
                   <div className="sm:col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">Agent configuration</span>
                     <span>{workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ")}</span>
-                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>
+                    <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>
                   </div>
                 </div>
               </details>
@@ -647,7 +647,7 @@ function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filt
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${activeCount > 0 ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground"}`}
+        className={`inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${activeCount > 0 ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground"}`}
       >
         <span aria-hidden>⚙</span>
         <span>Filters</span>
