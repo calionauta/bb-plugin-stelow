@@ -319,7 +319,7 @@ function StelowSidebarAccessory() {
   const { count, tone } = useRunningAccessory();
   return (
     <span
-      aria-label={`${count} Stelow cards in progress`}
+      aria-label={`${count} Stelow work items in progress`}
       className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${tone}`}
     >
       {count}
@@ -348,6 +348,8 @@ function BoardPanel({ subPath }: { subPath: string }) {
     try { window.localStorage.setItem("stelow-columns-collapsed-v1", JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
+  const [createWorkOpen, setCreateWorkOpen] = useState(false);
+  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
   const [appetite, setAppetite] = useState<Appetite>("Lean");
@@ -405,7 +407,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
   };
   const analysisWorkerPreset = presetForBand("analysis");
   const workerPolicy = ["analysis", "planning", "execution", "review"].map((band) => ({ band, preset: presetForBand(band) }));
-  const reason = !activeProjectId ? "Select a normal bb project (not the singleton Personal project) in the sidebar." : !prompt.trim() ? "Describe a product request to start the workflow." : null;
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
   const filteredCards = useMemo(() => cards.filter((card) => {
     if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
@@ -443,10 +444,11 @@ function BoardPanel({ subPath }: { subPath: string }) {
     try {
       const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, attachments, intent, appetite, reviewMode });
       setPrompt("");
+      setCreateWorkOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Card created in Triage. The agent will triage it.");
+      toast.success("Work started in Triage. Stelow will triage it.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to create the card.");
+      toast.error(error instanceof Error ? error.message : "Unable to start work.");
     }
   }
 
@@ -476,68 +478,77 @@ function BoardPanel({ subPath }: { subPath: string }) {
   return (
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
-        <div className="mx-auto max-w-[1500px] space-y-5">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Stelow board</h1>
-              <span className="text-xs text-muted-foreground">· {cards.filter(isLiveCard).length} cards · {inbox.length} need attention</span>
-              <div className="flex-1" />
+        <div className="mx-auto max-w-[1500px] space-y-4">
+          <header className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold tracking-tight">Stelow Board</h1>
+              {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
-            <PresetManagerDialog
-              open={boardPresetsOpen}
-              onOpenChange={setBoardPresetsOpen}
-              rpc={rpc}
-              presets={boardPresets}
-              onChanged={() => load(boardProjectId ?? routeProjectId)}
-            />
-            <p className="text-sm text-muted-foreground">Describe a request below to start a workflow. The agent runs in the background and posts updates here.</p>
-          </div>
+            <Button onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+          </header>
 
-          <div className="rounded-xl border bg-card/60 p-3">
-            <div className="mb-3 grid gap-3 border-b pb-3 sm:grid-cols-2">
-              <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
-              <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
-              <div className="sm:col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">Worker policy</span>
-                <span>{workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ")}</span>
-                <Button size="sm" variant="ghost" className="ml-auto h-7 px-2 text-xs" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>
-              </div>
-              <p className="sm:col-span-2 text-xs text-muted-foreground">These choices are saved with the new workflow. Its worker follows this shared phase policy, starting with the Analysis preset.</p>
-            </div>
-            <NewThreadComposer
-              defaultProjectId={activeProjectId ?? undefined}
-              defaultProviderId={analysisWorkerPreset?.providerId}
-              defaultModel={analysisWorkerPreset?.modelId}
-              defaultReasoningLevel={analysisWorkerPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-              defaultPermissionMode={analysisWorkerPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-              initialPrompt={prompt}
-              layout="contained"
-              draftKey="stelow-board-create"
-              onSubmit={(request) => void start(request)}
-            />
-          </div>
-          {reason ? <p className="-mt-2 px-1 text-xs text-muted-foreground">{reason}</p> : null}
+          <Dialog open={createWorkOpen} onOpenChange={setCreateWorkOpen}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Start new work</DialogTitle>
+                <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and delivery process.</DialogDescription>
+              </DialogHeader>
+              <NewThreadComposer
+                defaultProjectId={activeProjectId ?? undefined}
+                defaultProviderId={analysisWorkerPreset?.providerId}
+                defaultModel={analysisWorkerPreset?.modelId}
+                defaultReasoningLevel={analysisWorkerPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+                defaultPermissionMode={analysisWorkerPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+                initialPrompt={prompt}
+                placeholder="What would you like Stelow to work on?"
+                layout="contained"
+                draftKey="stelow-board-create"
+                onSubmit={(request) => void start(request)}
+              />
+              <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
+                <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">Customize defaults</summary>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <WorkflowChoiceSelect label="Appetite" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
+                  <WorkflowChoiceSelect label="Review mode" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+                  <div className="sm:col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Worker policy</span>
+                    <span>{workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ")}</span>
+                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>
+                  </div>
+                </div>
+              </details>
+            </DialogContent>
+          </Dialog>
 
-          <FiltersBar
-            projects={projects}
-            stageOptions={stageOptions}
-            filterProjectId={filterProjectId}
-            filterStage={filterStage}
-            filterIntent={filterIntent}
-            filterStatus={filterStatus}
-            filterActivity={filterActivity}
-            filterAttention={filterAttention}
-            onProject={setFilterProjectId}
-            onStage={setFilterStage}
-            onIntent={setFilterIntent}
-            onStatus={setFilterStatus}
-            onActivity={setFilterActivity}
-            onAttention={setFilterAttention}
-            onReset={() => { setFilterProjectId("all"); setFilterStage("all"); setFilterIntent("all"); setFilterStatus("all"); setFilterActivity("all"); setFilterAttention(false); }}
+          <PresetManagerDialog
+            open={boardPresetsOpen}
+            onOpenChange={setBoardPresetsOpen}
+            rpc={rpc}
+            presets={boardPresets}
+            onChanged={() => load(boardProjectId ?? routeProjectId)}
           />
 
+          <div className="border-b pb-3">
+            <FiltersBar
+              projects={projects}
+              stageOptions={stageOptions}
+              filterProjectId={filterProjectId}
+              filterStage={filterStage}
+              filterIntent={filterIntent}
+              filterStatus={filterStatus}
+              filterActivity={filterActivity}
+              filterAttention={filterAttention}
+              onProject={setFilterProjectId}
+              onStage={setFilterStage}
+              onIntent={setFilterIntent}
+              onStatus={setFilterStatus}
+              onActivity={setFilterActivity}
+              onAttention={setFilterAttention}
+              onReset={() => { setFilterProjectId("all"); setFilterStage("all"); setFilterIntent("all"); setFilterStatus("all"); setFilterActivity("all"); setFilterAttention(false); }}
+            />
+          </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading Stelow…</p> : null}
-          {cards.length === 0 && !loading ? <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">No cards yet. Describe a request above to start one.</p> : null}
+          {cards.length === 0 && !loading ? <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">No work yet. Start new work to add an item to the board.</p> : null}
 
           <div className="grid gap-3 overflow-x-auto" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
             {COLUMNS.map((column) => (
@@ -609,7 +620,7 @@ function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filt
   const stageOptionsList = useMemo(() => [{ value: "all", label: "Any stage" }, ...stageOptions.map((stage) => ({ value: stage, label: stage }))], [stageOptions]);
   const activeCount = (filterProjectId !== "all" ? 1 : 0) + (filterStage !== "all" ? 1 : 0) + (filterIntent !== "all" ? 1 : 0) + (filterStatus !== "all" ? 1 : 0) + (filterActivity !== "all" ? 1 : 0) + (filterAttention ? 1 : 0);
   return (
-    <div className="relative flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+    <div className="relative flex flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -689,7 +700,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
         )}
       </button>
       {!collapsed ? (
-        <div className="space-y-2" role="list" aria-label={`${COLUMN_LABELS[column]} cards`}>
+        <div className="space-y-2" role="list" aria-label={`${COLUMN_LABELS[column]} work items`}>
           {cards.map((card) => <BoardCard key={card.id} card={card} />)}
         </div>
       ) : null}
@@ -729,7 +740,7 @@ function BoardCard({ card }: { card: CardItem }) {
       onKeyDown={onKeyDown}
       title="Click to inspect · double-click or W to open the worker thread"
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
-      aria-label={`Open card ${card.displayName}. Press Enter to inspect, W to open the worker thread.`}
+      aria-label={`Open work item ${card.displayName}. Press Enter to inspect, W to open the worker thread.`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
@@ -840,7 +851,7 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   const params = props.params;
   const cardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
   const navigate = useBbNavigate();
-  if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a card from the Stelow board to see its detail here.</p>;
+  if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a work item from the Stelow Board to see its details here.</p>;
   return <CardDetailBody cardId={cardId} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
@@ -1167,7 +1178,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Manage agent presets</DialogTitle>
-          <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a card starts its worker thread.</DialogDescription>
+          <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a work item starts its worker thread.</DialogDescription>
         </DialogHeader>
         <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
           {presets.length === 0 ? <p className="text-sm text-muted-foreground">No presets yet. Create one below.</p> : null}
@@ -1189,7 +1200,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
         </div>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <h4 className="mb-2 text-sm font-semibold">Worker preset per workflow phase</h4>
-          <p className="mb-2 text-xs text-muted-foreground">Each phase uses its own preset. The worker is switched automatically when the card reaches a phase with a different preset; cards with no phase preset use the card's preset (or default).</p>
+          <p className="mb-2 text-xs text-muted-foreground">Each phase uses its own preset. The worker is switched automatically when a work item reaches a phase with a different preset; work items with no phase preset use the work item's preset (or default).</p>
           <div className="grid gap-2">
             {bandPresets.map((band) => (
               <div key={band.band} className="flex items-center gap-2 text-sm">
@@ -1203,7 +1214,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
                     void rpc.call("setBandPreset", { band: band.band, presetId: value }).then(() => { void onChanged(); void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([])); }).catch(() => setMessage("Failed to set phase preset.")).finally(() => setBusy(false));
                   }}
                 >
-                  <option value="">— Card default —</option>
+                  <option value="">— Work item default —</option>
                   {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </select>
                 <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title={band.stages.join(", ")}>{band.stages.join(", ")}</span>
@@ -1320,7 +1331,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
     setArchiveOpen(false);
     try {
       await rpc.call("cancelCard", { cardId });
-      toast.success("Card archived.");
+      toast.success("Work item archived.");
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Archive failed.");
@@ -1468,7 +1479,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
 
             <section className="space-y-1">
               <h3 className="text-sm font-semibold">Agent preset</h3>
-              <p className="text-xs text-muted-foreground">Presets are configured globally per workflow phase from the board's <strong>Presets</strong> button — not per card. This card is in the <strong>{stageLabel(card.stage)}</strong> phase.</p>
+              <p className="text-xs text-muted-foreground">Presets are configured globally per workflow phase from the board's <strong>Presets</strong> button — not per work item. This work item is in the <strong>{stageLabel(card.stage)}</strong> phase.</p>
               <div className="flex flex-wrap items-center gap-2">
                 {card.stage ? (
                   <Pill tone="bg-muted text-muted-foreground">
@@ -1526,7 +1537,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
             <DialogTitle>{pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage) ? "Advance to" : "Return to"} {pendingAdvance ? stageLabel(pendingAdvance) : ""}?</DialogTitle>
             <DialogDescription className="space-y-2">
               <p>
-                Move this card from <strong>{stageLabel(card?.stage ?? "")}</strong> to <strong>{pendingAdvance ? stageLabel(pendingAdvance) : ""}</strong>.
+                Move this work item from <strong>{stageLabel(card?.stage ?? "")}</strong> to <strong>{pendingAdvance ? stageLabel(pendingAdvance) : ""}</strong>.
               </p>
               <p className="rounded-md bg-muted p-2 text-xs">
                 {pendingAdvance ? STAGE_PRODUCES[pendingAdvance] ?? "The agent works on this stage and advances on its own once done." : ""}
@@ -1549,8 +1560,8 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Archive this card?"
-        description="The card is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
+        title="Archive this work item?"
+        description="The work item is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
         confirmLabel="Archive"
         confirmTone="destructive"
         onConfirm={doArchive}
@@ -1637,7 +1648,7 @@ export default definePluginApp((app) => {
     experimental_sidebarAccessory: StelowSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
-  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns", component: CardDrawerAdapter });
+  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Columns", component: CardDrawerAdapter });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Stelow board", component: OpenStelowBoardAction });
 
   app.slots.messageDirective({
