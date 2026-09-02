@@ -590,8 +590,8 @@ function BoardPanel({ subPath }: { subPath: string }) {
             </div>
             <div className="flex w-full items-center gap-2 sm:mt-0.5 sm:w-auto">
               <div role="group" aria-label="Work view" className="inline-flex h-9 shrink-0 rounded-md border bg-background p-0.5 shadow-sm max-md:pointer-coarse:h-10">
-                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
-                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
+                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
+                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
               </div>
               <Button className="h-9 flex-1 max-md:pointer-coarse:h-10 sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
             </div>
