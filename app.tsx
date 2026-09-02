@@ -759,7 +759,7 @@ function Meta({ label, value }: { label: string; value: string }) {
 // chip: passed / current / upcoming. Clicking an allowed target advances or
 // regresses ONE stage — the timeline is the position context AND the advance
 // control, so the user always sees where the card is and what it can move to.
-function StageTimeline({ currentStage, nextStages, onPick }: { currentStage: string; nextStages: string[]; onPick: (stage: string) => void }) {
+function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>; onPick: (stage: string) => void }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   const current = curIdx >= 0 ? curIdx : 0;
   const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
@@ -790,14 +790,15 @@ function StageTimeline({ currentStage, nextStages, onPick }: { currentStage: str
                 const canAdvance = idx === current + 1 && legal.has(stage);
                 const canRegress = passed && !isCurrent;
                 const clickable = canAdvance || canRegress;
+                const produced = artifacts.filter((artifact) => artifact.stage === stage);
                 return (
-                  <button
-                    key={stage}
-                    type="button"
-                    disabled={!clickable || isCurrent}
-                    title={STAGE_PRODUCES[stage]}
-                    onClick={() => onPick(stage)}
-                    className={`relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                  <div key={stage} className="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={!clickable || isCurrent}
+                      title={STAGE_PRODUCES[stage]}
+                      onClick={() => onPick(stage)}
+                      className={`relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
                         ? "bg-primary/15 text-primary ring-2 ring-primary/60"
                         : passed
@@ -806,11 +807,24 @@ function StageTimeline({ currentStage, nextStages, onPick }: { currentStage: str
                         ? "cursor-pointer border border-primary/40 text-primary hover:bg-primary/10"
                         : "cursor-pointer border border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
                     }`}
-                  >
-                    {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : canAdvance ? "·" : "·"}
-                    {stageLabel(stage)}
-                    {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
-                  </button>
+                      >
+                        {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : canAdvance ? "·" : "·"}
+                        {stageLabel(stage)}
+                        {produced.length > 0 ? <span aria-label={`${produced.length} artifacts`}>· {produced.length}</span> : null}
+                        {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
+                    </button>
+                    {produced.map((artifact) => (
+                      <FileLink
+                        key={artifact.path}
+                        target={{ kind: "host", hostId: artifact.hostId, path: artifact.absolutePath }}
+                        location={null}
+                        className="inline-flex max-w-36 items-center truncate rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                        title={`${stageLabel(stage)} · ${artifact.kind}`}
+                      >
+                        {artifact.display}
+                      </FileLink>
+                    ))}
+                  </div>
                 );
               })}
             </div>
@@ -1387,26 +1401,6 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
                 </div>
               </div>
             ) : null}
-            {detail?.artifacts && detail.artifacts.length > 0 ? (
-              <div className="space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Assets produced by the workflow:</span>
-                <div className="flex flex-wrap gap-1">
-                  {detail.artifacts.map((asset) => (
-                    <FileLink
-                      key={asset.path}
-                      target={{ kind: "host", hostId: asset.hostId, path: asset.absolutePath }}
-                      location={null}
-                      className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20"
-                      title={`${asset.stage}: ${asset.path}`}
-                    >
-                      <span>📎</span>
-                      <span className="text-muted-foreground">{asset.stage}</span>
-                      <span>{asset.display}</span>
-                    </FileLink>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             <div className="grid grid-cols-2 gap-2 text-sm">
               <Meta label="Stage" value={stageLabel(card.stage)} />
               {card.stage === "select" ? (
@@ -1466,6 +1460,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
                 <StageTimeline
                   currentStage={card.stage}
                   nextStages={detail.nextStages}
+                  artifacts={detail.artifacts}
                   onPick={(stage) => setPendingAdvance(stage)}
                 />
               </section>

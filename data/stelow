@@ -249,79 +249,40 @@ PY
 
   lock_acquire
 
-  # mutate state.md frontmatter: advance current_stage and record produced
-  # artifacts (repo-root-relative) under `artifacts.<source_stage>`.
+  # Mutate state.md and record every new Markdown file as produced by the
+  # source stage. A list preserves multiple outputs from the same stage.
   python3 - "$candidate" "$current" "$ROOT" "$STATEDIR" "$STATE" <<'PY'
-import sys, re, os, glob
+import sys, re, os, glob, datetime
 candidate, current, root, statedir, path = sys.argv[1:6]
 blob = open(path).read()
 m = re.match(r"^(---\n)(.*?)(\n---)(.*)$", blob, re.DOTALL)
 if not m:
     print("state.md: missing YAML frontmatter", file=sys.stderr); sys.exit(2)
 header_open, fm, header_close, body = m.group(1), m.group(2), m.group(3), m.group(4)
-
-# Discover artifacts produced by the stage we are leaving (from its transition block).
-art_map = {}
-trans = os.path.join(root, "skills/stelow-product-orchestrator/references/transitions.md")
-if os.path.exists(trans):
-    t = open(trans).read()
-    tm = re.search(r"^### " + re.escape(current) + r"\s*\n(.*?)(?=^### |\Z)", t, re.MULTILINE | re.DOTALL)
-    if tm:
-        for line in tm.group(1).splitlines():
-            am = re.match(r"^artifact:\s*(\S+)\s*$", line.strip())
-            if am:
-                pat = am.group(1)
-                bases = [statedir, root] if not pat.startswith("/") else [""]
-                for base in bases:
-                    fullpat = pat if base == "" else os.path.join(base, pat)
-                    hits = glob.glob(fullpat)
-                    if hits:
-                        art_map[current] = os.path.relpath(hits[0], root).replace(os.sep, "/")
-                        break
-
-# Rebuild frontmatter: keep every line that is NOT part of the old artifacts
-# block, drop the old artifacts block entirely, set current_stage, then
-# re-append a MERGED artifacts map (existing artifacts preserved + any new).
-# First capture existing artifacts so advancing from a stage that produces
-# nothing does not wipe earlier ones.
-prev = {}
-in_art = False
-for line in fm.splitlines():
-    if re.match(r"^artifacts:\s*.*$", line):
-        in_art = True
-        continue
-    if in_art:
-        m = re.match(r"^  (\S+):\s*(\S+)$", line)
-        if m:
-            prev[m.group(1)] = m.group(2)
-        elif line.strip() and not line.startswith(" "):
-            in_art = False
-merged = dict(prev)
-merged.update(art_map)
-
-# A workflow manifest must name every material Markdown artifact, not just the
-# one required by the transition guard. This is what lets host UIs enumerate
-# the completed work without a separate filesystem index.
-def artifact_stage(relative):
-    name = os.path.basename(relative)
-    if name.startswith("spec-product"): return "shape"
-    if name.startswith("spec-tech") or name == "testing-strategy.md": return "planning"
-    if relative.startswith("interfaces/"): return "interface"
-    if relative.startswith("critiques/"): return "critique"
-    if relative.startswith("scopes/"): return "scope"
-    if name == "execution.md": return "execution"
-    if name.startswith("verification"): return "verification"
-    if name == "audit.md": return "audit"
-    return None
-
+artifacts = []
+block = re.search(r"^artifacts:\s*\n(.*?)(?=^\S|\Z)", fm, re.MULTILINE | re.DOTALL)
+if block:
+    entry = {}
+    for line in block.group(1).splitlines():
+        start = re.match(r"^  - ([a-z_]+):\s*(.+)$", line)
+        field = re.match(r"^    ([a-z_]+):\s*(.+)$", line)
+        if start:
+            if entry: artifacts.append(entry)
+            entry = {start.group(1): start.group(2).strip()}
+        elif field and entry:
+            entry[field.group(1)] = field.group(2).strip()
+    if entry: artifacts.append(entry)
+known_paths = {entry.get("path") for entry in artifacts}
+timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
 for walk_root, _, filenames in os.walk(statedir):
     for filename in filenames:
-        if not filename.endswith(".md") or filename == "state.md":
-            continue
+        if not filename.endswith(".md") or filename == "state.md": continue
         full = os.path.join(walk_root, filename)
-        stage = artifact_stage(os.path.relpath(full, statedir).replace(os.sep, "/"))
-        if stage:
-            merged[stage] = os.path.relpath(full, root).replace(os.sep, "/")
+        relative = os.path.relpath(full, root).replace(os.sep, "/")
+        if relative in known_paths: continue
+        label = os.path.splitext(filename)[0].replace("_", " ").replace("-", " ").strip()
+        artifacts.append({"stage": current, "kind": "document", "label": label, "path": relative, "generated_at": timestamp})
+        known_paths.add(relative)
 
 out = []
 in_artifacts = False
@@ -342,8 +303,8 @@ for line in fm.splitlines():
 if not cur_found:
     out.append(f"current_stage: {candidate}")
 out.append("artifacts:")
-for k in sorted(merged.keys()):
-    out.append(f"  {k}: {merged[k]}")
+for entry in artifacts:
+    out.extend([f"  - stage: {entry['stage']}", f"    kind: {entry.get('kind', 'document')}", f"    label: {entry.get('label', os.path.basename(entry['path']))}", f"    path: {entry['path']}", f"    generated_at: {entry.get('generated_at', timestamp)}"])
 
 new_blob = header_open + "\n".join(out) + header_close + body
 open(path, "w").write(new_blob)

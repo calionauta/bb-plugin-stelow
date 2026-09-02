@@ -30,7 +30,7 @@ const TRANSITIONS_REF = (() => {
   }
   return candidates[0]!;
 })();
-const STATE_TEMPLATE = `---\nname: <workflow-name>\nintent: <new-product|feature|bugfix|refactor|investigate|unknown>\ncurrent_stage: triage\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\n  product_type: software\nstages:\n  triage: pending\n  select: pending\n  setup: pending\n  context: pending\n  shape: pending\n  critique: pending\n  gate: pending\n  scope: pending\n  interface: pending\n  int-gate: pending\n  selection: pending\n  planning: pending\n  plan-gate: pending\n  execution: pending\n  verification: pending\n  diff-gate: pending\n  audit: pending\nartifacts: {}\nhistory: []\n---\n`;
+const STATE_TEMPLATE = `---\nname: <workflow-name>\nintent: <new-product|feature|bugfix|refactor|investigate|unknown>\ncurrent_stage: triage\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\n  product_type: software\nstages:\n  triage: pending\n  select: pending\n  setup: pending\n  context: pending\n  shape: pending\n  critique: pending\n  gate: pending\n  scope: pending\n  interface: pending\n  int-gate: pending\n  selection: pending\n  planning: pending\n  plan-gate: pending\n  execution: pending\n  verification: pending\n  diff-gate: pending\n  audit: pending\nartifacts: []\nhistory: []\n---\n`;
 
 // Stage bands: groups of workflow stages that share a worker preset. A card's
 // worker swaps presets only at band boundaries (analysis -> planning -> execution
@@ -172,7 +172,7 @@ export const rpcContract = defineRpcContract({
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
-      artifacts: z.array(z.object({ stage: z.string(), path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
+      artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
       nextStages: z.array(z.string()),
     }),
   },
@@ -1299,8 +1299,8 @@ ${prompt}` }, ...workerAttachments],
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.name);
       const preset = getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
-      // Read the card's per-workflow state.md to surface produced artifacts
-      // (spec, plan, scope reports, …) as clickable assets on the card.
+      // The helper owns the typed artifact manifest. Its stage is the durable
+      // producer attribution rendered beside the workflow timeline.
       const artifacts = await (async () => {
         if (!sourcePath) return [];
         const stateBlob = await (async () => {
@@ -1311,16 +1311,18 @@ ${prompt}` }, ...workerAttachments],
           return await bb.sdk.files.read({ path: join(sourcePath, "state.md") }).then((f) => f.content).catch(() => null);
         })();
         if (!stateBlob) return [];
-        const list: Array<{ stage: string; path: string; display: string; absolutePath: string; hostId: string }> = [];
-        for (const raw of (String(stateBlob.match(/^artifacts:\s*$/m) ? stateBlob.split(/^artifacts:\s*$/m)[1] ?? "" : "").split(/\n(?=^\S)/m)[0] ?? "").split(/\n/)) {
-          const m = raw.match(/^\s{2}([\w-]+):\s*(\.?\S+)\s*$/);
-          if (!m) continue;
-          const relPath = m[2];
+        const list: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }> = [];
+        const block = String(stateBlob.match(/^artifacts:\s*$/m) ? stateBlob.split(/^artifacts:\s*$/m)[1] ?? "" : "").split(/\n(?=^\S)/m)[0] ?? "";
+        for (const rawEntry of block.split(/^  - /m).slice(1)) {
+          const fields = Object.fromEntries(Array.from(rawEntry.matchAll(/^\s*([a-z_]+):\s*(.+)\s*$/gm)).map((match) => [match[1], match[2].trim()]));
+          const stage = fields.stage;
+          const relPath = fields.path;
+          if (!stage || !relPath) continue;
           // Keep repo-root-relative (no leading /) so safeRelative() in
           // readDocument resolves it under the project root.
           const full = relPath.startsWith("/") ? join(sourcePath, relPath.slice(1)) : join(sourcePath, relPath);
           const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
-          if (exists && sourceHostId) list.push({ stage: m[1], path: relPath, display: basename(full), absolutePath: full, hostId: sourceHostId });
+          if (exists && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fields.generated_at ?? "", absolutePath: full, hostId: sourceHostId });
         }
         return list;
       })();
