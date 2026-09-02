@@ -181,12 +181,12 @@ export const rpcContract = defineRpcContract({
     output: z.object({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string() })),
-      mentionedFiles: z.array(z.object({ path: z.string(), display: z.string() })),
+      mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
-      artifacts: z.array(z.object({ stage: z.string(), path: z.string(), display: z.string() })),
+      artifacts: z.array(z.object({ stage: z.string(), path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
       nextStages: z.array(z.string()),
     }),
   },
@@ -437,7 +437,7 @@ function workspaceRelative(rootPath: string, path: string): string | null {
   try { return safeRelative(value); } catch { return null; }
 }
 
-async function detectMentionedFiles(bb: BbPluginApi, rootPath: string | null, text: string): Promise<Array<{ path: string; display: string }>> {
+async function detectMentionedFiles(bb: BbPluginApi, rootPath: string | null, text: string): Promise<Array<{ path: string; display: string; absolutePath: string }>> {
   if (!rootPath) return [];
   const candidates = new Set<string>();
   // Match file-ish tokens: path/to/file.ext (no spaces, may include -_./)
@@ -445,11 +445,11 @@ async function detectMentionedFiles(bb: BbPluginApi, rootPath: string | null, te
     const token = match[0]!.replace(/[.,;:)]+$/, "");
     if (token.length >= 3 && token.length <= 120) candidates.add(token);
   }
-  const found: Array<{ path: string; display: string }> = [];
+  const found: Array<{ path: string; display: string; absolutePath: string }> = [];
   for (const candidate of candidates) {
     try {
       await bb.sdk.files.read({ path: join(rootPath, candidate) });
-      found.push({ path: candidate, display: candidate });
+      found.push({ path: candidate, display: candidate, absolutePath: join(rootPath, candidate) });
     } catch { /* not found in workspace root */ }
   }
   if (found.length === 0) {
@@ -459,7 +459,7 @@ async function detectMentionedFiles(bb: BbPluginApi, rootPath: string | null, te
       if (!basename) continue;
       const listed = await bb.sdk.files.list({ path: rootPath, query: basename }).catch(() => null);
       const hit = (listed?.files ?? []).find((entry) => entry.path.endsWith(basename));
-      if (hit) found.push({ path: hit.path, display: hit.path });
+      if (hit) found.push({ path: hit.path, display: hit.path, absolutePath: hit.path });
     }
   }
   return found.slice(0, 6);
@@ -1323,12 +1323,15 @@ ${prompt}` }, ...workerAttachments],
       const expiredQuestions = expiredRows.map((row) => ({ id: row.id, question: row.question, multiple: Boolean(row.multiple), options: JSON.parse(row.options) as Array<{ label: string; description: string }>, expiredAt: row.expired_at }));
       let projectName = card.project_id;
       let sourcePath: string | null = null;
+      let sourceHostId: string | null = null;
       try {
         const project = await bb.sdk.projects.get({ projectId: card.project_id });
         projectName = project.name;
-        sourcePath = project.sources.find((entry) => entry.isDefault)?.path ?? null;
+        const source = project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
+        sourcePath = source?.path ?? null;
+        sourceHostId = source?.hostId ?? null;
       } catch { /* project removed; keep card viewable */ }
-      const mentionedFiles = await detectMentionedFiles(bb, sourcePath, card.prompt);
+      const mentionedFiles = (await detectMentionedFiles(bb, sourcePath, card.prompt)).flatMap((file) => sourceHostId ? [{ ...file, hostId: sourceHostId }] : []);
       const attachments = cardAttachments(card.attachments).map((attachment) => ({
         ...attachment,
         display: workspaceRelative(sourcePath ?? "", attachment.path) ?? basename(attachment.path),
@@ -1348,7 +1351,7 @@ ${prompt}` }, ...workerAttachments],
           return await bb.sdk.files.read({ path: join(sourcePath, "state.md") }).then((f) => f.content).catch(() => null);
         })();
         if (!stateBlob) return [];
-        const list: Array<{ stage: string; path: string; display: string }> = [];
+        const list: Array<{ stage: string; path: string; display: string; absolutePath: string; hostId: string }> = [];
         for (const raw of (String(stateBlob.match(/^artifacts:\s*$/m) ? stateBlob.split(/^artifacts:\s*$/m)[1] ?? "" : "").split(/\n(?=^\S)/m)[0] ?? "").split(/\n/)) {
           const m = raw.match(/^\s{2}([\w-]+):\s*(\.?\S+)\s*$/);
           if (!m) continue;
@@ -1357,7 +1360,7 @@ ${prompt}` }, ...workerAttachments],
           // readDocument resolves it under the project root.
           const full = relPath.startsWith("/") ? join(sourcePath, relPath.slice(1)) : join(sourcePath, relPath);
           const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
-          if (exists) list.push({ stage: m[1], path: relPath, display: basename(full) });
+          if (exists && sourceHostId) list.push({ stage: m[1], path: relPath, display: basename(full), absolutePath: full, hostId: sourceHostId });
         }
         return list;
       })();

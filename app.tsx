@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Markdown,
   definePluginApp,
+  experimental_FileLink as FileLink,
   experimental_NewThreadComposer as NewThreadComposer,
   useBbContext,
   useBbNavigate,
@@ -469,22 +470,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
         />
         <div className="flex-1 overflow-auto">
           <CardDetailBody cardId={cardId} onClose={() => navigate.toPluginPanel("board", { subPath: "" })} navigate={navigate} />
-        </div>
-      </div>
-    );
-  }
-
-  const reviewMatch = subPath.match(/^review-document\/(.+)$/);
-  if (reviewMatch && reviewMatch[1]) {
-    const path = decodeURIComponent(reviewMatch[1]);
-    return (
-      <div className="flex h-full flex-col overflow-hidden bg-background">
-        <div className="flex items-center justify-between border-b px-3 py-2">
-          <button onClick={() => navigate.toPluginPanel("board", { subPath: "" })} className="text-xs text-muted-foreground hover:text-foreground">← Stelow board</button>
-          <span className="truncate pl-2 text-xs font-medium text-muted-foreground" title={path}>{path.split("/").pop()}</span>
-        </div>
-        <div className="flex-1 overflow-auto">
-          <DocumentReviewImpl path={path} source={{ kind: "workspace", threadId: null, environmentId: null, projectId: boardProjectId ?? routeProjectId ?? null }} />
         </div>
       </div>
     );
@@ -1390,15 +1375,16 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
                 <span className="text-xs font-medium text-muted-foreground">Mentioned files:</span>
                 <div className="flex flex-wrap gap-1">
                   {detail.mentionedFiles.map((file) => (
-                    <button
+                    <FileLink
                       key={file.path}
-                      onClick={() => navigate.toPluginPanel("review-document", { subPath: file.path })}
+                      target={{ kind: "host", hostId: file.hostId, path: file.absolutePath }}
+                      location={null}
                       className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs text-foreground hover:bg-muted"
                       title={`Open ${file.path}`}
                     >
                       <span>📄</span>
                       <span>{file.display}</span>
-                    </button>
+                    </FileLink>
                   ))}
                 </div>
               </div>
@@ -1408,16 +1394,17 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
                 <span className="text-xs font-medium text-muted-foreground">Assets produced by the workflow:</span>
                 <div className="flex flex-wrap gap-1">
                   {detail.artifacts.map((asset) => (
-                    <button
+                    <FileLink
                       key={asset.path}
-                      onClick={() => navigate.toPluginPanel("review-document", { subPath: asset.path })}
+                      target={{ kind: "host", hostId: asset.hostId, path: asset.absolutePath }}
+                      location={null}
                       className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20"
                       title={`${asset.stage}: ${asset.path}`}
                     >
                       <span>📎</span>
                       <span className="text-muted-foreground">{asset.stage}</span>
                       <span>{asset.display}</span>
-                    </button>
+                    </FileLink>
                   ))}
                 </div>
               </div>
