@@ -567,7 +567,10 @@ function BoardPanel({ subPath }: { subPath: string }) {
             </section>
           ) : null}
 
-          <p className="sm:hidden text-xs text-muted-foreground">Swipe sideways to view every stage.</p>
+          <p className="text-xs text-muted-foreground">
+            <span className="sm:hidden">Swipe sideways to view every stage.</span>
+            <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
+          </p>
           <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
             {COLUMNS.map((column) => (
               <BoardColumn
@@ -718,7 +721,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
         )}
       </button>
       {!collapsed ? (
-        <div className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain md:pr-1" role="list" aria-label={`${COLUMN_LABELS[column]} work items`}>
+        <div className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-y-contain md:pr-1" role="list" aria-label={`${COLUMN_LABELS[column]} work items`}>
           {cards.map((card) => <BoardCard key={card.id} card={card} />)}
         </div>
       ) : null}
