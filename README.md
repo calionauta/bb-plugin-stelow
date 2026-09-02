@@ -125,8 +125,22 @@ bb stelow preset list|add|remove|assign
 
 ## Deploy / hot-reload (CRITICAL)
 
-Deploying plugin changes is **`npm run build` only**. The bb server
-hot-reloads the plugin when `dist/` becomes newer than the source.
+Use the explicit development reload command after every plugin change:
+
+```bash
+npm run build:reload
+```
+
+It builds the current `dist/` bundle and runs `bb plugin reload stelow`,
+which replaces this plugin in the already-running BB process. This preserves
+active threads and is the reliable fallback when automatic hot-reload does not
+refresh an open client panel. Reopen the Stelow panel afterwards; hard-refresh
+the browser only if it still displays stale UI.
+
+`npm run build` remains useful for build-only validation. `npm run reload` is
+available when the bundle is already current. Bump `package.json#version` when
+you need the Plugins screen to display a new version number, then run
+`npm run build:reload`.
 
 **NEVER run `systemctl --user restart bb-daemon.service` as a deploy step.**
 A daemon restart SIGTERMs every running thread and each one is marked

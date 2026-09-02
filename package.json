@@ -41,6 +41,8 @@
   },
   "scripts": {
     "build": "bb plugin build && node scripts/postbuild.mjs",
+    "reload": "bb plugin reload stelow",
+    "build:reload": "npm run build && npm run reload",
     "test:artifacts": "node tests/artifact-manifest.test.mjs",
     "typecheck": "tsc --noEmit"
   },
