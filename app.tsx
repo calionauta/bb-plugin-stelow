@@ -223,7 +223,7 @@ const ACTIVITY_GLYPH: Record<string, string> = {
 const ACTIVITY_TITLE: Record<string, string> = {
   running: "Worker is actively working",
   "awaiting-answer": "Waiting for your answer",
-  error: "Worker failed — needs attention",
+  error: "Worker failed. Needs attention.",
 };
 
 function ActivityPill({ activity }: { activity: CardItem["activity"] }) {
@@ -264,7 +264,7 @@ type ReviewMode = (typeof REVIEW_MODE_OPTIONS)[number]["value"];
 function attentionLabel(card: CardItem): string {
   if (card.activity === "awaiting-answer") return "Answer required";
   if (card.activity === "error") return "Worker failed";
-  return "Paused — resume it";
+  return "Paused. Resume it.";
 }
 
 function useDebouncedRealtime(channels: readonly string[], handler: () => void, delayMs = DEBOUNCE_MS) {
@@ -483,7 +483,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Stelow</p>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team—not just coding assistants—through a structured product workflow.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Stelow Board</h1>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">About Stelow <span aria-hidden="true">↗</span></UrlLink>
@@ -982,7 +982,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   return (
     <section className="space-y-2">
       <h3 className="text-sm font-semibold">Scopes ({scopes.length})</h3>
-      {scopes.length > 1 ? <p className="text-[11px] text-muted-foreground">Ordered by dependency — a scope that depends on another appears after it; ⛔ marks one waiting on an unfinished dependency.</p> : null}
+      {scopes.length > 1 ? <p className="text-[11px] text-muted-foreground">Ordered by dependency. A scope that depends on another appears after it; ⛔ marks one waiting on an unfinished dependency.</p> : null}
       {ordered.map((scope) => {
         const isOpen = openIds.has(scope.id);
         const wait = waitingOn.get(scope.id) ?? [];
@@ -1078,12 +1078,12 @@ function ExpiredQuestionBanner({ question, onAnswer, answering }: { question: Ex
       <div className="flex items-start gap-3">
         <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">Waiting for your answer — the agent paused</div>
+          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">Waiting for your answer. The agent is paused.</div>
           <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
           <div className="mt-2 flex flex-wrap gap-1">
             {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" disabled={answering} onClick={() => onAnswer(option.label)}>{option.label}</Button>)}
           </div>
-          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">The ask timed out, but the agent is waiting — answering here resumes the workflow.</p>
+          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">The ask timed out, but the agent is waiting. Answering here resumes the workflow.</p>
         </div>
       </div>
     </div>
@@ -1233,7 +1233,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
                     void rpc.call("setBandPreset", { band: band.band, presetId: value }).then(() => { void onChanged(); void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([])); }).catch(() => setMessage("Failed to set phase preset.")).finally(() => setBusy(false));
                   }}
                 >
-                  <option value="">— Work item default —</option>
+                  <option value="">Use work item default</option>
                   {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </select>
                 <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title={band.stages.join(", ")}>{band.stages.join(", ")}</span>
@@ -1437,7 +1437,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
                 <p className="col-span-2 text-xs text-muted-foreground">
                   Stage <strong>select</strong> (<em>Item Selection</em>) invites you to choose which item / group from the
                   triage inbox to work on. It is <strong>not</strong> asking for the intent type (that is the Intent dropdown
-                  above, already set). Pick the item in the thread; when done the agent advances on its own — or use
+                  above, already set). Pick the item in the thread; when done the agent advances on its own. Or use
                   <em> Advance stage</em> below to move on now.
                 </p>
               ) : null}
@@ -1498,7 +1498,7 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
 
             <section className="space-y-1">
               <h3 className="text-sm font-semibold">Agent preset</h3>
-              <p className="text-xs text-muted-foreground">Presets are configured globally per workflow phase from the board's <strong>Presets</strong> button — not per work item. This work item is in the <strong>{stageLabel(card.stage)}</strong> phase.</p>
+              <p className="text-xs text-muted-foreground">Presets are configured globally per workflow phase from the board's <strong>Presets</strong> button, not per work item. This work item is in the <strong>{stageLabel(card.stage)}</strong> phase.</p>
               <div className="flex flex-wrap items-center gap-2">
                 {card.stage ? (
                   <Pill tone="bg-muted text-muted-foreground">
@@ -1563,8 +1563,8 @@ function CardDetailBody({ cardId, onClose, navigate }: { cardId: string; onClose
               </p>
               <p className="text-xs text-muted-foreground">
                 {pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage)
-                  ? "This is a manual override — the agent usually advances on its own. Stage gates (product, interface, plan, diff) still apply on the next advance."
-                  : "Going back is safe and reversible — the workflow will re-run earlier stages as needed."}
+                  ? "This is a manual override. The agent usually advances on its own. Stage gates (product, interface, plan, diff) still apply on the next advance."
+                  : "Going back is safe and reversible. The workflow will re-run earlier stages as needed."}
               </p>
             </DialogDescription>
           </DialogHeader>
