@@ -88,7 +88,7 @@ CLI native todos are for **DISPLAY** only. `checklist.md` is always the source o
 
 **Tools:** `TaskCreate`, `TaskList`, `TaskGet`, `TaskUpdate`
 
-> **Required:** Install with `pi install npm:@tintinweb/pi-tasks`
+> **Optional, user-installed only.** Do not run this installer yourself; the tool works only if the user has already installed it. If it is not present, fall back to the checklist-based workflow below.
 
 pi-tasks provides a persistent widget above the editor with status icons (✔/◼/◻), dependency management, and session/project-scoped storage.
 
@@ -126,7 +126,7 @@ Storage modes (set via `/tasks` → Settings):
 
 **Tool:** `todo` (via `@juicesharp/rpiv-todo`)
 
-> **Required:** Install with `pi install npm:@juicesharp/rpiv-todo`
+> **Optional, user-installed only (legacy).** Do not run this installer yourself. If it is not present, use the checklist-based workflow below.
 
 ```typescript
 todo({ action: "create", subject: "[PHASE-1] Task", description: "..." })

@@ -588,7 +588,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
               </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
-            <div className="flex w-full items-center gap-2 sm:mt-0.5 sm:w-auto">
+            <div className="flex w-full items-center gap-2 sm:mt-0.5 sm:w-auto sm:gap-3">
               <div role="group" aria-label="Work view" className="inline-flex h-9 shrink-0 rounded-md border bg-background p-0.5 shadow-sm max-md:pointer-coarse:h-10">
                 <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
                 <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
@@ -1786,7 +1786,7 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "inbox",
     title: "Stelow Inbox",
-    icon: "Bell",
+    icon: "Inbox",
     path: "inbox",
     component: InboxPanel,
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
@@ -1794,13 +1794,13 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "board",
     title: "Stelow Work",
-    icon: "Kanban",
+    icon: "Columns2",
     path: "board",
     component: (props) => { PillsyStyles(); return <BoardPanel subPath={props.subPath} />; },
     experimental_sidebarAccessory: StelowWorkSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
-  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Kanban", component: CardDrawerAdapter });
+  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Columns2", component: CardDrawerAdapter });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Open Stelow Work", component: OpenStelowBoardAction });
 
   app.slots.messageDirective({

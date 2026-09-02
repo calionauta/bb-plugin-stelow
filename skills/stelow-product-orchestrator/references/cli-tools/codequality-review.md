@@ -25,19 +25,12 @@ This tool is **not installed by default** and is **not a replacement** for:
 
 ## Install
 
-**Pi-native path:**
+This is an **optional third-party tool, installed by the user only** — never run these installers yourself. If it is not already present in the environment, skip it and use the fallback below instead. The user may install it with (from a terminal, their choice):
 
-```bash
+```text
 pi install git:github.com/cursor/plugins
-# Then use via skill reference
-```
-
-**Universal fallback for any other agent:**
-
-```bash
+# or, for other agents:
 npx skills add cursor/plugins -g
-# The skill auto-registers into the agent's ~/.agents/skills directory.
-# Invoke the skill by name in chat (or via the agent's skill tool).
 ```
 
 ## How to invoke
@@ -109,7 +102,7 @@ Save the report to the stelow verification path above so `stelow-product-executi
 
 ## Fallback (not installed)
 
-If `thermo-nuclear-code-quality-review` is not installed:
+If `thermo-nuclear-code-quality-review` is not installed (the common case):
 
 - run the normal `code-quality-gate` checks from `skills/stelow-product-orchestrator/stages/verification.md`
 - manually review files over 1000 lines

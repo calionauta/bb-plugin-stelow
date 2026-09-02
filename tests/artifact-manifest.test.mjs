@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseArtifactManifest } from "../lib/artifact-manifest.mjs";
+import { parseArtifactManifest, resolveArtifactPath } from "../lib/artifact-manifest.mjs";
 
 const manifest = parseArtifactManifest(`---
 name: workflow
@@ -23,4 +23,9 @@ assert.deepEqual(manifest, [
 ]);
 assert.deepEqual(parseArtifactManifest("artifacts:\n  shape: .stelow/example/spec.md\nhistory: []"), []);
 
-console.log("artifact-manifest test ok: typed multi-artifact manifest parsed; legacy map rejected");
+assert.equal(resolveArtifactPath("/workspace/project", ".stelow/example/spec.md"), "/workspace/project/.stelow/example/spec.md");
+assert.equal(resolveArtifactPath("/workspace/project", "/etc/passwd"), null, "absolute artifact paths are rejected");
+assert.equal(resolveArtifactPath("/workspace/project", "../outside.md"), null, "parent traversal is rejected");
+assert.equal(resolveArtifactPath("/workspace/project", ".stelow/../outside.md"), null, "embedded parent traversal is rejected");
+
+console.log("artifact-manifest test ok: typed manifests parsed and artifact paths stay inside the project");

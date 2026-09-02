@@ -6,18 +6,13 @@
 
 ## Install
 
-**Pi:**
-```bash
-pi install git:github.com/PriNova/pi-agent-codebase-workflows
-```
+This is an **optional third-party tool, installed by the user only** — never run these installers yourself. If it is not already present, use the fallback below. The user may install it from a terminal (their choice), pinning a version or verifying a digest if the registry supports it:
 
-**Universal fallback (any agent that supports skill installation):**
-```bash
+```text
+pi install git:github.com/PriNova/pi-agent-codebase-workflows
+# or, for other agents:
 npx skills add Prinova/pi-agent-codebase-workflows -g
 ```
-The `-a <cli>` flag is no longer required — the skill installs to `~/.agents/skills/` and
-the agent picks it up automatically. The flagship install path (`pi install git:...`)
-remains for Pi users who prefer the registry install.
 
 ---
 

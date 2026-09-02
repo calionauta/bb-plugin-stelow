@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } fr
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { parseArtifactManifest } from "./lib/artifact-manifest.mjs";
+import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
@@ -1412,9 +1412,10 @@ ${prompt}` }, ...workerAttachments],
           const stage = fields.stage;
           const relPath = fields.path;
           if (!stage || !relPath) continue;
-          // Keep repo-root-relative (no leading /) so safeRelative() in
-          // readDocument resolves it under the project root.
-          const full = relPath.startsWith("/") ? join(sourcePath, relPath.slice(1)) : join(sourcePath, relPath);
+          // Artifact manifests are agent-produced input. Resolve only a strict
+          // project-relative path; absolute paths and traversal are rejected.
+          const full = resolveArtifactPath(sourcePath, relPath);
+          if (!full) continue;
           const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
           if (exists && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fields.generated_at ?? "", absolutePath: full, hostId: sourceHostId });
         }
