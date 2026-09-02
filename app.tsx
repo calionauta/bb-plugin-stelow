@@ -568,7 +568,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
           ) : null}
 
           <p className="sm:hidden text-xs text-muted-foreground">Swipe sideways to view every stage.</p>
-          <div className="grid gap-3 overflow-x-auto" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
+          <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
             {COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
@@ -696,7 +696,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void }) {
   const [over, setOver] = useState(false);
   return (
-    <section onDragOver={(event) => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(event) => { event.preventDefault(); setOver(false); const id = event.dataTransfer.getData("text/stelow-card"); if (id) onDrop(id); }} className={`flex min-h-40 flex-col rounded-lg border bg-muted/30 p-2 transition ${over ? "border-primary bg-primary/5" : "border-border"} ${collapsed ? "items-center" : ""}`}>
+    <section onDragOver={(event) => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(event) => { event.preventDefault(); setOver(false); const id = event.dataTransfer.getData("text/stelow-card"); if (id) onDrop(id); }} className={`flex min-h-40 flex-col rounded-lg border bg-muted/30 p-2 transition md:h-full md:min-h-0 ${over ? "border-primary bg-primary/5" : "border-border"} ${collapsed ? "items-center" : ""}`}>
       <button onClick={onToggleCollapsed} className={`${collapsed ? "flex h-full w-full cursor-pointer flex-col items-center gap-2 py-2 hover:bg-foreground/5" : "mb-2 flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-md px-1 py-0.5 hover:bg-foreground/5"} text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground`} title={collapsed ? `Expand ${COLUMN_LABELS[column]}` : `Collapse ${COLUMN_LABELS[column]}`} aria-label={collapsed ? `Expand ${COLUMN_LABELS[column]}` : `Collapse ${COLUMN_LABELS[column]}`}>
         {collapsed ? (
           <>
@@ -718,7 +718,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
         )}
       </button>
       {!collapsed ? (
-        <div className="space-y-2" role="list" aria-label={`${COLUMN_LABELS[column]} work items`}>
+        <div className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain md:pr-1" role="list" aria-label={`${COLUMN_LABELS[column]} work items`}>
           {cards.map((card) => <BoardCard key={card.id} card={card} />)}
         </div>
       ) : null}
