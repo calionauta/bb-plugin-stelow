@@ -289,12 +289,23 @@ function useDebouncedRealtime(channels: readonly string[], handler: () => void, 
   }
 }
 
-interface RunningAccessoryHandle {
+interface SidebarAccessoryHandle {
   count: number;
   tone: string;
 }
 
-function useRunningAccessory(): RunningAccessoryHandle {
+function SidebarCount({ count, tone, label }: SidebarAccessoryHandle & { label: string }) {
+  return (
+    <span
+      aria-label={label}
+      className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${tone}`}
+    >
+      {count}
+    </span>
+  );
+}
+
+function useInboxAccessory(): SidebarAccessoryHandle {
   const rpc = useRpc<typeof rpcContract>();
   const [count, setCount] = useState(0);
   const reload = useCallback(async () => {
@@ -313,16 +324,31 @@ function useRunningAccessory(): RunningAccessoryHandle {
   return { count, tone };
 }
 
-function StelowSidebarAccessory() {
-  const { count, tone } = useRunningAccessory();
-  return (
-    <span
-      aria-label={`${count} Stelow Inbox items need attention`}
-      className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${tone}`}
-    >
-      {count}
-    </span>
-  );
+function StelowInboxSidebarAccessory() {
+  const { count, tone } = useInboxAccessory();
+  return <SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />;
+}
+
+function useWorkAccessory(): SidebarAccessoryHandle {
+  const rpc = useRpc<typeof rpcContract>();
+  const [count, setCount] = useState(0);
+  const reload = useCallback(async () => {
+    try {
+      const result = await rpc.call("listCards", { projectId: null });
+      setCount(result.cards.filter((card) => card.status !== "completed" && card.status !== "archived").length);
+    } catch {
+      /* Keep the last known count while the host reconnects. */
+    }
+  }, [rpc]);
+  useEffect(() => { void reload(); }, [reload]);
+  useDebouncedRealtime(["card-state", "board-changed"], () => void reload());
+  const tone = count > 0 ? "bg-muted text-foreground" : "bg-muted text-muted-foreground";
+  return { count, tone };
+}
+
+function StelowWorkSidebarAccessory() {
+  const { count, tone } = useWorkAccessory();
+  return <SidebarCount count={count} tone={tone} label={`${count} active Stelow work items`} />;
 }
 
 type InboxNotification = {
@@ -1760,20 +1786,21 @@ export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "inbox",
     title: "Stelow Inbox",
-    icon: "Inbox",
+    icon: "Bell",
     path: "inbox",
     component: InboxPanel,
-    experimental_sidebarAccessory: StelowSidebarAccessory,
+    experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   app.slots.navPanel({
     id: "board",
     title: "Stelow Work",
-    icon: "Columns",
+    icon: "Kanban",
     path: "board",
     component: (props) => { PillsyStyles(); return <BoardPanel subPath={props.subPath} />; },
+    experimental_sidebarAccessory: StelowWorkSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
-  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Columns", component: CardDrawerAdapter });
+  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Kanban", component: CardDrawerAdapter });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Open Stelow Work", component: OpenStelowBoardAction });
 
   app.slots.messageDirective({
