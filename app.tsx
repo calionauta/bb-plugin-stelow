@@ -588,12 +588,12 @@ function BoardPanel({ subPath }: { subPath: string }) {
               </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
-            <div className="flex w-full gap-2 sm:mt-0.5 sm:w-auto">
-              <div role="group" aria-label="Work view" className="flex rounded-md border p-0.5">
-                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`min-h-11 rounded px-3 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-muted font-medium" : "text-muted-foreground"}`}>Board</button>
-                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`min-h-11 rounded px-3 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-muted font-medium" : "text-muted-foreground"}`}>List</button>
+            <div className="flex w-full items-center gap-2 sm:mt-0.5 sm:w-auto">
+              <div role="group" aria-label="Work view" className="inline-flex h-9 shrink-0 rounded-md border bg-background p-0.5 shadow-sm max-md:pointer-coarse:h-10">
+                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
+                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
               </div>
-              <Button className="flex-1 sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+              <Button className="h-9 flex-1 max-md:pointer-coarse:h-10 sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
             </div>
           </header>
 
