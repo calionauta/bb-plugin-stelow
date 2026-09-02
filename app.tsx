@@ -672,14 +672,14 @@ function BoardPanel({ subPath }: { subPath: string }) {
               </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
-            <div className="flex w-full items-center gap-2 sm:mt-0.5 sm:w-auto sm:gap-3">
-              <div role="group" aria-label="Work view" className="inline-flex h-9 shrink-0 rounded-md border bg-background p-0.5 shadow-sm max-md:pointer-coarse:h-10">
-                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
-                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
+            <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
+              <div role="group" aria-label="Work view" className="col-span-2 inline-flex h-10 w-full rounded-md border bg-background p-0.5 shadow-sm sm:h-9 sm:w-auto sm:shrink-0">
+                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
+                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
               </div>
-              <Button className="h-9 flex-1 max-md:pointer-coarse:h-10 sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+              <Button className="h-10 w-full sm:h-9 sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
               {githubStatus?.pluginAvailable ? (
-                <Button className="h-9 flex-1 max-md:pointer-coarse:h-10 sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
+                <Button className="h-10 w-full sm:h-9 sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
               ) : null}
             </div>
           </header>
