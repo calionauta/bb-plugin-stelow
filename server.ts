@@ -1203,11 +1203,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const stmt = projectId
         ? db.prepare("SELECT * FROM cards WHERE project_id = ? ORDER BY updated_at DESC")
         : db.prepare("SELECT * FROM cards ORDER BY updated_at DESC");
-      const initialRows = (projectId ? stmt.all(projectId) : stmt.all()) as CardRow[];
-      // Reconcile before rendering. This immediately heals cards created by an
-      // older plugin version that reached terminal audit while the board still
-      // recorded them as in-progress/review.
-      await Promise.all(initialRows.map((row) => syncThreadState(row.id)));
       const rows = (projectId ? stmt.all(projectId) : stmt.all()) as CardRow[];
       const projectsList = await bb.sdk.projects.list();
       const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
