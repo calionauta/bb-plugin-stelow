@@ -480,15 +480,17 @@ function BoardPanel({ subPath }: { subPath: string }) {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Stelow</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team—not just coding assistants—through a structured product workflow.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Stelow Board</h1>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">About Stelow <span aria-hidden="true">↗</span></UrlLink>
               </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
-            <Button className="w-full sm:w-auto" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+            <Button className="w-full sm:mt-0.5 sm:w-auto" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
           </header>
 
           <Dialog open={createWorkOpen} onOpenChange={setCreateWorkOpen}>
@@ -510,9 +512,9 @@ function BoardPanel({ subPath }: { subPath: string }) {
                 onSubmit={(request) => void start(request)}
               />
               <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
-                <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 text-sm font-medium text-foreground sm:flex-row sm:items-center sm:justify-between">
+                <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:justify-between">
                   <span>Work settings</span>
-                  <span className="text-xs font-normal text-muted-foreground">Planning depth, review checkpoints, and agent configuration</span>
+                  <span className="text-xs font-normal text-muted-foreground">Planning depth, review checkpoints, and agent configuration · Configure</span>
                 </summary>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
