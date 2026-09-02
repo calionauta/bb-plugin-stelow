@@ -8,6 +8,14 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **`stelow advance` / `doctor` after skill renames.** The `data/stelow`
+  SCOPE-2 helper still hardcoded the old `stelow-product-orchestrator` path in
+  its `TRANSITIONS` fallback and the advance pre-condition Python block. Both
+  now resolve `stelow-workflow-orchestrator`. Also fixed the stale mirror
+  reference in `references/transitions.md`.
+
 ### Architecture
 
 - **DRY: stop duplicating Stelow skills.** The plugin dropped the 13
