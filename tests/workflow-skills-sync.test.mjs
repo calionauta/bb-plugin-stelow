@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { syncWorkflowSkills, WORKFLOW_SKILLS } from "../lib/workflow-skills-sync.mjs";
@@ -29,6 +29,19 @@ try {
   assert.equal(second.changed, false, "second sync reports unchanged");
 
   assert.equal(WORKFLOW_SKILLS.length, 14, "exactly 14 core skills are vendored");
+  assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-entry"), "workflow entry is vendored");
+  assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-router"), "workflow router is vendored");
+
+  // A rename must not leave legacy control-plane skills available in the
+  // plugin's manifest root.
+  for (const legacy of ["stelow-entry", "stelow-router"]) {
+    mkdirSync(join(target, legacy), { recursive: true });
+    writeFileSync(join(target, legacy, "SKILL.md"), "legacy");
+  }
+  const cleanup = await syncWorkflowSkills(target, { log: () => {} });
+  assert.deepEqual(cleanup.removed.sort(), ["stelow-entry/", "stelow-router/"]);
+  assert.ok(!existsSync(join(target, "stelow-entry")), "legacy entry directory removed");
+  assert.ok(!existsSync(join(target, "stelow-router")), "legacy router directory removed");
 
   console.log(
     `workflow-skills-sync test ok: ${first.created.length} files synced from calionauta/stelow, idempotent on second run`,
