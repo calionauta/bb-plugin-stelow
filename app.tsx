@@ -1867,9 +1867,9 @@ function PillsyStyles() {
   const style = document.createElement("style");
   style.id = "stelow-style";
   style.textContent = [
-    "@keyframes stelow-border-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }",
-    ".stelow-board-card.stelow-border-running { position: relative; isolation: isolate; border-color: transparent !important; }",
-    ".stelow-board-card.stelow-border-running::before { content: ''; position: absolute; inset: -1px; border-radius: inherit; padding: 1.5px; background: conic-gradient(from 0deg, hsl(220 90% 60% / 0.95), hsl(280 80% 60% / 0.95), hsl(160 75% 55% / 0.95), hsl(220 90% 60% / 0.95)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: stelow-border-spin 4s linear infinite; pointer-events: none; z-index: -1; }",
+    "@keyframes stelow-card-alive { 0%, 100% { border-color: hsl(220 90% 60% / 0.5); box-shadow: 0 0 0 0 hsl(220 90% 60% / 0), 0 0 12px hsl(220 90% 60% / 0.08); } 35% { border-color: hsl(280 80% 60% / 0.82); box-shadow: 0 0 0 2px hsl(280 80% 60% / 0.10), 0 0 18px hsl(280 80% 60% / 0.14); } 70% { border-color: hsl(160 75% 48% / 0.72); box-shadow: 0 0 0 1px hsl(160 75% 48% / 0.10), 0 0 15px hsl(160 75% 48% / 0.12); } }",
+    ".stelow-board-card.stelow-border-running, details.stelow-border-running { border-color: hsl(220 90% 60% / 0.5) !important; animation: stelow-card-alive 3.2s ease-in-out infinite; }",
+    "@media (prefers-reduced-motion: reduce) { .stelow-board-card.stelow-border-running, details.stelow-border-running { animation: none; border-color: hsl(220 90% 60% / 0.7) !important; } }", 
     ".stelow-board-card.stelow-border-attention { border-color: hsl(38 92% 50% / 0.85) !important; box-shadow: 0 0 0 3px hsl(38 92% 50% / 0.12); }",
     "@keyframes stelow-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }",
     ".stelow-pill-working { background: linear-gradient(90deg, hsl(220 90% 60% / 0.18), hsl(280 80% 60% / 0.45), hsl(220 90% 60% / 0.18)); background-size: 200% 100%; animation: stelow-shimmer 1.6s linear infinite; color: hsl(220 90% 40%); }",
