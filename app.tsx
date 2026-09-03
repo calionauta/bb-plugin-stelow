@@ -584,7 +584,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
     const prompt = text;
     if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, prompt, attachments, intent, appetite, reviewMode });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode });
       setPrompt("");
       setCreateWorkOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
@@ -1664,6 +1664,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         {card ? (
           <>
             {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="font-medium">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
+            {card.workspaceKind === "exploratory" ? <section className="rounded-md border border-sky-500/30 bg-sky-500/5 p-3 text-sm"><p className="font-medium">Exploratory work</p><p className="mt-1 text-muted-foreground">Stored locally until you delete it.</p>{card.workspacePath ? <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{card.workspacePath}</p> : null}</section> : null}
             <p className="text-sm text-foreground">{card.prompt}</p>
             {detail?.attachments && detail.attachments.length > 0 ? (
               <div className="space-y-1">

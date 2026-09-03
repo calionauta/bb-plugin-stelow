@@ -164,7 +164,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() })) }),
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
@@ -191,7 +191,7 @@ export const rpcContract = defineRpcContract({
     output: boardWorkflowDefaultsSchema,
   },
   createCard: {
-    input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional() }).strict(),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
   updateCardIntent: {
@@ -201,7 +201,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
@@ -440,12 +440,12 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
   }
 }
 
-function workerEnvironment(source: { path: string; hostId: string }, params: { environmentKind: string; machineId: string | null }) {
-  // Card workflow state is stored in the project's declared source. The default
-  // preset must therefore run there as well; BB's generic project-default may
-  // point at a managed worktree, which silently split state from execution.
-  if (params.environmentKind === "project-default") {
-    return { type: "host" as const, hostId: params.machineId ?? source.hostId, workspace: { type: "unmanaged" as const, path: source.path } };
+function workerEnvironment(source: { path: string; hostId: string }, params: { environmentKind: string; machineId: string | null }, forceWorkspaceHost = false) {
+  // Card workflow state is stored in the declared workspace. The default preset
+  // must therefore run there as well; BB's generic project-default may point at
+  // a managed worktree, which silently splits state from execution.
+  if (forceWorkspaceHost || params.environmentKind === "project-default") {
+    return { type: "host" as const, hostId: forceWorkspaceHost ? source.hostId : (params.machineId ?? source.hostId), workspace: { type: "unmanaged" as const, path: source.path } };
   }
   return { type: "project-default" as const };
 }
@@ -770,6 +770,15 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "attachments")) {
     db.exec("ALTER TABLE cards ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'");
   }
+  if (!cardColumns.some((column) => column.name === "workspace_kind")) {
+    db.exec("ALTER TABLE cards ADD COLUMN workspace_kind TEXT NOT NULL DEFAULT 'project'");
+  }
+  if (!cardColumns.some((column) => column.name === "workspace_path")) {
+    db.exec("ALTER TABLE cards ADD COLUMN workspace_path TEXT");
+  }
+  if (!cardColumns.some((column) => column.name === "workspace_host_id")) {
+    db.exec("ALTER TABLE cards ADD COLUMN workspace_host_id TEXT");
+  }
   // stage_presets may not be applied by bb.storage.migrate on existing DBs,
   // so ensure it idempotently here as well.
   db.exec(`CREATE TABLE IF NOT EXISTS stage_presets (
@@ -933,25 +942,58 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   // Shared card-creation path for both the UI "start work" handler and the
-  // GitHub import. Replicates createCard's seeding + hidden worker spawn.
-  async function createCardInternal({ projectId, prompt, attachments, intent, appetite, reviewMode, presetId }: { projectId: string; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null }): Promise<{ cardId: string; threadId: string }> {
+  // GitHub import. A Personal-project request gets an isolated persistent
+  // exploratory workspace; project cards keep using their declared source.
+  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null }): Promise<{ cardId: string; threadId: string }> {
     const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
+    // The composer submits the Personal project id for “Don't work in a
+    // project”. Some SDK project reads omit its `kind`, so accept its stable
+    // id as well as the documented kind marker.
+    const isExploratory = projectId === "proj_personal" || project?.kind === "personal";
     const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-    const rootPath = source?.path;
-    if (!rootPath || !source) throw new Error("Project workspace path is unavailable.");
+    if (!isExploratory && !source?.path) throw new Error("Project workspace path is unavailable.");
+    const cardId = randomId("card");
+    const environmentRecord = environment && typeof environment === "object" ? environment as Record<string, unknown> : {};
+    const requestedHostId = typeof environmentRecord.hostId === "string" ? environmentRecord.hostId : null;
+    const hosts = await bb.sdk.hosts.list();
+    // The plugin's synchronous filesystem operations run on this host. BB's
+    // public host contract does not identify it, so only accept the sole host.
+    if (isExploratory && hosts.length !== 1) {
+      throw new Error("Exploratory work currently requires a single local BB host.");
+    }
+    const localHostId = hosts[0]?.id ?? null;
+    if (isExploratory && requestedHostId && requestedHostId !== localHostId) {
+      throw new Error("Exploratory work currently requires the local host.");
+    }
+    const exploratoryHostId = localHostId;
+    const rootPath = isExploratory
+      ? nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory", cardId)
+      : source?.path;
+    let workspaceProjectId = projectId;
+    let workspaceSource: { path: string; hostId: string } | undefined = source ? { path: source.path, hostId: source.hostId } : undefined;
+    if (isExploratory && rootPath && exploratoryHostId) {
+      mkdirSync(rootPath, { recursive: true });
+      const existing = (await bb.sdk.projects.list()).find((entry) => entry.name === "Stelow exploratory work" && entry.sources.some((candidate) => candidate.hostId === exploratoryHostId && candidate.path === nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory")));
+      const exploratoryProject = existing ?? await bb.sdk.projects.create({ name: "Stelow exploratory work", source: { type: "local_path", hostId: exploratoryHostId, path: nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory") } });
+      workspaceProjectId = exploratoryProject.id;
+      workspaceSource = { path: rootPath, hostId: exploratoryHostId };
+    }
+    if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this work.");
     const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
     const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
     const seed = await seedWorkflow(bb, rootPath, slug, intent, appetite, reviewMode);
     if (seed.error) throw new Error(seed.error);
-    const cardId = randomId("card");
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
     const analysisRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = 'analysis'").get() as { preset_id: string } | undefined;
     const spawnPreset = analysisRow ? (getPresetById(analysisRow.preset_id) ?? preset) : preset;
     const params = presetAttachmentParams(spawnPreset);
     const workerAttachments = attachments.map((attachment) => ({ type: attachment.type, path: attachment.path }));
+    // BB requires Personal-project threads to retain a `personal` workspace.
+    // Exploratory work therefore uses one Stelow-owned project with a local source.
+    const workerProjectId = workspaceProjectId;
     const thread = await bb.sdk.threads.spawn({
-      projectId,
-      environment: workerEnvironment(source, params),
+      projectId: workerProjectId,
+      environment: workerEnvironment(workspaceSource, params, isExploratory),
       visibility: "hidden",
       title: `Stelow: ${displayName}`,
       providerId: params.providerId,
@@ -978,14 +1020,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${prompt}` }, ...workerAttachments],
     });
     const ts = now();
-    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, projectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), null, null, null, ts, ts);
+    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, null, null, null, ts, ts);
     db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
     await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
     bb.realtime.publish("card-state", { cardId });
     return { cardId, threadId: thread.id };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; attachments: string; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null };
   type PresetRow = {
@@ -1050,13 +1092,9 @@ ${prompt}` }, ...workerAttachments],
     const preset = getPresetById(presetId);
     if (!preset) return { ok: false, error: "Preset not found." };
     const params = presetAttachmentParams(preset);
-    let projectPath = "";
-    let source: { path: string; hostId: string } | null = null;
-    try {
-      const project = await bb.sdk.projects.get({ projectId: row.project_id });
-      source = project.sources.find((s) => s.isDefault) ?? project.sources[0] ?? null;
-      projectPath = source?.path ?? "";
-    } catch { /* project gone; still respawn */ }
+    const workspace = await cardWorkspace(row);
+    const projectPath = workspace?.path ?? "";
+    const source = workspace?.hostId ? { path: workspace.path, hostId: workspace.hostId } : null;
     // Resolve the real per-workflow state dir (stelow.json -> created date), so
     // the respawned worker is told the correct path — never a guessed date.
     let stateDir: string | null = null;
@@ -1067,7 +1105,7 @@ ${prompt}` }, ...workerAttachments],
     try {
       const newThread = await bb.sdk.threads.spawn({
         projectId: row.project_id,
-        environment: source ? workerEnvironment(source, params) : { type: "project-default" },
+        environment: source ? workerEnvironment(source, params, row.workspace_kind === "exploratory") : { type: "project-default" },
         visibility: "hidden",
         title: `Stelow: ${row.display_name ?? row.name}`,
         providerId: params.providerId,
@@ -1110,8 +1148,21 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
   }
 
+  async function cardWorkspace(card: CardRow): Promise<{ path: string; hostId: string | null } | null> {
+    if (card.workspace_kind === "exploratory") {
+      return card.workspace_path ? { path: card.workspace_path, hostId: card.workspace_host_id } : null;
+    }
+    const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
+    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
+    return source?.path ? { path: source.path, hostId: source.hostId } : null;
+  }
+
   function getCard(cardId: string): CardRow | undefined {
     return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
+  }
+
+  function getCardByWorkerThread(threadId: string): CardRow | undefined {
+    return db.prepare("SELECT * FROM cards WHERE worker_thread_id = ?").get(threadId) as CardRow | undefined;
   }
   function updateCard(cardId: string, fields: Partial<Omit<CardRow, "id" | "project_id" | "intent" | "prompt" | "name" | "created_at">>): void {
     // Hot-reload race: bb closes the plugin DB while syncThreadState callbacks
@@ -1170,7 +1221,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (!card?.worker_thread_id) return;
     try {
       // Resolve this card's own per-workflow state file (not a shared root state.md).
-      const projectPath = await projectRoot(bb, card.project_id);
+      const workspace = await cardWorkspace(card);
+      const projectPath = workspace?.path ?? null;
       const stateBlob = await (async () => {
         if (!projectPath) return null;
         if (card.dir_hash) {
@@ -1515,7 +1567,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           prompt: row.prompt,
           intent: row.intent,
           projectId: row.project_id,
-          projectName: projectMap.get(row.project_id) ?? row.project_id,
+          projectName: row.workspace_kind === "exploratory" ? "Exploratory work" : (projectMap.get(row.project_id) ?? row.project_id),
+          workspaceKind: row.workspace_kind,
+          workspacePath: row.workspace_path,
           status: normalizeStatus(row.status),
           stage: row.stage,
           workerThreadId: row.worker_thread_id,
@@ -1563,8 +1617,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at } : null };
     },
 
-    async createCard({ projectId, prompt, attachments, intent, appetite, reviewMode, presetId }) {
-      return createCardInternal({ projectId, prompt, attachments, intent, appetite, reviewMode, presetId });
+    async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId }) {
+      return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId });
     },
 
     async cardDetail({ cardId }) {
@@ -1575,15 +1629,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; options: string; expired_at: number }>;
       const expiredQuestions = expiredRows.map((row) => ({ id: row.id, question: row.question, multiple: Boolean(row.multiple), options: JSON.parse(row.options) as Array<{ label: string; description: string }>, expiredAt: row.expired_at }));
       let projectName = card.project_id;
-      let sourcePath: string | null = null;
-      let sourceHostId: string | null = null;
-      try {
-        const project = await bb.sdk.projects.get({ projectId: card.project_id });
-        projectName = project.name;
-        const source = project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
-        sourcePath = source?.path ?? null;
-        sourceHostId = source?.hostId ?? null;
-      } catch { /* project removed; keep card viewable */ }
+      const workspace = await cardWorkspace(card);
+      let sourcePath: string | null = workspace?.path ?? null;
+      let sourceHostId: string | null = workspace?.hostId ?? null;
+      if (card.workspace_kind === "project") {
+        try { projectName = (await bb.sdk.projects.get({ projectId: card.project_id })).name; } catch { /* project removed; keep card viewable */ }
+      }
       const mentionedFiles = (await detectMentionedFiles(bb, sourcePath, card.prompt)).flatMap((file) => sourceHostId ? [{ ...file, hostId: sourceHostId }] : []);
       const attachments = cardAttachments(card.attachments).map((attachment) => ({
         ...attachment,
@@ -1633,7 +1684,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, updatedAt: card.updated_at },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, updatedAt: card.updated_at },
         attachments,
         mentionedFiles,
         scopes,
@@ -1652,11 +1703,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, ts, cardId);
       // Keep state.md intent in sync so the agent sees the corrected intent.
       try {
-        const project = await bb.sdk.projects.get({ projectId: card.project_id });
-        const source = project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
-        if (source?.path) {
-          const stateDir = card.dir_hash ? await workflowStateDir(bb, source.path, card.dir_hash) : null;
-          const statePath = stateDir ? join(stateDir, "state.md") : join(source.path, "state.md");
+        const workspace = await cardWorkspace(card);
+        if (workspace?.path) {
+          const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.dir_hash) : null;
+          const statePath = stateDir ? join(stateDir, "state.md") : join(workspace.path, "state.md");
           const existing = await bb.sdk.files.read({ path: statePath }).catch(() => null);
           if (existing) {
             await bb.sdk.files.write({ path: statePath, content: existing.content.replace(/^intent:.*$/m, `intent: ${intent}`) });
@@ -1699,14 +1749,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async reseedCard({ cardId, presetId }) {
       const card = getCard(cardId);
       if (!card) return { reseeded: false, error: "Card not found." };
-      let source: Awaited<ReturnType<typeof bb.sdk.projects.get>>["sources"][number] | undefined;
-      try {
-        const project = await bb.sdk.projects.get({ projectId: card.project_id });
-        source = project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
-      } catch {
-        return { reseeded: false, error: "Project no longer exists. Archive this card to remove it." };
-      }
-      if (!source?.path) return { reseeded: false, error: "Project workspace path is unavailable." };
+      const workspace = await cardWorkspace(card);
+      const source = workspace?.hostId && workspace.path ? { path: workspace.path, hostId: workspace.hostId } : null;
+      if (!source) return { reseeded: false, error: "Workspace is unavailable. Archive this card to remove it." };
       // Re-seed into a fresh per-workflow dir so the card gets a clean state file.
       const seed = await seedWorkflow(bb, source.path, card.name, card.intent, "Core", "Auto", true);
       if (seed.error) return { reseeded: false, error: seed.error };
@@ -1722,14 +1767,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       } else {
         preset = getPresetForCard(cardId);
       }
-      if (card.worker_thread_id) {
-        try { await bb.sdk.threads.archive({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
-        try { await bb.sdk.threads.stop({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
-      }
+      const previousThreadId = card.worker_thread_id;
       const params = presetAttachmentParams(preset);
       const newThread = await bb.sdk.threads.spawn({
         projectId: card.project_id,
-        environment: workerEnvironment(source, params),
+        environment: workerEnvironment(source, params, card.workspace_kind === "exploratory"),
         visibility: "hidden",
         title: `Stelow: ${card.display_name ?? card.name}`,
         providerId: params.providerId,
@@ -1753,6 +1795,10 @@ Before asking a question, first summarize what you read (files, plan, codebase) 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}` }, ...cardAttachments(card.attachments)],
       });
+      if (previousThreadId) {
+        try { await bb.sdk.threads.archive({ threadId: previousThreadId }); } catch { /* ignore */ }
+        try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
+      }
       updateCard(cardId, { stage: "triage", activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, last_assistant_text: null });
       return { reseeded: true, error: null };
     },
@@ -1807,15 +1853,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async advanceCard({ cardId, stage }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, stdout: "", error: "Card not found." };
-      let source: Awaited<ReturnType<typeof bb.sdk.projects.get>>["sources"][number] | undefined;
-      try {
-        const project = await bb.sdk.projects.get({ projectId: card.project_id });
-        source = project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
-      } catch {
-        return { ok: false, stdout: "", error: "Project no longer exists. Archive this card to remove it." };
-      }
-      if (!source?.path) return { ok: false, stdout: "", error: "Project workspace path is unavailable." };
-      const stateDir = card.dir_hash ? await workflowStateDir(bb, source.path, card.dir_hash) : null;
+      const workspace = await cardWorkspace(card);
+      if (!workspace?.path) return { ok: false, stdout: "", error: "Workspace is unavailable." };
+      const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.dir_hash) : null;
+      const source = { path: workspace.path, hostId: workspace.hostId };
       const guard = await ensureProjectArtifacts(bb, source.path, stateDir);
       if (guard) return { ok: false, stdout: "", error: guard };
       const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
@@ -2032,11 +2073,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const projectId = flag("--project") ?? ctx.projectId;
         const stage = flag("--stage") ?? args.find((arg) => !arg.startsWith("--") && arg !== projectId);
         if (!projectId || !stage) return { exitCode: 2, stderr: "Usage: bb stelow advance [--project <proj_id>] [--stage <stage>] <stage>" };
-        const rootPath = await projectRoot(bb, projectId);
-        if (!rootPath) return { exitCode: 1, stderr: "Project workspace path is unavailable." };
         // The agent runs this from within its worker thread; resolve the owning
-        // card so advance targets that card's per-workflow state file.
-        const cliCard = ctx.threadId ? db.prepare("SELECT id, dir_hash, worker_preset_id FROM cards WHERE worker_thread_id = ?").get(ctx.threadId) as { id: string; dir_hash: string | null; worker_preset_id: string | null } | undefined : undefined;
+        // card first so Personal/exploratory work uses its own workspace.
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
+        const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
         const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
         const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
         if (guard) return { exitCode: 1, stderr: guard };
