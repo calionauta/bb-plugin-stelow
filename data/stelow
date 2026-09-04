@@ -202,9 +202,13 @@ allowed = []
 for line in m.group(1).splitlines():
     mm = re.match(r"^(next|accept|reject|rework|annotate):\s*(.*)$", line.strip())
     if not mm: continue
-    for token in re.split(r"[,\s]+", mm.group(2)):
+    # Trailing "(...)" segments are human comments ("(none — stays at triage)",
+    # "shape (shape rework — same stage)"), not stages. Strip them before
+    # tokenizing so comment words never leak into the allowed list.
+    value = re.sub(r"\(.*", "", mm.group(2))
+    for token in re.split(r"[,\s]+", value):
         token = token.strip("[]\"'")
-        if token and not token.startswith("(") and re.match(r"^[a-z][a-z0-9-]*$", token): allowed.append(token)
+        if token and re.match(r"^[a-z][a-z0-9-]*$", token): allowed.append(token)
 route = re.search(r"^\*\*" + re.escape(intent) + r":\*\*\s*(.+)$", text, re.MULTILINE)
 if route:
     stages = [part.strip() for part in route.group(1).split("→")]

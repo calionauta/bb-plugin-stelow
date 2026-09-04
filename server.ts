@@ -493,18 +493,27 @@ function parseNextStages(rootPath: string | null, currentStage: string): string[
   if (!existsSync(transitionsPath)) return [];
   let content: string;
   try { content = readFileSync(transitionsPath, "utf8"); } catch { return []; }
-  const block = content.match(new RegExp(`^### ${currentStage}\\s*\\n([\\s\\S]*?)(?=^### |\\Z)`, "m"));
-  if (!block) return [];
+  // NOTE: do not use a `(?=^### |\Z)`-style regex here — `\Z` is an
+  // end-of-string anchor in Python but a literal "Z" in JavaScript, which
+  // silently broke parsing of the last stage block (`audit`). Splitting on
+  // headers avoids the dialect trap and any regex injection via stage names.
+  const sections = content.split(/^### /m);
+  const section = sections.find((entry) => entry === currentStage || entry.startsWith(`${currentStage}\n`) || entry.startsWith(`${currentStage} `));
+  if (!section) return [];
   const stages = new Set<string>();
-  for (const raw of block[1].split("\n")) {
+  for (const raw of section.split("\n")) {
     const line = raw.trim();
-    for (const key of ["next", "accept", "rework"] as const) {
+    for (const key of ["next", "accept", "reject", "rework"] as const) {
       const match = line.match(new RegExp(`^${key}:\\s*(.*)$`));
       if (!match) continue;
-      for (const token of match[1].split(",")) {
+      // Trailing "(...)" segments are human comments ("(none — stays at
+      // triage)", "shape (shape rework — same stage)"), not stages. Without
+      // stripping, a comment either leaks words (comma split keeps them) or
+      // hides a real target (the whole token contains "(" and is dropped).
+      const value = match[1].split("(")[0];
+      for (const token of value.split(",")) {
         const stage = token.replace(/[\[\]\s"']/g, "");
-        // Parenthesized tokens are markers ((none), (done), …), not stages.
-        if (stage && !stage.includes("(")) stages.add(stage);
+        if (stage && /^[a-z][a-z0-9-]*$/.test(stage)) stages.add(stage);
       }
     }
   }
