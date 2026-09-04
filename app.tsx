@@ -999,29 +999,15 @@ function BoardCard({ card }: { card: CardItem }) {
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` }), [navigate, card.id]);
-  const openWorker = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
-  const onKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      open();
-      return;
-    }
-    if ((event.key === "w" || event.key === "W") && card.workerThreadId) {
-      event.preventDefault();
-      openWorker();
-    }
-  }, [open, openWorker, card.workerThreadId]);
   return (
     <button
       role="listitem"
       draggable
       onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
-      onDoubleClick={openWorker}
-      onKeyDown={onKeyDown}
-      title="Click to inspect · double-click or W to open the worker thread"
+      title="Click to inspect"
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
-      aria-label={`Open work item ${card.displayName}. Press Enter to inspect, W to open the worker thread.`}
+      aria-label={`Open work item ${card.displayName}.`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
