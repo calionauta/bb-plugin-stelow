@@ -219,7 +219,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
@@ -227,6 +227,7 @@ export const rpcContract = defineRpcContract({
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
+      workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable() })),
       nextStages: z.array(z.string()),
     }),
   },
@@ -818,6 +819,9 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "worker_preset_id")) {
     db.exec("ALTER TABLE cards ADD COLUMN worker_preset_id TEXT");
   }
+  if (!cardColumns.some((column) => column.name === "preset_restart_pending")) {
+    db.exec("ALTER TABLE cards ADD COLUMN preset_restart_pending INTEGER NOT NULL DEFAULT 0");
+  }
   if (!cardColumns.some((column) => column.name === "attachments")) {
     db.exec("ALTER TABLE cards ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'");
   }
@@ -855,6 +859,22 @@ export default async function plugin(bb: BbPluginApi) {
   CREATE INDEX IF NOT EXISTS idx_inbox_events_visible ON inbox_events(archived_at, occurred_at DESC);`);
   const inboxColumns = db.prepare("PRAGMA table_info(inbox_events)").all() as Array<{ name: string }>;
   if (!inboxColumns.some((column) => column.name === "resolved_at")) db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
+
+  // card_threads is the worker ledger: one row per worker thread a card has
+  // ever had (initial spawn, band-swap / manual restarts, reseeds). Old rows
+  // stay as history; the open row (ended_at NULL) is the current worker.
+  // Threads themselves are archived+hidden on replacement, so the list UI
+  // never pollutes — this table is the auditable memory of it.
+  db.exec(`CREATE TABLE IF NOT EXISTS card_threads (
+    thread_id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    preset_id TEXT,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    ended_reason TEXT,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_card_threads_card ON card_threads(card_id, started_at DESC);`);
 
   // github_imports tracks which tagged GitHub issues have been pulled into
   // cards. Created outside the historical migration array (the recorded
@@ -1075,13 +1095,16 @@ ${prompt}` }, ...workerAttachments],
     });
     const ts = now();
     db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, null, null, null, ts, ts);
-    db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
+    // NOTE: no card_presets row here on purpose. An override row means "the
+    // user explicitly pinned this card", and writing the spawn default as one
+    // would mislabel every fresh card as overridden (and trip staleness).
+    recordWorkerThread(cardId, thread.id, spawnPreset.id, "initial");
     await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
     bb.realtime.publish("card-state", { cardId });
     return { cardId, threadId: thread.id };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null };
   type PresetRow = {
@@ -1146,7 +1169,7 @@ ${prompt}` }, ...workerAttachments],
   // same per-workflow state dir (dir_hash) so the new worker re-reads the
   // already-advanced state.md and continues from the current stage — no context
   // is re-created or reset. The old worker is archived/stopped by this helper.
-  async function respawnWorkerForBand(cardId: string, presetId: string): Promise<{ ok: boolean; error?: string; threadId?: string }> {
+  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap"): Promise<{ ok: boolean; error?: string; threadId?: string }> {
     const row = getCard(cardId);
     if (!row) return { ok: false, error: "Card not found." };
     const preset = getPresetById(presetId);
@@ -1198,7 +1221,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
       }
       const ts = now();
-      updateCard(cardId, { worker_thread_id: newThread.id, worker_preset_id: preset.id, activity: "running", last_error: null, updated_at: ts });
+      updateCard(cardId, { worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, activity: "running", last_error: null, updated_at: ts });
+      recordWorkerThread(cardId, newThread.id, preset.id, endedReason);
+      // Official inline mention of the archived predecessor (not just copied
+      // text): renders as a chip the user can open, and the worker can expand
+      // it natively for context state.md doesn't carry. Best-effort — the
+      // prompt text already references the thread id.
+      if (row.worker_thread_id) {
+        try {
+          const tag = "@previous-worker";
+          const mentionText = `Continuity link — ${tag} is the archived worker this thread replaces. Consult it if state.md is thin.`;
+          const start = mentionText.indexOf(tag);
+          await bb.sdk.threads.send({ threadId: newThread.id, mode: "auto", input: [{ type: "text", text: mentionText, mentions: [{ start, end: start + tag.length, resource: { kind: "thread", label: `Stelow: ${row.display_name ?? row.name} (previous)`, threadId: row.worker_thread_id, projectId: row.project_id } }] }] });
+        } catch { /* mention nicety; prompt reference suffices */ }
+      }
       return { ok: true, threadId: newThread.id };
     } catch (error) {
       // Spawn failed — surface it instead of leaving a silent zombie card.
@@ -1223,6 +1259,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     try {
       return (db.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND kind = 'paused'").get(cardId) as { count: number }).count;
     } catch { return 0; }
+  }
+
+  // Close the previous ledger row (if any) and open one for the new worker.
+  // Reason is the transition that replaced the worker: initial spawn,
+  // band-swap at a stage boundary, manual restart, or fresh reseed.
+  function recordWorkerThread(cardId: string, threadId: string, presetId: string | null, endedReason: string): void {
+    const ts = now();
+    try {
+      db.prepare("UPDATE card_threads SET ended_at = ?, ended_reason = ? WHERE card_id = ? AND ended_at IS NULL").run(ts, endedReason, cardId);
+      db.prepare("INSERT INTO card_threads (thread_id, card_id, preset_id, started_at, ended_at, ended_reason) VALUES (?, ?, ?, ?, NULL, NULL)").run(threadId, cardId, presetId, ts);
+    } catch { /* ledger is audit-only; never break the spawn path */ }
   }
 
   function getCard(cardId: string): CardRow | undefined {
@@ -1317,6 +1364,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id });
       const status = thread.status as string;
+      // Self-heal stale preset flags: a thread spawned BEFORE the current
+      // override was assigned provably predates it (covers legacy rows where
+      // worker_preset_id claims the override but the thread is ancestral).
+      // Never clears here — only spawn paths clear, so a flagged card keeps
+      // offering Restart until it actually happens.
+      try {
+        const override = db.prepare("SELECT preset_id, assigned_at FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string; assigned_at: number } | undefined;
+        const threadBorn = (thread as { createdAt?: number }).createdAt;
+        if (override && typeof threadBorn === "number" && threadBorn < override.assigned_at && !card.preset_restart_pending) {
+          db.prepare("UPDATE cards SET preset_restart_pending = 1 WHERE id = ?").run(cardId);
+        }
+      } catch { /* staleness stays best-effort; id comparison below still applies */ }
       const lastOutput = (await bb.sdk.threads.output({ threadId: card.worker_thread_id }).catch(() => null))?.output ?? null;
       // Stage source of truth is state.md (the agent advances it via `bb stelow
       // advance`); the DB `stage` is only written by the manual advanceCard RPC.
@@ -1812,8 +1871,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : ((Boolean(card.last_error) || effectiveActivity === "error") && (card.last_seen_error_at ?? 0) < card.updated_at) ? "error"
         : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
+      // Worker ledger, newest first. The open row (endedAt null) is the live
+      // worker; older rows are archived threads replaced along the way.
+      const workerHistory = (db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>).map((row) => ({ threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at, endedAt: row.ended_at, endedReason: row.ended_reason }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(cardId), presetId: preset.id, workerPresetId: card.worker_preset_id },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,
@@ -1821,6 +1883,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         pendingQuestions: pending,
         expiredQuestions,
         artifacts,
+        workerHistory,
         nextStages,
       };
     },
@@ -1919,12 +1982,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (card.status === "archived") return { ok: false, error: "This card is archived." };
       const effective = getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
       const previousThreadId = card.worker_thread_id;
-      const result = await respawnWorkerForBand(cardId, effective.id);
+      const result = await respawnWorkerForBand(cardId, effective.id, "restart");
       if (result.ok) {
         // Trail: which preset took over and where the previous worker's
         // history lives, so the switch is auditable from the card.
         const presetName = getPresetById(effective.id)?.name ?? effective.id;
-        db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Worker restarted on preset "${presetName}", continuing from the ${card.stage} stage.${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived).` : ""}`, now());
+        db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", previousThreadId ? `Worker restarted on preset "${presetName}", continuing from the ${card.stage} stage. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", continuing from the ${card.stage} stage.`, now());
         bb.realtime.publish("card-state", { cardId });
       }
       return { ok: result.ok, error: result.error ?? null };
@@ -1983,7 +2046,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try { await bb.sdk.threads.archive({ threadId: previousThreadId }); } catch { /* ignore */ }
         try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
       }
-      updateCard(cardId, { stage: "triage", activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, last_assistant_text: null });
+      updateCard(cardId, { stage: "triage", activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
+      recordWorkerThread(cardId, newThread.id, preset.id, "reseed");
       return { reseeded: true, error: null };
     },
 
@@ -2161,6 +2225,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const preset = getPresetById(presetId);
         if (!preset) return { ok: false, error: "Preset not found." };
         db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
+        // A live worker predating the new preset will never pick it up
+        // (provider/model are fixed at spawn): flag it so the card offers
+        // Restart instead of a Resume that changes nothing.
+        db.prepare("UPDATE cards SET preset_restart_pending = ? WHERE id = ?").run(card.worker_thread_id && presetId !== card.worker_preset_id ? 1 : 0, cardId);
       }
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, error: null };
@@ -2393,6 +2461,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const preset = getPresetById(presetId);
       if (!preset) return { ok: false, error: "Preset not found." };
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
+      db.prepare("UPDATE cards SET preset_restart_pending = ? WHERE id = ?").run(card.worker_thread_id && presetId !== card.worker_preset_id ? 1 : 0, cardId);
     }
     bb.realtime.publish("card-state", { cardId });
     return { ok: true, error: null };

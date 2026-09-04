@@ -1990,7 +1990,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   // Provider/model are fixed at spawn: a preset change only lands when a new
   // worker starts. Retry continues the SAME thread, so while the running
   // worker predates the override the hero must offer Restart, not Resume.
-  const presetStale = Boolean(detail && card?.workerThreadId && detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId);
+  // Staleness is the explicit restart-pending flag (set on assign, healed by
+  // thread-birth comparison) with id-mismatch as backup.
+  const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
   const scopeDone = detail?.scopes.filter((s) => ["done", "completed"].includes(s.status ?? "")).length ?? 0;
   const scopeTotal = detail?.scopes.length ?? 0;
   const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
@@ -2020,30 +2022,24 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "error" && card.workerThreadId ? (
                         <>
+                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
                           )}
                           <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button>
-                          {presetStale ? (
-                            <Button size="sm" variant="ghost" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — keeps the current provider/model.">{retrying ? "Retrying…" : "Retry same worker"}</Button>
-                          ) : null}
-                          <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
                         </>
                       ) : null}
                       {hero.kind === "paused" ? (
                         <>
+                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
                           )}
                           {card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button> : null}
-                          {presetStale ? (
-                            <Button size="sm" variant="ghost" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — keeps the current provider/model.">{retrying ? "Retrying…" : "Retry same worker"}</Button>
-                          ) : null}
-                          <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
                         </>
                       ) : null}
                       {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
@@ -2051,13 +2047,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                       ) : null}
                       {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
+                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
                           )}
                           <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread.">Open thread ↗</Button>
-                          <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
                         </>
                       ) : null}
                     </div>
@@ -2173,6 +2169,24 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
                 <button onClick={() => setArchiveOpen(true)} className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
               </div>
+              {detail && detail.workerHistory.length > 0 ? (
+                <details className="border-t pt-2">
+                  <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Worker history ({detail.workerHistory.length}) — archived threads stay readable</summary>
+                  <div className="mt-1 divide-y divide-border rounded-md border">
+                    {detail.workerHistory.map((entry) => (
+                      <div key={entry.threadId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
+                        <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${entry.endedAt === null ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                          <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
+                          {entry.presetName ? <span> · {entry.presetName}</span> : null}
+                          <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
+                        </span>
+                        <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </CardDisclosure>
             {/* DISCLOSURE 3 — Conversation (history + composer) */}
             <CardDisclosure
@@ -2215,7 +2229,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         open={restartWorkerOpen}
         onOpenChange={setRestartWorkerOpen}
         title="Restart the worker on the current preset?"
-        description="Stops the running worker and starts a fresh one on this card's preset, continuing from the current stage (not from triage). Use this to apply a preset change — Resume keeps the current provider/model."
+        description="Stops the running worker and starts a fresh one on this card's preset, continuing from the current stage (not from triage). Use this to apply a preset change."
         confirmLabel="Restart worker"
         confirmTone="default"
         onConfirm={doRestartWorker}
