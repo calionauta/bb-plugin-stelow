@@ -446,7 +446,7 @@ function InboxPanel() {
         {entries.map((entry) => {
           const copy = INBOX_COPY[entry.kind];
           return <div key={entry.id} className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
-            <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
               <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${copy.tone}`}>{copy.icon}</span>
               <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{copy.label}. {entry.summary}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(entry.occurredAt).toLocaleString()}>{entry.projectName} · {relativeTime(entry.occurredAt)}</span></span>
             </button>

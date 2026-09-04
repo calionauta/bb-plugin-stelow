@@ -1447,7 +1447,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async approveGate({ projectId, workflowId, gate }) {
-      const board = await loadBoard(bb, projectId);
+      // Resolve via the owning card first: the project-root board has no
+      // stelow.json for exploratory work, so board-only lookup fails there.
+      // dir_hash is unique per card, hence a reliable key for both modes.
+      const owner = db.prepare("SELECT * FROM cards WHERE dir_hash = ?").get(workflowId) as CardRow | undefined;
+      const board = owner
+        ? await (async () => {
+          const workspace = await cardWorkspace(owner);
+          if (!workspace?.path) return { rootPath: null as string | null, workflows: [] as Workflow[], error: "Workspace is unavailable for this card." };
+          return boardFromRoot(bb, workspace.path, owner.dir_hash);
+        })()
+        : await loadBoard(bb, projectId);
       const workflow = board.workflows.find((item) => item.id === workflowId);
       if (!board.rootPath || !workflow?.dirHash) return { approved: false, receiptPath: null, error: "Workflow directory metadata is unavailable." };
       const spec = GATES[gate];
@@ -2280,7 +2290,19 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     triggers: ["@"],
     async search({ query, projectId }) {
       const board = await loadBoard(bb, projectId ?? null);
-      return board.workflows.filter((workflow) => workflow.name.toLowerCase().includes(query.toLowerCase())).slice(0, 20).map((workflow) => ({ id: workflow.id, title: workflow.name, subtitle: `${workflow.stage} · ${workflow.status}` }));
+      const needle = query.toLowerCase();
+      const fromBoard = board.workflows.filter((workflow) => workflow.name.toLowerCase().includes(needle)).slice(0, 20).map((workflow) => ({ id: workflow.id, title: workflow.name, subtitle: `${workflow.stage} · ${workflow.status}` }));
+      // Boards are project-root scoped and miss exploratory cards (per-card
+      // stelow.json). Fall back to the cards table so every card is findable.
+      const cardRows = (projectId
+        ? db.prepare("SELECT id, display_name, name, stage, status, intent, dir_hash FROM cards WHERE project_id = ? AND status != 'archived'").all(projectId)
+        : db.prepare("SELECT id, display_name, name, stage, status, intent, dir_hash FROM cards WHERE status != 'archived'").all()) as Array<{ id: string; display_name: string | null; name: string; stage: string; status: string; intent: string; dir_hash: string | null }>;
+      const fromCards = cardRows
+        .filter((card) => (card.display_name ?? card.name).toLowerCase().includes(needle))
+        .slice(0, 20)
+        .map((card) => ({ id: card.dir_hash ?? card.id, title: card.display_name ?? card.name, subtitle: `${card.stage} · ${card.status} · ${card.intent}` }));
+      const seen = new Set(fromBoard.map((item) => item.id));
+      return [...fromBoard, ...fromCards.filter((item) => !seen.has(item.id))].slice(0, 20);
     },
     async resolve(itemId) {
       const projects = await bb.sdk.projects.list({ includePersonal: true });
@@ -2289,6 +2311,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const workflow = board.workflows.find((item) => item.id === itemId);
         if (workflow) return { context: `Stelow workflow ${workflow.name}: stage=${workflow.stage}, status=${workflow.status}, appetite=${workflow.appetite}, review_mode=${workflow.reviewMode}. Scopes: ${workflow.scopes.map((scope) => `${scope.id}:${scope.status}`).join(", ") || "none"}.` };
       }
+      const card = db.prepare("SELECT display_name, name, stage, status, intent FROM cards WHERE dir_hash = ? OR id = ?").get(itemId, itemId) as { display_name: string | null; name: string; stage: string; status: string; intent: string } | undefined;
+      if (card) return { context: `Stelow work item ${card.display_name ?? card.name}: stage=${card.stage}, status=${card.status}, intent=${card.intent}.` };
       throw new Error("Stelow workflow no longer exists.");
     },
   });
