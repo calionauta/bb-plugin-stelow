@@ -1608,13 +1608,15 @@ function CardDisclosure({ title, hint, action, children }: { title: string; hint
 function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: boolean; onOpenChange: (next: boolean) => void; cardId: string; onChanged: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; isDefault: boolean }>>([]);
-  const [catalog, setCatalog] = useState<{ providers: { id: string; displayName: string }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
+  const [catalog, setCatalog] = useState<{ providers: { id: string; displayName: string; modelsAvailable: boolean }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
+  const [customProvider, setCustomProvider] = useState("");
+  const [customModel, setCustomModel] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
-    setSelected(null); setError(null);
+    setSelected(null); setError(null); setCustomProvider(""); setCustomModel("");
     void rpc.call("listPresets", {}).then((result) => setPresets(result.presets)).catch(() => setPresets([]));
     void rpc.call("listProviderModels", {}).then(setCatalog).catch(() => setCatalog({ providers: [], models: [] }));
   }, [open, rpc]);
@@ -1633,24 +1635,29 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
         else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this work item. Takes effect when the worker (re)starts — Resume to apply now."); }
       } else if (selected.startsWith("model:")) {
         const [providerId, ...modelParts] = selected.slice("model:".length).split("/");
-        const modelId = modelParts.join("/");
-        const base = defaultPreset;
-        const upserted = await rpc.call("upsertPreset", {
-          id: `card-override-${cardId}`,
-          name: `Card override ${cardId}`,
-          providerId: providerId ?? "",
-          modelId,
-          reasoningLevel: base?.reasoningLevel ?? "medium",
-          permissionMode: (base?.permissionMode as "accept-edits" | "auto" | "full" | undefined) ?? "full",
-          environmentKind: (base?.environmentKind as "project-default" | "new-worktree" | undefined) ?? "project-default",
-        });
-        const result = await rpc.call("assignPreset", { cardId, presetId: upserted.preset.id });
-        if (!result.ok) setError(result.error ?? "Could not change preset.");
-        else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this work item. Takes effect when the worker (re)starts — Resume to apply now."); }
+        await applyCustom(providerId ?? "", modelParts.join("/"));
+      } else if (selected === "custom") {
+        await applyCustom(customProvider, customModel.trim());
       }
     } finally {
       setBusy(false);
     }
+  }
+  async function applyCustom(providerId: string, modelId: string) {
+    if (!providerId || !modelId) { setError("Pick a provider and type a model id."); return; }
+    const base = defaultPreset;
+    const upserted = await rpc.call("upsertPreset", {
+      id: `card-override-${cardId}`,
+      name: `Card override ${cardId}`,
+      providerId,
+      modelId,
+      reasoningLevel: base?.reasoningLevel ?? "medium",
+      permissionMode: (base?.permissionMode as "accept-edits" | "auto" | "full" | undefined) ?? "full",
+      environmentKind: (base?.environmentKind as "project-default" | "new-worktree" | undefined) ?? "project-default",
+    });
+    const result = await rpc.call("assignPreset", { cardId, presetId: upserted.preset.id });
+    if (!result.ok) setError(result.error ?? "Could not change preset.");
+    else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this work item. Takes effect when the worker (re)starts — Resume to apply now."); }
   }
   const radioRow = (value: string, title: React.ReactNode, sub?: string) => (
     <label key={value} className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === value ? "border-primary bg-primary/10" : "border-border"}`}>
@@ -1671,19 +1678,36 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
         <div className="max-h-64 space-y-1 overflow-auto">
           {radioRow("default", <>Board default{defaultPreset ? ` · ${defaultPreset.name}` : ""}</>, defaultPreset ? `${defaultPreset.providerId}/${defaultPreset.modelId}` : undefined)}
           {presets.filter((preset) => !preset.isDefault).map((preset) => radioRow(`preset:${preset.id}`, preset.name, `${preset.providerId}/${preset.modelId}`))}
-          {catalog.providers.map((provider) => (
-            <div key={provider.id} className="pt-1">
-              <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{provider.displayName}</p>
-              <div className="space-y-1">
-                {catalog.models.filter((model) => model.providerId === provider.id).map((model) => radioRow(`model:${provider.id}/${model.model}`, model.displayName, `${provider.id}/${model.model}`))}
+          {catalog.providers.map((provider) => {
+            const providerModels = catalog.models.filter((model) => model.providerId === provider.id);
+            return (
+              <div key={provider.id} className="pt-1">
+                <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{provider.displayName} · {providerModels.length}</p>
+                <div className="space-y-1">
+                  {providerModels.map((model) => radioRow(`model:${provider.id}/${model.model}`, model.displayName, `${provider.id}/${model.model}`))}
+                  {providerModels.length === 0 ? <p className="px-1 text-[11px] text-muted-foreground">{provider.modelsAvailable ? "No models listed for this provider." : "Couldn't load models — use Custom below."}</p> : null}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
+          <div className="pt-1">
+            <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Custom</p>
+            <label className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === "custom" ? "border-primary bg-primary/10" : "border-border"}`}>
+              <input type="radio" name="card-preset" checked={selected === "custom"} onChange={() => setSelected("custom")} className="accent-primary" />
+              <span className="grid min-w-0 flex-1 grid-cols-2 gap-1" onClick={(event) => event.stopPropagation()}>
+                <select aria-label="Custom provider" value={customProvider} onChange={(event) => { setCustomProvider(event.target.value); setSelected("custom"); }} className="h-7 min-w-0 rounded-md border bg-background px-1.5 text-xs">
+                  <option value="">Provider…</option>
+                  {catalog.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}</option>)}
+                </select>
+                <input aria-label="Custom model id" value={customModel} onChange={(event) => { setCustomModel(event.target.value); setSelected("custom"); }} onFocus={() => setSelected("custom")} placeholder="model id…" className="h-7 min-w-0 rounded-md border bg-background px-1.5 font-mono text-xs" />
+              </span>
+            </label>
+          </div>
           {presets.length === 0 && catalog.providers.length === 0 ? <p className="text-xs text-muted-foreground">No presets or providers available.</p> : null}
         </div>
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <DialogFooter>
-          <Button disabled={busy || !selected} onClick={() => void apply()}>{busy ? "Applying…" : "Apply"}</Button>
+          <Button disabled={busy || !selected || (selected === "custom" && (!customProvider || !customModel.trim()))} onClick={() => void apply()}>{busy ? "Applying…" : "Apply"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

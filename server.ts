@@ -308,7 +308,7 @@ export const rpcContract = defineRpcContract({
   listProviderModels: {
     input: z.object({}).strict(),
     output: z.object({
-      providers: z.array(z.object({ id: z.string(), displayName: z.string() })),
+      providers: z.array(z.object({ id: z.string(), displayName: z.string(), modelsAvailable: z.boolean() })),
       models: z.array(z.object({ providerId: z.string(), model: z.string(), displayName: z.string() })),
     }),
   },
@@ -2022,8 +2022,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async listProviderModels() {
       const providers = await bb.sdk.providers.list().catch(() => []);
       const models: Array<{ providerId: string; model: string; displayName: string }> = [];
+      const availability = new Map<string, boolean>();
       for (const provider of providers) {
         const result = await bb.sdk.providers.models({ providerId: provider.id }).catch(() => null);
+        availability.set(provider.id, result !== null);
         if (provider.id === "pi") {
           const catalog = new Map((result?.models ?? []).map((model) => [model.model, model.displayName]));
           for (const model of PI_BIFROST_PRESET_MODELS) {
@@ -2035,7 +2037,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           models.push({ providerId: provider.id, model: model.model, displayName: model.displayName });
         }
       }
-      return { providers: providers.map((provider) => ({ id: provider.id, displayName: provider.displayName })), models };
+      return { providers: providers.map((provider) => ({ id: provider.id, displayName: provider.displayName, modelsAvailable: availability.get(provider.id) ?? false })), models };
     },
   });
 
