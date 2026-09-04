@@ -1606,9 +1606,10 @@ function CardDisclosure({ title, hint, action, children }: { title: string; hint
   );
 }
 
-function PresetAssignDialog({ open, onOpenChange, cardId, overridden, onChanged }: { open: boolean; onOpenChange: (next: boolean) => void; cardId: string; overridden: boolean; onChanged: () => void }) {
+function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: boolean; onOpenChange: (next: boolean) => void; cardId: string; onChanged: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; isDefault: boolean }>>([]);
+  const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; isDefault: boolean }>>([]);
+  const [catalog, setCatalog] = useState<{ providers: { id: string; displayName: string }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1616,41 +1617,74 @@ function PresetAssignDialog({ open, onOpenChange, cardId, overridden, onChanged 
     if (!open) return;
     setSelected(null); setError(null);
     void rpc.call("listPresets", {}).then((result) => setPresets(result.presets)).catch(() => setPresets([]));
+    void rpc.call("listProviderModels", {}).then(setCatalog).catch(() => setCatalog({ providers: [], models: [] }));
   }, [open, rpc]);
-  async function apply(presetId: string | null) {
+  const defaultPreset = presets.find((preset) => preset.isDefault) ?? null;
+  async function apply() {
+    if (!selected) return;
     setBusy(true); setError(null);
     try {
-      const result = await rpc.call("assignPreset", { cardId, presetId });
-      if (!result.ok) setError(result.error ?? "Could not change preset.");
-      else { onOpenChange(false); onChanged(); toast.success(presetId ? "Preset overridden for this work item. Takes effect when the worker (re)starts — Resume to apply now." : "Preset reset to default."); }
+      if (selected === "default") {
+        const result = await rpc.call("assignPreset", { cardId, presetId: null });
+        if (!result.ok) setError(result.error ?? "Could not reset preset.");
+        else { onOpenChange(false); onChanged(); toast.success("Preset reset to board default."); }
+      } else if (selected.startsWith("preset:")) {
+        const result = await rpc.call("assignPreset", { cardId, presetId: selected.slice("preset:".length) });
+        if (!result.ok) setError(result.error ?? "Could not change preset.");
+        else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this work item. Takes effect when the worker (re)starts — Resume to apply now."); }
+      } else if (selected.startsWith("model:")) {
+        const [providerId, ...modelParts] = selected.slice("model:".length).split("/");
+        const modelId = modelParts.join("/");
+        const base = defaultPreset;
+        const upserted = await rpc.call("upsertPreset", {
+          id: `card-override-${cardId}`,
+          name: `Card override ${cardId}`,
+          providerId: providerId ?? "",
+          modelId,
+          reasoningLevel: base?.reasoningLevel ?? "medium",
+          permissionMode: (base?.permissionMode as "accept-edits" | "auto" | "full" | undefined) ?? "full",
+          environmentKind: (base?.environmentKind as "project-default" | "new-worktree" | undefined) ?? "project-default",
+        });
+        const result = await rpc.call("assignPreset", { cardId, presetId: upserted.preset.id });
+        if (!result.ok) setError(result.error ?? "Could not change preset.");
+        else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this work item. Takes effect when the worker (re)starts — Resume to apply now."); }
+      }
     } finally {
       setBusy(false);
     }
   }
+  const radioRow = (value: string, title: React.ReactNode, sub?: string) => (
+    <label key={value} className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === value ? "border-primary bg-primary/10" : "border-border"}`}>
+      <input type="radio" name="card-preset" checked={selected === value} onChange={() => setSelected(value)} className="accent-primary" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{title}</span>
+        {sub ? <span className="block truncate font-mono text-[11px] text-muted-foreground">{sub}</span> : null}
+      </span>
+    </label>
+  );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Agent preset for this work item</DialogTitle>
-          <DialogDescription className="space-y-2">
-            <p>Override provider and model for this card only — useful when the default hits credit or quota errors. Takes effect when the worker (re)starts.</p>
-          </DialogDescription>
+          <DialogDescription>Takes effect when the worker (re)starts.</DialogDescription>
         </DialogHeader>
         <div className="max-h-64 space-y-1 overflow-auto">
-          {presets.length === 0 ? <p className="text-xs text-muted-foreground">No presets available.</p> : presets.map((preset) => (
-            <label key={preset.id} className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === preset.id ? "border-primary bg-primary/10" : "border-border"}`}>
-              <input type="radio" name="card-preset" checked={selected === preset.id} onChange={() => setSelected(preset.id)} className="accent-primary" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{preset.name}{preset.isDefault ? " · default" : ""}</span>
-                <span className="block truncate font-mono text-[11px] text-muted-foreground">{preset.providerId}/{preset.modelId}</span>
-              </span>
-            </label>
+          {radioRow("default", <>Board default{defaultPreset ? ` · ${defaultPreset.name}` : ""}</>, defaultPreset ? `${defaultPreset.providerId}/${defaultPreset.modelId}` : undefined)}
+          {presets.filter((preset) => !preset.isDefault).map((preset) => radioRow(`preset:${preset.id}`, preset.name, `${preset.providerId}/${preset.modelId}`))}
+          {catalog.providers.map((provider) => (
+            <div key={provider.id} className="pt-1">
+              <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{provider.displayName}</p>
+              <div className="space-y-1">
+                {catalog.models.filter((model) => model.providerId === provider.id).map((model) => radioRow(`model:${provider.id}/${model.model}`, model.displayName, `${provider.id}/${model.model}`))}
+              </div>
+            </div>
           ))}
+          {presets.length === 0 && catalog.providers.length === 0 ? <p className="text-xs text-muted-foreground">No presets or providers available.</p> : null}
         </div>
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <DialogFooter>
-          {overridden ? <Button variant="ghost" disabled={busy} onClick={() => void apply(null)}>Reset to default</Button> : null}
-          <Button disabled={busy || !selected} onClick={() => selected && void apply(selected)}>{busy ? "Applying…" : "Apply override"}</Button>
+          <Button disabled={busy || !selected} onClick={() => void apply()}>{busy ? "Applying…" : "Apply"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1899,7 +1933,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         open={presetDialogOpen}
         onOpenChange={setPresetDialogOpen}
         cardId={cardId}
-        overridden={detail?.card.presetOverridden ?? false}
         onChanged={() => void load()}
       />
       {/* Advance preview: never jump stages blindly — show where you are, where
