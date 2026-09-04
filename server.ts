@@ -182,7 +182,7 @@ export const rpcContract = defineRpcContract({
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
-    output: z.object({ notifications: z.array(z.object({ id: z.string(), cardId: z.string(), cardName: z.string(), projectName: z.string(), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number(), readAt: z.number().nullable(), archivedAt: z.number().nullable() })) }),
+    output: z.object({ notifications: z.array(z.object({ id: z.string(), cardId: z.string(), cardName: z.string(), projectName: z.string(), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number(), readAt: z.number().nullable(), resolvedAt: z.number().nullable(), archivedAt: z.number().nullable() })) }),
   },
   markNotificationRead: {
     input: z.object({ notificationId: z.string() }).strict(),
@@ -195,6 +195,10 @@ export const rpcContract = defineRpcContract({
   restoreNotification: {
     input: z.object({ notificationId: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
+  },
+  cardByWorkerThread: {
+    input: z.object({ threadId: z.string() }).strict(),
+    output: z.object({ cardId: z.string().nullable() }),
   },
   getNotification: {
     input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
@@ -1227,7 +1231,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     db.prepare(`UPDATE cards SET ${keys.map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...next });
     const current = getCard(cardId);
     if (previous && current) {
-      if (current.status === "archived" || current.status === "completed" || current.activity === "running") resolveInboxEvents(cardId, current.updated_at);
+      if (current.status === "archived" || current.status === "completed") resolveInboxEvents(cardId, current.updated_at);
+      else if (current.activity === "running") resolveInboxEvents(cardId, current.updated_at, ["error", "paused"]);
       if (previous.status !== "completed" && current.status === "completed") recordInboxEvent(current, "completed", "Work completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "error" && current.activity === "error") recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "awaiting-answer" && current.activity === "awaiting-answer") recordInboxEvent(current, "question", "Needs your decision to continue.", `question:${cardId}:${current.updated_at}`, current.updated_at);
@@ -1241,8 +1246,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
   }
 
-  function resolveInboxEvents(cardId: string, resolvedAt: number): void {
-    if (resolveActionInboxEvents(db, cardId, resolvedAt) > 0) bb.realtime.publish("inbox-changed", { cardId });
+  // Resolution is per-kind, never blanket: a worker moving again clears
+  // failure/pause signals, but a question stays until it is answered.
+  function resolveInboxEvents(cardId: string, resolvedAt: number, kinds: Array<"question" | "error" | "paused"> = ["question", "error", "paused"]): void {
+    if (resolveActionInboxEvents(db, cardId, resolvedAt, kinds) > 0) bb.realtime.publish("inbox-changed", { cardId });
   }
 
   async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {
@@ -1305,11 +1312,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (stateBlob) {
         currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
       }
-      if (status === "active") {
+      if (status === "active" || status === "starting") {
         const pending = await fetchPendingQuestions(card.worker_thread_id);
         if (pending.length > 0) {
           updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
         } else {
+          // The worker moved on with nothing pending: any question event still
+          // open for this card is stale (answered elsewhere or superseded).
+          resolveInboxEvents(cardId, now(), ["question"]);
           // Keep freshly-created cards in the Triage column (draft) while the
           // workflow is still at the triage stage, even though the thread is
           // already active. Only move to Running (in-progress) once the agent
@@ -1321,7 +1331,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (currentStage !== card.stage) updates.stage = currentStage;
           updateCard(cardId, updates);
         }
-      } else if (status === "idle") {
+      } else if (status === "idle" || status === "stopping") {
         const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(cardId) as { id: string } | undefined;
         const transitioningIntoIdle = card.activity !== "idle";
         if (expiredPending) {
@@ -1356,7 +1366,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         if (lastOutput && lastOutput !== card.last_assistant_text) {
           db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
         }
-      } else if (status === "failed") {
+      } else if (status === "failed" || status === "error") {
         // Mark the failure without touching last_error: a specific cause
         // already recorded (e.g. from the thread.failed event) must survive,
         // and a content-free generic message next to the Failed pill reads
@@ -1502,6 +1512,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // agent turn. Send an explicit continuation so the worker proceeds.
         await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The user answered: ${answers.join(", ")}. Continue the workflow now: persist the decision, advance the appropriate stage with bb stelow advance, and keep working.`, mentions: [] }] });
         updateCard(cardId, { activity: "running", status: "in-progress" });
+        resolveInboxEvents(cardId, now(), ["question"]);
         return { ok: true as const, error: null };
       } catch (error) {
         return { ok: false as const, error: error instanceof Error ? error.message : "Unable to answer the question." };
@@ -1661,11 +1672,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async listNotifications({ includeArchived }) {
-      const rows = listInboxEvents(db, includeArchived) as Array<InboxEventRow & { display_name: string | null; name: string; project_id: string }>;
+      const rows = listInboxEvents(db, includeArchived) as Array<InboxEventRow & { display_name: string | null; name: string; project_id: string; resolved_at: number | null }>;
       const projects = await bb.sdk.projects.list();
       const projectNames = new Map(projects.map((project) => [project.id, project.name]));
       return {
-        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, archivedAt: row.archived_at })),
+        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, resolvedAt: row.resolved_at ?? null, archivedAt: row.archived_at })),
       };
     },
 
@@ -1687,6 +1698,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { ok: result.changes > 0 };
     },
 
+    async cardByWorkerThread({ threadId }) {
+      const row = getCardByWorkerThread(threadId);
+      if (!row || row.status === "archived") return { cardId: null };
+      return { cardId: row.id };
+    },
+
     async getNotification({ notificationId, cardId }) {
       const row = db.prepare("SELECT id, kind, summary, occurred_at FROM inbox_events WHERE id = ? AND card_id = ?").get(notificationId, cardId) as { id: string; kind: InboxEventRow["kind"]; summary: string; occurred_at: number } | undefined;
       return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at } : null };
@@ -1697,6 +1714,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async cardDetail({ cardId }) {
+      const initial = getCard(cardId);
+      if (!initial) throw new Error("Card not found");
+      // Reconcile with the live thread before reading: a worker stopped from
+      // outside (or a missed transition) would otherwise render stale until
+      // the next reconcile sweep.
+      if (initial.worker_thread_id) await syncThreadState(cardId).catch(() => undefined);
       const card = getCard(cardId);
       if (!card) throw new Error("Card not found");
       const comments = db.prepare("SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as CommentRow[];
@@ -1948,6 +1971,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // resumes the worker (thread.active → syncThreadState → running); if the
       // thread fails to resume, idle is honest and the comment still records it.
       updateCard(cardId, { activity: "running", status: "in-progress" });
+      resolveInboxEvents(cardId, now(), ["question"]);
       bb.realtime.publish("card-state", { cardId });
       // Deliver the answer to the worker thread so the agent picks it up and continues.
       try {

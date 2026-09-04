@@ -35,6 +35,18 @@ assert.equal(db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND re
 assert.equal(db.prepare("UPDATE inbox_events SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL").run("evt_completed").changes, 1, "archived notification can be restored");
 assert.equal(listInboxEvents(db, false)[0].id, "evt_completed", "restored completion returns to recent updates");
 
+// Per-kind resolution: resuming work clears failure/pause signals but a
+// question stays until it is answered.
+db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("card_2", "Per-kind", "per-kind", "project_1");
+insertInboxEvent(db, { id: "evt_q", cardId: "card_2", kind: "question", summary: "Q?", dedupeKey: "question:card_2:500", occurredAt: 500 });
+insertInboxEvent(db, { id: "evt_e", cardId: "card_2", kind: "error", summary: "E!", dedupeKey: "error:card_2:501", occurredAt: 501 });
+assert.equal(resolveActionInboxEvents(db, "card_2", 600, ["error", "paused"]), 1, "resume resolves error and paused only");
+assert.equal(listInboxEvents(db, false).filter((row) => row.card_id === "card_2").length, 1, "question survives a bare resume");
+assert.equal(resolveActionInboxEvents(db, "card_2", 601, ["question"]), 1, "answering resolves the question");
+assert.equal(resolveActionInboxEvents(db, "card_2", 602, ["bogus"]), 0, "unknown kinds resolve nothing");
+assert.equal(resolveActionInboxEvents(db, "card_2", 603, []), 0, "empty kind list resolves nothing");
+
+db.prepare("DELETE FROM cards WHERE id = ?").run("card_2");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_1");
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events").get().count, 0, "deleting a card cascades to its Inbox history");
 

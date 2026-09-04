@@ -8,5 +8,5 @@ export type InboxEventInput = {
 };
 
 export function insertInboxEvent(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, event: InboxEventInput): boolean;
-export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number): number;
+export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, kinds?: Array<"question" | "error" | "paused">): number;
 export function listInboxEvents(db: { prepare(query: string): { all(): unknown[] } }, includeArchived: boolean): unknown[];

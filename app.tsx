@@ -388,7 +388,7 @@ function StelowWorkSidebarAccessory() {
 type InboxNotification = {
   id: string; cardId: string; cardName: string; projectName: string;
   kind: "question" | "error" | "paused" | "completed";
-  summary: string; occurredAt: number; readAt: number | null; archivedAt: number | null;
+  summary: string; occurredAt: number; readAt: number | null; resolvedAt: number | null; archivedAt: number | null;
 };
 
 const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
@@ -428,8 +428,9 @@ function InboxPanel() {
   }, [rpc, showArchived]);
   useEffect(() => { void load(); }, [load]);
   useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
-  const action = notifications.filter((entry) => entry.archivedAt === null && ["question", "error", "paused"].includes(entry.kind));
+  const action = notifications.filter((entry) => entry.archivedAt === null && entry.resolvedAt === null && ["question", "error", "paused"].includes(entry.kind));
   const updates = notifications.filter((entry) => entry.archivedAt === null && entry.kind === "completed");
+  const resolved = notifications.filter((entry) => entry.archivedAt === null && entry.resolvedAt !== null && ["question", "error", "paused"].includes(entry.kind));
   async function open(entry: InboxNotification) {
     if (!entry.readAt) {
       try { await rpc.call("markNotificationRead", { notificationId: entry.id }); }
@@ -457,7 +458,7 @@ function InboxPanel() {
     </section>
   );
   const archived = notifications.filter((entry) => entry.archivedAt !== null);
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.</p></div><button onClick={() => setShowArchived((value) => !value)} className="min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{loading ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : loadError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.</p></div><button onClick={() => setShowArchived((value) => !value)} className="min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{loading ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : loadError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
 function BoardPanel({ subPath }: { subPath: string }) {
@@ -2004,6 +2005,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                       {hero.kind === "working" || hero.kind === "calm" ? (
                         card.workerThreadId ? <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread. Keyboard: T." className="min-h-11 rounded-md px-2 text-sm font-medium text-primary hover:underline">Open thread ↗</button> : null
                       ) : null}
+                      {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
+                        <span className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          <span>Worker idle.</span>
+                          <button disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset." className="font-medium text-primary hover:underline disabled:opacity-50">{retrying ? "Retrying…" : "Resume"}</button>
+                          <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="hover:text-foreground hover:underline">Restart fresh…</button>
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -2239,9 +2247,21 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
   );
 }
 
-function OpenStelowBoardAction() {
+function OpenStelowBoardAction({ threadId }: { threadId: string }) {
+  const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  return <button onClick={() => navigate.toPluginPanel("board", { subPath: "" })} className="min-h-11 rounded-md border bg-card px-3 py-2 text-xs shadow-sm hover:border-primary/50">Stelow Work</button>;
+  const [cardId, setCardId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setCardId(null);
+    void rpc.call("cardByWorkerThread", { threadId }).then((result) => {
+      if (!cancelled) setCardId(result.cardId);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [rpc, threadId]);
+  // Not a card worker thread: render nothing instead of a generic shortcut.
+  if (!cardId) return null;
+  return <button onClick={() => navigate.toPluginPanel("board", { subPath: `card/${cardId}` })} title="Open this work item" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow work item ↗</button>;
 }
 
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {
