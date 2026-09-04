@@ -238,6 +238,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ reseeded: z.boolean(), error: z.string().nullable() }),
   },
+  retryWorker: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   moveCard: {
     input: z.object({ cardId: z.string(), status: z.enum(["analysis", "planning", "execution", "review", "completed", "archived"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
@@ -1815,6 +1819,24 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       updateCard(cardId, { status: "archived", activity: "idle" });
       return { archived: true };
+    },
+
+    async retryWorker({ cardId }) {
+      // First-line recovery for stuck workers (error OR idle with nothing
+      // pending): the plugin SDK exposes no thread-retry, but delivering a
+      // message starts a new turn — exactly what typing into the thread does.
+      // Non-destructive: same worker, same state dir. Reseed stays available
+      // for cases where the worker itself is broken.
+      const card = getCard(cardId);
+      if (!card?.worker_thread_id) return { ok: false, error: "This card has no worker thread." };
+      try {
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If you were waiting on something, re-check it instead of asking again. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`, mentions: [] }] });
+        updateCard(cardId, { activity: "running", last_error: null });
+        bb.realtime.publish("card-state", { cardId });
+        return { ok: true, error: null };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "Could not reach the worker thread." };
+      }
     },
 
     async reseedCard({ cardId, presetId }) {

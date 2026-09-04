@@ -1780,6 +1780,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [advancing, setAdvancing] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
@@ -1833,11 +1834,23 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     setRepairOpen(false);
     const result = await rpc.call("reseedCard", { cardId });
     if (!result.reseeded) {
-      toast.error(result.error ?? "Repair failed");
+      toast.error(result.error ?? "Restart failed");
       return;
     }
-    toast.success("Workflow repaired. Agent restarts from triage.");
+    toast.success("Fresh worker started from triage.");
     await load();
+  }
+
+  async function doRetry() {
+    setRetrying(true);
+    try {
+      const result = await rpc.call("retryWorker", { cardId });
+      if (!result.ok) toast.error(result.error ?? "Retry failed. Try Restart fresh instead.");
+      else toast.success("Worker retried — continuing from the current stage.");
+      await load();
+    } finally {
+      setRetrying(false);
+    }
   }
 
   async function advance(stage: string) {
@@ -1872,15 +1885,17 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 <p className="text-sm text-destructive">{card.lastError ?? "The worker stopped unexpectedly."}</p>
                 {card.workerThreadId ? (
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setRepairOpen(true)}>Resume worker</Button>
+                    <Button size="sm" disabled={retrying} onClick={() => void doRetry()}>{retrying ? "Retrying…" : "Retry"}</Button>
+                    <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)}>Restart fresh…</Button>
                   </div>
                 ) : null}
               </div>
             ) : null}
-            {showResume && !card.lastError ? (
+            {showResume && card.activity === "idle" ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>Worker idle — nothing pending.</span>
-                <button onClick={() => setRepairOpen(true)} className="font-medium text-primary hover:underline">Resume</button>
+                <button disabled={retrying} onClick={() => void doRetry()} className="font-medium text-primary hover:underline disabled:opacity-50">{retrying ? "Retrying…" : "Retry"}</button>
+                <button onClick={() => setRepairOpen(true)} className="hover:text-foreground hover:underline">Restart fresh…</button>
               </div>
             ) : null}
             {pendingFirst && card.activity === "awaiting-answer" ? (
@@ -2003,9 +2018,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
       <ConfirmActionDialog
         open={repairOpen}
         onOpenChange={setRepairOpen}
-        title="Repair this workflow?"
-        description="Reseed state.md and stelow.json so the agent restarts from the triage stage. Existing scope work and comments are kept."
-        confirmLabel="Repair"
+        title="Restart with a fresh worker?"
+        description="Reseed state.md and stelow.json so a new worker restarts from the triage stage. Existing scope work and comments are kept. Try Retry first — restart only if the worker itself is broken."
+        confirmLabel="Restart fresh"
         confirmTone="default"
         onConfirm={doRepair}
       />
