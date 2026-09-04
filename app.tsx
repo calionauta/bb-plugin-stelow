@@ -1031,7 +1031,7 @@ function BoardCard({ card }: { card: CardItem }) {
         <Pill className="whitespace-nowrap">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
         <span className="ml-auto truncate rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">{stageLabel(card.stage)}</span>
       </div>
-      {attention ? (
+      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
           <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
           <span>{attentionLabel(card)}</span>
