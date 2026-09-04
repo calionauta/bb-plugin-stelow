@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Reload-proof questions.** Transient ask cancellations (timeout,
+  plugin reload/restart, aborted request) persist the question and park
+  the card in awaiting-answer instead of losing the decision; explicit
+  dismissals pass through. The persist is guarded against storage torn
+  down mid-write, with an honest re-ask-once fallback.
 - **Worker ledger.** Every worker thread per card is recorded (initial,
   band-swap, restart, reseed) with preset and reason; a Worker history
   section in Manage opens current and archived threads.
