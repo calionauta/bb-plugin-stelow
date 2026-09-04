@@ -1829,6 +1829,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // for cases where the worker itself is broken.
       const card = getCard(cardId);
       if (!card?.worker_thread_id) return { ok: false, error: "This card has no worker thread." };
+      if (card.status === "archived") return { ok: false, error: "This card is archived." };
       try {
         await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If you were waiting on something, re-check it instead of asking again. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`, mentions: [] }] });
         updateCard(cardId, { activity: "running", last_error: null });
