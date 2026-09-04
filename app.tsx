@@ -2090,7 +2090,29 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
             </CardDisclosure>
 
-            {/* DISCLOSURE 2 — Conversation (history + composer) */}
+            {/* DISCLOSURE 2 — Manage (preset + danger zone, always collapsed) */}
+            <CardDisclosure
+              title="Manage"
+              hint={`${detail?.card.presetName ?? "default"}${detail?.card.presetOverridden ? " · overridden" : ""}`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                {card.stage ? (
+                  <Pill tone="bg-muted text-muted-foreground">
+                    {BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · {detail?.card.presetName ?? "default"}
+                    {detail?.card.presetProviderId && detail?.card.presetModelId ? (
+                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
+                    ) : null}
+                  </Pill>
+                ) : null}
+                <button onClick={() => setPresetDialogOpen(true)} className="min-h-11 rounded-md px-2 text-xs font-medium text-primary hover:underline">Change preset…</button>
+              </div>
+              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect when the worker (re)starts.</p>
+              <div className="flex flex-wrap items-center gap-4 border-t pt-3">
+                <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
+                <button onClick={() => setArchiveOpen(true)} className="min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
+              </div>
+            </CardDisclosure>
+            {/* DISCLOSURE 3 — Conversation (history + composer) */}
             <CardDisclosure
               title="Conversation"
               hint={detail?.comments.length ? `${detail.comments.length}` : "talk to the agent"}
@@ -2114,28 +2136,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               <div className="flex justify-end"><Button disabled={!comment.trim()} onClick={() => void submitComment()}>Send to agent</Button></div>
             </CardDisclosure>
 
-            {/* DISCLOSURE 3 — Manage (preset + danger zone, always collapsed) */}
-            <CardDisclosure
-              title="Manage"
-              hint={`${detail?.card.presetName ?? "default"}${detail?.card.presetOverridden ? " · overridden" : ""}`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                {card.stage ? (
-                  <Pill tone="bg-muted text-muted-foreground">
-                    {BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · {detail?.card.presetName ?? "default"}
-                    {detail?.card.presetProviderId && detail?.card.presetModelId ? (
-                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
-                    ) : null}
-                  </Pill>
-                ) : null}
-                <button onClick={() => setPresetDialogOpen(true)} className="min-h-11 rounded-md px-2 text-xs font-medium text-primary hover:underline">Change preset…</button>
-              </div>
-              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect when the worker (re)starts.</p>
-              <div className="flex flex-wrap items-center gap-4 border-t pt-3">
-                <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                <button onClick={() => setArchiveOpen(true)} className="min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
-              </div>
-            </CardDisclosure>
           </>
         ) : null}
         </div>
