@@ -1144,6 +1144,7 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
 function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string; onBack: () => void; restartFocusKey?: number }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
+  const [pendingIntent, setPendingIntent] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -1167,7 +1168,22 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
     if (restartFocusKey === undefined) return;
     closeRef.current?.focus();
   }, [restartFocusKey]);
+  async function applyIntent(nextIntent: string) {
+    const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" });
+    if (!result.ok) {
+      toast.error(result.error ?? "Could not change intent.");
+      return;
+    }
+    if (result.pastTriage && !result.notified) {
+      toast.error("Intent changed, but the worker could not be notified. Use Retry so it picks up the change.");
+    } else if (result.pastTriage) {
+      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent} — worker notified. Appetite and stage path unchanged.`);
+    } else {
+      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
+    }
+  }
   return (
+    <>
     <header className="flex items-center gap-2 border-b bg-card/80 px-3 py-1.5">
       <button onClick={onBack} title="Back to board (Esc)" className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
         <span aria-hidden>←</span>
@@ -1185,14 +1201,16 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
           aria-label="Intent"
           title="Work intent — the kind of work this is. The agent sets it during triage; correct it here if it got it wrong."
           value={card.intent}
-          onChange={async (event) => {
+          onChange={(event) => {
             const nextIntent = event.target.value;
-            const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" });
-            if (result.ok) {
-              toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
-            } else {
-              toast.error(result.error ?? "Could not change intent.");
+            if (nextIntent === card.intent) return;
+            // Past triage the intent already shaped appetite and the stage path,
+            // so changing it is a correction with consequences — confirm first.
+            if (card.stage !== "triage") {
+              setPendingIntent(nextIntent);
+              return;
             }
+            void applyIntent(nextIntent);
           }}
           className="h-6 max-w-32 cursor-pointer truncate rounded-full border border-transparent bg-transparent text-xs font-medium text-muted-foreground hover:border-border hover:text-foreground"
         >
@@ -1208,6 +1226,16 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         <span aria-hidden>×</span>
       </button>
     </header>
+    <ConfirmActionDialog
+      open={pendingIntent !== null}
+      onOpenChange={(next) => { if (!next) setPendingIntent(null); }}
+      title="Change intent after triage?"
+      description={card && pendingIntent ? `This work item is already at the ${stageLabel(card.stage)} stage. Changing the intent to ${INTENT_LABEL[pendingIntent] ?? pendingIntent} updates the label and notifies the worker, but appetite and the stage path chosen under the old intent are not recomputed.` : "Changing the intent updates the label and notifies the worker."}
+      confirmLabel="Change intent"
+      confirmTone="default"
+      onConfirm={() => { const next = pendingIntent; setPendingIntent(null); if (next) void applyIntent(next); }}
+    />
+    </>
   );
 }
 

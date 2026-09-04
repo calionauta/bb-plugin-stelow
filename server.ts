@@ -210,7 +210,7 @@ export const rpcContract = defineRpcContract({
   },
   updateCardIntent: {
     input: z.object({ cardId: z.string(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]) }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), pastTriage: z.boolean(), notified: z.boolean() }),
   },
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
@@ -1773,7 +1773,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async updateCardIntent({ cardId, intent }) {
       const card = getCard(cardId);
-      if (!card) return { ok: false, error: "Card not found." };
+      if (!card) return { ok: false, error: "Card not found.", pastTriage: false, notified: false };
+      const previousIntent = card.intent;
+      const pastTriage = card.stage !== "triage";
       const ts = now();
       db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, ts, cardId);
       // Keep state.md intent in sync so the agent sees the corrected intent.
@@ -1788,8 +1790,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
         }
       } catch { /* state.md sync is best-effort */ }
+      // Past triage the label change alone leaves the worker behind: appetite and
+      // the stage path were chosen under the old intent and are not recomputed.
+      // Notify the worker directly (same mechanism as user comments) so it learns
+      // about the correction instead of discovering a silently edited state.md.
+      let notified = false;
+      if (pastTriage && intent !== previousIntent && card.worker_thread_id) {
+        try {
+          await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The user corrected this work item's intent from "${previousIntent}" to "${intent}". The card label and state.md are updated. Appetite and the stage path chosen under the old intent are unchanged — keep working from the current stage (${card.stage}) unless the new intent clearly invalidates completed work, in which case ask the user via the question form instead of silently switching tracks.`, mentions: [] }] });
+          updateCard(cardId, { activity: "running" });
+          notified = true;
+        } catch { /* worker unreachable — caller surfaces the fallback */ }
+      }
       bb.realtime.publish("card-state", { cardId });
-      return { ok: true, error: null };
+      return { ok: true, error: null, pastTriage, notified };
     },
 
     async addCardComment({ cardId, target, targetId, body }) {
