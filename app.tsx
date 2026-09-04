@@ -1605,6 +1605,46 @@ function CardDisclosure({ title, hint, action, children }: { title: string; hint
   );
 }
 
+function CustomModelCombobox({ models, value, onPick }: { models: Array<{ model: string; displayName: string }>; value: string; onPick: (model: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const query = value.trim().toLowerCase();
+  const matches = (query ? models.filter((model) => model.model.toLowerCase().includes(query) || model.displayName.toLowerCase().includes(query)) : models).slice(0, 30);
+  return (
+    <span className="relative block min-w-0">
+      <input
+        aria-label="Custom model id"
+        value={value}
+        onChange={(event) => { onPick(event.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); if (event.key === "Enter" && matches.length > 0 && !matches.some((model) => model.model === value.trim())) onPick(matches[0]!.model); }}
+        placeholder={models.length > 0 ? "type to filter models…" : "model id…"}
+        className="h-7 w-full min-w-0 rounded-md border bg-background px-1.5 font-mono text-xs"
+      />
+      {open && (matches.length > 0 || query) ? (
+        <span className="mt-1 block max-h-44 overflow-auto rounded-md border bg-background">
+          {matches.map((model) => (
+            <button
+              key={model.model}
+              type="button"
+              onClick={() => { onPick(model.model); setOpen(false); }}
+              className="block w-full truncate px-2 py-1.5 text-left text-xs hover:bg-muted"
+              title={`${model.model}`}
+            >
+              <span className="block truncate font-medium">{model.displayName}</span>
+              <span className="block truncate font-mono text-[10px] text-muted-foreground">{model.model}</span>
+            </button>
+          ))}
+          {query && !matches.some((model) => model.model === value.trim()) ? (
+            <button type="button" onClick={() => setOpen(false)} className="block w-full truncate px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted">
+              Use “{value.trim()}” anyway
+            </button>
+          ) : null}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: boolean; onOpenChange: (next: boolean) => void; cardId: string; onChanged: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; isDefault: boolean }>>([]);
@@ -1696,7 +1736,7 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
                   <option value="">Provider…</option>
                   {catalog.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}</option>)}
                 </select>
-                <input aria-label="Custom model id" value={customModel} onChange={(event) => { setCustomModel(event.target.value); setSelected("custom"); }} onFocus={() => setSelected("custom")} placeholder="model id…" className="h-7 min-w-0 rounded-md border bg-background px-1.5 font-mono text-xs" />
+                <CustomModelCombobox models={catalog.models.filter((model) => model.providerId === customProvider)} value={customModel} onPick={(model) => { setCustomModel(model); setSelected("custom"); }} />
               </span>
             </label>
           </div>
