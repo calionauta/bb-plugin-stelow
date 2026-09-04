@@ -1614,13 +1614,22 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+  const updateFade = () => {
+    const el = listRef.current;
+    if (el) setCanScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+  };
   useEffect(() => {
     if (!open) return;
     setSelected(null); setError(null); setCustomProvider(""); setCustomModel("");
     void rpc.call("listPresets", {}).then((result) => setPresets(result.presets)).catch(() => setPresets([]));
     void rpc.call("listProviderModels", {}).then(setCatalog).catch(() => setCatalog({ providers: [], models: [] }));
   }, [open, rpc]);
+  useEffect(() => { updateFade(); }, [open, presets, catalog]);
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? null;
+  const customPresets = presets.filter((preset) => !preset.isDefault);
+  const optionCount = customPresets.length + catalog.models.length + 2; // default + custom rows
   async function apply() {
     if (!selected) return;
     setBusy(true); setError(null);
@@ -1675,9 +1684,24 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
           <DialogTitle>Agent preset for this work item</DialogTitle>
           <DialogDescription>Takes effect when the worker (re)starts.</DialogDescription>
         </DialogHeader>
-        <div className="max-h-64 space-y-1 overflow-auto">
+        <p className="text-[11px] text-muted-foreground">{optionCount} options · {catalog.providers.length} providers — scroll for more below.</p>
+        <div className="relative">
+          <div ref={listRef} onScroll={updateFade} className="max-h-64 space-y-1 overflow-auto">
+          <div>
+            <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Custom provider + model</p>
+            <label className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === "custom" ? "border-primary bg-primary/10" : "border-border"}`}>
+              <input type="radio" name="card-preset" checked={selected === "custom"} onChange={() => setSelected("custom")} className="accent-primary" />
+              <span className="grid min-w-0 flex-1 grid-cols-2 gap-1" onClick={(event) => event.stopPropagation()}>
+                <select aria-label="Custom provider" value={customProvider} onChange={(event) => { setCustomProvider(event.target.value); setSelected("custom"); }} className="h-7 min-w-0 rounded-md border bg-background px-1.5 text-xs">
+                  <option value="">Provider…</option>
+                  {catalog.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}</option>)}
+                </select>
+                <input aria-label="Custom model id" value={customModel} onChange={(event) => { setCustomModel(event.target.value); setSelected("custom"); }} onFocus={() => setSelected("custom")} placeholder="model id…" className="h-7 min-w-0 rounded-md border bg-background px-1.5 font-mono text-xs" />
+              </span>
+            </label>
+          </div>
           {radioRow("default", <>Board default{defaultPreset ? ` · ${defaultPreset.name}` : ""}</>, defaultPreset ? `${defaultPreset.providerId}/${defaultPreset.modelId}` : undefined)}
-          {presets.filter((preset) => !preset.isDefault).map((preset) => radioRow(`preset:${preset.id}`, preset.name, `${preset.providerId}/${preset.modelId}`))}
+          {customPresets.map((preset) => radioRow(`preset:${preset.id}`, preset.name, `${preset.providerId}/${preset.modelId}`))}
           {catalog.providers.map((provider) => {
             const providerModels = catalog.models.filter((model) => model.providerId === provider.id);
             return (
@@ -1690,20 +1714,9 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
               </div>
             );
           })}
-          <div className="pt-1">
-            <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Custom</p>
-            <label className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === "custom" ? "border-primary bg-primary/10" : "border-border"}`}>
-              <input type="radio" name="card-preset" checked={selected === "custom"} onChange={() => setSelected("custom")} className="accent-primary" />
-              <span className="grid min-w-0 flex-1 grid-cols-2 gap-1" onClick={(event) => event.stopPropagation()}>
-                <select aria-label="Custom provider" value={customProvider} onChange={(event) => { setCustomProvider(event.target.value); setSelected("custom"); }} className="h-7 min-w-0 rounded-md border bg-background px-1.5 text-xs">
-                  <option value="">Provider…</option>
-                  {catalog.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}</option>)}
-                </select>
-                <input aria-label="Custom model id" value={customModel} onChange={(event) => { setCustomModel(event.target.value); setSelected("custom"); }} onFocus={() => setSelected("custom")} placeholder="model id…" className="h-7 min-w-0 rounded-md border bg-background px-1.5 font-mono text-xs" />
-              </span>
-            </label>
-          </div>
           {presets.length === 0 && catalog.providers.length === 0 ? <p className="text-xs text-muted-foreground">No presets or providers available.</p> : null}
+          </div>
+          {canScrollDown ? <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent" /> : null}
         </div>
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <DialogFooter>
