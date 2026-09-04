@@ -10,6 +10,12 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Honest card-state signaling.** A worker that stops with no new output,
+  question, or stage progress signals paused immediately (no 90s grace);
+  the retry nudge tells the worker to ask genuinely new questions instead
+  of staying silent; the paused hero fires only on known-stuck idle; inbox
+  summaries complement kind labels; the card hides the inbox banner when
+  the hero already communicates that state.
 - **Contextual thread button.** The thread header shows "Stelow work item"
   only on a card's worker thread (via a new `cardByWorkerThread` lookup)
   and opens that card directly; other threads show nothing.
