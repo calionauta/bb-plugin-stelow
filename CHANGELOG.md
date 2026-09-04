@@ -8,6 +8,12 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Added
+
+- **Scope/task progress everywhere.** Open cards show per-scope n/m task
+  counts plus task dependency chips; board and list rows carry scope and
+  task done/totals from a per-workspace-cached lookup.
+
 ### Fixed
 
 - **Skills sync verifies content hash.** The raw CDN can serve a stale
