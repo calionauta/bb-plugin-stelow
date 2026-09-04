@@ -8,6 +8,7 @@ import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manif
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
+import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills } from "./lib/workflow-skills-sync.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
@@ -1109,6 +1110,7 @@ ${prompt}` }, ...workerAttachments],
     // user explicitly pinned this card", and writing the spawn default as one
     // would mislabel every fresh card as overridden (and trip staleness).
     recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
+    if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
     await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
     bb.realtime.publish("card-state", { cardId });
     return { cardId, threadId: thread.id };
@@ -1233,6 +1235,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const ts = now();
       updateCard(cardId, { worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, activity: "running", last_error: null, updated_at: ts });
       recordWorkerThread(db, cardId, newThread.id, preset.id, endedReason);
+      if (row.dir_hash) void recordWorkflowLineage(projectPath, row.dir_hash, newThread.id, preset.id, endedReason);
       // Official inline mention of the archived predecessor (not just copied
       // text): renders as a chip the user can open, and the worker can expand
       // it natively for context state.md doesn't carry. Best-effort — the
@@ -1261,6 +1264,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
     const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
+  }
+
+  // Mirror the card_threads ledger into the workflow's own stelow.json
+  // (upstream "Worker Lineage" contract): survives plugin database loss and
+  // is readable by any host and by the worker itself. Best-effort — a failed
+  // lineage write must never break a spawn, reseed, or restart.
+  async function recordWorkflowLineage(rootPath: string, dirHash: string, threadId: string, presetId: string | null, endedReason: string): Promise<void> {
+    try {
+      const trackingPath = join(rootPath, "stelow.json");
+      await writeMergedFile(bb.sdk.files, trackingPath, rootPath, (existing) => mergeLineageFile(existing, dirHash, { threadId, presetId, endedReason }));
+    } catch { /* audit-only */ }
   }
 
   function getCard(cardId: string): CardRow | undefined {
@@ -2071,6 +2085,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       updateCard(cardId, { stage: "triage", activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
       recordWorkerThread(db, cardId, newThread.id, preset.id, "reseed");
+      if (seed.dirHash) void recordWorkflowLineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
       return { reseeded: true, error: null };
     },
 
