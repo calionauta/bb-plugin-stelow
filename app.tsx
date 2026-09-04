@@ -236,8 +236,8 @@ function statusGlyph(status: string) {
   return "·";
 }
 
-function Pill({ children, tone = "bg-muted text-muted-foreground", className = "" }: { children: React.ReactNode; tone?: string; className?: string }) {
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
+function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title }: { children: React.ReactNode; tone?: string; className?: string; title?: string }) {
+  return <span title={title} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
 }
 
 // Activity is a transient worker state — subordinated to the status pill and
@@ -1014,8 +1014,8 @@ function BoardCard({ card }: { card: CardItem }) {
         <ActivityPill activity={card.activity} />
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <Pill className="whitespace-nowrap">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
-        <span className="ml-auto truncate rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80">{stageLabel(card.stage)}</span>
+        <span className="truncate whitespace-nowrap rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80" title="Workflow stage — where this work stands. Move it from the Progress timeline inside the card.">{stageLabel(card.stage)}</span>
+        <Pill className="ml-auto whitespace-nowrap" title="Work intent — the kind of work this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
       </div>
       {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
@@ -1153,13 +1153,13 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? <span className="ml-2 text-muted-foreground">· {statusLabel(card.status)}{card.status !== card.stage ? ` · ${stageLabel(card.stage)}` : ""}</span> : null}
+        {card ? <span className="ml-2 text-muted-foreground" title="Workflow stage — where this work stands. Move it from the Progress timeline inside the card.">· {statusLabel(card.status)}{card.status !== card.stage ? ` · ${stageLabel(card.stage)}` : ""}</span> : null}
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />
         <select
           aria-label="Intent"
-          title="Change intent"
+          title="Work intent — the kind of work this is. The agent sets it during triage; correct it here if it got it wrong."
           value={card.intent}
           onChange={async (event) => {
             const nextIntent = event.target.value;
