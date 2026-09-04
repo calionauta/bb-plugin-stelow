@@ -6,6 +6,8 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
+import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
+import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills } from "./lib/workflow-skills-sync.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
@@ -1098,7 +1100,7 @@ ${prompt}` }, ...workerAttachments],
     // NOTE: no card_presets row here on purpose. An override row means "the
     // user explicitly pinned this card", and writing the spawn default as one
     // would mislabel every fresh card as overridden (and trip staleness).
-    recordWorkerThread(cardId, thread.id, spawnPreset.id, "initial");
+    recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
     await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
     bb.realtime.publish("card-state", { cardId });
     return { cardId, threadId: thread.id };
@@ -1222,7 +1224,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       const ts = now();
       updateCard(cardId, { worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, activity: "running", last_error: null, updated_at: ts });
-      recordWorkerThread(cardId, newThread.id, preset.id, endedReason);
+      recordWorkerThread(db, cardId, newThread.id, preset.id, endedReason);
       // Official inline mention of the archived predecessor (not just copied
       // text): renders as a chip the user can open, and the worker can expand
       // it natively for context state.md doesn't carry. Best-effort — the
@@ -1251,25 +1253,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
     const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
-  }
-
-  function stallCount(cardId: string): number {
-    // How many times this card worker has stalled (paused events, resolved
-    // or not). Drives escalation copy after repeated silent stops.
-    try {
-      return (db.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND kind = 'paused'").get(cardId) as { count: number }).count;
-    } catch { return 0; }
-  }
-
-  // Close the previous ledger row (if any) and open one for the new worker.
-  // Reason is the transition that replaced the worker: initial spawn,
-  // band-swap at a stage boundary, manual restart, or fresh reseed.
-  function recordWorkerThread(cardId: string, threadId: string, presetId: string | null, endedReason: string): void {
-    const ts = now();
-    try {
-      db.prepare("UPDATE card_threads SET ended_at = ?, ended_reason = ? WHERE card_id = ? AND ended_at IS NULL").run(ts, endedReason, cardId);
-      db.prepare("INSERT INTO card_threads (thread_id, card_id, preset_id, started_at, ended_at, ended_reason) VALUES (?, ?, ?, ?, NULL, NULL)").run(threadId, cardId, presetId, ts);
-    } catch { /* ledger is audit-only; never break the spawn path */ }
   }
 
   function getCard(cardId: string): CardRow | undefined {
@@ -1370,11 +1353,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Never clears here — only spawn paths clear, so a flagged card keeps
       // offering Restart until it actually happens.
       try {
-        const override = db.prepare("SELECT preset_id, assigned_at FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string; assigned_at: number } | undefined;
         const threadBorn = (thread as { createdAt?: number }).createdAt;
-        if (override && typeof threadBorn === "number" && threadBorn < override.assigned_at && !card.preset_restart_pending) {
-          db.prepare("UPDATE cards SET preset_restart_pending = 1 WHERE id = ?").run(cardId);
-        }
+        healPresetStaleness(db, cardId, threadBorn, card.preset_restart_pending);
       } catch { /* staleness stays best-effort; id comparison below still applies */ }
       const lastOutput = (await bb.sdk.threads.output({ threadId: card.worker_thread_id }).catch(() => null))?.output ?? null;
       // Stage source of truth is state.md (the agent advances it via `bb stelow
@@ -1755,7 +1735,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           presetProviderId: preset.provider_id,
           presetModelId: preset.model_id,
           updatedAt: row.updated_at,
-          stallCount: stallCount(row.id),
+          stallCount: stallCount(db, row.id),
         };
       }));
       return { cards: enriched };
@@ -1875,7 +1855,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // worker; older rows are archived threads replaced along the way.
       const workerHistory = (db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>).map((row) => ({ threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at, endedAt: row.ended_at, endedReason: row.ended_reason }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,
@@ -2047,7 +2027,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
       }
       updateCard(cardId, { stage: "triage", activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
-      recordWorkerThread(cardId, newThread.id, preset.id, "reseed");
+      recordWorkerThread(db, cardId, newThread.id, preset.id, "reseed");
       return { reseeded: true, error: null };
     },
 
@@ -2228,7 +2208,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // A live worker predating the new preset will never pick it up
         // (provider/model are fixed at spawn): flag it so the card offers
         // Restart instead of a Resume that changes nothing.
-        db.prepare("UPDATE cards SET preset_restart_pending = ? WHERE id = ?").run(card.worker_thread_id && presetId !== card.worker_preset_id ? 1 : 0, cardId);
+        refreshRestartPending(db, cardId, card.worker_thread_id, card.worker_preset_id, presetId);
       }
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, error: null };
@@ -2330,7 +2310,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // worker stops to wait. Explicit end states (user dismissed, thread
         // stopped/deleted) are returned as-is for the worker to interpret.
         const cancelReason = result.outcome === "cancelled" ? result.reason : null;
-        const transientCancel = requestFailed || (cancelReason !== null && ["timeout", "plugin-disposed", "server-restarted", "request-aborted"].includes(cancelReason));
+        const transientCancel = requestFailed || classifyAskCancel(result.outcome, cancelReason) === "persist";
         if (transientCancel) {
           // The user never answered within the window. Keep the card in
           // "Gate pending" (awaiting-answer) so it is obvious a decision is
@@ -2354,11 +2334,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (!persisted) {
             return { exitCode: 1, stdout: `The question could not be recorded (interrupted storage). STOP and wait: do NOT proceed with the workflow. On your next turn, if no pending question exists on the card, ask it ONCE more via bb stelow ask.` };
           }
-          const why = requestFailed
-            ? `The question request failed before delivery.`
-            : cancelReason === "timeout"
-              ? `No response after ${elapsed}s — the user is away.`
-              : `The question was interrupted by a ${cancelReason === "plugin-disposed" ? "plugin reload" : cancelReason} after ${elapsed}s — the user never saw it.`;
+          const why = interruptionWhy(cancelReason, requestFailed, elapsed);
           return { exitCode: 1, stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (Gate pending) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };
         }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
@@ -2491,7 +2467,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const preset = getPresetById(presetId);
       if (!preset) return { ok: false, error: "Preset not found." };
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
-      db.prepare("UPDATE cards SET preset_restart_pending = ? WHERE id = ?").run(card.worker_thread_id && presetId !== card.worker_preset_id ? 1 : 0, cardId);
+      refreshRestartPending(db, cardId, card.worker_thread_id, card.worker_preset_id, presetId);
     }
     bb.realtime.publish("card-state", { cardId });
     return { ok: true, error: null };
