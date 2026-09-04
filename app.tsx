@@ -995,27 +995,47 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop }: { 
 
 function BoardCard({ card }: { card: CardItem }) {
   const navigate = useBbNavigate();
+  const rpc = useRpc<typeof rpcContract>();
+  const [retrying, setRetrying] = useState(false);
   const attention = card.needsAttention;
   const running = card.activity === "running";
+  const stuck = Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
   const borderClass = running
     ? "stelow-border-running"
     : attention
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` }), [navigate, card.id]);
+  async function retry(event: React.MouseEvent | React.KeyboardEvent) {
+    event.stopPropagation();
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const result = await rpc.call("retryWorker", { cardId: card.id });
+      if (!result.ok) toast.error(result.error ?? "Retry failed. Open the card to restart fresh.");
+      else toast.success("Worker retried.");
+    } finally {
+      setRetrying(false);
+    }
+  }
   return (
-    <button
-      role="listitem"
+    <div
+      role="button"
+      tabIndex={0}
       draggable
       onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
       title="Click to inspect"
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open work item ${card.displayName}.`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
-        <ActivityPill activity={card.activity} />
+        <span className="inline-flex shrink-0 items-center gap-1.5">
+          {stuck ? <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="rounded-full border border-primary/40 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">{retrying ? "…" : "↻ Retry"}</button> : null}
+          <ActivityPill activity={card.activity} />
+        </span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <span className="truncate whitespace-nowrap rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80" title="Workflow stage — where this work stands. Move it from the Progress timeline inside the card.">{stageLabel(card.stage)}</span>
@@ -1029,7 +1049,7 @@ function BoardCard({ card }: { card: CardItem }) {
       ) : null}
       {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
       {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
-    </button>
+    </div>
   );
 }
 
