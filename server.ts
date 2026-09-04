@@ -35,6 +35,20 @@ const TRANSITIONS_REF = (() => {
 })();
 const STATE_TEMPLATE = `---\nname: <workflow-name>\nintent: <new-product|feature|bugfix|refactor|investigate|unknown>\ncurrent_stage: triage\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\n  product_type: software\nstages:\n  triage: pending\n  select: pending\n  setup: pending\n  context: pending\n  shape: pending\n  critique: pending\n  gate: pending\n  scope: pending\n  interface: pending\n  int-gate: pending\n  selection: pending\n  planning: pending\n  plan-gate: pending\n  execution: pending\n  verification: pending\n  diff-gate: pending\n  audit: pending\nartifacts: []\nhistory: []\n---\n`;
 
+// Ground-truth freshness signal, written by scripts/postbuild.mjs. The panel
+// bundle and bb's plugin row are both sticky caches; the board footer renders
+// this so "did the reload take effect?" is checkable instead of vibes.
+const BUILD_INFO = (() => {
+  const fallback = { version: "dev", builtAt: null as string | null };
+  for (const candidate of [nodeJoin(pluginDir, "version.json"), nodeJoin(pluginDir, "..", "version.json"), nodeJoin(pluginDir, "..", "package.json")]) {
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown; builtAt?: unknown };
+      if (typeof parsed.version === "string") return { version: parsed.version, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
+    } catch { /* try next */ }
+  }
+  return fallback;
+})();
+
 // Stage bands: groups of workflow stages that share a worker preset. A card's
 // worker swaps presets only at band boundaries (analysis -> planning -> execution
 // -> review), so context continuity is preserved within a band.
@@ -311,6 +325,10 @@ export const rpcContract = defineRpcContract({
       providers: z.array(z.object({ id: z.string(), displayName: z.string(), modelsAvailable: z.boolean() })),
       models: z.array(z.object({ providerId: z.string(), model: z.string(), displayName: z.string() })),
     }),
+  },
+  buildInfo: {
+    input: z.object({}).strict(),
+    output: z.object({ version: z.string(), builtAt: z.string().nullable() }),
   },
 });
 
@@ -639,11 +657,23 @@ async function findArtifacts(files: FilesApi, root: string, workflow: LooseRecor
 async function loadBoard(bb: BbPluginApi, projectId: string | null) {
   const rootPath = await projectRoot(bb, projectId);
   if (!rootPath) return { rootPath: null, workflows: [], error: projectId ? "Project workspace path is unavailable." : "Select a bb project to view its Stelow board." };
-  const tracking = await readJson(bb.sdk.files, join(rootPath, "stelow.json"));
-  if (!tracking) return { rootPath, workflows: [], error: "No stelow.json found in this project. Start a Stelow workflow first." };
+  return boardFromRoot(bb, rootPath);
+}
+
+// Board scoped to an explicit workspace root (project source, or a single
+// exploratory card dir). onlyDirHash restricts the listing to one workflow —
+// used when a card worker asks for status: its project's source root holds no
+// stelow.json (each exploratory card owns its own file), so resolving by
+// project alone yields a misleading "not found".
+async function boardFromRoot(bb: BbPluginApi, rootPath: string, onlyDirHash?: string | null) {
+  const trackingPath = join(rootPath, "stelow.json");
+  const tracking = await readJson(bb.sdk.files, trackingPath);
+  if (!tracking) return { rootPath, workflows: [], error: `No stelow.json found (looked in ${trackingPath}). Start a Stelow workflow first — card workers: your file lives in your own state dir, not the project root.` };
+  const entries = array(tracking.workflows).filter((value) => !onlyDirHash || text(record(value).dirHash) === onlyDirHash);
+  if (onlyDirHash && entries.length === 0) return { rootPath, workflows: [], error: `No workflow ${onlyDirHash} in ${trackingPath}. The card may have been reseeded — read the state dir from your spawn prompt.` };
 
   const workflows: Workflow[] = [];
-  for (const [index, value] of array(tracking.workflows).entries()) {
+  for (const [index, value] of entries.entries()) {
     const raw = record(value);
     const config = record(raw.config);
     const stage = record(raw.stage);
@@ -1015,6 +1045,8 @@ export default async function plugin(bb: BbPluginApi) {
 
 Step 1 — classify intent first: this work item starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
 
+Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
+
 Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 CRITICAL — User input contract:
@@ -1131,7 +1163,7 @@ ${prompt}` }, ...workerAttachments],
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
         prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
-The user already classified this request as intent=\`${row.intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${row.intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
 You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. Read your state.md and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already settled in state.md. Pick up exactly where the workflow left off.
 
@@ -1810,7 +1842,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
         input: [{ type: "text", mentions: [], text: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
-The user already classified this request as intent=\`${card.intent}\` (recorded in state.md). Use that intent — do NOT ask the user to pick an intent again.${card.intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+Intent is currently \`${card.intent}\` in the re-seeded state.md. ${card.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form:
@@ -2039,6 +2071,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       return { providers: providers.map((provider) => ({ id: provider.id, displayName: provider.displayName, modelsAvailable: availability.get(provider.id) ?? false })), models };
     },
+
+    async buildInfo() {
+      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt };
+    },
   });
 
   bb.cli.register({
@@ -2055,6 +2091,18 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (argv[0] === "status") {
         const projectFlag = argv.indexOf("--project");
         const projectId = projectFlag >= 0 ? argv[projectFlag + 1] : ctx.projectId;
+        // A card worker's project source root holds no stelow.json (each
+        // exploratory card owns its own file), so resolve the owning card
+        // first — same pattern as the advance command.
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        if (cliCard) {
+          const workspace = await cardWorkspace(cliCard);
+          if (!workspace?.path) return { exitCode: 1, stderr: "Workspace path is unavailable for this card." };
+          const board = await boardFromRoot(bb, workspace.path, cliCard.dir_hash);
+          if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify(board, null, 2) };
+          if (board.error) return { exitCode: 1, stderr: board.error };
+          return { exitCode: 0, stdout: board.workflows.map((workflow) => `${workflow.name}\t${workflow.status}\t${workflow.stage}`).join("\n") };
+        }
         const board = await loadBoard(bb, projectId ?? null);
         if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify(board, null, 2) };
         if (board.error) return { exitCode: 1, stderr: board.error };

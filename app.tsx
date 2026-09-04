@@ -504,22 +504,25 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [importSelected, setImportSelected] = useState<Record<string, boolean>>({});
   const [importBusy, setImportBusy] = useState(false);
   const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null } | null>(null);
 
   const load = useCallback(async (targetId: string | null) => {
     setLoading(true);
     try {
-      const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
+      const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult, buildResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
         rpc.call("listCards", { projectId: targetId }).catch(() => ({ cards: [] })),
         rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
         rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
         rpc.call("board", { projectId: targetId }).catch(() => null),
+        rpc.call("buildInfo", {}).catch(() => null),
       ]);
       setProjects(projectsResult?.projects ?? []);
       setCards(cardsResult.cards);
       setBoardPresets(presetsResult.presets);
       setBoardBandPresets(bandPresetsResult.bands);
       if (boardResult?.githubStatus) setGithubStatus(boardResult.githubStatus);
+      if (buildResult) setBuildInfo(buildResult);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       setProjects([]);
@@ -669,6 +672,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Work</h1>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">About Stelow <span aria-hidden="true">↗</span></UrlLink>
+                {buildInfo ? <span className="text-[11px] text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
               </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
