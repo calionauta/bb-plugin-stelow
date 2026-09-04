@@ -841,7 +841,7 @@ function BoardPanel({ subPath }: { subPath: string }) {
             ))}
           </div>}
 
-          <button onClick={() => setRestartFocusKey((k) => k + 1)} className="sr-only" aria-hidden="true" tabIndex={-1}>refresh focus</button>
+          <button onClick={() => setRestartFocusKey((k) => k + 1)} className="cursor-pointer sr-only" aria-hidden="true" tabIndex={-1}>refresh focus</button>
         </div>
       </div>
     </div>
@@ -853,7 +853,7 @@ function WorkflowChoiceSelect<T extends string>({ label, value, options, onChang
   return (
     <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
       <span className="font-medium text-foreground">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value as T)} className="h-9 rounded-md border bg-background px-2 text-sm text-foreground" aria-label={label}>
+      <select value={value} onChange={(event) => onChange(event.target.value as T)} className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm text-foreground" aria-label={label}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <span>{selected?.description}</span>
@@ -910,12 +910,12 @@ function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filt
         <span>Filters</span>
         {activeCount > 0 ? <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">{activeCount}</span> : null}
       </button>
-      {filterAttention ? <button onClick={() => onAttention(!filterAttention)} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-500 bg-amber-500/15 px-3 text-xs font-medium text-amber-700 dark:text-amber-300" aria-label="Remove attention filter" aria-pressed="true">
+      {filterAttention ? <button onClick={() => onAttention(!filterAttention)} className="cursor-pointer inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-500 bg-amber-500/15 px-3 text-xs font-medium text-amber-700 dark:text-amber-300" aria-label="Remove attention filter" aria-pressed="true">
         <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
         Needs attention
         <span aria-hidden className="ml-1">×</span>
       </button> : null}
-      {activeCount > 0 ? <button onClick={onReset} className="inline-flex h-7 items-center rounded-full border bg-background px-3 text-xs text-muted-foreground hover:text-foreground">Clear</button> : null}
+      {activeCount > 0 ? <button onClick={onReset} className="cursor-pointer inline-flex h-7 items-center rounded-full border bg-background px-3 text-xs text-muted-foreground hover:text-foreground">Clear</button> : null}
       {open ? (
         <div role="dialog" aria-label="Filters" className="absolute left-0 top-10 z-20 w-[min(36rem,calc(100vw-2rem))] rounded-md border bg-card p-3 shadow-lg">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -945,7 +945,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className={`rounded-md border px-2 py-1 text-sm ${isAll ? "border-border bg-background text-muted-foreground" : "border-primary bg-primary/10 text-foreground"}`}>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className={`cursor-pointer rounded-md border px-2 py-1 text-sm ${isAll ? "border-border bg-background text-muted-foreground" : "border-primary bg-primary/10 text-foreground"}`}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       {selected ? null : null}
@@ -957,7 +957,7 @@ function WorkList({ groups, navigate }: { groups: Record<string, CardItem[]>; na
   return <div className="space-y-5">{COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` })} className="flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` })} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
   })}</div>;
 }
 
@@ -1034,7 +1034,7 @@ function BoardCard({ card }: { card: CardItem }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
         <span className="inline-flex shrink-0 items-center gap-1.5">
-          {stuck ? <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="rounded-full border border-primary/40 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">{retrying ? "…" : "↻ Retry"}</button> : null}
+          {stuck ? <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="disabled:cursor-not-allowed cursor-pointer rounded-full border border-primary/40 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">{retrying ? "…" : "↻ Retry"}</button> : null}
           <ActivityPill activity={card.activity} />
         </span>
       </div>
@@ -1097,7 +1097,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { curren
                       disabled={!clickable || isCurrent}
                       title={STAGE_PRODUCES[stage]}
                       onClick={() => onPick(stage)}
-                      className={`relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
                         ? "bg-primary/15 text-primary ring-2 ring-primary/60"
                         : passed
@@ -1372,7 +1372,7 @@ function AwaitingAnswerBanner({ cardId, question, onAnswered }: { cardId: string
               <button
                 key={option.label}
                 onClick={() => toggle(option.label)}
-                className={`rounded-md border p-2 text-left text-sm ${answers.includes(option.label) ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
+                className={`cursor-pointer rounded-md border p-2 text-left text-sm ${answers.includes(option.label) ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
               >
                 <div className="font-medium">{option.label}</div>
                 {option.description ? <div className="text-xs text-muted-foreground">{option.description}</div> : null}
@@ -1543,7 +1543,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
               <div key={band.band} className="flex items-center gap-2 text-sm">
                 <span className="w-24 shrink-0 capitalize">{band.band}</span>
                 <select
-                  className="h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                  className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
                   value={band.presetId ?? ""}
                   onChange={(event) => {
                     const value = event.target.value || null;
@@ -1568,23 +1568,23 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
-                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.providerId} onChange={(event) => { setForm({ ...form, providerId: event.target.value, modelId: options.models.find((model) => model.providerId === event.target.value)?.model ?? "" }); }}>
+                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.providerId} onChange={(event) => { setForm({ ...form, providerId: event.target.value, modelId: options.models.find((model) => model.providerId === event.target.value)?.model ?? "" }); }}>
                   {options.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName} ({provider.id})</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2"><span>Model</span>
-                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
+                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
                   {providerModels.length === 0 ? <option value={form.modelId}>{form.modelId}</option> : null}
                   {providerModels.map((model) => <option key={model.model} value={model.model}>{model.displayName} ({model.model})</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Reasoning</span>
-                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.reasoningLevel} onChange={(event) => setForm({ ...form, reasoningLevel: event.target.value })}>
+                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.reasoningLevel} onChange={(event) => setForm({ ...form, reasoningLevel: event.target.value })}>
                   {["low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Permission mode</span>
-                <select className="h-9 rounded-md border bg-background px-2 text-sm" value={form.permissionMode} onChange={(event) => setForm({ ...form, permissionMode: event.target.value as "accept-edits" | "auto" | "full" })}>
+                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.permissionMode} onChange={(event) => setForm({ ...form, permissionMode: event.target.value as "accept-edits" | "auto" | "full" })}>
                   <option value="accept-edits">accept-edits</option>
                   <option value="auto">auto</option>
                   <option value="full">full</option>
@@ -1727,7 +1727,7 @@ function CustomModelCombobox({ models, value, onPick }: { models: Array<{ model:
               key={model.model}
               type="button"
               onClick={() => { onPick(model.model); setOpen(false); }}
-              className="block w-full truncate px-2 py-1.5 text-left text-xs hover:bg-muted"
+              className="cursor-pointer block w-full truncate px-2 py-1.5 text-left text-xs hover:bg-muted"
               title={`${model.model}`}
             >
               <span className="block truncate font-medium">{model.displayName}</span>
@@ -1735,7 +1735,7 @@ function CustomModelCombobox({ models, value, onPick }: { models: Array<{ model:
             </button>
           ))}
           {query && !matches.some((model) => model.model === value.trim()) ? (
-            <button type="button" onClick={() => setOpen(false)} className="block w-full truncate px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted">
+            <button type="button" onClick={() => setOpen(false)} className="cursor-pointer block w-full truncate px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted">
               Use “{value.trim()}” anyway
             </button>
           ) : null}
@@ -1832,7 +1832,7 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
             <label className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === "custom" ? "border-primary bg-primary/10" : "border-border"}`}>
               <input type="radio" name="card-preset" checked={selected === "custom"} onChange={() => setSelected("custom")} className="accent-primary" />
               <span className="grid min-w-0 flex-1 grid-cols-2 gap-1" onClick={(event) => event.stopPropagation()}>
-                <select aria-label="Custom provider" value={customProvider} onChange={(event) => { setCustomProvider(event.target.value); setSelected("custom"); }} className="h-7 min-w-0 rounded-md border bg-background px-1.5 text-xs">
+                <select aria-label="Custom provider" value={customProvider} onChange={(event) => { setCustomProvider(event.target.value); setSelected("custom"); }} className="cursor-pointer h-7 min-w-0 rounded-md border bg-background px-1.5 text-xs">
                   <option value="">Provider…</option>
                   {catalog.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}</option>)}
                 </select>
@@ -2070,7 +2070,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                         key={`${attachment.type}:${attachment.path}`}
                         onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}
                         disabled={!card.workerThreadId}
-                        className="inline-flex min-h-11 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20 disabled:opacity-50"
+                        className="disabled:cursor-not-allowed cursor-pointer inline-flex min-h-11 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20 disabled:opacity-50"
                         title="Open the worker thread; BB renders this original attachment there."
                       >
                         <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
@@ -2116,12 +2116,12 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     ) : null}
                   </Pill>
                 ) : null}
-                <button onClick={() => setPresetDialogOpen(true)} className="min-h-11 rounded-md px-2 text-xs font-medium text-primary hover:underline">Change preset…</button>
+                <button onClick={() => setPresetDialogOpen(true)} className="cursor-pointer min-h-11 rounded-md px-2 text-xs font-medium text-primary hover:underline">Change preset…</button>
               </div>
               <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect when the worker (re)starts.</p>
               <div className="flex flex-wrap items-center gap-4 border-t pt-3">
-                <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                <button onClick={() => setArchiveOpen(true)} className="min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
+                <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
+                <button onClick={() => setArchiveOpen(true)} className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
               </div>
             </CardDisclosure>
             {/* DISCLOSURE 3 — Conversation (history + composer) */}
@@ -2244,7 +2244,7 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
     <div className="space-y-3 rounded-lg border bg-card p-4">
       <p className="font-medium">{payload.question ?? interaction.title}</p>
       <div className="space-y-2">
-        {options.map((option) => <button key={option.label} onClick={() => toggle(option.label)} className={`w-full rounded-md border p-3 text-left ${answers.includes(option.label) ? "border-primary bg-primary/10" : "border-border"}`}><div className="font-medium">{option.label}</div><div className="text-sm text-muted-foreground">{option.description}</div></button>)}
+        {options.map((option) => <button key={option.label} onClick={() => toggle(option.label)} className={`cursor-pointer w-full rounded-md border p-3 text-left ${answers.includes(option.label) ? "border-primary bg-primary/10" : "border-border"}`}><div className="font-medium">{option.label}</div><div className="text-sm text-muted-foreground">{option.description}</div></button>)}
       </div>
       <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => void cancel()}>Cancel</Button><Button disabled={answers.length === 0} onClick={() => void submit({ answers })}>Continue</Button></div>
     </div>
