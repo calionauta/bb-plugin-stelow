@@ -1666,6 +1666,23 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="font-medium">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
             {card.workspaceKind === "exploratory" ? <section className="rounded-md border border-sky-500/30 bg-sky-500/5 p-3 text-sm"><p className="font-medium">Exploratory work</p><p className="mt-1 text-muted-foreground">Stored locally until you delete it.</p>{card.workspacePath ? <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{card.workspacePath}</p> : null}</section> : null}
             <p className="text-sm text-foreground">{card.prompt}</p>
+            {pendingFirst && card.activity === "awaiting-answer" ? (
+              <section aria-label="Needs your decision" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+                <h3 className="text-sm font-semibold">Needs your decision</h3>
+                <p className="text-xs text-muted-foreground">Answer below to resume the agent. Details and history follow.</p>
+                <AwaitingAnswerBanner cardId={card.id} question={pendingFirst} onAnswered={() => void load()} />
+                {detail && detail.pendingQuestions.length > 1 ? (
+                  <details className="rounded-md border bg-card p-2">
+                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">More pending questions ({detail.pendingQuestions.length - 1})</summary>
+                    <div className="mt-2 space-y-2">
+                      {detail.pendingQuestions.slice(1).map((question) => <AwaitingAnswerBanner key={question.id} cardId={card.id} question={question} onAnswered={() => void load()} />)}
+                    </div>
+                  </details>
+                ) : null}
+              </section>
+            ) : null}
+
+            {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
             {detail?.attachments && detail.attachments.length > 0 ? (
               <div className="space-y-1">
                 <span className="text-xs font-medium text-muted-foreground">Attachments (open in BB worker):</span>
@@ -1743,17 +1760,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               <Meta label="Updated" value={new Date(card.updatedAt).toLocaleString()} />
             </div>
             {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
-
-            {pendingFirst && card.activity === "awaiting-answer" ? <AwaitingAnswerBanner cardId={card.id} question={pendingFirst} onAnswered={() => void load()} /> : null}
-
-            {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
-
-            {detail && card.activity === "awaiting-answer" && detail.pendingQuestions.length > 1 ? (
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold">More pending questions</h3>
-                {detail.pendingQuestions.slice(1).map((question) => <AwaitingAnswerBanner key={question.id} cardId={card.id} question={question} onAnswered={() => void load()} />)}
-              </section>
-            ) : null}
 
             {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : null}
 

@@ -14,7 +14,19 @@
 set -euo pipefail
 
 PROG="${0##*/}"
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || { echo "$PROG: not in a git repo" >&2; exit 2; })"
+# Project workflows derive their root from Git. Exploratory workspaces are not
+# repositories, so the plugin provides an explicit per-workflow state directory.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$ROOT" ]; then
+  if [ -n "${STELOW_STATEDIR:-}" ]; then
+    # Per-workflow state dir is <root>/.stelow/<date>/<dirHash>, so the project
+    # root is three levels up. Project checkouts keep using `git rev-parse`.
+    ROOT="$(cd "$STELOW_STATEDIR/../../.." && pwd)"
+  else
+    echo "$PROG: not in a git repo (set STELOW_STATEDIR for an exploratory workspace)" >&2
+    exit 2
+  fi
+fi
 # State is PER-WORKFLOW: each card owns a dir .stelow/<date>/<dirHash> holding
 # its own state.md, invariants.json, and lock. The server sets STELOW_STATEDIR
 # to that workflow dir. When unset (manual/legacy CLI use from repo root), fall
@@ -223,10 +235,11 @@ do_advance() {
     die "invalid transition '$current' -> '$candidate' (allowed: $(echo "$allowed" | paste -sd, -))"
 
   # pre-condition: required artifacts
-  python3 - "$current" "$ROOT" "$STATEDIR" <<'PY' || die "pre-condition check failed"
+  python3 - "$current" "$ROOT" "$STATEDIR" "${STELOW_TRANSITIONS:-}" <<'PY' || die "pre-condition check failed"
 import sys, re, os, glob
-current, root, statedir = sys.argv[1], sys.argv[2], sys.argv[3]
-trans = open(os.path.join(root, "skills/stelow-workflow-orchestrator/references/transitions.md")).read()
+current, root, statedir, trans_override = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+trans = trans_override if trans_override else os.path.join(root, "skills/stelow-workflow-orchestrator/references/transitions.md")
+trans = open(trans).read()
 m = re.search(r"^### " + re.escape(current) + r"\s*\n(.*?)(?=^### |\Z)", trans, re.MULTILINE | re.DOTALL)
 if not m: sys.exit(0)
 for line in m.group(1).splitlines():

@@ -981,7 +981,8 @@ export default async function plugin(bb: BbPluginApi) {
     if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this work.");
     const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
     const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
-    const seed = await seedWorkflow(bb, rootPath, slug, intent, appetite, reviewMode);
+    const initialIntent = "unknown";
+    const seed = await seedWorkflow(bb, rootPath, slug, initialIntent, appetite, reviewMode);
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
     const analysisRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = 'analysis'").get() as { preset_id: string } | undefined;
@@ -1001,26 +1002,26 @@ export default async function plugin(bb: BbPluginApi) {
       reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
       permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
       executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-      input: [{ type: "text", mentions: [], text: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host pre-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
+      input: [{ type: "text", mentions: [], text: `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
 
-The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+Step 1 — classify intent first: this work item starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
 
-The user already classified this request as intent=\`${intent}\`, appetite=\`${appetite}\`, and review mode=\`${reviewMode}\` (all recorded in state.md and stelow.json). Use these declarations — do NOT ask the user to pick or confirm intent, appetite, or review mode again.${intent === "unknown" ? " Since no intent was pre-selected, determine the most fitting one yourself during triage (new-product, feature, bugfix, refactor, or investigate) and record it in state.md — only ask the user if it is genuinely ambiguous." : ""}
+Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 CRITICAL — User input contract:
-ANY time you need user input (ambiguity, approval, scope, interface choice, etc.), you MUST call the structured form, NEVER just write text like "waiting for your choice":
+ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
 
     bb stelow ask --thread <this_thread_id> \\
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage; do not start shaping before triage is settled. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card moves to "Gate pending" automatically. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}` }, ...workerAttachments],
     });
     const ts = now();
-    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, intent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, null, null, null, ts, ts);
+    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, null, null, null, ts, ts);
     db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, ts);
     await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
     bb.realtime.publish("card-state", { cardId });
@@ -1427,6 +1428,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const pending = list.find((entry) => entry.origin?.kind === "plugin" && entry.status === "pending");
         if (!pending) return { ok: false as const, error: "No open question awaits an answer on this card." };
         await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId: pending.id, value: { answers } });
+        // A structured interaction resumes the waiting command but not a new
+        // agent turn. Send an explicit continuation so the worker proceeds.
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The user answered: ${answers.join(", ")}. Continue the workflow now: persist the decision, advance the appropriate stage with bb stelow advance, and keep working.`, mentions: [] }] });
+        updateCard(cardId, { activity: "running", status: "in-progress" });
         return { ok: true as const, error: null };
       } catch (error) {
         return { ok: false as const, error: error instanceof Error ? error.message : "Unable to answer the question." };
