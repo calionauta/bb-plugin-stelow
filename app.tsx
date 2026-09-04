@@ -1626,36 +1626,79 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
   );
 }
 
-// Uniform building blocks for the open-card revamp: one heading pattern for
-// visible sections (CardSection) and one disclosure pattern for secondary
-// content (CardDisclosure). Previously every zone — banners, meta grid,
-// timeline, preset, comments — used its own ad-hoc spacing and heading style.
-function CardSection({ title, hint, action, children }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
+// Open-card building blocks: one contextual hero (heroFor) + one disclosure
+// pattern (CardDisclosure) for secondary content. Previously every zone —
+// banners, meta grid, timeline, preset, comments — used its own ad-hoc
+// spacing and heading style.
+function CardDisclosure({ title, hint, action, children, defaultOpen = false }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean }) {
   return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
-        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-        {action ? <span className="ml-auto inline-flex">{action}</span> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function CardDisclosure({ title, hint, action, children }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <details className="group rounded-md border bg-muted/20">
-      <summary className="flex cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden [&::-webkit-details-marker]:hidden">
+    <details open={defaultOpen} className="group rounded-lg border bg-muted/20">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
         <span aria-hidden className="mr-1.5 inline-block text-[10px] text-muted-foreground transition-transform group-open:rotate-90">▶</span>
         <span>{title}</span>
         {hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null}
         {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
       </summary>
-      <div className="space-y-2 px-3 pb-3">{children}</div>
+      <div className="space-y-3 px-3 pb-3">{children}</div>
     </details>
   );
 }
+
+// Hybrid (A+D+E): single contextual hero derived from card state. One plain
+// sentence + one primary action. Replaces the scattered error / paused /
+// decision banners with one ordered attention model:
+// decision > error > paused-with-work > working > calm.
+type HeroKind = "decision" | "error" | "paused" | "working" | "calm";
+function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: HeroKind; title: string; sub: string } {
+  const pending = detail?.pendingQuestions?.length ?? 0;
+  if (card.activity === "awaiting-answer" && pending > 0) {
+    return {
+      kind: "decision",
+      title: pending === 1 ? "Needs your decision to continue" : `Needs your decision — ${pending} questions`,
+      sub: "Answer below and the agent resumes on its own.",
+    };
+  }
+  if (card.activity === "awaiting-answer") {
+    return {
+      kind: "working",
+      title: `Waiting — ${stageLabel(card.stage)}`,
+      sub: "The agent is preparing a question. Nothing needs you yet.",
+    };
+  }
+  if (card.activity === "error") {
+    return {
+      kind: "error",
+      title: "The worker stopped",
+      sub: card.lastError ?? "Something went wrong. Retry continues in place; restart begins fresh.",
+    };
+  }
+  if (card.activity === "idle" && card.workerThreadId != null && (detail?.card.needsAttention || (detail?.scopes.length ?? 0) > 0)) {
+    return {
+      kind: "paused",
+      title: "Work paused",
+      sub: "The worker is idle with unfinished work. Retry continues in place; restart begins fresh from triage.",
+    };
+  }
+  if (card.activity === "running") {
+    return {
+      kind: "working",
+      title: `Working — ${stageLabel(card.stage)}`,
+      sub: "The agent advances on its own. Nothing needs you right now.",
+    };
+  }
+  return {
+    kind: "calm",
+    title: `At ${stageLabel(card.stage)} — nothing needs you`,
+    sub: "Follow along below, or send a note to the agent.",
+  };
+}
+const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: boolean }> = {
+  decision: { wrap: "border-amber-500/50 bg-amber-500/5", dot: "bg-amber-500", alert: true },
+  error: { wrap: "border-destructive/40 bg-destructive/5", dot: "bg-destructive", alert: true },
+  paused: { wrap: "border-amber-500/40 bg-amber-500/5", dot: "bg-amber-500", alert: false },
+  working: { wrap: "border-emerald-500/30 bg-emerald-500/5", dot: "bg-emerald-500", alert: false },
+  calm: { wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: false },
+};
 
 function CustomModelCombobox({ models, value, onPick }: { models: Array<{ model: string; displayName: string }>; value: string; onPick: (model: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -1913,138 +1956,169 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     }
   }
 
-  // Resume (formerly Repair) is the primary action whenever the worker is
-  // idle on an unfinished card — a stopped worker may have left a step
-  // incomplete. Read off the card's own activity (no separate kind).
-  const showResume = card?.activity === "idle" && card.workerThreadId != null;
+  // Hero + disclosures read the primary action off the card's own activity
+  // (no separate kind): decision > error > paused-with-work > working > calm.
   const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
+
+  const hero = card ? heroFor(card, detail) : null;
+  const heroStyle = hero ? HERO_STYLE[hero.kind] : null;
+  const scopeDone = detail?.scopes.filter((s) => ["done", "completed"].includes(s.status ?? "")).length ?? 0;
+  const scopeTotal = detail?.scopes.length ?? 0;
+  const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-4">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {card ? (
           <>
-            {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="font-medium">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
-            <p className="text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
-            {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
-            {card.activity === "error" ? (
-              <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
-                <p className="text-sm text-destructive">{card.lastError ?? "The worker stopped unexpectedly."}</p>
-                {card.workerThreadId ? (
-                  <div className="flex gap-2">
-                    <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
-                    <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {showResume && card.activity === "idle" && !pendingFirst ? (
-              detail?.card.needsAttention ? (
-                <section aria-label="Worker paused" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
-                  <div className="flex items-center gap-2">
-                    <span aria-hidden className="size-2 rounded-full bg-amber-500" />
-                    <h3 className="text-sm font-semibold">Work paused</h3>
-                  </div>
-                  <p className="text-xs text-muted-foreground">The worker is idle with unfinished work. Retry continues in place; restarting begins fresh from triage.</p>
-                  <div className="flex gap-2">
-                    <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
-                    {card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button> : null}
-                  </div>
-                </section>
-              ) : (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Worker idle — nothing pending.</span>
-                  <button disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset." className="font-medium text-primary hover:underline disabled:opacity-50">{retrying ? "Retrying…" : "Retry"}</button>
-                  <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="hover:text-foreground hover:underline">Restart fresh…</button>
-                </div>
-              )
-            ) : null}
-            {pendingFirst && card.activity === "awaiting-answer" ? (
-              <section aria-label="Needs your decision" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
-                <h3 className="text-sm font-semibold">Needs your decision</h3>
-                <p className="text-xs text-muted-foreground">Answer below to resume the agent. Details and history follow.</p>
-                <AwaitingAnswerBanner cardId={card.id} question={pendingFirst} onAnswered={() => void load()} />
-                {detail && detail.pendingQuestions.length > 1 ? (
-                  <details className="rounded-md border bg-card p-2">
-                    <summary className="cursor-pointer text-xs font-medium text-muted-foreground">More pending questions ({detail.pendingQuestions.length - 1})</summary>
-                    <div className="mt-2 space-y-2">
-                      {detail.pendingQuestions.slice(1).map((question) => <AwaitingAnswerBanner key={question.id} cardId={card.id} question={question} onAnswered={() => void load()} />)}
+            {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="text-sm font-semibold">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
+            {/* HERO — one contextual sentence + one primary action (D primary, A type scale) */}
+            {hero && heroStyle ? (
+              <section aria-label="Card status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
+                <div className="flex items-start gap-2.5">
+                  <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${heroStyle.dot}`} />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
+                    <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+                    {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
+                    {/* Single primary action per state — no competing CTAs */}
+                    <div className="flex min-h-11 flex-wrap items-center gap-2 pt-2">
+                      {hero.kind === "decision" && pendingFirst ? <span className="text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
+                      {hero.kind === "error" && card.workerThreadId ? (
+                        <>
+                          <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
+                          <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
+                          <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened." className="min-h-11 rounded-md px-2 text-sm font-medium text-primary hover:underline">Open thread ↗</button>
+                        </>
+                      ) : null}
+                      {hero.kind === "paused" ? (
+                        <>
+                          <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
+                          <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
+                          {card.workerThreadId ? <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened." className="min-h-11 rounded-md px-2 text-sm font-medium text-primary hover:underline">Open thread ↗</button> : null}
+                        </>
+                      ) : null}
+                      {hero.kind === "working" || hero.kind === "calm" ? (
+                        card.workerThreadId ? <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread. Keyboard: T." className="min-h-11 rounded-md px-2 text-sm font-medium text-primary hover:underline">Open thread ↗</button> : null
+                      ) : null}
                     </div>
-                  </details>
+                  </div>
+                </div>
+                {pendingFirst && card.activity === "awaiting-answer" ? (
+                  <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
+                    <AwaitingAnswerBanner cardId={card.id} question={pendingFirst} onAnswered={() => void load()} />
+                    {detail && detail.pendingQuestions.length > 1 ? (
+                      <details className="rounded-md border bg-card p-2">
+                        <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground">More pending questions ({detail.pendingQuestions.length - 1})</summary>
+                        <div className="mt-2 space-y-2">
+                          {detail.pendingQuestions.slice(1).map((question) => <AwaitingAnswerBanner key={question.id} cardId={card.id} question={question} onAnswered={() => void load()} />)}
+                        </div>
+                      </details>
+                    ) : null}
+                  </div>
                 ) : null}
               </section>
             ) : null}
 
-            {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
-            {detail?.attachments && detail.attachments.length > 0 ? (
-              <div className="space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Attachments (open in BB worker):</span>
-                <div className="flex flex-wrap gap-1">
-                  {detail.attachments.map((attachment) => (
-                    <button
-                      key={`${attachment.type}:${attachment.path}`}
-                      onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}
-                      disabled={!card.workerThreadId}
-                      className="inline-flex items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-sky-500/20 disabled:opacity-50"
-                      title="Open the worker thread; BB renders this original attachment there."
-                    >
-                      <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
-                      <span>{attachment.display}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
-              <div className="space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Mentioned files:</span>
-                <div className="flex flex-wrap gap-1">
-                  {detail.mentionedFiles.map((file) => (
-                    <FileLink
-                      key={file.path}
-                      target={{ kind: "host", hostId: file.hostId, path: file.absolutePath }}
-                      location={null}
-                      className="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-0.5 text-xs text-foreground hover:bg-muted"
-                      title={`Open ${file.path}`}
-                    >
-                      <span>📄</span>
-                      <span>{file.display}</span>
-                    </FileLink>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {card.stage === "select" ? (
-              <p className="text-xs text-muted-foreground">
-                Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
-              </p>
-            ) : null}
-
-            {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : null}
-
-            {detail && card ? (
-              <CardSection
-                title="Progress"
-                hint="Agent advances alone · click a lit stage to override"
-                action={card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}>Open thread ↗</Button> : undefined}
-              >
-                <StageTimeline
-                  currentStage={card.stage}
-                  nextStages={detail.nextStages}
-                  artifacts={detail.artifacts}
-                  onPick={(stage) => setPendingAdvance(stage)}
-                />
-              </CardSection>
-            ) : null}
-
+            {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
-              title="Agent preset"
-              hint={card.stage ? `${detail?.card.presetName ?? "default"}${detail?.card.presetOverridden ? " · overridden" : ""}` : undefined}
-              action={<button onClick={() => setPresetDialogOpen(true)} className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">Change</button>}
+              title="What is happening"
+              hint={scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : stageLabel(card.stage)}
+              defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
             >
-              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect when the worker (re)starts.</p>
+              {card.stage === "select" ? (
+                <p className="text-xs text-muted-foreground">
+                  Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
+                </p>
+              ) : null}
+              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">No scopes broken down yet — the agent is still shaping the work.</p>}
+              {detail ? (
+                <div className="space-y-2 border-t pt-3">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Progress</h4>
+                    <span className="text-xs text-muted-foreground">Agent advances alone · click a lit stage to override</span>
+                  </div>
+                  <StageTimeline
+                    currentStage={card.stage}
+                    nextStages={detail.nextStages}
+                    artifacts={detail.artifacts}
+                    onPick={(stage) => setPendingAdvance(stage)}
+                  />
+                </div>
+              ) : null}
+              {detail?.attachments && detail.attachments.length > 0 ? (
+                <div className="space-y-1 border-t pt-3">
+                  <span className="text-xs font-medium text-muted-foreground">Attachments ({detail.attachments.length}) — open in worker thread:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {detail.attachments.map((attachment) => (
+                      <button
+                        key={`${attachment.type}:${attachment.path}`}
+                        onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}
+                        disabled={!card.workerThreadId}
+                        className="inline-flex min-h-11 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20 disabled:opacity-50"
+                        title="Open the worker thread; BB renders this original attachment there."
+                      >
+                        <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
+                        <span>{attachment.display}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
+                <div className="space-y-1 border-t pt-3">
+                  <span className="text-xs font-medium text-muted-foreground">Mentioned files ({detail.mentionedFiles.length}):</span>
+                  <div className="flex flex-wrap gap-1">
+                    {detail.mentionedFiles.map((file) => (
+                      <FileLink
+                        key={file.path}
+                        target={{ kind: "host", hostId: file.hostId, path: file.absolutePath }}
+                        location={null}
+                        className="inline-flex min-h-11 items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted"
+                        title={`Open ${file.path}`}
+                      >
+                        <span>📄</span>
+                        <span>{file.display}</span>
+                      </FileLink>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
+            </CardDisclosure>
+
+            {/* DISCLOSURE 2 — Conversation (history + composer) */}
+            <CardDisclosure
+              title="Conversation"
+              hint={detail?.comments.length ? `${detail.comments.length}` : "talk to the agent"}
+              defaultOpen={hero?.kind === "decision"}
+            >
+              <div className="divide-y divide-border">
+                {detail?.comments.length ? detail.comments.map((entry) => (
+                  <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
+                      <span>{new Date(entry.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></p>
+                  </div>
+                )) : <p className="text-xs text-muted-foreground">No comments yet — send the first note to the agent below.</p>}
+              </div>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Write to the agent</span>
+                <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Ask, correct, or add context... (Cmd/Ctrl+Enter to send)" onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && comment.trim()) void submitComment(); }} />
+              </label>
+              <div className="flex justify-end"><Button disabled={!comment.trim()} onClick={() => void submitComment()}>Send to agent</Button></div>
+            </CardDisclosure>
+
+            {/* DISCLOSURE 3 — Manage (preset + danger zone, always collapsed) */}
+            <CardDisclosure
+              title="Manage"
+              hint={`${detail?.card.presetName ?? "default"}${detail?.card.presetOverridden ? " · overridden" : ""}`}
+            >
               <div className="flex flex-wrap items-center gap-2">
                 {card.stage ? (
                   <Pill tone="bg-muted text-muted-foreground">
@@ -2054,28 +2128,16 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     ) : null}
                   </Pill>
                 ) : null}
+                <button onClick={() => setPresetDialogOpen(true)} className="min-h-11 rounded-md px-2 text-xs font-medium text-primary hover:underline">Change preset…</button>
+              </div>
+              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect when the worker (re)starts.</p>
+              <div className="flex flex-wrap items-center gap-4 border-t pt-3">
+                <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
+                <button onClick={() => setArchiveOpen(true)} className="min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
               </div>
             </CardDisclosure>
-
-            <CardSection title="Comments" hint={detail?.comments.length ? `${detail.comments.length}` : undefined}>
-              <div className="divide-y divide-border">
-                {detail?.comments.length ? detail.comments.map((entry) => (
-                  <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
-                      <span>{new Date(entry.createdAt).toLocaleString()}</span>
-                    </div>
-                    <p className="mt-1 text-sm"><Markdown content={entry.body} /></p>
-                  </div>
-                )) : <p className="text-xs text-muted-foreground">No comments yet.</p>}
-              </div>
-              <textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm" placeholder="Send a comment to the agent." />
-              <div className="flex justify-end"><Button disabled={!comment.trim()} onClick={() => void submitComment()}>Send to agent</Button></div>
-            </CardSection>
           </>
         ) : null}
-        <div className="px-4 pb-4">
-          <button onClick={() => setArchiveOpen(true)} className="text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
         </div>
       </div>
       <ConfirmActionDialog
