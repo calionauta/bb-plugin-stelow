@@ -8,6 +8,51 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Added
+
+- **Exploratory workspaces.** "Don't work in a project" now creates an
+  isolated workspace under `~/.bb/stelow/exploratory/<card-id/>` backed by a
+  local "Stelow exploratory work" project, instead of failing on the Personal
+  project. Advance, reseed, preset swap, details, artifacts and intent editing
+  all resolve the exploratory workspace.
+- **Per-card preset override with reset.** The card's Agent preset section has
+  a Change dialog: board default first, user presets, every installed
+  provider's models (with counts and load-failure notes), plus a Custom
+  provider + filterable model combobox. A card override now beats band
+  presets; reset restores the board default and drops the private row.
+  Override rows stay out of preset listings.
+
+### Fixed
+
+- **Exploratory `bb stelow advance`.** The `data/stelow` helper was Git-only;
+  it now accepts `STELOW_STATEDIR`/`STELOW_STATE`, resolves the project root
+  correctly, and honors `STELOW_TRANSITIONS` in pre-condition checks.
+- **Transitions parsing.** Comment markers (`(none — …)`) no longer leak
+  fake stages into the CLI allow-list nor hide real rework targets from the
+  card UI; `reject` targets are listed; the terminal `audit` block parses
+  (the JS `\\Z` anchor was a literal "Z").
+- **Worker stalls after answers.** Answering a card question now sends an
+  explicit continuation turn — responding to the interaction alone never
+  resumed the agent.
+- **Worker errors.** Specific failure causes survive reconcile (the generic
+  fallback is never stored); the kanban attention pill no longer duplicates
+  the activity pill; the broken `W` shortcut and double-click worker open
+  were removed.
+- **Every card starts `unknown`.** The creation intent parameter is always
+  persisted as `unknown` and the worker prompt classifies intent first,
+  writing it to `state.md` before loading any phase skill.
+
+### Changed
+
+- **Worker prompt trimmed.** Intent-first instruction, state dir, advance
+  and ask contracts only — redundant paragraphs removed.
+- **Open card revamp.** Single sticky identity bar (intent control lives
+  there now), micro-caps section scale, de-boxed comments, contextual
+  actions (Resume in the error box, Open thread button in Progress, quiet
+  Archive), tooltips explaining intent/stage, stage shown before intent.
+- **Preset dialog UX.** Custom choice first, option counts, scroll fade
+  affordance, filterable inline model list with free-text fallback.
+
 ### Fixed
 
 - **`stelow advance` / `doctor` after skill renames.** The `data/stelow`
