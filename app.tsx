@@ -1043,10 +1043,6 @@ function BoardCard({ card }: { card: CardItem }) {
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-md bg-muted p-2"><div className="text-[10px] uppercase text-muted-foreground">{label}</div><div className="truncate font-medium">{value}</div></div>;
-}
-
 // Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a
 // chip: passed / current / upcoming. Clicking an allowed target advances or
 // regresses ONE stage — the timeline is the position context AND the advance
@@ -1571,6 +1567,47 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
   );
 }
 
+// Uniform building blocks for the open-card revamp: one heading pattern for
+// visible sections (CardSection) and one disclosure pattern for secondary
+// content (CardDisclosure). Previously every zone — banners, meta grid,
+// timeline, preset, comments — used its own ad-hoc spacing and heading style.
+function CardSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-baseline gap-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CardDisclosure({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <details className="group rounded-md border bg-muted/20">
+      <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="mr-1.5 inline-block text-[10px] text-muted-foreground transition-transform group-open:rotate-90">▶</span>
+        {title}
+        {hint ? <span className="ml-2 text-xs font-normal text-muted-foreground">{hint}</span> : null}
+      </summary>
+      <div className="space-y-2 px-3 pb-3">{children}</div>
+    </details>
+  );
+}
+
+const CARD_STATUS_TONE: Record<string, string> = {
+  "in-progress": "bg-primary/15 text-primary",
+  completed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  blocked: "bg-destructive/15 text-destructive",
+};
+
+const CARD_ACTIVITY_TONE: Record<string, string> = {
+  running: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  "awaiting-answer": "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  error: "bg-destructive/15 text-destructive",
+};
+
 function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
@@ -1664,7 +1701,40 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         {card ? (
           <>
             {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="font-medium">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
-            {card.workspaceKind === "exploratory" ? <section className="rounded-md border border-sky-500/30 bg-sky-500/5 p-3 text-sm"><p className="font-medium">Exploratory work</p><p className="mt-1 text-muted-foreground">Stored locally until you delete it.</p>{card.workspacePath ? <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{card.workspacePath}</p> : null}</section> : null}
+            <header className="space-y-2">
+              <h2 className="text-base font-semibold leading-tight">{card.displayName}</h2>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Pill tone={CARD_STATUS_TONE[card.status] ?? "bg-muted text-muted-foreground"}>{card.status}</Pill>
+                <Pill tone={CARD_ACTIVITY_TONE[card.activity] ?? "bg-muted text-muted-foreground"}>{card.activity === "awaiting-answer" ? "needs answer" : card.activity}</Pill>
+                <Pill>{stageLabel(card.stage)}</Pill>
+                <select
+                  aria-label="Intent"
+                  title="Change intent"
+                  className="h-6 cursor-pointer rounded-full border border-border bg-muted/40 px-2 text-xs font-medium text-foreground hover:bg-muted"
+                  value={card.intent}
+                  onChange={async (event) => {
+                    const nextIntent = event.target.value as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown";
+                    const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent });
+                    if (result.ok) {
+                      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
+                      await load();
+                    } else {
+                      toast.error(result.error ?? "Could not change intent.");
+                    }
+                  }}
+                >
+                  <option value="new-product">New Product</option>
+                  <option value="feature">Feature</option>
+                  <option value="bugfix">Bugfix</option>
+                  <option value="refactor">Refactor</option>
+                  <option value="investigate">Investigate</option>
+                  <option value="unknown">Unknown (agent decides)</option>
+                </select>
+                <span className="text-xs text-muted-foreground">Updated {new Date(card.updatedAt).toLocaleString()}</span>
+              </div>
+              {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally{card.workspacePath ? ` · ${card.workspacePath}` : ""}</p> : null}
+            </header>
+            {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
             <p className="text-sm text-foreground">{card.prompt}</p>
             {pendingFirst && card.activity === "awaiting-answer" ? (
               <section aria-label="Needs your decision" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
@@ -1721,63 +1791,30 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 </div>
               </div>
             ) : null}
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <Meta label="Stage" value={stageLabel(card.stage)} />
-              {card.stage === "select" ? (
-                <p className="col-span-2 text-xs text-muted-foreground">
-                  Stage <strong>select</strong> (<em>Item Selection</em>) invites you to choose which item / group from the
-                  triage inbox to work on. It is <strong>not</strong> asking for the intent type (that is the Intent dropdown
-                  above, already set). Pick the item in the thread; when done the agent advances on its own. Or use
-                  <em> Advance stage</em> below to move on now.
-                </p>
-              ) : null}
-              <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">Intent {card.intent && card.intent !== "unknown" ? `· ${INTENT_LABEL[card.intent] ?? card.intent}` : ""}</span>
-                <select
-                  aria-label="Intent"
-                  title="Change intent"
-                  className="h-7 rounded-md border bg-background px-1.5 text-xs font-medium"
-                  value={card.intent}
-                  onChange={async (event) => {
-                    const nextIntent = event.target.value as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown";
-                    const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent });
-                    if (result.ok) {
-                      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
-                      await load();
-                    } else {
-                      toast.error(result.error ?? "Could not change intent.");
-                    }
-                  }}
-                >
-                  <option value="new-product">New Product</option>
-                  <option value="feature">Feature</option>
-                  <option value="bugfix">Bugfix</option>
-                  <option value="refactor">Refactor</option>
-                  <option value="investigate">Investigate</option>
-                  <option value="unknown">Unknown (agent decides)</option>
-                </select>
-              </div>
-              <Meta label="Updated" value={new Date(card.updatedAt).toLocaleString()} />
-            </div>
-            {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
+            {card.stage === "select" ? (
+              <p className="text-xs text-muted-foreground">
+                Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
+              </p>
+            ) : null}
 
             {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : null}
 
             {detail && card ? (
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold">Workflow</h3>
+              <CardSection title="Progress" hint={stageLabel(card.stage)}>
                 <StageTimeline
                   currentStage={card.stage}
                   nextStages={detail.nextStages}
                   artifacts={detail.artifacts}
                   onPick={(stage) => setPendingAdvance(stage)}
                 />
-              </section>
+              </CardSection>
             ) : null}
 
-            <section className="space-y-1">
-              <h3 className="text-sm font-semibold">Agent preset</h3>
-              <p className="text-xs text-muted-foreground">Presets are configured globally per workflow phase from the board's <strong>Presets</strong> button, not per work item. This work item is in the <strong>{stageLabel(card.stage)}</strong> phase.</p>
+            <CardDisclosure
+              title="Agent preset"
+              hint={card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ${detail?.card.presetName ?? "default"}` : undefined}
+            >
+              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase — configured on the board, not per work item.</p>
               <div className="flex flex-wrap items-center gap-2">
                 {card.stage ? (
                   <Pill tone="bg-muted text-muted-foreground">
@@ -1788,10 +1825,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                   </Pill>
                 ) : null}
               </div>
-            </section>
+            </CardDisclosure>
 
-            <section className="space-y-2">
-              <h3 className="text-sm font-semibold">Comments</h3>
+            <CardSection title="Comments" hint={detail?.comments.length ? `${detail.comments.length}` : undefined}>
               <div className="space-y-2 rounded-md border bg-muted/30 p-2">
                 {detail?.comments.length ? detail.comments.map((entry) => (
                   <div key={entry.id} className="rounded-md border bg-card p-3">
@@ -1805,7 +1841,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               </div>
               <textarea value={comment} onChange={(event) => setComment(event.target.value)} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm" placeholder="Send a comment to the agent." />
               <div className="flex justify-end"><Button disabled={!comment.trim()} onClick={() => void submitComment()}>Send to agent</Button></div>
-            </section>
+            </CardSection>
           </>
         ) : null}
       </div>
