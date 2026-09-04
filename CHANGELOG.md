@@ -10,6 +10,15 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Contextual thread button.** The thread header shows "Stelow work item"
+  only on a card's worker thread (via a new `cardByWorkerThread` lookup)
+  and opens that card directly; other threads show nothing.
+- **Inbox Resolved history.** Auto-resolved items stay visible under a
+  collapsed Resolved section instead of vanishing; resolution is per-kind
+  (resume clears error/paused, answers clear questions).
+- **Manual-stop recovery.** Thread `starting`/`stopping`/`error` statuses
+  map to card activity, opening a card reconciles with the live thread,
+  and an idle worker always offers Resume next to Open thread.
 - **Open-card zone order.** The Manage disclosure (preset, restart,
   archive) now comes collapsed right after What is happening, with
   Conversation closing the page as the final interaction zone.
