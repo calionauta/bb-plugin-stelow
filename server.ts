@@ -219,7 +219,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
@@ -243,6 +243,10 @@ export const rpcContract = defineRpcContract({
     output: z.object({ reseeded: z.boolean(), error: z.string().nullable() }),
   },
   retryWorker: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  restartWorker: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
@@ -1173,7 +1177,7 @@ ${prompt}` }, ...workerAttachments],
 
 Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
-You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. Read your state.md and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already settled in state.md. Pick up exactly where the workflow left off.
+You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. Read your state.md and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already settled in state.md. Pick up exactly where the workflow left off.${row.worker_thread_id ? ` Previous worker thread: ${row.worker_thread_id} (archived, same project). If state.md is thin — e.g. the previous worker stalled silently — its turn history may hold the missing context; retrieve it with \`bb thread output ${row.worker_thread_id}\`.` : ""}
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form:
@@ -1809,7 +1813,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(cardId) },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(cardId), presetId: preset.id, workerPresetId: card.worker_preset_id },
         attachments,
         mentionedFiles,
         scopes,
@@ -1902,6 +1906,28 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       } catch (error) {
         return { ok: false, error: error instanceof Error ? error.message : "Could not reach the worker thread." };
       }
+    },
+
+    async restartWorker({ cardId }) {
+      // Applies a pending preset change (or escapes a broken worker) by
+      // spawning a FRESH worker on the same state dir that CONTINUES from the
+      // current stage — unlike reseed (restarts triage) and retry (same
+      // thread, same model: provider/model are fixed at spawn and can never
+      // change on a live thread). Uses the override-aware effective preset.
+      const card = getCard(cardId);
+      if (!card) return { ok: false, error: "Card not found." };
+      if (card.status === "archived") return { ok: false, error: "This card is archived." };
+      const effective = getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
+      const previousThreadId = card.worker_thread_id;
+      const result = await respawnWorkerForBand(cardId, effective.id);
+      if (result.ok) {
+        // Trail: which preset took over and where the previous worker's
+        // history lives, so the switch is auditable from the card.
+        const presetName = getPresetById(effective.id)?.name ?? effective.id;
+        db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Worker restarted on preset "${presetName}", continuing from the ${card.stage} stage.${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived).` : ""}`, now());
+        bb.realtime.publish("card-state", { cardId });
+      }
+      return { ok: result.ok, error: result.error ?? null };
     },
 
     async reseedCard({ cardId, presetId }) {
