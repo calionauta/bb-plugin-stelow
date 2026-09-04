@@ -238,6 +238,28 @@ do_advance() {
   echo "$allowed" | grep -qx "$candidate" ||
     die "invalid transition '$current' -> '$candidate' (allowed: $(echo "$allowed" | paste -sd, -))"
 
+  # Mode-skipped gates: plan-gate and diff-gate do not exist in modes that
+  # skip them (see Gate Conditions in transitions.md). Entering one parks the
+  # worker waiting for a review nobody configured, so refuse with the
+  # redirect instead of mutating. Unknown/missing review_mode skips enforcement.
+  review_mode=$(yaml_get review_mode "$STATE" 2>/dev/null || true)
+  if [ -n "$review_mode" ]; then
+    case "$candidate" in
+      plan-gate)
+        case "$review_mode" in
+          "Product Spec + Interface + Tech Review"|"Product Spec + Interface + Tech Review + Code Diff") ;;
+          *) die "plan-gate is skipped in '$review_mode' review mode — advance directly to execution instead" ;;
+        esac
+        ;;
+      diff-gate)
+        case "$review_mode" in
+          "Product Spec + Interface + Tech Review + Code Diff") ;;
+          *) die "diff-gate is skipped in '$review_mode' review mode — advance directly to audit instead" ;;
+        esac
+        ;;
+    esac
+  fi
+
   # pre-condition: required artifacts
   python3 - "$current" "$ROOT" "$STATEDIR" "${STELOW_TRANSITIONS:-}" <<'PY' || die "pre-condition check failed"
 import sys, re, os, glob

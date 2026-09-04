@@ -10,6 +10,12 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Advance refuses mode-skipped gates.** `plan-gate`/`diff-gate` in a
+  review mode that skips them now fail with the redirect (to execution /
+  audit) instead of parking the worker on a review nobody configured.
+- **Gate-tool fallback in worker prompts.** When `visual_review` is
+  unavailable, Auto writes the approval receipt and advances; gated
+  modes open a structured ask; chat-parking is forbidden.
 - **Regression tests for ask-cancel and worker lifecycle.** Ask
   cancellation matrix and worker ledger/stall/flag transitions run
   against real SQLite; suite grows from 3 to 5.
