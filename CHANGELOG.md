@@ -10,6 +10,12 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Restart worker applies preset changes.** Provider/model are fixed at
+  spawn, so Resume can never switch them. While the running worker
+  predates the override the hero offers Restart worker (fresh worker on
+  the effective preset, continuing from the current stage), with the
+  previous archived thread referenced for context recovery and trailed on
+  the card.
 - **Reload-safe workers.** The dispose hook that stopped every live worker
   thread is removed — it fired on each hot-reload and massacred in-flight
   work. Workers survive reloads; boot reconcile re-syncs state.
