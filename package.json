@@ -43,11 +43,12 @@
     "build": "bb plugin build && node scripts/postbuild.mjs",
     "reload": "bb plugin reload stelow",
     "build:reload": "npm run build && npm run reload",
-    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:worker-ledger && npm run test:skills-sync",
+    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:worker-ledger && npm run test:skills-sync && npm run test:skills-verify",
     "test:artifacts": "node tests/artifact-manifest.test.mjs",
     "test:ask-cancel": "node tests/ask-cancel.test.mjs",
     "test:worker-ledger": "node tests/worker-ledger.test.mjs",
     "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",
+    "test:skills-verify": "node tests/skills-sync-verify.test.mjs",
     "test:inbox": "node tests/inbox-flows.test.mjs",
     "typecheck": "tsc --noEmit"
   },

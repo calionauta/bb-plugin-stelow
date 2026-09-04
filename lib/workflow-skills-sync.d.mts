@@ -13,4 +13,6 @@ export function syncWorkflowSkills(
   opts?: { log?: (msg: string) => void },
 ): Promise<SyncResult>;
 
+export function gitBlobSha(content: Uint8Array | string): string;
+
 export const WORKFLOW_SKILLS: string[];
