@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Regression tests for ask-cancel and worker lifecycle.** Ask
+  cancellation matrix and worker ledger/stall/flag transitions run
+  against real SQLite; suite grows from 3 to 5.
+- **Honest paused verbs.** The paused hero offers Resume (not Retry) when
+  there is no error, matching the board's attention label.
 - **Mode-gated interface picks in worker prompts.** Spawn and retry
   prompts now state the review-mode discipline (Auto / Product Spec Gate
   → LLM decides; Interface-Gates+ → human picks), matching the new
