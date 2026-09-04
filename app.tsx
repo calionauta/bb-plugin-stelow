@@ -1596,26 +1596,78 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
 function CardSection({ title, hint, action, children }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-center gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
         {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
-        {action ? <span className="ml-auto">{action}</span> : null}
+        {action ? <span className="ml-auto inline-flex">{action}</span> : null}
       </div>
       {children}
     </section>
   );
 }
 
-function CardDisclosure({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function CardDisclosure({ title, hint, action, children }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <details className="group rounded-md border bg-muted/20">
-      <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium marker:hidden [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden [&::-webkit-details-marker]:hidden">
         <span aria-hidden className="mr-1.5 inline-block text-[10px] text-muted-foreground transition-transform group-open:rotate-90">▶</span>
-        {title}
-        {hint ? <span className="ml-2 text-xs font-normal text-muted-foreground">{hint}</span> : null}
+        <span>{title}</span>
+        {hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null}
+        {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
       </summary>
       <div className="space-y-2 px-3 pb-3">{children}</div>
     </details>
+  );
+}
+
+function PresetAssignDialog({ open, onOpenChange, cardId, overridden, onChanged }: { open: boolean; onOpenChange: (next: boolean) => void; cardId: string; overridden: boolean; onChanged: () => void }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; isDefault: boolean }>>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    setSelected(null); setError(null);
+    void rpc.call("listPresets", {}).then((result) => setPresets(result.presets)).catch(() => setPresets([]));
+  }, [open, rpc]);
+  async function apply(presetId: string | null) {
+    setBusy(true); setError(null);
+    try {
+      const result = await rpc.call("assignPreset", { cardId, presetId });
+      if (!result.ok) setError(result.error ?? "Could not change preset.");
+      else { onOpenChange(false); onChanged(); toast.success(presetId ? "Preset overridden for this work item. Takes effect when the worker (re)starts — Resume to apply now." : "Preset reset to default."); }
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Agent preset for this work item</DialogTitle>
+          <DialogDescription className="space-y-2">
+            <p>Override provider and model for this card only — useful when the default hits credit or quota errors. Takes effect when the worker (re)starts.</p>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-64 space-y-1 overflow-auto">
+          {presets.length === 0 ? <p className="text-xs text-muted-foreground">No presets available.</p> : presets.map((preset) => (
+            <label key={preset.id} className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === preset.id ? "border-primary bg-primary/10" : "border-border"}`}>
+              <input type="radio" name="card-preset" checked={selected === preset.id} onChange={() => setSelected(preset.id)} className="accent-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{preset.name}{preset.isDefault ? " · default" : ""}</span>
+                <span className="block truncate font-mono text-[11px] text-muted-foreground">{preset.providerId}/{preset.modelId}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+        <DialogFooter>
+          {overridden ? <Button variant="ghost" disabled={busy} onClick={() => void apply(null)}>Reset to default</Button> : null}
+          <Button disabled={busy || !selected} onClick={() => selected && void apply(selected)}>{busy ? "Applying…" : "Apply override"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1629,6 +1681,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
 
@@ -1720,7 +1773,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 {card.workerThreadId ? (
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => setRepairOpen(true)}>Resume worker</Button>
-                    <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}>Open thread</Button>
                   </div>
                 ) : null}
               </div>
@@ -1798,7 +1850,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               <CardSection
                 title="Progress"
                 hint={stageLabel(card.stage)}
-                action={card.workerThreadId ? <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">Open thread ↗</button> : undefined}
+                action={card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}>Open thread ↗</Button> : undefined}
               >
                 <StageTimeline
                   currentStage={card.stage}
@@ -1811,9 +1863,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
 
             <CardDisclosure
               title="Agent preset"
-              hint={card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ${detail?.card.presetName ?? "default"}` : undefined}
+              hint={card.stage ? `${detail?.card.presetName ?? "default"}${detail?.card.presetOverridden ? " · overridden" : ""}` : undefined}
+              action={<button onClick={() => setPresetDialogOpen(true)} className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">Change</button>}
             >
-              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase — configured on the board, not per work item.</p>
+              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect when the worker (re)starts.</p>
               <div className="flex flex-wrap items-center gap-2">
                 {card.stage ? (
                   <Pill tone="bg-muted text-muted-foreground">
@@ -1855,6 +1908,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         confirmLabel="Repair"
         confirmTone="default"
         onConfirm={doRepair}
+      />
+      <PresetAssignDialog
+        open={presetDialogOpen}
+        onOpenChange={setPresetDialogOpen}
+        cardId={cardId}
+        overridden={detail?.card.presetOverridden ?? false}
+        onChanged={() => void load()}
       />
       {/* Advance preview: never jump stages blindly — show where you are, where
           you'd go, and what the target stage produces before confirming. */}
