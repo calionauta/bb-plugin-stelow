@@ -2311,25 +2311,55 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
         if (cardRow) updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
+        let requestFailed = false;
         const askedAt = Date.now();
         const options = labels.map((label) => ({ label, description: "" }));
         try {
           result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", timeoutMs: Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), payload: { question, multiple: argv.includes("--multiple"), options } }, { signal: ctx.signal });
+        } catch {
+          // The request itself blew up mid-flight (e.g. dispose tore down the
+          // call): same bucket as a transient cancel — never lose the question.
+          requestFailed = true;
+          result = { outcome: "cancelled", reason: "request-aborted" };
         } finally {
           if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
-        }        if (result.outcome === "cancelled" && result.reason === "timeout") {
+        }        // Cancellation without an answer falls into two buckets. Transient
+        // infrastructure reasons (timeout, plugin reload/restart, aborted
+        // request) mean the user simply never answered: persist the question
+        // exactly like a timeout so it stays answerable on the card and the
+        // worker stops to wait. Explicit end states (user dismissed, thread
+        // stopped/deleted) are returned as-is for the worker to interpret.
+        const cancelReason = result.outcome === "cancelled" ? result.reason : null;
+        const transientCancel = requestFailed || (cancelReason !== null && ["timeout", "plugin-disposed", "server-restarted", "request-aborted"].includes(cancelReason));
+        if (transientCancel) {
           // The user never answered within the window. Keep the card in
           // "Gate pending" (awaiting-answer) so it is obvious a decision is
           // still outstanding, and tell the agent to STOP and wait rather
           // than guessing. The answer, when it arrives via the card, is
           // delivered as a comment that resumes the thread.
+          // The persist itself is guarded: a reload landing exactly here
+          // closes the DB under us, and then honesty beats optimism — tell
+          // the worker to re-ask ONCE next turn instead of waiting on a
+          // question that was never recorded.
+          let persisted = false;
           if (cardRow) {
-            db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(randomId("qexp"), cardRow.id, threadId, question, argv.includes("--multiple") ? 1 : 0, JSON.stringify(options), askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), 0);
-            updateCard(cardRow.id, { activity: "awaiting-answer" });
-            bb.realtime.publish("card-state", { cardId: cardRow.id });
+            try {
+              db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(randomId("qexp"), cardRow.id, threadId, question, argv.includes("--multiple") ? 1 : 0, JSON.stringify(options), askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), 0);
+              updateCard(cardRow.id, { activity: "awaiting-answer" });
+              bb.realtime.publish("card-state", { cardId: cardRow.id });
+              persisted = true;
+            } catch { persisted = false; }
           }
           const elapsed = Math.round((Date.now() - askedAt) / 1e3);
-          return { exitCode: 1, stdout: `No response after ${elapsed}s — the user is away. STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (Gate pending) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };
+          if (!persisted) {
+            return { exitCode: 1, stdout: `The question could not be recorded (interrupted storage). STOP and wait: do NOT proceed with the workflow. On your next turn, if no pending question exists on the card, ask it ONCE more via bb stelow ask.` };
+          }
+          const why = requestFailed
+            ? `The question request failed before delivery.`
+            : cancelReason === "timeout"
+              ? `No response after ${elapsed}s — the user is away.`
+              : `The question was interrupted by a ${cancelReason === "plugin-disposed" ? "plugin reload" : cancelReason} after ${elapsed}s — the user never saw it.`;
+          return { exitCode: 1, stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (Gate pending) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };
         }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }
