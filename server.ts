@@ -1235,7 +1235,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       else if (current.activity === "running") resolveInboxEvents(cardId, current.updated_at, ["error", "paused"]);
       if (previous.status !== "completed" && current.status === "completed") recordInboxEvent(current, "completed", "Work completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "error" && current.activity === "error") recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
-      if (previous.activity !== "awaiting-answer" && current.activity === "awaiting-answer") recordInboxEvent(current, "question", "Needs your decision to continue.", `question:${cardId}:${current.updated_at}`, current.updated_at);
+      if (previous.activity !== "awaiting-answer" && current.activity === "awaiting-answer") recordInboxEvent(current, "question", "The agent is waiting for your answer to continue.", `question:${cardId}:${current.updated_at}`, current.updated_at);
     }
     bb.realtime.publish("card-state", { cardId });
   }
@@ -1352,15 +1352,28 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // Backfill last_idle_at on the first poll that observes an already-idle
           // card missing it (legacy cards idled before the column existed), so
           // it starts its own idle-stuck clock instead of falling through.
+          // Suspicious idle: the worker just stopped (running -> idle) yet
+          // produced no new output, no question, and no stage progress. That
+          // is a manual stop or a stall — never a routine between-turn rest,
+          // which always leaves fresh output behind. Skip the grace period so
+          // the card signals paused immediately instead of saying "nothing
+          // needs you" for 90s. Guarded to cards that have worked before, so
+          // a brand-new worker still gets its grace.
+          // A failed output read is "unknown", not "no progress": never backdate
+          // on lastOutput == null or a flaky read would false-positive.
+          const noProgress = transitioningIntoIdle
+            && card.last_assistant_text != null
+            && lastOutput != null
+            && lastOutput === card.last_assistant_text;
           const backfillIdle = transitioningIntoIdle || !card.last_idle_at;
-          const idleAt = backfillIdle ? now() : card.last_idle_at;
+          const idleAt = noProgress ? now() - IDLE_ATTENTION_MS : backfillIdle ? now() : card.last_idle_at;
           updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
           // The Inbox must be driven by lifecycle transitions, never by a UI
           // read. The scheduled sync revisits idle cards after the grace
           // period, producing exactly one durable event per idle period.
           const current = getCard(cardId);
           if (current && current.status !== "archived" && current.status !== "completed" && idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
-            recordInboxEvent(current, "paused", "Work paused and may need a restart.", `paused:${cardId}:${idleAt}`, idleAt);
+            recordInboxEvent(current, "paused", "Idle with unfinished work — retry continues in place, restart begins fresh.", `paused:${cardId}:${idleAt}`, idleAt);
           }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
@@ -1868,7 +1881,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card?.worker_thread_id) return { ok: false, error: "This card has no worker thread." };
       if (card.status === "archived") return { ok: false, error: "This card is archived." };
       try {
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If you were waiting on something, re-check it instead of asking again. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`, mentions: [] }] });
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the current stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`, mentions: [] }] });
         updateCard(cardId, { activity: "running", last_error: null });
         bb.realtime.publish("card-state", { cardId });
         return { ok: true, error: null };

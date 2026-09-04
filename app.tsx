@@ -449,7 +449,7 @@ function InboxPanel() {
           return <div key={entry.id} className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
             <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
               <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${copy.tone}`}>{copy.icon}</span>
-              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{copy.label}. {entry.summary}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(entry.occurredAt).toLocaleString()}>{entry.projectName} · {relativeTime(entry.occurredAt)}</span></span>
+              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{entry.summary.toLowerCase().includes(copy.label.toLowerCase()) ? entry.summary : `${copy.label}. ${entry.summary}`}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(entry.occurredAt).toLocaleString()}>{entry.projectName} · {relativeTime(entry.occurredAt)}</span></span>
             </button>
             <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
           </div>;
@@ -1673,7 +1673,11 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       sub: card.lastError ?? "Something went wrong. Retry continues in place; restart begins fresh.",
     };
   }
-  if (card.activity === "idle" && card.workerThreadId != null && (detail?.card.needsAttention || (detail?.scopes.length ?? 0) > 0)) {
+  // Prominent paused state only when the idle is known-stuck (past the grace
+  // period), never for the routine seconds-long idle between agent turns.
+  // Firing it on every turn would cry wolf and teach the signal to be ignored.
+  // Fresh idles still get the subtle resume row in the calm hero below.
+  if (card.activity === "idle" && card.workerThreadId != null && detail?.card.needsAttention) {
     return {
       kind: "paused",
       title: "Work paused",
@@ -1974,7 +1978,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {card ? (
           <>
-            {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="text-sm font-semibold">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
+            {inboxEventId && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused")) ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="text-sm font-semibold">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
             {/* HERO — one contextual sentence + one primary action (D primary, A type scale) */}
             {hero && heroStyle ? (
               <section aria-label="Card status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
