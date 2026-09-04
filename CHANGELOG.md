@@ -10,6 +10,15 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Reload-safe workers.** The dispose hook that stopped every live worker
+  thread is removed — it fired on each hot-reload and massacred in-flight
+  work. Workers survive reloads; boot reconcile re-syncs state.
+- **Inbox history that persists.** Resolved items render under a Resolved
+  section instead of vanishing; the badge counts unresolved action items
+  only. Silent stops leave an agent comment trail, and repeated stalls
+  escalate the paused hero copy.
+- **Pointer cursors.** Every clickable across Stelow panels uses the hand
+  cursor; disabled controls use not-allowed; text fields keep the I-beam.
 - **Honest card-state signaling.** A worker that stops with no new output,
   question, or stage progress signals paused immediately (no 90s grace);
   the retry nudge tells the worker to ask genuinely new questions instead
