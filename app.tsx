@@ -1172,6 +1172,28 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />
+        <select
+          aria-label="Intent"
+          title="Change intent"
+          value={card.intent}
+          onChange={async (event) => {
+            const nextIntent = event.target.value;
+            const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" });
+            if (result.ok) {
+              toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
+            } else {
+              toast.error(result.error ?? "Could not change intent.");
+            }
+          }}
+          className="h-6 max-w-32 cursor-pointer truncate rounded-full border border-transparent bg-transparent text-xs font-medium text-muted-foreground hover:border-border hover:text-foreground"
+        >
+          <option value="new-product">New Product</option>
+          <option value="feature">Feature</option>
+          <option value="bugfix">Bugfix</option>
+          <option value="refactor">Refactor</option>
+          <option value="investigate">Investigate</option>
+          <option value="unknown">Unknown intent</option>
+        </select>
       </> : null}
       <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
         <span aria-hidden>×</span>
@@ -1239,8 +1261,8 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   const finished = (id: string) => ["done", "completed"].includes(byId.get(id)?.status ?? "");
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-semibold">Scopes ({scopes.length})</h3>
-      {scopes.length > 1 ? <p className="text-[11px] text-muted-foreground">Ordered by dependency. A scope that depends on another appears after it; ⛔ marks one waiting on an unfinished dependency.</p> : null}
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Scopes ({scopes.length})</h3>
+      {scopes.length > 1 ? <p className="text-[11px] text-muted-foreground">Ordered by dependency — ⛔ waits on unfinished work.</p> : null}
       {ordered.map((scope) => {
         const isOpen = openIds.has(scope.id);
         const wait = waitingOn.get(scope.id) ?? [];
@@ -1366,7 +1388,7 @@ function ExpiredQuestionsSection({ cardId, questions }: { cardId: string; questi
   if (remaining.length === 0) return null;
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-semibold">Timed-out questions waiting for your answer</h3>
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">Timed-out questions waiting for your answer</h3>
       {remaining.map((question) => <ExpiredQuestionBanner key={question.id} question={question} onAnswer={(option) => answer(question, option)} answering={answering === question.id} />)}
     </section>
   );
@@ -1571,12 +1593,13 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
 // visible sections (CardSection) and one disclosure pattern for secondary
 // content (CardDisclosure). Previously every zone — banners, meta grid,
 // timeline, preset, comments — used its own ad-hoc spacing and heading style.
-function CardSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function CardSection({ title, hint, action, children }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
       <div className="flex items-baseline gap-2">
-        <h3 className="text-sm font-semibold">{title}</h3>
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
         {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
+        {action ? <span className="ml-auto">{action}</span> : null}
       </div>
       {children}
     </section>
@@ -1595,18 +1618,6 @@ function CardDisclosure({ title, hint, children }: { title: string; hint?: strin
     </details>
   );
 }
-
-const CARD_STATUS_TONE: Record<string, string> = {
-  "in-progress": "bg-primary/15 text-primary",
-  completed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  blocked: "bg-destructive/15 text-destructive",
-};
-
-const CARD_ACTIVITY_TONE: Record<string, string> = {
-  running: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
-  "awaiting-answer": "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  error: "bg-destructive/15 text-destructive",
-};
 
 function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -1701,41 +1712,25 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         {card ? (
           <>
             {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="font-medium">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
-            <header className="space-y-2">
-              <h2 className="text-base font-semibold leading-tight">{card.displayName}</h2>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Pill tone={CARD_STATUS_TONE[card.status] ?? "bg-muted text-muted-foreground"}>{card.status}</Pill>
-                <Pill tone={CARD_ACTIVITY_TONE[card.activity] ?? "bg-muted text-muted-foreground"}>{card.activity === "awaiting-answer" ? "needs answer" : card.activity}</Pill>
-                <Pill>{stageLabel(card.stage)}</Pill>
-                <select
-                  aria-label="Intent"
-                  title="Change intent"
-                  className="h-6 cursor-pointer rounded-full border border-border bg-muted/40 px-2 text-xs font-medium text-foreground hover:bg-muted"
-                  value={card.intent}
-                  onChange={async (event) => {
-                    const nextIntent = event.target.value as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown";
-                    const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent });
-                    if (result.ok) {
-                      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
-                      await load();
-                    } else {
-                      toast.error(result.error ?? "Could not change intent.");
-                    }
-                  }}
-                >
-                  <option value="new-product">New Product</option>
-                  <option value="feature">Feature</option>
-                  <option value="bugfix">Bugfix</option>
-                  <option value="refactor">Refactor</option>
-                  <option value="investigate">Investigate</option>
-                  <option value="unknown">Unknown (agent decides)</option>
-                </select>
-                <span className="text-xs text-muted-foreground">Updated {new Date(card.updatedAt).toLocaleString()}</span>
+            <p className="text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+            {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
+            {card.lastError ? (
+              <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
+                <p className="text-sm text-destructive">{card.lastError}</p>
+                {card.workerThreadId ? (
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => setRepairOpen(true)}>Resume worker</Button>
+                    <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}>Open thread</Button>
+                  </div>
+                ) : null}
               </div>
-              {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally{card.workspacePath ? ` · ${card.workspacePath}` : ""}</p> : null}
-            </header>
-            {card.lastError ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">{card.lastError}</p> : null}
-            <p className="text-sm text-foreground">{card.prompt}</p>
+            ) : null}
+            {showResume && !card.lastError ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Worker idle — nothing pending.</span>
+                <button onClick={() => setRepairOpen(true)} className="font-medium text-primary hover:underline">Resume</button>
+              </div>
+            ) : null}
             {pendingFirst && card.activity === "awaiting-answer" ? (
               <section aria-label="Needs your decision" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
                 <h3 className="text-sm font-semibold">Needs your decision</h3>
@@ -1800,7 +1795,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : null}
 
             {detail && card ? (
-              <CardSection title="Progress" hint={stageLabel(card.stage)}>
+              <CardSection
+                title="Progress"
+                hint={stageLabel(card.stage)}
+                action={card.workerThreadId ? <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">Open thread ↗</button> : undefined}
+              >
                 <StageTimeline
                   currentStage={card.stage}
                   nextStages={detail.nextStages}
@@ -1828,9 +1827,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             </CardDisclosure>
 
             <CardSection title="Comments" hint={detail?.comments.length ? `${detail.comments.length}` : undefined}>
-              <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+              <div className="divide-y divide-border">
                 {detail?.comments.length ? detail.comments.map((entry) => (
-                  <div key={entry.id} className="rounded-md border bg-card p-3">
+                  <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
                       <span>{new Date(entry.createdAt).toLocaleString()}</span>
@@ -1844,16 +1843,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             </CardSection>
           </>
         ) : null}
+        <div className="px-4 pb-4">
+          <button onClick={() => setArchiveOpen(true)} className="text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
+        </div>
       </div>
-      <footer className="flex flex-wrap gap-1 border-t p-3">
-        {card?.workerThreadId ? <Button size="sm" variant="outline" onClick={() => navigate.toThread(card.workerThreadId ?? "")}>Open thread</Button> : null}
-        {showResume ? (
-          <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)}>
-            Resume
-          </Button>
-        ) : null}
-        <Button size="sm" variant="outline" onClick={() => setArchiveOpen(true)}>Archive</Button>
-      </footer>
       <ConfirmActionDialog
         open={repairOpen}
         onOpenChange={setRepairOpen}
