@@ -181,7 +181,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number() })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
@@ -229,7 +229,7 @@ export const rpcContract = defineRpcContract({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
-      scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
+      scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
@@ -631,12 +631,15 @@ function workflowScopes(raw: LooseRecord): Workflow["scopes"] {
       ...(Array.isArray(scope.depends_on) ? { dependsOn: (scope.depends_on as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)) } : {}),
       tasks: array(scope.tasks).map((item, taskIndex) => {
         const task = record(item);
+        const strArray = (value: unknown): string[] | undefined => Array.isArray(value) ? value.map((entry) => typeof entry === "string" ? entry : String(entry)) : undefined;
         return {
           id: text(task.id, `task-${taskIndex + 1}`),
           name: text(task.name, text(task.title, `Task ${taskIndex + 1}`)),
           status: normalizeStatus(task.status),
           ...(typeof task.source === "string" ? { source: task.source } : {}),
           ...(typeof task.note === "string" ? { note: task.note } : {}),
+          ...(strArray(task.blockedBy) ?? strArray(task.blocked_by) ? { blockedBy: strArray(task.blockedBy) ?? strArray(task.blocked_by) } : {}),
+          ...(strArray(task.dependsOn) ?? strArray(task.depends_on) ? { dependsOn: strArray(task.dependsOn) ?? strArray(task.depends_on) } : {}),
         };
       }),
     };
@@ -1709,6 +1712,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const rows = (projectId ? stmt.all(projectId) : stmt.all()) as CardRow[];
       const projectsList = await bb.sdk.projects.list();
       const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
+      // Scope summaries share one workspace read per root: many cards can sit
+      // in the same project, and stelow.json parsing is pure local IO.
+      const scopeCache = new Map<string, { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number }>();
+      const emptySummary = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0 };
+      async function scopeSummary(row: CardRow): Promise<typeof emptySummary> {
+        try {
+          const workspace = await cardWorkspace(row);
+          if (!workspace?.path) return emptySummary;
+          const cached = scopeCache.get(workspace.path);
+          if (cached) return cached;
+          const done = (status: string): boolean => ["done", "completed"].includes(status);
+          const scopes = loadCardScopes(workspace.path, row.name);
+          const summary = {
+            scopesTotal: scopes.length,
+            scopesDone: scopes.filter((scope) => done(scope.status)).length,
+            tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0),
+            tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => done(task.status)).length, 0),
+          };
+          scopeCache.set(workspace.path, summary);
+          return summary;
+        } catch {
+          return emptySummary;
+        }
+      }
       const enriched = await Promise.all(rows.map(async (row) => {
         let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";        if (activity !== "error" && row.worker_thread_id) {
           // A pending stelow ask interaction must surface regardless of whether
@@ -1758,6 +1785,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           presetModelId: preset.model_id,
           updatedAt: row.updated_at,
           stallCount: stallCount(db, row.id),
+          scopeSummary: await scopeSummary(row),
         };
       }));
       return { cards: enriched };

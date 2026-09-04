@@ -960,7 +960,7 @@ function WorkList({ groups, navigate }: { groups: Record<string, CardItem[]>; na
   return <div className="space-y-5">{COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` })} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` })} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
   })}</div>;
 }
 
@@ -1043,6 +1043,7 @@ function BoardCard({ card }: { card: CardItem }) {
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <span className="truncate whitespace-nowrap rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80" title="Workflow stage — where this work stands. Move it from the Progress timeline inside the card.">{stageLabel(card.stage)}</span>
+        {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
         <Pill className="ml-auto whitespace-nowrap" title="Work intent — the kind of work this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
       </div>
       {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
@@ -1320,6 +1321,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
         const wait = waitingOn.get(scope.id) ?? [];
         const blockedNow = wait.length > 0;
         const tasksSorted = [...scope.tasks].sort((a, b) => statusRank(a.status) - statusRank(b.status));
+        const tasksDone = scope.tasks.filter((task) => statusRank(task.status) === 4).length;
         return (
           <details key={scope.id} open={isOpen} onToggle={(event) => { const next = new Set(openIds); if ((event.currentTarget as HTMLDetailsElement).open) next.add(scope.id); else next.delete(scope.id); setOpenIds(next); }} className={`rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
             <summary className="cursor-pointer list-none space-y-1">
@@ -1328,6 +1330,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
                 <span className="font-medium">{scope.name}</span>
                 {scope.type ? <Pill>{scope.type}</Pill> : null}
                 <Pill tone={statusTone(scope.status)}><span className="mr-1">{statusGlyph(scope.status)}</span>{statusLabel(scope.status)}</Pill>
+                {scope.tasks.length > 0 ? <span className="text-[11px] text-muted-foreground" title={`${tasksDone} of ${scope.tasks.length} tasks done`}>{tasksDone}/{scope.tasks.length} tasks</span> : null}
                 {blockedNow ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={wait.join(", ")}>⛔ waiting on {wait.length}</span> : null}
               </div>
               {(scope.blockedBy?.length || scope.dependsOn?.length) ? (
@@ -1349,6 +1352,12 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
                       {task.source ? <Pill>{task.source}</Pill> : null}
                     </div>
                     {task.note ? <div className="text-xs text-muted-foreground">{task.note}</div> : null}
+                    {(task.blockedBy?.length || task.dependsOn?.length) ? (
+                      <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                        {task.dependsOn?.map((dep) => <span key={dep} className="rounded-md border border-dashed px-1.5 py-0.5">after {dep}</span>)}
+                        {task.blockedBy?.map((dep) => <span key={dep} className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5">blocked by {dep}</span>)}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -1683,12 +1692,12 @@ function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, 
   const isMarkdown = file ? /\.mdx?$/i.test(file.display) || /\.mdx?$/i.test(file.path) : false;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle className="truncate">{file?.display ?? "Artifact"}</DialogTitle>
           <DialogDescription>Read-only preview. Discuss below — notes go to the agent.</DialogDescription>
         </DialogHeader>
-        <div className="max-h-[50vh] overflow-auto rounded-md border bg-muted/20 p-3">
+        <div className="max-h-[70vh] overflow-auto rounded-md border bg-muted/20 p-3">
           {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
           {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
           {!loading && !loadError && content !== null ? (
