@@ -17,7 +17,11 @@ and this project adheres to a single-version-per-release tag format
   Covered by a blob-sha unit test; suite grows from 5 to 6.
 
 ### Added
-
+- **Worker lineage in stelow.json.** Per the upstream Worker Lineage
+  contract, spawn/reseed/restart mirror the thread ledger into the
+  workflow's own state (host-readable, survives plugin DB loss). Merges
+  retry on write conflicts instead of clobbering concurrent stage
+  advances; covered by round-trip, preservation, and failure-path tests.
 - **Artifact review surface.** Read-only viewer (Markdown/source render)
   with multi-excerpt draft comments sent to the agent in one organized
   batch, pending gate question inline, and workspace-kind links that open
