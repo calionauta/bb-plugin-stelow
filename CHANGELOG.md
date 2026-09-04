@@ -10,6 +10,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Mode-gated interface picks in worker prompts.** Spawn and retry
+  prompts now state the review-mode discipline (Auto / Product Spec Gate
+  → LLM decides; Interface-Gates+ → human picks), matching the new
+  upstream `human-gates.md` policy that ships via skills sync.
 - **Reload-proof questions.** Transient ask cancellations (timeout,
   plugin reload/restart, aborted request) persist the question and park
   the card in awaiting-answer instead of losing the decision; explicit
