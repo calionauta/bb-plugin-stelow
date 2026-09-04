@@ -1786,9 +1786,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             {inboxEventId ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="font-medium">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
             <p className="text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
             {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
-            {card.lastError ? (
+            {card.activity === "error" ? (
               <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-3">
-                <p className="text-sm text-destructive">{card.lastError}</p>
+                <p className="text-sm text-destructive">{card.lastError ?? "The worker stopped unexpectedly."}</p>
                 {card.workerThreadId ? (
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => setRepairOpen(true)}>Resume worker</Button>

@@ -1321,10 +1321,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
         }
       } else if (status === "failed") {
-        // Preserve a specific error already recorded (e.g. from the
-        // thread.failed event): blindly writing the generic message here
-        // would clobber it on the next reconcile tick.
-        updateCard(cardId, { activity: "error", last_error: card.last_error || "Worker thread failed." });
+        // Mark the failure without touching last_error: a specific cause
+        // already recorded (e.g. from the thread.failed event) must survive,
+        // and a content-free generic message next to the Failed pill reads
+        // as duplication, so none is ever written here.
+        updateCard(cardId, { activity: "error" });
       }
     } catch (error) {
       updateCard(cardId, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -1341,7 +1342,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   });
   bb.events.on("thread.failed", ({ thread, error }) => {
     const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(thread.id) as { id: string } | undefined;
-    if (row) updateCard(row.id, { activity: "error", last_error: error ?? "Worker thread failed." });
+    if (!row) return;
+    // Only a specific cause is worth storing. A null/empty event error means
+    // "failed for unknown reasons" — the activity pill already says Failed,
+    // so writing a generic sentence would duplicate it on every surface.
+    if (error) updateCard(row.id, { activity: "error", last_error: error });
+    else updateCard(row.id, { activity: "error" });
   });
   // Reconcile card states with their worker threads after reloads (events only fire on transitions).
   const liveCards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
