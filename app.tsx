@@ -1686,7 +1686,9 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       title: "Work paused",
       sub: stalls >= 3
         ? `Stalled ${stalls} times in ${stageLabel(card.stage)} with no progress — inspect the thread before retrying, or restart fresh.`
-        : "The worker is idle with unfinished work. Retry continues in place; restart begins fresh from triage.",
+        : card.lastError
+          ? "The worker failed with unfinished work. Retry continues in place; restart begins fresh from triage."
+          : "The worker is idle with unfinished work. Resume continues in place; restart begins fresh from triage.",
     };
   }
   if (card.activity === "running") {
@@ -2037,7 +2039,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
                           ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
+                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title={card.lastError ? "Retry the failed worker in place from the current stage — nothing is reset." : "Resume the idle worker in place from the current stage — nothing is reset."}>{retrying ? "Retrying…" : card.lastError ? "Retry" : "Resume"}</Button>
                           )}
                           {card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button> : null}
                         </>
