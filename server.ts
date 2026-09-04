@@ -206,6 +206,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
     output: z.object({ notification: z.object({ id: z.string(), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number() }).nullable() }),
   },
+  readCardFile: {
+    input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
+    output: z.object({ content: z.string().nullable(), truncated: z.boolean(), error: z.string().nullable() }),
+  },
   boardWorkflowDefaults: {
     input: z.object({}).strict(),
     output: boardWorkflowDefaultsSchema,
@@ -222,14 +226,18 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
-      attachments: z.array(attachmentSchema.extend({ display: z.string() })),
-      mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
+      attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable() })),
+      mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable() })),
+      // Environment of the worker thread: enables workspace-kind file links
+      // (the official viewer with comments). Host-kind links fail for
+      // exploratory workspaces, which live outside provisioned environments.
+      fileEnvironmentId: z.string().nullable(),
       nextStages: z.array(z.string()),
     }),
   },
@@ -1779,6 +1787,27 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at } : null };
     },
 
+    async readCardFile({ cardId, path }) {
+      // Read-only artifact viewer backing: resolve strictly inside the card
+      // workspace (never absolute escapes), cap output, refuse binaries.
+      const card = getCard(cardId);
+      if (!card) return { content: null, truncated: false, error: "Card not found." };
+      const workspace = await cardWorkspace(card);
+      if (!workspace?.path) return { content: null, truncated: false, error: "Workspace is unavailable." };
+      const full = resolveArtifactPath(workspace.path, path)
+        ?? (isAbsolute(path) && !path.split(/[\\/]+/).some((segment) => segment === "..") && relative(workspace.path, resolve(path)).split(/[\\/]+/)[0] !== ".." ? resolve(path) : null);
+      if (!full) return { content: null, truncated: false, error: "Path escapes the workspace." };
+      try {
+        const file = await bb.sdk.files.read({ path: full });
+        const text = typeof file.content === "string" ? file.content : null;
+        if (text === null || text.includes("\0")) return { content: null, truncated: false, error: "Not a readable text file." };
+        const LIMIT = 200_000;
+        return { content: text.slice(0, LIMIT), truncated: text.length > LIMIT, error: null };
+      } catch {
+        return { content: null, truncated: false, error: "Could not read the file." };
+      }
+    },
+
     async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId }) {
       return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId });
     },
@@ -1803,11 +1832,24 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (card.workspace_kind === "project") {
         try { projectName = (await bb.sdk.projects.get({ projectId: card.project_id })).name; } catch { /* project removed; keep card viewable */ }
       }
-      const mentionedFiles = (await detectMentionedFiles(bb, sourcePath, card.prompt)).flatMap((file) => sourceHostId ? [{ ...file, hostId: sourceHostId }] : []);
-      const attachments = cardAttachments(card.attachments).map((attachment) => ({
-        ...attachment,
-        display: workspaceRelative(sourcePath ?? "", attachment.path) ?? basename(attachment.path),
-      }));
+      const mentionedFiles = (await detectMentionedFiles(bb, sourcePath, card.prompt)).flatMap((file) => sourceHostId ? [{ ...file, hostId: sourceHostId, relPath: sourcePath ? workspaceRelative(sourcePath, file.absolutePath) ?? (isAbsolute(file.path) ? null : file.path) : null }] : []);
+      const attachments = cardAttachments(card.attachments).map((attachment) => {
+        const absolute = sourcePath ? (isAbsolute(attachment.path) ? attachment.path : join(sourcePath, attachment.path)) : attachment.path;
+        return {
+          ...attachment,
+          display: workspaceRelative(sourcePath ?? "", attachment.path) ?? basename(attachment.path),
+          relPath: sourcePath ? workspaceRelative(sourcePath, absolute) : null,
+        };
+      });
+      // Environment backing the worker thread's worktree. Workspace-kind file
+      // links resolve against it (verified via thread-open); host-kind links
+      // cannot resolve exploratory paths, which sit outside environments.
+      const fileEnvironmentId = card.worker_thread_id
+        ? await bb.sdk.threads.get({ threadId: card.worker_thread_id }).then((thread) => {
+          const environmentId = (thread as { environmentId?: unknown }).environmentId;
+          return typeof environmentId === "string" && environmentId ? environmentId : null;
+        }).catch(() => null)
+        : null;
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.name);
       const preset = getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
@@ -1864,6 +1906,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         expiredQuestions,
         artifacts,
         workerHistory,
+        fileEnvironmentId,
         nextStages,
       };
     },

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Markdown,
+  experimental_SourceCode as SourceCode,
   definePluginApp,
   UrlLink,
   experimental_FileLink as FileLink,
@@ -1060,7 +1061,19 @@ function BoardCard({ card }: { card: CardItem }) {
 // chip: passed / current / upcoming. Clicking an allowed target advances or
 // regresses ONE stage — the timeline is the position context AND the advance
 // control, so the user always sees where the card is and what it can move to.
-function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>; onPick: (stage: string) => void }) {
+type WorkspaceFileTarget = { kind: "workspace"; environmentId: string; path: string };
+type HostFileTarget = { kind: "host"; hostId: string; path: string };
+
+// Workspace-kind links open in bb's official file viewer (with comments).
+// Host-kind links cannot resolve exploratory paths, which live outside
+// provisioned environments — so exploratory cards use the worker thread's
+// environment + worktree-relative path, everything else keeps host links.
+function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, relPath: string | null, hostId: string, absolutePath: string): WorkspaceFileTarget | HostFileTarget {
+  if (useWorkspace && environmentId && relPath) return { kind: "workspace", environmentId, path: relPath };
+  return { kind: "host", hostId, path: absolutePath };
+}
+
+function StageTimeline({ currentStage, nextStages, artifacts, fileEnvironmentId, useWorkspaceLinks, onViewFile, onPick }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>; fileEnvironmentId: string | null; useWorkspaceLinks: boolean; onViewFile: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void; onPick: (stage: string) => void }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   const current = curIdx >= 0 ? curIdx : 0;
   const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
@@ -1115,15 +1128,14 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { curren
                         {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
                     </button>
                     {produced.map((artifact) => (
-                      <FileLink
+                      <button
                         key={artifact.path}
-                        target={{ kind: "host", hostId: artifact.hostId, path: artifact.absolutePath }}
-                        location={null}
-                        className="inline-flex max-w-36 items-center truncate rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-                        title={`${stageLabel(stage)} · ${artifact.kind}`}
+                        onClick={() => onViewFile({ display: artifact.display, path: artifact.absolutePath, target: fileLinkTarget(useWorkspaceLinks, fileEnvironmentId, artifact.path, artifact.hostId, artifact.absolutePath) })}
+                        className="inline-flex max-w-36 cursor-pointer items-center truncate rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                        title={`Review ${artifact.display} — ${stageLabel(stage)} · ${artifact.kind}`}
                       >
                         {artifact.display}
-                      </FileLink>
+                      </button>
                     ))}
                   </div>
                 );
@@ -1608,8 +1620,120 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   );
 }
 
-function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLabel, confirmTone, onConfirm }: { open: boolean; onOpenChange: (next: boolean) => void; title: string; description: string; confirmLabel: string; confirmTone?: "destructive" | "default"; onConfirm: () => void | Promise<void> }) {
-  const [pending, setPending] = useState(false);
+// Read-only artifact viewer with discuss-to-agent: Markdown for prose,
+// source renderer for code, plus a comment box that posts to the card
+// (card comments route to the worker). The bb editor stays one click away
+// for edits, but review never needs it.
+function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, pendingQuestion, onQuestionAnswered, onCommented }: {
+  open: boolean; onOpenChange: (next: boolean) => void; cardId: string;
+  file: { display: string; path: string } | null;
+  editorTarget: WorkspaceFileTarget | HostFileTarget | null;
+  pendingQuestion: CardQuestion | null;
+  onQuestionAnswered: () => void;
+  onCommented: () => void;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [content, setContent] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [drafts, setDrafts] = useState<Array<{ id: number; quote: string; comment: string }>>([]);
+  const [sending, setSending] = useState(false);
+  const nextDraftId = useRef(1);
+  function quoteSelection() {
+    const text = typeof window !== "undefined" ? window.getSelection()?.toString().trim() ?? "" : "";
+    if (!text) {
+      toast.message("Select a passage in the preview first, then quote it.");
+      return;
+    }
+    const id = nextDraftId.current++;
+    setDrafts((current) => [...current, { id, quote: text.slice(0, 2000), comment: "" }]);
+  }
+  function removeDraft(id: number) {
+    setDrafts((current) => current.filter((draft) => draft.id !== id));
+  }
+  useEffect(() => {
+    if (!open || !file) return;
+    setContent(null); setTruncated(false); setLoadError(null); setDrafts([]);
+    setLoading(true);
+    let cancelled = false;
+    void rpc.call("readCardFile", { cardId, path: file.path }).then((result) => {
+      if (cancelled) return;
+      if (result.error) setLoadError(result.error);
+      else { setContent(result.content); setTruncated(result.truncated); }
+    }).catch((err) => { if (!cancelled) setLoadError(err instanceof Error ? err.message : "Could not load the file."); }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, file, cardId, rpc]);
+  async function sendAll() {
+    if (drafts.length === 0 || !file) return;
+    setSending(true);
+    try {
+      const body = [`Re ${file.display}:`, ...drafts.map((draft, index) => {
+        const quoted = draft.quote.split("\n").map((line) => `> ${line}`).join("\n");
+        const note = draft.comment.trim() || "(no note — for context)";
+        return `#### Excerpt ${index + 1}\n${quoted}\n\n${note}`;
+      })].join("\n\n");
+      const result = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body });
+      if (result.error) toast.error(result.error);
+      else { setDrafts([]); toast.success(drafts.length === 1 ? "Comment sent to the agent." : `${drafts.length} comments sent to the agent.`); onCommented(); }
+    } finally {
+      setSending(false);
+    }
+  }
+  const isMarkdown = file ? /\.mdx?$/i.test(file.display) || /\.mdx?$/i.test(file.path) : false;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="truncate">{file?.display ?? "Artifact"}</DialogTitle>
+          <DialogDescription>Read-only preview. Discuss below — notes go to the agent.</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[50vh] overflow-auto rounded-md border bg-muted/20 p-3">
+          {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
+          {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
+          {!loading && !loadError && content !== null ? (
+            isMarkdown ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div> : <SourceCode content={content} path={file?.display ?? "file.txt"} />
+          ) : null}
+          {truncated ? <p className="mt-2 text-xs text-muted-foreground">Truncated preview — open in the editor for the full file.</p> : null}
+        </div>
+        {pendingQuestion ? (
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-muted-foreground">Decide without leaving — answering resumes the agent</span>
+            <AwaitingAnswerBanner cardId={cardId} question={pendingQuestion} onAnswered={onQuestionAnswered} />
+          </div>
+        ) : null}
+        <div className="space-y-2">
+          <span className="flex min-h-11 items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
+            <span>Discuss excerpts with the agent{drafts.length ? ` (${drafts.length})` : ""}</span>
+            <button onClick={quoteSelection} className="cursor-pointer rounded-md border px-2 py-1 text-xs hover:bg-muted" title="Quote the passage currently selected in the preview above as a new draft">Quote selection</button>
+          </span>
+          {drafts.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Select passages above and quote each one, then send them together.</p>
+          ) : null}
+          {drafts.map((draft, index) => (
+            <div key={draft.id} className="space-y-1 rounded-md border bg-muted/20 p-2">
+              <div className="flex items-start gap-2">
+                <span className="text-xs font-semibold text-muted-foreground">#{index + 1}</span>
+                <blockquote className="min-w-0 flex-1 border-l-2 border-primary/50 pl-2 text-xs text-muted-foreground">{draft.quote.length > 300 ? `${draft.quote.slice(0, 300)}…` : draft.quote}</blockquote>
+                <button onClick={() => removeDraft(draft.id)} aria-label={`Remove excerpt ${index + 1}`} className="cursor-pointer rounded px-1 text-muted-foreground hover:text-foreground">×</button>
+              </div>
+              <textarea value={draft.comment} onChange={(event) => setDrafts((current) => current.map((entry) => entry.id === draft.id ? { ...entry, comment: event.target.value } : entry))} rows={2} className="min-h-16 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder={`Comment on excerpt ${index + 1}… (Cmd/Ctrl+Enter sends all)`} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && drafts.length > 0) void sendAll(); }} />
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          {editorTarget ? (
+            <FileLink target={editorTarget} location={null} className="mr-auto inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 text-xs font-medium text-primary hover:underline">Open in bb editor ↗</FileLink>
+          ) : null}
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button disabled={drafts.length === 0 || sending} onClick={() => void sendAll()}>{sending ? "Sending…" : drafts.length > 1 ? `Send ${drafts.length} to agent` : "Send to agent"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLabel, confirmTone, onConfirm }: { open: boolean; onOpenChange: (next: boolean) => void; title: string; description: string; confirmLabel: string; confirmTone?: "destructive" | "default"; onConfirm: () => void | Promise<void> }) {  const [pending, setPending] = useState(false);
   useEffect(() => { if (!open) setPending(false); }, [open]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1888,6 +2012,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [retrying, setRetrying] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
 
@@ -1998,6 +2123,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const scopeDone = detail?.scopes.filter((s) => ["done", "completed"].includes(s.status ?? "")).length ?? 0;
   const scopeTotal = detail?.scopes.length ?? 0;
   const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
+  // Gate review entry: the artifact the pending decision is about. Gate
+  // reviews the shaped spec, int-gate/selection the interface proposals,
+  // plan-gate the tech plan. Falls back to the newest artifact, if any.
+  const GATE_ARTIFACT_STAGE: Record<string, string> = { gate: "shape", "int-gate": "interface", selection: "interface", "plan-gate": "planning" };
+  const reviewArtifact = detail && card && (hero?.kind === "decision" || detail.pendingQuestions.length > 0)
+    ? detail.artifacts.find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts[detail.artifacts.length - 1] ?? null
+    : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -2022,6 +2154,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                         body text. */}
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
+                      {hero.kind === "decision" && reviewArtifact ? (
+                        <span className="w-full">
+                          <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewArtifact.display, path: reviewArtifact.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewArtifact.path, reviewArtifact.hostId, reviewArtifact.absolutePath) })} title={`Read ${reviewArtifact.display} before deciding`}>Review artifact ↗</Button>
+                        </span>
+                      ) : null}
                       {hero.kind === "error" && card.workerThreadId ? (
                         <>
                           {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
@@ -2099,18 +2236,33 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     currentStage={card.stage}
                     nextStages={detail.nextStages}
                     artifacts={detail.artifacts}
+                    fileEnvironmentId={detail.fileEnvironmentId}
+                    useWorkspaceLinks={card.workspaceKind === "exploratory"}
+                    onViewFile={(file) => setViewerFile(file)}
                     onPick={(stage) => setPendingAdvance(stage)}
                   />
                 </div>
               ) : null}
               {detail?.attachments && detail.attachments.length > 0 ? (
                 <div className="space-y-1 border-t pt-3">
-                  <span className="text-xs font-medium text-muted-foreground">Attachments ({detail.attachments.length}) — open in worker thread:</span>
+                  <span className="text-xs font-medium text-muted-foreground">Attachments ({detail.attachments.length}):</span>
                   <div className="flex flex-wrap gap-1">
-                    {detail.attachments.map((attachment) => (
-                      <button
-                        key={`${attachment.type}:${attachment.path}`}
-                        onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}
+                    {detail.attachments.map((attachment) => {
+                      const canPreview = card.workspaceKind === "exploratory" && detail.fileEnvironmentId && attachment.relPath;
+                      return canPreview ? (
+                        <button
+                          key={`${attachment.type}:${attachment.path}`}
+                          onClick={() => setViewerFile({ display: attachment.display, path: attachment.relPath ?? attachment.path, target: fileLinkTarget(true, detail.fileEnvironmentId, attachment.relPath, "", "") })}
+                          className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20"
+                          title={`Review ${attachment.display}`}
+                        >
+                          <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
+                          <span>{attachment.display}</span>
+                        </button>
+                      ) : (
+                        <button
+                          key={`${attachment.type}:${attachment.path}`}
+                          onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}
                         disabled={!card.workerThreadId}
                         className="disabled:cursor-not-allowed cursor-pointer inline-flex min-h-11 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20 disabled:opacity-50"
                         title="Open the worker thread; BB renders this original attachment there."
@@ -2118,7 +2270,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                         <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
                         <span>{attachment.display}</span>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
@@ -2127,16 +2280,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                   <span className="text-xs font-medium text-muted-foreground">Mentioned files ({detail.mentionedFiles.length}):</span>
                   <div className="flex flex-wrap gap-1">
                     {detail.mentionedFiles.map((file) => (
-                      <FileLink
+                      <button
                         key={file.path}
-                        target={{ kind: "host", hostId: file.hostId, path: file.absolutePath }}
-                        location={null}
-                        className="inline-flex min-h-11 items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted"
-                        title={`Open ${file.path}`}
+                        onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail.fileEnvironmentId, file.relPath, file.hostId, file.absolutePath) })}
+                        className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted"
+                        title={`Review ${file.display}`}
                       >
                         <span>📄</span>
                         <span>{file.display}</span>
-                      </FileLink>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -2241,6 +2393,16 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         onOpenChange={setPresetDialogOpen}
         cardId={cardId}
         onChanged={() => void load()}
+      />
+      <ArtifactViewerDialog
+        open={viewerFile !== null}
+        onOpenChange={(next) => { if (!next) setViewerFile(null); }}
+        cardId={cardId}
+        file={viewerFile}
+        editorTarget={viewerFile?.target ?? null}
+        pendingQuestion={pendingFirst}
+        onQuestionAnswered={() => { setViewerFile(null); void load(); }}
+        onCommented={() => void load()}
       />
       {/* Advance preview: never jump stages blindly — show where you are, where
           you'd go, and what the target stage produces before confirming. */}
