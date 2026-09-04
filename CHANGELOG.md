@@ -10,6 +10,17 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Open-card redesign (contextual hero + progressive disclosure).** The
+  open card now leads with a single hero derived from card state
+  (decision > error > paused > working > calm) — one sentence plus one
+  primary action — instead of competing error/paused/decision banners.
+  Everything else collapses into three disclosures (What is happening /
+  Conversation / Manage) with a fixed type scale, left-aligned
+  single-column layout, and larger touch targets.
+- **Intent correction after triage notifies the worker.** Changing a
+  card's intent past triage asks for confirmation (appetite and the stage
+  path are not recomputed) and sends the correction straight to the
+  worker thread; a failed notify falls back to Retry guidance.
 - **Exploratory workspaces.** "Don't work in a project" now creates an
   isolated workspace under `~/.bb/stelow/exploratory/<card-id/>` backed by a
   local "Stelow exploratory work" project, instead of failing on the Personal
