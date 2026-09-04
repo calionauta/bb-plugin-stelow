@@ -1069,10 +1069,16 @@ ${prompt}` }, ...workerAttachments],
     return preset ?? getDefaultPreset();
   }
 
-  // Resolve the worker preset for a stage band. A configured band preset
-  // overrides the card's preset; otherwise fall back to the card preset so
-  // existing cards (with no band preset) behave exactly as before.
+  // Resolve the worker preset for a stage band. An explicit per-card override
+  // (set in the card's Agent preset section, e.g. to escape a quota error)
+  // wins over the band policy: explicit + later beats phase default. Without
+  // an override, a configured band preset applies, else the card/board default.
   function getPresetForBand(band: string, cardId: string): PresetRow {
+    const override = db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined;
+    if (override) {
+      const pinned = getPresetById(override.preset_id);
+      if (pinned) return pinned;
+    }
     const row = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(band) as { preset_id: string } | undefined;
     if (!row) return getPresetForCard(cardId);
     const preset = getPresetById(row.preset_id);
@@ -1315,7 +1321,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
         }
       } else if (status === "failed") {
-        updateCard(cardId, { activity: "error", last_error: "Worker thread failed." });
+        // Preserve a specific error already recorded (e.g. from the
+        // thread.failed event): blindly writing the generic message here
+        // would clobber it on the next reconcile tick.
+        updateCard(cardId, { activity: "error", last_error: card.last_error || "Worker thread failed." });
       }
     } catch (error) {
       updateCard(cardId, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });

@@ -1105,7 +1105,6 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { curren
           </div>
         );
       })}
-      <p className="text-[11px] text-muted-foreground">→ advance one step at a time (gates apply); ← go back any number of steps. The agent usually advances on its own.</p>
     </div>
   );
 }
@@ -1869,7 +1868,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             {detail && card ? (
               <CardSection
                 title="Progress"
-                hint={stageLabel(card.stage)}
+                hint="Agent advances alone · click a lit stage to override"
                 action={card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}>Open thread ↗</Button> : undefined}
               >
                 <StageTimeline
