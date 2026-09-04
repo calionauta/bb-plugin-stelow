@@ -10,6 +10,14 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Worker ledger.** Every worker thread per card is recorded (initial,
+  band-swap, restart, reseed) with preset and reason; a Worker history
+  section in Manage opens current and archived threads.
+- **Robust preset staleness.** An explicit restart-pending flag (set on
+  assign, self-healed by thread-birth comparison) replaces id-equality
+  inference; fresh cards no longer get a pseudo-override row.
+- **Official thread mention.** Respawned workers reference the archived
+  predecessor with a native mention chip, not just copied text.
 - **Restart worker applies preset changes.** Provider/model are fixed at
   spawn, so Resume can never switch them. While the running worker
   predates the override the hero offers Restart worker (fresh worker on
