@@ -235,6 +235,31 @@ do_advance() {
   local intent allowed
   intent=$(yaml_get intent "$STATE" 2>/dev/null || echo "unknown")
   allowed=$(allowed_candidates_for_stage "$current" "$intent") || die "no transition defined from stage '$current'"
+  # Mode-skipped passthroughs: when a gate/stage does not exist in the active
+  # review mode, its successor becomes a legal target directly — otherwise the
+  # worker deadlocks (refused AT the gate by the block below, rejected PAST it
+  # here). Unknown/missing review_mode (or appetite) skips enforcement.
+  review_mode=$(yaml_get review_mode "$STATE" 2>/dev/null || true)
+  appetite=$(yaml_get appetite "$STATE" 2>/dev/null || true)
+  if [ -n "$review_mode" ]; then
+    case "$current" in
+      planning)
+        case "$review_mode" in
+          "Product Spec + Interface + Tech Review"|"Product Spec + Interface + Tech Review + Code Diff") ;;
+          *) allowed=$(printf "%s\nexecution" "$allowed") ;;
+        esac
+        ;;
+      verification)
+        case "$review_mode" in
+          "Product Spec + Interface + Tech Review + Code Diff") ;;
+          *) allowed=$(printf "%s\naudit" "$allowed") ;;
+        esac
+        ;;
+      setup)
+        if [ "$appetite" = "Lean" ] && [ "$review_mode" = "Auto" ]; then allowed=$(printf "%s\nshape" "$allowed"); fi
+        ;;
+    esac
+  fi
   echo "$allowed" | grep -qx "$candidate" ||
     die "invalid transition '$current' -> '$candidate' (allowed: $(echo "$allowed" | paste -sd, -))"
 
