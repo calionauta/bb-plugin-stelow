@@ -178,7 +178,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number() })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number() })) }),
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
@@ -219,7 +219,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional() })) })),
@@ -1213,6 +1213,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
   }
 
+  function stallCount(cardId: string): number {
+    // How many times this card worker has stalled (paused events, resolved
+    // or not). Drives escalation copy after repeated silent stops.
+    try {
+      return (db.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND kind = 'paused'").get(cardId) as { count: number }).count;
+    } catch { return 0; }
+  }
+
   function getCard(cardId: string): CardRow | undefined {
     return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
   }
@@ -1367,6 +1375,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             && lastOutput === card.last_assistant_text;
           const backfillIdle = transitioningIntoIdle || !card.last_idle_at;
           const idleAt = noProgress ? now() - IDLE_ATTENTION_MS : backfillIdle ? now() : card.last_idle_at;
+          if (noProgress) {
+            // Once per idle period (transition edge only): leave a trail so
+            // repeated silent stops are visible in Conversation, not just as
+            // identical paused banners.
+            db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", "Worker stopped with no new output — treated as paused. If this repeats, inspect the thread before retrying: a silent stop usually means the worker is waiting on input it never asked for.", now());
+          }
           updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
           // The Inbox must be driven by lifecycle transitions, never by a UI
           // read. The scheduled sync revisits idle cards after the grace
@@ -1450,12 +1464,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
   });
 
-  bb.onDispose(async () => {
-    const rows = db.prepare("SELECT id, worker_thread_id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string; worker_thread_id: string }>;
-    for (const row of rows) {
-      try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
-    }
-  });
+  // NOTE: a previous revision stopped every live worker thread here. Removed:
+  // dispose fires on every hot-reload (dev + build:reload), so it massacred
+  // in-flight work with a "Stopped manually" on each update. Workers now
+  // survive reloads; boot reconcile re-syncs their state, and a truly dead
+  // plugin surfaces as an honest worker error on the next bb stelow call.
 
   bb.rpc.register(rpcContract, {
     board: async ({ projectId }) => {
@@ -1679,6 +1692,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           presetProviderId: preset.provider_id,
           presetModelId: preset.model_id,
           updatedAt: row.updated_at,
+          stallCount: stallCount(row.id),
         };
       }));
       return { cards: enriched };
@@ -1795,7 +1809,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(cardId) },
         attachments,
         mentionedFiles,
         scopes,

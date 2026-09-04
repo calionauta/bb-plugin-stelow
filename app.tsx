@@ -345,7 +345,9 @@ function useInboxAccessory(): SidebarAccessoryHandle {
   const reload = useCallback(async () => {
     try {
       const result = await rpc.call("listNotifications", { includeArchived: false });
-      setCount(result.notifications.filter((entry) => entry.kind !== "completed").length);
+      // Badge = work genuinely awaiting the user. Resolved history and
+      // completions must never inflate it, or the count loses credibility.
+      setCount(result.notifications.filter((entry) => entry.archivedAt === null && entry.resolvedAt === null && entry.kind !== "completed").length);
     } catch {
       /* host will show stale silently */
     }
@@ -451,14 +453,14 @@ function InboxPanel() {
               <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${copy.tone}`}>{copy.icon}</span>
               <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{entry.summary.toLowerCase().includes(copy.label.toLowerCase()) ? entry.summary : `${copy.label}. ${entry.summary}`}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(entry.occurredAt).toLocaleString()}>{entry.projectName} · {relativeTime(entry.occurredAt)}</span></span>
             </button>
-            <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
+            <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
           </div>;
         })}
       </div>
     </section>
   );
   const archived = notifications.filter((entry) => entry.archivedAt !== null);
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.</p></div><button onClick={() => setShowArchived((value) => !value)} className="min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{loading ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : loadError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{loading ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : loadError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
 function BoardPanel({ subPath }: { subPath: string }) {
@@ -1678,10 +1680,13 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
   // Firing it on every turn would cry wolf and teach the signal to be ignored.
   // Fresh idles still get the subtle resume row in the calm hero below.
   if (card.activity === "idle" && card.workerThreadId != null && detail?.card.needsAttention) {
+    const stalls = detail?.card.stallCount ?? 0;
     return {
       kind: "paused",
       title: "Work paused",
-      sub: "The worker is idle with unfinished work. Retry continues in place; restart begins fresh from triage.",
+      sub: stalls >= 3
+        ? `Stalled ${stalls} times in ${stageLabel(card.stage)} with no progress — inspect the thread before retrying, or restart fresh.`
+        : "The worker is idle with unfinished work. Retry continues in place; restart begins fresh from triage.",
     };
   }
   if (card.activity === "running") {
@@ -1989,32 +1994,34 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
                     {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
-                    {/* Single primary action per state — no competing CTAs */}
-                    <div className="flex min-h-11 flex-wrap items-center gap-2 pt-2">
-                      {hero.kind === "decision" && pendingFirst ? <span className="text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
+                    {/* One primary action per state; secondary actions are real
+                        buttons (outline/ghost) so affordances never read as
+                        body text. */}
+                    <div className="flex flex-wrap items-center gap-2 pt-3">
+                      {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "error" && card.workerThreadId ? (
                         <>
                           <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
-                          <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                          <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened." className="min-h-11 rounded-md px-2 text-sm font-medium text-primary hover:underline">Open thread ↗</button>
+                          <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
                         </>
                       ) : null}
                       {hero.kind === "paused" ? (
                         <>
                           <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
-                          <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="min-h-11 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                          {card.workerThreadId ? <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened." className="min-h-11 rounded-md px-2 text-sm font-medium text-primary hover:underline">Open thread ↗</button> : null}
+                          {card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button> : null}
+                          <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
                         </>
                       ) : null}
-                      {hero.kind === "working" || hero.kind === "calm" ? (
-                        card.workerThreadId ? <button onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread. Keyboard: T." className="min-h-11 rounded-md px-2 text-sm font-medium text-primary hover:underline">Open thread ↗</button> : null
+                      {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
+                        card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread.">Open thread ↗</Button> : null
                       ) : null}
                       {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
-                        <span className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span>Worker idle.</span>
-                          <button disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset." className="font-medium text-primary hover:underline disabled:opacity-50">{retrying ? "Retrying…" : "Resume"}</button>
-                          <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="hover:text-foreground hover:underline">Restart fresh…</button>
-                        </span>
+                        <>
+                          <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
+                          <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread.">Open thread ↗</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
+                        </>
                       ) : null}
                     </div>
                   </div>
@@ -2278,7 +2285,7 @@ function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: Plug
     <button
       onClick={openFile}
       disabled={!openWorkspaceFile}
-      className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+      className="cursor-pointer inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
       title={path}
     >
       <span>📎</span>

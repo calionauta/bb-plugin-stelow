@@ -21,14 +21,15 @@ assert.equal(insertInboxEvent(db, { ...paused, id: "evt_duplicate" }), false, "r
 assert.equal(listInboxEvents(db, false).length, 1, "unresolved action is visible in Inbox");
 
 assert.equal(resolveActionInboxEvents(db, "card_1", 200), 1, "resuming work resolves the pending action");
-assert.equal(listInboxEvents(db, false).length, 0, "resolved action leaves the active Inbox");
+assert.equal(listInboxEvents(db, false).length, 1, "resolved action stays queryable for the Resolved history");
+assert.equal(listInboxEvents(db, false)[0].resolved_at, 200, "resolution timestamp is durable");
 
 const completed = { id: "evt_completed", cardId: "card_1", kind: "completed", summary: "Work completed.", dedupeKey: "completed:card_1:300", occurredAt: 300 };
 assert.equal(insertInboxEvent(db, completed), true);
 assert.equal(listInboxEvents(db, false)[0].id, "evt_completed", "completion remains a recent update after action resolution");
 
 db.prepare("UPDATE inbox_events SET archived_at = ? WHERE id = ?").run(400, "evt_completed");
-assert.equal(listInboxEvents(db, false).length, 0, "archived events are hidden from the active Inbox");
+assert.equal(listInboxEvents(db, false).length, 1, "only archived events are hidden; resolved history remains");
 assert.equal(listInboxEvents(db, true).length, 2, "archive view retains the full durable history");
 assert.equal(db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL").run(401, "evt_completed").changes, 1, "read acknowledgement persists");
 assert.equal(db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL").run(402, "evt_completed").changes, 0, "read acknowledgement is idempotent");
@@ -41,7 +42,9 @@ db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("card_2", "Per-kind", "p
 insertInboxEvent(db, { id: "evt_q", cardId: "card_2", kind: "question", summary: "Q?", dedupeKey: "question:card_2:500", occurredAt: 500 });
 insertInboxEvent(db, { id: "evt_e", cardId: "card_2", kind: "error", summary: "E!", dedupeKey: "error:card_2:501", occurredAt: 501 });
 assert.equal(resolveActionInboxEvents(db, "card_2", 600, ["error", "paused"]), 1, "resume resolves error and paused only");
-assert.equal(listInboxEvents(db, false).filter((row) => row.card_id === "card_2").length, 1, "question survives a bare resume");
+const card2rows = listInboxEvents(db, false).filter((row) => row.card_id === "card_2");
+assert.equal(card2rows.length, 2, "both rows stay listed (action + resolved history)");
+assert.equal(card2rows.find((row) => row.id === "evt_q").resolved_at, null, "question stays unresolved after a bare resume");
 assert.equal(resolveActionInboxEvents(db, "card_2", 601, ["question"]), 1, "answering resolves the question");
 assert.equal(resolveActionInboxEvents(db, "card_2", 602, ["bogus"]), 0, "unknown kinds resolve nothing");
 assert.equal(resolveActionInboxEvents(db, "card_2", 603, []), 0, "empty kind list resolves nothing");
