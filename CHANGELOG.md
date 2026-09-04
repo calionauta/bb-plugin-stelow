@@ -10,6 +10,9 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Open-card zone order.** The Manage disclosure (preset, restart,
+  archive) now comes collapsed right after What is happening, with
+  Conversation closing the page as the final interaction zone.
 - **Open-card redesign (contextual hero + progressive disclosure).** The
   open card now leads with a single hero derived from card state
   (decision > error > paused > working > calm) — one sentence plus one
