@@ -8,6 +8,14 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Skills sync verifies content hash.** The raw CDN can serve a stale
+  blob for a fresh tree sha right after pushes; the sync pinned stale
+  bytes under a fresh sha forever. Fetched content is now verified
+  against the tree sha before recording, with retry on mismatch.
+  Covered by a blob-sha unit test; suite grows from 5 to 6.
+
 ### Added
 
 - **Advance refuses mode-skipped gates.** `plan-gate`/`diff-gate` in a
