@@ -18,6 +18,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Artifact review surface.** Read-only viewer (Markdown/source render)
+  with multi-excerpt draft comments sent to the agent in one organized
+  batch, pending gate question inline, and workspace-kind links that open
+  in bb's official viewer. Review entry point from the decision hero.
 - **Advance refuses mode-skipped gates.** `plan-gate`/`diff-gate` in a
   review mode that skips them now fail with the redirect (to execution /
   audit) instead of parking the worker on a review nobody configured.
