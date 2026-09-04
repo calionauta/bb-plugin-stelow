@@ -1911,12 +1911,27 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 ) : null}
               </div>
             ) : null}
-            {showResume && card.activity === "idle" ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Worker idle — nothing pending.</span>
-                <button disabled={retrying} onClick={() => void doRetry()} className="font-medium text-primary hover:underline disabled:opacity-50">{retrying ? "Retrying…" : "Retry"}</button>
-                <button onClick={() => setRepairOpen(true)} className="hover:text-foreground hover:underline">Restart fresh…</button>
-              </div>
+            {showResume && card.activity === "idle" && !pendingFirst ? (
+              detail?.card.needsAttention ? (
+                <section aria-label="Worker paused" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+                  <div className="flex items-center gap-2">
+                    <span aria-hidden className="size-2 rounded-full bg-amber-500" />
+                    <h3 className="text-sm font-semibold">Work paused</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">The worker is idle with unfinished work. Retry continues in place; restarting begins fresh from triage.</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" disabled={retrying} onClick={() => void doRetry()}>{retrying ? "Retrying…" : "Retry"}</Button>
+                    {card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}>Open thread ↗</Button> : null}
+                    <Button size="sm" variant="ghost" onClick={() => setRepairOpen(true)}>Restart fresh…</Button>
+                  </div>
+                </section>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Worker idle — nothing pending.</span>
+                  <button disabled={retrying} onClick={() => void doRetry()} className="font-medium text-primary hover:underline disabled:opacity-50">{retrying ? "Retrying…" : "Retry"}</button>
+                  <button onClick={() => setRepairOpen(true)} className="hover:text-foreground hover:underline">Restart fresh…</button>
+                </div>
+              )
             ) : null}
             {pendingFirst && card.activity === "awaiting-answer" ? (
               <section aria-label="Needs your decision" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
