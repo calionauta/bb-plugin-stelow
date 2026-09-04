@@ -1914,7 +1914,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async listPresets() {
-      const rows = db.prepare("SELECT * FROM presets ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[];
+      // Per-card override rows (card-override-*) are implementation detail of
+      // a single card's custom provider/model choice — not reusable presets.
+      // Hide them so neither the board manager nor the card dialog is polluted.
+      const rows = db.prepare("SELECT * FROM presets WHERE id NOT LIKE 'card-override-%' ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[];
       return {
         presets: rows.map((row) => ({
           id: row.id,
@@ -1989,6 +1992,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!card) return { ok: false, error: "Card not found." };
       if (presetId === null) {
         db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
+        // Drop this card's private override row (if any) so custom choices
+        // don't accumulate dead rows; it is unreferenced after the reset.
+        db.prepare("DELETE FROM presets WHERE id = ?").run(`card-override-${cardId}`);
       } else {
         const preset = getPresetById(presetId);
         if (!preset) return { ok: false, error: "Preset not found." };
@@ -2128,7 +2134,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (argv[0] === "preset") {
         const sub = argv[1];
         const flag = (name: string, list: string[]) => { const index = list.indexOf(name); return index >= 0 ? list[index + 1] : undefined; };
-        const rows = (db.prepare("SELECT * FROM presets ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[]);
+        const rows = (db.prepare("SELECT * FROM presets WHERE id NOT LIKE 'card-override-%' ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[]);
         if (!sub || sub === "list") {
           return { exitCode: 0, stdout: rows.map((row) => `${row.id}\t${row.is_default === 1 ? "*" : " "}${row.built_in === 1 ? "B" : " "}\t${row.name}\t${row.provider_id}/${row.model_id}\t${row.reasoning_level}\t${row.permission_mode}`).join("\n") };
         }
