@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Turn exploratory work into a project.** Exploratory cards gain a
+  "Turn into project…" action that creates a BB project from the card's
+  workspace. Files stay in place and the worker continues from the current
+  stage; project cards never see the option. Covered by a naming and
+  create/adopt/conflict unit test.
 - **Scope/task progress everywhere.** Open cards show per-scope n/m task
   counts plus task dependency chips; board and list rows carry scope and
   task done/totals from a per-workspace-cached lookup.

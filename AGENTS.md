@@ -32,6 +32,13 @@ name a valid redirect — a refusal without an exit is a deadlock with a
 good error message. Verify all paths live with fixture `state.md` files
 before shipping guard changes.
 
+## Feature inventory
+
+`FEATURES.md` lists every user-facing feature grouped by job-to-be-done.
+Any commit that adds, changes, or removes a user-facing feature must
+update `FEATURES.md` in the same commit — a feature without an entry
+does not exist.
+
 ## Verify before commit
 
 - `npm run typecheck` and `npm test` must be green.

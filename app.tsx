@@ -2021,6 +2021,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const [promoteName, setPromoteName] = useState("");
+  const [promoting, setPromoting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
@@ -2067,6 +2070,23 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Archive failed.");
+    }
+  }
+
+  async function doPromote() {
+    if (!card) return;
+    setPromoting(true);
+    try {
+      const result = await rpc.call("promoteCard", { cardId, name: promoteName.trim() || card.displayName });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not turn into project.");
+        return;
+      }
+      setPromoteOpen(false);
+      toast.success(`Turned into project "${result.projectName}".`);
+      await load();
+    } finally {
+      setPromoting(false);
     }
   }
 
@@ -2158,7 +2178,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
-                    {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
+                    {card.workspaceKind === "exploratory" ? <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" title={card.workspacePath ?? undefined}><span>Exploratory work · stored locally</span><Button size="sm" variant="outline" onClick={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} title="Create a BB project from this workspace so the work lives as a real project. Files stay in place.">Turn into project…</Button></p> : null}
                     {/* One primary action per state; secondary actions are real
                         buttons (outline/ghost) so affordances never read as
                         body text. */}
@@ -2451,6 +2471,28 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         confirmTone="destructive"
         onConfirm={doArchive}
       />
+      <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Turn into project?</DialogTitle>
+            <DialogDescription className="space-y-2">
+              <p>
+                Creates a BB project from this workspace. Files stay in place and the worker continues from the current stage.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Project name</span>
+            <Input value={promoteName} onChange={(event) => setPromoteName(event.target.value)} placeholder={card?.displayName ?? "Project name"} aria-label="Project name" maxLength={120} />
+          </label>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={promoting}>Cancel</Button>
+            </DialogClose>
+            <Button disabled={promoting || !promoteName.trim()} onClick={() => void doPromote()}>{promoting ? "Creating…" : "Turn into project"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

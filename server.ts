@@ -9,6 +9,7 @@ import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./l
 import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
+import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills } from "./lib/workflow-skills-sync.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
@@ -265,6 +266,10 @@ export const rpcContract = defineRpcContract({
   moveCard: {
     input: z.object({ cardId: z.string(), status: z.enum(["analysis", "planning", "execution", "review", "completed", "archived"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  promoteCard: {
+    input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
+    output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), error: z.string().nullable() }),
   },
   markCardSeen: {
     input: z.object({ cardId: z.string(), kind: z.enum(["completed", "error", "question"]).optional() }).strict(),
@@ -2134,6 +2139,47 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { ok: true, error: null };
     },
 
+    async promoteCard({ cardId, name }) {
+      // Turns exploratory scratch into a real BB project. Files never move
+      // and the worker keeps running: the new project's source IS the card's
+      // workspace path, so cardWorkspace resolves the identical state.md
+      // before and after. Only exploratory cards qualify — project cards
+      // already have a project, so the UI hides this option for them and the
+      // server refuses with that exit named.
+      const card = getCard(cardId);
+      if (!card) return { ok: false, projectId: null, projectName: null, error: "Card not found." };
+      if (card.workspace_kind !== "exploratory") {
+        const projectName = await bb.sdk.projects.get({ projectId: card.project_id }).then((p) => p.name).catch(() => card.project_id);
+        return { ok: false, projectId: null, projectName: null, error: `This work already lives in project "${projectName}" — nothing to promote.` };
+      }
+      if (card.status === "archived") return { ok: false, projectId: null, projectName: null, error: "This card is archived." };
+      const workspace = await cardWorkspace(card);
+      if (!workspace?.path) return { ok: false, projectId: null, projectName: null, error: "Workspace is unavailable." };
+      if (!workspace.hostId) return { ok: false, projectId: null, projectName: null, error: "Workspace host is unavailable." };
+      const projectName = normalizePromoteName(name, card.display_name ?? card.name);
+      const projects = await bb.sdk.projects.list().catch(() => []);
+      const decision = findAdoptableProject(projects, projectName, workspace.path);
+      if (decision.action === "conflict") {
+        return { ok: false, projectId: null, projectName: null, error: `A project named "${projectName}" already exists — pick another name.` };
+      }
+      let projectId: string;
+      try {
+        projectId = decision.action === "adopt" && decision.project
+          ? decision.project.id
+          : (await bb.sdk.projects.create({ name: projectName, source: { type: "local_path", hostId: workspace.hostId, path: workspace.path } })).id;
+      } catch (error) {
+        return { ok: false, projectId: null, projectName: null, error: error instanceof Error ? error.message : "Could not create the project." };
+      }
+      // project_id is deliberately outside updateCard's contract (it excludes
+      // ownership moves), so this writes it explicitly. Nulling the
+      // exploratory path/host flips future cardWorkspace resolution to the
+      // new project's source — the same directory.
+      db.prepare("UPDATE cards SET project_id = ?, workspace_kind = 'project', workspace_path = NULL, workspace_host_id = NULL, updated_at = ? WHERE id = ?").run(projectId, now(), cardId);
+      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Turned into project "${projectName}". Files stayed in place; the worker continues from the current stage.`, now());
+      bb.realtime.publish("card-state", { cardId });
+      bb.realtime.publish("board-changed", { cardId });
+      return { ok: true, projectId, projectName, error: null };
+    },
     async markCardSeen({ cardId, kind }) {
       const card = getCard(cardId);
       if (!card) return { ok: false };
