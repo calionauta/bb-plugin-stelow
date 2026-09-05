@@ -1575,11 +1575,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
           round.files.sort((a, b) => (a.display < b.display ? -1 : 1));
         }
-        const listed = await bb.sdk.files.list({ path: stateDir, query: ".md" }).catch(() => null);
-        for (const entry of listed?.files ?? []) {
-          const abs = entry.path;
-          if (typeof abs !== "string" || !abs.endsWith(".md") || known.has(abs) || !hostId) continue;
-          looseFiles.push({ display: workspaceRelative(workspacePath, abs) ?? abs.split("/").pop()!, path: workspaceRelative(workspacePath, abs) ?? abs, absolutePath: abs, hostId });
+        // files.list is single-level: scan the state dir and its rounds/
+        // subdir (no query — filter client-side, independent of query
+        // semantics).
+        const scanDirs = [stateDir, join(stateDir, ROUNDS_DIR)];
+        for (const dir of scanDirs) {
+          const listed = await bb.sdk.files.list({ path: dir }).catch(() => null);
+          for (const entry of listed?.files ?? []) {
+            const abs = entry.path;
+            if (typeof abs !== "string" || !abs.endsWith(".md") || known.has(abs) || !hostId) continue;
+            looseFiles.push({ display: workspaceRelative(workspacePath, abs) ?? abs.split("/").pop()!, path: workspaceRelative(workspacePath, abs) ?? abs, absolutePath: abs, hostId });
+          }
         }
         looseFiles.sort((a, b) => (a.display < b.display ? -1 : 1));
       } catch { /* fail-soft: history-only rounds, no extras or orphans */ }
@@ -1605,19 +1611,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { rounds: rounds.reverse(), looseFiles };
   }
 
-  // Pre-create an empty round file (and its rounds/ dir inside the state
-  // dir) so the rounds list works even if the worker never writes: the
-  // plugin owns structure, the worker owns content. Never clobbers
-  // existing content (restart reuses).
+  // Pre-create an empty round file (parents included) so the rounds list
+  // works even if the worker never writes: the plugin owns structure, the
+  // worker owns content. Never clobbers existing content (restart reuses).
   async function ensureRoundFile(workspacePath: string, relPath: string): Promise<void> {
     try {
       const full = resolveArtifactPath(workspacePath, relPath);
       if (!full) return;
       const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
       if (exists) return;
-      const dir = full.split("/").slice(0, -1).join("/");
-      await bb.sdk.files.mkdir({ path: dir, rootPath: workspacePath, recursive: true }).catch(() => undefined);
-      await bb.sdk.files.write({ path: full, content: "" }).catch(() => undefined);
+      await bb.sdk.files.write({ path: full, content: "", createParents: true }).catch(() => undefined);
     } catch { /* worker still writes content on its own path */ }
   }
 
