@@ -745,13 +745,13 @@ function BoardPanel() {
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <div role="group" aria-label="Work view" className="col-span-2 inline-flex h-10 w-full rounded-md border bg-background p-0.5 shadow-sm sm:h-9 sm:w-auto sm:shrink-0">
-                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
-                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
+              <div role="group" aria-label="Work view" className="col-span-2 inline-flex min-h-11 w-full rounded-md border bg-background p-0.5 shadow-sm sm:w-auto sm:shrink-0">
+                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
+                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
               </div>
-              <Button className="h-10 w-full sm:h-9 sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
               {githubStatus?.pluginAvailable ? (
-                <Button className="h-10 w-full sm:h-9 sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
+                <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
               ) : null}
             </div>
           </header>
@@ -1038,7 +1038,7 @@ function ResearchPanel() {
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <Button className="h-10 w-full sm:h-9 sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}>New research</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}>New research</Button>
             </div>
           </header>
 
@@ -1067,9 +1067,9 @@ function ResearchPanel() {
           </Dialog>
 
           <div className="flex flex-wrap items-center gap-2 border-b pb-3">
-            <FilterSelect label="Project" value={filterProjectId} onChange={setFilterProjectId} options={[{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))]} />
+            <FilterSelect label="Project" value={filterProjectId} onChange={setFilterProjectId} options={[{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))]} inline />
             <button onClick={() => setFilterAttention((value) => !value)} aria-pressed={filterAttention} className={`min-h-11 cursor-pointer rounded-md border px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filterAttention ? "border-primary/40 bg-primary/5 text-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted"}`}>Needs attention</button>
-            <button onClick={() => { setFilterProjectId("all"); setFilterAttention(false); }} className="min-h-11 cursor-pointer rounded-md px-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:underline">Reset</button>
+            <button onClick={() => { setFilterProjectId("all"); setFilterAttention(false); }} className="min-h-11 cursor-pointer rounded-md px-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:underline">Reset</button>
           </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading research…</p> : null}
           {cards.length === 0 && !loading ? (
@@ -1345,9 +1345,22 @@ function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filt
   );
 }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
+function FilterSelect({ label, value, onChange, options, inline = false }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; inline?: boolean }) {
   const selected = options.find((option) => option.value === value);
   const isAll = value === "all";
+  // Inline: horizontal label + control in one min-h-11 box, so filter-bar
+  // rows align with their button siblings. Stacked (default) stays for
+  // vertical contexts like the FiltersBar popover.
+  if (inline) {
+    return (
+      <label className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-muted-foreground hover:text-foreground ${isAll ? "border-border bg-background" : "border-primary bg-primary/10 text-foreground"}`}>
+        <span aria-hidden>{label}</span>
+        <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className="h-full min-h-11 cursor-pointer bg-transparent pr-1 text-sm font-medium text-foreground focus-visible:outline-none">
+          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>
+    );
+  }
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       <span>{label}</span>
