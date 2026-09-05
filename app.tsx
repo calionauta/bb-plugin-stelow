@@ -52,6 +52,7 @@ type GithubCandidate = {
   title: string;
   labels: string[];
   author: string;
+  assignees: string[];
   url: string;
   body: string;
   updatedAt: string;
@@ -591,6 +592,9 @@ function BoardPanel() {
   const [importLabel, setImportLabel] = useState("stelow-work");
   const [importCandidates, setImportCandidates] = useState<GithubCandidate[]>([]);
   const [importSelected, setImportSelected] = useState<Record<string, boolean>>({});
+  const [importAllLabels, setImportAllLabels] = useState<string[]>([]);
+  const [importAllAssignees, setImportAllAssignees] = useState<string[]>([]);
+  const [importAssignee, setImportAssignee] = useState<string>("all");
   const [importBusy, setImportBusy] = useState(false);
   const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
   const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null } | null>(null);
@@ -697,12 +701,14 @@ function BoardPanel() {
     setImportCandidates([]);
     setImportSelected({});
     try {
-      const { issues } = await rpc.call("listGithubCandidates", { label: importLabel.trim() });
-      setImportCandidates(issues);
+      const result = await rpc.call("listGithubCandidates", { label: importLabel.trim() });
+      setImportCandidates(result.issues);
+      setImportAllLabels(result.allLabels);
+      setImportAllAssignees(result.allAssignees);
       // Preselect only issues not yet imported, so the flow is a one-click
       // "bring in everything tagged" rather than a long checklist.
       const fresh: Record<string, boolean> = {};
-      for (const issue of issues) if (!issue.alreadyImported) fresh[`${issue.repo}#${issue.number}`] = true;
+      for (const issue of result.issues) if (!issue.alreadyImported) fresh[`${issue.repo}#${issue.number}`] = true;
       setImportSelected(fresh);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to list GitHub issues.");
@@ -711,8 +717,13 @@ function BoardPanel() {
     }
   }
 
+  // Client-side assignee narrowing over the label-filtered candidates.
+  const importVisible = importAssignee === "all"
+    ? importCandidates
+    : importCandidates.filter((issue) => (issue.assignees ?? []).includes(importAssignee));
+
   async function importSelectedIssues() {
-    const chosen = importCandidates.filter((issue) => importSelected[`${issue.repo}#${issue.number}`]);
+    const chosen = importVisible.filter((issue) => importSelected[`${issue.repo}#${issue.number}`]);
     if (chosen.length === 0) return toast.error("No issues selected.");
     setImportBusy(true);
     let imported = 0;
@@ -749,9 +760,9 @@ function BoardPanel() {
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <div role="group" aria-label="Work view" className="col-span-2 inline-flex min-h-11 w-full rounded-md border bg-background p-0.5 shadow-sm sm:w-auto sm:shrink-0">
-                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
-                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`h-full flex-1 cursor-pointer rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-none ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
+              <div role="group" aria-label="Work view" className="col-span-2 grid h-11 w-full grid-cols-2 gap-1 rounded-md border bg-background p-1 shadow-sm sm:w-56 sm:shrink-0">
+                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`inline-flex h-full w-full cursor-pointer items-center justify-center rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
+                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`inline-flex h-full w-full cursor-pointer items-center justify-center rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
               </div>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
               {githubStatus?.pluginAvailable ? (
@@ -812,8 +823,25 @@ function BoardPanel() {
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="import-label">Label</label>
-                    <Input id="import-label" value={importLabel} onChange={(event) => setImportLabel(event.target.value)} placeholder="stelow-work" aria-label="Stelow GitHub label" className="sm:w-52" />
+                    <Input id="import-label" value={importLabel} onChange={(event) => setImportLabel(event.target.value)} placeholder="stelow-work" aria-label="Stelow GitHub label" className="sm:w-52" list="stelow-import-labels" autoComplete="off" />
+                    <datalist id="stelow-import-labels">
+                      {importAllLabels.map((label) => <option key={label} value={label} />)}
+                    </datalist>
                   </div>
+                  {importAllAssignees.length > 0 ? (
+                    <div className="flex min-w-0 items-center gap-2">
+                      <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="import-assignee">Assignee</label>
+                      <select
+                        id="import-assignee"
+                        className="h-9 min-h-11 cursor-pointer rounded-md border bg-background px-2 text-sm"
+                        value={importAssignee}
+                        onChange={(event) => setImportAssignee(event.target.value)}
+                      >
+                        <option value="all">Everyone</option>
+                        {importAllAssignees.map((login) => <option key={login} value={login}>{login}</option>)}
+                      </select>
+                    </div>
+                  ) : null}
                   <Button size="sm" variant="outline" onClick={() => void listGithubIssues()} disabled={importBusy}>Refresh</Button>
                 </div>
                 <p className="text-xs text-muted-foreground">Each issue is imported into the bb project that owns its repository — no picker needed. Tag issues with this label on GitHub; nothing is auto-imported.</p>
@@ -821,9 +849,12 @@ function BoardPanel() {
                 {!importBusy && importCandidates.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No open issues carry the label “{importLabel}” yet. Tag an issue on GitHub with this label, then Refresh.</p>
                 ) : null}
-                {importCandidates.length > 0 ? (
+                {!importBusy && importCandidates.length > 0 && importVisible.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No issues assigned to {importAssignee} carry this label.</p>
+                ) : null}
+                {importVisible.length > 0 ? (
                   <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-md border">
-                    {importCandidates.map((issue) => {
+                    {importVisible.map((issue) => {
                       const key = `${issue.repo}#${issue.number}`;
                       return (
                         <li key={key} className="flex items-start gap-2 p-2">
@@ -839,7 +870,7 @@ function BoardPanel() {
                               <span className="font-medium">{issue.title}</span>
                               <span className="ml-2 text-xs text-muted-foreground">{issue.repo}#{issue.number}</span>
                             </p>
-                            <p className="text-xs text-muted-foreground">{issue.labels.join(" · ") || "no labels"}{issue.projectId ? ` → ${projects.find((project) => project.id === issue.projectId)?.name ?? issue.projectId}` : ""}{issue.alreadyImported ? " · already imported" : ""}</p>
+                            <p className="text-xs text-muted-foreground">{issue.labels.join(" · ") || "no labels"}{(issue.assignees ?? []).length > 0 ? ` · @${(issue.assignees ?? []).join(" @")}` : ""}{issue.projectId ? ` → ${projects.find((project) => project.id === issue.projectId)?.name ?? issue.projectId}` : ""}{issue.alreadyImported ? " · already imported" : ""}</p>
                           </div>
                         </li>
                       );
@@ -1909,43 +1940,128 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   );
 }
 
-function AwaitingAnswerBanner({ cardId, question, onAnswered }: { cardId: string; question: CardQuestion; onAnswered: () => void }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [answers, setAnswers] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const toggle = (label: string) => setAnswers((current) => question.multiple ? current.includes(label) ? current.filter((item) => item !== label) : [...current, label] : [label]);
-  async function submitAnswer() {
-    if (answers.length === 0) return;
-    setBusy(true); setError(null);
-    const result = await rpc.call("answerQuestion", { cardId, answers });
-    if (!result.ok) setError(result.error ?? "Could not send the answer.");
-    else { setAnswers([]); onAnswered(); }
-    setBusy(false);
-  }
+type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; options: Array<{ label: string; description: string }> };
+
+// One sitting for every pending question: stepper with counter, per-question
+// radio (single) / checkbox (multi) options plus a free-text "Other", explicit
+// skip, and a single atomic submit — one worker resume, one inbox resolution.
+function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit }: {
+  questions: BatchItem[];
+  allowSkip: boolean;
+  busy: boolean;
+  error: string | null;
+  submitLabel: string;
+  onSubmit: (answers: string[][]) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  if (questions.length === 0) return null;
+  const current = questions[Math.min(index, questions.length - 1)]!;
+  const merged = (id: string): string[] => {
+    if (skipped.has(id)) return [];
+    const out = [...(selected[id] ?? [])];
+    const text = (custom[id] ?? "").trim();
+    if (text) out.push(text);
+    return out;
+  };
+  const doneCount = questions.filter((q) => skipped.has(q.id) || merged(q.id).length > 0).length;
+  const complete = allowSkip ? doneCount === questions.length : doneCount > 0;
+  const pick = (question: BatchItem, label: string) => {
+    setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
+    setSelected((prev) => {
+      const has = (prev[question.id] ?? []).includes(label);
+      if (question.multiple) return { ...prev, [question.id]: has ? prev[question.id]!.filter((item) => item !== label) : [...(prev[question.id] ?? []), label] };
+      // Single-select: an option and a custom text are mutually exclusive.
+      if (!has) setCustom((c) => ({ ...c, [question.id]: "" }));
+      return { ...prev, [question.id]: has ? [] : [label] };
+    });
+  };
+  const typeCustom = (question: BatchItem, value: string) => {
+    setCustom((prev) => ({ ...prev, [question.id]: value }));
+    if (value.trim() && !question.multiple) setSelected((prev) => ({ ...prev, [question.id]: [] }));
+    if (value.trim()) setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
+  };
+  const skip = (question: BatchItem) => {
+    setSkipped((prev) => new Set(prev).add(question.id));
+    setSelected((prev) => ({ ...prev, [question.id]: [] }));
+    setCustom((prev) => ({ ...prev, [question.id]: "" }));
+  };
+  const unskip = (question: BatchItem) => setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
   return (
     <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
       <div className="flex items-start gap-3">
         <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
         <div className="min-w-0 flex-1 space-y-2">
-          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{question.title}</div>
-          <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
-          <div className="grid gap-1">
-            {question.options.map((option) => (
-              <button
-                key={option.label}
-                onClick={() => toggle(option.label)}
-                className={`cursor-pointer rounded-md border p-2 text-left text-sm ${answers.includes(option.label) ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
-              >
-                <div className="font-medium">{option.label}</div>
-                {option.description ? <div className="text-xs text-muted-foreground">{option.description}</div> : null}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
+              {questions.length > 1 ? `${questions.length} questions need your answer` : "Your answer is needed"}
+            </div>
+            {questions.length > 1 ? <div className="text-xs text-amber-900/70 dark:text-amber-200/70">Question {index + 1} of {questions.length}</div> : null}
           </div>
+          {questions.length > 1 ? (
+            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Questions">
+              {questions.map((q, i) => {
+                const done = skipped.has(q.id) || merged(q.id).length > 0;
+                return (
+                  <button
+                    key={q.id}
+                    role="tab"
+                    aria-selected={i === index}
+                    aria-label={`Question ${i + 1}${done ? " (answered)" : ""}`}
+                    onClick={() => setIndex(i)}
+                    className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-xs font-medium ${i === index ? "border-primary bg-primary/15 text-foreground" : done ? "border-emerald-500/50 bg-emerald-500/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}
+                  >
+                    {done && i !== index ? "✓ " : ""}{i + 1}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div>
+          {current.prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{current.prompt}</p> : null}
+          <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
+            {current.options.map((option) => {
+              const active = (selected[current.id] ?? []).includes(option.label);
+              return (
+                <button
+                  key={option.label}
+                  role={current.multiple ? "checkbox" : "radio"}
+                  aria-checked={active}
+                  onClick={() => pick(current, option.label)}
+                  className={`min-h-11 cursor-pointer rounded-md border p-2 text-left text-sm ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
+                >
+                  <div className="font-medium">{current.multiple ? (active ? "☑ " : "☐ ") : (active ? "◉ " : "○ ")}{option.label}</div>
+                  {option.description ? <div className="text-xs text-muted-foreground">{option.description}</div> : null}
+                </button>
+              );
+            })}
+          </div>
+          <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
+            <span>Other — write your own answer</span>
+            <input
+              value={custom[current.id] ?? ""}
+              onChange={(event) => typeCustom(current, event.target.value)}
+              placeholder="Type a custom answer…"
+              className="mt-1 min-h-11 w-full cursor-text rounded-md border border-border bg-background/60 px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground"
+            />
+          </label>
+          {allowSkip ? (
+            skipped.has(current.id)
+              ? <button onClick={() => unskip(current)} className="min-h-11 cursor-pointer text-xs font-medium text-primary hover:underline">Skipped — answer it after all</button>
+              : <button onClick={() => skip(current)} className="min-h-11 cursor-pointer text-xs text-amber-900/70 hover:underline dark:text-amber-200/70">Skip — let the AI use its recommendation</button>
+          ) : null}
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
-          {question.multiple ? <p className="text-xs text-amber-900/60 dark:text-amber-200/60">Pick one or more, then submit.</p> : null}
-          <div className="flex gap-2">
-            <Button size="sm" disabled={answers.length === 0 || busy} onClick={() => void submitAnswer()}>{busy ? "Sending…" : "Submit answer"}</Button>
+          {questions.length > 1 ? (
+            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{doneCount} of {questions.length} answered{allowSkip ? " (skipped counts as answered)" : ""}. {allowSkip ? "One submit sends everything at once." : "Only answered questions are sent; the rest stay open."}</p>
+          ) : current.multiple ? (
+            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">Pick one or more, then submit.</p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {questions.length > 1 ? <Button size="sm" variant="outline" disabled={index === 0 || busy} onClick={() => setIndex((i) => Math.max(0, i - 1))}>Back</Button> : null}
+            {questions.length > 1 && index < questions.length - 1 ? <Button size="sm" variant="outline" disabled={busy} onClick={() => setIndex((i) => Math.min(questions.length - 1, i + 1))}>Next</Button> : null}
+            <Button size="sm" disabled={!complete || busy} onClick={() => onSubmit(questions.map((q) => merged(q.id)))}>{busy ? "Sending…" : submitLabel}</Button>
           </div>
         </div>
       </div>
@@ -1953,44 +2069,56 @@ function AwaitingAnswerBanner({ cardId, question, onAnswered }: { cardId: string
   );
 }
 
-function ExpiredQuestionBanner({ question, onAnswer, answering }: { question: ExpiredQuestion; onAnswer: (answer: string) => void; answering: boolean }) {
-  return (
-    <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
-      <div className="flex items-start gap-3">
-        <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">Waiting for your answer. The agent is paused.</div>
-          <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-200/80">{question.question}</p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {question.options.map((option) => <Button key={option.label} size="sm" variant="outline" disabled={answering} onClick={() => onAnswer(option.label)}>{option.label}</Button>)}
-          </div>
-          <p className="mt-2 text-xs text-amber-900/70 dark:text-amber-200/70">The ask timed out, but the agent is waiting. Answering here resumes the workflow.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExpiredQuestionsSection({ cardId, questions }: { cardId: string; questions: ExpiredQuestion[] }) {
+function QuestionBatch({ cardId, questions, mode, onAnswered }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [answering, setAnswering] = useState<string | null>(null);
-  const [answered, setAnswered] = useState<Set<string>>(new Set());
-  const answer = async (question: ExpiredQuestion, option: string) => {
-    setAnswering(question.id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (questions.length === 0) return null;
+  async function submit(all: string[][]) {
+    setBusy(true); setError(null);
     try {
-      const result = await rpc.call("answerExpiredQuestion", { cardId, questionId: question.id, answer: option });
-      void result;
-      setAnswered((prev) => new Set(prev).add(question.id));
+      if (mode === "live") {
+        const result = await rpc.call("answerQuestions", { cardId, answers: questions.map((q, i) => ({ questionId: q.id, answers: all[i] ?? [] })) });
+        if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
+      } else {
+        // Timed-out questions take one answer each; untouched ones stay open.
+        const payload = questions.flatMap((q, i) => {
+          const first = (all[i] ?? [])[0];
+          return first ? [{ questionId: q.id, answer: first }] : [];
+        });
+        if (payload.length === 0) return;
+        const result = await rpc.call("answerExpiredQuestions", { cardId, answers: payload });
+        if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
+      }
+      onAnswered();
     } finally {
-      setAnswering(null);
+      setBusy(false);
     }
-  };
-  const remaining = questions.filter((question) => !answered.has(question.id));
-  if (remaining.length === 0) return null;
+  }
+  return (
+    <BatchStepper
+      questions={questions}
+      allowSkip={mode === "live"}
+      busy={busy}
+      error={error}
+      submitLabel={questions.length > 1 ? (mode === "live" ? `Submit ${questions.length} answers` : "Submit answers") : "Submit answer"}
+      onSubmit={(all) => void submit(all)}
+    />
+  );
+}
+
+function ExpiredQuestionsSection({ cardId, questions, onAnswered }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void }) {
+  if (questions.length === 0) return null;
   return (
     <section className="space-y-2">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">Timed-out questions waiting for your answer</h3>
-      {remaining.map((question) => <ExpiredQuestionBanner key={question.id} question={question} onAnswer={(option) => answer(question, option)} answering={answering === question.id} />)}
+      <p className="text-xs text-amber-900/70 dark:text-amber-200/70">The ask timed out, but the agent is waiting. Answering here resumes the workflow.</p>
+      <QuestionBatch
+        cardId={cardId}
+        mode="expired"
+        questions={questions.map((q) => ({ id: q.id, title: "Timed-out question", prompt: q.question, multiple: q.multiple, options: q.options }))}
+        onAnswered={onAnswered}
+      />
     </section>
   );
 }
@@ -2248,7 +2376,7 @@ function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, 
         {pendingQuestion ? (
           <div className="space-y-1">
             <span className="text-xs font-medium text-muted-foreground">Decide without leaving — answering resumes the agent</span>
-            <AwaitingAnswerBanner cardId={cardId} question={pendingQuestion} onAnswered={onQuestionAnswered} />
+            <QuestionBatch cardId={cardId} mode="live" questions={[{ id: pendingQuestion.id, title: pendingQuestion.title, prompt: pendingQuestion.question, multiple: pendingQuestion.multiple, options: pendingQuestion.options }]} onAnswered={onQuestionAnswered} />
           </div>
         ) : null}
         <div className="space-y-2">
@@ -2991,15 +3119,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                 </div>
                 {pendingFirst && card.activity === "awaiting-answer" ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <AwaitingAnswerBanner cardId={card.id} question={pendingFirst} onAnswered={() => { onChanged(); void loadBrief(); }} />
-                    {detail && detail.pendingQuestions.length > 1 ? (
-                      <details className="rounded-md border bg-card p-2">
-                        <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground">More pending questions ({detail.pendingQuestions.length - 1})</summary>
-                        <div className="mt-2 space-y-2">
-                          {detail.pendingQuestions.slice(1).map((question) => <AwaitingAnswerBanner key={question.id} cardId={card.id} question={question} onAnswered={() => { onChanged(); void loadBrief(); }} />)}
-                        </div>
-                      </details>
-                    ) : null}
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadBrief(); }} />
                   </div>
                 ) : null}
               </section>
@@ -3036,7 +3156,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                   ))}
                 </div>
               ) : null}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => { onChanged(); void loadBrief(); }} /> : null}
             </CardDisclosure>
 
             <CardDisclosure title="Artifacts" hint={detail ? `${detail.artifacts.length}` : "produced files"}>
@@ -3161,6 +3281,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [promoteName, setPromoteName] = useState("");
   const [promoting, setPromoting] = useState(false);
+  const [githubPostOpen, setGithubPostOpen] = useState(false);
+  const [githubCloseIssue, setGithubCloseIssue] = useState(false);
+  const [githubPosting, setGithubPosting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
@@ -3279,6 +3402,25 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     }
   }
 
+  async function doGithubPost() {
+    setGithubPosting(true);
+    try {
+      const result = await rpc.call("postGithubCompletion", { cardId, closeIssue: githubCloseIssue });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not post to GitHub.");
+        // Reload anyway: the comment may have posted even when the close
+        // failed, and the card should show the posted state immediately.
+        await load();
+        return;
+      }
+      setGithubPostOpen(false);
+      toast.success(githubCloseIssue ? "Summary posted and issue closed on GitHub." : "Completion summary posted on GitHub.");
+      await load();
+    } finally {
+      setGithubPosting(false);
+    }
+  }
+
   async function advance(stage: string) {
     setAdvancing(stage);
     try {
@@ -3386,15 +3528,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 </div>
                 {pendingFirst && card.activity === "awaiting-answer" ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <AwaitingAnswerBanner cardId={card.id} question={pendingFirst} onAnswered={() => void load()} />
-                    {detail && detail.pendingQuestions.length > 1 ? (
-                      <details className="rounded-md border bg-card p-2">
-                        <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground">More pending questions ({detail.pendingQuestions.length - 1})</summary>
-                        <div className="mt-2 space-y-2">
-                          {detail.pendingQuestions.slice(1).map((question) => <AwaitingAnswerBanner key={question.id} cardId={card.id} question={question} onAnswered={() => void load()} />)}
-                        </div>
-                      </details>
-                    ) : null}
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => void load()} />
                   </div>
                 ) : null}
               </section>
@@ -3477,7 +3611,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                   </div>
                 </div>
               ) : null}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => void load()} /> : null}
             </CardDisclosure>
 
             <div ref={artifactsRef}>
@@ -3523,8 +3657,22 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               ) : null}
               <div className="flex flex-wrap items-center gap-4 border-t pt-3">
                 <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                <button onClick={() => setArchiveOpen(true)} className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
+                <button onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
               </div>
+              {detail?.githubLink ? (
+                <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
+                  <span>Imported from <UrlLink href={detail.githubLink.url} className="font-medium text-primary underline-offset-4 hover:underline">{detail.githubLink.repo}#{detail.githubLink.number}</UrlLink></span>
+                  {card.status === "completed" ? (
+                    detail.githubLink.postedAt ? (
+                      <span className="text-emerald-700 dark:text-emerald-300">✓ Completion summary posted to GitHub</span>
+                    ) : (
+                      <button onClick={() => { setGithubCloseIssue(false); setGithubPostOpen(true); }} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
+                    )
+                  ) : (
+                    <span>A completion summary can be posted once this work is Done.</span>
+                  )}
+                </div>
+              ) : null}
               {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
             </CardDisclosure>
             {/* DISCLOSURE 3 — Conversation (history + composer) */}
@@ -3605,6 +3753,28 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         confirmTone="destructive"
         onConfirm={doArchive}
       />
+      <Dialog open={githubPostOpen} onOpenChange={setGithubPostOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share completion summary on GitHub?</DialogTitle>
+            <DialogDescription className="space-y-2">
+              <p>
+                Posts a factual summary (scopes, tasks, prompt) as a comment on {detail?.githubLink ? `${detail.githubLink.repo}#${detail.githubLink.number}` : "the linked issue"}. Nothing is posted automatically — only this action writes back.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" className="h-4 w-4 cursor-pointer" checked={githubCloseIssue} onChange={(event) => setGithubCloseIssue(event.target.checked)} />
+            <span>Also close the issue on GitHub</span>
+          </label>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={githubPosting}>Cancel</Button>
+            </DialogClose>
+            <Button disabled={githubPosting} onClick={() => void doGithubPost()}>{githubPosting ? "Posting…" : "Post summary"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
         <DialogContent>
           <DialogHeader>
@@ -3659,17 +3829,28 @@ function PillsyStyles() {
 }
 
 function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionProps) {
-  const payload = interaction.payload as { question?: string; multiple?: boolean; options?: { label: string; description: string }[] };
-  const options = Array.isArray(payload.options) ? payload.options : [];
-  const [answers, setAnswers] = useState<string[]>([]);
-  const toggle = (label: string) => setAnswers((current) => payload.multiple ? current.includes(label) ? current.filter((item) => item !== label) : [...current, label] : [label]);
+  const payload = interaction.payload as { question?: string; multiple?: boolean; options?: { label: string; description: string }[]; questions?: { question?: string; multiple?: boolean; options?: { label: string; description: string }[] }[] };
+  const clean = (options: unknown): BatchItem["options"] => Array.isArray(options)
+    ? options.filter((o): o is { label: string; description: string } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "" }))
+    : [];
+  // Batch payloads (one `bb stelow ask` call with repeated --question groups)
+  // answer together; legacy single-question payloads keep their exact shape.
+  const items: BatchItem[] = Array.isArray(payload.questions) && payload.questions.length > 0
+    ? payload.questions.map((q, i) => ({ id: `q${i}`, title: interaction.title, prompt: typeof q?.question === "string" ? q.question : "", multiple: q?.multiple === true, options: clean(q?.options) })).filter((q) => q.options.length > 0)
+    : [{ id: "q0", title: interaction.title, prompt: payload.question ?? interaction.title, multiple: payload.multiple === true, options: clean(payload.options) }];
+  if (items.length === 0) return null;
+  const batched = items.length > 1;
   return (
-    <div className="space-y-3 rounded-lg border bg-card p-4">
-      <p className="font-medium">{payload.question ?? interaction.title}</p>
-      <div className="space-y-2">
-        {options.map((option) => <button key={option.label} onClick={() => toggle(option.label)} className={`cursor-pointer w-full rounded-md border p-3 text-left ${answers.includes(option.label) ? "border-primary bg-primary/10" : "border-border"}`}><div className="font-medium">{option.label}</div><div className="text-sm text-muted-foreground">{option.description}</div></button>)}
-      </div>
-      <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => void cancel()}>Cancel</Button><Button disabled={answers.length === 0} onClick={() => void submit({ answers })}>Continue</Button></div>
+    <div className="space-y-3">
+      <BatchStepper
+        questions={items}
+        allowSkip
+        busy={false}
+        error={null}
+        submitLabel={batched ? `Continue with ${items.length} answers` : "Continue"}
+        onSubmit={(all) => void submit(batched ? { answers: all } : { answers: all[0] ?? [] })}
+      />
+      <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => void cancel()}>Cancel</Button></div>
     </div>
   );
 }

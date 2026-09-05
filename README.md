@@ -120,6 +120,18 @@ bb stelow ask \
   --option "Accessible" \
   --option "Mobile"
 
+# Batch independent questions into one call — the human answers them
+# together instead of being pinged one by one:
+bb stelow ask \
+  --thread <thr_id> \
+  --question "Which direction should we use?" \
+  --option "Option A" \
+  --option "Option B" \
+  --question "Which constraints apply?" \
+  --multiple \
+  --option "Offline" \
+  --option "Accessible"
+
 bb stelow preset list|add|remove|assign
 ```
 

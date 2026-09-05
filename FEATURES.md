@@ -13,6 +13,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **GitHub issue import** (`listGithubCandidates`, `importGithubIssue`).
   Tagged issues land in Triage; fresh issues preselected; owning project
   resolved per repo; intent guessed from labels/title (user-correctable).
+  Label field offers the alphabetical label picker (all open-issue labels);
+  assignee dropdown narrows to one person when the GitHub cache exposes
+  assignees (hidden otherwise, never faked). Per-issue assignees shown inline.
+- **GitHub completion write-back** (`postGithubCompletion`). Completed cards
+  imported from an issue offer one explicit Manage action: post a factual
+  English summary (scopes/tasks, prompt) as an issue comment via `gh`,
+  optionally closing the issue behind the same confirm. Never automatic —
+  Done in Stelow is not merged/deployed.
 - **Exploratory work** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project
@@ -49,10 +57,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   archived; per-item read/archive/restore; deep-links into card+event.
   The badge counts unresolved actions plus unseen recent completions
   (7-day window); opening a completed card marks it seen, never resolved.
-- **Structured questions** (`ask`, `answerQuestion`,
-  `answerExpiredQuestion`, `QuestionForm`, `AwaitingAnswerBanner`).
-  Blocking single/multi-choice asks; timed-out asks stay answerable on
-  the card and resume the worker.
+- **Structured questions** (`ask`, `answerQuestions`,
+  `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
+  Blocking single/multi-choice asks answered in one sitting: a stepper with
+  question counter (N of M), Prev/Next plus direct jump tabs, radio for
+  single-choice and checkbox for multi-choice, a free-text Other on every
+  question, and explicit Skip (AI uses its recommendation). One atomic
+  submit answers everything — one worker resume, one inbox resolution.
+  Workers batch independent questions into one `bb stelow ask` call
+  (repeat `--question` groups); dependent questions stay sequential.
+  Timed-out asks stay answerable on the card, batched the same way.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision.
 - **Intent correction** (`updateCardIntent`). Fix the card's kind

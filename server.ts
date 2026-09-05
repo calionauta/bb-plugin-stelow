@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
@@ -7,6 +8,7 @@ import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
+import { parseAskGroups, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
@@ -171,12 +173,18 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), answers: z.array(z.string()) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  answerQuestions: {
+    input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().max(2_000)).max(10) })).min(1).max(12) }).strict(),
+    output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
+  },
   listGithubCandidates: {
     input: z.object({ label: z.string().min(1).max(60) }).strict(),
     output: z.object({
       issues: z.array(z.object({
-        repo: z.string(), number: z.number().int().positive(), title: z.string(), labels: z.array(z.string()), author: z.string(), url: z.string(), body: z.string(), updatedAt: z.string(), projectId: z.string().nullable(), alreadyImported: z.boolean(), cardId: z.string().nullable(), cardName: z.string().nullable(),
+        repo: z.string(), number: z.number().int().positive(), title: z.string(), labels: z.array(z.string()), author: z.string(), assignees: z.array(z.string()), url: z.string(), body: z.string(), updatedAt: z.string(), projectId: z.string().nullable(), alreadyImported: z.boolean(), cardId: z.string().nullable(), cardName: z.string().nullable(),
       })),
+      allLabels: z.array(z.string()),
+      allAssignees: z.array(z.string()),
     }),
   },
   importGithubIssue: {
@@ -248,6 +256,7 @@ export const rpcContract = defineRpcContract({
       // exploratory workspaces, which live outside provisioned environments.
       fileEnvironmentId: z.string().nullable(),
       nextStages: z.array(z.string()),
+      githubLink: z.object({ repo: z.string(), number: z.number().int().positive(), url: z.string(), postedAt: z.number().nullable() }).nullable(),
     }),
   },
   addCardComment: {
@@ -301,6 +310,14 @@ export const rpcContract = defineRpcContract({
   answerExpiredQuestion: {
     input: z.object({ cardId: z.string(), questionId: z.string(), answer: z.string().min(1).max(10_000) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  answerExpiredQuestions: {
+    input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answer: z.string().min(1).max(10_000) })).min(1).max(12) }).strict(),
+    output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
+  },
+  postGithubCompletion: {
+    input: z.object({ cardId: z.string(), closeIssue: z.boolean().default(false) }).strict(),
+    output: z.object({ ok: z.boolean(), commentUrl: z.string().nullable(), error: z.string().nullable() }),
   },
   advanceCard: {
     input: z.object({ cardId: z.string(), stage: z.string().min(1).max(40) }).strict(),
@@ -410,6 +427,13 @@ function array(value: unknown): unknown[] {
 function normalizeStatus(value: unknown): z.infer<typeof statusSchema> {
   const candidate = text(value, "pending");
   return statusSchema.safeParse(candidate).success ? candidate as z.infer<typeof statusSchema> : "pending";
+}
+
+// Short human status for the GitHub completion summary (English).
+function statusLabelForSummary(status: string): string {
+  if (status === "in-progress") return "in progress";
+  if (status === "done" || status === "completed") return "done";
+  return status;
 }
 
 async function projectRoot(bb: BbPluginApi, projectId: string | null): Promise<string | null> {
@@ -630,6 +654,17 @@ function runHelper(args: string[], cwd: string, stateDir?: string): Promise<{ co
       env.STELOW_STATE = nodeJoin(cwd, "state.md");
     }
     const child = spawn("bash", [HELPER_SCRIPT, ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.on("error", (error) => resolveRun({ code: null, stdout, stderr: error.message }));
+    child.on("close", (code) => resolveRun({ code, stdout, stderr }));
+  });
+}
+
+function runGh(args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolveRun) => {
+    const child = spawn("gh", args, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
@@ -946,6 +981,8 @@ export default async function plugin(bb: BbPluginApi) {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE SET NULL
   );
   CREATE INDEX IF NOT EXISTS idx_github_imports_label ON github_imports(label);`);
+  const githubImportColumns = db.prepare("PRAGMA table_info(github_imports)").all() as Array<{ name: string }>;
+  if (!githubImportColumns.some((column) => column.name === "commented_at")) db.exec("ALTER TABLE github_imports ADD COLUMN commented_at INTEGER");
 
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
@@ -1117,6 +1154,8 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--multiple]
 
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
+
 On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question. There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the brief is complete with ranked opportunities, STOP and end your turn — the user reviews the brief, marks the card Done, and fans opportunities out into delivery cards. Stop early when the user archives the card.
 
 ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
@@ -1211,6 +1250,8 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
     bb stelow ask --thread <this_thread_id> \\
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
+
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
 
 Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card moves to "Gate pending" automatically. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
@@ -1356,6 +1397,8 @@ ANY time you need user input, you MUST call the structured form:
     bb stelow ask --thread <this_thread_id> \\\\
       --question "<a single clear question>" \\\\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
+
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
 
 Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
@@ -1532,24 +1575,31 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (resolveActionInboxEvents(db, cardId, resolvedAt, kinds) > 0) bb.realtime.publish("inbox-changed", { cardId });
   }
 
+  // Pending plugin interactions (stelow asks), narrowed so payload/title read.
+  type PendingAsk = Extract<Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>>[number], { origin: { kind: "plugin" } }>;
+  function pendingAsks(list: Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>>): PendingAsk[] {
+    return list.filter((entry): entry is PendingAsk => entry.origin?.kind === "plugin" && entry.status === "pending");
+  }
+
   async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {
     if (!threadId) return [];
     try {
       const list = await bb.sdk.threads.interactions.list({ threadId });
-      return list
-        .filter((entry): entry is Extract<typeof entry, { origin: { kind: "plugin" } }> => entry.origin?.kind === "plugin" && entry.status === "pending")
-        .map((entry) => {
-          const data = record(entry.payload?.data);
-          const options = array(data.options).map((option) => ({ label: text(record(option).label, ""), description: text(record(option).description, "") }));
-          return {
-            id: entry.id,
-            title: text(entry.payload?.title, "Question"),
-            question: text(data.question, ""),
-            multiple: Boolean(data.multiple),
-            options,
+      const out: Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"] = [];
+      for (const entry of pendingAsks(list)) {
+        const expanded = expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload });
+        for (const question of expanded) {
+          out.push({
+            id: question.questionId,
+            title: question.title,
+            question: question.question,
+            multiple: question.multiple,
+            options: question.options,
             expiresAt: typeof entry.expiresAt === "number" ? entry.expiresAt : null,
-          };
-        });
+          });
+        }
+      }
+      return out;
     } catch { return []; }
   }
 
@@ -1816,17 +1866,57 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card?.worker_thread_id) return { ok: false as const, error: "This card has no worker thread." };
       try {
         const list = await bb.sdk.threads.interactions.list({ threadId: card.worker_thread_id });
-        const pending = list.find((entry) => entry.origin?.kind === "plugin" && entry.status === "pending");
+        const pending = pendingAsks(list)[0];
         if (!pending) return { ok: false as const, error: "No open question awaits an answer on this card." };
         await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId: pending.id, value: { answers } });
         // A structured interaction resumes the waiting command but not a new
         // agent turn. Send an explicit continuation so the worker proceeds.
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The user answered: ${answers.join(", ")}. Continue the workflow now: persist the decision, advance the appropriate stage with bb stelow advance, and keep working.`, mentions: [] }] });
+        const pendingExpanded = expandInteractionQuestions({ id: pending.id, title: pending.payload?.title, payload: pending.payload });
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation([{ question: pendingExpanded[0]?.question ?? "", answers }]), mentions: [] }] });
         updateCard(cardId, { activity: "running", status: "in-progress" });
         resolveInboxEvents(cardId, now(), ["question"]);
         return { ok: true as const, error: null };
       } catch (error) {
         return { ok: false as const, error: error instanceof Error ? error.message : "Unable to answer the question." };
+      }
+    },
+
+    async answerQuestions({ cardId, answers }) {
+      // Atomic batch answer: every pending question addressed in one RPC, one
+      // worker continuation, one inbox resolution — no fragmented pings.
+      const card = getCard(cardId);
+      if (!card?.worker_thread_id) return { ok: false as const, answered: 0, error: "This card has no worker thread." };
+      try {
+        const list = await bb.sdk.threads.interactions.list({ threadId: card.worker_thread_id });
+        const pendingById = new Map(pendingAsks(list).map((entry) => [entry.id, entry]));
+        const questionText = new Map<string, string>();
+        for (const entry of pendingById.values()) {
+          for (const item of expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload })) {
+            questionText.set(item.questionId, item.question);
+          }
+        }
+        const grouped = groupBatchAnswers(answers);
+        const decisions: Array<{ question: string; answers: string[] }> = [];
+        for (const [interactionId, value] of grouped) {
+          if (!pendingById.has(interactionId)) continue;
+          await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId, value: { answers: value.answers } });
+          if (value.kind === "single") {
+            decisions.push({ question: questionText.get(interactionId) ?? "", answers: value.answers });
+          } else {
+            value.answers.forEach((slot, index) => {
+              decisions.push({ question: questionText.get(`${interactionId}#${index}`) ?? "", answers: slot });
+            });
+          }
+        }
+        if (decisions.length === 0) return { ok: false as const, answered: 0, error: "No open question awaits an answer on this card." };
+        // A structured interaction resumes the waiting command but not a new
+        // agent turn. Exactly one continuation for the whole batch.
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
+        updateCard(cardId, { activity: "running", status: "in-progress" });
+        resolveInboxEvents(cardId, now(), ["question"]);
+        return { ok: true as const, answered: decisions.length, error: null };
+      } catch (error) {
+        return { ok: false as const, answered: 0, error: error instanceof Error ? error.message : "Unable to answer the questions." };
       }
     },
 
@@ -1862,10 +1952,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // picker. Unmapped repos fall back to the caller's active project.
       const status = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
       const repoToProject = new Map(status.repos.map((entry) => [entry.repo, entry.projectId]));
+      const strList = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+      // Alphabetical pickers: every label and assignee seen on open issues, so
+      // the dialog filters without extra round-trips. Assignees flow through
+      // when the GitHub cache exposes them; otherwise the list is empty and
+      // the UI hides the filter instead of faking it.
+      const allLabels = [...new Set(items.items.flatMap((item) => strList(item.labels)))].sort((a, b) => a.localeCompare(b));
+      const allAssignees = [...new Set(items.items.flatMap((item) => strList((item as { assignees?: unknown }).assignees)))].sort((a, b) => a.localeCompare(b));
       const issues = items.items
         .filter((item) => item.labels.includes(label))
         .sort((a, b) => Number(b.number) - Number(a.number));
       return {
+        allLabels,
+        allAssignees,
         issues: issues.map((issue) => {
           const key = `${issue.repo}#${issue.number}`;
           const link = db.prepare("SELECT card_id, imported_at FROM github_imports WHERE issue_key = ?").get(key) as { card_id: string | null; imported_at: number } | undefined;
@@ -1876,6 +1975,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             title: issue.title,
             labels: issue.labels,
             author: issue.author,
+            assignees: strList((issue as { assignees?: unknown }).assignees),
             url: issue.url,
             body: issue.body,
             updatedAt: issue.updatedAt,
@@ -1920,6 +2020,55 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       await g.setLabels({ repo, number: numberValue, labels: issue.labels.filter((item) => item !== label) }).catch(() => {});
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, cardId, skipped: null, error: null };
+    },
+
+    async postGithubCompletion({ cardId, closeIssue }) {
+      // Explicit, user-triggered write-back for imported issues: posts a
+      // factual English completion summary as an issue comment, optionally
+      // closing the issue. Never automatic — Done in Stelow is not
+      // merged/deployed, so auto-close would lie. Runs via the `gh` CLI,
+      // which shares the host's GitHub auth (same account the github plugin
+      // syncs with).
+      const card = getCard(cardId);
+      if (!card) return { ok: false, commentUrl: null, error: ERR_CARD_NOT_FOUND };
+      const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
+      if (!link) return { ok: false, commentUrl: null, error: "This work item was not imported from a GitHub issue." };
+      if (normalizeStatus(card.status) !== "completed") return { ok: false, commentUrl: null, error: "Only completed work items can report back to GitHub." };
+      const workspace = await cardWorkspace(card).catch(() => null);
+      const scopes = workspace?.path ? loadCardScopes(workspace.path, card.name) : [];
+      const doneScopes = scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length;
+      const tasksTotal = scopes.reduce((total, scope) => total + scope.tasks.length, 0);
+      const tasksDone = scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0);
+      const scopeLines = scopes.map((scope) => `- ${scope.name} (${statusLabelForSummary(scope.status)}${scope.tasks.length > 0 ? `, ${scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length}/${scope.tasks.length} tasks` : ""})`);
+      const body = [
+        `Stelow completed "${card.display_name ?? card.name}" (intent: ${card.intent}, final stage: ${card.stage}).`,
+        ``,
+        scopes.length > 0 ? `Scopes: ${doneScopes}/${scopes.length} done; tasks: ${tasksDone}/${tasksTotal} done.` : `No scopes tracked.`,
+        ...scopeLines,
+        ``,
+        `Prompt: ${card.prompt.length > 500 ? `${card.prompt.slice(0, 500)}…` : card.prompt}`,
+      ].join("\n");
+      try {
+        const tmpFile = nodeJoin(tmpdir(), `stelow-gh-comment-${cardId}-${Date.now()}.md`);
+        writeFileSync(tmpFile, body, "utf8");
+        try {
+          const comment = await runGh(["issue", "comment", String(link.number), "--repo", link.repo, "--body-file", tmpFile]);
+          if (comment.code !== 0) return { ok: false, commentUrl: null, error: comment.stderr.trim() || "gh issue comment failed." };
+          // Record before the optional close: a close failure must never
+          // invite a retry that posts the comment twice.
+          db.prepare("UPDATE github_imports SET commented_at = ? WHERE card_id = ?").run(now(), cardId);
+          if (closeIssue) {
+            const closed = await runGh(["issue", "close", String(link.number), "--repo", link.repo, "--reason", "completed"]);
+            if (closed.code !== 0) return { ok: false, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: "Comment posted, but the automatic close failed — close the issue manually on GitHub." };
+          }
+          bb.realtime.publish("card-state", { cardId });
+          return { ok: true, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: null };
+        } finally {
+          try { unlinkSync(tmpFile); } catch { /* best-effort */ }
+        }
+      } catch (error) {
+        return { ok: false, commentUrl: null, error: error instanceof Error ? error.message : "Could not reach GitHub." };
+      }
     },
 
     async listCards({ projectId, kind }) {
@@ -2174,6 +2323,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Worker ledger, newest first. The open row (endedAt null) is the live
       // worker; older rows are archived threads replaced along the way.
       const workerHistory = (db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>).map((row) => ({ threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at, endedAt: row.ended_at, endedReason: row.ended_reason }));
+      // Imported-issue link for the Done-card write-back affordance. The URL
+      // is deterministic (github.com/<repo>/issues/<number>), so no extra
+      // GitHub round-trip is needed to render it.
+      const githubRow = db.prepare("SELECT repo, number, commented_at FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number; commented_at: number | null } | undefined;
+      const githubLink = githubRow ? { repo: githubRow.repo, number: githubRow.number, url: `https://github.com/${githubRow.repo}/issues/${githubRow.number}`, postedAt: githubRow.commented_at ?? null } : null;
       return {
         card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: (card.kind === "research" ? "research" : "delivery") as "delivery" | "research", researchStrategy: card.research_strategy, researchStrategies: strategyList(card), status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
@@ -2186,6 +2340,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         workerHistory,
         fileEnvironmentId,
         nextStages,
+        githubLink,
       };
     },
 
@@ -2355,6 +2510,8 @@ ANY time you need user input, you MUST call the structured form:
     bb stelow ask --thread <this_thread_id> \\
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
+
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
 
 Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
@@ -2556,12 +2713,49 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       resolveInboxEvents(cardId, now(), ["question"]);
       bb.realtime.publish("card-state", { cardId });
       // Deliver the answer to the worker thread so the agent picks it up and continues.
+      // Prefer the current worker: the row's thread may be stale after a restart.
       try {
-        await bb.sdk.threads.send({ threadId: question.thread_id, mode: "auto", input: [{ type: "text", text: `Answer to the question that timed out — continue the workflow now.\n\nQ: ${question.question}\nA: ${answer}`, mentions: [] }] });
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id ?? question.thread_id, mode: "auto", input: [{ type: "text", text: `Answer to the question that timed out — continue the workflow now.\n\nQ: ${question.question}\nA: ${answer}`, mentions: [] }] });
       } catch (error) {
         // Thread may be stopped; the comment still records the answer.
       }
       return { ok: true, error: null };
+    },
+
+    async answerExpiredQuestions({ cardId, answers }) {
+      // Atomic batch for timed-out questions: one comment trail, one resume
+      // message, one inbox resolution — same guarantees as answerQuestions.
+      const card = getCard(cardId);
+      if (!card) return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
+      const rows = new Map<string, { thread_id: string; question: string }>();
+      for (const item of answers) {
+        const row = db.prepare("SELECT * FROM expired_questions WHERE id = ? AND card_id = ? AND answered = 0").get(item.questionId, cardId) as { thread_id: string; question: string } | undefined;
+        if (row && !rows.has(item.questionId)) rows.set(item.questionId, { thread_id: row.thread_id, question: row.question });
+      }
+      if (rows.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };
+      const decisions: Array<{ question: string; answer: string }> = [];
+      // Resume the CURRENT worker: the row's thread may be stale (restart /
+      // reseed archives the thread but keeps its expired questions).
+      const threadId = card.worker_thread_id ?? rows.values().next().value?.thread_id ?? null;
+      db.transaction(() => {
+        for (const [questionId, row] of rows) {
+          const answer = answers.find((item) => item.questionId === questionId)?.answer ?? "";
+          logCardComment(cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${row.question}\nA: ${answer}`);
+          db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
+          decisions.push({ question: row.question, answer });
+        }
+      })();
+      updateCard(cardId, { activity: "running", status: "in-progress" });
+      resolveInboxEvents(cardId, now(), ["question"]);
+      bb.realtime.publish("card-state", { cardId });
+      if (threadId) {
+        try {
+          await bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text: `Answers to ${decisions.length === 1 ? "the question that timed out" : `all ${decisions.length} questions that timed out`} — continue the workflow now.\n\n${decisions.map((d) => `Q: ${d.question}\nA: ${d.answer}`).join("\n\n")}`, mentions: [] }] });
+        } catch {
+          // Thread may be stopped; the comments still record the answers.
+        }
+      }
+      return { ok: true as const, answered: decisions.length, error: null };
     },
 
     async advanceCard({ cardId, stage }) {
@@ -2740,7 +2934,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     summary: "Inspect and interact with Stelow workflows",
     commands: [
       { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
-      { name: "ask", summary: "Ask a blocking structured question", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." },
+      { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>... (repeat --question groups to ask several at once)" },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] <stage>" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
@@ -2769,9 +2963,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (argv[0] === "ask") {
         const flag = (name: string) => { const index = argv.indexOf(name); return index >= 0 ? argv[index + 1] : undefined; };
         const threadId = flag("--thread") ?? ctx.threadId;
-        const question = flag("--question");
-        const labels = argv.flatMap((arg, index) => arg === "--option" && argv[index + 1] ? [argv[index + 1]!] : []);
-        if (!threadId || !question || labels.length < 2) return { exitCode: 2, stderr: "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." };
+        // Repeated --question groups ask several questions in ONE blocking
+        // call: the human answers them together instead of being pinged N
+        // times. Options/--multiple attach to the most recent --question.
+        const parsed = parseAskGroups(argv.slice(1));
+        if (!threadId) return { exitCode: 2, stderr: "Missing --thread <thr_id>." };
+        if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." };
+        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, options: group.options.map((label) => ({ label, description: "" })) }));
+        const batched = groups.length > 1;
         // Signal the pending question via activity (drives the attention flag);
         // the card stays in its real stage column.
         const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
@@ -2779,9 +2978,19 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
         let requestFailed = false;
         const askedAt = Date.now();
-        const options = labels.map((label) => ({ label, description: "" }));
+        // Single-question calls keep the legacy payload shape so older
+        // renderers and card UIs keep working; batches carry `questions`.
+        const askInput = {
+          threadId,
+          rendererId: "stelow-question",
+          title: batched ? `Stelow questions (${groups.length})` : "Stelow question",
+          timeoutMs: Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000),
+        } as const;
+        const first = groups[0]!;
         try {
-          result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title: "Stelow question", timeoutMs: Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), payload: { question, multiple: argv.includes("--multiple"), options } }, { signal: ctx.signal });
+          result = batched
+            ? await bb.ui.requestInput({ ...askInput, payload: { questions: groups } }, { signal: ctx.signal })
+            : await bb.ui.requestInput({ ...askInput, payload: { question: first.question, multiple: first.multiple, options: first.options } }, { signal: ctx.signal });
         } catch {
           // The request itself blew up mid-flight (e.g. dispose tore down the
           // call): same bucket as a transient cancel — never lose the question.
@@ -2810,7 +3019,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           let persisted = false;
           if (cardRow) {
             try {
-              db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(randomId("qexp"), cardRow.id, threadId, question, argv.includes("--multiple") ? 1 : 0, JSON.stringify(options), askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000), 0);
+              // A timed-out batch persists as one expired row per sub-question
+              // so the card can answer them individually or all at once.
+              const expiredAt = askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
+              const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+              db.transaction(() => {
+                for (const group of groups) {
+                  insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, JSON.stringify(group.options), expiredAt, 0);
+                }
+              })();
               updateCard(cardRow.id, { activity: "awaiting-answer" });
               bb.realtime.publish("card-state", { cardId: cardRow.id });
               persisted = true;
