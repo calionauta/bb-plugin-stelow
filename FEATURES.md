@@ -44,7 +44,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   stage's phase. Columns collapse (persisted); cards move via drag-drop.
 - **List view.** Same cards grouped by column, for narrow screens.
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
-  needs-attention + reset.
+  needs-attention + reset. One shared bar: project + attention are the
+  common facets, delivery adds the rest by config — Research renders the
+  identical popover, pills, and checkbox, never a forked row.
+- **First-run tours** (`Tour`). One shared stepper for Inbox, Work, and
+  Research: full steps on first use, a one-line summary bar once content
+  exists, a quiet reopen once dismissed (per-track localStorage).
+  Every step may carry its own primary action, so configuration
+  surfaces where it is explained. Inbox teaches with a ghost sample
+  row instead of a seeded notification — no badge or history pollution.
 - **Sidebar badge.** Unresolved actions plus unseen recent completions
   (7-day window); per-tab active counts. All realtime.
 - **Build stamp** (`buildInfo`). Version in the header so reloads are
@@ -134,11 +142,6 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   takes effect on (re)start, with a stale-worker warning until then.
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
   review checkpoints remembered across cards.
-- **Work tour** (`WorkOnboarding`). First-run progressive disclosure over
-  the Work board: a 3-step tour (start work → per-phase agents → tune
-  later) on the first-use empty state, collapsing to a one-line agent
-  routing bar once cards exist. Dismissible, reopenable, persisted in
-  localStorage; never blocking, one primary action per step.
 
 ## 7. Command and embed
 *When I am an agent, CLI, or another surface, I want the same power.*
@@ -156,8 +159,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 investigation that feeds the delivery board.*
 
 - **Research tab** (`ResearchPanel`). To-Do / Doing / Done / Archived
-  columns over research cards only; project + attention filters;
-  collapsible columns; per-tab active counts; no stages, no gates.
+  columns over research cards only; shared `FiltersBar` (project +
+  attention) plus the Research tour; collapsible columns; per-tab
+  active counts; no stages, no gates.
   The New research dialog shows the effective agent preset
   (`research` band default, else board default) with a Configure
   presets entry; per-investigation pins live in the card's Manage

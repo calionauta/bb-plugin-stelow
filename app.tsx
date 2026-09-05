@@ -549,91 +549,78 @@ function InboxPanel() {
   // content with a quiet updating hint instead of flashing.
   const firstLoad = loading && notifications.length === 0;
   const fatalError = loadError && notifications.length === 0;
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.{loading && !firstLoad ? " Updating…" : ""}</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{firstLoad ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.{loading && !firstLoad ? " Updating…" : ""}</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header><Tour storageKey={STORAGE_KEYS.inboxTour} tourName="Inbox" hasData={notifications.length > 0} summary={action.length > 0 ? `${action.length} ${action.length === 1 ? "item needs" : "items need"} your decision` : "Decisions, failures, and completions land here"} steps={[{ title: "You only get pinged when needed", body: "Questions, worker failures, and pauses land here as action items; completions appear under Recent updates. The badge counts only what needs you." }, { title: "Action items look like this", body: "Each row names the card, what it needs, and when. Opening a row jumps straight to the card and event.", preview: <div aria-hidden className="mt-2 flex items-start gap-3 rounded-md border bg-background p-3 opacity-80"><span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-semibold text-amber-700 dark:text-amber-300">?</span><span className="min-w-0"><span className="block text-sm font-medium">Example card</span><span className="mt-0.5 block text-sm text-muted-foreground">Needs a decision. Which interface should we build?</span></span></div> }, { title: "Answer in one sitting", body: "Batched questions answer together with one submit — one worker resume, one resolution. Timed-out asks stay answerable on the card." }]} />{firstLoad ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
-// First-run onboarding for the Work board, built as progressive disclosure:
-// Layer 1 (orientation) fires on the first-use empty state and drives one
-// task — starting the first work. Layer 2 (contextual) collapses to a
-// one-line bar once cards exist. Layer 3 (power: per-phase presets) is
-// revealed only inside step 3 or via the presets dialog, never up front.
-// Behavior-triggered only (card count), dismissible, reopenable — never
-// time-based, never blocking. Dismissal persists in localStorage next to
-// the other board preferences.
-function WorkOnboarding({ hasCards, workerPolicy, onStartWork, onConfigurePresets }: {
-  hasCards: boolean;
-  workerPolicy: Array<{ band: string; preset: { name: string } | null }>;
-  onStartWork: () => void;
-  onConfigurePresets: () => void;
+// Shared first-run tour for every track (DRY: one stepper, one collapsed
+// bar, one reopen — steps are data per track). Convention over
+// Configuration: Layer 1 (full steps) shows on first use, Layer 2 (summary
+// bar) once content exists, a quiet reopen once dismissed. Dismissal
+// persists per storageKey. Every step may carry its own primary action, so
+// configuration surfaces exactly where it is explained, never a step later.
+type TourStep = {
+  title: string;
+  body: React.ReactNode;
+  action?: React.ReactNode;
+  preview?: React.ReactNode;
+};
+function Tour({ storageKey, tourName, steps, hasData, summary }: {
+  storageKey: string;
+  tourName: string;
+  steps: TourStep[];
+  hasData: boolean;
+  summary: React.ReactNode;
 }) {
   const [dismissed, setDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    try { return window.localStorage.getItem(STORAGE_KEYS.workOnboarding) === "dismissed"; } catch { return false; }
+    try { return window.localStorage.getItem(storageKey) === "dismissed"; } catch { return false; }
   });
   const [step, setStep] = useState(0);
   const [expanded, setExpanded] = useState(false);
   function dismiss() {
     setDismissed(true);
-    try { window.localStorage.setItem(STORAGE_KEYS.workOnboarding, "dismissed"); } catch { /* onboarding is best-effort */ }
+    try { window.localStorage.setItem(storageKey, "dismissed"); } catch { /* tours are best-effort */ }
   }
   function reopen() {
     setDismissed(false);
     setStep(0);
     setExpanded(true);
-    try { window.localStorage.removeItem(STORAGE_KEYS.workOnboarding); } catch { /* onboarding is best-effort */ }
+    try { window.localStorage.removeItem(storageKey); } catch { /* tours are best-effort */ }
   }
-  const policySummary = workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ");
-  // Dismissed: a quiet reopen affordance, so the guidance stays
-  // discoverable without occupying space (never hidden).
   if (dismissed) {
     return (
       <div className="flex justify-end">
-        <button onClick={reopen} title="Replay the 3-step Work tour" className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-          How Stelow works?
+        <button onClick={reopen} title={`Replay the ${tourName} tour`} className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+          How {tourName} works?
         </button>
       </div>
     );
   }
-  // Layer 2: cards exist, so orientation already happened. One line naming
-  // the current agent routing, expandable into the full 3 steps on demand.
-  if (hasCards && !expanded) {
+  if (hasData && !expanded) {
     return (
       <div className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
-        <span className="min-w-0 flex-1 truncate" title={policySummary}>Agents per phase — {policySummary}</span>
-        <button onClick={() => setExpanded(true)} aria-expanded={false} className="cursor-pointer shrink-0 rounded-md px-2 py-1 font-medium text-primary hover:underline">How it works</button>
-        <button onClick={dismiss} aria-label="Dismiss Work tour" className="cursor-pointer shrink-0 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground">×</button>
+        <span className="min-w-0 flex-1 truncate">{summary}</span>
+        <button onClick={() => setExpanded(true)} aria-expanded={false} className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">How it works</button>
+        <button onClick={dismiss} aria-label={`Dismiss ${tourName} tour`} className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">×</button>
       </div>
     );
   }
-  const steps = [
-    {
-      title: "Start with an outcome",
-      body: "Describe what you want — a problem, an idea, a fix. Stelow triages it, then guides it through Analyse → Plan → Execute → Review.",
-      action: <Button className="min-h-11" onClick={onStartWork}>Start new work</Button>,
-    },
-    {
-      title: "Each phase can use a different agent",
-      body: "The worker switches brains automatically at phase boundaries — heavier reasoning for planning, faster models for execution. Unset phases inherit the card default.",
-      action: null,
-    },
-    {
-      title: "Tune when you're ready",
-      body: "Defaults work out of the box. When you feel a phase needs a different provider, model, or permission mode, change it per phase — or pin one card.",
-      action: <Button className="min-h-11" variant="outline" onClick={onConfigurePresets}>Configure presets</Button>,
-    },
-  ];
   const current = steps[step]!;
+  // Contextual action lives in the content zone (with the preview it acts
+  // on); navigation owns a fixed right-aligned footer row on every step.
+  // Mixing the two in one row shifts Back/Next around and reads as
+  // navigation — the action must never move the way out.
   return (
-    <section aria-label="Work tour" className="rounded-md border bg-muted/30 p-4">
+    <section aria-label={`${tourName} tour`} className="rounded-md border bg-muted/30 p-4">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Work tour · Step {step + 1} of {steps.length}</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{tourName} tour · Step {step + 1} of {steps.length}</p>
         <button onClick={dismiss} className="cursor-pointer min-h-11 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Skip tour</button>
       </div>
       <h2 className="mt-1 text-sm font-semibold text-foreground">{current.title}</h2>
       <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{current.body}</p>
-      {step === 1 ? <p className="mt-2 rounded-md border bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground" title="Current per-phase routing">{policySummary}</p> : null}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {current.action}
+      {current.preview}
+      {current.action ? <div className="mt-3">{current.action}</div> : null}
+      <div className="mt-3 flex items-center justify-end gap-2 border-t pt-3">
         {step > 0 ? <button onClick={() => setStep(step - 1)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Back</button> : null}
         {step < steps.length - 1 ? <button onClick={() => setStep(step + 1)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Next</button> : <button onClick={dismiss} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Done</button>}
       </div>
@@ -735,6 +722,7 @@ function BoardPanel() {
   };
   const analysisWorkerPreset = presetForBand("analysis");
   const workerPolicy = ["analysis", "planning", "execution", "review"].map((band) => ({ band, preset: presetForBand(band) }));
+  const policySummary = workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ");
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
   const filteredCards = useMemo(() => cards.filter((card) => {
     if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
@@ -860,11 +848,28 @@ function BoardPanel() {
               ) : null}
             </div>
           </header>
-          <WorkOnboarding
-            hasCards={cards.length > 0}
-            workerPolicy={workerPolicy}
-            onStartWork={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}
-            onConfigurePresets={() => setBoardPresetsOpen(true)}
+          <Tour
+            storageKey={STORAGE_KEYS.workTour}
+            tourName="Work"
+            hasData={cards.length > 0}
+            summary={<span title={policySummary}>Agents per phase — {policySummary}</span>}
+            steps={[
+              {
+                title: "Start with an outcome",
+                body: "Describe what you want — a problem, an idea, a fix. Stelow triages it, then guides it through Analyse → Plan → Execute → Review.",
+                action: <Button className="min-h-11" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>Start new work</Button>,
+              },
+              {
+                title: "Each phase can use a different agent",
+                body: "The worker switches brains automatically at phase boundaries — heavier reasoning for planning, faster models for execution. Unset phases inherit the card default. Change it here, no need to wait.",
+                preview: <p className="mt-2 rounded-md border bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground" title="Current per-phase routing">{policySummary}</p>,
+                action: <Button className="min-h-11" variant="outline" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>,
+              },
+              {
+                title: "Pin one card when needed",
+                body: "The board default covers everything. To escape a quota error or give one card a stronger brain, pin a preset from its Manage section — it applies on restart.",
+              },
+            ]}
           />
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
@@ -1182,6 +1187,30 @@ function ResearchPanel() {
             </div>
           </header>
 
+          <Tour
+            storageKey={STORAGE_KEYS.researchTour}
+            tourName="Research"
+            hasData={cards.length > 0}
+            summary={<span title={`research: ${effectiveResearchPreset?.name ?? "Default"}`}>Investigations run on {effectiveResearchPreset?.name ?? "Default"}</span>}
+            steps={[
+              {
+                title: "Understand before you build",
+                body: "Ask a question or describe what to investigate — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become Work cards.",
+                action: <Button className="min-h-11" onClick={() => setCreateOpen(true)}>Start new research</Button>,
+              },
+              {
+                title: "One strategy per round",
+                body: "Each round appends a new section to the brief — never rewrites it. Run another strategy from the card to compound perspectives; every round uses the research agent preset.",
+                preview: <p className="mt-2 rounded-md border bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground" title="Research agent preset">research: {effectiveResearchPreset?.name ?? "Default"}{researchBandPreset ? "" : " (board default)"}</p>,
+                action: <Button className="min-h-11" variant="outline" onClick={() => setResearchPresetsOpen(true)}>Configure presets</Button>,
+              },
+              {
+                title: "Ranked opportunities become work",
+                body: "Check opportunities in the brief and fan out — each becomes a delivery work card at triage, with a comment trail both ways so nothing duplicates.",
+              },
+            ]}
+          />
+
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
               <DialogHeader>
@@ -1219,10 +1248,15 @@ function ResearchPanel() {
             onChanged={() => load(researchProjectId ?? routeProjectId)}
           />
 
-          <div className="flex flex-wrap items-center gap-2 border-b pb-3">
-            <FilterSelect label="Project" value={filterProjectId} onChange={setFilterProjectId} options={[{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))]} inline />
-            <button onClick={() => setFilterAttention((value) => !value)} aria-pressed={filterAttention} className={`min-h-11 cursor-pointer rounded-md border px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filterAttention ? "border-primary/40 bg-primary/5 text-foreground" : "border-border bg-background text-muted-foreground hover:bg-muted"}`}>Needs attention</button>
-            <button onClick={() => { setFilterProjectId("all"); setFilterAttention(false); }} className="min-h-11 cursor-pointer rounded-md px-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:underline">Reset</button>
+          <div className="border-b pb-3">
+            <FiltersBar
+              projects={projects}
+              filterProjectId={filterProjectId}
+              filterAttention={filterAttention}
+              onProject={setFilterProjectId}
+              onAttention={setFilterAttention}
+              onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
+            />
           </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading research…</p> : null}
           {cards.length === 0 && !loading ? (
@@ -1266,7 +1300,9 @@ const STORAGE_KEYS = {
   boardColumns: "stelow-columns-collapsed-v1",
   researchColumns: "stelow-research-columns-collapsed-v1",
   lastTab: "stelow-tab-v1",
-  workOnboarding: "stelow-work-onboarding-v1",
+  workTour: "stelow-tour-work-v1",
+  researchTour: "stelow-tour-research-v1",
+  inboxTour: "stelow-tour-inbox-v1",
 } as const;
 
 type ParsedStelowRoute =
@@ -1446,29 +1482,57 @@ function ProjectPill({ value, onChange, projects }: { value: string | null; onCh
   );
 }
 
-function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filterIntent, filterStatus, filterActivity, filterAttention, onProject, onStage, onIntent, onStatus, onActivity, onAttention, onReset }: {
+// One filter bar for both boards (Archetype A: same components, same
+// affordances). Project + attention are the shared facets; delivery adds
+// stage/type/status/activity by passing their value + handler. Facets
+// without a handler are not rendered — Research gets the identical popover,
+// pills, and checkbox without a forked filter row.
+function FiltersBar({ projects, filterProjectId, filterAttention, onProject, onAttention, onReset, stageOptions, filterStage, onStage, filterIntent, onIntent, filterStatus, onStatus, filterActivity, onActivity }: {
   projects: Project[];
-  stageOptions: string[];
   filterProjectId: string;
-  filterStage: string;
-  filterIntent: string;
-  filterStatus: string;
-  filterActivity: string;
   filterAttention: boolean;
   onProject: (v: string) => void;
-  onStage: (v: string) => void;
-  onIntent: (v: string) => void;
-  onStatus: (v: string) => void;
-  onActivity: (v: string) => void;
   onAttention: (v: boolean) => void;
   onReset: () => void;
+  stageOptions?: string[];
+  filterStage?: string;
+  onStage?: (v: string) => void;
+  filterIntent?: string;
+  onIntent?: (v: string) => void;
+  filterStatus?: string;
+  onStatus?: (v: string) => void;
+  filterActivity?: string;
+  onActivity?: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // The popover is a lightweight dialog, not a modal: clicking outside or
+  // pressing Escape dismisses it, like Done does. Selections apply live,
+  // so dismissing never loses filter state.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
   const projectOptions = useMemo(() => [{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))], [projects]);
-  const stageOptionsList = useMemo(() => [{ value: "all", label: "Any stage" }, ...stageOptions.map((stage) => ({ value: stage, label: stage }))], [stageOptions]);
-  const activeCount = (filterProjectId !== "all" ? 1 : 0) + (filterStage !== "all" ? 1 : 0) + (filterIntent !== "all" ? 1 : 0) + (filterStatus !== "all" ? 1 : 0) + (filterActivity !== "all" ? 1 : 0) + (filterAttention ? 1 : 0);
+  const stageOptionsList = useMemo(() => [{ value: "all", label: "Any stage" }, ...(stageOptions ?? []).map((stage) => ({ value: stage, label: stage }))], [stageOptions]);
+  const activeCount = (filterProjectId !== "all" ? 1 : 0) + (filterAttention ? 1 : 0)
+    + (onStage && filterStage !== undefined && filterStage !== "all" ? 1 : 0)
+    + (onIntent && filterIntent !== undefined && filterIntent !== "all" ? 1 : 0)
+    + (onStatus && filterStatus !== undefined && filterStatus !== "all" ? 1 : 0)
+    + (onActivity && filterActivity !== undefined && filterActivity !== "all" ? 1 : 0);
   return (
-    <div className="relative flex flex-wrap items-center gap-2">
+    <div ref={wrapRef} className="relative flex flex-wrap items-center gap-2">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -1490,10 +1554,10 @@ function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filt
         <div role="dialog" aria-label="Filters" className="absolute left-0 top-10 z-20 w-[min(36rem,calc(100vw-2rem))] rounded-md border bg-card p-3 shadow-lg">
           <div className="grid gap-3 sm:grid-cols-2">
             <FilterSelect label="Project" value={filterProjectId} onChange={onProject} options={projectOptions} />
-            <FilterSelect label="Type" value={filterIntent} onChange={onIntent} options={FILTER_INTENT_OPTIONS} />
-            <FilterSelect label="Status" value={filterStatus} onChange={onStatus} options={FILTER_STATUS_OPTIONS} />
-            <FilterSelect label="Stage" value={filterStage} onChange={onStage} options={stageOptionsList} />
-            <FilterSelect label="Activity" value={filterActivity} onChange={onActivity} options={FILTER_ACTIVITY_OPTIONS} />
+            {onIntent ? <FilterSelect label="Type" value={filterIntent ?? "all"} onChange={onIntent} options={FILTER_INTENT_OPTIONS} /> : null}
+            {onStatus ? <FilterSelect label="Status" value={filterStatus ?? "all"} onChange={onStatus} options={FILTER_STATUS_OPTIONS} /> : null}
+            {onStage ? <FilterSelect label="Stage" value={filterStage ?? "all"} onChange={onStage} options={stageOptionsList} /> : null}
+            {onActivity ? <FilterSelect label="Activity" value={filterActivity ?? "all"} onChange={onActivity} options={FILTER_ACTIVITY_OPTIONS} /> : null}
             <label className="flex items-center gap-2 self-end text-sm">
               <input type="checkbox" checked={filterAttention} onChange={(event) => onAttention(event.target.checked)} aria-label="Needs attention" />
               <span className="text-xs text-muted-foreground">Needs attention</span>
@@ -1509,29 +1573,14 @@ function FiltersBar({ projects, stageOptions, filterProjectId, filterStage, filt
   );
 }
 
-function FilterSelect({ label, value, onChange, options, inline = false }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; inline?: boolean }) {
-  const selected = options.find((option) => option.value === value);
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
   const isAll = value === "all";
-  // Inline: horizontal label + control in one min-h-11 box, so filter-bar
-  // rows align with their button siblings. Stacked (default) stays for
-  // vertical contexts like the FiltersBar popover.
-  if (inline) {
-    return (
-      <label className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm text-muted-foreground hover:text-foreground ${isAll ? "border-border bg-background" : "border-primary bg-primary/10 text-foreground"}`}>
-        <span aria-hidden>{label}</span>
-        <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} className="h-full min-h-11 cursor-pointer bg-transparent pr-1 text-sm font-medium text-foreground focus-visible:outline-none">
-          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </label>
-    );
-  }
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)} className={`cursor-pointer rounded-md border px-2 py-1 text-sm ${isAll ? "border-border bg-background text-muted-foreground" : "border-primary bg-primary/10 text-foreground"}`}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
-      {selected ? null : null}
     </label>
   );
 }
