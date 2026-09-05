@@ -557,7 +557,7 @@ function BoardPanel() {
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return { archived: true };
     try {
-      const raw = window.localStorage.getItem("stelow-columns-collapsed-v1");
+      const raw = window.localStorage.getItem(STORAGE_KEYS.boardColumns);
       if (!raw) return { archived: true };
       const parsed = JSON.parse(raw) as Record<string, boolean>;
       return typeof parsed === "object" && parsed ? parsed : { archived: true };
@@ -565,7 +565,7 @@ function BoardPanel() {
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try { window.localStorage.setItem("stelow-columns-collapsed-v1", JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(STORAGE_KEYS.boardColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
   const [createWorkOpen, setCreateWorkOpen] = useState(false);
@@ -932,7 +932,7 @@ function ResearchPanel() {
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return { archived: true };
     try {
-      const raw = window.localStorage.getItem("stelow-research-columns-collapsed-v1");
+      const raw = window.localStorage.getItem(STORAGE_KEYS.researchColumns);
       if (!raw) return { archived: true };
       const parsed = JSON.parse(raw) as Record<string, boolean>;
       return typeof parsed === "object" && parsed ? parsed : { archived: true };
@@ -940,7 +940,7 @@ function ResearchPanel() {
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try { window.localStorage.setItem("stelow-research-columns-collapsed-v1", JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
+    try { window.localStorage.setItem(STORAGE_KEYS.researchColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1107,7 +1107,14 @@ function ResearchPanel() {
   );
 }
 
-const STELOW_TAB_STORAGE_KEY = "stelow-tab-v1";
+// localStorage keys in one place: board/research column collapse and the
+// remembered track. Renaming a key is one line; readers never guess at
+// raw strings scattered through panels.
+const STORAGE_KEYS = {
+  boardColumns: "stelow-columns-collapsed-v1",
+  researchColumns: "stelow-research-columns-collapsed-v1",
+  lastTab: "stelow-tab-v1",
+} as const;
 
 type ParsedStelowRoute =
   | { kind: "track"; track: StelowTrack }
@@ -1209,7 +1216,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
   const [lastTab, setLastTab] = useState<StelowTrack>(() => {
     if (typeof window === "undefined") return "inbox";
     try {
-      const raw = window.localStorage.getItem(STELOW_TAB_STORAGE_KEY);
+      const raw = window.localStorage.getItem(STORAGE_KEYS.lastTab);
       if (raw === "inbox" || raw === "work" || raw === "research") return raw;
     } catch { /* default below */ }
     return "inbox";
@@ -1221,7 +1228,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
     if (route.kind !== "track") return;
     if (subPath.replace(/^\/+|\/+$/g, "") === "") return;
     setLastTab(route.track);
-    try { window.localStorage.setItem(STELOW_TAB_STORAGE_KEY, route.track); } catch { /* ignore */ }
+    try { window.localStorage.setItem(STORAGE_KEYS.lastTab, route.track); } catch { /* ignore */ }
   }, [route, subPath]);
   const goTrack = useCallback((track: StelowTrack) => {
     goToTrack(navigate, track);
@@ -1395,10 +1402,58 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labe
   );
 }
 
-function BoardCard({ card }: { card: CardItem }) {
-  const navigate = useBbNavigate();
+// Shared card leaves. BoardCard and ResearchCard render identical worker
+// chrome (inline retry, attention/error/idle rows) — one definition serves
+// both tracks instead of drifting copies.
+function CardRetryButton({ cardId }: { cardId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const [retrying, setRetrying] = useState(false);
+  async function retry(event: React.MouseEvent) {
+    event.stopPropagation();
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const result = await rpc.call("retryWorker", { cardId });
+      if (!result.ok) toast.error(result.error ?? "Retry failed. Open the card to restart fresh.");
+      else toast.success("Worker retried.");
+    } finally {
+      setRetrying(false);
+    }
+  }
+  return (
+    <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="disabled:cursor-not-allowed cursor-pointer rounded-full border border-primary/40 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
+      {retrying ? "…" : "↻ Retry"}
+    </button>
+  );
+}
+
+// Every "open the worker thread" affordance: one definition with the
+// inspect-title everywhere (it is always an inspection). Renders nothing
+// without a thread instead of a dead button that swallows clicks.
+function OpenThreadButton({ threadId }: { threadId: string | null | undefined }) {
+  const navigate = useBbNavigate();
+  if (!threadId) return null;
+  return <Button size="sm" variant="outline" onClick={() => navigate.toThread(threadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button>;
+}
+
+function CardMetaRows({ card }: { card: CardItem }) {
+  const attention = card.needsAttention;
+  return (
+    <>
+      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+          <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
+          <span>{attentionLabel(card)}</span>
+        </div>
+      ) : null}
+      {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
+      {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
+    </>
+  );
+}
+
+function BoardCard({ card }: { card: CardItem }) {
+  const navigate = useBbNavigate();
   const attention = card.needsAttention;
   const running = card.activity === "running";
   const stuck = Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
@@ -1408,18 +1463,6 @@ function BoardCard({ card }: { card: CardItem }) {
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
-  async function retry(event: React.MouseEvent | React.KeyboardEvent) {
-    event.stopPropagation();
-    if (retrying) return;
-    setRetrying(true);
-    try {
-      const result = await rpc.call("retryWorker", { cardId: card.id });
-      if (!result.ok) toast.error(result.error ?? "Retry failed. Open the card to restart fresh.");
-      else toast.success("Worker retried.");
-    } finally {
-      setRetrying(false);
-    }
-  }
   return (
     <div
       role="button"
@@ -1435,7 +1478,7 @@ function BoardCard({ card }: { card: CardItem }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
         <span className="inline-flex shrink-0 items-center gap-1.5">
-          {stuck ? <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="disabled:cursor-not-allowed cursor-pointer rounded-full border border-primary/40 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">{retrying ? "…" : "↻ Retry"}</button> : null}
+          {stuck ? <CardRetryButton cardId={card.id} /> : null}
           <ActivityPill activity={card.activity} />
         </span>
       </div>
@@ -1444,14 +1487,7 @@ function BoardCard({ card }: { card: CardItem }) {
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
         <Pill className="ml-auto whitespace-nowrap" title="Work intent — the kind of work this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
       </div>
-      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
-        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-          <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
-          <span>{attentionLabel(card)}</span>
-        </div>
-      ) : null}
-      {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
-      {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
+      <CardMetaRows card={card} />
     </div>
   );
 }
@@ -1460,8 +1496,6 @@ function BoardCard({ card }: { card: CardItem }) {
 // Research panel. Retry, attention, and activity reuse the delivery pieces.
 function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: string | null }) {
   const navigate = useBbNavigate();
-  const rpc = useRpc<typeof rpcContract>();
-  const [retrying, setRetrying] = useState(false);
   const attention = card.needsAttention;
   const running = card.activity === "running";
   const stuck = Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
@@ -1471,18 +1505,6 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
-  async function retry(event: React.MouseEvent | React.KeyboardEvent) {
-    event.stopPropagation();
-    if (retrying) return;
-    setRetrying(true);
-    try {
-      const result = await rpc.call("retryWorker", { cardId: card.id });
-      if (!result.ok) toast.error(result.error ?? "Retry failed. Open the card to restart fresh.");
-      else toast.success("Worker retried.");
-    } finally {
-      setRetrying(false);
-    }
-  }
   return (
     <div
       role="button"
@@ -1498,7 +1520,7 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
         <span className="inline-flex shrink-0 items-center gap-1.5">
-          {stuck ? <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="disabled:cursor-not-allowed cursor-pointer rounded-full border border-primary/40 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">{retrying ? "…" : "↻ Retry"}</button> : null}
+          {stuck ? <CardRetryButton cardId={card.id} /> : null}
           <ActivityPill activity={card.activity} />
         </span>
       </div>
@@ -1506,14 +1528,7 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
         <Pill tone={statusTone(card.status)}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>
         {strategyLabel ? <Pill className="ml-auto whitespace-nowrap" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
       </div>
-      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
-        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-          <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
-          <span>{attentionLabel(card)}</span>
-        </div>
-      ) : null}
-      {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
-      {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
+      <CardMetaRows card={card} />
     </div>
   );
 }
@@ -2689,6 +2704,76 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
   );
 }
 
+// Shared detail leaves. Delivery and research bodies render identical
+// worker history, conversation, and inbox-event banners — one definition
+// each instead of drifting copies.
+function WorkerHistoryList({ history }: { history: CardDetailResponse["workerHistory"] }) {
+  const navigate = useBbNavigate();
+  if (history.length === 0) return null;
+  return (
+    <details className="border-t pt-2">
+      <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Worker history ({history.length}) — archived threads stay readable</summary>
+      <div className="mt-1 divide-y divide-border rounded-md border">
+        {history.map((entry) => (
+          <div key={entry.threadId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
+            <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${entry.endedAt === null ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">
+              <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
+              {entry.presetName ? <span> · {entry.presetName}</span> : null}
+              <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
+            </span>
+            <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen = false }: {
+  comments: CardDetailResponse["comments"]; draft: string; onDraftChange: (value: string) => void; onSend: () => void; defaultOpen?: boolean;
+}) {
+  return (
+    <CardDisclosure
+      title="Conversation"
+      hint={comments.length ? `${comments.length}` : "talk to the agent"}
+      defaultOpen={defaultOpen}
+    >
+      <div className="divide-y divide-border">
+        {comments.length ? comments.map((entry) => (
+          <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
+              <span>{new Date(entry.createdAt).toLocaleString()}</span>
+            </div>
+            <p className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></p>
+          </div>
+        )) : <p className="text-xs text-muted-foreground">No comments yet — send the first note to the agent below.</p>}
+      </div>
+      <label className="block space-y-1">
+        <span className="text-xs font-medium text-muted-foreground">Write to the agent</span>
+        <textarea value={draft} onChange={(event) => onDraftChange(event.target.value)} rows={3} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Ask, correct, or add context... (Cmd/Ctrl+Enter to send)" onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && draft.trim()) onSend(); }} />
+      </label>
+      <div className="flex justify-end"><Button disabled={!draft.trim()} onClick={() => onSend()}>Send to agent</Button></div>
+    </CardDisclosure>
+  );
+}
+
+function InboxEventBanner({ visible, event, sectionRef }: {
+  visible: boolean;
+  event: { kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null;
+  sectionRef: React.RefObject<HTMLElement | null>;
+}) {
+  if (!visible) return null;
+  return (
+    <section ref={sectionRef} tabIndex={-1} className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification">
+      <p className="text-sm font-semibold">{event ? `${INBOX_COPY[event.kind].label}.` : "Opened from Stelow Inbox."}</p>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{event?.summary ?? "This notification is no longer available."}</p>
+      {event ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(event.occurredAt).toLocaleString()}>{relativeTime(event.occurredAt)}</p> : null}
+    </section>
+  );
+}
+
 // Research-track card detail: hero + brief + fan-out + artifacts + manage +
 // conversation. Delivery-only surfaces (stages, timeline, gates, intent)
 // never render here; every leaf below is shared with the delivery body.
@@ -2822,7 +2907,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {card ? (
           <>
-            {inboxEventId && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused")) ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="text-sm font-semibold">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
+            <InboxEventBanner visible={Boolean(inboxEventId) && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused"))} event={inboxEvent} sectionRef={inboxEventRef} />
             {hero && heroStyle ? (
               <section aria-label="Research status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
                 <div className="flex items-start gap-2.5">
@@ -2848,7 +2933,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
                           )}
-                          <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button>
+                          <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
                       {hero.kind === "paused" ? (
@@ -2859,11 +2944,11 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title={card.lastError ? "Retry the failed worker in place — nothing is reset." : "Resume the idle worker in place — nothing is reset."}>{retrying ? "Retrying…" : card.lastError ? "Retry" : "Resume"}</Button>
                           )}
-                          {card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button> : null}
+                          <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
                       {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
-                        card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread.">Open thread ↗</Button> : null
+                        <OpenThreadButton threadId={card.workerThreadId} />
                       ) : null}
                       {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
@@ -2873,7 +2958,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
                           )}
-                          <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread.">Open thread ↗</Button>
+                          <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
                     </div>
@@ -2964,48 +3049,10 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                 <button onClick={() => setRepairOpen(true)} title="Start over with a new worker on the same strategy. Comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
                 <button onClick={() => setArchiveOpen(true)} className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive research</button>
               </div>
-              {detail && detail.workerHistory.length > 0 ? (
-                <details className="border-t pt-2">
-                  <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Worker history ({detail.workerHistory.length}) — archived threads stay readable</summary>
-                  <div className="mt-1 divide-y divide-border rounded-md border">
-                    {detail.workerHistory.map((entry) => (
-                      <div key={entry.threadId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
-                        <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${entry.endedAt === null ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                          <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
-                          {entry.presetName ? <span> · {entry.presetName}</span> : null}
-                          <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
-                        </span>
-                        <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ) : null}
+              {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
             </CardDisclosure>
 
-            <CardDisclosure
-              title="Conversation"
-              hint={detail?.comments.length ? `${detail.comments.length}` : "talk to the agent"}
-              defaultOpen={hero?.kind === "decision"}
-            >
-              <div className="divide-y divide-border">
-                {detail?.comments.length ? detail.comments.map((entry) => (
-                  <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
-                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
-                      <span>{new Date(entry.createdAt).toLocaleString()}</span>
-                    </div>
-                    <p className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></p>
-                  </div>
-                )) : <p className="text-xs text-muted-foreground">No comments yet — send the first note to the agent below.</p>}
-              </div>
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Write to the agent</span>
-                <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Ask, correct, or add context... (Cmd/Ctrl+Enter to send)" onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && comment.trim()) void submitComment(); }} />
-              </label>
-              <div className="flex justify-end"><Button disabled={!comment.trim()} onClick={() => void submitComment()}>Send to agent</Button></div>
-            </CardDisclosure>
+<CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
 
           </>
         ) : null}
@@ -3252,7 +3299,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         ) : null}
         {card && card.kind !== "research" ? (
           <>
-            {inboxEventId && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused")) ? <section ref={inboxEventRef} tabIndex={-1} className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification"><p className="text-sm font-semibold">{inboxEvent ? `${INBOX_COPY[inboxEvent.kind].label}.` : "Opened from Stelow Inbox."}</p><p className="mt-1 text-sm leading-relaxed text-muted-foreground">{inboxEvent?.summary ?? "This notification is no longer available."}</p>{inboxEvent ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(inboxEvent.occurredAt).toLocaleString()}>{relativeTime(inboxEvent.occurredAt)}</p> : null}</section> : null}
+            <InboxEventBanner visible={Boolean(inboxEventId) && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused"))} event={inboxEvent} sectionRef={inboxEventRef} />
             {/* HERO — one contextual sentence + one primary action (D primary, A type scale) */}
             {hero && heroStyle ? (
               <section aria-label="Card status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
@@ -3281,7 +3328,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
                           )}
-                          <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button>
+                          <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
                       {hero.kind === "paused" ? (
@@ -3292,11 +3339,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title={card.lastError ? "Retry the failed worker in place from the current stage — nothing is reset." : "Resume the idle worker in place from the current stage — nothing is reset."}>{retrying ? "Retrying…" : card.lastError ? "Retry" : "Resume"}</Button>
                           )}
-                          {card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button> : null}
+                          <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
                       {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
-                        card.workerThreadId ? <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread.">Open thread ↗</Button> : null
+                        <OpenThreadButton threadId={card.workerThreadId} />
                       ) : null}
                       {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
@@ -3306,7 +3353,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                           ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
                           )}
-                          <Button size="sm" variant="outline" onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)} title="Open the worker thread.">Open thread ↗</Button>
+                          <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
                     </div>
@@ -3453,48 +3500,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
                 <button onClick={() => setArchiveOpen(true)} className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
               </div>
-              {detail && detail.workerHistory.length > 0 ? (
-                <details className="border-t pt-2">
-                  <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Worker history ({detail.workerHistory.length}) — archived threads stay readable</summary>
-                  <div className="mt-1 divide-y divide-border rounded-md border">
-                    {detail.workerHistory.map((entry) => (
-                      <div key={entry.threadId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
-                        <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${entry.endedAt === null ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                          <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
-                          {entry.presetName ? <span> · {entry.presetName}</span> : null}
-                          <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
-                        </span>
-                        <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ) : null}
+              {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
             </CardDisclosure>
             {/* DISCLOSURE 3 — Conversation (history + composer) */}
-            <CardDisclosure
-              title="Conversation"
-              hint={detail?.comments.length ? `${detail.comments.length}` : "talk to the agent"}
-              defaultOpen={hero?.kind === "decision"}
-            >
-              <div className="divide-y divide-border">
-                {detail?.comments.length ? detail.comments.map((entry) => (
-                  <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
-                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
-                      <span>{new Date(entry.createdAt).toLocaleString()}</span>
-                    </div>
-                    <p className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></p>
-                  </div>
-                )) : <p className="text-xs text-muted-foreground">No comments yet — send the first note to the agent below.</p>}
-              </div>
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Write to the agent</span>
-                <textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Ask, correct, or add context... (Cmd/Ctrl+Enter to send)" onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && comment.trim()) void submitComment(); }} />
-              </label>
-              <div className="flex justify-end"><Button disabled={!comment.trim()} onClick={() => void submitComment()}>Send to agent</Button></div>
-            </CardDisclosure>
+<CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
 
           </>
         ) : null}

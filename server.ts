@@ -1299,9 +1299,9 @@ ${prompt}` }, ...workerAttachments],
   // is re-created or reset. The old worker is archived/stopped by this helper.
   async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append" }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
     const row = getCard(cardId);
-    if (!row) return { ok: false, error: "Card not found." };
+    if (!row) return { ok: false, error: ERR_CARD_NOT_FOUND };
     const preset = getPresetById(presetId);
-    if (!preset) return { ok: false, error: "Preset not found." };
+    if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
     const params = presetAttachmentParams(preset);
     const workspace = await cardWorkspace(row);
     const projectPath = workspace?.path ?? "";
@@ -1407,7 +1407,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // project without colliding). Every refusal names its exit.
   async function readResearchBrief(card: CardRow): Promise<{ ok: false; error: string } | { ok: true; content: string; absolute: string; display: string }> {
     const workspace = await cardWorkspace(card);
-    if (!workspace?.path) return { ok: false, error: "Workspace is unavailable." };
+    if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
     if (!card.dir_hash) return { ok: false, error: "No workflow state for this research yet." };
     const stateDir = await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null);
     if (!stateDir) return { ok: false, error: "No workflow state for this research yet." };
@@ -1453,7 +1453,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
-          db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), card.id, "card", card.id, "agent", lastOutput, now());
+          logCardComment(card.id, "card", card.id, "agent", lastOutput);
         }
       } else if (status === "failed" || status === "error") {
         updateCard(card.id, { activity: "error" });
@@ -1475,6 +1475,21 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   function getCard(cardId: string): CardRow | undefined {
     return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
+  }
+
+  // Shared refusal copy: identical wording everywhere so the same failure
+  // reads the same on every surface, fixed in one place.
+  const ERR_CARD_NOT_FOUND = "Card not found.";
+  const ERR_CARD_ARCHIVED = "This card is archived.";
+  const ERR_WORKSPACE_UNAVAILABLE = "Workspace is unavailable.";
+  const ERR_PRESET_NOT_FOUND = "Preset not found.";
+
+  // Single writer for card conversation rows (agent trail, user notes,
+  // worker transitions). Returns the comment id for callers that reference it.
+  function logCardComment(cardId: string, target: string, targetId: string, author: "user" | "agent", body: string): string {
+    const commentId = randomId("cmt");
+    db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, target, targetId, author, body, now());
+    return commentId;
   }
 
   // Ordered strategy history for a research card (first = primary).
@@ -1649,7 +1664,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             // Once per idle period (transition edge only): leave a trail so
             // repeated silent stops are visible in Conversation, not just as
             // identical paused banners.
-            db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", "Worker stopped with no new output — treated as paused. If this repeats, inspect the thread before retrying: a silent stop usually means the worker is waiting on input it never asked for.", now());
+            logCardComment(cardId, "card", cardId, "agent", "Worker stopped with no new output — treated as paused. If this repeats, inspect the thread before retrying: a silent stop usually means the worker is waiting on input it never asked for.");
           }
           updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
           // The Inbox must be driven by lifecycle transitions, never by a UI
@@ -1661,7 +1676,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
-          db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", lastOutput, now());
+          logCardComment(cardId, "card", cardId, "agent", lastOutput);
         }
       } else if (status === "failed" || status === "error") {
         // Mark the failure without touching last_error: a specific cause
@@ -2054,9 +2069,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Read-only artifact viewer backing: resolve strictly inside the card
       // workspace (never absolute escapes), cap output, refuse binaries.
       const card = getCard(cardId);
-      if (!card) return { content: null, truncated: false, error: "Card not found." };
+      if (!card) return { content: null, truncated: false, error: ERR_CARD_NOT_FOUND };
       const workspace = await cardWorkspace(card);
-      if (!workspace?.path) return { content: null, truncated: false, error: "Workspace is unavailable." };
+      if (!workspace?.path) return { content: null, truncated: false, error: ERR_WORKSPACE_UNAVAILABLE };
       const full = resolveArtifactPath(workspace.path, path)
         ?? (isAbsolute(path) && !path.split(/[\\/]+/).some((segment) => segment === "..") && relative(workspace.path, resolve(path)).split(/[\\/]+/)[0] !== ".." ? resolve(path) : null);
       if (!full) return { content: null, truncated: false, error: "Path escapes the workspace." };
@@ -2077,13 +2092,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async cardDetail({ cardId }) {
       const initial = getCard(cardId);
-      if (!initial) throw new Error("Card not found");
+      if (!initial) throw new Error(ERR_CARD_NOT_FOUND);
       // Reconcile with the live thread before reading: a worker stopped from
       // outside (or a missed transition) would otherwise render stale until
       // the next reconcile sweep.
       if (initial.worker_thread_id) await syncThreadState(cardId).catch(() => undefined);
       const card = getCard(cardId);
-      if (!card) throw new Error("Card not found");
+      if (!card) throw new Error(ERR_CARD_NOT_FOUND);
       const comments = db.prepare("SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as CommentRow[];
       const pending = await fetchPendingQuestions(card.worker_thread_id);
       const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; options: string; expired_at: number }>;
@@ -2176,7 +2191,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async updateCardIntent({ cardId, intent }) {
       const card = getCard(cardId);
-      if (!card) return { ok: false, error: "Card not found.", pastTriage: false, notified: false };
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND, pastTriage: false, notified: false };
       if (card.kind === "research") return { ok: false, error: "Research cards don't use intent — the strategy defines the work.", pastTriage: false, notified: false };
       const previousIntent = card.intent;
       const pastTriage = card.stage !== "triage";
@@ -2212,10 +2227,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async addCardComment({ cardId, target, targetId, body }) {
       const card = getCard(cardId);
-      if (!card) return { commentId: "", error: "Card not found." };
-      const commentId = randomId("cmt");
-      const ts = now();
-      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, target, targetId, "user", body, ts);
+      if (!card) return { commentId: "", error: ERR_CARD_NOT_FOUND };
+      const commentId = logCardComment(cardId, target, targetId, "user", body);
       if (target === "card" && card.worker_thread_id) {
         try {
           await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `User comment on card "${card.name}":\n\n${body}`, mentions: [] }] });
@@ -2247,7 +2260,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // for cases where the worker itself is broken.
       const card = getCard(cardId);
       if (!card?.worker_thread_id) return { ok: false, error: "This card has no worker thread." };
-      if (card.status === "archived") return { ok: false, error: "This card is archived." };
+      if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
       // Research workers never advance stages: a delivery-flavored nudge
       // would instruct them to run a machine that does not exist here.
       const nudge = card.kind === "research"
@@ -2270,8 +2283,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // thread, same model: provider/model are fixed at spawn and can never
       // change on a live thread). Uses the override-aware effective preset.
       const card = getCard(cardId);
-      if (!card) return { ok: false, error: "Card not found." };
-      if (card.status === "archived") return { ok: false, error: "This card is archived." };
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
+      if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
       const effective = getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
       const previousThreadId = card.worker_thread_id;
       const result = await respawnWorkerForBand(cardId, effective.id, "restart");
@@ -2280,7 +2293,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // history lives, so the switch is auditable from the card.
         const presetName = getPresetById(effective.id)?.name ?? effective.id;
         const continueText = card.kind === "research" ? "continuing the research" : `continuing from the ${card.stage} stage`;
-        db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`, now());
+        logCardComment(cardId, "card", cardId, "agent", previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`);
         bb.realtime.publish("card-state", { cardId });
       }
       return { ok: result.ok, error: result.error ?? null };
@@ -2288,10 +2301,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async reseedCard({ cardId, presetId }) {
       const card = getCard(cardId);
-      if (!card) return { reseeded: false, error: "Card not found." };
+      if (!card) return { reseeded: false, error: ERR_CARD_NOT_FOUND };
       const workspace = await cardWorkspace(card);
       const source = workspace?.hostId && workspace.path ? { path: workspace.path, hostId: workspace.hostId } : null;
-      if (!source) return { reseeded: false, error: "Workspace is unavailable. Archive this card to remove it." };
+      if (!source) return { reseeded: false, error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.` };
       // Re-seed into a fresh per-workflow dir so the card gets a clean state file.
       const seed = await seedWorkflow(bb, source.path, card.name, card.intent, "Core", "Auto", true);
       if (seed.error) return { reseeded: false, error: seed.error };
@@ -2301,7 +2314,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       let preset: PresetRow;
       if (presetId) {
         const found = getPresetById(presetId);
-        if (!found) return { reseeded: false, error: "Preset not found." };
+        if (!found) return { reseeded: false, error: ERR_PRESET_NOT_FOUND };
         preset = found;
         db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, now());
       } else {
@@ -2360,7 +2373,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async moveCard({ cardId, status }) {
       const card = getCard(cardId);
-      if (!card) return { ok: false, error: "Card not found." };
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
       // Track routing lives in lib/card-move (unit-tested): research moves
       // statuses, delivery moves phases + terminals, each side refuses the
       // other's columns with the valid exit named.
@@ -2387,14 +2400,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // already have a project, so the UI hides this option for them and the
       // server refuses with that exit named.
       const card = getCard(cardId);
-      if (!card) return { ok: false, projectId: null, projectName: null, error: "Card not found." };
+      if (!card) return { ok: false, projectId: null, projectName: null, error: ERR_CARD_NOT_FOUND };
       if (card.workspace_kind !== "exploratory") {
         const projectName = await bb.sdk.projects.get({ projectId: card.project_id }).then((p) => p.name).catch(() => card.project_id);
         return { ok: false, projectId: null, projectName: null, error: `This work already lives in project "${projectName}" — nothing to promote.` };
       }
-      if (card.status === "archived") return { ok: false, projectId: null, projectName: null, error: "This card is archived." };
+      if (card.status === "archived") return { ok: false, projectId: null, projectName: null, error: ERR_CARD_ARCHIVED };
       const workspace = await cardWorkspace(card);
-      if (!workspace?.path) return { ok: false, projectId: null, projectName: null, error: "Workspace is unavailable." };
+      if (!workspace?.path) return { ok: false, projectId: null, projectName: null, error: ERR_WORKSPACE_UNAVAILABLE };
       if (!workspace.hostId) return { ok: false, projectId: null, projectName: null, error: "Workspace host is unavailable." };
       const projectName = normalizePromoteName(name, card.display_name ?? card.name);
       const projects = await bb.sdk.projects.list().catch(() => []);
@@ -2415,7 +2428,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // exploratory path/host flips future cardWorkspace resolution to the
       // new project's source — the same directory.
       db.prepare("UPDATE cards SET project_id = ?, workspace_kind = 'project', workspace_path = NULL, workspace_host_id = NULL, updated_at = ? WHERE id = ?").run(projectId, now(), cardId);
-      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Turned into project "${projectName}". Files stayed in place; the worker continues from the current stage.`, now());
+      logCardComment(cardId, "card", cardId, "agent", `Turned into project "${projectName}". Files stayed in place; the worker continues from the current stage.`);
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, projectId, projectName, error: null };
@@ -2438,7 +2451,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // throwing so every refusal names its exit.
     async researchBrief({ cardId }) {
       const card = getCard(cardId);
-      if (!card) return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: "Card not found." };
+      if (!card) return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: ERR_CARD_NOT_FOUND };
       if (card.kind !== "research") return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: "Only research cards have a brief. Delivery cards track scopes instead." };
       const resolved = await readResearchBrief(card);
       if (!resolved.ok) return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: resolved.error };
@@ -2457,9 +2470,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async fanOutResearch({ cardId, opportunityIds }) {
       const card = getCard(cardId);
-      if (!card) return { ok: false, created: [], error: "Card not found." };
+      if (!card) return { ok: false, created: [], error: ERR_CARD_NOT_FOUND };
       if (card.kind !== "research") return { ok: false, created: [], error: "Only research cards fan out. Delivery cards already are work." };
-      if (card.status === "archived") return { ok: false, created: [], error: "This card is archived." };
+      if (card.status === "archived") return { ok: false, created: [], error: ERR_CARD_ARCHIVED };
       const resolved = await readResearchBrief(card);
       if (!resolved.ok) return { ok: false, created: [], error: resolved.error };
       const parsed = parseResearchBrief(resolved.content);
@@ -2499,7 +2512,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           await bb.sdk.files.write({ path: resolved.absolute, content: flipped.updated });
         } catch { /* boxes stay unchecked; the comment below still trails */ }
       }
-      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Fanned out ${created.length} ${created.length === 1 ? "opportunity" : "opportunities"} into work: ${created.map((entry) => entry.title).join("; ")}.`, now());
+      logCardComment(cardId, "card", cardId, "agent", `Fanned out ${created.length} ${created.length === 1 ? "opportunity" : "opportunities"} into work: ${created.map((entry) => entry.title).join("; ")}.`);
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, created, error: null };
@@ -2512,9 +2525,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // previous worker retires only after the new one is live (same safe
       // order as every respawn).
       const card = getCard(cardId);
-      if (!card) return { ok: false, strategy: null, error: "Card not found." };
+      if (!card) return { ok: false, strategy: null, error: ERR_CARD_NOT_FOUND };
       if (card.kind !== "research") return { ok: false, strategy: null, error: "Only research cards run strategies. Delivery cards advance stages instead." };
-      if (card.status === "archived") return { ok: false, strategy: null, error: "This card is archived." };
+      if (card.status === "archived") return { ok: false, strategy: null, error: ERR_CARD_ARCHIVED };
       const picked = researchStrategyById(strategy);
       if (!picked) {
         return { ok: false, strategy: null, error: `Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.` };
@@ -2525,7 +2538,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const history = [...strategyList(card), picked.id];
       db.prepare("UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), cardId);
       const presetName = getPresetById(effective.id)?.name ?? effective.id;
-      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the brief. Previous worker archived.`, now());
+      logCardComment(cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the brief. Previous worker archived.`);
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, strategy: picked.id, error: null };
     },
@@ -2534,8 +2547,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const card = getCard(cardId);
       const question = card ? db.prepare("SELECT * FROM expired_questions WHERE id = ? AND card_id = ? AND answered = 0").get(questionId, cardId) as { thread_id: string; question: string; multiple: number; options: string } | undefined : undefined;
       if (!card || !question) return { ok: false, error: "Question not found or already answered." };
-      const commentId = randomId("cmt");
-      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${question.question}\nA: ${answer}`, now());
+      logCardComment(cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${question.question}\nA: ${answer}`);
       db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
       // The question is answered — leave Gate pending. The threads.send below
       // resumes the worker (thread.active → syncThreadState → running); if the
@@ -2554,10 +2566,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async advanceCard({ cardId, stage }) {
       const card = getCard(cardId);
-      if (!card) return { ok: false, stdout: "", error: "Card not found." };
+      if (!card) return { ok: false, stdout: "", error: ERR_CARD_NOT_FOUND };
       if (card.kind === "research") return { ok: false, stdout: "", error: "Research cards don't use stages — drag to Done when the brief is complete." };
       const workspace = await cardWorkspace(card);
-      if (!workspace?.path) return { ok: false, stdout: "", error: "Workspace is unavailable." };
+      if (!workspace?.path) return { ok: false, stdout: "", error: ERR_WORKSPACE_UNAVAILABLE };
       const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.dir_hash) : null;
       const source = { path: workspace.path, hostId: workspace.hostId };
       const guard = await ensureProjectArtifacts(bb, source.path, stateDir);
@@ -2641,7 +2653,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async deletePreset({ id }) {
       const row = db.prepare("SELECT built_in FROM presets WHERE id = ?").get(id) as { built_in: number } | undefined;
-      if (!row) return { deleted: false, error: "Preset not found." };
+      if (!row) return { deleted: false, error: ERR_PRESET_NOT_FOUND };
       if (row.built_in === 1) return { deleted: false, error: "Built-in presets cannot be deleted." };
       const inUse = db.prepare("SELECT COUNT(*) AS count FROM card_presets WHERE preset_id = ?").get(id) as { count: number };
       if (inUse.count > 0) return { deleted: false, error: `Preset is assigned to ${inUse.count} card(s). Unassign first.` };
@@ -2659,7 +2671,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async setBandPreset({ band, presetId }) {
       if (!STAGE_BANDS[band]) return { ok: false, error: `Unknown band: ${band}` };
       if (presetId) {
-        if (!getPresetById(presetId)) return { ok: false, error: "Preset not found." };
+        if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
         db.prepare("INSERT OR REPLACE INTO stage_presets (band, preset_id, assigned_at) VALUES (?, ?, ?)").run(band, presetId, now());
       } else {
         db.prepare("DELETE FROM stage_presets WHERE band = ?").run(band);
@@ -2669,7 +2681,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async assignPreset({ cardId, presetId }) {
       const card = getCard(cardId);
-      if (!card) return { ok: false, error: "Card not found." };
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
       if (presetId === null) {
         db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
         // Drop this card's private override row (if any) so custom choices
@@ -2677,7 +2689,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         db.prepare("DELETE FROM presets WHERE id = ?").run(`card-override-${cardId}`);
       } else {
         const preset = getPresetById(presetId);
-        if (!preset) return { ok: false, error: "Preset not found." };
+        if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
         db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
         // A live worker predating the new preset will never pick it up
         // (provider/model are fixed at spawn): flag it so the card offers
@@ -2690,7 +2702,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async setDefaultPreset({ id }) {
       const preset = getPresetById(id);
-      if (!preset) return { ok: false, error: "Preset not found." };
+      if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
       db.prepare("UPDATE presets SET is_default = 0").run();
       db.prepare("UPDATE presets SET is_default = 1 WHERE id = ?").run(id);
       bb.realtime.publish("board-changed", { presetId: id });
@@ -2924,7 +2936,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
   const deletePresetHandler = async ({ id }: { id: string }) => {
     const row = db.prepare("SELECT built_in FROM presets WHERE id = ?").get(id) as { built_in: number } | undefined;
-    if (!row) return { deleted: false, error: "Preset not found." };
+    if (!row) return { deleted: false, error: ERR_PRESET_NOT_FOUND };
     if (row.built_in === 1) return { deleted: false, error: "Built-in presets cannot be deleted." };
     const inUse = db.prepare("SELECT COUNT(*) AS count FROM card_presets WHERE preset_id = ?").get(id) as { count: number };
     if (inUse.count > 0) return { deleted: false, error: `Preset is assigned to ${inUse.count} card(s). Unassign first.` };
@@ -2934,12 +2946,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
   const assignPresetHandler = async ({ cardId, presetId }: { cardId: string; presetId: string | null }) => {
     const card = getCard(cardId);
-    if (!card) return { ok: false, error: "Card not found." };
+    if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
     if (presetId === null) {
       db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
     } else {
       const preset = getPresetById(presetId);
-      if (!preset) return { ok: false, error: "Preset not found." };
+      if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
       refreshRestartPending(db, cardId, card.worker_thread_id, card.worker_preset_id, presetId);
     }
