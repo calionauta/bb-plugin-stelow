@@ -1082,7 +1082,7 @@ function ResearchPanel({ subPath }: { subPath: string }) {
           {cards.length === 0 && !loading ? (
             <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
               <h2 className="text-sm font-semibold text-foreground">Understand before you build</h2>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Start with a question or a space — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become Work cards.</p>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Start with a question or an opportunity space — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become Work cards.</p>
               <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
                 <Button onClick={() => setCreateOpen(true)}>Start new research</Button>
               </div>

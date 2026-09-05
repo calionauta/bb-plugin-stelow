@@ -28,6 +28,8 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Research empty-state wording.** "A question or a space" read as
+  ambiguous — it now says "an opportunity space".
 - **Skills sync verifies content hash.** The raw CDN can serve a stale
   blob for a fresh tree sha right after pushes; the sync pinned stale
   bytes under a fresh sha forever. Fetched content is now verified
