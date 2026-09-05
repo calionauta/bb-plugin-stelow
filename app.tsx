@@ -207,8 +207,8 @@ type StelowTrack = "inbox" | "work" | "research";
 // and thread actions keep resolving; tracks live in the subPath.
 const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
   { key: "inbox", title: "Inbox", icon: "Mail", rootSubPath: "inbox" },
-  { key: "work", title: "Work", icon: "Columns2", rootSubPath: "work" },
   { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
+  { key: "work", title: "Work", icon: "Columns2", rootSubPath: "work" },
 ];
 function trackRootSubPath(track: StelowTrack): string {
   return STELOW_TRACKS.find((entry) => entry.key === track)?.rootSubPath ?? "";
@@ -1194,20 +1194,22 @@ function StelowPanel({ subPath }: { subPath: string }) {
   const work = useWorkAccessory();
   const research = useResearchAccessory();
   const [lastTab, setLastTab] = useState<StelowTrack>(() => {
-    if (typeof window === "undefined") return "work";
+    if (typeof window === "undefined") return "inbox";
     try {
       const raw = window.localStorage.getItem(STELOW_TAB_STORAGE_KEY);
       if (raw === "inbox" || raw === "work" || raw === "research") return raw;
     } catch { /* default below */ }
-    return "work";
+    return "inbox";
   });
   // Remember the last visited track so the bare root reopens where you were.
+  // The bare root itself only reads — persisting it would overwrite the
+  // memory with the fallback on every fresh entry.
   useEffect(() => {
-    if (route.kind === "track") {
-      setLastTab(route.track);
-      try { window.localStorage.setItem(STELOW_TAB_STORAGE_KEY, route.track); } catch { /* ignore */ }
-    }
-  }, [route]);
+    if (route.kind !== "track") return;
+    if (subPath.replace(/^\/+|\/+$/g, "") === "") return;
+    setLastTab(route.track);
+    try { window.localStorage.setItem(STELOW_TAB_STORAGE_KEY, route.track); } catch { /* ignore */ }
+  }, [route, subPath]);
   const goTrack = useCallback((track: StelowTrack) => {
     navigate.toPluginPanel("board", { subPath: trackRootSubPath(track) });
   }, [navigate]);
