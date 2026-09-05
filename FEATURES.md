@@ -45,8 +45,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **List view.** Same cards grouped by column, for narrow screens.
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
   needs-attention + reset.
-- **Sidebar badge.** Unresolved inbox action items only (both tracks).
-  Track tabs carry their own active counts. All realtime.
+- **Sidebar badge.** Unresolved actions plus unseen recent completions
+  (7-day window); per-tab active counts. All realtime.
 - **Build stamp** (`buildInfo`). Version in the header so reloads are
   checkable instead of vibes.
 
@@ -95,7 +95,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
-  (`stelow-card-detail`), "Open Stelow work" header action,
+  (`stelow-card-detail`), "Open Stelow" header action,
   `stelow-artifact` message chips, blocking question form.
 
 ## 5. Recover
@@ -148,9 +148,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I need to understand before building, I want a lightweight
 investigation that feeds the delivery board.*
 
-- **Research panel** (`ResearchPanel`). To-Do / Doing / Done / Archived
+- **Research tab** (`ResearchPanel`). To-Do / Doing / Done / Archived
   columns over research cards only; project + attention filters;
-  collapsible columns; sidebar badge; no stages, no gates.
+  collapsible columns; per-tab active counts; no stages, no gates.
 - **Strategy picker** (`researchStrategies`). Composite strategy runs on
   the same request: one round at a time, each appending a `###` section
   to the brief — never parallel batches to merge. "Explore another
