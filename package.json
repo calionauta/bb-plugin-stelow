@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Stelow",
-    "description": "Visualize and control Stelow workflows, reviews, gates, scopes, and tasks.",
+    "description": "Stelow turns humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks (opportunity mapping, JTBD, discovery, market analysis), then deliver through an orchestrated workflow — Shape Up proposals, interface alternatives with explicit trade-offs before any code, technical plans broken into typed scopes with dependencies and spikes up front, gated reviews, and agent workers executing scope by scope. One board, one inbox that only interrupts when you are needed.",
     "branding": {
       "icon": "Star"
     },
