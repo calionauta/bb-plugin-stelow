@@ -200,19 +200,22 @@ function researchColumnOf(card: Pick<CardItem, "status">): string {
   return "todo";
 }
 
-type StelowTrack = "inbox" | "work" | "research";
+type StelowTrack = "inbox" | "build" | "research";
 // Single source for tracks: the tab bar, the router, and every navigation
 // helper read from here. Renaming a track (or reordering tabs) is one line.
 const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
   { key: "inbox", title: "Inbox", icon: "Mail", rootSubPath: "inbox" },
   { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
-  { key: "work", title: "Work", icon: "Columns2", rootSubPath: "work" },
+  { key: "build", title: "Build", icon: "Columns2", rootSubPath: "build" },
 ];
+function trackTitle(track: StelowTrack): string {
+  return STELOW_TRACKS.find((entry) => entry.key === track)?.title ?? track;
+}
 function trackRootSubPath(track: StelowTrack): string {
   return STELOW_TRACKS.find((entry) => entry.key === track)?.rootSubPath ?? "";
 }
 function trackOfCard(card: Pick<CardItem, "kind">): StelowTrack {
-  return card.kind === "research" ? "research" : "work";
+  return card.kind === "research" ? "research" : "build";
 }
 function cardSubPath(card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): string {
   const track = trackOfCard(card);
@@ -438,7 +441,7 @@ function StelowInboxSidebarAccessory() {
   return <SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />;
 }
 
-function useWorkAccessory(): SidebarAccessoryHandle {
+function useBuildAccessory(): SidebarAccessoryHandle {
   const rpc = useRpc<typeof rpcContract>();
   const [count, setCount] = useState(0);
   const reload = useCallback(async () => {
@@ -481,7 +484,7 @@ type InboxNotification = {
 const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
   question: { icon: "?", label: "Needs a decision", tone: "bg-amber-500/15 text-amber-700" },
   error: { icon: "!", label: "Worker failed", tone: "bg-destructive/15 text-destructive" },
-  paused: { icon: "Ⅱ", label: "Work paused", tone: "bg-amber-500/15 text-amber-700" },
+  paused: { icon: "Ⅱ", label: "Paused", tone: "bg-amber-500/15 text-amber-700" },
   completed: { icon: "✓", label: "Completed", tone: "bg-emerald-500/15 text-emerald-700" },
 };
 
@@ -649,7 +652,7 @@ function BoardPanel() {
     try { window.localStorage.setItem(STORAGE_KEYS.boardColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
-  const [createWorkOpen, setCreateWorkOpen] = useState(false);
+  const [createBuildOpen, setCreateBuildOpen] = useState(false);
   const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
@@ -760,11 +763,11 @@ function BoardPanel() {
     try {
       const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode });
       setPrompt("");
-      setCreateWorkOpen(false);
+      setCreateBuildOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Work started in Triage. Stelow will triage it.");
+      toast.success("Card started in Triage. Stelow will triage it.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to start work.");
+      toast.error(error instanceof Error ? error.message : "Unable to start the card.");
     }
   }
 
@@ -831,33 +834,33 @@ function BoardPanel() {
             <div className="min-w-0">
               <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h1 className="text-xl font-semibold tracking-tight">Work</h1>
+                <h1 className="text-xl font-semibold tracking-tight">Build</h1>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">About Stelow <span aria-hidden="true">↗</span></UrlLink>
                 {buildInfo ? <span className="text-[11px] text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
               </div>
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <div role="group" aria-label="Work view" className="col-span-2 grid h-11 w-full grid-cols-2 gap-1 rounded-md border bg-background p-1 shadow-sm sm:w-56 sm:shrink-0">
+              <div role="group" aria-label="Build view" className="col-span-2 grid h-11 w-full grid-cols-2 gap-1 rounded-md border bg-background p-1 shadow-sm sm:w-56 sm:shrink-0">
                 <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`inline-flex h-full w-full cursor-pointer items-center justify-center rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
                 <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`inline-flex h-full w-full cursor-pointer items-center justify-center rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
               </div>
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>New work</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>New card</Button>
               {githubStatus?.pluginAvailable ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
               ) : null}
             </div>
           </header>
           <Tour
-            storageKey={STORAGE_KEYS.workTour}
-            tourName="Work"
+            storageKey={STORAGE_KEYS.buildTour}
+            tourName="Build"
             hasData={cards.length > 0}
             summary={<span title={policySummary}>Agents per phase — {policySummary}</span>}
             steps={[
               {
                 title: "Start with an outcome",
                 body: "Describe what you want — a problem, an idea, a fix. Stelow triages it, then guides it through Analyse → Plan → Execute → Review.",
-                action: <Button className="min-h-11" onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>Start new work</Button>,
+                action: <Button className="min-h-11" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new card</Button>,
               },
               {
                 title: "Each phase can use a different agent",
@@ -878,10 +881,10 @@ function BoardPanel() {
             </div>
           ) : null}
 
-          <Dialog open={createWorkOpen} onOpenChange={setCreateWorkOpen}>
+          <Dialog open={createBuildOpen} onOpenChange={setCreateBuildOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
               <DialogHeader>
-                <DialogTitle>Start new work</DialogTitle>
+                <DialogTitle>Start new card</DialogTitle>
                 <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and delivery process.</DialogDescription>
               </DialogHeader>
               <NewThreadComposer
@@ -891,14 +894,14 @@ function BoardPanel() {
                 defaultReasoningLevel={analysisWorkerPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
                 defaultPermissionMode={analysisWorkerPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
                 initialPrompt={prompt}
-                placeholder="What would you like Stelow to work on?"
+                placeholder="What should Stelow build?"
                 layout="contained"
                 draftKey="stelow-board-create"
                 onSubmit={(request) => void start(request)}
               />
               <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
                 <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:justify-between">
-                  <span>Work settings</span>
+                  <span>Settings</span>
                   <span className="text-xs font-normal text-muted-foreground">Planning depth, review checkpoints, and agent configuration · Configure</span>
                 </summary>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -918,7 +921,7 @@ function BoardPanel() {
             <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Import GitHub issues</DialogTitle>
-                <DialogDescription>Issues tagged with the Stelow label land in Triage as work cards. Tag the issue with the label on GitHub, then import it here — nothing is auto-imported.</DialogDescription>
+                <DialogDescription>Issues tagged with the Stelow label land in Triage as cards. Tag the issue with the label on GitHub, then import it here — nothing is auto-imported.</DialogDescription>
               </DialogHeader>
               <div className="flex flex-col gap-3 py-2">
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
@@ -1021,7 +1024,7 @@ function BoardPanel() {
               <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Stelow is an opinionated product workflow for humans and AI agents. Start with an outcome or problem; it guides the work through framing, critique, planning, execution, and review.</p>
               <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
-                <Button onClick={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}>Start new work</Button>
+                <Button onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new card</Button>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Learn about Stelow <span aria-hidden="true">↗</span></UrlLink>
               </div>
             </section>
@@ -1031,7 +1034,7 @@ function BoardPanel() {
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
-          {viewMode === "list" ? <WorkList groups={grouped} navigate={navigate} /> : <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
+          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} /> : <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
             {COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
@@ -1052,9 +1055,9 @@ function BoardPanel() {
 
 type ResearchStrategyOption = { id: string; label: string; skill: string; blurb: string };
 
-// Second track beside Work: lightweight research (To-Do / Doing / Done)
+// Second track beside Build: lightweight research (To-Do / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
-// the card produces a brief, and opportunities fan out into Work cards.
+// the card produces a brief, and opportunities fan out into Build cards.
 function ResearchPanel() {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
@@ -1176,7 +1179,7 @@ function ResearchPanel() {
         <div className="mx-auto max-w-[1500px] space-y-4">
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces a brief; ranked opportunities fan out into Work cards.</p>
+              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces a brief; ranked opportunities fan out into {trackTitle("build")} cards.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Research</h1>
               </div>
@@ -1195,7 +1198,7 @@ function ResearchPanel() {
             steps={[
               {
                 title: "Understand before you build",
-                body: "Ask a question or describe what to investigate — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become Work cards.",
+                body: <>Ask a question or describe what to investigate — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become {trackTitle("build")} cards.</>,
                 action: <Button className="min-h-11" onClick={() => setCreateOpen(true)}>Start new research</Button>,
               },
               {
@@ -1205,8 +1208,8 @@ function ResearchPanel() {
                 action: <Button className="min-h-11" variant="outline" onClick={() => setResearchPresetsOpen(true)}>Configure presets</Button>,
               },
               {
-                title: "Ranked opportunities become work",
-                body: "Check opportunities in the brief and fan out — each becomes a delivery work card at triage, with a comment trail both ways so nothing duplicates.",
+                title: `Ranked opportunities become ${trackTitle("build")} cards`,
+                body: "Check opportunities in the brief and fan out — each becomes a build card at triage, with a comment trail both ways so nothing duplicates.",
               },
             ]}
           />
@@ -1262,7 +1265,7 @@ function ResearchPanel() {
           {cards.length === 0 && !loading ? (
             <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
               <h2 className="text-sm font-semibold text-foreground">Understand before you build</h2>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Ask a question or describe what to investigate — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become Work cards.</p>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Ask a question or describe what to investigate — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become {trackTitle("build")} cards.</p>
               <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
                 <Button onClick={() => setCreateOpen(true)}>Start new research</Button>
               </div>
@@ -1300,7 +1303,7 @@ const STORAGE_KEYS = {
   boardColumns: "stelow-columns-collapsed-v1",
   researchColumns: "stelow-research-columns-collapsed-v1",
   lastTab: "stelow-tab-v1",
-  workTour: "stelow-tour-work-v1",
+  buildTour: "stelow-tour-build-v1",
   researchTour: "stelow-tour-research-v1",
   inboxTour: "stelow-tour-inbox-v1",
 } as const;
@@ -1311,7 +1314,7 @@ type ParsedStelowRoute =
   | { kind: "bare-card"; cardId: string; eventId: string | null };
 
 // One panel, three tracks. Grammar (routes are panel-relative):
-//   "" | "work"                  -> Work board ("" reopens the last tab)
+//   "" | "build"                 -> Build board ("" reopens the last tab)
 //   "inbox"                      -> Inbox list
 //   "research"                   -> Research board
 //   "<track>/card/<id>[/event/]" -> card detail, back returns to <track>
@@ -1319,19 +1322,19 @@ type ParsedStelowRoute =
 //                                  live, then rendered with back to its track.
 function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   const normalized = subPath.replace(/^\/+|\/+$/g, "");
-  if (normalized === "" || normalized === "work") return { kind: "track", track: "work" };
+  if (normalized === "" || normalized === "build") return { kind: "track", track: "build" };
   if (normalized === "inbox") return { kind: "track", track: "inbox" };
   if (normalized === "research") return { kind: "track", track: "research" };
-  let match = normalized.match(/^(inbox|work|research)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
+  let match = normalized.match(/^(inbox|build|research)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, origin: match[1] as StelowTrack };
   match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) return { kind: "bare-card", cardId: match[1]!, eventId: match[2] ?? null };
-  return { kind: "track", track: "work" };
+  return { kind: "track", track: "build" };
 }
 
 function StelowTabBar({ tab, counts, onSelect }: {
   tab: StelowTrack;
-  counts: { inbox: number; work: number; research: number };
+  counts: { inbox: number; build: number; research: number };
   onSelect: (track: StelowTrack) => void;
 }) {
   const countFor = (key: StelowTrack) => counts[key];
@@ -1346,7 +1349,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
             role="tab"
             aria-selected={active}
             onClick={() => onSelect(entry.key)}
-            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "work" ? "Delivery board" : "Research board"}
+            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Delivery board" : "Research board"}
             className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:px-3 sm:text-sm ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
           >
             <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
@@ -1399,13 +1402,13 @@ function StelowPanel({ subPath }: { subPath: string }) {
   const navigate = useBbNavigate();
   const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);
   const inbox = useInboxAccessory();
-  const work = useWorkAccessory();
+  const build = useBuildAccessory();
   const research = useResearchAccessory();
   const [lastTab, setLastTab] = useState<StelowTrack>(() => {
     if (typeof window === "undefined") return "inbox";
     try {
       const raw = window.localStorage.getItem(STORAGE_KEYS.lastTab);
-      if (raw === "inbox" || raw === "work" || raw === "research") return raw;
+      if (raw === "inbox" || raw === "build" || raw === "research") return raw;
     } catch { /* default below */ }
     return "inbox";
   });
@@ -1429,11 +1432,11 @@ function StelowPanel({ subPath }: { subPath: string }) {
     return <BareCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
   }
   // The bare root reopens the last visited track; explicit track routes
-  // always win (otherwise clicking Work while lastTab is Research would
+  // always win (otherwise clicking Build while lastTab is Research would
   // visibly do nothing).
   const bare = subPath.replace(/^\/+|\/+$/g, "") === "";
   const tab = bare ? lastTab : route.track;
-  const counts = { inbox: inbox.count, work: work.count, research: research.count };
+  const counts = { inbox: inbox.count, build: build.count, research: research.count };
   // Keep-alive: all three tracks stay mounted and only the active one
   // shows. Tab switches are instant (no reload flash) and every track
   // keeps its realtime subscription warm. First mount still loads once —
@@ -1444,7 +1447,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
       <div className={tab === "inbox" ? "min-h-0 flex-1" : "hidden"}>
         <InboxPanel />
       </div>
-      <div className={tab === "work" ? "min-h-0 flex-1" : "hidden"}>
+      <div className={tab === "build" ? "min-h-0 flex-1" : "hidden"}>
         <BoardPanel />
       </div>
       <div className={tab === "research" ? "min-h-0 flex-1" : "hidden"}>
@@ -1585,7 +1588,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   );
 }
 
-function WorkList({ groups, navigate }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate> }) {
+function BuildList({ groups, navigate }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate> }) {
   return <div className="space-y-5">{COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
@@ -1618,7 +1621,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labe
         )}
       </button>
       {!collapsed ? (
-        <div className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-y-contain md:pr-1" role="list" aria-label={`${labels[column]} work items`}>
+        <div className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-y-contain md:pr-1" role="list" aria-label={`${labels[column]} cards`}>
           {cards.map((card) => <div key={card.id}>{renderCard(card)}</div>)}
         </div>
       ) : null}
@@ -1697,7 +1700,7 @@ function BoardCard({ card }: { card: CardItem }) {
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
       title="Click to inspect"
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
-      aria-label={`Open work item ${card.displayName}.`}
+      aria-label={`Open card ${card.displayName}.`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
@@ -1707,9 +1710,9 @@ function BoardCard({ card }: { card: CardItem }) {
         </span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="truncate whitespace-nowrap rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80" title="Workflow stage — where this work stands. Move it from the Progress timeline inside the card.">{stageLabel(card.stage)}</span>
+        <span className="truncate whitespace-nowrap rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80" title="Workflow stage — where this card stands. Move it from the Progress timeline inside the card.">{stageLabel(card.stage)}</span>
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
-        <Pill className="ml-auto whitespace-nowrap" title="Work intent — the kind of work this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
+        <Pill className="ml-auto whitespace-nowrap" title="Intent — the kind of card this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
       </div>
       <CardMetaRows card={card} />
     </div>
@@ -1890,7 +1893,7 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   const params = props.params;
   const cardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
   const navigate = useBbNavigate();
-  if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a work item from Stelow Work to see its details here.</p>;
+  if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a card from Stelow {trackTitle("build")} to see its details here.</p>;
   return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
@@ -1953,7 +1956,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         {card.kind !== "research" ? (
         <select
           aria-label="Intent"
-          title="Work intent — the kind of work this is. The agent sets it during triage; correct it here if it got it wrong."
+          title="Intent — the kind of card this is. The agent sets it during triage; correct it here if it got it wrong."
           value={card.intent}
           onChange={(event) => {
             const nextIntent = event.target.value;
@@ -1985,7 +1988,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
       open={pendingIntent !== null}
       onOpenChange={(next) => { if (!next) setPendingIntent(null); }}
       title="Change intent after triage?"
-      description={card && pendingIntent ? `This work item is already at the ${stageLabel(card.stage)} stage. Changing the intent to ${INTENT_LABEL[pendingIntent] ?? pendingIntent} updates the label and notifies the worker, but appetite and the stage path chosen under the old intent are not recomputed.` : "Changing the intent updates the label and notifies the worker."}
+      description={card && pendingIntent ? `This card is already at the ${stageLabel(card.stage)} stage. Changing the intent to ${INTENT_LABEL[pendingIntent] ?? pendingIntent} updates the label and notifies the worker, but appetite and the stage path chosen under the old intent are not recomputed.` : "Changing the intent updates the label and notifies the worker."}
       confirmLabel="Change intent"
       confirmTone="default"
       onConfirm={() => { const next = pendingIntent; setPendingIntent(null); if (next) void applyIntent(next); }}
@@ -2374,7 +2377,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Manage agent presets</DialogTitle>
-          <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a work item starts its worker thread. Research investigations use the research phase preset.</DialogDescription>
+          <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a card starts its worker thread. Research investigations use the research phase preset.</DialogDescription>
         </DialogHeader>
         <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
           {presets.length === 0 ? <p className="text-sm text-muted-foreground">No presets yet. Create one below.</p> : null}
@@ -2396,7 +2399,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
         </div>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <h4 className="mb-2 text-sm font-semibold">Worker preset per workflow phase</h4>
-          <p className="mb-2 text-xs text-muted-foreground">Each phase uses its own preset. The worker is switched automatically when a work item reaches a phase with a different preset; work items with no phase preset use the work item's preset (or default).</p>
+          <p className="mb-2 text-xs text-muted-foreground">Each phase uses its own preset. The worker is switched automatically when a card reaches a phase with a different preset; cards with no phase preset use the card's preset (or default).</p>
           <div className="grid gap-2">
             {bandPresets.map((band) => (
               <div key={band.band} className="flex items-center gap-2 text-sm">
@@ -2410,7 +2413,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
                     void rpc.call("setBandPreset", { band: band.band, presetId: value }).then(() => { void onChanged(); void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([])); }).catch(() => setMessage("Failed to set phase preset.")).finally(() => setBusy(false));
                   }}
                 >
-                  <option value="">Use work item default</option>
+                  <option value="">Use card default</option>
                   {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </select>
                 <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title={band.stages.join(", ")}>{band.stages.join(", ")}</span>
@@ -2624,7 +2627,7 @@ function CardDisclosure({ title, hint, action, children, defaultOpen = false, op
 // Hybrid (A+D+E): single contextual hero derived from card state. One plain
 // sentence + one primary action. Replaces the scattered error / paused /
 // decision banners with one ordered attention model:
-// decision > error > paused-with-work > working > calm.
+// decision > error > paused > working > calm.
 type HeroKind = "decision" | "error" | "paused" | "working" | "calm";
 function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: HeroKind; title: string; sub: string } {
   const pending = detail?.pendingQuestions?.length ?? 0;
@@ -2657,7 +2660,7 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
     const stalls = detail?.card.stallCount ?? 0;
     return {
       kind: "paused",
-      title: "Work paused",
+      title: "Paused",
       sub: stalls >= 3
         ? `Stalled ${stalls} times in ${stageLabel(card.stage)} with no progress — inspect the thread before retrying, or restart fresh.`
         : card.lastError
@@ -2762,7 +2765,7 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
       } else if (selected.startsWith("preset:")) {
         const result = await rpc.call("assignPreset", { cardId, presetId: selected.slice("preset:".length) });
         if (!result.ok) setError(result.error ?? "Could not change preset.");
-        else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this work item. Resume only continues the current worker — use Restart worker to switch to the new preset now."); }
+        else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this card. Resume only continues the current worker — use Restart worker to switch to the new preset now."); }
       } else if (selected.startsWith("model:")) {
         const [providerId, ...modelParts] = selected.slice("model:".length).split("/");
         await applyCustom(providerId ?? "", modelParts.join("/"));
@@ -2787,7 +2790,7 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
     });
     const result = await rpc.call("assignPreset", { cardId, presetId: upserted.preset.id });
     if (!result.ok) setError(result.error ?? "Could not change preset.");
-    else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this work item. Resume only continues the current worker — use Restart worker to switch to the new preset now."); }
+    else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this card. Resume only continues the current worker — use Restart worker to switch to the new preset now."); }
   }
   const radioRow = (value: string, title: React.ReactNode, sub?: string) => (
     <label key={value} className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === value ? "border-primary bg-primary/10" : "border-border"}`}>
@@ -2802,7 +2805,7 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Agent preset for this work item</DialogTitle>
+          <DialogTitle>Agent preset for this card</DialogTitle>
           <DialogDescription>Takes effect when the worker (re)starts.</DialogDescription>
         </DialogHeader>
         <p className="text-[11px] text-muted-foreground">{optionCount} options · {catalog.providers.length} providers — scroll for more below.</p>
@@ -2857,7 +2860,7 @@ type ResearchBriefState = {
   error: string | null;
 };
 
-// Fan-out: turn checked opportunities into delivery Work cards. Mirrors the
+// Fan-out: turn checked opportunities into delivery Build cards. Mirrors the
 // GitHub-import dialog (checkbox list + bulk confirm); the server re-parses
 // the brief, spawns, and flips exactly the spawned boxes.
 function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
@@ -2891,10 +2894,10 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
     try {
       const result = await rpc.call("fanOutResearch", { cardId, opportunityIds: chosen.map((item) => item.id) });
       if (!result.ok) {
-        toast.error(result.error ?? "Could not create work cards.");
+        toast.error(result.error ?? "Could not create build cards.");
         return;
       }
-      toast.success(`Created ${result.created.length} ${result.created.length === 1 ? "work card" : "work cards"}.`);
+      toast.success(`Created ${result.created.length} ${result.created.length === 1 ? "build card" : "build cards"}.`);
       onOpenChange(false);
       onFanned();
     } finally {
@@ -2905,8 +2908,8 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Create work cards</DialogTitle>
-          <DialogDescription>Each selected opportunity becomes a delivery work card starting at triage. Spawned boxes check off in the brief so a retry never duplicates.</DialogDescription>
+          <DialogTitle>Create build cards</DialogTitle>
+          <DialogDescription>Each selected opportunity becomes a delivery build card starting at triage. Spawned boxes check off in the brief so a retry never duplicates.</DialogDescription>
         </DialogHeader>
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing available — every opportunity was already fanned out or checked.</p>
@@ -3238,7 +3241,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
                     {brief && brief.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? (
-                      <p className="text-xs text-muted-foreground">Brief ready — review it below, fan out opportunities into work cards, then drag this card to Done.</p>
+                      <p className="text-xs text-muted-foreground">Brief ready — review it below, fan out opportunities into build cards, then drag this card to Done.</p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       {strategyLabel ? <Pill tone="bg-primary/15 text-primary" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
@@ -3308,7 +3311,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({brief.opportunities.length})</h4>
                     <span className="flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy round on the same request — appends a new section to the brief.">Explore another strategy…</Button>
-                      <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Turn selected opportunities into delivery work cards.">Create work cards…</Button>
+                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Turn selected opportunities into delivery build cards.">Create build cards…</Button>
                     </span>
                   </div>
                   {briefGroups.map((group) => (
@@ -3510,7 +3513,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     setArchiveOpen(false);
     try {
       await rpc.call("cancelCard", { cardId });
-      toast.success("Work item archived.");
+      toast.success("Card archived.");
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Archive failed.");
@@ -3602,7 +3605,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   }
 
   // Hero + disclosures read the primary action off the card's own activity
-  // (no separate kind): decision > error > paused-with-work > working > calm.
+  // (no separate kind): decision > error > paused > working > calm.
   const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
 
   const hero = card ? heroFor(card, detail) : null;
@@ -3713,7 +3716,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
-              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">No scopes broken down yet — the agent is still shaping the work.</p>}
+              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">No scopes broken down yet — the agent is still shaping the card.</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex items-center gap-2">
@@ -3825,7 +3828,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               ) : null}
               <div className="flex flex-wrap items-center gap-4 border-t pt-3">
                 <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                <button onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive work item</button>
+                <button onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive card</button>
               </div>
               {detail?.githubLink ? (
                 <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
@@ -3837,7 +3840,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                       <button onClick={() => { setGithubCloseIssue(false); setGithubPostOpen(true); }} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
                     )
                   ) : (
-                    <span>A completion summary can be posted once this work is Done.</span>
+                    <span>A completion summary can be posted once this card is Done.</span>
                   )}
                 </div>
               ) : null}
@@ -3892,7 +3895,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             <DialogTitle>{pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage) ? "Advance to" : "Return to"} {pendingAdvance ? stageLabel(pendingAdvance) : ""}?</DialogTitle>
             <DialogDescription className="space-y-2">
               <p>
-                Move this work item from <strong>{stageLabel(card?.stage ?? "")}</strong> to <strong>{pendingAdvance ? stageLabel(pendingAdvance) : ""}</strong>.
+                Move this card from <strong>{stageLabel(card?.stage ?? "")}</strong> to <strong>{pendingAdvance ? stageLabel(pendingAdvance) : ""}</strong>.
               </p>
               <p className="rounded-md bg-muted p-2 text-xs">
                 {pendingAdvance ? STAGE_PRODUCES[pendingAdvance] ?? "The agent works on this stage and advances on its own once done." : ""}
@@ -3915,8 +3918,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Archive this work item?"
-        description="The work item is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
+        title="Archive this card?"
+        description="The card is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
         confirmLabel="Archive"
         confirmTone="destructive"
         onConfirm={doArchive}
@@ -4037,7 +4040,7 @@ function OpenStelowAction({ threadId }: { threadId: string }) {
   }, [rpc, threadId]);
   // Not a card worker thread: render nothing instead of a generic shortcut.
   if (!target) return null;
-  return <button onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this work item" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow work item ↗</button>;
+  return <button onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this card" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow card ↗</button>;
 }
 
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {
@@ -4061,7 +4064,7 @@ function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: Plug
 }
 
 export default definePluginApp((app) => {
-  // One sidebar row for the whole plugin. Inbox, work, and research live
+  // One sidebar row for the whole plugin. Inbox, build, and research live
   // on as subPath tracks (see STELOW_TRACKS).
   // The badge counts what matters: unresolved inbox action items.
   // Sidebar icon truth: the host renders package.json#bb.branding.icon,
@@ -4079,7 +4082,7 @@ export default definePluginApp((app) => {
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
-  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Columns2", component: CardDrawerAdapter });
+  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns2", component: CardDrawerAdapter });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow", title: "Open Stelow", component: OpenStelowAction });
 
   app.slots.messageDirective({

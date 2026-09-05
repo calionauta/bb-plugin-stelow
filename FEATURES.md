@@ -4,10 +4,10 @@ Grouped by the job the user hires the feature for, not by file.
 Source of truth for "what can this plugin do"; see `AGENTS.md`
 (Feature inventory) for the update rule.
 
-## 1. Capture work
-*When I have an idea, problem, or issue, I want it tracked as work.*
+## 1. Capture
+*When I have an idea, problem, or issue, I want it tracked as a card.*
 
-- **New work composer** (`BoardPanel`, `createCard`). Prompt + file/image
+- **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
   attachments, intent, planning depth, review checkpoints, agent preset from
   the analysis band. Spawns a hidden worker thread starting at triage.
 - **GitHub issue import** (`listGithubCandidates`, `importGithubIssue`).
@@ -22,7 +22,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   English summary (scopes/tasks, prompt) as an issue comment via the
   github plugin's own RPCs, optionally closing the issue behind the same
   confirm. Never automatic — Done in Stelow is not merged/deployed.
-- **Exploratory work** (`createCardInternal`). "Don't work in a project"
+- **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project
   "Stelow exploratory work".
@@ -34,7 +34,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I open Stelow, I want to see everything and find my card.*
 
 - **One panel, three tracks** (`StelowPanel`, `STELOW_TRACKS`). A single
-  Stelow sidebar row with Inbox / Work / Research tabs (subPath-routed,
+  Stelow sidebar row with Inbox / Build / Research tabs (subPath-routed,
   back-button friendly, last tab remembered). Track names, icons, and
   routes come from one table — renaming is one line. Legacy card links
   resolve the track live. Panel identity and every navigation flows
@@ -47,7 +47,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   needs-attention + reset. One shared bar: project + attention are the
   common facets, delivery adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
-- **First-run tours** (`Tour`). One shared stepper for Inbox, Work, and
+- **First-run tours** (`Tour`). One shared stepper for Inbox, Build, and
   Research: full steps on first use, a one-line summary bar once content
   exists, a quiet reopen once dismissed (per-track localStorage).
   Every step may carry its own primary action, so configuration
@@ -176,7 +176,7 @@ investigation that feeds the delivery board.*
   own state dir; the card renders it with per-strategy groups and
   available/total counts. Non-conforming briefs refuse with an exit.
 - **Fan-out** (`fanOutResearch`, `FanOutDialog`). Checked opportunities
-  become delivery work cards at triage (exploratory research fans out
+  become build cards at triage (exploratory research fans out
   into isolated exploratory cards); spawned boxes check off so retries
   never duplicate; both-ways comment trail.
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,

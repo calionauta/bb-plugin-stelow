@@ -1158,7 +1158,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
 
-  // Shared card-creation path for both the UI "start work" handler and the
+  // Shared card-creation path for both the UI "start card" handler and the
   // GitHub import. A Personal-project request gets an isolated persistent
   // exploratory workspace; project cards keep using their declared source.
   //
@@ -1190,7 +1190,7 @@ Step 3 — write your findings to <state-dir>/brief.md (create it) in EXACTLY th
     ### ${strategyLabel} — <today's YYYY-MM-DD date>
     - [ ] <opportunity title> — <one-line why it matters>
 
-Unchecked boxes mean "available for fan-out". NEVER check a box yourself — the plugin checks the ones the user turns into work cards. If you run another strategy later, APPEND a new ### section under ## Opportunities; never rewrite existing items.
+Unchecked boxes mean "available for fan-out". NEVER check a box yourself — the plugin checks the ones the user turns into build cards. If you run another strategy later, APPEND a new ### section under ## Opportunities; never rewrite existing items.
 
 Step 4 — register the brief as an artifact so it renders on the card: append EXACTLY this block to <state-dir>/state.md (create the artifacts: section if missing; path is relative to the workspace root ${workspaceRoot}):
 
@@ -1249,7 +1249,7 @@ ${prompt}`;
       workspaceProjectId = exploratoryProject.id;
       workspaceSource = { path: rootPath, hostId: exploratoryHostId };
     }
-    if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this work.");
+    if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this card.");
     const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
     const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
     const isResearch = kind === "research";
@@ -1262,7 +1262,7 @@ ${prompt}`;
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
     // Spawn workers on their track's entry band: research investigations use
-    // the research band default, delivery work uses the analysis band. Either
+    // the research band default, delivery cards use the analysis band. Either
     // falls back to the card/board default when the band is unconfigured.
     const spawnBand = isResearch ? "research" : "analysis";
     const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(spawnBand) as { preset_id: string } | undefined;
@@ -1295,7 +1295,7 @@ ${prompt}`;
       executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
       input: [{ type: "text", mentions: [], text: researchPrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
 
-Step 1 — classify intent first: this work item starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
+Step 1 — classify intent first: this card starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -1613,7 +1613,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (previous && current) {
       if (current.status === "archived" || current.status === "completed") resolveInboxEvents(cardId, current.updated_at);
       else if (current.activity === "running") resolveInboxEvents(cardId, current.updated_at, ["error", "paused"]);
-      if (previous.status !== "completed" && current.status === "completed") recordInboxEvent(current, "completed", "Work completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
+      if (previous.status !== "completed" && current.status === "completed") recordInboxEvent(current, "completed", "Completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "error" && current.activity === "error") recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "awaiting-answer" && current.activity === "awaiting-answer") recordInboxEvent(current, "question", "The agent is waiting for your answer to continue.", `question:${cardId}:${current.updated_at}`, current.updated_at);
     }
@@ -1835,7 +1835,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }, RECONCILE_MS);
   bb.onDispose(async () => clearInterval(reconcileTimer));
 
-  // Workflow mechanics are private to workers created by the Work panel.
+  // Workflow mechanics are private to workers created by the Build panel.
   // Manifest skills are static registrations in BB, so configure() is the
   // boundary that keeps them out of every other thread/session.
   bb.agents.configure((context) => ({
@@ -2089,8 +2089,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card) return { ok: false, commentUrl: null, error: ERR_CARD_NOT_FOUND };
       const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
-      if (!link) return { ok: false, commentUrl: null, error: "This work item was not imported from a GitHub issue." };
-      if (normalizeStatus(card.status) !== "completed") return { ok: false, commentUrl: null, error: "Only completed work items can report back to GitHub." };
+      if (!link) return { ok: false, commentUrl: null, error: "This card was not imported from a GitHub issue." };
+      if (normalizeStatus(card.status) !== "completed") return { ok: false, commentUrl: null, error: "Only completed cards can report back to GitHub." };
       const workspace = await cardWorkspace(card).catch(() => null);
       const scopes = workspace?.path ? loadCardScopes(workspace.path, card.name) : [];
       const doneScopes = scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length;
@@ -2424,7 +2424,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       let notified = false;
       if (pastTriage && intent !== previousIntent && card.worker_thread_id) {
         try {
-          await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The user corrected this work item's intent from "${previousIntent}" to "${intent}". The card label and state.md are updated. Appetite and the stage path chosen under the old intent are unchanged — keep working from the current stage (${card.stage}) unless the new intent clearly invalidates completed work, in which case ask the user via the question form instead of silently switching tracks.`, mentions: [] }] });
+          await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The user corrected this card's intent from "${previousIntent}" to "${intent}". The card label and state.md are updated. Appetite and the stage path chosen under the old intent are unchanged — keep working from the current stage (${card.stage}) unless the new intent clearly invalidates completed work, in which case ask the user via the question form instead of silently switching tracks.`, mentions: [] }] });
           updateCard(cardId, { activity: "running" });
           notified = true;
         } catch { /* worker unreachable — caller surfaces the fallback */ }
@@ -2613,7 +2613,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!card) return { ok: false, projectId: null, projectName: null, error: ERR_CARD_NOT_FOUND };
       if (card.workspace_kind !== "exploratory") {
         const projectName = await bb.sdk.projects.get({ projectId: card.project_id }).then((p) => p.name).catch(() => card.project_id);
-        return { ok: false, projectId: null, projectName: null, error: `This work already lives in project "${projectName}" — nothing to promote.` };
+        return { ok: false, projectId: null, projectName: null, error: `This card already lives in project "${projectName}" — nothing to promote.` };
       }
       if (card.status === "archived") return { ok: false, projectId: null, projectName: null, error: ERR_CARD_ARCHIVED };
       const workspace = await cardWorkspace(card);
@@ -2681,7 +2681,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async fanOutResearch({ cardId, opportunityIds }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, created: [], error: ERR_CARD_NOT_FOUND };
-      if (card.kind !== "research") return { ok: false, created: [], error: "Only research cards fan out. Delivery cards already are work." };
+      if (card.kind !== "research") return { ok: false, created: [], error: "Only research cards fan out. This is already a build card." };
       if (card.status === "archived") return { ok: false, created: [], error: ERR_CARD_ARCHIVED };
       const resolved = await readResearchBrief(card);
       if (!resolved.ok) return { ok: false, created: [], error: resolved.error };
@@ -2691,7 +2691,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const matched = parsed.opportunities.filter((item) => wanted.has(item.id) && !item.checked);
       if (matched.length === 0) return { ok: false, created: [], error: "None of the selected opportunities are still available — reopen the brief; they may already have been fanned out." };
       const strategyLabel = researchStrategyById(card.research_strategy ?? "")?.label ?? "research";
-      // Exploratory research fans out into fresh exploratory work cards (each
+      // Exploratory research fans out into fresh exploratory build cards (each
       // owns its isolated workspace) instead of piling every card's state
       // into the shared container directory. Project research stays in its
       // project.
@@ -2699,7 +2699,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const created: Array<{ cardId: string; title: string }> = [];
       for (const item of matched) {
         try {
-          const work = await createCardInternal({
+          const spawned = await createCardInternal({
             projectId: targetProjectId,
             prompt: `Spawned from research "${card.display_name ?? card.name}" (${strategyLabel}).\n\nOpportunity: ${item.title}\n\nResearch context: full brief at ${resolved.absolute} — read its ## Findings before triage. Treat the opportunity above as the request; classify intent first, then work it through the normal delivery workflow.`,
             attachments: [],
@@ -2708,10 +2708,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             reviewMode: "Auto",
             kind: "delivery",
           });
-          const workCard = getCard(work.cardId);
-          created.push({ cardId: work.cardId, title: workCard?.display_name ?? workCard?.name ?? item.title });
+          const spawnedCard = getCard(spawned.cardId);
+          created.push({ cardId: spawned.cardId, title: spawnedCard?.display_name ?? spawnedCard?.name ?? item.title });
         } catch (error) {
-          return { ok: false, created, error: error instanceof Error ? error.message : "Could not spawn a work card." };
+          return { ok: false, created, error: error instanceof Error ? error.message : "Could not spawn a build card." };
         }
       }
       // Flip exactly the spawned boxes so a retry never double-spawns. Only
@@ -2722,7 +2722,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           await bb.sdk.files.write({ path: resolved.absolute, content: flipped.updated });
         } catch { /* boxes stay unchecked; the comment below still trails */ }
       }
-      logCardComment(cardId, "card", cardId, "agent", `Fanned out ${created.length} ${created.length === 1 ? "opportunity" : "opportunities"} into work: ${created.map((entry) => entry.title).join("; ")}.`);
+      logCardComment(cardId, "card", cardId, "agent", `Fanned out ${created.length} ${created.length === 1 ? "opportunity" : "opportunities"} into build: ${created.map((entry) => entry.title).join("; ")}.`);
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, created, error: null };
@@ -3257,7 +3257,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (workflow) return { context: `Stelow workflow ${workflow.name}: stage=${workflow.stage}, status=${workflow.status}, appetite=${workflow.appetite}, review_mode=${workflow.reviewMode}. Scopes: ${workflow.scopes.map((scope) => `${scope.id}:${scope.status}`).join(", ") || "none"}.` };
       }
       const card = db.prepare("SELECT display_name, name, stage, status, intent FROM cards WHERE dir_hash = ? OR id = ?").get(itemId, itemId) as { display_name: string | null; name: string; stage: string; status: string; intent: string } | undefined;
-      if (card) return { context: `Stelow work item ${card.display_name ?? card.name}: stage=${card.stage}, status=${card.status}, intent=${card.intent}.` };
+      if (card) return { context: `Stelow card ${card.display_name ?? card.name}: stage=${card.stage}, status=${card.status}, intent=${card.intent}.` };
       throw new Error("Stelow workflow no longer exists.");
     },
   });

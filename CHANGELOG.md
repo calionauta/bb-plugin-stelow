@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Changed
+
+- **Work track is now Build.** The delivery tab, its `build/card/...`
+  routes, and all copy drop the "Work" qualifier ("Build cards",
+  "Paused", "Intent", "Settings") — cross-track references read the
+  track title from the central `STELOW_TRACKS` table instead of
+  hardcoding it. No backward compatibility: old `work/...` links
+  fall back to the Build board.
+
 ### Added
 
 - **Tour nav visibility.** Back/Next/Done use real button hierarchy

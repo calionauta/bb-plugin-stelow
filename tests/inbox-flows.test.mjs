@@ -15,7 +15,7 @@ db.exec(`
 `);
 db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_1", "Launch Inbox", "launch-inbox", "project_1", "delivery");
 
-const paused = { id: "evt_paused", cardId: "card_1", kind: "paused", summary: "Work paused.", dedupeKey: "paused:card_1:100", occurredAt: 100 };
+const paused = { id: "evt_paused", cardId: "card_1", kind: "paused", summary: "Paused.", dedupeKey: "paused:card_1:100", occurredAt: 100 };
 assert.equal(insertInboxEvent(db, paused), true, "first lifecycle event is durable");
 assert.equal(insertInboxEvent(db, { ...paused, id: "evt_duplicate" }), false, "repeated lifecycle polling cannot create duplicate alerts");
 assert.equal(listInboxEvents(db, false).length, 1, "unresolved action is visible in Inbox");
@@ -24,7 +24,7 @@ assert.equal(resolveActionInboxEvents(db, "card_1", 200), 1, "resuming work reso
 assert.equal(listInboxEvents(db, false).length, 1, "resolved action stays queryable for the Resolved history");
 assert.equal(listInboxEvents(db, false)[0].resolved_at, 200, "resolution timestamp is durable");
 
-const completed = { id: "evt_completed", cardId: "card_1", kind: "completed", summary: "Work completed.", dedupeKey: "completed:card_1:300", occurredAt: 300 };
+const completed = { id: "evt_completed", cardId: "card_1", kind: "completed", summary: "Completed.", dedupeKey: "completed:card_1:300", occurredAt: 300 };
 assert.equal(insertInboxEvent(db, completed), true);
 assert.equal(listInboxEvents(db, false)[0].id, "evt_completed", "completion remains a recent update after action resolution");
 
