@@ -621,8 +621,8 @@ function Tour({ storageKey, tourName, steps, hasData, summary }: {
       {current.preview}
       {current.action ? <div className="mt-3">{current.action}</div> : null}
       <div className="mt-3 flex items-center justify-end gap-2 border-t pt-3">
-        {step > 0 ? <button onClick={() => setStep(step - 1)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Back</button> : null}
-        {step < steps.length - 1 ? <button onClick={() => setStep(step + 1)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Next</button> : <button onClick={dismiss} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Done</button>}
+        {step > 0 ? <Button variant="outline" className="min-h-11" onClick={() => setStep(step - 1)}>Back</Button> : null}
+        {step < steps.length - 1 ? <Button className="min-h-11" onClick={() => setStep(step + 1)}>Next</Button> : <Button className="min-h-11" onClick={dismiss}>Done</Button>}
       </div>
     </section>
   );
