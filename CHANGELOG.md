@@ -34,6 +34,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Track tabs order and memory.** Order is Inbox, Research, Work with
+  Inbox as the default; explicit track routes persist the last tab while
+  the bare root only reads it (it used to clobber the memory), and the
+  tab bar scrolls instead of squeezing on mobile.
 - **Artifacts live with their stages.** File pills no longer sit among
   navigation pills in the timeline (count-only badges remain); a shared
   Artifacts section lists everything grouped by producing stage, in both
