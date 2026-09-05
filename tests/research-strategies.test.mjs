@@ -12,7 +12,10 @@ for (const entry of RESEARCH_STRATEGIES) {
   assert.match(entry.skill, /^stelow-product-[a-z-]+$/, `${entry.id} maps to a stelow-product-* skill`);
   assert.ok(entry.blurb && entry.blurb.length > 0, `${entry.id} has a picker blurb`);
 }
-assert.ok(RESEARCH_STRATEGIES.some((entry) => entry.id === "opportunity-mapping"), "opportunity mapping leads");
+assert.ok(RESEARCH_STRATEGIES.some((entry) => entry.id === "opportunity-mapping"), "opportunity mapping is offered");
+const labels = RESEARCH_STRATEGIES.map((entry) => entry.label);
+const sorted = [...labels].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+assert.deepEqual(labels, sorted, "picker order is alphabetical by label");
 assert.equal(researchStrategyById("job-to-be-done")?.skill, "stelow-product-job-to-be-done", "lookup by id");
 assert.equal(researchStrategyById("nope"), null, "unknown id resolves to null");
 

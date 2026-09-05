@@ -28,6 +28,8 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Strategy picker is alphabetical.** Playbooks scan predictably;
+  opportunity-mapping stays the suggested default.
 - **Dead card-seen tracking removed.** The unreachable `markCardSeen`
   endpoint and its always-NULL columns are gone; attention reads presence
   directly. No behavior change.
