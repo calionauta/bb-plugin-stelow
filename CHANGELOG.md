@@ -34,6 +34,8 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Inbox keeps stale content while reloading.** Only the first mount
+  skeletons; later polls show a quiet updating hint instead of blanking.
 - **Uniform header and filter controls.** Work toggle segments, action
   buttons, and research filters share one height and text size; the
   research project filter is horizontal so the row aligns.
