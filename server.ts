@@ -205,7 +205,7 @@ export const rpcContract = defineRpcContract({
   },
   cardByWorkerThread: {
     input: z.object({ threadId: z.string() }).strict(),
-    output: z.object({ cardId: z.string().nullable() }),
+    output: z.object({ cardId: z.string().nullable(), kind: z.enum(["delivery", "research"]).nullable() }),
   },
   getNotification: {
     input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
@@ -2025,8 +2025,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async cardByWorkerThread({ threadId }) {
       const row = getCardByWorkerThread(threadId);
-      if (!row || row.status === "archived") return { cardId: null };
-      return { cardId: row.id };
+      if (!row || row.status === "archived") return { cardId: null, kind: null };
+      return { cardId: row.id, kind: row.kind === "research" ? "research" as const : "delivery" as const };
     },
 
     async getNotification({ notificationId, cardId }) {

@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -197,6 +197,30 @@ function researchColumnOf(card: Pick<CardItem, "status">): string {
   if (card.status === "completed") return "done";
   if (card.status === "in-progress" || card.status === "approved") return "doing";
   return "todo";
+}
+
+type StelowTrack = "inbox" | "work" | "research";
+// Single source for tracks: the tab bar, the router, and every navigation
+// helper read from here. Renaming a track (or reordering tabs) is one line.
+// The panel itself keeps the legacy "board" id/path so existing deep links
+// and thread actions keep resolving; tracks live in the subPath.
+const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
+  { key: "inbox", title: "Inbox", icon: "Mail", rootSubPath: "inbox" },
+  { key: "work", title: "Work", icon: "Columns2", rootSubPath: "" },
+  { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
+];
+function trackRootSubPath(track: StelowTrack): string {
+  return STELOW_TRACKS.find((entry) => entry.key === track)?.rootSubPath ?? "";
+}
+function trackOfCard(card: Pick<CardItem, "kind">): StelowTrack {
+  return card.kind === "research" ? "research" : "work";
+}
+function cardSubPath(card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): string {
+  const track = trackOfCard(card);
+  return `${track}/card/${cardId}${eventId ? `/event/${eventId}` : ""}`;
+}
+function inboxCardSubPath(cardId: string, eventId: string): string {
+  return `inbox/card/${cardId}/event/${eventId}`;
 }
 
 // Composite strategy label: unique playbook labels joined in run order.
@@ -415,11 +439,6 @@ function useWorkAccessory(): SidebarAccessoryHandle {
   return { count, tone };
 }
 
-function StelowWorkSidebarAccessory() {
-  const { count, tone } = useWorkAccessory();
-  return <SidebarCount count={count} tone={tone} label={`${count} active Stelow work items`} />;
-}
-
 function useResearchAccessory(): SidebarAccessoryHandle {
   const rpc = useRpc<typeof rpcContract>();
   const [count, setCount] = useState(0);
@@ -435,11 +454,6 @@ function useResearchAccessory(): SidebarAccessoryHandle {
   useDebouncedRealtime(["card-state", "board-changed"], () => void reload());
   const tone = count > 0 ? "bg-muted text-foreground" : "bg-muted text-muted-foreground";
   return { count, tone };
-}
-
-function StelowResearchSidebarAccessory() {
-  const { count, tone } = useResearchAccessory();
-  return <SidebarCount count={count} tone={tone} label={`${count} active Stelow research items`} />;
 }
 
 type InboxNotification = {
@@ -493,7 +507,7 @@ function InboxPanel() {
       try { await rpc.call("markNotificationRead", { notificationId: entry.id }); }
       catch { /* navigation must remain available if acknowledgement fails */ }
     }
-    navigate.toPluginPanel(entry.cardKind === "research" ? "research" : "board", { subPath: `card/${entry.cardId}/event/${entry.id}` });
+    navigate.toPluginPanel("board", { subPath: inboxCardSubPath(entry.cardId, entry.id) });
   }
   async function archive(entry: InboxNotification) { await rpc.call("archiveNotification", { notificationId: entry.id }); await load(); }
   async function restore(entry: InboxNotification) { await rpc.call("restoreNotification", { notificationId: entry.id }); await load(); }
@@ -518,7 +532,7 @@ function InboxPanel() {
   return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{loading ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : loadError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
-function BoardPanel({ subPath }: { subPath: string }) {
+function BoardPanel() {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
@@ -555,7 +569,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
-  const [restartFocusKey, setRestartFocusKey] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const [importLabel, setImportLabel] = useState("stelow-work");
   const [importCandidates, setImportCandidates] = useState<GithubCandidate[]>([]);
@@ -701,23 +714,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
       toast.success(`Imported ${imported} issue${imported === 1 ? "" : "s"} into Stelow Triage.`);
       void load(boardProjectId ?? routeProjectId);
     }
-  }
-
-  const cardMatch = subPath.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?\/?$/);
-  if (cardMatch && cardMatch[1]) {
-    const cardId = cardMatch[1];
-    return (
-      <div className="flex h-full flex-col overflow-hidden bg-background">
-        <CardDetailHeader
-          cardId={cardId}
-          restartFocusKey={restartFocusKey}
-          onBack={() => navigate.toPluginPanel("board", { subPath: "" })}
-        />
-        <div className="flex-1 overflow-auto">
-          <CardDetailBody cardId={cardId} inboxEventId={cardMatch[2] ?? null} onClose={() => navigate.toPluginPanel("board", { subPath: "" })} navigate={navigate} />
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -898,7 +894,6 @@ function BoardPanel({ subPath }: { subPath: string }) {
             ))}
           </div>}
 
-          <button onClick={() => setRestartFocusKey((k) => k + 1)} className="cursor-pointer sr-only" aria-hidden="true" tabIndex={-1}>refresh focus</button>
         </div>
       </div>
     </div>
@@ -910,7 +905,7 @@ type ResearchStrategyOption = { id: string; label: string; skill: string; blurb:
 // Second track beside Work: lightweight research (To-Do / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
 // the card produces a brief, and opportunities fan out into Work cards.
-function ResearchPanel({ subPath }: { subPath: string }) {
+function ResearchPanel() {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
@@ -1016,22 +1011,6 @@ function ResearchPanel({ subPath }: { subPath: string }) {
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
-  const cardMatch = subPath.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?\/?$/);
-  if (cardMatch && cardMatch[1]) {
-    const cardId = cardMatch[1];
-    return (
-      <div className="flex h-full flex-col overflow-hidden bg-background">
-        <CardDetailHeader
-          cardId={cardId}
-          onBack={() => navigate.toPluginPanel("research", { subPath: "" })}
-        />
-        <div className="flex-1 overflow-auto">
-          <CardDetailBody cardId={cardId} inboxEventId={cardMatch[2] ?? null} onClose={() => navigate.toPluginPanel("research", { subPath: "" })} navigate={navigate} />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
@@ -1108,6 +1087,142 @@ function ResearchPanel({ subPath }: { subPath: string }) {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+const STELOW_TAB_STORAGE_KEY = "stelow-tab-v1";
+
+type ParsedStelowRoute =
+  | { kind: "track"; track: StelowTrack }
+  | { kind: "card"; cardId: string; eventId: string | null; origin: StelowTrack }
+  | { kind: "legacy-card"; cardId: string; eventId: string | null };
+
+// One panel, three tracks. Grammar (all under the legacy "board" path so
+// existing deep links keep resolving):
+//   "" | "work"                  -> Work board (default tab)
+//   "inbox"                      -> Inbox list
+//   "research"                   -> Research board
+//   "<track>/card/<id>[/event/]" -> card detail, back returns to <track>
+//   "card/<id>[/event/]"         -> legacy pre-tabs link: kind is resolved
+//                                  live, then rendered with back to its track.
+function parseStelowSubPath(subPath: string): ParsedStelowRoute {
+  const normalized = subPath.replace(/^\/+|\/+$/g, "");
+  if (normalized === "" || normalized === "work") return { kind: "track", track: "work" };
+  if (normalized === "inbox") return { kind: "track", track: "inbox" };
+  if (normalized === "research") return { kind: "track", track: "research" };
+  let match = normalized.match(/^(inbox|work|research)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
+  if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, origin: match[1] as StelowTrack };
+  match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
+  if (match) return { kind: "legacy-card", cardId: match[1]!, eventId: match[2] ?? null };
+  return { kind: "track", track: "work" };
+}
+
+function StelowTabBar({ tab, counts, onSelect }: {
+  tab: StelowTrack;
+  counts: { inbox: number; work: number; research: number };
+  onSelect: (track: StelowTrack) => void;
+}) {
+  const countFor = (key: StelowTrack) => counts[key];
+  return (
+    <div role="tablist" aria-label="Stelow tracks" className="flex shrink-0 items-center gap-1 border-b bg-card/80 px-3 py-1.5">
+      {STELOW_TRACKS.map((entry) => {
+        const active = tab === entry.key;
+        const count = countFor(entry.key);
+        return (
+          <button
+            key={entry.key}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(entry.key)}
+            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "work" ? "Delivery board" : "Research board"}
+            className={`inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+          >
+            <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
+            <span>{entry.title}</span>
+            <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${active ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"}`}>{count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
+  cardId: string; eventId: string | null; backTrack: StelowTrack; navigate: ReturnType<typeof useBbNavigate>;
+}) {
+  const back = () => navigate.toPluginPanel("board", { subPath: trackRootSubPath(backTrack) });
+  return (
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <CardDetailHeader cardId={cardId} onBack={back} />
+      <div className="flex-1 overflow-auto">
+        <CardDetailBody cardId={cardId} inboxEventId={eventId} onClose={back} navigate={navigate} />
+      </div>
+    </div>
+  );
+}
+
+// Legacy pre-tabs deep link (board/card/<id>): the track is unknown until
+// the card loads, so resolve the kind live and render with back to its
+// track. New code always links track-prefixed routes instead.
+function LegacyCardRoute({ cardId, eventId, navigate }: {
+  cardId: string; eventId: string | null; navigate: ReturnType<typeof useBbNavigate>;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [kind, setKind] = useState<"delivery" | "research" | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setKind(null);
+    void rpc.call("listCards", { projectId: null }).then((result) => {
+      if (cancelled) return;
+      const found = result.cards.find((entry) => entry.id === cardId);
+      setKind(found ? found.kind : "delivery");
+    }).catch(() => { if (!cancelled) setKind("delivery"); });
+    return () => { cancelled = true; };
+  }, [cardId, rpc]);
+  if (!kind) return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
+  return <StelowCardDetail cardId={cardId} eventId={eventId} backTrack={trackOfCard({ kind })} navigate={navigate} />;
+}
+
+function StelowPanel({ subPath }: { subPath: string }) {
+  const navigate = useBbNavigate();
+  const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);
+  const inbox = useInboxAccessory();
+  const work = useWorkAccessory();
+  const research = useResearchAccessory();
+  const [lastTab, setLastTab] = useState<StelowTrack>(() => {
+    if (typeof window === "undefined") return "work";
+    try {
+      const raw = window.localStorage.getItem(STELOW_TAB_STORAGE_KEY);
+      if (raw === "inbox" || raw === "work" || raw === "research") return raw;
+    } catch { /* default below */ }
+    return "work";
+  });
+  // Remember the last visited track so the bare root reopens where you were.
+  useEffect(() => {
+    if (route.kind === "track") {
+      setLastTab(route.track);
+      try { window.localStorage.setItem(STELOW_TAB_STORAGE_KEY, route.track); } catch { /* ignore */ }
+    }
+  }, [route]);
+  const goTrack = useCallback((track: StelowTrack) => {
+    navigate.toPluginPanel("board", { subPath: trackRootSubPath(track) });
+  }, [navigate]);
+
+  if (route.kind === "card") {
+    return <StelowCardDetail cardId={route.cardId} eventId={route.eventId} backTrack={route.origin} navigate={navigate} />;
+  }
+  if (route.kind === "legacy-card") {
+    return <LegacyCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
+  }
+  const tab = route.track === "work" && subPath.replace(/^\/+|\/+$/g, "") === "" ? lastTab : route.track;
+  const counts = { inbox: inbox.count, work: work.count, research: research.count };
+  return (
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <StelowTabBar tab={tab} counts={counts} onSelect={goTrack} />
+      <div className="min-h-0 flex-1">
+        {tab === "inbox" ? <InboxPanel /> : tab === "research" ? <ResearchPanel /> : <BoardPanel />}
       </div>
     </div>
   );
@@ -1222,7 +1337,7 @@ function WorkList({ groups, navigate }: { groups: Record<string, CardItem[]>; na
   return <div className="space-y-5">{COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` })} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: cardSubPath(card, card.id) })} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
   })}</div>;
 }
 
@@ -1271,7 +1386,7 @@ function BoardCard({ card }: { card: CardItem }) {
     : attention
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
-  const open = useCallback(() => navigate.toPluginPanel("board", { subPath: `card/${card.id}` }), [navigate, card.id]);
+  const open = useCallback(() => navigate.toPluginPanel("board", { subPath: cardSubPath(card, card.id) }), [navigate, card]);
   async function retry(event: React.MouseEvent | React.KeyboardEvent) {
     event.stopPropagation();
     if (retrying) return;
@@ -1334,7 +1449,7 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
     : attention
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
-  const open = useCallback(() => navigate.toPluginPanel("research", { subPath: `card/${card.id}` }), [navigate, card.id]);
+  const open = useCallback(() => navigate.toPluginPanel("board", { subPath: cardSubPath(card, card.id) }), [navigate, card]);
   async function retry(event: React.MouseEvent | React.KeyboardEvent) {
     event.stopPropagation();
     if (retrying) return;
@@ -3434,18 +3549,18 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
 function OpenStelowBoardAction({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [cardId, setCardId] = useState<string | null>(null);
+  const [target, setTarget] = useState<{ cardId: string; kind: "delivery" | "research" } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setCardId(null);
+    setTarget(null);
     void rpc.call("cardByWorkerThread", { threadId }).then((result) => {
-      if (!cancelled) setCardId(result.cardId);
+      if (!cancelled && result.cardId) setTarget({ cardId: result.cardId, kind: result.kind ?? "delivery" });
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [rpc, threadId]);
   // Not a card worker thread: render nothing instead of a generic shortcut.
-  if (!cardId) return null;
-  return <button onClick={() => navigate.toPluginPanel("board", { subPath: `card/${cardId}` })} title="Open this work item" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow work item ↗</button>;
+  if (!target) return null;
+  return <button onClick={() => navigate.toPluginPanel("board", { subPath: cardSubPath({ kind: target.kind }, target.cardId) })} title="Open this work item" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow work item ↗</button>;
 }
 
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {
@@ -3469,29 +3584,17 @@ function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: Plug
 }
 
 export default definePluginApp((app) => {
-  app.slots.navPanel({
-    id: "inbox",
-    title: "Stelow Inbox",
-    icon: "Inbox",
-    path: "inbox",
-    component: InboxPanel,
-    experimental_sidebarAccessory: StelowInboxSidebarAccessory,
-  });
+  // One sidebar row for the whole plugin. The legacy "board" id/path is
+  // kept so existing deep links and thread actions keep resolving; inbox,
+  // work, and research live on as subPath tracks (see STELOW_TRACKS).
+  // The badge counts what matters: unresolved inbox action items.
   app.slots.navPanel({
     id: "board",
-    title: "Stelow Work",
-    icon: "Columns2",
+    title: "Stelow",
+    icon: "Sparkles",
     path: "board",
-    component: (props) => { PillsyStyles(); return <BoardPanel subPath={props.subPath} />; },
-    experimental_sidebarAccessory: StelowWorkSidebarAccessory,
-  });
-  app.slots.navPanel({
-    id: "research",
-    title: "Stelow Research",
-    icon: "ListTodo",
-    path: "research",
-    component: (props) => { PillsyStyles(); return <ResearchPanel subPath={props.subPath} />; },
-    experimental_sidebarAccessory: StelowResearchSidebarAccessory,
+    component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },
+    experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
   app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Columns2", component: CardDrawerAdapter });

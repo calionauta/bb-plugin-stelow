@@ -24,14 +24,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 2. Orient myself
 *When I open Stelow, I want to see everything and find my card.*
 
+- **One panel, three tracks** (`StelowPanel`, `STELOW_TRACKS`). A single
+  Stelow sidebar row with Inbox / Work / Research tabs (subPath-routed,
+  back-button friendly, last tab remembered). Track names, icons, and
+  routes come from one table — renaming is one line. Legacy card links
+  resolve the track live.
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
   (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their
   stage's phase. Columns collapse (persisted); cards move via drag-drop.
 - **List view.** Same cards grouped by column, for narrow screens.
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
   needs-attention + reset.
-- **Sidebar badges.** Inbox counts unresolved action items only; Work
-  counts active cards. Both realtime.
+- **Sidebar badge.** Unresolved inbox action items only (both tracks).
+  Track tabs carry their own active counts. All realtime.
 - **Build stamp** (`buildInfo`). Version in the header so reloads are
   checkable instead of vibes.
 

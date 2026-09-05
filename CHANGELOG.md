@@ -10,7 +10,13 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
-- **Research track.** New `Stelow Research` panel beside Work: To-Do /
+- **One Stelow panel with track tabs.** Inbox, Work, and Research live
+  as tabs under a single Stelow sidebar row (subPath-routed, last tab
+  remembered, legacy card links resolve live). Track names, icons, and
+  routes come from one table. The sidebar badge counts unresolved inbox
+  action items across both tracks; each tab carries its own active
+  count.
+- **Research track.** A Research tab beside Work and Inbox: To-Do /
   Doing / Done cards with composite strategy rounds on the same request
   (each round appends to `brief.md`, never rewrites), a parsed
   opportunities convention, and fan-out that turns opportunities into
