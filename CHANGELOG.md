@@ -34,6 +34,9 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Uniform header and filter controls.** Work toggle segments, action
+  buttons, and research filters share one height and text size; the
+  research project filter is horizontal so the row aligns.
 - **Panel drops the board legacy.** Single panel id/path is now
   `stelow` (was `board`); track routes, thread actions, and comments
   no longer reference it. Old panel URLs are not preserved —
