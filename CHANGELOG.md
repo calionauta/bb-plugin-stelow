@@ -10,6 +10,11 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Strategy picker on mobile.** The options list no longer nests its
+  own scroll region inside the sheet scroll (scroll trap); it expands
+  and the sheet scrolls as one column, autofocus is desktop-only so
+  the keyboard doesn't cover the list, and a fieldset min-width fix
+  removes the horizontal overflow. Disabled rows no longer hover.
 - **Blocked submits keep the draft.** A submit rejected for want of a
   strategy (or a failed create) used to resolve successfully from the
   composer's view, wiping what the user typed. Guards now throw so the

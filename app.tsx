@@ -21,6 +21,7 @@ import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -1494,6 +1495,12 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
   const [query, setQuery] = useState("");
   const [flash, setFlash] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  // Compact (mobile): the list expands and the sheet scrolls as one column
+  // instead of nesting a scroll region inside the sheet scroll (scroll trap,
+  // fights the drag-to-close gesture). ~4 cards fit the viewport; the rest
+  // flows in the sheet scroll. Autofocus is desktop-only so the keyboard
+  // doesn't cover the list on open.
+  const compact = useIsCompactViewport();
   useEffect(() => {
     if (attentionSignal === 0) return;
     searchRef.current?.focus();
@@ -1525,7 +1532,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search strategies…"
-          autoFocus
+          autoFocus={!compact}
           disabled={disabled}
           aria-label="Search strategies"
           className="h-11 w-full rounded-md border bg-background pr-9 pl-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
@@ -1547,7 +1554,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
         </div>
       ) : (
-        <fieldset className={`grid max-h-72 gap-2 overflow-y-auto rounded-md pr-0.5 ${flash ? "ring-2 ring-destructive/60" : ""}`}>
+        <fieldset className={`grid min-w-0 gap-2 ${compact ? "" : "max-h-72 overflow-y-auto pr-0.5"} ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
           <legend className="sr-only">Research strategy</legend>
           {visible.map((entry) => {
             const selected = value === entry.id;
@@ -1555,7 +1562,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
             return (
               <label
                 key={entry.id}
-                className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : ""} ${selected ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+                className={`flex min-h-11 items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : "cursor-pointer"} ${selected ? "border-primary bg-primary/5" : disabled ? "" : "hover:bg-muted/50"}`}
               >
                 <input
                   type="radio"
