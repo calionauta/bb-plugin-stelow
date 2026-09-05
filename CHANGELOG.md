@@ -8,6 +8,13 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Blocked submits keep the draft.** A submit rejected for want of a
+  strategy (or a failed create) used to resolve successfully from the
+  composer's view, wiping what the user typed. Guards now throw so the
+  draft is kept, per the composer contract — in both creation dialogs.
+
 ### Added
 
 - **Board/List on both boards.** Research gains the list view; the switch

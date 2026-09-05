@@ -768,6 +768,7 @@ function BoardPanel() {
       toast.success("Card started in Triage. Stelow will triage it.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start the card.");
+      throw error;
     }
   }
 
@@ -894,7 +895,7 @@ function BoardPanel() {
                 placeholder="What should Stelow build?"
                 layout="contained"
                 draftKey="stelow-board-create"
-                onSubmit={(request) => void start(request)}
+                onSubmit={(request) => start(request)}
               />
               <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
                 <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:justify-between">
@@ -1087,6 +1088,7 @@ function ResearchPanel() {
   const [createOpen, setCreateOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<string | null>(null);
+  const [strategyAttention, setStrategyAttention] = useState(0);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
@@ -1154,7 +1156,10 @@ function ResearchPanel() {
     if (!text.trim()) return;
     if (!strategy) {
       toast.error("Pick a strategy first.");
-      return;
+      setStrategyAttention((count) => count + 1);
+      // Throw so the composer keeps the draft: a blocked submit must never
+      // lose what the user typed (SDK clears the draft only on resolve).
+      throw new Error("Pick a strategy first.");
     }
     try {
       const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy });
@@ -1164,6 +1169,7 @@ function ResearchPanel() {
       toast.success("Research started. The brief appears on the card.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start research.");
+      throw error;
     }
   }
 
@@ -1224,7 +1230,7 @@ function ResearchPanel() {
               <div className="grid gap-4">
                 <div className="grid gap-1.5">
                   <span className="text-xs font-medium text-foreground">Choose a strategy</span>
-                  <StrategyPicker strategies={strategies} value={strategy} onChange={setStrategy} groupName="strategy-pick" />
+                  <StrategyPicker strategies={strategies} value={strategy} onChange={setStrategy} groupName="strategy-pick" attentionSignal={strategyAttention} />
                 </div>
                 <AgentConfigBox
                   lines={[`Research runs on ${effectiveResearchPreset?.name ?? "Default"}${researchBandPreset ? "" : " (board default)"}`]}
@@ -1240,7 +1246,7 @@ function ResearchPanel() {
                   placeholder="What should Stelow investigate?"
                   layout="contained"
                   draftKey="stelow-research-create"
-                  onSubmit={(request) => void start(request)}
+                  onSubmit={(request) => start(request)}
                 />
               </div>
             </DialogContent>
@@ -1474,16 +1480,27 @@ function WorkflowChoiceSelect<T extends string>({ label, value, options, onChang
 // Visual strategy picker shared by the creation modal and the follow-up
 // round dialog: search field over emoji radio-cards, single select, no
 // preselected default. RunIds (follow-up) only badge already-run rows.
-function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, disabled = false }: {
+function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, disabled = false, attentionSignal = 0 }: {
   strategies: ResearchStrategyOption[];
   value: string | null;
   onChange: (id: string) => void;
   runIds?: string[];
   groupName: string;
   disabled?: boolean;
+  // Increment to draw attention to the picker (focus search + transient
+  // ring). Used when submit is blocked for want of a selection.
+  attentionSignal?: number;
 }) {
   const [query, setQuery] = useState("");
+  const [flash, setFlash] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (attentionSignal === 0) return;
+    searchRef.current?.focus();
+    setFlash(true);
+    const timer = window.setTimeout(() => setFlash(false), 1800);
+    return () => window.clearTimeout(timer);
+  }, [attentionSignal]);
   const needle = query.trim().toLowerCase();
   const visible = needle.length === 0
     ? strategies
@@ -1530,7 +1547,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
         </div>
       ) : (
-        <fieldset className="grid max-h-72 gap-2 overflow-y-auto pr-0.5">
+        <fieldset className={`grid max-h-72 gap-2 overflow-y-auto rounded-md pr-0.5 ${flash ? "ring-2 ring-destructive/60" : ""}`}>
           <legend className="sr-only">Research strategy</legend>
           {visible.map((entry) => {
             const selected = value === entry.id;
