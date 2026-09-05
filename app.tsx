@@ -222,6 +222,21 @@ function inboxCardSubPath(cardId: string, eventId: string): string {
   return `inbox/card/${cardId}/event/${eventId}`;
 }
 
+// Panel identity lives here, not scattered across call sites: every
+// navigation flows through goToTrack / goToCard / goToInboxCard, so the
+// panel id, track routes, and card URLs change in exactly one place each.
+const STELOW_PANEL_ID = "board";
+type BbNavigate = ReturnType<typeof useBbNavigate>;
+function goToTrack(navigate: BbNavigate, track: StelowTrack): void {
+  navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: trackRootSubPath(track) });
+}
+function goToCard(navigate: BbNavigate, card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): void {
+  navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: cardSubPath(card, cardId, eventId) });
+}
+function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): void {
+  navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: inboxCardSubPath(cardId, eventId) });
+}
+
 // Composite strategy label: unique playbook labels joined in run order.
 // Falls back to the raw id when the label map has not loaded yet, so the
 // pill never renders empty while strategies fetch.
@@ -507,7 +522,7 @@ function InboxPanel() {
       try { await rpc.call("markNotificationRead", { notificationId: entry.id }); }
       catch { /* navigation must remain available if acknowledgement fails */ }
     }
-    navigate.toPluginPanel("board", { subPath: inboxCardSubPath(entry.cardId, entry.id) });
+    goToInboxCard(navigate, entry.cardId, entry.id);
   }
   async function archive(entry: InboxNotification) { await rpc.call("archiveNotification", { notificationId: entry.id }); await load(); }
   async function restore(entry: InboxNotification) { await rpc.call("restoreNotification", { notificationId: entry.id }); await load(); }
@@ -1152,7 +1167,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
 function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
   cardId: string; eventId: string | null; backTrack: StelowTrack; navigate: ReturnType<typeof useBbNavigate>;
 }) {
-  const back = () => navigate.toPluginPanel("board", { subPath: trackRootSubPath(backTrack) });
+  const back = () => goToTrack(navigate, backTrack);
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       <CardDetailHeader cardId={cardId} onBack={back} />
@@ -1209,7 +1224,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
     try { window.localStorage.setItem(STELOW_TAB_STORAGE_KEY, route.track); } catch { /* ignore */ }
   }, [route, subPath]);
   const goTrack = useCallback((track: StelowTrack) => {
-    navigate.toPluginPanel("board", { subPath: trackRootSubPath(track) });
+    goToTrack(navigate, track);
   }, [navigate]);
 
   if (route.kind === "card") {
@@ -1343,7 +1358,7 @@ function WorkList({ groups, navigate }: { groups: Record<string, CardItem[]>; na
   return <div className="space-y-5">{COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => navigate.toPluginPanel("board", { subPath: cardSubPath(card, card.id) })} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => goToCard(navigate, card, card.id)} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
   })}</div>;
 }
 
@@ -1392,7 +1407,7 @@ function BoardCard({ card }: { card: CardItem }) {
     : attention
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
-  const open = useCallback(() => navigate.toPluginPanel("board", { subPath: cardSubPath(card, card.id) }), [navigate, card]);
+  const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
   async function retry(event: React.MouseEvent | React.KeyboardEvent) {
     event.stopPropagation();
     if (retrying) return;
@@ -1455,7 +1470,7 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
     : attention
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
-  const open = useCallback(() => navigate.toPluginPanel("board", { subPath: cardSubPath(card, card.id) }), [navigate, card]);
+  const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
   async function retry(event: React.MouseEvent | React.KeyboardEvent) {
     event.stopPropagation();
     if (retrying) return;
@@ -1519,7 +1534,7 @@ function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, rel
   return { kind: "host", hostId, path: absolutePath };
 }
 
-function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void }) {
+function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   const current = curIdx >= 0 ? curIdx : 0;
   const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
@@ -1542,7 +1557,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { curren
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{BAND_LABEL[band] ?? band}</span>
               <span className={`h-px flex-1 ${bandActive ? "bg-primary/40" : hasAnyPassed ? "bg-emerald-500/30" : "bg-border"}`} />
             </div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex gap-1 overflow-x-auto pb-0.5 md:flex-wrap md:overflow-visible">
               {stages.map((stage) => {
                 const idx = STAGE_SEQUENCE.indexOf(stage);
                 const passed = idx >= 0 && idx < current;
@@ -1552,13 +1567,13 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { curren
                 const clickable = canAdvance || canRegress;
                 const produced = artifacts.filter((artifact) => artifact.stage === stage);
                 return (
-                  <div key={stage} className="inline-flex items-center gap-1">
+                  <span key={stage} className="inline-flex shrink-0 items-center gap-1">
                     <button
                       type="button"
                       disabled={!clickable || isCurrent}
-                      title={`${STAGE_PRODUCES[stage]}${produced.length > 0 ? ` (${produced.length} artifact${produced.length === 1 ? "" : "s"} in the Artifacts section below)` : ""}`}
+                      title={STAGE_PRODUCES[stage]}
                       onClick={() => onPick(stage)}
-                      className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-11 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
                         ? "bg-primary/15 text-primary ring-2 ring-primary/60"
                         : passed
@@ -1570,10 +1585,21 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { curren
                       >
                         {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : canAdvance ? "·" : "·"}
                         {stageLabel(stage)}
-                        {produced.length > 0 ? <span aria-label={`${produced.length} artifact${produced.length === 1 ? "" : "s"} below in Artifacts`}>· {produced.length}</span> : null}
                         {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
                     </button>
-                  </div>
+                    {produced.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => onShowArtifacts(stage)}
+                        title={`Show ${produced.length} artifact${produced.length === 1 ? "" : "s"} from ${stageLabel(stage)} in Artifacts below`}
+                        aria-label={`Show ${produced.length} artifact${produced.length === 1 ? "" : "s"} from ${stageLabel(stage)} in Artifacts below`}
+                        className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-0.5 rounded-full border border-border bg-muted/40 px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                      >
+                        <span aria-hidden>📄</span>
+                        {produced.length}
+                      </button>
+                    ) : null}
+                  </span>
                 );
               })}
             </div>
@@ -2240,9 +2266,14 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
 // pattern (CardDisclosure) for secondary content. Previously every zone —
 // banners, meta grid, timeline, preset, comments — used its own ad-hoc
 // spacing and heading style.
-function CardDisclosure({ title, hint, action, children, defaultOpen = false }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean }) {
+function CardDisclosure({ title, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
+  const controlled = open !== undefined;
   return (
-    <details open={defaultOpen} className="group rounded-lg border bg-muted/20">
+    <details
+      open={controlled ? open : defaultOpen}
+      onToggle={(event) => onToggle?.((event.currentTarget as HTMLDetailsElement).open)}
+      className="group rounded-lg border bg-muted/20"
+    >
       <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
         <span aria-hidden className="mr-1.5 inline-block text-[10px] text-muted-foreground transition-transform group-open:rotate-90">▶</span>
         <span>{title}</span>
@@ -3062,6 +3093,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
+  const [artifactsOpen, setArtifactsOpen] = useState(false);
+  const artifactsRef = useRef<HTMLDivElement | null>(null);
+  // Count badges on the timeline deep-link here: open the section, then
+  // bring it into view. Instant scroll (no smooth) to respect reduced
+  // motion by default.
+  const showArtifacts = useCallback(() => {
+    setArtifactsOpen(true);
+    requestAnimationFrame(() => artifactsRef.current?.scrollIntoView({ block: "nearest" }));
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -3311,6 +3351,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     nextStages={detail.nextStages}
                     artifacts={detail.artifacts}
                     onPick={(stage) => setPendingAdvance(stage)}
+                    onShowArtifacts={() => showArtifacts()}
                   />
                 </div>
               ) : null}
@@ -3367,9 +3408,12 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
             </CardDisclosure>
 
+            <div ref={artifactsRef}>
             <CardDisclosure
               title="Artifacts"
               hint={detail ? `${detail.artifacts.length}` : "produced files"}
+              open={artifactsOpen}
+              onToggle={setArtifactsOpen}
             >
               {detail ? (
                 <ArtifactGroups
@@ -3380,6 +3424,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
+            </div>
 
             {/* DISCLOSURE 2 — Manage (preset + danger zone, always collapsed) */}
             <CardDisclosure
@@ -3609,7 +3654,7 @@ function OpenStelowBoardAction({ threadId }: { threadId: string }) {
   }, [rpc, threadId]);
   // Not a card worker thread: render nothing instead of a generic shortcut.
   if (!target) return null;
-  return <button onClick={() => navigate.toPluginPanel("board", { subPath: cardSubPath({ kind: target.kind }, target.cardId) })} title="Open this work item" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow work item ↗</button>;
+  return <button onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this work item" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow work item ↗</button>;
 }
 
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {

@@ -34,6 +34,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Timeline count links to its artifacts.** The count is now its own
+  button (navigation and files no longer share a chip); it opens the
+  Artifacts section and scrolls to it. Stage chips meet touch targets
+  and scroll horizontally on mobile instead of wrapping.
 - **Track tabs order and memory.** Order is Inbox, Research, Work with
   Inbox as the default; explicit track routes persist the last tab while
   the bare root only reads it (it used to clobber the memory), and the

@@ -28,7 +28,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Stelow sidebar row with Inbox / Work / Research tabs (subPath-routed,
   back-button friendly, last tab remembered). Track names, icons, and
   routes come from one table — renaming is one line. Legacy card links
-  resolve the track live.
+  resolve the track live. Panel identity and every navigation flows
+  through `STELOW_PANEL_ID` / `goToTrack` / `goToCard` / `goToInboxCard`.
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
   (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their
   stage's phase. Columns collapse (persisted); cards move via drag-drop.
