@@ -49,7 +49,7 @@
     "test:question-batch": "node tests/question-batch.test.mjs",
     "test:github-lists": "node tests/github-lists.test.mjs",
     "test:promote": "node tests/promote-card.test.mjs",
-    "test:research": "node tests/research-brief.test.mjs && node tests/research-strategies.test.mjs && node tests/card-move.test.mjs && node tests/artifact-groups.test.mjs",
+    "test:research": "node tests/research-brief.test.mjs && node tests/research-strategies.test.mjs && node tests/research-rounds.test.mjs && node tests/card-move.test.mjs && node tests/artifact-groups.test.mjs",
     "test:worker-ledger": "node tests/worker-ledger.test.mjs",
     "test:workflow-lineage": "node tests/workflow-lineage.test.mjs",
     "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",

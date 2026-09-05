@@ -1495,11 +1495,9 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
   const [query, setQuery] = useState("");
   const [flash, setFlash] = useState(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
-  // Compact (mobile): the list expands and the sheet scrolls as one column
-  // instead of nesting a scroll region inside the sheet scroll (scroll trap,
-  // fights the drag-to-close gesture). ~4 cards fit the viewport; the rest
-  // flows in the sheet scroll. Autofocus is desktop-only so the keyboard
-  // doesn't cover the list on open.
+  // Compact (mobile): the list keeps its ~4-row cap with inner scroll on
+  // every viewport — capped over expanded, per explicit preference.
+  // Autofocus is desktop-only so the keyboard doesn't cover the list on open.
   const compact = useIsCompactViewport();
   useEffect(() => {
     if (attentionSignal === 0) return;
@@ -1554,7 +1552,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
         </div>
       ) : (
-        <fieldset className={`grid min-w-0 gap-2 ${compact ? "" : "max-h-72 overflow-y-auto pr-0.5"} ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
+        <fieldset className={`grid max-h-72 min-w-0 gap-2 overflow-y-auto pr-0.5 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
           <legend className="sr-only">Research strategy</legend>
           {visible.map((entry) => {
             const selected = value === entry.id;
@@ -1562,7 +1560,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
             return (
               <label
                 key={entry.id}
-                className={`flex min-h-11 items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : "cursor-pointer"} ${selected ? "border-primary bg-primary/5" : disabled ? "" : "hover:bg-muted/50"}`}
+                className={`flex min-h-11 min-w-0 items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : "cursor-pointer"} ${selected ? "border-primary bg-primary/5" : disabled ? "" : "hover:bg-muted/50"}`}
               >
                 <input
                   type="radio"
@@ -3032,8 +3030,17 @@ type ResearchBriefState = {
   content: string | null;
   truncated: boolean;
   opportunities: Array<{ id: string; title: string; checked: boolean; group: string | null }>;
+  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string | null; status: "ready" | "pending" | "missing"; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
+  looseFiles: Array<{ display: string; path: string; absolutePath: string; hostId: string }>;
   error: string | null;
 };
+
+function formatRoundDate(iso: string | null): string {
+  if (!iso) return "";
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) return "";
+  return new Date(time).toLocaleString();
+}
 
 // Fan-out: turn checked opportunities into delivery Build cards. Mirrors the
 // GitHub-import dialog (checkbox list + bulk confirm); the server re-parses
@@ -3278,7 +3285,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
       setStrategies(strategiesResult.strategies);
       setInboxEvent(eventResult?.notification ?? null);
     } catch {
-      setBrief({ found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: "Unable to load the brief." });
+      setBrief({ found: false, briefPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "Unable to load the brief." });
     }
   }, [cardId, inboxEventId, rpc]);
 
@@ -3475,6 +3482,58 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
               ) : null}
               {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => { onChanged(); void loadBrief(); }} /> : null}
             </CardDisclosure>
+
+            {(brief && (brief.rounds.length > 0 || brief.looseFiles.length > 0)) ? (
+              <CardDisclosure title="Rounds" hint={`${brief.rounds.length} round${brief.rounds.length === 1 ? "" : "s"} · newest first`}>
+                <div className="space-y-1.5">
+                  {brief.rounds.map((round) => {
+                    const when = formatRoundDate(round.files[0]?.generatedAt || round.at);
+                    return (
+                      <div key={`${round.strategyId}-r${round.n}`} className="rounded-md border bg-muted/20 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                          <span aria-hidden>{round.emoji}</span>
+                          <span className="font-medium">Round {round.n} — {round.label}</span>
+                          {when ? <span className="text-xs text-muted-foreground">{when}</span> : null}
+                          {round.status === "pending" ? <span className="text-xs text-muted-foreground">Running…</span> : null}
+                          {round.status === "missing" ? <span className="text-xs text-muted-foreground">{round.at ? "No file saved yet" : "Saved before round files existed"}</span> : null}
+                        </div>
+                        {round.files.length > 0 ? (
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {round.files.map((file) => (
+                              <button
+                                key={file.path}
+                                onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) })}
+                                title={`Open ${file.display}`}
+                                className="cursor-pointer min-h-11 rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:border-primary/50"
+                              >
+                                {file.display} ↗
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {brief.looseFiles.length > 0 ? (
+                    <div className="rounded-md border border-dashed px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Other files in the state dir</p>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {brief.looseFiles.map((file) => (
+                          <button
+                            key={file.path}
+                            onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) })}
+                            title={`Open ${file.display}`}
+                            className="cursor-pointer min-h-11 rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:border-primary/50"
+                          >
+                            {file.display} ↗
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </CardDisclosure>
+            ) : null}
 
             <CardDisclosure title="Artifacts" hint={detail ? `${detail.artifacts.length}` : "produced files"}>
               {detail ? (

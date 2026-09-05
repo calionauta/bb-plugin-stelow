@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Added
+
+- **Round files on research cards.** Every strategy round persists its
+  native playbook output verbatim (`rounds/<strategy>-r<n>-<stamp>.md`,
+  one per sub-step when a playbook fans out) and registers each in the
+  manifest; the card lists rounds newest-first with run status plus
+  unregistered state-dir files. `brief.md` stays the fan-out
+  aggregator; history carries timestamps with legacy migration.
+
 ### Fixed
 
 - **Strategy picker on mobile.** The options list no longer nests its

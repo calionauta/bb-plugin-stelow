@@ -13,6 +13,7 @@ import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStalen
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList } from "./lib/research-strategies.mjs";
+import { normalizeHistory, roundTimestamp, buildRoundsView } from "./lib/research-rounds.mjs";
 import { parseResearchBrief, checkBriefItems } from "./lib/research-brief.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills } from "./lib/workflow-skills-sync.mjs";
@@ -296,7 +297,7 @@ export const rpcContract = defineRpcContract({
   },
   researchBrief: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ found: z.boolean(), briefPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), error: z.string().nullable() }),
+    output: z.object({ found: z.boolean(), briefPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string().nullable(), status: z.enum(["ready", "pending", "missing"]), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), looseFiles: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string() })), error: z.string().nullable() }),
   },
   fanOutResearch: {
     input: z.object({ cardId: z.string(), opportunityIds: z.array(z.string().min(1).max(120)).min(1).max(20) }).strict(),
@@ -1166,7 +1167,7 @@ export default async function plugin(bb: BbPluginApi) {
   // workflow: no stages, no gates, no advance. The worker writes brief.md
   // (exact shape below) into its own state dir; the user marks Done and
   // fans opportunities out into delivery cards from the plugin UI.
-  function researchWorkerPrompt({ displayName, prompt, strategyLabel, strategySkill, stateDirText, workspaceRoot, instructions, flavor, previousThreadId }: { displayName: string; prompt: string; strategyLabel: string; strategySkill: string; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed" | "append"; previousThreadId: string | null }): string {
+  function researchWorkerPrompt({ displayName, prompt, strategyLabel, strategyId, strategySkill, stateDirText, workspaceRoot, instructions, flavor, previousThreadId, roundNo, roundStamp }: { displayName: string; prompt: string; strategyLabel: string; strategyId: string; strategySkill: string; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed" | "append"; previousThreadId: string | null; roundNo: number; roundStamp: string }): string {
     const flavorLine = flavor === "initial"
       ? "This is a fresh research task."
       : flavor === "append"
@@ -1192,13 +1193,21 @@ Step 3 — write your findings to <state-dir>/brief.md (create it) in EXACTLY th
 
 Unchecked boxes mean "available for fan-out". NEVER check a box yourself — the plugin checks the ones the user turns into build cards. If you run another strategy later, APPEND a new ### section under ## Opportunities; never rewrite existing items.
 
-Step 4 — register the brief as an artifact so it renders on the card: append EXACTLY this block to <state-dir>/state.md (create the artifacts: section if missing; path is relative to the workspace root ${workspaceRoot}):
+Step 3b — persist this round's native output IN ADDITION to the brief, never instead of it: save the playbook's full result VERBATIM to <workspaceRoot>/rounds/${strategyId}-r${roundNo}-${roundStamp}.md (create the rounds/ dir; use EXACTLY this filename). If the playbook runs distinct sub-steps with separable outputs (e.g. JTBD's numbered prompts), save EACH as rounds/${strategyId}-<substep-slug>-r${roundNo}-${roundStamp}.md with the SAME stamp, where <substep-slug> is the lowercase-hyphenated sub-step name.
+
+Step 4 — register every file you created so each renders on the card: append one block per file to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 
     artifacts:
       - stage: research
         kind: document
         path: <brief.md path relative to ${workspaceRoot}>
         label: Research brief
+      - stage: research
+        kind: document
+        path: rounds/${strategyId}-r${roundNo}-${roundStamp}.md
+        label: Round ${roundNo} — ${strategyLabel}
+        generated_at: <current UTC time in ISO 8601>
+(one more block per sub-step file, with label "Round ${roundNo} — ${strategyLabel} (<substep-slug>)" and its own path.)
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
@@ -1272,16 +1281,20 @@ ${prompt}`;
     // BB requires Personal-project threads to retain a `personal` workspace.
     // Exploratory work therefore uses one Stelow-owned project with a local source.
     const workerProjectId = workspaceProjectId;
+    const creationStamp = roundTimestamp();
     const researchPrompt = isResearch && researchStrategy ? researchWorkerPrompt({
       displayName,
       prompt,
       strategyLabel: researchStrategy.label,
+      strategyId: researchStrategy.id,
       strategySkill: researchStrategy.skill,
       stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
       workspaceRoot: rootPath,
       instructions: params.instructions,
       flavor: "initial",
       previousThreadId: null,
+      roundNo: 1,
+      roundStamp: creationStamp,
     }) : null;
     const thread = await bb.sdk.threads.spawn({
       projectId: workerProjectId,
@@ -1316,7 +1329,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${prompt}` }, ...workerAttachments],
     });
     const ts = now();
-    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, kind, research_strategy, research_strategies, last_error, last_assistant_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch ? "pending" : "draft", isResearch ? "research" : "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : "delivery", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([researchStrategy.id]) : null, null, null, ts, ts);
+    const createdAt = new Date(ts).toISOString();
+    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, kind, research_strategy, research_strategies, last_error, last_assistant_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch ? "pending" : "draft", isResearch ? "research" : "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : "delivery", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([{ id: researchStrategy.id, at: createdAt }]) : null, null, null, ts, ts);
     // NOTE: no card_presets row here on purpose. An override row means "the
     // user explicitly pinned this card", and writing the spawn default as one
     // would mislabel every fresh card as overridden (and trip staleness).
@@ -1395,7 +1409,7 @@ ${prompt}` }, ...workerAttachments],
   // same per-workflow state dir (dir_hash) so the new worker re-reads the
   // already-advanced state.md and continues from the current stage — no context
   // is re-created or reset. The old worker is archived/stopped by this helper.
-  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append" }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
+  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append"; roundNo?: number; roundStamp?: string }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
     const row = getCard(cardId);
     if (!row) return { ok: false, error: ERR_CARD_NOT_FOUND };
     const preset = getPresetById(presetId);
@@ -1424,12 +1438,15 @@ ${prompt}` }, ...workerAttachments],
       displayName: row.display_name ?? row.name,
       prompt: row.prompt,
       strategyLabel: researchStrategy.label,
+      strategyId: researchStrategy.id,
       strategySkill: researchStrategy.skill,
       stateDirText: text(stateHint),
       workspaceRoot: projectPath || "<workspace>",
       instructions: params.instructions,
       flavor: opts?.flavor ?? "restart",
       previousThreadId: row.worker_thread_id,
+      roundNo: opts?.roundNo ?? Math.max(1, history.length),
+      roundStamp: opts?.roundStamp ?? roundTimestamp(),
     }) : null;
     try {
       const newThread = await bb.sdk.threads.spawn({
@@ -1505,6 +1522,44 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // Resolve the research brief file for a card: always the card's own state
   // dir (never the project root, so many research cards can share one
   // project without colliding). Every refusal names its exit.
+  // Round files for a research card, newest first: join the timestamped
+  // history with manifest entries by naming convention (lib/research-rounds),
+  // plus unregistered .md files in the state dir ("loose files"). A round
+  // without a file is pending while its worker is alive, otherwise honestly
+  // missing (legacy pre-files rounds, or a failed round). Fail-soft throughout:
+  // rounds degrade to history-only, orphans stay hidden.
+  async function researchRoundFiles(workspacePath: string | null, hostId: string | null, stateDir: string | null, history: Array<{ id: string; at: string | null }>, live: boolean) {
+    type RoundFile = { display: string; path: string; absolutePath: string; hostId: string; generatedAt: string };
+    const manifestFiles: RoundFile[] = [];
+    const looseFiles: Array<{ display: string; path: string; absolutePath: string; hostId: string }> = [];
+    if (workspacePath && stateDir) {
+      try {
+        const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+        const manifest = stateBlob ? parseArtifactManifest(stateBlob).filter((fields) => fields.stage === "research" && typeof fields.path === "string") : [];
+        const known = new Set([join(stateDir, "brief.md"), join(stateDir, "state.md")]);
+        for (const fields of manifest) {
+          const full = fields.path ? resolveArtifactPath(workspacePath, fields.path) : null;
+          if (!full) continue;
+          known.add(full);
+          if (!hostId) continue;
+          manifestFiles.push({ display: fields.label ?? full.split("/").pop()!, path: fields.path, absolutePath: full, hostId, generatedAt: fields.generated_at ?? "" });
+        }
+        const listed = await bb.sdk.files.list({ path: stateDir, query: ".md" }).catch(() => null);
+        for (const entry of listed?.files ?? []) {
+          const abs = entry.path;
+          if (typeof abs !== "string" || !abs.endsWith(".md") || known.has(abs) || !hostId) continue;
+          looseFiles.push({ display: workspaceRelative(workspacePath, abs) ?? abs.split("/").pop()!, path: workspaceRelative(workspacePath, abs) ?? abs, absolutePath: abs, hostId });
+        }
+        looseFiles.sort((a, b) => (a.display < b.display ? -1 : 1));
+      } catch { /* fail-soft: history-only rounds, no orphans */ }
+    }
+    const rounds = buildRoundsView(history, manifestFiles, live).map((round) => {
+      const meta = researchStrategyById(round.strategyId);
+      return { ...round, label: meta?.label ?? round.strategyId, emoji: meta?.emoji ?? "" };
+    });
+    return { rounds, looseFiles };
+  }
+
   async function readResearchBrief(card: CardRow): Promise<{ ok: false; error: string } | { ok: true; content: string; absolute: string; display: string }> {
     const workspace = await cardWorkspace(card);
     if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
@@ -1595,6 +1650,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // Ordered strategy history for a research card (first = primary).
   function strategyList(row: Pick<CardRow, "research_strategies" | "research_strategy">): string[] {
     return parseStrategyList(row.research_strategies, row.research_strategy);
+  }
+
+  // Round history with timestamps (newest bookkeeping, oldest first).
+  // Legacy plain-id rows degrade to at:null.
+  function strategyRounds(row: Pick<CardRow, "research_strategies" | "research_strategy">): Array<{ id: string; at: string | null }> {
+    return normalizeHistory(row.research_strategies, row.research_strategy);
   }
 
   function getCardByWorkerThread(threadId: string): CardRow | undefined {
@@ -2536,12 +2597,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         displayName: card.display_name ?? card.name,
         prompt: card.prompt,
         strategyLabel: researchStrategy.label,
+        strategyId: researchStrategy.id,
         strategySkill: researchStrategy.skill,
         stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
         workspaceRoot: source.path,
         instructions: params.instructions,
         flavor: "reseed",
         previousThreadId,
+        roundNo: Math.max(1, strategyList(card).length),
+        roundStamp: roundTimestamp(),
       }) : null;
       const newThread = await bb.sdk.threads.spawn({
         projectId: card.project_id,
@@ -2661,12 +2725,18 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // throwing so every refusal names its exit.
     async researchBrief({ cardId }) {
       const card = getCard(cardId);
-      if (!card) return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: ERR_CARD_NOT_FOUND };
-      if (card.kind !== "research") return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: "Only research cards have a brief. Delivery cards track scopes instead." };
+      const empty = { found: false, briefPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "" };
+      if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
+      if (card.kind !== "research") return { ...empty, error: "Only research cards have a brief. Delivery cards track scopes instead." };
       const resolved = await readResearchBrief(card);
-      if (!resolved.ok) return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: resolved.error };
+      if (!resolved.ok) return { ...empty, error: resolved.error };
+      const history = strategyRounds(card);
+      const live = ["running", "awaiting-answer"].includes(card.activity);
+      const workspace = await cardWorkspace(card).catch(() => null);
+      const stateDir = card.dir_hash && workspace?.path ? await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null) : null;
+      const { rounds, looseFiles } = await researchRoundFiles(workspace?.path ?? null, workspace?.hostId ?? null, stateDir, history, live);
       const parsed = parseResearchBrief(resolved.content);
-      if (!parsed.found) return { found: false, briefPath: resolved.display, content: null, truncated: false, opportunities: [], error: "No ## Opportunities section in the brief yet — the research is still running." };
+      if (!parsed.found) return { ...empty, briefPath: resolved.display, rounds, looseFiles, error: "No ## Opportunities section in the brief yet — the research is still running." };
       const LIMIT = 100_000;
       return {
         found: true,
@@ -2674,6 +2744,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         content: resolved.content.slice(0, LIMIT),
         truncated: resolved.content.length > LIMIT,
         opportunities: parsed.opportunities.map(({ id, title, checked, group }) => ({ id, title, checked, group })),
+        rounds,
+        looseFiles,
         error: null,
       };
     },
@@ -2743,9 +2815,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { ok: false, strategy: null, error: `Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.` };
       }
       const effective = getPresetForBand("research", cardId);
-      const result = await respawnWorkerForBand(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append" });
+      const roundNo = strategyList(card).length + 1;
+      const roundStamp = roundTimestamp();
+      const result = await respawnWorkerForBand(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append", roundNo, roundStamp });
       if (!result.ok) return { ok: false, strategy: null, error: result.error ?? "Could not start the strategy round." };
-      const history = [...strategyList(card), picked.id];
+      const history = [...strategyRounds(card), { id: picked.id, at: new Date(now()).toISOString() }];
       db.prepare("UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), cardId);
       const presetName = getPresetById(effective.id)?.name ?? effective.id;
       logCardComment(cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the brief. Previous worker archived.`);
