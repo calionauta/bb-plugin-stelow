@@ -3701,10 +3701,12 @@ export default definePluginApp((app) => {
   // One sidebar row for the whole plugin. Inbox, work, and research live
   // on as subPath tracks (see STELOW_TRACKS).
   // The badge counts what matters: unresolved inbox action items.
-  // Sidebar icon must be one of BB's ~70 host icon aliases (only map in
-  // the app bundle): Inbox/Columns2/Star/Sparkles are NOT in it and fall
-  // back to the generic divided-square icon. Workflow is. (Tab icons are
-  // unaffected — they render from the plugin's own HugeIcons set.)
+  // Sidebar icon truth: the host renders package.json#bb.branding.icon,
+  // which WINS over this panel icon (plugin?.icon ?? panel icon in ZO).
+  // Both names must be in BB's allowlist (An base map + Cn extended chunk:
+  // jn = [...Object.keys(An), ...Cn]); anything else falls back to Zap.
+  // Verified: Workflow is in An. (Tab icons are unaffected — they render
+  // from the plugin's own HugeIcons set.)
   app.slots.navPanel({
     id: STELOW_PANEL_ID,
     title: "Stelow",

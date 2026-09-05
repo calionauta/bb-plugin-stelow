@@ -10,7 +10,7 @@
     "name": "Stelow",
     "description": "Visualize and control Stelow workflows, reviews, gates, scopes, and tasks.",
     "branding": {
-      "icon": "Columns2"
+      "icon": "Workflow"
     },
     "server": "./server.ts",
     "app": "./app.tsx",
