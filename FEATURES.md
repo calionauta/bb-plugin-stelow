@@ -70,6 +70,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
   to the agent, gate question answerable inline.
+- **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
+  artifact together, grouped by producing stage in canonical order. The
+  timeline keeps count-only badges — files and navigation never share a
+  shape.
 - **Manage** (preset pill + override, change preset, restart fresh,
   archive, worker history with readable archived threads).
 - **Conversation.** Card/agent comment thread + composer that routes to

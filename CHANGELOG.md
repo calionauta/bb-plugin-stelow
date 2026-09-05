@@ -34,6 +34,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Artifacts live with their stages.** File pills no longer sit among
+  navigation pills in the timeline (count-only badges remain); a shared
+  Artifacts section lists everything grouped by producing stage, in both
+  tracks. Order pinned by unit test.
 - **Inbox counts fresh completions.** The badge now includes unseen
   completions from the last 7 days alongside unresolved actions;
   opening a completed card marks it seen (read, never resolved).

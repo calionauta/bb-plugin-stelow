@@ -18,6 +18,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
+import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -144,11 +145,8 @@ const STAGE_PRODUCES: Record<string, string> = {
 // Canonical linear order of the 17 workflow stages (mirrors stages.yaml). The
 // timeline uses this to give position (passed / current / upcoming); legal
 // transitions still come from nextStages (parsed from transitions.md).
-const STAGE_SEQUENCE: string[] = [
-  "triage", "select", "setup", "context", "shape", "critique", "gate",
-  "scope", "interface", "int-gate", "selection", "planning", "plan-gate",
-  "execution", "verification", "diff-gate", "audit",
-];
+// Single-sourced from lib/artifact-groups (which also ranks artifact groups)
+// so the two never drift apart.
 // Which phase (band) each stage belongs to — shown as a visual group label on
 // the timeline. This is the SINGLE place in the client that names phase
 // groupings: they are an aggregation of stages, not a rival axis. KEEP IN SYNC
@@ -1521,7 +1519,7 @@ function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, rel
   return { kind: "host", hostId, path: absolutePath };
 }
 
-function StageTimeline({ currentStage, nextStages, artifacts, fileEnvironmentId, useWorkspaceLinks, onViewFile, onPick }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>; fileEnvironmentId: string | null; useWorkspaceLinks: boolean; onViewFile: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void; onPick: (stage: string) => void }) {
+function StageTimeline({ currentStage, nextStages, artifacts, onPick }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   const current = curIdx >= 0 ? curIdx : 0;
   const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
@@ -1558,7 +1556,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, fileEnvironmentId,
                     <button
                       type="button"
                       disabled={!clickable || isCurrent}
-                      title={STAGE_PRODUCES[stage]}
+                      title={`${STAGE_PRODUCES[stage]}${produced.length > 0 ? ` (${produced.length} artifact${produced.length === 1 ? "" : "s"} in the Artifacts section below)` : ""}`}
                       onClick={() => onPick(stage)}
                       className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
@@ -1572,19 +1570,9 @@ function StageTimeline({ currentStage, nextStages, artifacts, fileEnvironmentId,
                       >
                         {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : canAdvance ? "·" : "·"}
                         {stageLabel(stage)}
-                        {produced.length > 0 ? <span aria-label={`${produced.length} artifacts`}>· {produced.length}</span> : null}
+                        {produced.length > 0 ? <span aria-label={`${produced.length} artifact${produced.length === 1 ? "" : "s"} below in Artifacts`}>· {produced.length}</span> : null}
                         {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
                     </button>
-                    {produced.map((artifact) => (
-                      <button
-                        key={artifact.path}
-                        onClick={() => onViewFile({ display: artifact.display, path: artifact.absolutePath, target: fileLinkTarget(useWorkspaceLinks, fileEnvironmentId, artifact.path, artifact.hostId, artifact.absolutePath) })}
-                        className="inline-flex max-w-36 cursor-pointer items-center truncate rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-                        title={`Review ${artifact.display} — ${stageLabel(stage)} · ${artifact.kind}`}
-                      >
-                        {artifact.display}
-                      </button>
-                    ))}
                   </div>
                 );
               })}
@@ -1592,6 +1580,43 @@ function StageTimeline({ currentStage, nextStages, artifacts, fileEnvironmentId,
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Shared artifact inventory: every artifact together, grouped by producing
+// stage in canonical order. Rows are file affordances (open the viewer),
+// never pills among status pills — the timeline keeps count-only badges so
+// navigation and files never share a shape. Used by both track details.
+function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView }: {
+  artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>;
+  workspaceKind: string;
+  fileEnvironmentId: string | null;
+  onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+}) {
+  const groups = useMemo(() => groupArtifactsByStage(artifacts), [artifacts]);
+  if (groups.length === 0) return <p className="text-xs text-muted-foreground">No artifacts yet — they appear here as stages complete.</p>;
+  return (
+    <div className="space-y-3">
+      {groups.map((group) => (
+        <div key={group.stage} className="space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{stageLabel(group.stage)} ({group.items.length})</p>
+          <div className="divide-y divide-border rounded-md border">
+            {group.items.map((file) => (
+              <button
+                key={file.path}
+                onClick={() => onView({ display: file.display, path: file.absolutePath, target: fileLinkTarget(workspaceKind === "exploratory", fileEnvironmentId, file.path, file.hostId, file.absolutePath) })}
+                className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                title={`Review ${file.display} — ${stageLabel(group.stage)} · ${file.kind}`}
+              >
+                <span aria-hidden>📄</span>
+                <span className="min-w-0 flex-1 truncate font-medium text-foreground">{file.display}</span>
+                <span className="shrink-0 text-muted-foreground">{file.kind}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2875,19 +2900,12 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
 
             {detail && detail.artifacts.length > 0 ? (
               <CardDisclosure title="Artifacts" hint={`${detail.artifacts.length}`}>
-                <div className="flex flex-wrap gap-1">
-                  {detail.artifacts.map((file) => (
-                    <button
-                      key={file.path}
-                      onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail.fileEnvironmentId, file.path, file.hostId, file.absolutePath) })}
-                      className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted"
-                      title={`Review ${file.display}`}
-                    >
-                      <span>📄</span>
-                      <span>{file.display}</span>
-                    </button>
-                  ))}
-                </div>
+                <ArtifactGroups
+                  artifacts={detail.artifacts}
+                  workspaceKind={card.workspaceKind}
+                  fileEnvironmentId={detail.fileEnvironmentId}
+                  onView={(file) => setViewerFile(file)}
+                />
               </CardDisclosure>
             ) : null}
 
@@ -3292,9 +3310,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     currentStage={card.stage}
                     nextStages={detail.nextStages}
                     artifacts={detail.artifacts}
-                    fileEnvironmentId={detail.fileEnvironmentId}
-                    useWorkspaceLinks={card.workspaceKind === "exploratory"}
-                    onViewFile={(file) => setViewerFile(file)}
                     onPick={(stage) => setPendingAdvance(stage)}
                   />
                 </div>
@@ -3350,6 +3365,20 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 </div>
               ) : null}
               {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
+            </CardDisclosure>
+
+            <CardDisclosure
+              title="Artifacts"
+              hint={detail ? `${detail.artifacts.length}` : "produced files"}
+            >
+              {detail ? (
+                <ArtifactGroups
+                  artifacts={detail.artifacts}
+                  workspaceKind={card.workspaceKind}
+                  fileEnvironmentId={detail.fileEnvironmentId}
+                  onView={(file) => setViewerFile(file)}
+                />
+              ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
 
             {/* DISCLOSURE 2 — Manage (preset + danger zone, always collapsed) */}
