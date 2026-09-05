@@ -10,6 +10,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Work tour.** First-run progressive disclosure on the Work board: a
+  3-step tour on the empty state (start work, per-phase agents with the
+  live routing, tune later), collapsing to a one-line agent routing bar
+  once cards exist. Dismissible, reopenable, persisted in localStorage.
+- **Research preset band.** Investigations get their own `research` preset
+  default instead of inheriting the analysis band, configured from the
+  New research dialog (board default fallback). Spawn, restart, and
+  strategy rounds resolve it; `createResearchCard` accepts an optional
+  per-investigation `presetId`.
+
 - **Batched question answering.** Workers batch independent questions into
   one `bb stelow ask` call (repeat `--question` groups); the card, the
   artifact viewer, and the thread form answer them in one sitting via a
