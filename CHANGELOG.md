@@ -28,6 +28,9 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Research copy matches the concept.** The input is a question or topic,
+  not an opportunity space — that is the result. Empty state, header, and
+  creation dialog reworded; the dialog also reflects composite rounds.
 - **Research empty-state wording.** "A question or a space" read as
   ambiguous — it now says "an opportunity space".
 - **Skills sync verifies content hash.** The raw CDN can serve a stale

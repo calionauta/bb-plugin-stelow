@@ -1038,7 +1038,7 @@ function ResearchPanel({ subPath }: { subPath: string }) {
         <div className="mx-auto max-w-[1500px] space-y-4">
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate an opportunity space with one product strategy. The card produces a brief; ranked opportunities fan out into Work cards.</p>
+              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces a brief; ranked opportunities fan out into Work cards.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Research</h1>
               </div>
@@ -1053,7 +1053,7 @@ function ResearchPanel({ subPath }: { subPath: string }) {
             <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new research</DialogTitle>
-                <DialogDescription>Describe the space to investigate. One strategy drives the card; explore another strategy with a second card.</DialogDescription>
+                <DialogDescription>Describe the question or topic to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4">
                 <WorkflowChoiceSelect label="Strategy" value={strategy} options={strategyOptions.length > 0 ? strategyOptions : [{ value: strategy, label: strategy, description: "" }]} onChange={setStrategy} />
@@ -1082,7 +1082,7 @@ function ResearchPanel({ subPath }: { subPath: string }) {
           {cards.length === 0 && !loading ? (
             <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
               <h2 className="text-sm font-semibold text-foreground">Understand before you build</h2>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Start with a question or an opportunity space — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become Work cards.</p>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Ask a question or describe what to investigate — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become Work cards.</p>
               <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
                 <Button onClick={() => setCreateOpen(true)}>Start new research</Button>
               </div>
