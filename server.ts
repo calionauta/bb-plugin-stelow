@@ -294,10 +294,6 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
     output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), error: z.string().nullable() }),
   },
-  markCardSeen: {
-    input: z.object({ cardId: z.string(), kind: z.enum(["completed", "error", "question"]).optional() }).strict(),
-    output: z.object({ ok: z.boolean() }),
-  },
   answerExpiredQuestion: {
     input: z.object({ cardId: z.string(), questionId: z.string(), answer: z.string().min(1).max(10_000) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
@@ -840,17 +836,22 @@ export default async function plugin(bb: BbPluginApi) {
   ]);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
-  if (!cardColumns.some((column) => column.name === "last_seen_completed_at")) {
-    db.exec("ALTER TABLE cards ADD COLUMN last_seen_completed_at INTEGER");
+  // markCardSeen (viewing clears attention) was deliberately removed: viewing
+  // is not resolving, and the columns sat permanently NULL. Drop them where
+  // they exist; the attention checks below read presence, not timestamps.
+  // Fail-soft like the skills sync: leftover columns are harmless (nothing
+  // references them), but a failed plugin load is not.
+  for (const column of ["last_seen_completed_at", "last_seen_error_at", "last_seen_question_at"]) {
+    if (cardColumns.some((entry) => entry.name === column)) {
+      try {
+        db.exec(`ALTER TABLE cards DROP COLUMN ${column}`);
+      } catch (error) {
+        bb.log.warn(`stelow: could not drop ${column} (harmless): ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
   if (!cardColumns.some((column) => column.name === "display_name")) {
     db.exec("ALTER TABLE cards ADD COLUMN display_name TEXT");
-  }
-  if (!cardColumns.some((column) => column.name === "last_seen_error_at")) {
-    db.exec("ALTER TABLE cards ADD COLUMN last_seen_error_at INTEGER");
-  }
-  if (!cardColumns.some((column) => column.name === "last_seen_question_at")) {
-    db.exec("ALTER TABLE cards ADD COLUMN last_seen_question_at INTEGER");
   }
   if (!cardColumns.some((column) => column.name === "last_idle_at")) {
     db.exec("ALTER TABLE cards ADD COLUMN last_idle_at INTEGER");
@@ -1213,7 +1214,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${prompt}` }, ...workerAttachments],
     });
     const ts = now();
-    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, kind, research_strategy, research_strategies, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch ? "pending" : "draft", isResearch ? "research" : "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : "delivery", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([researchStrategy.id]) : null, null, null, null, ts, ts);
+    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, kind, research_strategy, research_strategies, last_error, last_assistant_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch ? "pending" : "draft", isResearch ? "research" : "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : "delivery", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([researchStrategy.id]) : null, null, null, ts, ts);
     // NOTE: no card_presets row here on purpose. An override row means "the
     // user explicitly pinned this card", and writing the spawn default as one
     // would mislabel every fresh card as overridden (and trip staleness).
@@ -1227,7 +1228,7 @@ ${prompt}` }, ...workerAttachments],
     return { cardId, threadId: thread.id };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "delivery" | "research"; research_strategy: string | null; research_strategies: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "delivery" | "research"; research_strategy: string | null; research_strategies: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null };
   type PresetRow = {
@@ -1960,8 +1961,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           && row.worker_thread_id !== null
           && !termStatus
           && now() - idleAt >= IDLE_ATTENTION_MS;
-        const questionPending = activity === "awaiting-answer" && (row.last_seen_question_at ?? 0) < row.updated_at;
-        const errorPending = (Boolean(row.last_error) || activity === "error") && (row.last_seen_error_at ?? 0) < row.updated_at;
+        const questionPending = activity === "awaiting-answer";
+        const errorPending = Boolean(row.last_error) || activity === "error";
         const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
         const needsAttention = attentionKind !== null;
         const preset = getPresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
@@ -2135,8 +2136,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         && !termStatus
         && now() - idleAt >= IDLE_ATTENTION_MS;
       const attentionKind = (idleStuck ? "idle"
-        : (effectiveActivity === "awaiting-answer" && (card.last_seen_question_at ?? 0) < card.updated_at) ? "question"
-        : ((Boolean(card.last_error) || effectiveActivity === "error") && (card.last_seen_error_at ?? 0) < card.updated_at) ? "error"
+        : effectiveActivity === "awaiting-answer" ? "question"
+        : Boolean(card.last_error) || effectiveActivity === "error" ? "error"
         : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       // Worker ledger, newest first. The open row (endedAt null) is the live
@@ -2511,15 +2512,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the brief. Previous worker archived.`, now());
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, strategy: picked.id, error: null };
-    },
-
-    async markCardSeen({ cardId, kind }) {
-      const card = getCard(cardId);
-      if (!card) return { ok: false };
-      const column = kind === "error" ? "last_seen_error_at" : kind === "question" ? "last_seen_question_at" : "last_seen_completed_at";
-      db.prepare(`UPDATE cards SET ${column} = @ts WHERE id = @id`).run({ id: cardId, ts: now() });
-      bb.realtime.publish("card-state", { cardId });
-      return { ok: true };
     },
 
     async answerExpiredQuestion({ cardId, questionId, answer }) {
