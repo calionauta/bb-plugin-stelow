@@ -10,6 +10,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Tour nav visibility.** Back/Next/Done use real button hierarchy
+  (Next/Done solid primary, Back outline) in a fixed footer row, so
+  tour navigation no longer dissolves into the background.
+
 - **Shared tours for Inbox, Work, and Research.** One `Tour` stepper for
   all three tracks: full steps on first use, a one-line summary bar once
   content exists, a quiet reopen once dismissed (per-track localStorage).
