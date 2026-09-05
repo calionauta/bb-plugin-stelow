@@ -10,6 +10,13 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Research track.** New `Stelow Research` panel beside Work: To-Do /
+  Doing / Done cards with composite strategy rounds on the same request
+  (each round appends to `brief.md`, never rewrites), a parsed
+  opportunities convention, and fan-out that turns opportunities into
+  delivery work cards without duplication.
+  Delivery surfaces (stages, gates, intent) refuse on research cards
+  with named exits. Covered by brief-parser and strategy unit tests.
 - **Turn exploratory work into a project.** Exploratory cards gain a
   "Turn into project…" action that creates a BB project from the card's
   workspace. Files stay in place and the worker continues from the current

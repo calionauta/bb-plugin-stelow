@@ -21,3 +21,129 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   creates a real BB project from the card's workspace. Files stay in
   place; the worker continues from the current stage.
 
+## 2. Orient myself
+*When I open Stelow, I want to see everything and find my card.*
+
+- **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
+  (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their
+  stage's phase. Columns collapse (persisted); cards move via drag-drop.
+- **List view.** Same cards grouped by column, for narrow screens.
+- **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
+  needs-attention + reset.
+- **Sidebar badges.** Inbox counts unresolved action items only; Work
+  counts active cards. Both realtime.
+- **Build stamp** (`buildInfo`). Version in the header so reloads are
+  checkable instead of vibes.
+
+## 3. Decide and unblock
+*When the agent needs me, I want to answer or approve fast.*
+
+- **Inbox** (`InboxPanel`, `listNotifications`). Needs-you
+  (question/error/paused), recent completions, resolved history,
+  archived; per-item read/archive/restore; deep-links into card+event.
+- **Structured questions** (`ask`, `answerQuestion`,
+  `answerExpiredQuestion`, `QuestionForm`, `AwaitingAnswerBanner`).
+  Blocking single/multi-choice asks; timed-out asks stay answerable on
+  the card and resume the worker.
+- **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
+  with receipt files; review entry surfaces the artifact under decision.
+- **Intent correction** (`updateCardIntent`). Fix the card's kind
+  anytime; past triage it confirms first and notifies the worker.
+
+## 4. Follow one card
+*When I open a card, I want the full picture without reading the thread.*
+
+- **Hero** (`heroFor`: decision/error/paused/working/calm). One sentence
+  + one primary action per state; secondary actions as real buttons.
+- **What is happening** (`ScopesList`, `StageTimeline`). Scopes in
+  dependency order with task counts, blockers, 17-stage timeline with
+  position/next stages, manual advance/return behind a preview dialog
+  (what the target stage produces). Attachments, mentioned files,
+  timed-out questions inline.
+- **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
+  Markdown/source render, quote-a-passage excerpt drafts, batch comment
+  to the agent, gate question answerable inline.
+- **Manage** (preset pill + override, change preset, restart fresh,
+  archive, worker history with readable archived threads).
+- **Conversation.** Card/agent comment thread + composer that routes to
+  the worker.
+- **Thread embeds.** Card drawer inside threads
+  (`stelow-card-detail`), "Open Stelow work" header action,
+  `stelow-artifact` message chips, blocking question form.
+
+## 5. Recover
+*When the worker stalls or fails, I want one obvious fix.*
+
+- **Retry** (`retryWorker`). Nudges the same worker in place; nothing
+  resets. Refused on archived cards.
+- **Restart worker** (`restartWorker`). Fresh thread on the current
+  preset from the current stage; applies preset changes. Predecessor
+  archived with an inline mention for context.
+- **Restart fresh** (`reseedCard`). New worker from triage; scopes and
+  comments kept.
+- **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
+  Every worker thread recorded; mirrored into the workflow's own
+  `stelow.json` so history survives plugin DB loss.
+- **Preset-staleness detection.** Cards whose worker predates a preset
+  change offer Restart instead of Resume.
+- **Archive card** (`cancelCard`). Stops + archives the worker; history
+  preserved. Behind a confirm dialog.
+- **Self-healing** (`syncThreadState`, 45s reconcile sweep, thread
+  idle/active/failed events). Suspicious idle and stalls surface as
+  paused with exactly one inbox event per idle period.
+
+## 6. Configure the workforce
+*When I want a different brain, cost, or permission, I want presets.*
+
+- **Preset manager** (`listPresets`, `upsertPreset`, `deletePreset`,
+  `setDefaultPreset`). Provider, model (catalog + searchable custom),
+  reasoning, permission mode, environment kind. Built-ins protected.
+- **Per-phase presets** (`listBandPresets`, `setBandPreset`).
+  Analysis/planning/execution/review bands auto-swap workers at
+  boundaries; unset bands inherit the card preset.
+- **Per-card override** (`assignPreset`). Pinned preset for one card;
+  takes effect on (re)start, with a stale-worker warning until then.
+- **Board defaults** (`boardWorkflowDefaults`). Planning depth and
+  review checkpoints remembered across cards.
+
+## 7. Command and embed
+*When I am an agent, CLI, or another surface, I want the same power.*
+
+- **`bb stelow` CLI.** status, ask, seed, advance, preset management.
+- **Mention providers.** `@` workflows/cards (with context resolve) and
+  `@` workspace files in any composer, including the board's.
+- **Realtime.** `card-state`, `board-changed`, `inbox-changed` keep
+  panels, badges, and open cards live (debounced).
+- **Background services.** Workflow-skills sync from `calionauta/stelow`
+  (content-hash verified), scheduled reconcile, build stamp.
+
+## 8. Research track
+*When I need to understand before building, I want a lightweight
+investigation that feeds the delivery board.*
+
+- **Research panel** (`ResearchPanel`). To-Do / Doing / Done / Archived
+  columns over research cards only; project + attention filters;
+  collapsible columns; sidebar badge; no stages, no gates.
+- **Strategy picker** (`researchStrategies`). Composite strategy runs on
+  the same request: one round at a time, each appending a `###` section
+  to the brief — never parallel batches to merge. "Explore another
+  strategy" starts a fresh worker on a new playbook; history pills join
+  run labels (`A + B`); reseed restarts the original strategy clean.
+- **Research brief** (`researchBrief`, `parseResearchBrief`). The worker
+  writes `brief.md` (findings + `## Opportunities` checkboxes) into its
+  own state dir; the card renders it with per-strategy groups and
+  available/total counts. Non-conforming briefs refuse with an exit.
+- **Fan-out** (`fanOutResearch`, `FanOutDialog`). Checked opportunities
+  become delivery work cards at triage (exploratory research fans out
+  into isolated exploratory cards); spawned boxes check off so retries
+  never duplicate; both-ways comment trail.
+- **Shared machinery.** Hero, questions, artifacts viewer, presets,
+  retry/restart/reseed, worker history, inbox, and realtime are the same
+  components as delivery. Stage advance and intent editing refuse on
+  research cards with the valid exit named.
+
+## Cross-cutting rules (apply to every feature above)
+
+From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
+resolution, one primary action per card state, destructives behind
+confirms in Manage, `min-h-11` touch targets with `cursor-pointer`.

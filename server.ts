@@ -10,6 +10,9 @@ import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
+import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList } from "./lib/research-strategies.mjs";
+import { parseResearchBrief, checkBriefItems } from "./lib/research-brief.mjs";
+import { resolveCardMove } from "./lib/card-move.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills } from "./lib/workflow-skills-sync.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
@@ -181,12 +184,12 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), cardId: z.string().nullable(), skipped: z.string().nullable(), error: z.string().nullable() }),
   },
   listCards: {
-    input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
+    input: z.object({ projectId: z.string().nullable(), kind: z.enum(["delivery", "research"]).nullable().optional() }).strict(),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["delivery", "research"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
-    output: z.object({ notifications: z.array(z.object({ id: z.string(), cardId: z.string(), cardName: z.string(), projectName: z.string(), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number(), readAt: z.number().nullable(), resolvedAt: z.number().nullable(), archivedAt: z.number().nullable() })) }),
+    output: z.object({ notifications: z.array(z.object({ id: z.string(), cardId: z.string(), cardName: z.string(), projectName: z.string(), cardKind: z.enum(["delivery", "research"]), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number(), readAt: z.number().nullable(), resolvedAt: z.number().nullable(), archivedAt: z.number().nullable() })) }),
   },
   markNotificationRead: {
     input: z.object({ notificationId: z.string() }).strict(),
@@ -227,7 +230,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["delivery", "research"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
@@ -264,8 +267,28 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   moveCard: {
-    input: z.object({ cardId: z.string(), status: z.enum(["analysis", "planning", "execution", "review", "completed", "archived"]) }).strict(),
+    input: z.object({ cardId: z.string(), status: z.enum(["analysis", "planning", "execution", "review", "completed", "archived", "todo", "doing", "done"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  researchStrategies: {
+    input: z.object({}).strict(),
+    output: z.object({ strategies: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), blurb: z.string() })) }),
+  },
+  createResearchCard: {
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60) }).strict(),
+    output: z.object({ cardId: z.string(), threadId: z.string() }),
+  },
+  researchBrief: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ found: z.boolean(), briefPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), error: z.string().nullable() }),
+  },
+  fanOutResearch: {
+    input: z.object({ cardId: z.string(), opportunityIds: z.array(z.string().min(1).max(120)).min(1).max(20) }).strict(),
+    output: z.object({ ok: z.boolean(), created: z.array(z.object({ cardId: z.string(), title: z.string() })), error: z.string().nullable() }),
+  },
+  runResearchStrategy: {
+    input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
+    output: z.object({ ok: z.boolean(), strategy: z.string().nullable(), error: z.string().nullable() }),
   },
   promoteCard: {
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
@@ -853,6 +876,15 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "workspace_host_id")) {
     db.exec("ALTER TABLE cards ADD COLUMN workspace_host_id TEXT");
   }
+  if (!cardColumns.some((column) => column.name === "kind")) {
+    db.exec("ALTER TABLE cards ADD COLUMN kind TEXT NOT NULL DEFAULT 'delivery'");
+  }
+  if (!cardColumns.some((column) => column.name === "research_strategy")) {
+    db.exec("ALTER TABLE cards ADD COLUMN research_strategy TEXT");
+  }
+  if (!cardColumns.some((column) => column.name === "research_strategies")) {
+    db.exec("ALTER TABLE cards ADD COLUMN research_strategies TEXT");
+  }
   // stage_presets may not be applied by bb.storage.migrate on existing DBs,
   // so ensure it idempotently here as well.
   db.exec(`CREATE TABLE IF NOT EXISTS stage_presets (
@@ -1034,7 +1066,59 @@ export default async function plugin(bb: BbPluginApi) {
   // Shared card-creation path for both the UI "start work" handler and the
   // GitHub import. A Personal-project request gets an isolated persistent
   // exploratory workspace; project cards keep using their declared source.
-  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null }): Promise<{ cardId: string; threadId: string }> {
+  //
+  // kind "research" runs a stelow-product-* strategy instead of the delivery
+  // workflow: no stages, no gates, no advance. The worker writes brief.md
+  // (exact shape below) into its own state dir; the user marks Done and
+  // fans opportunities out into delivery cards from the plugin UI.
+  function researchWorkerPrompt({ displayName, prompt, strategyLabel, strategySkill, stateDirText, workspaceRoot, instructions, flavor, previousThreadId }: { displayName: string; prompt: string; strategyLabel: string; strategySkill: string; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed" | "append"; previousThreadId: string | null }): string {
+    const flavorLine = flavor === "initial"
+      ? "This is a fresh research task."
+      : flavor === "append"
+        ? "A previous strategy round already wrote to brief.md. Load the playbook below and APPEND a new ### section for it — never rewrite, delete, or re-check existing items."
+        : flavor === "restart"
+          ? "You are being restarted mid-research with a fresh worker. Re-read your brief.md and CONTINUE the research — do not start over unless the brief is empty."
+          : "The host re-seeded your state dir: start the research over with a fresh brief.md.";
+    return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the brief is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
+
+Step 1 — load the strategy playbook: the ${strategyLabel} method (${strategySkill}) comes from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb skill list\` to confirm it, then follow that playbook — not the stelow-workflow-* delivery skills, which do not apply here.
+
+Step 2 — research the request below inside this workspace. You may read code, docs, and the web; you MUST NOT write product code or open pull requests. Research only.
+
+Step 3 — write your findings to <state-dir>/brief.md (create it) in EXACTLY this shape (headings verbatim, opportunities as checkboxes — the plugin parses them deterministically for fan-out):
+
+    # Research brief: ${displayName}
+    Strategy: ${strategyLabel}
+    ## Findings
+    <what you learned, concise>
+    ## Opportunities
+    ### ${strategyLabel} — <today's YYYY-MM-DD date>
+    - [ ] <opportunity title> — <one-line why it matters>
+
+Unchecked boxes mean "available for fan-out". NEVER check a box yourself — the plugin checks the ones the user turns into work cards. If you run another strategy later, APPEND a new ### section under ## Opportunities; never rewrite existing items.
+
+Step 4 — register the brief as an artifact so it renders on the card: append EXACTLY this block to <state-dir>/state.md (create the artifacts: section if missing; path is relative to the workspace root ${workspaceRoot}):
+
+    artifacts:
+      - stage: research
+        kind: document
+        path: <brief.md path relative to ${workspaceRoot}>
+        label: Research brief
+
+CRITICAL — User input contract:
+ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
+
+    bb stelow ask --thread <this_thread_id> \\
+      --question "<a single clear question>" \\
+      --option "<label 1>" --option "<label 2>" [--multiple]
+
+On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question. There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the brief is complete with ranked opportunities, STOP and end your turn — the user reviews the brief, marks the card Done, and fans opportunities out into delivery cards. Stop early when the user archives the card.
+
+${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
+${prompt}`;
+  }
+
+  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null; kind?: "delivery" | "research"; strategy?: string | null }): Promise<{ cardId: string; threadId: string }> {
     const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
     // The composer submits the Personal project id for “Don't work in a
     // project”. Some SDK project reads omit its `kind`, so accept its stable
@@ -1071,7 +1155,12 @@ export default async function plugin(bb: BbPluginApi) {
     if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this work.");
     const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
     const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
-    const initialIntent = "unknown";
+    const isResearch = kind === "research";
+    const researchStrategy = isResearch ? researchStrategyById(strategy ?? "") : null;
+    if (isResearch && !researchStrategy) {
+      throw new Error(`Unknown research strategy "${strategy ?? ""}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
+    }
+    const initialIntent = isResearch ? "investigate" : "unknown";
     const seed = await seedWorkflow(bb, rootPath, slug, initialIntent, appetite, reviewMode);
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
@@ -1082,6 +1171,17 @@ export default async function plugin(bb: BbPluginApi) {
     // BB requires Personal-project threads to retain a `personal` workspace.
     // Exploratory work therefore uses one Stelow-owned project with a local source.
     const workerProjectId = workspaceProjectId;
+    const researchPrompt = isResearch && researchStrategy ? researchWorkerPrompt({
+      displayName,
+      prompt,
+      strategyLabel: researchStrategy.label,
+      strategySkill: researchStrategy.skill,
+      stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
+      workspaceRoot: rootPath,
+      instructions: params.instructions,
+      flavor: "initial",
+      previousThreadId: null,
+    }) : null;
     const thread = await bb.sdk.threads.spawn({
       projectId: workerProjectId,
       environment: workerEnvironment(workspaceSource, params, isExploratory),
@@ -1092,7 +1192,7 @@ export default async function plugin(bb: BbPluginApi) {
       reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
       permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
       executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-      input: [{ type: "text", mentions: [], text: `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
+      input: [{ type: "text", mentions: [], text: researchPrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
 
 Step 1 — classify intent first: this work item starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
 
@@ -1113,18 +1213,21 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 ${prompt}` }, ...workerAttachments],
     });
     const ts = now();
-    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, "draft", "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, null, null, null, ts, ts);
+    db.prepare("INSERT INTO cards (id, project_id, name, display_name, prompt, intent, status, stage, activity, worker_thread_id, worker_preset_id, dir_hash, attachments, workspace_kind, workspace_path, workspace_host_id, kind, research_strategy, research_strategies, last_error, last_assistant_text, last_seen_completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch ? "pending" : "draft", isResearch ? "research" : "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : "delivery", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([researchStrategy.id]) : null, null, null, null, ts, ts);
     // NOTE: no card_presets row here on purpose. An override row means "the
     // user explicitly pinned this card", and writing the spawn default as one
     // would mislabel every fresh card as overridden (and trip staleness).
     recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
     if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
-    await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
+    // Delivery remembers the user's planning depth / review mode for the next
+    // card. Research carries fixed Lean/Auto internals that must never
+    // clobber those delivery defaults.
+    if (!isResearch) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
     bb.realtime.publish("card-state", { cardId });
     return { cardId, threadId: thread.id };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "delivery" | "research"; research_strategy: string | null; research_strategies: string | null; last_error: string | null; last_assistant_text: string | null; last_seen_completed_at: number | null; last_seen_error_at: number | null; last_seen_question_at: number | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null };
   type PresetRow = {
@@ -1189,7 +1292,7 @@ ${prompt}` }, ...workerAttachments],
   // same per-workflow state dir (dir_hash) so the new worker re-reads the
   // already-advanced state.md and continues from the current stage — no context
   // is re-created or reset. The old worker is archived/stopped by this helper.
-  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap"): Promise<{ ok: boolean; error?: string; threadId?: string }> {
+  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append" }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
     const row = getCard(cardId);
     if (!row) return { ok: false, error: "Card not found." };
     const preset = getPresetById(presetId);
@@ -1205,6 +1308,26 @@ ${prompt}` }, ...workerAttachments],
       stateDir = await workflowStateDir(bb, projectPath, row.dir_hash).catch(() => null);
     }
     const stateHint = stateDir ?? (row.dir_hash ? ".stelow/<date>/" + row.dir_hash : "<project>/.stelow/<date>/<dirHash>");
+    // Research cards restart with the strategy prompt, never the delivery
+    // stage machine. The run strategy defaults to the latest round; a new
+    // round passes its own. A research card without a known strategy cannot
+    // restart honestly — refuse with the fix instead of spawning a confused
+    // worker.
+    const history = strategyList(row);
+    const runStrategyId = row.kind === "research" ? (opts?.strategyId ?? history[history.length - 1] ?? row.research_strategy ?? "") : null;
+    const researchStrategy = row.kind === "research" ? researchStrategyById(runStrategyId ?? "") : null;
+    if (row.kind === "research" && !researchStrategy) return { ok: false, error: "This research has no known strategy. Archive it and start a new one." };
+    const researchRestart = researchStrategy ? researchWorkerPrompt({
+      displayName: row.display_name ?? row.name,
+      prompt: row.prompt,
+      strategyLabel: researchStrategy.label,
+      strategySkill: researchStrategy.skill,
+      stateDirText: text(stateHint),
+      workspaceRoot: projectPath || "<workspace>",
+      instructions: params.instructions,
+      flavor: opts?.flavor ?? "restart",
+      previousThreadId: row.worker_thread_id,
+    }) : null;
     try {
       const newThread = await bb.sdk.threads.spawn({
         projectId: row.project_id,
@@ -1216,7 +1339,7 @@ ${prompt}` }, ...workerAttachments],
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+        prompt: researchRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -1274,6 +1397,66 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
   }
 
+  // Resolve the research brief file for a card: always the card's own state
+  // dir (never the project root, so many research cards can share one
+  // project without colliding). Every refusal names its exit.
+  async function readResearchBrief(card: CardRow): Promise<{ ok: false; error: string } | { ok: true; content: string; absolute: string; display: string }> {
+    const workspace = await cardWorkspace(card);
+    if (!workspace?.path) return { ok: false, error: "Workspace is unavailable." };
+    if (!card.dir_hash) return { ok: false, error: "No workflow state for this research yet." };
+    const stateDir = await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null);
+    if (!stateDir) return { ok: false, error: "No workflow state for this research yet." };
+    const absolute = join(stateDir, "brief.md");
+    const content = await bb.sdk.files.read({ path: absolute }).then((file) => file.content).catch(() => null);
+    if (content === null) return { ok: false, error: "No brief.md yet — the research is still running." };
+    return { ok: true, content, absolute, display: workspaceRelative(workspace.path, absolute) ?? "brief.md" };
+  }
+
+  // Research cards have no stages: sync only worker activity and attention.
+  // A freshly-spawned research worker moves To-Do (pending) to Doing
+  // (in-progress) on its first active poll — work visibly began. Done is
+  // always a human drag after reviewing the brief, never automatic.
+  async function syncResearchThreadState(card: CardRow): Promise<void> {
+    try {
+      const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id! });
+      const status = thread.status as string;
+      try {
+        const threadBorn = (thread as { createdAt?: number }).createdAt;
+        healPresetStaleness(db, card.id, threadBorn, card.preset_restart_pending);
+      } catch { /* staleness stays best-effort */ }
+      const lastOutput = (await bb.sdk.threads.output({ threadId: card.worker_thread_id! }).catch(() => null))?.output ?? null;
+      if (status === "active" || status === "starting") {
+        const pending = await fetchPendingQuestions(card.worker_thread_id);
+        if (pending.length > 0) {
+          updateCard(card.id, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
+        } else {
+          resolveInboxEvents(card.id, now(), ["question"]);
+          const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput };
+          if (card.status === "pending") updates.status = "in-progress";
+          updateCard(card.id, updates);
+        }
+      } else if (status === "idle" || status === "stopping") {
+        const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(card.id) as { id: string } | undefined;
+        if (expiredPending) {
+          updateCard(card.id, { activity: "awaiting-answer", last_assistant_text: lastOutput });
+        } else {
+          const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
+          updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
+          const current = getCard(card.id);
+          if (current && current.status !== "archived" && current.status !== "completed" && idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
+            recordInboxEvent(current, "paused", "Idle with unfinished research — retry continues in place, restart begins fresh.", `paused:${card.id}:${idleAt}`, idleAt);
+          }
+        }
+        if (lastOutput && lastOutput !== card.last_assistant_text) {
+          db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), card.id, "card", card.id, "agent", lastOutput, now());
+        }
+      } else if (status === "failed" || status === "error") {
+        updateCard(card.id, { activity: "error" });
+      }
+    } catch (error) {
+      updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
+    }
+  }
   // Mirror the card_threads ledger into the workflow's own stelow.json
   // (upstream "Worker Lineage" contract): survives plugin database loss and
   // is readable by any host and by the worker itself. Best-effort — a failed
@@ -1287,6 +1470,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   function getCard(cardId: string): CardRow | undefined {
     return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
+  }
+
+  // Ordered strategy history for a research card (first = primary).
+  function strategyList(row: Pick<CardRow, "research_strategies" | "research_strategy">): string[] {
+    return parseStrategyList(row.research_strategies, row.research_strategy);
   }
 
   function getCardByWorkerThread(threadId: string): CardRow | undefined {
@@ -1350,6 +1538,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   async function syncThreadState(cardId: string): Promise<void> {
     const card = getCard(cardId);
     if (!card?.worker_thread_id) return;
+    if (card.kind === "research") {
+      await syncResearchThreadState(card);
+      return;
+    }
     try {
       // Resolve this card's own per-workflow state file (not a shared root state.md).
       const workspace = await cardWorkspace(card);
@@ -1710,11 +1902,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { ok: true, cardId, skipped: null, error: null };
     },
 
-    async listCards({ projectId }) {
-      const stmt = projectId
-        ? db.prepare("SELECT * FROM cards WHERE project_id = ? ORDER BY updated_at DESC")
-        : db.prepare("SELECT * FROM cards ORDER BY updated_at DESC");
-      const rows = (projectId ? stmt.all(projectId) : stmt.all()) as CardRow[];
+    async listCards({ projectId, kind }) {
+      const stmt = projectId && kind
+        ? db.prepare("SELECT * FROM cards WHERE project_id = ? AND kind = ? ORDER BY updated_at DESC")
+        : projectId
+          ? db.prepare("SELECT * FROM cards WHERE project_id = ? ORDER BY updated_at DESC")
+          : kind
+            ? db.prepare("SELECT * FROM cards WHERE kind = ? ORDER BY updated_at DESC")
+            : db.prepare("SELECT * FROM cards ORDER BY updated_at DESC");
+      const rows = (projectId && kind ? stmt.all(projectId, kind) : projectId ? stmt.all(projectId) : kind ? stmt.all(kind) : stmt.all()) as CardRow[];
       const projectsList = await bb.sdk.projects.list();
       const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
       // Scope summaries share one workspace read per root: many cards can sit
@@ -1779,6 +1975,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           projectName: row.workspace_kind === "exploratory" ? "Exploratory work" : (projectMap.get(row.project_id) ?? row.project_id),
           workspaceKind: row.workspace_kind,
           workspacePath: row.workspace_path,
+          kind: (row.kind === "research" ? "research" : "delivery") as "delivery" | "research",
+          researchStrategy: row.research_strategy,
+          researchStrategies: strategyList(row),
           status: normalizeStatus(row.status),
           stage: row.stage,
           workerThreadId: row.worker_thread_id,
@@ -1797,11 +1996,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async listNotifications({ includeArchived }) {
-      const rows = listInboxEvents(db, includeArchived) as Array<InboxEventRow & { display_name: string | null; name: string; project_id: string; resolved_at: number | null }>;
+      const rows = listInboxEvents(db, includeArchived) as Array<InboxEventRow & { display_name: string | null; name: string; project_id: string; card_kind: string | null; resolved_at: number | null }>;
       const projects = await bb.sdk.projects.list();
       const projectNames = new Map(projects.map((project) => [project.id, project.name]));
       return {
-        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, resolvedAt: row.resolved_at ?? null, archivedAt: row.archived_at })),
+        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, cardKind: row.card_kind === "research" ? "research" as const : "delivery" as const, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, resolvedAt: row.resolved_at ?? null, archivedAt: row.archived_at })),
       };
     },
 
@@ -1944,7 +2143,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // worker; older rows are archived threads replaced along the way.
       const workerHistory = (db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>).map((row) => ({ threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at, endedAt: row.ended_at, endedReason: row.ended_reason }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: (card.kind === "research" ? "research" : "delivery") as "delivery" | "research", researchStrategy: card.research_strategy, researchStrategies: strategyList(card), status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,
@@ -1961,6 +2160,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async updateCardIntent({ cardId, intent }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, error: "Card not found.", pastTriage: false, notified: false };
+      if (card.kind === "research") return { ok: false, error: "Research cards don't use intent — the strategy defines the work.", pastTriage: false, notified: false };
       const previousIntent = card.intent;
       const pastTriage = card.stage !== "triage";
       const ts = now();
@@ -2031,8 +2231,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card?.worker_thread_id) return { ok: false, error: "This card has no worker thread." };
       if (card.status === "archived") return { ok: false, error: "This card is archived." };
+      // Research workers never advance stages: a delivery-flavored nudge
+      // would instruct them to run a machine that does not exist here.
+      const nudge = card.kind === "research"
+        ? `Continue the Stelow research now. Re-read your brief.md first, then keep researching with the strategy playbook. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if you genuinely need NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — research has no stages. When the brief is complete with ranked opportunities, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.`
+        : `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the current stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable here, do not park in chat waiting. Auto approves and advances itself; gated modes use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
       try {
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the current stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable here, do not park in chat waiting. Auto approves and advances itself; gated modes use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`, mentions: [] }] });
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: nudge, mentions: [] }] });
         updateCard(cardId, { activity: "running", last_error: null });
         bb.realtime.publish("card-state", { cardId });
         return { ok: true, error: null };
@@ -2057,7 +2262,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // Trail: which preset took over and where the previous worker's
         // history lives, so the switch is auditable from the card.
         const presetName = getPresetById(effective.id)?.name ?? effective.id;
-        db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", previousThreadId ? `Worker restarted on preset "${presetName}", continuing from the ${card.stage} stage. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", continuing from the ${card.stage} stage.`, now());
+        const continueText = card.kind === "research" ? "continuing the research" : `continuing from the ${card.stage} stage`;
+        db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`, now());
         bb.realtime.publish("card-state", { cardId });
       }
       return { ok: result.ok, error: result.error ?? null };
@@ -2086,6 +2292,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       const previousThreadId = card.worker_thread_id;
       const params = presetAttachmentParams(preset);
+      const researchStrategy = card.kind === "research" ? researchStrategyById(card.research_strategy ?? "") : null;
+      if (card.kind === "research" && !researchStrategy) return { reseeded: false, error: "This research has no known strategy. Archive it and start a new one." };
+      const researchReseed = researchStrategy ? researchWorkerPrompt({
+        displayName: card.display_name ?? card.name,
+        prompt: card.prompt,
+        strategyLabel: researchStrategy.label,
+        strategySkill: researchStrategy.skill,
+        stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
+        workspaceRoot: source.path,
+        instructions: params.instructions,
+        flavor: "reseed",
+        previousThreadId,
+      }) : null;
       const newThread = await bb.sdk.threads.spawn({
         projectId: card.project_id,
         environment: workerEnvironment(source, params, card.workspace_kind === "exploratory"),
@@ -2096,7 +2315,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+        input: [{ type: "text", mentions: [], text: researchReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
 
 Intent is currently \`${card.intent}\` in the re-seeded state.md. ${card.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -2116,7 +2335,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try { await bb.sdk.threads.archive({ threadId: previousThreadId }); } catch { /* ignore */ }
         try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
       }
-      updateCard(cardId, { stage: "triage", activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
+      updateCard(cardId, { stage: card.kind === "research" ? "research" : "triage", status: card.kind === "research" ? "pending" : card.status, activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
       recordWorkerThread(db, cardId, newThread.id, preset.id, "reseed");
       if (seed.dirHash) void recordWorkflowLineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
       return { reseeded: true, error: null };
@@ -2125,17 +2344,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async moveCard({ cardId, status }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, error: "Card not found." };
-      // Board columns are phases + terminals. Moving to a phase sets the card's
-      // stage to that phase's entry stage (stage drives the column); moving to a
-      // terminal sets status.
-      const BAND_ENTRY_STAGE: Record<string, string> = { analysis: "triage", planning: "critique", execution: "execution", review: "diff-gate" };
-      if (status === "completed" || status === "archived") {
-        updateCard(cardId, { status });
-      } else {
-        const entry = BAND_ENTRY_STAGE[status];
-        if (!entry) return { ok: false, error: "Unknown phase." };
-        updateCard(cardId, { stage: entry, status: entry === "triage" ? "draft" : "in-progress" });
+      // Track routing lives in lib/card-move (unit-tested): research moves
+      // statuses, delivery moves phases + terminals, each side refuses the
+      // other's columns with the valid exit named.
+      const decision = resolveCardMove(card.kind, status);
+      if (!decision.ok) return { ok: false, error: decision.error };
+      if (decision.move.type === "status") {
+        updateCard(cardId, { status: decision.move.status as "pending" | "in-progress" | "completed" | "archived" });
+        return { ok: true, error: null };
       }
+      // A phase move sets the card's stage to that phase's entry stage
+      // (stage drives the column). Terminals already returned above.
+      const BAND_ENTRY_STAGE: Record<string, string> = { analysis: "triage", planning: "critique", execution: "execution", review: "diff-gate" };
+      const entry = BAND_ENTRY_STAGE[decision.move.phase];
+      if (!entry) return { ok: false, error: "Unknown phase." };
+      updateCard(cardId, { stage: entry, status: entry === "triage" ? "draft" : "in-progress" });
       return { ok: true, error: null };
     },
 
@@ -2180,6 +2403,116 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, projectId, projectName, error: null };
     },
+
+    async researchStrategies() {
+      return { strategies: RESEARCH_STRATEGIES };
+    },
+
+    async createResearchCard({ projectId, environment, prompt, attachments, strategy }) {
+      const picked = researchStrategyById(strategy);
+      if (!picked) {
+        throw new Error(`Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
+      }
+      return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id });
+    },
+
+    // Resolve the research brief file for a card. Shared by researchBrief
+    // (read) and fanOutResearch (read + flip). Returns the error instead of
+    // throwing so every refusal names its exit.
+    async researchBrief({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: "Card not found." };
+      if (card.kind !== "research") return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: "Only research cards have a brief. Delivery cards track scopes instead." };
+      const resolved = await readResearchBrief(card);
+      if (!resolved.ok) return { found: false, briefPath: null, content: null, truncated: false, opportunities: [], error: resolved.error };
+      const parsed = parseResearchBrief(resolved.content);
+      if (!parsed.found) return { found: false, briefPath: resolved.display, content: null, truncated: false, opportunities: [], error: "No ## Opportunities section in the brief yet — the research is still running." };
+      const LIMIT = 100_000;
+      return {
+        found: true,
+        briefPath: resolved.display,
+        content: resolved.content.slice(0, LIMIT),
+        truncated: resolved.content.length > LIMIT,
+        opportunities: parsed.opportunities.map(({ id, title, checked, group }) => ({ id, title, checked, group })),
+        error: null,
+      };
+    },
+
+    async fanOutResearch({ cardId, opportunityIds }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, created: [], error: "Card not found." };
+      if (card.kind !== "research") return { ok: false, created: [], error: "Only research cards fan out. Delivery cards already are work." };
+      if (card.status === "archived") return { ok: false, created: [], error: "This card is archived." };
+      const resolved = await readResearchBrief(card);
+      if (!resolved.ok) return { ok: false, created: [], error: resolved.error };
+      const parsed = parseResearchBrief(resolved.content);
+      if (!parsed.found) return { ok: false, created: [], error: "No ## Opportunities section in the brief yet — the research is still running." };
+      const wanted = new Set(opportunityIds);
+      const matched = parsed.opportunities.filter((item) => wanted.has(item.id) && !item.checked);
+      if (matched.length === 0) return { ok: false, created: [], error: "None of the selected opportunities are still available — reopen the brief; they may already have been fanned out." };
+      const strategyLabel = researchStrategyById(card.research_strategy ?? "")?.label ?? "research";
+      // Exploratory research fans out into fresh exploratory work cards (each
+      // owns its isolated workspace) instead of piling every card's state
+      // into the shared container directory. Project research stays in its
+      // project.
+      const targetProjectId = card.workspace_kind === "exploratory" ? "proj_personal" : card.project_id;
+      const created: Array<{ cardId: string; title: string }> = [];
+      for (const item of matched) {
+        try {
+          const work = await createCardInternal({
+            projectId: targetProjectId,
+            prompt: `Spawned from research "${card.display_name ?? card.name}" (${strategyLabel}).\n\nOpportunity: ${item.title}\n\nResearch context: full brief at ${resolved.absolute} — read its ## Findings before triage. Treat the opportunity above as the request; classify intent first, then work it through the normal delivery workflow.`,
+            attachments: [],
+            intent: "unknown",
+            appetite: "Lean",
+            reviewMode: "Auto",
+            kind: "delivery",
+          });
+          const workCard = getCard(work.cardId);
+          created.push({ cardId: work.cardId, title: workCard?.display_name ?? workCard?.name ?? item.title });
+        } catch (error) {
+          return { ok: false, created, error: error instanceof Error ? error.message : "Could not spawn a work card." };
+        }
+      }
+      // Flip exactly the spawned boxes so a retry never double-spawns. Only
+      // exact parser lines flip; a worker edit in between stays intact.
+      const flipped = checkBriefItems(resolved.content, matched.map((item) => item.id));
+      if (flipped.checked.length > 0) {
+        try {
+          await bb.sdk.files.write({ path: resolved.absolute, content: flipped.updated });
+        } catch { /* boxes stay unchecked; the comment below still trails */ }
+      }
+      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Fanned out ${created.length} ${created.length === 1 ? "opportunity" : "opportunities"} into work: ${created.map((entry) => entry.title).join("; ")}.`, now());
+      bb.realtime.publish("card-state", { cardId });
+      bb.realtime.publish("board-changed", { cardId });
+      return { ok: true, created, error: null };
+    },
+
+    async runResearchStrategy({ cardId, strategy }) {
+      // Composite research: run another strategy round on the same card.
+      // Spawns a fresh worker on the new playbook that APPENDS a new ###
+      // section to the brief — existing items are never rewritten. The
+      // previous worker retires only after the new one is live (same safe
+      // order as every respawn).
+      const card = getCard(cardId);
+      if (!card) return { ok: false, strategy: null, error: "Card not found." };
+      if (card.kind !== "research") return { ok: false, strategy: null, error: "Only research cards run strategies. Delivery cards advance stages instead." };
+      if (card.status === "archived") return { ok: false, strategy: null, error: "This card is archived." };
+      const picked = researchStrategyById(strategy);
+      if (!picked) {
+        return { ok: false, strategy: null, error: `Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.` };
+      }
+      const effective = getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
+      const result = await respawnWorkerForBand(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append" });
+      if (!result.ok) return { ok: false, strategy: null, error: result.error ?? "Could not start the strategy round." };
+      const history = [...strategyList(card), picked.id];
+      db.prepare("UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), cardId);
+      const presetName = getPresetById(effective.id)?.name ?? effective.id;
+      db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("cmt"), cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the brief. Previous worker archived.`, now());
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, strategy: picked.id, error: null };
+    },
+
     async markCardSeen({ cardId, kind }) {
       const card = getCard(cardId);
       if (!card) return { ok: false };
@@ -2214,6 +2547,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async advanceCard({ cardId, stage }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, stdout: "", error: "Card not found." };
+      if (card.kind === "research") return { ok: false, stdout: "", error: "Research cards don't use stages — drag to Done when the brief is complete." };
       const workspace = await cardWorkspace(card);
       if (!workspace?.path) return { ok: false, stdout: "", error: "Workspace is unavailable." };
       const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.dir_hash) : null;

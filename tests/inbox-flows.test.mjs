@@ -5,7 +5,7 @@ import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "../
 const db = new Database(":memory:");
 db.exec(`
   PRAGMA foreign_keys = ON;
-  CREATE TABLE cards (id TEXT PRIMARY KEY, display_name TEXT, name TEXT NOT NULL, project_id TEXT NOT NULL);
+  CREATE TABLE cards (id TEXT PRIMARY KEY, display_name TEXT, name TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'delivery');
   CREATE TABLE inbox_events (
     id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL,
     summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL,
@@ -13,7 +13,7 @@ db.exec(`
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );
 `);
-db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("card_1", "Launch Inbox", "launch-inbox", "project_1");
+db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_1", "Launch Inbox", "launch-inbox", "project_1", "delivery");
 
 const paused = { id: "evt_paused", cardId: "card_1", kind: "paused", summary: "Work paused.", dedupeKey: "paused:card_1:100", occurredAt: 100 };
 assert.equal(insertInboxEvent(db, paused), true, "first lifecycle event is durable");
@@ -38,7 +38,7 @@ assert.equal(listInboxEvents(db, false)[0].id, "evt_completed", "restored comple
 
 // Per-kind resolution: resuming work clears failure/pause signals but a
 // question stays until it is answered.
-db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?)").run("card_2", "Per-kind", "per-kind", "project_1");
+db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_2", "Per-kind", "per-kind", "project_1", "delivery");
 insertInboxEvent(db, { id: "evt_q", cardId: "card_2", kind: "question", summary: "Q?", dedupeKey: "question:card_2:500", occurredAt: 500 });
 insertInboxEvent(db, { id: "evt_e", cardId: "card_2", kind: "error", summary: "E!", dedupeKey: "error:card_2:501", occurredAt: 501 });
 assert.equal(resolveActionInboxEvents(db, "card_2", 600, ["error", "paused"]), 1, "resume resolves error and paused only");
