@@ -12,6 +12,7 @@ const STAGE_BANDS = {
   planning: ["critique", "scope", "interface", "int-gate", "selection", "planning", "plan-gate"],
   execution: ["execution", "verification"],
   review: ["diff-gate", "audit"],
+  research: ["research"],
 };
 
 const STAGE_TO_BAND = Object.fromEntries(
@@ -26,6 +27,9 @@ assert.strictEqual(Object.keys(STAGE_TO_BAND).length, flat.length, "stage->band 
 // 2. every band non-empty and every stage mapped
 assert.ok(Object.values(STAGE_BANDS).every((s) => s.length > 0), "some band is empty");
 for (const stage of flat) assert.ok(STAGE_TO_BAND[stage], `unmapped stage ${stage}`);
+
+// 2b. research investigations resolve to their own band, never analysis
+assert.strictEqual(STAGE_TO_BAND["research"], "research", "research stage must map to the research band");
 
 // 3. resolution: band override beats card preset beats idem
 const resolve = (bandDefs, cardPreset, band = "execution") => {

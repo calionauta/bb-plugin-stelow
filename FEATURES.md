@@ -127,11 +127,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   reasoning, permission mode, environment kind. Built-ins protected.
 - **Per-phase presets** (`listBandPresets`, `setBandPreset`).
   Analysis/planning/execution/review bands auto-swap workers at
-  boundaries; unset bands inherit the card preset.
+  boundaries; unset bands inherit the card preset. Research has its own
+  `research` band default, configured from the Research board's New
+  research dialog (falls back to the board default when unset).
 - **Per-card override** (`assignPreset`). Pinned preset for one card;
   takes effect on (re)start, with a stale-worker warning until then.
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
   review checkpoints remembered across cards.
+- **Work tour** (`WorkOnboarding`). First-run progressive disclosure over
+  the Work board: a 3-step tour (start work → per-phase agents → tune
+  later) on the first-use empty state, collapsing to a one-line agent
+  routing bar once cards exist. Dismissible, reopenable, persisted in
+  localStorage; never blocking, one primary action per step.
 
 ## 7. Command and embed
 *When I am an agent, CLI, or another surface, I want the same power.*
@@ -151,6 +158,10 @@ investigation that feeds the delivery board.*
 - **Research tab** (`ResearchPanel`). To-Do / Doing / Done / Archived
   columns over research cards only; project + attention filters;
   collapsible columns; per-tab active counts; no stages, no gates.
+  The New research dialog shows the effective agent preset
+  (`research` band default, else board default) with a Configure
+  presets entry; per-investigation pins live in the card's Manage
+  section.
 - **Strategy picker** (`researchStrategies`). Composite strategy runs on
   the same request: one round at a time, each appending a `###` section
   to the brief — never parallel batches to merge. "Explore another

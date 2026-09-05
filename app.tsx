@@ -157,8 +157,9 @@ const STAGE_BAND: Record<string, string> = {
   critique: "planning", gate: "planning", scope: "planning", interface: "planning", "int-gate": "planning", selection: "planning", planning: "planning", "plan-gate": "planning",
   execution: "execution", verification: "execution",
   "diff-gate": "review", audit: "review",
+  research: "research",
 };
-const BAND_LABEL: Record<string, string> = { analysis: "Analyse", planning: "Plan", execution: "Execute", review: "Review" };
+const BAND_LABEL: Record<string, string> = { analysis: "Analyse", planning: "Plan", execution: "Execute", review: "Review", research: "Research" };
 // Board columns ARE the workflow phases + terminals. Active cards sit in the
 // column of their current phase (STAGE_BAND[stage]); a card is a board column,
 // not a status. Terminals: completed / archived. Blocked was removed because
@@ -551,6 +552,95 @@ function InboxPanel() {
   return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.{loading && !firstLoad ? " Updating…" : ""}</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{firstLoad ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
+// First-run onboarding for the Work board, built as progressive disclosure:
+// Layer 1 (orientation) fires on the first-use empty state and drives one
+// task — starting the first work. Layer 2 (contextual) collapses to a
+// one-line bar once cards exist. Layer 3 (power: per-phase presets) is
+// revealed only inside step 3 or via the presets dialog, never up front.
+// Behavior-triggered only (card count), dismissible, reopenable — never
+// time-based, never blocking. Dismissal persists in localStorage next to
+// the other board preferences.
+function WorkOnboarding({ hasCards, workerPolicy, onStartWork, onConfigurePresets }: {
+  hasCards: boolean;
+  workerPolicy: Array<{ band: string; preset: { name: string } | null }>;
+  onStartWork: () => void;
+  onConfigurePresets: () => void;
+}) {
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem(STORAGE_KEYS.workOnboarding) === "dismissed"; } catch { return false; }
+  });
+  const [step, setStep] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  function dismiss() {
+    setDismissed(true);
+    try { window.localStorage.setItem(STORAGE_KEYS.workOnboarding, "dismissed"); } catch { /* onboarding is best-effort */ }
+  }
+  function reopen() {
+    setDismissed(false);
+    setStep(0);
+    setExpanded(true);
+    try { window.localStorage.removeItem(STORAGE_KEYS.workOnboarding); } catch { /* onboarding is best-effort */ }
+  }
+  const policySummary = workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ");
+  // Dismissed: a quiet reopen affordance, so the guidance stays
+  // discoverable without occupying space (never hidden).
+  if (dismissed) {
+    return (
+      <div className="flex justify-end">
+        <button onClick={reopen} title="Replay the 3-step Work tour" className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+          How Stelow works?
+        </button>
+      </div>
+    );
+  }
+  // Layer 2: cards exist, so orientation already happened. One line naming
+  // the current agent routing, expandable into the full 3 steps on demand.
+  if (hasCards && !expanded) {
+    return (
+      <div className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate" title={policySummary}>Agents per phase — {policySummary}</span>
+        <button onClick={() => setExpanded(true)} aria-expanded={false} className="cursor-pointer shrink-0 rounded-md px-2 py-1 font-medium text-primary hover:underline">How it works</button>
+        <button onClick={dismiss} aria-label="Dismiss Work tour" className="cursor-pointer shrink-0 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground">×</button>
+      </div>
+    );
+  }
+  const steps = [
+    {
+      title: "Start with an outcome",
+      body: "Describe what you want — a problem, an idea, a fix. Stelow triages it, then guides it through Analyse → Plan → Execute → Review.",
+      action: <Button className="min-h-11" onClick={onStartWork}>Start new work</Button>,
+    },
+    {
+      title: "Each phase can use a different agent",
+      body: "The worker switches brains automatically at phase boundaries — heavier reasoning for planning, faster models for execution. Unset phases inherit the card default.",
+      action: null,
+    },
+    {
+      title: "Tune when you're ready",
+      body: "Defaults work out of the box. When you feel a phase needs a different provider, model, or permission mode, change it per phase — or pin one card.",
+      action: <Button className="min-h-11" variant="outline" onClick={onConfigurePresets}>Configure presets</Button>,
+    },
+  ];
+  const current = steps[step]!;
+  return (
+    <section aria-label="Work tour" className="rounded-md border bg-muted/30 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Work tour · Step {step + 1} of {steps.length}</p>
+        <button onClick={dismiss} className="cursor-pointer min-h-11 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Skip tour</button>
+      </div>
+      <h2 className="mt-1 text-sm font-semibold text-foreground">{current.title}</h2>
+      <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{current.body}</p>
+      {step === 1 ? <p className="mt-2 rounded-md border bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground" title="Current per-phase routing">{policySummary}</p> : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {current.action}
+        {step > 0 ? <button onClick={() => setStep(step - 1)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Back</button> : null}
+        {step < steps.length - 1 ? <button onClick={() => setStep(step + 1)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Next</button> : <button onClick={dismiss} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Done</button>}
+      </div>
+    </section>
+  );
+}
+
 function BoardPanel() {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
@@ -770,6 +860,12 @@ function BoardPanel() {
               ) : null}
             </div>
           </header>
+          <WorkOnboarding
+            hasCards={cards.length > 0}
+            workerPolicy={workerPolicy}
+            onStartWork={() => { setCreateOptionsOpen(false); setCreateWorkOpen(true); }}
+            onConfigurePresets={() => setBoardPresetsOpen(true)}
+          />
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
               <span className="text-amber-700 dark:text-amber-300">Import issues needs a GitHub account linked in the <span className="font-medium">github</span> plugin.</span>
@@ -962,6 +1058,8 @@ function ResearchPanel() {
   const [cards, setCards] = useState<CardItem[]>([]);
   const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
   const [presets, setPresets] = useState<PresetManagerPreset[]>([]);
+  const [researchBandPresets, setResearchBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
+  const [researchPresetsOpen, setResearchPresetsOpen] = useState(false);
   const [researchProjectId, setResearchProjectId] = useState<string | null>(routeProjectId);
   const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return { archived: true };
@@ -986,16 +1084,18 @@ function ResearchPanel() {
   const load = useCallback(async (targetId: string | null) => {
     setLoading(true);
     try {
-      const [projectsResult, cardsResult, strategiesResult, presetsResult] = await Promise.all([
+      const [projectsResult, cardsResult, strategiesResult, presetsResult, bandPresetsResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
         rpc.call("listCards", { projectId: targetId, kind: "research" }).catch(() => ({ cards: [] })),
         rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
         rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
+        rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
       ]);
       setProjects(projectsResult?.projects ?? []);
       setCards(cardsResult.cards);
       setStrategies(strategiesResult.strategies);
       setPresets(presetsResult.presets);
+      setResearchBandPresets(bandPresetsResult.bands);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load research.");
       setProjects([]);
@@ -1017,6 +1117,11 @@ function ResearchPanel() {
   }, [strategies, strategy]);
   const activeProjectId = researchProjectId ?? routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
+  // Research has its own band default (like each delivery phase). Unset means
+  // "use the board default" — the same fallback the worker spawn applies, so
+  // the dialog never promises a preset the worker won't get.
+  const researchBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "research")?.presetId) ?? null;
+  const effectiveResearchPreset = researchBandPreset ?? defaultPreset;
   const filteredCards = useMemo(() => cards.filter((card) => {
     if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
     if (filterAttention && !card.needsAttention) return false;
@@ -1085,12 +1190,17 @@ function ResearchPanel() {
               </DialogHeader>
               <div className="grid gap-4">
                 <WorkflowChoiceSelect label="Strategy" value={strategy} options={strategyOptions.length > 0 ? strategyOptions : [{ value: strategy, label: strategy, description: "" }]} onChange={setStrategy} />
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Agent configuration</span>
+                  <span>research: {effectiveResearchPreset?.name ?? "Default"}{researchBandPreset ? "" : " (board default)"}</span>
+                  <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={() => setResearchPresetsOpen(true)}>Configure presets</Button>
+                </div>
                 <NewThreadComposer
                   defaultProjectId={activeProjectId ?? undefined}
-                  defaultProviderId={defaultPreset?.providerId}
-                  defaultModel={defaultPreset?.modelId}
-                  defaultReasoningLevel={defaultPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-                  defaultPermissionMode={defaultPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+                  defaultProviderId={effectiveResearchPreset?.providerId}
+                  defaultModel={effectiveResearchPreset?.modelId}
+                  defaultReasoningLevel={effectiveResearchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+                  defaultPermissionMode={effectiveResearchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
                   initialPrompt={prompt}
                   placeholder="What should Stelow investigate?"
                   layout="contained"
@@ -1100,6 +1210,14 @@ function ResearchPanel() {
               </div>
             </DialogContent>
           </Dialog>
+
+          <PresetManagerDialog
+            open={researchPresetsOpen}
+            onOpenChange={setResearchPresetsOpen}
+            rpc={rpc}
+            presets={presets}
+            onChanged={() => load(researchProjectId ?? routeProjectId)}
+          />
 
           <div className="flex flex-wrap items-center gap-2 border-b pb-3">
             <FilterSelect label="Project" value={filterProjectId} onChange={setFilterProjectId} options={[{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))]} inline />
@@ -1148,6 +1266,7 @@ const STORAGE_KEYS = {
   boardColumns: "stelow-columns-collapsed-v1",
   researchColumns: "stelow-research-columns-collapsed-v1",
   lastTab: "stelow-tab-v1",
+  workOnboarding: "stelow-work-onboarding-v1",
 } as const;
 
 type ParsedStelowRoute =
@@ -2206,7 +2325,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Manage agent presets</DialogTitle>
-          <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a work item starts its worker thread.</DialogDescription>
+          <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a work item starts its worker thread. Research investigations use the research phase preset.</DialogDescription>
         </DialogHeader>
         <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
           {presets.length === 0 ? <p className="text-sm text-muted-foreground">No presets yet. Create one below.</p> : null}

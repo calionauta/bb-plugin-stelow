@@ -60,12 +60,15 @@ const BUILD_INFO = (() => {
 
 // Stage bands: groups of workflow stages that share a worker preset. A card's
 // worker swaps presets only at band boundaries (analysis -> planning -> execution
-// -> review), so context continuity is preserved within a band.
+// -> review), so context continuity is preserved within a band. Research cards
+// run a single "research" stage with their own band so investigations have an
+// explicit preset default independent of the delivery analysis phase.
 const STAGE_BANDS: Record<string, string[]> = {
   analysis: ["triage", "select", "setup", "context", "shape"],
   planning: ["critique", "scope", "interface", "int-gate", "selection", "planning", "plan-gate"],
   execution: ["execution", "verification"],
   review: ["diff-gate", "audit"],
+  research: ["research"],
 };
 const STAGE_TO_BAND: Record<string, string> = Object.fromEntries(
   Object.entries(STAGE_BANDS).flatMap(([band, stages]) => stages.map((stage) => [stage, band])),
@@ -288,7 +291,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ strategies: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), blurb: z.string() })) }),
   },
   createResearchCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60) }).strict(),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
   researchBrief: {
@@ -915,13 +918,28 @@ export default async function plugin(bb: BbPluginApi) {
     db.exec("ALTER TABLE cards ADD COLUMN research_strategies TEXT");
   }
   // stage_presets may not be applied by bb.storage.migrate on existing DBs,
-  // so ensure it idempotently here as well.
+  // so ensure it idempotently here as well. Band validity is enforced by
+  // setBandPreset against STAGE_BANDS — the schema carries no band allowlist.
   db.exec(`CREATE TABLE IF NOT EXISTS stage_presets (
-    band TEXT PRIMARY KEY CHECK (band IN ('analysis','planning','execution','review')),
+    band TEXT PRIMARY KEY,
     preset_id TEXT NOT NULL,
     assigned_at INTEGER NOT NULL,
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
   )`);
+  // Rebuild tables created with the delivery-only band allowlist, preserving
+  // rows. Runs once: the rebuilt schema has no CHECK to match against.
+  const stagePresetsSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'stage_presets'").get() as { sql: string } | undefined;
+  if (stagePresetsSql?.sql.includes("CHECK (band IN")) {
+    db.exec(`ALTER TABLE stage_presets RENAME TO stage_presets_rebuild;
+      CREATE TABLE stage_presets (
+        band TEXT PRIMARY KEY,
+        preset_id TEXT NOT NULL,
+        assigned_at INTEGER NOT NULL,
+        FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+      );
+      INSERT INTO stage_presets (band, preset_id, assigned_at) SELECT band, preset_id, assigned_at FROM stage_presets_rebuild;
+      DROP TABLE stage_presets_rebuild;`);
+  }
   // This table is deliberately created outside the historical migration array:
   // older local installations have different recorded migration lengths.
   db.exec(`CREATE TABLE IF NOT EXISTS inbox_events (
@@ -1243,8 +1261,12 @@ ${prompt}`;
     const seed = await seedWorkflow(bb, rootPath, slug, initialIntent, appetite, reviewMode);
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
-    const analysisRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = 'analysis'").get() as { preset_id: string } | undefined;
-    const spawnPreset = analysisRow ? (getPresetById(analysisRow.preset_id) ?? preset) : preset;
+    // Spawn workers on their track's entry band: research investigations use
+    // the research band default, delivery work uses the analysis band. Either
+    // falls back to the card/board default when the band is unconfigured.
+    const spawnBand = isResearch ? "research" : "analysis";
+    const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(spawnBand) as { preset_id: string } | undefined;
+    const spawnPreset = bandRow ? (getPresetById(bandRow.preset_id) ?? preset) : preset;
     const params = presetAttachmentParams(spawnPreset);
     const workerAttachments = attachments.map((attachment) => ({ type: attachment.type, path: attachment.path }));
     // BB requires Personal-project threads to retain a `personal` workspace.
@@ -2626,12 +2648,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { strategies: RESEARCH_STRATEGIES };
     },
 
-    async createResearchCard({ projectId, environment, prompt, attachments, strategy }) {
+    async createResearchCard({ projectId, environment, prompt, attachments, strategy, presetId }) {
       const picked = researchStrategyById(strategy);
       if (!picked) {
         throw new Error(`Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
       }
-      return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id });
+      return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id, presetId: presetId ?? null });
     },
 
     // Resolve the research brief file for a card. Shared by researchBrief
@@ -2720,7 +2742,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!picked) {
         return { ok: false, strategy: null, error: `Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.` };
       }
-      const effective = getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
+      const effective = getPresetForBand("research", cardId);
       const result = await respawnWorkerForBand(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append" });
       if (!result.ok) return { ok: false, strategy: null, error: result.error ?? "Could not start the strategy round." };
       const history = [...strategyList(card), picked.id];
