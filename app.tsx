@@ -1244,11 +1244,21 @@ function StelowPanel({ subPath }: { subPath: string }) {
   const bare = subPath.replace(/^\/+|\/+$/g, "") === "";
   const tab = bare ? lastTab : route.track;
   const counts = { inbox: inbox.count, work: work.count, research: research.count };
+  // Keep-alive: all three tracks stay mounted and only the active one
+  // shows. Tab switches are instant (no reload flash) and every track
+  // keeps its realtime subscription warm. First mount still loads once —
+  // data has to come from somewhere.
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       <StelowTabBar tab={tab} counts={counts} onSelect={goTrack} />
-      <div className="min-h-0 flex-1">
-        {tab === "inbox" ? <InboxPanel /> : tab === "research" ? <ResearchPanel /> : <BoardPanel />}
+      <div className={tab === "inbox" ? "min-h-0 flex-1" : "hidden"}>
+        <InboxPanel />
+      </div>
+      <div className={tab === "work" ? "min-h-0 flex-1" : "hidden"}>
+        <BoardPanel />
+      </div>
+      <div className={tab === "research" ? "min-h-0 flex-1" : "hidden"}>
+        <ResearchPanel />
       </div>
     </div>
   );
@@ -3705,12 +3715,12 @@ export default definePluginApp((app) => {
   // which WINS over this panel icon (plugin?.icon ?? panel icon in ZO).
   // Both names must be in BB's allowlist (An base map + Cn extended chunk:
   // jn = [...Object.keys(An), ...Cn]); anything else falls back to Zap.
-  // Verified: Workflow is in An. (Tab icons are unaffected — they render
-  // from the plugin's own HugeIcons set.)
+  // Star (extended chunk) is the stellar mark. (Tab icons are unaffected —
+  // they render from the plugin's own HugeIcons set.)
   app.slots.navPanel({
     id: STELOW_PANEL_ID,
     title: "Stelow",
-    icon: "Workflow",
+    icon: "Star",
     path: STELOW_PANEL_PATH,
     component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
