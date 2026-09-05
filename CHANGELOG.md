@@ -8,6 +8,14 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Added
+
+- **Visual strategy picker.** Choosing a research strategy is now emoji
+  radio-cards (name + one-line summary) with instant search over label,
+  summary, and keywords — shared by the creation modal and "Explore
+  another strategy" (which badges already-ran playbooks). No preselected
+  default: Start stays disabled until an explicit pick.
+
 ### Changed
 
 - **Work track is now Build.** The delivery tab, its `build/card/...`

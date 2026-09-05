@@ -288,7 +288,7 @@ export const rpcContract = defineRpcContract({
   },
   researchStrategies: {
     input: z.object({}).strict(),
-    output: z.object({ strategies: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), blurb: z.string() })) }),
+    output: z.object({ strategies: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), blurb: z.string(), emoji: z.string(), keywords: z.array(z.string()) })) }),
   },
   createResearchCard: {
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional() }).strict(),

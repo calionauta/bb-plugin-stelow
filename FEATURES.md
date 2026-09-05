@@ -166,7 +166,12 @@ investigation that feeds the delivery board.*
   (`research` band default, else board default) with a Configure
   presets entry; per-investigation pins live in the card's Manage
   section.
-- **Strategy picker** (`researchStrategies`). Composite strategy runs on
+- **Strategy picker** (`StrategyPicker`, `researchStrategies`). Visual
+  radio-cards (emoji + name + one-line summary) with instant search over
+  label, summary, and keywords; no preselected default — Start stays
+  disabled until an explicit pick. Shared by the creation modal and
+  "Explore another strategy" (which badges already-ran playbooks).
+  Composite strategy runs on
   the same request: one round at a time, each appending a `###` section
   to the brief — never parallel batches to merge. "Explore another
   strategy" starts a fresh worker on a new playbook; history pills join

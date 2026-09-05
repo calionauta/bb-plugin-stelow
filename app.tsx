@@ -1053,7 +1053,7 @@ function BoardPanel() {
   );
 }
 
-type ResearchStrategyOption = { id: string; label: string; skill: string; blurb: string };
+type ResearchStrategyOption = { id: string; label: string; skill: string; blurb: string; emoji: string; keywords: string[] };
 
 // Second track beside Build: lightweight research (To-Do / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
@@ -1085,7 +1085,7 @@ function ResearchPanel() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
-  const [strategy, setStrategy] = useState("opportunity-mapping");
+  const [strategy, setStrategy] = useState<string | null>(null);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
 
@@ -1117,12 +1117,7 @@ function ResearchPanel() {
   useDebouncedRealtime(["card-state", "board-changed"], () => void load(researchProjectId ?? routeProjectId));
 
   const strategyLabelById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
-  const strategyOptions = useMemo(() => strategies.map((entry) => ({ value: entry.id, label: entry.label, description: entry.blurb })), [strategies]);
-  useEffect(() => {
-    if (strategies.length > 0 && !strategies.some((entry) => entry.id === strategy)) {
-      setStrategy(strategies[0]!.id);
-    }
-  }, [strategies, strategy]);
+  const selectedStrategy = strategies.find((entry) => entry.id === strategy) ?? null;
   const activeProjectId = researchProjectId ?? routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
   // Research has its own band default (like each delivery phase). Unset means
@@ -1156,6 +1151,10 @@ function ResearchPanel() {
       .filter((part): part is { type: "localFile" | "localImage"; path: string } => (part.type === "localFile" || part.type === "localImage") && "path" in part && typeof part.path === "string" && part.path.length > 0)
       .map((part) => ({ type: part.type, path: part.path }));
     if (!text.trim()) return;
+    if (!strategy) {
+      toast.error("Pick a strategy first.");
+      return;
+    }
     try {
       const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy });
       setPrompt("");
@@ -1214,14 +1213,18 @@ function ResearchPanel() {
             ]}
           />
 
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStrategy(null); }}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new research</DialogTitle>
                 <DialogDescription>Describe the question or topic to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4">
-                <WorkflowChoiceSelect label="Strategy" value={strategy} options={strategyOptions.length > 0 ? strategyOptions : [{ value: strategy, label: strategy, description: "" }]} onChange={setStrategy} />
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-medium text-foreground">Strategy</span>
+                  <StrategyPicker strategies={strategies} value={strategy} onChange={setStrategy} groupName="strategy-pick" />
+                  <p className="text-xs text-muted-foreground" aria-live="polite">{selectedStrategy ? `Selected: ${selectedStrategy.label}` : "Choose a strategy above to continue."}</p>
+                </div>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">Agent configuration</span>
                   <span>research: {effectiveResearchPreset?.name ?? "Default"}{researchBandPreset ? "" : " (board default)"}</span>
@@ -1467,6 +1470,98 @@ function WorkflowChoiceSelect<T extends string>({ label, value, options, onChang
       </select>
       <span>{selected?.description}</span>
     </label>
+  );
+}
+
+// Visual strategy picker shared by the creation modal and the follow-up
+// round dialog: search field over emoji radio-cards, single select, no
+// preselected default. RunIds (follow-up) only badge already-run rows.
+function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, disabled = false }: {
+  strategies: ResearchStrategyOption[];
+  value: string | null;
+  onChange: (id: string) => void;
+  runIds?: string[];
+  groupName: string;
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const needle = query.trim().toLowerCase();
+  const visible = needle.length === 0
+    ? strategies
+    : strategies.filter((entry) => [entry.id, entry.label, entry.blurb, ...entry.keywords].join(" ").toLowerCase().includes(needle));
+  function focusSearch() {
+    searchRef.current?.focus();
+  }
+  return (
+    <div
+      className="grid gap-2"
+      onKeyDown={(event) => {
+        const target = event.target as HTMLElement | null;
+        if (event.key === "/" && target && !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) {
+          event.preventDefault();
+          focusSearch();
+        }
+      }}
+    >
+      <div className="relative">
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search strategies…"
+          autoFocus
+          disabled={disabled}
+          aria-label="Search strategies"
+          className="h-11 w-full rounded-md border bg-background pr-9 pl-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        />
+        {query.length > 0 ? (
+          <button onClick={() => { setQuery(""); focusSearch(); }} aria-label="Clear search" className="cursor-pointer absolute top-1/2 right-1 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">×</button>
+        ) : null}
+      </div>
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        {strategies.length === 0 ? "Loading strategies…" : `${visible.length} of ${strategies.length} strategies`}
+      </p>
+      {visible.length === 0 && strategies.length > 0 ? (
+        <div className="rounded-md border border-dashed p-4 text-center">
+          <p className="text-sm text-muted-foreground">No strategies match “{query.trim()}”.</p>
+          <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
+        </div>
+      ) : (
+        <fieldset className="grid max-h-72 gap-2 overflow-y-auto pr-0.5">
+          <legend className="sr-only">Research strategy</legend>
+          {visible.map((entry) => {
+            const selected = value === entry.id;
+            const ran = runIds.includes(entry.id);
+            return (
+              <label
+                key={entry.id}
+                className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : ""} ${selected ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+              >
+                <input
+                  type="radio"
+                  name={groupName}
+                  checked={selected}
+                  onChange={() => onChange(entry.id)}
+                  disabled={disabled}
+                  className="sr-only"
+                  aria-label={`${entry.label}${ran ? " (already ran)" : ""}`}
+                />
+                <span aria-hidden className="text-xl leading-none">{entry.emoji}</span>
+                <span className="min-w-0 flex-1">
+                  <span className={`flex flex-wrap items-center gap-2 text-sm ${selected ? "font-semibold text-foreground" : "font-medium text-foreground"}`}>
+                    {entry.label}
+                    {ran ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">already ran — runs again</span> : null}
+                    {selected ? <span aria-hidden className="text-primary">✓</span> : null}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground" title={entry.blurb}>{entry.blurb}</span>
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
+    </div>
   );
 }
 
@@ -2987,36 +3082,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
           <DialogTitle>Explore another strategy</DialogTitle>
           <DialogDescription>A fresh worker runs the strategy on the same request and appends a new section to the brief. Existing findings are never rewritten.</DialogDescription>
         </DialogHeader>
-        {strategies.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading strategies…</p>
-        ) : (
-          <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-md border">
-            {strategies.map((entry) => {
-              const ran = runIds.includes(entry.id);
-              return (
-                <li key={entry.id}>
-                  <label className="flex cursor-pointer items-start gap-2 p-2 hover:bg-muted/40">
-                    <input
-                      className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
-                      type="radio"
-                      name="research-strategy-round"
-                      checked={picked === entry.id}
-                      onChange={() => setPicked(entry.id)}
-                      disabled={busy}
-                    />
-                    <span className="min-w-0">
-                      <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                        {entry.label}
-                        {ran ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">already ran — runs again</span> : null}
-                      </span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">{entry.blurb}</span>
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <StrategyPicker strategies={strategies} value={picked} onChange={setPicked} runIds={runIds} groupName="research-strategy-round" disabled={busy} />
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="ghost" disabled={busy}>Cancel</Button>

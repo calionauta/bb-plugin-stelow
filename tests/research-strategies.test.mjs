@@ -11,7 +11,14 @@ for (const entry of RESEARCH_STRATEGIES) {
   assert.ok(entry.label && entry.label.length > 0, `${entry.id} has a label`);
   assert.match(entry.skill, /^stelow-product-[a-z-]+$/, `${entry.id} maps to a stelow-product-* skill`);
   assert.ok(entry.blurb && entry.blurb.length > 0, `${entry.id} has a picker blurb`);
+  assert.ok(entry.emoji && entry.emoji.length > 0, `${entry.id} has a picker emoji`);
+  assert.ok(Array.isArray(entry.keywords) && entry.keywords.length > 0, `${entry.id} has filter keywords`);
+  for (const keyword of entry.keywords) {
+    assert.equal(keyword, keyword.toLowerCase(), `${entry.id} keyword is lowercase`);
+  }
 }
+const emojis = RESEARCH_STRATEGIES.map((entry) => entry.emoji);
+assert.equal(new Set(emojis).size, emojis.length, "strategy emoji are unique");
 assert.ok(RESEARCH_STRATEGIES.some((entry) => entry.id === "opportunity-mapping"), "opportunity mapping is offered");
 const labels = RESEARCH_STRATEGIES.map((entry) => entry.label);
 const sorted = [...labels].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
