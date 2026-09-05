@@ -10,6 +10,20 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Batched question answering.** Workers batch independent questions into
+  one `bb stelow ask` call (repeat `--question` groups); the card, the
+  artifact viewer, and the thread form answer them in one sitting via a
+  stepper with counter, direct jump tabs, radio/checkbox options, a
+  free-text Other on every question, and explicit Skip. One atomic submit
+  (`answerQuestions` / `answerExpiredQuestions`) resumes the worker once.
+  Timed-out questions batch the same way and resume the current worker.
+- **GitHub import filters.** The label field offers the alphabetical label
+  picker; an assignee dropdown narrows to one person when the GitHub cache
+  exposes assignees; per-issue assignees render inline.
+- **GitHub completion write-back.** Completed cards imported from an issue
+  offer one explicit Manage action: post a factual English summary as an
+  issue comment via `gh`, optionally closing the issue. Never automatic.
+
 - **One Stelow panel with track tabs.** Inbox, Work, and Research live
   as tabs under a single Stelow sidebar row (subPath-routed, last tab
   remembered, legacy card links resolve live). Track names, icons, and
@@ -34,6 +48,9 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Proportional Board/List toggle.** The Work view switch is a fixed-height
+  (44px) two-column segmented control with equal halves and centered
+  labels, matching the action buttons beside it.
 - **Inbox keeps stale content while reloading.** Only the first mount
   skeletons; later polls show a quiet updating hint instead of blanking.
 - **Uniform header and filter controls.** Work toggle segments, action
