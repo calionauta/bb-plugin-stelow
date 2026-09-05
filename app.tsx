@@ -1128,7 +1128,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
 }) {
   const countFor = (key: StelowTrack) => counts[key];
   return (
-    <div role="tablist" aria-label="Stelow tracks" className="flex shrink-0 items-center gap-1 border-b bg-card/80 px-3 py-1.5">
+    <div role="tablist" aria-label="Stelow tracks" className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto border-b bg-card/80 px-2 py-1.5 sm:px-3">
       {STELOW_TRACKS.map((entry) => {
         const active = tab === entry.key;
         const count = countFor(entry.key);
@@ -1139,7 +1139,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
             aria-selected={active}
             onClick={() => onSelect(entry.key)}
             title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "work" ? "Delivery board" : "Research board"}
-            className={`inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+            className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:px-3 sm:text-sm ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
           >
             <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
             <span>{entry.title}</span>
