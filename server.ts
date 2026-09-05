@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
@@ -9,6 +8,7 @@ import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manif
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
 import { parseAskGroups, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
+import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
@@ -662,17 +662,6 @@ function runHelper(args: string[], cwd: string, stateDir?: string): Promise<{ co
   });
 }
 
-function runGh(args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolveRun) => {
-    const child = spawn("gh", args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "", stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
-    child.on("error", (error) => resolveRun({ code: null, stdout, stderr: error.message }));
-    child.on("close", (code) => resolveRun({ code, stdout, stderr }));
-  });
-}
-
 async function readJson(files: FilesApi, path: string): Promise<LooseRecord | null> {
   try {
     const file = await files.read({ path });
@@ -1071,6 +1060,34 @@ export default async function plugin(bb: BbPluginApi) {
         input,
         outputSchema: z.any(),
       }),
+    assignableUsers: (input: { repo: string }) =>
+      bb.sdk.plugins.callRpc<{ users: string[] }>({
+        pluginId: "github",
+        method: "assignableUsers",
+        input,
+        outputSchema: z.any(),
+      }),
+    repositoryLabels: (input: { repo: string }) =>
+      bb.sdk.plugins.callRpc<{ labels: string[] }>({
+        pluginId: "github",
+        method: "repositoryLabels",
+        input,
+        outputSchema: z.any(),
+      }),
+    commentIssue: (input: { repo: string; number: number; body: string }) =>
+      bb.sdk.plugins.callRpc<{ ok: boolean }>({
+        pluginId: "github",
+        method: "commentIssue",
+        input,
+        outputSchema: z.any(),
+      }),
+    setIssueState: (input: { repo: string; number: number; state: "open" | "closed" }) =>
+      bb.sdk.plugins.callRpc<{ ok: boolean }>({
+        pluginId: "github",
+        method: "setIssueState",
+        input,
+        outputSchema: z.any(),
+      }),
   };
 
   // A curated issue reference for the card prompt, so the worker reads the
@@ -1089,6 +1106,24 @@ export default async function plugin(bb: BbPluginApi) {
       for (const comment of comments) lines.push(`- ${comment.author}: ${comment.body.trim()}`);
     }
     return lines.join("\n");
+  }
+
+  // Per-repo picker data (assignable users, repo labels) for the import
+  // dialog. Fail-soft per repo: one rejection never empties the pickers.
+  async function githubPickers(repos: string[]): Promise<{ labels: string[]; assignees: string[] }> {
+    const labelLists: unknown[] = [];
+    const userLists: unknown[] = [];
+    await Promise.all(repos.map(async (repo) => {
+      try {
+        const result = await g.repositoryLabels({ repo });
+        labelLists.push(result.labels);
+      } catch { /* repo unreachable — derived lists still cover it */ }
+      try {
+        const result = await g.assignableUsers({ repo });
+        userLists.push(result.users);
+      } catch { /* same */ }
+    }));
+    return { labels: sortedUnion(labelLists), assignees: sortedUnion(userLists) };
   }
 
   // Availability + auth of the builtin `github` plugin. Distinguishes the three
@@ -1953,12 +1988,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const status = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
       const repoToProject = new Map(status.repos.map((entry) => [entry.repo, entry.projectId]));
       const strList = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
-      // Alphabetical pickers: every label and assignee seen on open issues, so
-      // the dialog filters without extra round-trips. Assignees flow through
-      // when the GitHub cache exposes them; otherwise the list is empty and
-      // the UI hides the filter instead of faking it.
-      const allLabels = [...new Set(items.items.flatMap((item) => strList(item.labels)))].sort((a, b) => a.localeCompare(b));
-      const allAssignees = [...new Set(items.items.flatMap((item) => strList((item as { assignees?: unknown }).assignees)))].sort((a, b) => a.localeCompare(b));
+      // Alphabetical pickers over EXISTING things, not just what's on open
+      // issues: assignable users and repo labels per tracked repo (fail-soft
+      // per repo), merged with whatever the cached issues already carry so
+      // the pickers stay useful even when no open issue has an assignee.
+      const pickerLists = await githubPickers(status.repos.map((entry) => entry.repo));
+      const allLabels = sortedUnion([pickerLists.labels, items.items.flatMap((item) => strList(item.labels))]);
+      const allAssignees = sortedUnion([pickerLists.assignees, items.items.flatMap((item) => strList((item as { assignees?: unknown }).assignees))]);
       const issues = items.items
         .filter((item) => item.labels.includes(label))
         .sort((a, b) => Number(b.number) - Number(a.number));
@@ -2026,9 +2062,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Explicit, user-triggered write-back for imported issues: posts a
       // factual English completion summary as an issue comment, optionally
       // closing the issue. Never automatic — Done in Stelow is not
-      // merged/deployed, so auto-close would lie. Runs via the `gh` CLI,
-      // which shares the host's GitHub auth (same account the github plugin
-      // syncs with).
+      // merged/deployed, so auto-close would lie. Uses the github plugin's
+      // own RPCs (same auth it syncs with), never shelling out.
       const card = getCard(cardId);
       if (!card) return { ok: false, commentUrl: null, error: ERR_CARD_NOT_FOUND };
       const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
@@ -2049,26 +2084,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         `Prompt: ${card.prompt.length > 500 ? `${card.prompt.slice(0, 500)}…` : card.prompt}`,
       ].join("\n");
       try {
-        const tmpFile = nodeJoin(tmpdir(), `stelow-gh-comment-${cardId}-${Date.now()}.md`);
-        writeFileSync(tmpFile, body, "utf8");
-        try {
-          const comment = await runGh(["issue", "comment", String(link.number), "--repo", link.repo, "--body-file", tmpFile]);
-          if (comment.code !== 0) return { ok: false, commentUrl: null, error: comment.stderr.trim() || "gh issue comment failed." };
-          // Record before the optional close: a close failure must never
-          // invite a retry that posts the comment twice.
-          db.prepare("UPDATE github_imports SET commented_at = ? WHERE card_id = ?").run(now(), cardId);
-          if (closeIssue) {
-            const closed = await runGh(["issue", "close", String(link.number), "--repo", link.repo, "--reason", "completed"]);
-            if (closed.code !== 0) return { ok: false, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: "Comment posted, but the automatic close failed — close the issue manually on GitHub." };
-          }
-          bb.realtime.publish("card-state", { cardId });
-          return { ok: true, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: null };
-        } finally {
-          try { unlinkSync(tmpFile); } catch { /* best-effort */ }
-        }
+        await g.commentIssue({ repo: link.repo, number: link.number, body });
       } catch (error) {
-        return { ok: false, commentUrl: null, error: error instanceof Error ? error.message : "Could not reach GitHub." };
+        return { ok: false, commentUrl: null, error: error instanceof Error ? error.message : "Could not comment on the GitHub issue." };
       }
+      // Record before the optional close: a close failure must never
+      // invite a retry that posts the comment twice.
+      db.prepare("UPDATE github_imports SET commented_at = ? WHERE card_id = ?").run(now(), cardId);
+      if (closeIssue) {
+        try {
+          await g.setIssueState({ repo: link.repo, number: link.number, state: "closed" });
+        } catch (error) {
+          return { ok: false, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: "Comment posted, but the automatic close failed — close the issue manually on GitHub." };
+        }
+      }
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: null };
     },
 
     async listCards({ projectId, kind }) {

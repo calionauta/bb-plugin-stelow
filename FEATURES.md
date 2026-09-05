@@ -13,14 +13,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **GitHub issue import** (`listGithubCandidates`, `importGithubIssue`).
   Tagged issues land in Triage; fresh issues preselected; owning project
   resolved per repo; intent guessed from labels/title (user-correctable).
-  Label field offers the alphabetical label picker (all open-issue labels);
-  assignee dropdown narrows to one person when the GitHub cache exposes
-  assignees (hidden otherwise, never faked). Per-issue assignees shown inline.
+  Label field offers the alphabetical label picker (every repo label, not
+  just labels on open issues); assignee dropdown lists assignable users
+  per tracked repo merged with assignees seen on issues. Per-issue
+  assignees shown inline.
 - **GitHub completion write-back** (`postGithubCompletion`). Completed cards
   imported from an issue offer one explicit Manage action: post a factual
-  English summary (scopes/tasks, prompt) as an issue comment via `gh`,
-  optionally closing the issue behind the same confirm. Never automatic —
-  Done in Stelow is not merged/deployed.
+  English summary (scopes/tasks, prompt) as an issue comment via the
+  github plugin's own RPCs, optionally closing the issue behind the same
+  confirm. Never automatic — Done in Stelow is not merged/deployed.
 - **Exploratory work** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project
