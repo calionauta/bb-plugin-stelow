@@ -183,13 +183,13 @@ investigation that feeds the delivery board.*
   own state dir; the card renders it with per-strategy groups and
   available/total counts. Non-conforming briefs refuse with an exit.
 - **Round files** (`researchRoundFiles`, `lib/research-rounds.mjs`). Every
-  round persists its native playbook output verbatim to
-  `rounds/<strategy>-r<n>-<stamp>.md` (one per sub-step when a playbook
-  fans out, e.g. JTBD) and registers each in the manifest; `brief.md`
-  stays the machine-read aggregator for fan-out. The card lists rounds
-  newest-first with run status (ready / running / missing) plus
-  unregistered state-dir files; history carries timestamps with legacy
-  migration.
+  round persists its native playbook output verbatim (one file per
+  round, one per sub-step when a playbook fans out, e.g. JTBD) under
+  the state dir's `rounds/` and registers each in the manifest;
+  `brief.md` stays the machine-read aggregator for fan-out. The card
+  lists rounds newest-first with run status (ready / pending /
+  missing) plus unregistered state-dir files; history carries
+  timestamps.
 - **Fan-out** (`fanOutResearch`, `FanOutDialog`). Checked opportunities
   become build cards at triage (exploratory research fans out
   into isolated exploratory cards); spawned boxes check off so retries

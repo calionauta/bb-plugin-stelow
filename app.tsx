@@ -3030,7 +3030,7 @@ type ResearchBriefState = {
   content: string | null;
   truncated: boolean;
   opportunities: Array<{ id: string; title: string; checked: boolean; group: string | null }>;
-  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string | null; status: "ready" | "pending" | "missing"; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
+  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
   looseFiles: Array<{ display: string; path: string; absolutePath: string; hostId: string }>;
   error: string | null;
 };
@@ -3495,7 +3495,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                           <span className="font-medium">Round {round.n} — {round.label}</span>
                           {when ? <span className="text-xs text-muted-foreground">{when}</span> : null}
                           {round.status === "pending" ? <span className="text-xs text-muted-foreground">Running…</span> : null}
-                          {round.status === "missing" ? <span className="text-xs text-muted-foreground">{round.at ? "No file saved yet" : "Saved before round files existed"}</span> : null}
+                          {round.status === "missing" ? <span className="text-xs text-muted-foreground">No file saved yet</span> : null}
                         </div>
                         {round.files.length > 0 ? (
                           <div className="mt-1 flex flex-wrap gap-1.5">

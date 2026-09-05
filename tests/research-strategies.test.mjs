@@ -26,13 +26,10 @@ assert.deepEqual(labels, sorted, "picker order is alphabetical by label");
 assert.equal(researchStrategyById("job-to-be-done")?.skill, "stelow-product-job-to-be-done", "lookup by id");
 assert.equal(researchStrategyById("nope"), null, "unknown id resolves to null");
 
-// Strategy history: JSON array wins, legacy single id degrades to one round,
+// Strategy history: strict {id, at, file} rows project to ids;
 // repeats are preserved as separate rounds, garbage degrades honestly.
-assert.deepEqual(parseStrategyList('["a","b"]', "a"), ["a", "b"], "ordered history");
-assert.deepEqual(parseStrategyList('["a","a"]', "a"), ["a", "a"], "repeats preserved");
-assert.deepEqual(parseStrategyList(null, "a"), ["a"], "legacy single id");
-assert.deepEqual(parseStrategyList("not-json", "a"), ["a"], "corrupt JSON falls back");
-assert.deepEqual(parseStrategyList("[1,2]", "a"), ["a"], "non-string entries fall back");
-assert.deepEqual(parseStrategyList(null, null), [], "nothing yields no history");
+assert.deepEqual(parseStrategyList('[{"id":"a","at":"t","file":"f"},{"id":"a","at":"t2","file":"f2"}]'), ["a", "a"], "repeats preserved");
+assert.deepEqual(parseStrategyList('["a","b"]'), [], "legacy id arrays are dropped");
+assert.deepEqual(parseStrategyList(null), [], "nothing yields no history");
 
 console.log("research strategies test ok: unique ids, skill mapping, lookup, history");
