@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -1201,7 +1202,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
   return (
     <>
     <header className="flex items-center gap-2 border-b bg-card/80 px-3 py-1.5">
-      <button onClick={onBack} title="Back to board (Esc)" className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
+      <button onClick={onBack} title="Back to board (Esc)" className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
         <span aria-hidden>←</span>
         <span>Board</span>
       </button>
@@ -1238,8 +1239,8 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
           <option value="unknown">Unknown intent</option>
         </select>
       </> : null}
-      <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md bg-background text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-        <span aria-hidden>×</span>
+      <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        <Icon name="X" className="h-4 w-4" aria-hidden />
       </button>
     </header>
     <ConfirmActionDialog
