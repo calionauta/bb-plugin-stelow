@@ -195,6 +195,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ notificationId: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
   },
+  markCardNotificationsRead: {
+    input: z.object({ cardId: z.string(), kind: z.enum(["question", "error", "paused", "completed"]) }).strict(),
+    output: z.object({ marked: z.boolean() }),
+  },
   archiveNotification: {
     input: z.object({ notificationId: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
@@ -2009,6 +2013,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const result = db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL").run(now(), notificationId);
       if (result.changes > 0) bb.realtime.publish("inbox-changed", { notificationId });
       return { ok: result.changes > 0 };
+    },
+
+    async markCardNotificationsRead({ cardId, kind }) {
+      // Viewing marks informational state seen (read), never resolved.
+      // Only completions use this today: opening a Done card clears its
+      // "new" badge while the entry stays in Recent updates. Action kinds
+      // (question/error/paused) keep counting until resolved, no matter
+      // how often the card is opened.
+      if (kind !== "completed") return { marked: false };
+      const result = db.prepare("UPDATE inbox_events SET read_at = ? WHERE card_id = ? AND kind = 'completed' AND read_at IS NULL AND archived_at IS NULL").run(now(), cardId);
+      if (result.changes > 0) bb.realtime.publish("inbox-changed", { cardId });
+      return { marked: result.changes > 0 };
     },
 
     async archiveNotification({ notificationId }) {

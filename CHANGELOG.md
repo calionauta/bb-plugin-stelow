@@ -34,6 +34,9 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Inbox counts fresh completions.** The badge now includes unseen
+  completions from the last 7 days alongside unresolved actions;
+  opening a completed card marks it seen (read, never resolved).
 - **Strategy picker is alphabetical.** Playbooks scan predictably;
   opportunity-mapping stays the suggested default.
 - **Dead card-seen tracking removed.** The unreachable `markCardSeen`

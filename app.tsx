@@ -17,6 +17,7 @@ import {
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
+import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -206,7 +207,7 @@ type StelowTrack = "inbox" | "work" | "research";
 // and thread actions keep resolving; tracks live in the subPath.
 const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
   { key: "inbox", title: "Inbox", icon: "Mail", rootSubPath: "inbox" },
-  { key: "work", title: "Work", icon: "Columns2", rootSubPath: "" },
+  { key: "work", title: "Work", icon: "Columns2", rootSubPath: "work" },
   { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
 ];
 function trackRootSubPath(track: StelowTrack): string {
@@ -402,9 +403,10 @@ function useInboxAccessory(): SidebarAccessoryHandle {
   const reload = useCallback(async () => {
     try {
       const result = await rpc.call("listNotifications", { includeArchived: false });
-      // Badge = work genuinely awaiting the user. Resolved history and
-      // completions must never inflate it, or the count loses credibility.
-      setCount(result.notifications.filter((entry) => entry.archivedAt === null && entry.resolvedAt === null && entry.kind !== "completed").length);
+      // Badge = new things for you: unresolved actions plus unseen recent
+      // completions. Seen completions stay in Recent updates; resolved and
+      // archived items never count.
+      setCount(result.notifications.filter((entry) => countsForInboxBadge(entry)).length);
     } catch {
       /* host will show stale silently */
     }
@@ -1216,7 +1218,11 @@ function StelowPanel({ subPath }: { subPath: string }) {
   if (route.kind === "legacy-card") {
     return <LegacyCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
   }
-  const tab = route.track === "work" && subPath.replace(/^\/+|\/+$/g, "") === "" ? lastTab : route.track;
+  // The bare root reopens the last visited track; explicit track routes
+  // always win (otherwise clicking Work while lastTab is Research would
+  // visibly do nothing).
+  const bare = subPath.replace(/^\/+|\/+$/g, "") === "";
+  const tab = bare ? lastTab : route.track;
   const counts = { inbox: inbox.count, work: work.count, research: research.count };
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -2665,6 +2671,11 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
 
   useEffect(() => { void loadBrief(); }, [loadBrief]);
   useDebouncedRealtime(["card-state"], () => { void loadBrief(); });
+  // Viewing a completed card marks its completion seen (read, never
+  // resolved): the badge drops, Recent updates keeps the entry.
+  useEffect(() => {
+    if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
+  }, [cardId, card?.status, rpc]);
   useEffect(() => {
     if (!inboxEventId || !inboxEvent) return;
     inboxEventRef.current?.scrollIntoView({ block: "nearest" });
@@ -3048,6 +3059,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
 
   useEffect(() => { void load(); }, [load]);
   useDebouncedRealtime(["card-state"], () => { void load(); });
+  // Viewing a completed card marks its completion seen (read, never
+  // resolved): the badge drops, Recent updates keeps the entry. Fires on
+  // mount-if-completed and on the transition; steady state never refires
+  // because the dep is the status value, not the card object.
+  useEffect(() => {
+    if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
+  }, [cardId, card?.status, rpc]);
   useEffect(() => {
     if (!inboxEventId || !inboxEvent) return;
     inboxEventRef.current?.scrollIntoView({ block: "nearest" });

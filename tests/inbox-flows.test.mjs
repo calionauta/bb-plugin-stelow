@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "../lib/inbox-events.mjs";
+import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents, countsForInboxBadge, COMPLETED_BADGE_DAYS } from "../lib/inbox-events.mjs";
 
 const db = new Database(":memory:");
 db.exec(`
@@ -52,6 +52,21 @@ assert.equal(resolveActionInboxEvents(db, "card_2", 603, []), 0, "empty kind lis
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_2");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_1");
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events").get().count, 0, "deleting a card cascades to its Inbox history");
+
+// Badge rule: unresolved actions always count; completions count only
+// while unseen and fresh; archived never counts; seen is not resolved.
+const NOW = 1_000_000_000;
+const DAY = 86_400_000;
+const action = { kind: "question", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: NOW - 30 * DAY };
+assert.equal(countsForInboxBadge(action, NOW), true, "unresolved action counts even when read and old");
+assert.equal(countsForInboxBadge({ ...action, resolvedAt: NOW }, NOW), false, "resolved action stops counting");
+assert.equal(countsForInboxBadge({ ...action, archivedAt: NOW }, NOW), false, "archived action stops counting");
+const freshDone = { kind: "completed", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: NOW - DAY };
+assert.equal(countsForInboxBadge(freshDone, NOW), true, "unseen recent completion counts");
+assert.equal(countsForInboxBadge({ ...freshDone, readAt: NOW }, NOW), false, "seen completion stops counting but stays listed");
+assert.equal(countsForInboxBadge({ ...freshDone, occurredAt: NOW - (COMPLETED_BADGE_DAYS + 1) * DAY }, NOW), false, "stale completion never inflates the badge");
+assert.equal(countsForInboxBadge({ ...freshDone, archivedAt: NOW }, NOW), false, "archived completion stops counting");
+assert.equal(countsForInboxBadge({ ...freshDone, occurredAt: NOW + DAY }, NOW), false, "future-dated completion does not count");
 
 db.close();
 

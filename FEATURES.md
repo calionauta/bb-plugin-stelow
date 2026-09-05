@@ -46,6 +46,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Inbox** (`InboxPanel`, `listNotifications`). Needs-you
   (question/error/paused), recent completions, resolved history,
   archived; per-item read/archive/restore; deep-links into card+event.
+  The badge counts unresolved actions plus unseen recent completions
+  (7-day window); opening a completed card marks it seen, never resolved.
 - **Structured questions** (`ask`, `answerQuestion`,
   `answerExpiredQuestion`, `QuestionForm`, `AwaitingAnswerBanner`).
   Blocking single/multi-choice asks; timed-out asks stay answerable on
