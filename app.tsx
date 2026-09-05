@@ -201,8 +201,6 @@ function researchColumnOf(card: Pick<CardItem, "status">): string {
 type StelowTrack = "inbox" | "work" | "research";
 // Single source for tracks: the tab bar, the router, and every navigation
 // helper read from here. Renaming a track (or reordering tabs) is one line.
-// The panel itself keeps the legacy "board" id/path so existing deep links
-// and thread actions keep resolving; tracks live in the subPath.
 const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
   { key: "inbox", title: "Inbox", icon: "Mail", rootSubPath: "inbox" },
   { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
@@ -225,7 +223,8 @@ function inboxCardSubPath(cardId: string, eventId: string): string {
 // Panel identity lives here, not scattered across call sites: every
 // navigation flows through goToTrack / goToCard / goToInboxCard, so the
 // panel id, track routes, and card URLs change in exactly one place each.
-const STELOW_PANEL_ID = "board";
+const STELOW_PANEL_ID = "stelow";
+const STELOW_PANEL_PATH = "stelow";
 type BbNavigate = ReturnType<typeof useBbNavigate>;
 function goToTrack(navigate: BbNavigate, track: StelowTrack): void {
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: trackRootSubPath(track) });
@@ -1119,15 +1118,14 @@ const STORAGE_KEYS = {
 type ParsedStelowRoute =
   | { kind: "track"; track: StelowTrack }
   | { kind: "card"; cardId: string; eventId: string | null; origin: StelowTrack }
-  | { kind: "legacy-card"; cardId: string; eventId: string | null };
+  | { kind: "bare-card"; cardId: string; eventId: string | null };
 
-// One panel, three tracks. Grammar (all under the legacy "board" path so
-// existing deep links keep resolving):
-//   "" | "work"                  -> Work board (default tab)
+// One panel, three tracks. Grammar (routes are panel-relative):
+//   "" | "work"                  -> Work board ("" reopens the last tab)
 //   "inbox"                      -> Inbox list
 //   "research"                   -> Research board
 //   "<track>/card/<id>[/event/]" -> card detail, back returns to <track>
-//   "card/<id>[/event/]"         -> legacy pre-tabs link: kind is resolved
+//   "card/<id>[/event/]"         -> trackless link: kind is resolved
 //                                  live, then rendered with back to its track.
 function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   const normalized = subPath.replace(/^\/+|\/+$/g, "");
@@ -1137,7 +1135,7 @@ function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   let match = normalized.match(/^(inbox|work|research)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, origin: match[1] as StelowTrack };
   match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
-  if (match) return { kind: "legacy-card", cardId: match[1]!, eventId: match[2] ?? null };
+  if (match) return { kind: "bare-card", cardId: match[1]!, eventId: match[2] ?? null };
   return { kind: "track", track: "work" };
 }
 
@@ -1185,10 +1183,10 @@ function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
   );
 }
 
-// Legacy pre-tabs deep link (board/card/<id>): the track is unknown until
+// Bare card link (card/<id> without a track prefix): the track is unknown until
 // the card loads, so resolve the kind live and render with back to its
 // track. New code always links track-prefixed routes instead.
-function LegacyCardRoute({ cardId, eventId, navigate }: {
+function BareCardRoute({ cardId, eventId, navigate }: {
   cardId: string; eventId: string | null; navigate: ReturnType<typeof useBbNavigate>;
 }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -1237,8 +1235,8 @@ function StelowPanel({ subPath }: { subPath: string }) {
   if (route.kind === "card") {
     return <StelowCardDetail cardId={route.cardId} eventId={route.eventId} backTrack={route.origin} navigate={navigate} />;
   }
-  if (route.kind === "legacy-card") {
-    return <LegacyCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
+  if (route.kind === "bare-card") {
+    return <BareCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
   }
   // The bare root reopens the last visited track; explicit track routes
   // always win (otherwise clicking Work while lastTab is Research would
@@ -3649,7 +3647,7 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
   );
 }
 
-function OpenStelowBoardAction({ threadId }: { threadId: string }) {
+function OpenStelowAction({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const [target, setTarget] = useState<{ cardId: string; kind: "delivery" | "research" } | null>(null);
@@ -3687,24 +3685,23 @@ function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: Plug
 }
 
 export default definePluginApp((app) => {
-  // One sidebar row for the whole plugin. The legacy "board" id/path is
-  // kept so existing deep links and thread actions keep resolving; inbox,
-  // work, and research live on as subPath tracks (see STELOW_TRACKS).
+  // One sidebar row for the whole plugin. Inbox, work, and research live
+  // on as subPath tracks (see STELOW_TRACKS).
   // The badge counts what matters: unresolved inbox action items.
   // Sidebar icon must come from BB's HugeIcons alias list (verified in the
   // app bundle): Star is the stellar mark. Unknown names silently fall back
   // to a generic icon — that fallback is the divided square.
   app.slots.navPanel({
-    id: "board",
+    id: STELOW_PANEL_ID,
     title: "Stelow",
     icon: "Star",
-    path: "board",
+    path: STELOW_PANEL_PATH,
     component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
   app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow work item", icon: "Columns2", component: CardDrawerAdapter });
-  app.slots.experimental_threadHeaderAction({ id: "open-stelow-board", title: "Open Stelow Work", component: OpenStelowBoardAction });
+  app.slots.experimental_threadHeaderAction({ id: "open-stelow", title: "Open Stelow", component: OpenStelowAction });
 
   app.slots.messageDirective({
     id: "stelow-artifact",

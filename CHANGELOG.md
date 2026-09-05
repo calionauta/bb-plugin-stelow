@@ -34,6 +34,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Panel drops the board legacy.** Single panel id/path is now
+  `stelow` (was `board`); track routes, thread actions, and comments
+  no longer reference it. Old panel URLs are not preserved —
+  early development, no backward-compat tax.
 - **Timeline count links to its artifacts.** The count is now its own
   button (navigation and files no longer share a chip); it opens the
   Artifacts section and scrolls to it. Stage chips meet touch targets
