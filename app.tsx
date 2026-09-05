@@ -3637,10 +3637,13 @@ export default definePluginApp((app) => {
   // kept so existing deep links and thread actions keep resolving; inbox,
   // work, and research live on as subPath tracks (see STELOW_TRACKS).
   // The badge counts what matters: unresolved inbox action items.
+  // Sidebar icon must come from BB's HugeIcons alias list (verified in the
+  // app bundle): Star is the stellar mark. Unknown names silently fall back
+  // to a generic icon — that fallback is the divided square.
   app.slots.navPanel({
     id: "board",
     title: "Stelow",
-    icon: "Sparkles",
+    icon: "Star",
     path: "board",
     component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
