@@ -2898,16 +2898,16 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
               {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} /> : null}
             </CardDisclosure>
 
-            {detail && detail.artifacts.length > 0 ? (
-              <CardDisclosure title="Artifacts" hint={`${detail.artifacts.length}`}>
+            <CardDisclosure title="Artifacts" hint={detail ? `${detail.artifacts.length}` : "produced files"}>
+              {detail ? (
                 <ArtifactGroups
                   artifacts={detail.artifacts}
                   workspaceKind={card.workspaceKind}
                   fileEnvironmentId={detail.fileEnvironmentId}
                   onView={(file) => setViewerFile(file)}
                 />
-              </CardDisclosure>
-            ) : null}
+              ) : <p className="text-xs text-muted-foreground">Loading…</p>}
+            </CardDisclosure>
 
             <CardDisclosure
               title="Manage"
