@@ -841,11 +841,8 @@ function BoardPanel() {
               {inbox.length > 0 ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">{inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention</p> : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <div role="group" aria-label="Build view" className="col-span-2 grid h-11 w-full grid-cols-2 gap-1 rounded-md border bg-background p-1 shadow-sm sm:w-56 sm:shrink-0">
-                <button onClick={() => setViewMode("board")} aria-pressed={viewMode === "board"} className={`inline-flex h-full w-full cursor-pointer items-center justify-center rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "board" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>Board</button>
-                <button onClick={() => setViewMode("list")} aria-pressed={viewMode === "list"} className={`inline-flex h-full w-full cursor-pointer items-center justify-center rounded-[5px] px-3 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${viewMode === "list" ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>List</button>
-              </div>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>New card</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing">Presets</Button>
               {githubStatus?.pluginAvailable ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
               ) : null}
@@ -907,10 +904,11 @@ function BoardPanel() {
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
                   <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
-                  <div className="sm:col-span-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Agent configuration</span>
-                    <span>{workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ")}</span>
-                    <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={() => setBoardPresetsOpen(true)}>Configure presets</Button>
+                  <div className="sm:col-span-2">
+                    <AgentConfigBox
+                      lines={workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`)}
+                      onConfigure={() => setBoardPresetsOpen(true)}
+                    />
                   </div>
                 </div>
               </details>
@@ -999,24 +997,27 @@ function BoardPanel() {
             onChanged={() => load(boardProjectId ?? routeProjectId)}
           />
 
-          <div className="border-b pb-3">
-            <FiltersBar
-              projects={projects}
-              stageOptions={stageOptions}
-              filterProjectId={filterProjectId}
-              filterStage={filterStage}
-              filterIntent={filterIntent}
-              filterStatus={filterStatus}
-              filterActivity={filterActivity}
-              filterAttention={filterAttention}
-              onProject={setFilterProjectId}
-              onStage={setFilterStage}
-              onIntent={setFilterIntent}
-              onStatus={setFilterStatus}
-              onActivity={setFilterActivity}
-              onAttention={setFilterAttention}
-              onReset={() => { setFilterProjectId("all"); setFilterStage("all"); setFilterIntent("all"); setFilterStatus("all"); setFilterActivity("all"); setFilterAttention(false); }}
-            />
+          <div className="flex items-start gap-2 border-b pb-3">
+            <div className="min-w-0 flex-1">
+              <FiltersBar
+                projects={projects}
+                stageOptions={stageOptions}
+                filterProjectId={filterProjectId}
+                filterStage={filterStage}
+                filterIntent={filterIntent}
+                filterStatus={filterStatus}
+                filterActivity={filterActivity}
+                filterAttention={filterAttention}
+                onProject={setFilterProjectId}
+                onStage={setFilterStage}
+                onIntent={setFilterIntent}
+                onStatus={setFilterStatus}
+                onActivity={setFilterActivity}
+                onAttention={setFilterAttention}
+                onReset={() => { setFilterProjectId("all"); setFilterStage("all"); setFilterIntent("all"); setFilterStatus("all"); setFilterActivity("all"); setFilterAttention(false); }}
+              />
+            </div>
+            <ViewToggle view={viewMode} onChange={setViewMode} label="Build cards view" />
           </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading Stelow…</p> : null}
           {cards.length === 0 && !loading ? (
@@ -1086,6 +1087,7 @@ function ResearchPanel() {
   const [createOpen, setCreateOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
 
@@ -1117,7 +1119,6 @@ function ResearchPanel() {
   useDebouncedRealtime(["card-state", "board-changed"], () => void load(researchProjectId ?? routeProjectId));
 
   const strategyLabelById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
-  const selectedStrategy = strategies.find((entry) => entry.id === strategy) ?? null;
   const activeProjectId = researchProjectId ?? routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
   // Research has its own band default (like each delivery phase). Unset means
@@ -1186,6 +1187,7 @@ function ResearchPanel() {
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}>New research</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the research band default">Presets</Button>
             </div>
           </header>
 
@@ -1217,19 +1219,17 @@ function ResearchPanel() {
             <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new research</DialogTitle>
-                <DialogDescription>Describe the question or topic to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
+                <DialogDescription>Pick a strategy below, then describe what to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4">
                 <div className="grid gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Strategy</span>
+                  <span className="text-xs font-medium text-foreground">Choose a strategy</span>
                   <StrategyPicker strategies={strategies} value={strategy} onChange={setStrategy} groupName="strategy-pick" />
-                  <p className="text-xs text-muted-foreground" aria-live="polite">{selectedStrategy ? `Selected: ${selectedStrategy.label}` : "Choose a strategy above to continue."}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">Agent configuration</span>
-                  <span>research: {effectiveResearchPreset?.name ?? "Default"}{researchBandPreset ? "" : " (board default)"}</span>
-                  <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={() => setResearchPresetsOpen(true)}>Configure presets</Button>
-                </div>
+                <AgentConfigBox
+                  lines={[`Research runs on ${effectiveResearchPreset?.name ?? "Default"}${researchBandPreset ? "" : " (board default)"}`]}
+                  onConfigure={() => setResearchPresetsOpen(true)}
+                />
                 <NewThreadComposer
                   defaultProjectId={activeProjectId ?? undefined}
                   defaultProviderId={effectiveResearchPreset?.providerId}
@@ -1254,31 +1254,28 @@ function ResearchPanel() {
             onChanged={() => load(researchProjectId ?? routeProjectId)}
           />
 
-          <div className="border-b pb-3">
-            <FiltersBar
-              projects={projects}
-              filterProjectId={filterProjectId}
-              filterAttention={filterAttention}
-              onProject={setFilterProjectId}
-              onAttention={setFilterAttention}
-              onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
-            />
+          <div className="flex items-start gap-2 border-b pb-3">
+            <div className="min-w-0 flex-1">
+              <FiltersBar
+                projects={projects}
+                filterProjectId={filterProjectId}
+                filterAttention={filterAttention}
+                onProject={setFilterProjectId}
+                onAttention={setFilterAttention}
+                onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
+              />
+            </div>
+            <ViewToggle view={viewMode} onChange={setViewMode} label="Research cards view" />
           </div>
           {loading ? <p className="text-sm text-muted-foreground">Loading research…</p> : null}
-          {cards.length === 0 && !loading ? (
-            <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
-              <h2 className="text-sm font-semibold text-foreground">Understand before you build</h2>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Ask a question or describe what to investigate — opportunity mapping, jobs to be done, market analysis. Ranked opportunities become {trackTitle("build")} cards.</p>
-              <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
-                <Button onClick={() => setCreateOpen(true)}>Start new research</Button>
-              </div>
-            </section>
-          ) : null}
 
+          {viewMode === "board" ? (
           <p className="text-xs text-muted-foreground">
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
+          ) : null}
+          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} /> : (
           <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: RESEARCH_COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -1293,6 +1290,7 @@ function ResearchPanel() {
               />
             ))}
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -1520,7 +1518,11 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
         ) : null}
       </div>
       <p className="text-xs text-muted-foreground" aria-live="polite">
-        {strategies.length === 0 ? "Loading strategies…" : `${visible.length} of ${strategies.length} strategies`}
+        {strategies.length === 0
+          ? "Loading strategies…"
+          : needle.length > 0
+            ? `${visible.length} of ${strategies.length} strategies`
+            : `${strategies.length} strategies`}
       </p>
       {visible.length === 0 && strategies.length > 0 ? (
         <div className="rounded-md border border-dashed p-4 text-center">
@@ -1561,6 +1563,25 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           })}
         </fieldset>
       )}
+    </div>
+  );
+}
+
+// Agent configuration as its own block (not inline muted text): which
+// agent runs, with a Configure entry point. Shared by the Build settings
+// and the research creation dialog so it reads as one configuration.
+function AgentConfigBox({ lines, onConfigure }: { lines: string[]; onConfigure: () => void }) {
+  return (
+    <div className="rounded-md border bg-muted/30 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-foreground">Agent configuration</span>
+        <Button size="sm" variant="outline" className="shrink-0" onClick={onConfigure}>Configure presets</Button>
+      </div>
+      <ul className="mt-0.5 space-y-0.5">
+        {lines.map((line) => (
+          <li key={line} className="text-xs text-muted-foreground">{line}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -1681,6 +1702,41 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
       </select>
     </label>
   );
+}
+
+// Quiet view switcher shared by both boards. Icon-only and chromeless on
+// purpose: changing how the cards below render is a view preference, not an
+// action — so it lives beside the filters, never in the CTA row, and never
+// looks like a primary button.
+function ViewToggle({ view, onChange, label }: { view: "board" | "list"; onChange: (view: "board" | "list") => void; label: string }) {
+  const options = [
+    { value: "board" as const, title: "Board view", icon: "GridView" as const },
+    { value: "list" as const, title: "List view", icon: "ListView" as const },
+  ];
+  return (
+    <div role="group" aria-label={label} className="flex shrink-0 items-center">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          onClick={() => onChange(option.value)}
+          aria-pressed={view === option.value}
+          title={option.title}
+          aria-label={option.title}
+          className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${view === option.value ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
+        >
+          <Icon name={option.icon} className="h-4 w-4" aria-hidden />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ResearchList({ groups, navigate, strategyLabelById }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; strategyLabelById: Map<string, string> }) {
+  return <div className="space-y-5">{RESEARCH_COLUMNS.map((column) => {
+    const cards = groups[column] ?? [];
+    if (!cards.length) return null;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{RESEARCH_COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="space-y-2">{cards.map((card) => <ResearchCard key={card.id} card={card} strategyLabel={joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById)} />)}</div></section>;
+  })}</div>;
 }
 
 function BuildList({ groups, navigate }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate> }) {

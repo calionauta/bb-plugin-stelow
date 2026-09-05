@@ -683,7 +683,9 @@ export function PersistentResponsiveDrawerShell({
         role="dialog"
         tabIndex={-1}
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mt-24 flex max-h-[92dvh] flex-col rounded-t-xl border bg-background outline-none",
+          // Floating sheet: visible backdrop margins on every side, not an
+          // edge-to-edge panel. Applies to all compact dialogs/menus at once.
+          "fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-50 flex max-h-[92dvh] flex-col rounded-2xl border bg-background shadow-xl outline-none",
           contentClassName,
         )}
         style={{

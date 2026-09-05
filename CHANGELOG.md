@@ -10,6 +10,17 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Board/List on both boards.** Research gains the list view; the switch
+  is now a quiet shared icon toggle beside the filters (a view
+  preference, not a CTA) instead of a boxed segment next to the action
+  buttons. The redundant Research empty-state hero is gone — first-run
+  guidance lives in the tour.
+- **Direct preset access.** Build and Research headers gain a Presets
+  button opening the preset manager without starting anything; agent
+  configuration in both creation dialogs is now its own block instead
+  of inline text.
+- **Floating mobile sheets.** Compact dialogs render as floating cards
+  with backdrop margins on every side, not edge-to-edge panels.
 - **Visual strategy picker.** Choosing a research strategy is now emoji
   radio-cards (name + one-line summary) with instant search over label,
   summary, and keywords — shared by the creation modal and "Explore

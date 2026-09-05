@@ -42,7 +42,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
   (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their
   stage's phase. Columns collapse (persisted); cards move via drag-drop.
-- **List view.** Same cards grouped by column, for narrow screens.
+- **List view.** Same cards grouped by column, for narrow screens —
+  on both boards, via a quiet icon toggle beside the filters (a view
+  preference, not a CTA).
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
   needs-attention + reset. One shared bar: project + attention are the
   common facets, delivery adds the rest by config — Research renders the
