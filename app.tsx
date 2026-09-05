@@ -833,7 +833,7 @@ function BoardPanel() {
                       <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="import-assignee">Assignee</label>
                       <select
                         id="import-assignee"
-                        className="h-9 min-h-11 cursor-pointer rounded-md border bg-background px-2 text-sm"
+                        className="h-11 cursor-pointer rounded-md border bg-background px-2 text-sm"
                         value={importAssignee}
                         onChange={(event) => setImportAssignee(event.target.value)}
                       >
