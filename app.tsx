@@ -3701,13 +3701,14 @@ export default definePluginApp((app) => {
   // One sidebar row for the whole plugin. Inbox, work, and research live
   // on as subPath tracks (see STELOW_TRACKS).
   // The badge counts what matters: unresolved inbox action items.
-  // Sidebar icon must come from BB's HugeIcons alias list (verified in the
-  // app bundle): Star is the stellar mark. Unknown names silently fall back
-  // to a generic icon — that fallback is the divided square.
+  // Sidebar icon must be one of BB's ~70 host icon aliases (only map in
+  // the app bundle): Inbox/Columns2/Star/Sparkles are NOT in it and fall
+  // back to the generic divided-square icon. Workflow is. (Tab icons are
+  // unaffected — they render from the plugin's own HugeIcons set.)
   app.slots.navPanel({
     id: STELOW_PANEL_ID,
     title: "Stelow",
-    icon: "Star",
+    icon: "Workflow",
     path: STELOW_PANEL_PATH,
     component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
