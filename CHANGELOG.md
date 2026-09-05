@@ -10,6 +10,18 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Shared tours for Inbox, Work, and Research.** One `Tour` stepper for
+  all three tracks: full steps on first use, a one-line summary bar once
+  content exists, a quiet reopen once dismissed (per-track localStorage).
+  Every step may carry its own primary action, rendered in the content
+  zone while navigation owns a fixed footer row. Inbox teaches with a
+  ghost sample row instead of a seeded notification.
+- **Unified filters.** `FiltersBar` with optional facets: project +
+  attention shared by both boards, delivery adding stage/type/status/
+  activity by config. Research drops its forked filter row for the
+  identical popover, pills, and checkbox. The popover dismisses on
+  outside click or Escape; selections apply live.
+
 - **Work tour.** First-run progressive disclosure on the Work board: a
   3-step tour on the empty state (start work, per-phase agents with the
   live routing, tune later), collapsing to a one-line agent routing bar
