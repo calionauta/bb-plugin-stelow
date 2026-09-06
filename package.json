@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.1.52",
+  "version": "0.1.53",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
@@ -43,9 +43,10 @@
     "build": "bb plugin build && node scripts/postbuild.mjs",
     "reload": "bb plugin reload stelow",
     "build:reload": "npm run build && npm run reload",
-    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:question-batch && npm run test:github-lists && npm run test:promote && npm run test:research && npm run test:worker-ledger && npm run test:workflow-lineage && npm run test:skills-sync && npm run test:skills-verify && npm run test:skills-tables",
+    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:question-batch && npm run test:question-state && npm run test:github-lists && npm run test:promote && npm run test:research && npm run test:worker-ledger && npm run test:workflow-lineage && npm run test:skills-sync && npm run test:skills-verify && npm run test:skills-tables",
     "test:artifacts": "node tests/artifact-manifest.test.mjs",
     "test:ask-cancel": "node tests/ask-cancel.test.mjs",
+    "test:question-state": "node tests/card-question-state.test.mjs",
     "test:question-batch": "node tests/question-batch.test.mjs",
     "test:github-lists": "node tests/github-lists.test.mjs",
     "test:promote": "node tests/promote-card.test.mjs",
