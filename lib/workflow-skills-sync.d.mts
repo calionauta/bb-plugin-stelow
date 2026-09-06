@@ -10,12 +10,12 @@ export interface SyncResult {
 
 export function syncWorkflowSkills(
   targetDir: string,
-  opts?: { log?: (msg: string) => void },
+  opts?: { log?: (msg: string) => void; statePath?: string },
 ): Promise<SyncResult>;
 
 export function syncHelperScript(
   repoRoot: string,
-  opts?: { log?: (msg: string) => void },
+  opts?: { log?: (msg: string) => void; statePath?: string },
 ): Promise<SyncResult>;
 
 export function gitBlobSha(content: Uint8Array | string): string;

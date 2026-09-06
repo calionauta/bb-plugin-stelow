@@ -4221,7 +4221,7 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
     ? options.filter((o): o is { label: string; description: string } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "" }))
     : [];
   // Batch payloads (one `bb stelow ask` call with repeated --question groups)
-  // answer together; legacy single-question payloads keep their exact shape.
+  // answer together; single-question payloads keep their exact shape.
   const items: BatchItem[] = Array.isArray(payload.questions) && payload.questions.length > 0
     ? payload.questions.map((q, i) => ({ id: `q${i}`, title: interaction.title, prompt: typeof q?.question === "string" ? q.question : "", multiple: q?.multiple === true, options: clean(q?.options) })).filter((q) => q.options.length > 0)
     : [{ id: "q0", title: interaction.title, prompt: payload.question ?? interaction.title, multiple: payload.multiple === true, options: clean(payload.options) }];

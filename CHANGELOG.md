@@ -8,6 +8,16 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Removed
+
+- **Legacy data handling.** Dropped the v0.1.5 empty-id preset repair
+  (new presets can no longer be created without an id), the
+  `markCardSeen` column cleanup, the `awaiting-answer`-in-`status`
+  healing, and the retired-skills sweep — with the producers fixed or
+  gone, old rows have no path back in. Sync state path is now explicit
+  (`statePath` option; production points outside `skills/`, ending the
+  daemon log spam).
+
 ### Added
 
 - **Upstream delegation for advance mechanics.** `data/stelow` is now a

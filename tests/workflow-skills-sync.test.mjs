@@ -32,16 +32,34 @@ try {
   assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-entry"), "workflow entry is vendored");
   assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-router"), "workflow router is vendored");
 
-  // A rename must not leave legacy control-plane skills available in the
-  // plugin's manifest root.
-  for (const legacy of ["stelow-entry", "stelow-router"]) {
-    mkdirSync(join(target, legacy), { recursive: true });
-    writeFileSync(join(target, legacy, "SKILL.md"), "legacy");
+  // An explicit statePath keeps the target dir free of dotfiles (bb scans
+  // skills/ for candidates and warns on strays) without leaking state into
+  // a shared parent: each target still owns its own state.
+  const root2 = mkdtempSync(join(tmpdir(), "stelow-skills-root-"));
+  try {
+    const target2 = join(root2, "skills");
+    const state2 = join(root2, ".sync-state.json");
+    mkdirSync(target2, { recursive: true });
+    const a = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
+    assert.equal(a.errors.length, 0, "explicit-state sync has no errors");
+    assert.ok(a.created.length > 0, "explicit-state sync created files");
+    assert.ok(existsSync(state2), "state lands at the explicit path");
+    const strays = readdirSync(target2).filter((e) => e.startsWith("."));
+    assert.deepEqual(strays, [], "no dotfiles inside skills/");
+    const b = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
+    assert.equal(b.changed, false, "explicit-state second run is a no-op");
+    assert.equal(b.errors.length, 0, "explicit-state second run has no errors");
+
+    // Legacy in-skills state migrates once: it is consumed (no redundant
+    // re-download storm beyond the single migration run) and then removed.
+    const legacy = join(target2, ".sync-state.json");
+    writeFileSync(legacy, JSON.stringify({ "stelow-workflow-orchestrator/SKILL.md": "deadbeef" }));
+    const c = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
+    assert.equal(c.errors.length, 0, "migration run has no errors");
+    assert.ok(!existsSync(legacy), "legacy in-skills state removed after migration");
+  } finally {
+    rmSync(root2, { recursive: true, force: true });
   }
-  const cleanup = await syncWorkflowSkills(target, { log: () => {} });
-  assert.deepEqual(cleanup.removed.sort(), ["stelow-entry/", "stelow-router/"]);
-  assert.ok(!existsSync(join(target, "stelow-entry")), "legacy entry directory removed");
-  assert.ok(!existsSync(join(target, "stelow-router")), "legacy router directory removed");
 
   console.log(
     `workflow-skills-sync test ok: ${first.created.length} files synced from calionauta/stelow, idempotent on second run`,

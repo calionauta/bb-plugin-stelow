@@ -7,7 +7,7 @@ import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
-import { healQuestionStatus, isQuestionStatus, questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
+import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
@@ -20,7 +20,7 @@ import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS
 import { parseResearchBrief, checkBriefItems } from "./lib/research-brief.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
-import { WORKFLOW_SKILLS, syncWorkflowSkills } from "./lib/workflow-skills-sync.mjs";
+import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
 const HELPER_SCRIPT = (() => {
@@ -417,10 +417,7 @@ function array(value: unknown): unknown[] {
 
 function normalizeStatus(value: unknown): z.infer<typeof statusSchema> {
   const candidate = text(value, "pending");
-  // Legacy rows stored the question wait in `status` ("awaiting-answer"):
-  // heal to in-progress (work visibly began) instead of pending.
-  const healed = healQuestionStatus(candidate);
-  return statusSchema.safeParse(healed).success ? healed as z.infer<typeof statusSchema> : "pending";
+  return statusSchema.safeParse(candidate).success ? candidate as z.infer<typeof statusSchema> : "pending";
 }
 
 // Short human status for the GitHub completion summary (English).
@@ -644,7 +641,8 @@ function runHelper(args: string[], cwd: string, stateDir?: string): Promise<{ co
       env.STELOW_STATEDIR = stateDir;
       env.STELOW_STATE = nodeJoin(stateDir, "state.md");
     } else {
-      // Legacy fallback: single root state.md.
+      // Project-root mode: single state.md for workflows without a
+      // per-workflow state dir.
       env.STELOW_STATE = nodeJoin(cwd, "state.md");
     }
     const child = spawn("bash", [HELPER_SCRIPT, ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
@@ -858,20 +856,6 @@ export default async function plugin(bb: BbPluginApi) {
   ]);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
-  // markCardSeen (viewing clears attention) was deliberately removed: viewing
-  // is not resolving, and the columns sat permanently NULL. Drop them where
-  // they exist; the attention checks below read presence, not timestamps.
-  // Fail-soft like the skills sync: leftover columns are harmless (nothing
-  // references them), but a failed plugin load is not.
-  for (const column of ["last_seen_completed_at", "last_seen_error_at", "last_seen_question_at"]) {
-    if (cardColumns.some((entry) => entry.name === column)) {
-      try {
-        db.exec(`ALTER TABLE cards DROP COLUMN ${column}`);
-      } catch (error) {
-        bb.log.warn(`stelow: could not drop ${column} (harmless): ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-  }
   if (!cardColumns.some((column) => column.name === "display_name")) {
     db.exec("ALTER TABLE cards ADD COLUMN display_name TEXT");
   }
@@ -991,26 +975,6 @@ export default async function plugin(bb: BbPluginApi) {
   }
   if (!presetColumns.some((column) => column.name === "machine_id")) {
     db.exec("ALTER TABLE presets ADD COLUMN machine_id TEXT");
-  }
-
-  // v0.1.5's preset form sent an empty string instead of null for a new
-  // preset. SQLite accepts that as a primary key, but React treats it as
-  // falsey and can no longer distinguish editing it from creating a new one.
-  // Give any affected row a real id and preserve its card/phase assignments.
-  const legacyBlankPreset = db.prepare("SELECT * FROM presets WHERE id = ''").get() as PresetRow | undefined;
-  if (legacyBlankPreset) {
-    const replacementId = `preset_${Math.random().toString(36).slice(2, 10)}`;
-    const temporaryName = `__stelow_migrating_${Date.now()}__`;
-    db.transaction(() => {
-      // Free the unique name before copying the legacy row under its new id.
-      db.prepare("UPDATE presets SET name = ? WHERE id = ''").run(temporaryName);
-      db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-        replacementId, legacyBlankPreset.name, legacyBlankPreset.provider_id, legacyBlankPreset.model_id, legacyBlankPreset.reasoning_level, legacyBlankPreset.permission_mode, legacyBlankPreset.environment_kind, legacyBlankPreset.base_branch, legacyBlankPreset.machine_id, legacyBlankPreset.instructions, legacyBlankPreset.is_default, legacyBlankPreset.built_in, legacyBlankPreset.created_at, legacyBlankPreset.updated_at,
-      );
-      db.prepare("UPDATE card_presets SET preset_id = ? WHERE preset_id = ''").run(replacementId);
-      db.prepare("UPDATE stage_presets SET preset_id = ? WHERE preset_id = ''").run(replacementId);
-      db.prepare("DELETE FROM presets WHERE id = ''").run();
-    })();
   }
 
   const defaultPresetId = "preset_default";
@@ -1667,7 +1631,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         } else {
           resolveInboxEvents(card.id, now(), ["question"]);
           const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput };
-          if (card.status === "pending" || isQuestionStatus(card.status)) updates.status = "in-progress";
+          if (card.status === "pending") updates.status = "in-progress";
           updateCard(card.id, updates);
         }
       } else if (status === "idle" || status === "stopping") {
@@ -1845,8 +1809,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id });
       const status = thread.status as string;
       // Self-heal stale preset flags: a thread spawned BEFORE the current
-      // override was assigned provably predates it (covers legacy rows where
-      // worker_preset_id claims the override but the thread is ancestral).
+      // override was assigned provably predates it.
       // Never clears here — only spawn paths clear, so a flagged card keeps
       // offering Restart until it actually happens.
       try {
@@ -1873,10 +1836,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // Keep freshly-created cards in the Triage column (draft) while the
           // workflow is still at the triage stage, even though the thread is
           // already active. Only move to Running (in-progress) once the agent
-          // has advanced past triage (current_stage != triage). Legacy rows
-          // that stored the wait in `status` heal to in-progress (work began).
+          // has advanced past triage (current_stage != triage).
           const stillTriaging = currentStage === "triage" && card.status === "draft";
-          const nextStatus = stillTriaging ? "draft" : card.status === "draft" || isQuestionStatus(card.status) ? "in-progress" : card.status;
+          const nextStatus = stillTriaging ? "draft" : card.status === "draft" ? "in-progress" : card.status;
           const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput, status: nextStatus };
           if (currentStage !== card.stage) updates.stage = currentStage;
           updateCard(cardId, updates);
@@ -1900,8 +1862,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           updateCard(cardId, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: now(), last_error: null, stage: currentStage });
         } else {
           // Backfill last_idle_at on the first poll that observes an already-idle
-          // card missing it (legacy cards idled before the column existed), so
-          // it starts its own idle-stuck clock instead of falling through.
+          // card missing it, so it starts its own idle-stuck clock instead
+          // of falling through.
           // Suspicious idle: the worker just stopped (running -> idle) yet
           // produced no new output, no question, and no stage progress. That
           // is a manual stop or a stall — never a routine between-turn rest,
@@ -1993,14 +1955,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     skills: context.thread.title?.startsWith("Stelow: ") ? [...WORKFLOW_SKILLS] : [],
   }));
 
-  // Auto-sync the vendored Stelow workflow skills from the calionauta/stelow
-  // repo. Runs every 6h; fail-soft (network issues just log, never break the
-  // plugin). Product playbooks are NOT vendored — workers consume them from the
-  // agent skills hub (npx skills add calionauta/stelow).
+  // Auto-sync the vendored Stelow workflow skills + helper script from the
+  // calionauta/stelow repo. Runs every 6h; fail-soft (network issues just
+  // log, never break the plugin). Product playbooks are NOT vendored —
+  // workers consume them from the agent skills hub (npx skills add
+  // calionauta/stelow). State lives at the plugin root (never inside
+  // skills/, which bb scans for skill candidates).
   const SKILLS_SYNC_CRON = process.env.STELOW_SKILLS_SYNC_CRON ?? "33 */6 * * *";
+  const SYNC_STATE_FILE = nodeJoin(pluginDir, ".sync-state.json");
   bb.background.schedule("stelow-skills-sync", SKILLS_SYNC_CRON, async () => {
     try {
-      await syncWorkflowSkills(PLUGIN_SKILLS_DIR, { log: (m) => bb.log.info(m) });
+      await syncWorkflowSkills(PLUGIN_SKILLS_DIR, { log: (m) => bb.log.info(m), statePath: SYNC_STATE_FILE });
+      await syncHelperScript(pluginDir, { log: (m) => bb.log.info(m), statePath: SYNC_STATE_FILE });
     } catch (e) {
       bb.log.warn(`stelow-skills-sync failed (fail-soft): ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -2324,9 +2290,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // request for human action; idle-stuck, question and error are.
         const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
         // Idle-stuck uses last_idle_at when present (set on transition into
-        // idle). For cards that were already idle before that column existed
-        // (legacy), fall back to updated_at as the idle-onset proxy so they
-        // still surface as needing attention instead of staying invisible.
+        // idle), falling back to updated_at as the idle-onset proxy so cards
+        // without the timestamp still surface instead of staying invisible.
         const idleAt = (row.last_idle_at && row.last_idle_at > 0) ? row.last_idle_at : row.updated_at;
         const idleCandidate = activity === "idle"
           && row.worker_thread_id !== null
@@ -3071,7 +3036,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async upsertPreset({ id, name, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch, machineId, instructions }) {
       const trimmed = name.trim();
       if (!trimmed) return { preset: { id: "", name: "" } };
-      const effectiveId = id ?? `preset_${Math.random().toString(36).slice(2, 10)}`;
+      // Empty-string ids must never reach the database (SQLite accepts "" as
+      // a primary key, but the UI cannot distinguish editing it from creating
+      // a new one). Any falsey id mints a fresh one.
+      const effectiveId = id || `preset_${Math.random().toString(36).slice(2, 10)}`;
       const collision = db.prepare("SELECT id FROM presets WHERE LOWER(name) = LOWER(?) AND id != ?").get(trimmed, effectiveId) as { id: string } | undefined;
       if (collision) throw new Error(`A preset named "${trimmed}" already exists.`);
       const existing = db.prepare("SELECT id, built_in FROM presets WHERE id = ?").get(effectiveId) as { id: string; built_in: number } | undefined;
@@ -3228,8 +3196,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
         let requestFailed = false;
         const askedAt = Date.now();
-        // Single-question calls keep the legacy payload shape so older
-        // renderers and card UIs keep working; batches carry `questions`.
+        // Single-question calls keep the single-question payload shape;
+        // batches carry `questions`.
         const askInput = {
           threadId,
           rendererId: "stelow-question",
