@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
+import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport.js";
@@ -151,16 +152,11 @@ const STAGE_PRODUCES: Record<string, string> = {
 // Single-sourced from lib/artifact-groups (which also ranks artifact groups)
 // so the two never drift apart.
 // Which phase (band) each stage belongs to — shown as a visual group label on
-// the timeline. This is the SINGLE place in the client that names phase
-// groupings: they are an aggregation of stages, not a rival axis. KEEP IN SYNC
-// with server.ts STAGE_BANDS (preset routing) and test_bands.mjs.
-const STAGE_BAND: Record<string, string> = {
-  triage: "analysis", select: "analysis", setup: "analysis", context: "analysis", shape: "analysis",
-  critique: "planning", gate: "planning", scope: "planning", interface: "planning", "int-gate": "planning", selection: "planning", planning: "planning", "plan-gate": "planning",
-  execution: "execution", verification: "execution",
-  "diff-gate": "review", audit: "review",
-  research: "research",
-};
+// the timeline. Derived from lib/stage-bands.mjs (single source shared with
+// the server); they are an aggregation of stages, not a rival axis.
+const STAGE_BAND: Record<string, string> = Object.fromEntries(
+  Object.entries(STAGE_BANDS).flatMap(([band, stages]) => stages.map((stage) => [stage, band])),
+);
 const BAND_LABEL: Record<string, string> = { analysis: "Analyse", planning: "Plan", execution: "Execute", review: "Review", research: "Research" };
 // Board columns ARE the workflow phases + terminals. Active cards sit in the
 // column of their current phase (STAGE_BAND[stage]); a card is a board column,

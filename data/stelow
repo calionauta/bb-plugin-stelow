@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # scripts/stelow — SCOPE-2 helper (status / advance / doctor).
 #
-# Passive: reads/writes the project state.md under the current git root.
+# Passive: reads/writes one workflow state. Hosts may point at a per-workflow
+# directory with STELOW_STATEDIR/STELOW_STATE; root paths remain the legacy
+# standalone fallback.
 # Idempotent on bad input (never mutates on invalid candidate). Fail-closed.
 # No npm deps — POSIX sh + node only.
 #
@@ -14,35 +16,42 @@
 set -euo pipefail
 
 PROG="${0##*/}"
-# Project workflows derive their root from Git. Exploratory workspaces are not
-# repositories, so the plugin provides an explicit per-workflow state directory.
+# Project workflows derive their root from git. Non-repository workspaces
+# (exploratory dirs, CI checkouts without .git) provide an explicit
+# per-workflow state dir instead: <root>/.stelow/<date>/<dirHash>, so the
+# project root is three levels up.
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$ROOT" ]; then
   if [ -n "${STELOW_STATEDIR:-}" ]; then
-    # Per-workflow state dir is <root>/.stelow/<date>/<dirHash>, so the project
-    # root is three levels up. Project checkouts keep using `git rev-parse`.
     ROOT="$(cd "$STELOW_STATEDIR/../../.." && pwd)"
   else
-    echo "$PROG: not in a git repo (set STELOW_STATEDIR for an exploratory workspace)" >&2
+    echo "$PROG: not in a git repo (set STELOW_STATEDIR for a non-repository workspace)" >&2
     exit 2
   fi
 fi
-# State is PER-WORKFLOW: each card owns a dir .stelow/<date>/<dirHash> holding
-# its own state.md, invariants.json, and lock. The server sets STELOW_STATEDIR
-# to that workflow dir. When unset (manual/legacy CLI use from repo root), fall
-# back to the old single root state.md + .stelow/invariants.json.
 STATEDIR="${STELOW_STATEDIR:-$ROOT/.stelow}"
-STATE="${STELOW_STATE:-$STATEDIR/state.md}"
+if [ -n "${STELOW_STATE:-}" ]; then
+  STATE="$STELOW_STATE"
+elif [ -n "${STELOW_STATEDIR:-}" ]; then
+  STATE="$STATEDIR/state.md"
+else
+  STATE="$ROOT/state.md"
+fi
 INVARIANTS="$STATEDIR/invariants.json"
 TRANSITIONS="${STELOW_TRANSITIONS:-$ROOT/skills/stelow-workflow-orchestrator/references/transitions.md}"
 LOCKDIR="$STATEDIR/lock"
 LOCK_TTL_SEC="${STELOW_LOCK_TTL_SEC:-120}"
 
-mkdir -p "$STATEDIR"
+# NOTE: no mkdir here — read-only commands (status, doctor, dry runs) must
+# never mutate the filesystem. Mutating paths create what they need.
 
 # --- shared helpers ---------------------------------------------------------
 
 die() { echo "$PROG: $*" >&2; exit 1; }
+
+# Usage errors exit 2 (worker misuse); runtime failures exit 1. The split is
+# machine-readable contract: hosts retry 1, fix-and-rerun on 2.
+usage_error() { echo "$PROG: $*" >&2; exit 2; }
 
 yaml_get() {
   local key="$1" file="$2"
@@ -197,23 +206,32 @@ import sys, re
 stage, intent, path = sys.argv[1:4]
 text = open(path).read()
 m = re.search(r"^### " + re.escape(stage) + r"\s*\n(.*?)(?=^### |\Z)", text, re.MULTILINE | re.DOTALL)
-if not m: sys.exit(1)
+if not m:
+    sys.exit(1)
 allowed = []
 for line in m.group(1).splitlines():
     mm = re.match(r"^(next|accept|reject|rework|annotate):\s*(.*)$", line.strip())
-    if not mm: continue
-    # Trailing "(...)" segments are human comments ("(none — stays at triage)",
-    # "shape (shape rework — same stage)"), not stages. Strip them before
-    # tokenizing so comment words never leak into the allowed list.
-    value = re.sub(r"\(.*", "", mm.group(2))
+    if not mm:
+        continue
+    # Trailing prose comments (e.g. "(full rework path ...)") must never
+    # leak words as candidates: cut the line at the first paren.
+    value = mm.group(2).split("(", 1)[0]
     for token in re.split(r"[,\s]+", value):
         token = token.strip("[]\"'")
-        if token and re.match(r"^[a-z][a-z0-9-]*$", token): allowed.append(token)
+        if token and re.match(r"^[a-z][a-z0-9-]*$", token):
+            allowed.append(token)
+
+# Intent routes are canonical shortcuts through the full transition graph.
 route = re.search(r"^\*\*" + re.escape(intent) + r":\*\*\s*(.+)$", text, re.MULTILINE)
 if route:
     stages = [part.strip() for part in route.group(1).split("→")]
-    if stage in stages and stages.index(stage) + 1 < len(stages): allowed.append(stages[stages.index(stage) + 1])
-for candidate in dict.fromkeys(allowed): print(candidate)
+    if stage in stages:
+        index = stages.index(stage)
+        if index + 1 < len(stages):
+            allowed.append(stages[index + 1])
+
+for candidate in dict.fromkeys(allowed):
+    print(candidate)
 PY
 }
 
@@ -235,6 +253,7 @@ do_advance() {
   local intent allowed
   intent=$(yaml_get intent "$STATE" 2>/dev/null || echo "unknown")
   allowed=$(allowed_candidates_for_stage "$current" "$intent") || die "no transition defined from stage '$current'"
+
   # Mode-skipped passthroughs: when a gate/stage does not exist in the active
   # review mode, its successor becomes a legal target directly — otherwise the
   # worker deadlocks (refused AT the gate by the block below, rejected PAST it
@@ -267,7 +286,6 @@ do_advance() {
   # skip them (see Gate Conditions in transitions.md). Entering one parks the
   # worker waiting for a review nobody configured, so refuse with the
   # redirect instead of mutating. Unknown/missing review_mode skips enforcement.
-  review_mode=$(yaml_get review_mode "$STATE" 2>/dev/null || true)
   if [ -n "$review_mode" ]; then
     case "$candidate" in
       plan-gate)
@@ -285,20 +303,18 @@ do_advance() {
     esac
   fi
 
-  # pre-condition: required artifacts
-  python3 - "$current" "$ROOT" "$STATEDIR" "${STELOW_TRANSITIONS:-}" <<'PY' || die "pre-condition check failed"
+  # pre-condition: required artifacts, resolved against the workflow's own
+  # state dir first, then the repo root.
+  python3 - "$current" "$ROOT" "$STATEDIR" "$TRANSITIONS" <<'PY' || die "pre-condition check failed"
 import sys, re, os, glob
-current, root, statedir, trans_override = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-trans = trans_override if trans_override else os.path.join(root, "skills/stelow-workflow-orchestrator/references/transitions.md")
-trans = open(trans).read()
+current, root, statedir, transitions = sys.argv[1:5]
+trans = open(transitions).read()
 m = re.search(r"^### " + re.escape(current) + r"\s*\n(.*?)(?=^### |\Z)", trans, re.MULTILINE | re.DOTALL)
 if not m: sys.exit(0)
 for line in m.group(1).splitlines():
     am = re.match(r"^artifact:\s*(\S+)\s*$", line.strip())
     if am:
         pat = am.group(1)
-        # Resolve the glob relative to the workflow's own state dir first
-        # (.stelow/<date>/<dirHash>), then fall back to the repo root.
         bases = [statedir, root]
         if pat.startswith("/"): bases = [""]
         matched = False
@@ -311,73 +327,129 @@ for line in m.group(1).splitlines():
             print(f"missing required artifact: {pat} (expected under {statedir})", file=sys.stderr); sys.exit(1)
 PY
 
+  # dry run validates without side effects (no lock, no mutation)
+  if [ -n "${DRY_RUN:-}" ]; then
+    emit_advanced "$current" "$candidate" "true"
+    return 0
+  fi
+
+  mkdir -p "$STATEDIR"
   lock_acquire
 
-  # Mutate state.md and record every new Markdown file as produced by the
-  # source stage. A list preserves multiple outputs from the same stage.
-  python3 - "$candidate" "$current" "$ROOT" "$STATEDIR" "$STATE" <<'PY'
-import sys, re, os, glob, datetime
-candidate, current, root, statedir, path = sys.argv[1:6]
+  # mutate state.md frontmatter
+  python3 - "$current" "$candidate" "$STATE" "$STATEDIR" <<'PY'
+import sys, re, os, datetime, tempfile
+current, candidate, path, statedir = sys.argv[1:5]
 blob = open(path).read()
 m = re.match(r"^(---\n)(.*?)(\n---)(.*)$", blob, re.DOTALL)
 if not m:
     print("state.md: missing YAML frontmatter", file=sys.stderr); sys.exit(2)
 header_open, fm, header_close, body = m.group(1), m.group(2), m.group(3), m.group(4)
+lines = fm.splitlines()
+
+for index, line in enumerate(lines):
+    if re.match(r"^current_stage:\s*", line):
+        lines[index] = f"current_stage: {candidate}"
+        break
+else:
+    lines.append(f"current_stage: {candidate}")
+
+def block_bounds(key):
+    start = next((i for i, line in enumerate(lines) if line == f"{key}:" or line == f"{key}: []"), None)
+    if start is None:
+        return None, None
+    end = start + 1
+    while end < len(lines) and (lines[end].startswith(" ") or not lines[end]):
+        end += 1
+    return start, end
+
+stage_start, stage_end = block_bounds("stages")
+if stage_start is None:
+    lines.extend(["stages:", f"  {current}: done", f"  {candidate}: in-progress"])
+else:
+    stage_lines = lines[stage_start + 1:stage_end]
+    seen_current = seen_candidate = False
+    for index, line in enumerate(stage_lines):
+        match = re.match(r"^  ([a-z][a-z0-9-]*):\s*", line)
+        if not match:
+            continue
+        if match.group(1) == current:
+            stage_lines[index] = f"  {current}: {'in-progress' if current == candidate else 'done'}"
+            seen_current = True
+        if match.group(1) == candidate:
+            stage_lines[index] = f"  {candidate}: in-progress"
+            seen_candidate = True
+    if not seen_current and current != candidate:
+        stage_lines.append(f"  {current}: done")
+    if not seen_candidate:
+        stage_lines.append(f"  {candidate}: in-progress")
+    lines[stage_start + 1:stage_end] = stage_lines
+
+timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+history_entry = [f"  - stage: {current}", f"    at: {timestamp}", "    status: done"]
+history_start, history_end = block_bounds("history")
+if history_start is None:
+    lines.extend(["history:", *history_entry])
+elif lines[history_start] == "history: []":
+    lines[history_start:history_end] = ["history:", *history_entry]
+else:
+    lines[history_end:history_end] = history_entry
+
+# Advancing is the durable workflow boundary: record every Markdown file that
+# appeared since an earlier transition as produced by the stage being left.
+# The manifest is a list so a stage can own more than one artifact.
 artifacts = []
-block = re.search(r"^artifacts:\s*\n(.*?)(?=^\S|\Z)", fm, re.MULTILINE | re.DOTALL)
-if block:
+artifact_start, artifact_end = block_bounds("artifacts")
+if artifact_start is not None:
     entry = {}
-    for line in block.group(1).splitlines():
-        start = re.match(r"^  - ([a-z_]+):\s*(.+)$", line)
+    for line in lines[artifact_start + 1:artifact_end]:
+        item = re.match(r"^  - ([a-z_]+):\s*(.+)$", line)
         field = re.match(r"^    ([a-z_]+):\s*(.+)$", line)
-        if start:
+        if item:
             if entry: artifacts.append(entry)
-            entry = {start.group(1): start.group(2).strip()}
+            entry = {item.group(1): item.group(2).strip()}
         elif field and entry:
             entry[field.group(1)] = field.group(2).strip()
     if entry: artifacts.append(entry)
-known_paths = {entry.get("path") for entry in artifacts}
-timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
-for walk_root, _, filenames in os.walk(statedir):
-    for filename in filenames:
+known_paths = {item.get("path") for item in artifacts}
+for walk_root, _, files in os.walk(statedir):
+    for filename in files:
         if not filename.endswith(".md") or filename == "state.md": continue
-        full = os.path.join(walk_root, filename)
-        relative = os.path.relpath(full, root).replace(os.sep, "/")
+        absolute = os.path.join(walk_root, filename)
+        relative = os.path.relpath(absolute, os.getcwd()).replace(os.sep, "/")
         if relative in known_paths: continue
-        label = os.path.splitext(filename)[0].replace("_", " ").replace("-", " ").strip()
-        artifacts.append({"stage": current, "kind": "document", "label": label, "path": relative, "generated_at": timestamp})
+        stem = os.path.splitext(filename)[0].replace("_", " ").replace("-", " ").strip()
+        artifacts.append({"stage": current, "kind": "document", "label": stem, "path": relative, "generated_at": timestamp})
         known_paths.add(relative)
+manifest = ["artifacts:"]
+for item in artifacts:
+    manifest.extend([
+        f"  - stage: {item['stage']}",
+        f"    kind: {item.get('kind', 'document')}",
+        f"    label: {item.get('label', os.path.basename(item['path']))}",
+        f"    path: {item['path']}",
+        f"    generated_at: {item.get('generated_at', timestamp)}",
+    ])
+if artifact_start is None:
+    lines.extend(manifest)
+else:
+    lines[artifact_start:artifact_end] = manifest
 
-out = []
-in_artifacts = False
-cur_found = False
-for line in fm.splitlines():
-    if line == "artifacts:" or re.match(r"^artifacts:\s*.*$", line):
-        in_artifacts = True
-        continue
-    if in_artifacts:
-        if line.startswith(" ") or line == "":
-            continue
-        in_artifacts = False
-    mm = re.match(r"^current_stage:\s*(.*)$", line)
-    if mm:
-        out.append(f"current_stage: {candidate}"); cur_found = True
-        continue
-    out.append(line)
-if not cur_found:
-    out.append(f"current_stage: {candidate}")
-out.append("artifacts:")
-for entry in artifacts:
-    out.extend([f"  - stage: {entry['stage']}", f"    kind: {entry.get('kind', 'document')}", f"    label: {entry.get('label', os.path.basename(entry['path']))}", f"    path: {entry['path']}", f"    generated_at: {entry.get('generated_at', timestamp)}"])
-
-new_blob = header_open + "\n".join(out) + header_close + body
-open(path, "w").write(new_blob)
+new_blob = header_open + "\n".join(lines) + header_close + body
+fd, temporary = tempfile.mkstemp(prefix=".state.", dir=os.path.dirname(path) or ".", text=True)
+try:
+    with os.fdopen(fd, "w") as handle:
+        handle.write(new_blob)
+    os.replace(temporary, path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
 PY
 
   # append invariants
   python3 - "$candidate" "$INVARIANTS" <<'PY'
-import sys, os, json, datetime
-candidate, inv_path = sys.argv[1], sys.argv[2]
+import sys, os, json, datetime, tempfile
+candidate, inv_path = sys.argv[1:3]
 os.makedirs(os.path.dirname(inv_path), exist_ok=True)
 data = {}
 if os.path.exists(inv_path):
@@ -387,11 +459,36 @@ data.setdefault("history", [])
 data["history"].append({"stage": candidate,
                          "at": datetime.datetime.now(datetime.timezone.utc).isoformat()})
 data["current_stage"] = candidate
-open(inv_path, "w").write(json.dumps(data, indent=2, sort_keys=True) + "\n")
+fd, temporary = tempfile.mkstemp(prefix=".invariants.", dir=os.path.dirname(inv_path), text=True)
+try:
+    with os.fdopen(fd, "w") as handle:
+        handle.write(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    os.replace(temporary, inv_path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
 PY
 
   rm -rf "$LOCKDIR"
-  echo "$PROG: advanced to $candidate"
+  emit_advanced "$current" "$candidate" "false"
+}
+
+emit_advanced() {
+  local previous="$1" candidate="$2" dry="$3"
+  if [ -n "${JSON_OUT:-}" ]; then
+    python3 - "$previous" "$candidate" "$dry" <<'PY'
+import sys, json
+previous, candidate, dry = sys.argv[1:4]
+out = {"previous_stage": previous, "advanced_to": candidate}
+if dry == "true":
+    out["dry_run"] = True
+print(json.dumps(out, sort_keys=True))
+PY
+  elif [ "$dry" = "true" ]; then
+    echo "$PROG: would advance $previous -> $candidate"
+  else
+    echo "$PROG: advanced to $candidate"
+  fi
 }
 
 # --- doctor ------------------------------------------------------------------
@@ -457,21 +554,310 @@ else:
 PY
 }
 
+# --- seed --------------------------------------------------------------------
+
+# Mint a fresh per-workflow state dir (.stelow/<date>/<dirHash>/) with a
+# scaffolded state.md plus a stelow.json tracking entry. Prints the state
+# dir so callers export STELOW_STATEDIR for follow-up commands.
+do_seed() {
+  local name="" intent="" appetite="Core" review_mode="Auto" json=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --name) name="${2:-}"; shift 2 ;;
+      --intent) intent="${2:-}"; shift 2 ;;
+      --appetite) appetite="${2:-}"; shift 2 ;;
+      --review-mode) review_mode="${2:-}"; shift 2 ;;
+      --json) json="1"; shift ;;
+      *) usage_error "seed: unknown arg '$1' (try --help)" ;;    esac
+  done
+  [ -n "$name" ] || usage_error "seed requires --name <workflow-name>"
+  case "$intent" in
+    new-product|feature|bugfix|refactor|investigate) ;;
+    *) usage_error "seed requires --intent <new-product|feature|bugfix|refactor|investigate>" ;;
+  esac
+  case "$appetite" in
+    Lean|Core|Complete) ;;
+    *) usage_error "seed: --appetite must be Lean|Core|Complete" ;;
+  esac
+  [ -n "$review_mode" ] || usage_error "seed: --review-mode must be non-empty"
+  python3 - "$ROOT" "$STATEDIR" "$TRANSITIONS" "$name" "$intent" "$appetite" "$review_mode" "$json" <<'PY' || die "seed failed"
+import sys, os, re, json, secrets, datetime
+root, statedir, trans_path, name, intent, appetite, review_mode, want_json = sys.argv[1:9]
+if not os.path.exists(trans_path):
+    print(f"seed: transitions reference not found at {trans_path}", file=sys.stderr); sys.exit(1)
+text = open(trans_path).read()
+stages = [m.group(1) for m in re.finditer(r"^### (\S+)\s*$", text, re.MULTILINE)]
+if not stages:
+    print("seed: no stages in transitions reference", file=sys.stderr); sys.exit(1)
+first = "triage" if intent == "new-product" else "setup"
+if first not in stages:
+    print(f"seed: first stage '{first}' not in transitions reference", file=sys.stderr); sys.exit(1)
+date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+dirhash = "pw-%s-%s" % (secrets.token_hex(3), secrets.token_hex(3))
+statedir = os.path.join(statedir, date, dirhash)
+os.makedirs(statedir, exist_ok=True)
+fm = ["---", f"name: {name}", f"intent: {intent}", f"current_stage: {first}",
+      "status: active", "config:", f"  appetite: {appetite}",
+      f"  review_mode: {review_mode}", "  product_type: software", "stages:"]
+fm += [f"  {s}: pending" for s in stages]
+fm += ["artifacts: []", "history: []", "---", "", f"# {name}", ""]
+with open(os.path.join(statedir, "state.md"), "w") as handle:
+    handle.write("\n".join(fm))
+tracking_path = os.path.join(root, "stelow.json")
+tracking = {}
+if os.path.exists(tracking_path):
+    try: tracking = json.loads(open(tracking_path).read())
+    except Exception: tracking = {}
+if not isinstance(tracking.get("workflows"), list):
+    tracking["workflows"] = []
+entry = {"name": name, "description": "", "status": "in-progress", "cwd": root,
+         "dirHash": dirhash, "created": now, "updated": now,
+         "config": {"appetite": appetite, "review_mode": review_mode},
+         "stage": {"current_stage": first, "previous_stage": None,
+                   "transitioned_at": now,
+                   "history": [{"stage": first, "entered_at": now}]},
+         "phases": []}
+tracking["workflows"] = [w for w in tracking["workflows"] if w.get("name") != name]
+tracking["workflows"].append(entry)
+tracking.setdefault("$schema", "https://raw.githubusercontent.com/calionauta/stelow/main/stelow.schema.json")
+tracking.setdefault("version", "1.0")
+tracking.setdefault("created", now)
+tracking["updated"] = now
+fd, temporary = __import__("tempfile").mkstemp(prefix=".stelow.", dir=root)
+try:
+    with os.fdopen(fd, "w") as handle:
+        handle.write(json.dumps(tracking, indent=2, sort_keys=True) + "\n")
+    os.replace(temporary, tracking_path)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+if want_json:
+    print(json.dumps({"state": os.path.join(statedir, "state.md"), "statedir": statedir,
+                      "dirHash": dirhash, "created": now}, indent=2, sort_keys=True))
+else:
+    print(os.path.join(statedir, "state.md"))
+PY
+}
+
+# --- schema ------------------------------------------------------------------
+
+# Runtime introspection: the CLI documents itself as JSON so agents self-serve
+# without pre-stuffed docs. Keep in sync with the dispatch table below (the
+# schema test fails otherwise).
+do_schema() {
+  local want="${1:-}"
+  python3 - "$want" <<'PY'
+import json, sys
+want = sys.argv[1] if len(sys.argv) > 1 else ""
+commands = {
+  "status": {
+    "usage": "stelow status [--json]",
+    "flags": ["--json"],
+    "env": ["STELOW_STATE", "STELOW_STATEDIR", "STELOW_TRANSITIONS"],
+    "exit_codes": {"0": "ok", "1": "unreadable state (still prints ?-rows with exit 0; reserved)"},
+    "output": "text rows or {workflow, intent, current_stage, status, config, artifacts?, invariants?, lock}",
+  },
+  "advance": {
+    "usage": "stelow advance <candidate> [--dry-run] [--json]",
+    "flags": ["--dry-run", "--json"],
+    "env": ["STELOW_STATE", "STELOW_STATEDIR", "STELOW_TRANSITIONS", "STELOW_LOCK_TTL_SEC"],
+    "exit_codes": {"0": "advanced", "1": "invalid transition, pre-condition, lock held, or bad state", "2": "usage"},
+    "output": "'stelow: advanced to <stage>' or {previous_stage, advanced_to} with --json",
+  },
+  "doctor": {
+    "usage": "stelow doctor [--json]",
+    "flags": ["--json"],
+    "env": ["STELOW_STATE", "STELOW_STATEDIR", "STELOW_TRANSITIONS", "STELOW_LOCK_TTL_SEC"],
+    "exit_codes": {"0": "ok or warnings only", "1": "findings with severity error"},
+    "output": "text lines or {findings: [{severity, class, message}], ok}",
+  },
+  "seed": {
+    "usage": "stelow seed --name <n> --intent <i> [--appetite Lean|Core|Complete] [--review-mode M] [--json]",
+    "flags": ["--name", "--intent", "--appetite", "--review-mode", "--json"],
+    "env": ["STELOW_STATEDIR"],
+    "exit_codes": {"0": "seeded (prints state path)", "1": "seed failed", "2": "usage"},
+    "output": "state path or {state, statedir, dirHash, created} with --json",
+  },
+  "ask": {
+    "usage": "stelow ask --question <t> [--multiple] --option <label>... (repeat --question groups)",
+    "flags": ["--question", "--option", "--multiple"],
+    "env": ["STELOW_THREAD_ID", "STELOW_ASK_TIMEOUT_MS"],
+    "exit_codes": {"0": "submitted (answer JSON)", "1": "waiting (persisted) or explicit cancel", "2": "usage or unknown identity"},
+    "output": "answer JSON, or pending.json surviving under ask/ for host fulfillment",
+  },
+}
+if want and want not in commands:
+    print(f"schema: unknown command '{want}' (known: {', '.join(sorted(commands))})", file=sys.stderr)
+    sys.exit(2)
+print(json.dumps(commands[want] if want else commands, indent=2, sort_keys=True))
+PY
+}
+
+# --- ask ---------------------------------------------------------------------
+
+# File-handoff question protocol. Writes ask/pending.json, blocks until
+# ask/answer.json appears or the timeout lapses. Hosts fulfill by rendering
+# their own UI or by watching the directory — the CLI never renders.
+# Identity comes from STELOW_THREAD_ID (fallback BB_THREAD_ID) only; there
+# is no --thread flag (explicit ids get copied wrong — see plugin history).
+do_ask() {
+  local thread_id="${STELOW_THREAD_ID:-${BB_THREAD_ID:-}}"
+  [ -n "$thread_id" ] || usage_error "ask needs a worker identity: export STELOW_THREAD_ID (no --thread flag; identity is never copied by hand)"
+  local timeout_ms="${STELOW_ASK_TIMEOUT_MS:-3600000}"
+  case "$timeout_ms" in ''|*[!0-9]*) usage_error "ask: STELOW_ASK_TIMEOUT_MS must be a millisecond integer" ;; esac
+  local ask_dir="$STATEDIR/ask"
+  mkdir -p "$ask_dir"
+  python3 - "$ask_dir" "$thread_id" "$timeout_ms" "$@" <<'PY' || exit $?
+import sys, os, json, time, datetime
+ask_dir, thread_id, timeout_ms = sys.argv[1:4]
+timeout_ms = int(timeout_ms)
+argv = sys.argv[4:]
+
+def fail_usage(msg):
+    print(f"ask: {msg}", file=sys.stderr)
+    print("Usage: stelow ask --question <text> [--multiple] --option <label>... (repeat --question groups)", file=sys.stderr)
+    sys.exit(2)
+
+# --- parse groups (same grammar as every host adapter) ---
+groups = []
+current = None
+i = 0
+while i < len(argv):
+    arg = argv[i]
+    if arg == "--thread":
+        fail_usage("stelow ask takes no --thread; identity comes from STELOW_THREAD_ID")
+    elif arg == "--question":
+        i += 1
+        if i >= len(argv) or not argv[i].strip():
+            fail_usage("Each --question needs a non-empty text.")
+        current = {"question": argv[i], "multiple": False, "options": []}
+        groups.append(current)
+    elif arg == "--option":
+        i += 1
+        if current is None:
+            fail_usage("Options must follow a --question: --question <text> --option <label>...")
+        if i >= len(argv) or not argv[i].strip():
+            fail_usage("Each --option needs a non-empty label.")
+        current["options"].append({"label": argv[i], "description": ""})
+    elif arg == "--multiple":
+        if current is None:
+            fail_usage("--multiple must follow a --question.")
+        current["multiple"] = True
+    elif arg.startswith("--"):
+        fail_usage(f"unknown flag '{arg}'")
+    else:
+        fail_usage(f"unexpected positional '{arg}' (questions come from --question groups)")
+    i += 1
+if not groups:
+    fail_usage("at least one --question group is required")
+for index, group in enumerate(groups):
+    if len(group["options"]) < 2:
+        fail_usage(f"Question {index + 1} needs at least 2 --option labels.")
+
+def pending_path():
+    return os.path.join(ask_dir, "pending.json")
+
+def answer_path():
+    return os.path.join(ask_dir, "answer.json")
+
+def read_json(path):
+    try:
+        with open(path) as handle:
+            return json.load(handle)
+    except Exception:
+        return None
+
+def collect():
+    """Print a valid answer and consume it. Returns True when collected."""
+    answer = read_json(answer_path())
+    if not isinstance(answer, dict):
+        return False
+    if answer.get("cancelled") is True:
+        print(json.dumps(answer, sort_keys=True))
+        try: os.unlink(answer_path())
+        except OSError: pass
+        sys.exit(1)
+    answers = answer.get("answers")
+    if not isinstance(answers, dict) or not answers:
+        return False
+    print(json.dumps({"answers": answers}, sort_keys=True))
+    try: os.unlink(answer_path())
+    except OSError: pass
+    sys.exit(0)
+
+def pending_live():
+    """A pending file that has not timed out yet (or has no deadline)."""
+    pending = read_json(pending_path())
+    if not isinstance(pending, dict) or not isinstance(pending.get("questions"), list):
+        return None
+    asked_at = pending.get("asked_at_ms", 0)
+    timeout = pending.get("timeout_ms", 0)
+    try:
+        expired = timeout > 0 and (int(time.time() * 1000) - int(asked_at)) >= int(timeout)
+    except (TypeError, ValueError):
+        expired = False
+    return None if expired else pending
+
+# Re-run doubles as collect: an arrived answer wins over everything.
+collect()  # exits 0/1 when an answer is present
+live = pending_live()
+if live is not None:
+    asked_ago = int(time.time() - live.get("asked_at_ms", int(time.time() * 1000)) / 1000)
+    print(f"ask: question already pending (asked {asked_ago}s ago) — answer it, then re-run to collect", file=sys.stderr)
+    sys.exit(1)
+
+# Fresh (or expired) pending: stage it, clearing any stale answer.
+now_ms = int(time.time() * 1000)
+now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+pending = {
+    "questions": [{"id": f"q{index + 1}", **group} for index, group in enumerate(groups)],
+    "thread_id": thread_id,
+    "asked_at": now_iso,
+    "asked_at_ms": now_ms,
+    "timeout_ms": timeout_ms,
+}
+try: os.unlink(answer_path())
+except OSError: pass
+with open(pending_path(), "w") as handle:
+    handle.write(json.dumps(pending, indent=2, sort_keys=True) + "\n")
+
+# Block until an answer lands, the timeout lapses, or the pending file vanishes.
+deadline = now_ms + timeout_ms
+interval = 1.0 if timeout_ms >= 10000 else 0.1
+while True:
+    collect()  # exits 0/1 when an answer lands
+    if not os.path.exists(pending_path()):
+        print("ask: pending question was withdrawn; stopping", file=sys.stderr)
+        sys.exit(1)
+    if int(time.time() * 1000) >= deadline:
+        elapsed = max(1, round((int(time.time() * 1000) - now_ms) / 1000))
+        print(f"No response after {elapsed}s. STOP and wait: do NOT proceed with the workflow. "
+              f"The question is still pending (ask/pending.json) and remains answerable. "
+              f"When an answer is recorded, re-run this command to collect it.", file=sys.stderr)
+        sys.exit(1)
+    time.sleep(interval)
+PY
+}
+
 # --- dispatch ----------------------------------------------------------------
 
 usage() {
   cat <<EOF
-$PROG — SCOPE-2 helper (status / advance / doctor)
+$PROG — stelow workflow helper (status / advance / doctor / seed / schema)
 
 Usage:
   $PROG status [--json]
-  $PROG advance <candidate>
+  $PROG advance <candidate> [--dry-run] [--json]
   $PROG doctor [--json]
+  $PROG seed --name <n> --intent <i> [--appetite Lean|Core|Complete] [--review-mode M] [--json]
+  $PROG schema [command]
   $PROG --help
 
 State file:  $STATE
 Transitions: $TRANSITIONS
 Lock dir:    $LOCKDIR (TTL ${LOCK_TTL_SEC}s, override with STELOW_LOCK_TTL_SEC)
+Identity:    STELOW_THREAD_ID (ask only)
 EOF
 }
 
@@ -481,18 +867,40 @@ case "${1:-}" in
     case "${1:-}" in
       --json) status_json ;;
       "")     status_text ;;
-      *) die "status: unknown arg '$1'" ;;
+      *) usage_error "status: unknown arg '$1'" ;;
     esac
     ;;
   advance)
     shift
-    candidate="${1:-}"; [ -n "$candidate" ] || die "advance requires <candidate>"
+    candidate=""; DRY_RUN=""; JSON_OUT=""
+    for arg in "$@"; do
+      case "$arg" in
+        --dry-run) DRY_RUN="1" ;;
+        --json) JSON_OUT="1" ;;
+        --*) usage_error "advance: unknown flag '$arg'" ;;
+        *) if [ -n "$candidate" ]; then usage_error "advance takes exactly one <candidate>"; fi
+           candidate="$arg" ;;
+      esac
+    done
+    [ -n "$candidate" ] || usage_error "advance requires <candidate>"
     do_advance "$candidate"
+    ;;
+  seed)
+    shift
+    do_seed "$@"
+    ;;
+  schema)
+    shift
+    do_schema "${1:-}"
+    ;;
+  ask)
+    shift
+    do_ask "$@"
     ;;
   doctor)
     shift
     do_doctor "${1:-}"
     ;;
   -h|--help|help|"") usage ;;
-  *) die "unknown subcommand '$1' (try --help)" ;;
+  *) usage_error "unknown subcommand '$1' (try --help)" ;;
 esac

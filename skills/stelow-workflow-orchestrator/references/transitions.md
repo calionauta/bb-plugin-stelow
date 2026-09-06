@@ -20,19 +20,19 @@ after any change to verify.
 | 10 | triage | Initial assessment. Determine if this is a valid request. |
 | 15 | select | Item selection. Rank accepted items, user picks one. |
 | 20 | setup | Setup context. Explore codebase, gather requirements. |
-| 25 | context | Strategic context. Market analysis, JTBD, domain detection. |
+| 25 | context | Strategic context. Market analysis, JTBD, domain detection. Gated by `context:5` (appetite/review mode): Product Spec Gate+Auto skips; others use reduced ask. See `stages/context.md#context:5`. |
 | 40 | shape | Shape stage. Define appetite, hill chart, rabbit holes. |
 | 45 | critique | Plan critique. Pre-flight check before gate. |
-| 60 | gate | Gate review. Visual approval required. |
+| 60 | gate | Gate review. Visual approval via visual review required. Use `visual_review` tool (not bash). |
 | 70 | scope | Scope adjustment. Add/remove from IN/OUT after gate approval. |
-| 80 | interface | Interface alternatives. Appetite-scaled exploration. |
-| 90 | int-gate | Interface gate. Visual review of all interface proposals. |
-| 100 | selection | Interface selection. Human pick via structured question in Interface-Gates modes; LLM decides in `Auto` / `Product Spec Gate` (see `human-gates.md`). |
+| 80 | interface | Interface alternatives. Appetite-scaled exploration: 1, 3, or 5 proposals + hybrid. |
+| 90 | int-gate | Interface gate. Visual review of all interface proposals. Use `visual_review` tool (not bash). |
+| 100 | selection | Interface selection. Human pick via structured question in Interface-Gates modes; LLM decides in Auto / Product Spec Gate (see references/human-gates.md). |
 | 110 | planning | Tech planning. Typed scopes + sequencing. |
-| 115 | plan-gate | Tech plan gate. Visual review of spec-tech.md. |
+| 115 | plan-gate | Tech plan gate. Visual review of spec-tech.md via visual review. Only in Product Spec + Interface + Tech Review or Code Diff mode. |
 | 120 | execution | Implementation. Execute planned scopes. |
-| 150 | verification | Verification. Run full test suite, code review, UI audit. |
-| 175 | diff-gate | Code diff review. Visual review of working tree diff. |
+| 150 | verification | Verification. Run full test suite, code review, UI audit, browser testing. |
+| 175 | diff-gate | Code diff review. visual review review of working tree diff. Only in Product Spec + Interface + Tech Review + Code Diff mode. |
 | 200 | audit | Final audit. Verify all requirements met. |
 
 ---
@@ -185,7 +185,6 @@ gate:      requires_approval: true
 ```
 next:      verification
 accept:    verification
-reject:    execution
 rework:    shape    (full rework path — returns to shape)
 gate:      (none)
            supervisor: true (pi/supervisor pattern active)
@@ -281,9 +280,9 @@ Minimal pipelines (no stage skipped without a gate rule):
 
 ## Regeneration
 
-If you edit `stages.yaml`, regenerate this file:
+Regenerate from `stages.yaml` (never hand-edit the generated file):
 
 ```bash
-# The helper script handles this in SCOPE-2.
-# Until then, manually sync the transition table above.
+python3 scripts/generate-transitions.py
+python3 scripts/generate-transitions.py --check  # CI gate: fails on drift
 ```

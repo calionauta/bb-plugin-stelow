@@ -20,14 +20,17 @@ work on each update.
 - `skills/` is synced from `calionauta/stelow` and overwritten without
   warning. Never hand-edit it; fix methodology upstream and let the sync
   propagate (run it manually when urgent, then commit the result).
-- `data/stelow` is a plugin-owned fork of the upstream helper. Safe to edit.
+- `data/stelow` is a synced copy of upstream `scripts/stelow`
+  (`syncHelperScript`, same sha discipline as skills). Never hand-edit it;
+  port state-machine rules upstream and let the sync propagate.
 - `lib/` + `tests/` are owned. New state-machine logic belongs in `lib/`
   with a node test, following `inbox-events` / `ask-cancel` precedent —
   never inline-only in `server.ts` handlers.
 
 ## Transitions are enforced in one place
 
-Stage/mode rules live in `data/stelow` (`do_advance`). Every refusal must
+Stage/mode rules live upstream (`scripts/stelow` `do_advance`, mirrored
+in the vendored `transitions.md`). Every refusal must
 name a valid redirect — a refusal without an exit is a deadlock with a
 good error message. Verify all paths live with fixture `state.md` files
 before shipping guard changes.

@@ -10,6 +10,13 @@ and this project adheres to a single-version-per-release tag format
 
 ### Added
 
+- **Upstream delegation for advance mechanics.** `data/stelow` is now a
+  synced copy of upstream `scripts/stelow` (mode-skips, gate refusals
+  and non-git roots ported there first); the transitions mirror and its
+  fallbacks retire in favor of the vendored copy. New `bb stelow doctor`
+  passthrough; workflow contract tests pin template, board order and
+  transitions to the same 17 stages.
+
 - **Round files on research cards.** Every strategy round persists its
   native playbook output verbatim (one file per round, one per sub-step
   when a playbook fans out) and registers each in the manifest; the

@@ -13,6 +13,8 @@ import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
+import { STATE_TEMPLATE } from "./lib/state-template.mjs";
+import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/stage-bands.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { parseResearchBrief, checkBriefItems } from "./lib/research-brief.mjs";
@@ -34,18 +36,10 @@ const HELPER_SCRIPT = (() => {
 const PLUGIN_SKILLS_DIR = nodeJoin(pluginDir, "skills");
 const PLUGIN_ORCHESTRATOR_REF = nodeJoin(PLUGIN_SKILLS_DIR, "stelow-workflow-orchestrator", "references");
 
-const TRANSITIONS_REF = (() => {
-  const candidates = [
-    nodeJoin(PLUGIN_ORCHESTRATOR_REF, "transitions.md"),
-    nodeJoin(pluginDir, "references", "transitions.md"),
-    nodeJoin(pluginDir, "..", "references", "transitions.md"),
-  ];
-  for (const candidate of candidates) {
-    try { if (readFileSync(candidate, "utf8").length > 0) return candidate; } catch { /* try next */ }
-  }
-  return candidates[0]!;
-})();
-const STATE_TEMPLATE = `---\nname: <workflow-name>\nintent: <new-product|feature|bugfix|refactor|investigate|unknown>\ncurrent_stage: triage\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\n  product_type: software\nstages:\n  triage: pending\n  select: pending\n  setup: pending\n  context: pending\n  shape: pending\n  critique: pending\n  gate: pending\n  scope: pending\n  interface: pending\n  int-gate: pending\n  selection: pending\n  planning: pending\n  plan-gate: pending\n  execution: pending\n  verification: pending\n  diff-gate: pending\n  audit: pending\nartifacts: []\nhistory: []\n---\n`;
+// Transitions contract: always the vendored upstream copy (kept fresh by
+// the skills sync). No root-mirror fallbacks — a missing vendored copy is
+// a broken install and must fail closed, not silently use a stale mirror.
+const TRANSITIONS_REF = nodeJoin(PLUGIN_ORCHESTRATOR_REF, "transitions.md");
 
 // Ground-truth freshness signal, written by scripts/postbuild.mjs. The panel
 // bundle and bb's plugin row are both sticky caches; the board footer renders
@@ -66,16 +60,7 @@ const BUILD_INFO = (() => {
 // -> review), so context continuity is preserved within a band. Research cards
 // run a single "research" stage with their own band so investigations have an
 // explicit preset default independent of the delivery analysis phase.
-const STAGE_BANDS: Record<string, string[]> = {
-  analysis: ["triage", "select", "setup", "context", "shape"],
-  planning: ["critique", "scope", "interface", "int-gate", "selection", "planning", "plan-gate"],
-  execution: ["execution", "verification"],
-  review: ["diff-gate", "audit"],
-  research: ["research"],
-};
-const STAGE_TO_BAND: Record<string, string> = Object.fromEntries(
-  Object.entries(STAGE_BANDS).flatMap(([band, stages]) => stages.map((stage) => [stage, band])),
-);
+// Bands live in lib/stage-bands.mjs (single source shared with the panel).
 
 // Pi exposes every route it can delegate to (OpenRouter, OpenCode, Bifrost,
 // etc.). Stelow's Pi presets intentionally offer only the configured Bifrost
@@ -3198,6 +3183,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>... (repeat --question groups to ask several at once)" },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] <stage>" },
+      { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -3355,6 +3341,23 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 0, stdout: result.stdout };
       }
+      if (argv[0] === "doctor") {
+        const args = argv.slice(1);
+        const json = args.includes("--json");
+        const projectId = args[args.indexOf("--project") + 1] ?? ctx.projectId;
+        const stray = args.find((arg) => !arg.startsWith("--") && arg !== projectId);
+        if (stray) return { exitCode: 2, stderr: "Usage: bb stelow doctor [--project <proj_id>] [--json]" };
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
+        const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        if (guard) return { exitCode: 1, stderr: guard };
+        const result = await runHelper(json ? ["doctor", "--json"] : ["doctor"], rootPath, stateDir ?? undefined);
+        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "doctor found drift", stdout: result.stdout };
+        return { exitCode: 0, stdout: result.stdout };
+      }
       if (argv[0] === "preset") {
         const sub = argv[1];
         const flag = (name: string, list: string[]) => { const index = list.indexOf(name); return index >= 0 ? list[index + 1] : undefined; };
@@ -3397,7 +3400,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|preset" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|preset" };
     },
   });
 

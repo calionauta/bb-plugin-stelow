@@ -148,7 +148,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 7. Command and embed
 *When I am an agent, CLI, or another surface, I want the same power.*
 
-- **`bb stelow` CLI.** status, ask, seed, advance, preset management.
+- **`bb stelow` CLI.** status, ask, seed, advance, doctor, preset management.
+  Advance mechanics delegate to the upstream `stelow` helper (synced like
+  skills, no fork); transitions always resolve from the vendored copy.
 - **Mention providers.** `@` workflows/cards (with context resolve) and
   `@` workspace files in any composer, including the board's.
 - **Realtime.** `card-state`, `board-changed`, `inbox-changed` keep

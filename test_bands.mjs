@@ -6,18 +6,7 @@
 //   2. Every band has at least one stage.
 //   3. Resolution honors band-override, falls back to card preset, then default.
 import assert from "node:assert";
-
-const STAGE_BANDS = {
-  analysis: ["triage", "select", "setup", "context", "shape"],
-  planning: ["critique", "scope", "interface", "int-gate", "selection", "planning", "plan-gate"],
-  execution: ["execution", "verification"],
-  review: ["diff-gate", "audit"],
-  research: ["research"],
-};
-
-const STAGE_TO_BAND = Object.fromEntries(
-  Object.entries(STAGE_BANDS).flatMap(([band, stages]) => stages.map((stage) => [stage, band])),
-);
+import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/stage-bands.mjs";
 
 // 1. no overlap / no duplicates across bands
 const flat = Object.values(STAGE_BANDS).flat();
