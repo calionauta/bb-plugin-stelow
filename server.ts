@@ -1179,7 +1179,7 @@ export default async function plugin(bb: BbPluginApi) {
 
 Step 1 — load the strategy playbook: the ${strategyLabel} method (${strategySkill}) comes from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb skill list\` to confirm it, then follow that playbook — not the stelow-workflow-* delivery skills, which do not apply here.
 
-Step 2 — research the request below inside this workspace. You may read code, docs, and the web; you MUST NOT write product code or open pull requests. Research only.
+Step 2 — research the request below inside this workspace. Research happens primarily on the WEB using your search tools — the playbook expects real-time sources (LinkedIn, X/Twitter, Reddit practitioner communities, industry reports), not prior knowledge. You may also read code and docs. If you genuinely have no web search tools available, say so explicitly in the brief instead of inventing findings — never fabricate market data, quotes, or statistics. You MUST NOT write product code or open pull requests. Research only.
 
 Step 3 — write your findings to <state-dir>/brief.md (create it) in EXACTLY this shape (headings verbatim, opportunities as checkboxes — the plugin parses them deterministically for fan-out):
 
@@ -1207,7 +1207,7 @@ Step 4 — register the brief plus any EXTRA sub-step files so each renders on t
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
 
-    bb stelow ask --thread <this_thread_id> \\
+    bb stelow ask --thread "$BB_THREAD_ID" \\
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--multiple]
 
@@ -1318,7 +1318,7 @@ Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, s
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
 
-    bb stelow ask --thread <this_thread_id> \\
+    bb stelow ask --thread "$BB_THREAD_ID" \\
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
@@ -1480,7 +1480,7 @@ You are being restarted mid-workflow at a stage boundary so a new preset can tak
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form:
 
-    bb stelow ask --thread <this_thread_id> \\\\
+    bb stelow ask --thread "$BB_THREAD_ID" \\\\
       --question "<a single clear question>" \\\\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
@@ -2703,7 +2703,7 @@ Intent is currently \`${card.intent}\` in the re-seeded state.md. ${card.intent 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form:
 
-    bb stelow ask --thread <this_thread_id> \\
+    bb stelow ask --thread "$BB_THREAD_ID" \\
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
@@ -3184,10 +3184,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." };
         const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, options: group.options.map((label) => ({ label, description: "" })) }));
         const batched = groups.length > 1;
-        // Signal the pending question via activity (drives the attention flag);
-        // the card stays in its real stage column.
+        // The thread must own a card: otherwise the question would surface
+        // nowhere and the persist below would silently skip. Refuse fast
+        // with the fix (this is almost always a provider session id passed
+        // where the bb worker thread id belongs) instead of blaming storage.
         const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
-        if (cardRow) updateCard(cardRow.id, { activity: "awaiting-answer" });
+        if (!cardRow) return { exitCode: 2, stderr: `No card owns thread "${threadId}". Pass your bb worker thread id ($BB_THREAD_ID, a thr_* id — confirm with: echo $BB_THREAD_ID), never a provider session id nor a workflow dirHash (pw-*).` };
+        updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
         let requestFailed = false;
         const askedAt = Date.now();
@@ -3210,7 +3213,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           requestFailed = true;
           result = { outcome: "cancelled", reason: "request-aborted" };
         } finally {
-          if (cardRow) updateCard(cardRow.id, { activity: "running", status: "in-progress" });
+          updateCard(cardRow.id, { activity: "running", status: "in-progress" });
         }        // Cancellation without an answer falls into two buckets. Transient
         // infrastructure reasons (timeout, plugin reload/restart, aborted
         // request) mean the user simply never answered: persist the question
@@ -3230,25 +3233,24 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // the worker to re-ask ONCE next turn instead of waiting on a
           // question that was never recorded.
           let persisted = false;
-          if (cardRow) {
-            try {
-              // A timed-out batch persists as one expired row per sub-question
-              // so the card can answer them individually or all at once.
-              const expiredAt = askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
-              const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-              db.transaction(() => {
-                for (const group of groups) {
-                  insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, JSON.stringify(group.options), expiredAt, 0);
-                }
-              })();
-              updateCard(cardRow.id, { activity: "awaiting-answer" });
-              bb.realtime.publish("card-state", { cardId: cardRow.id });
-              persisted = true;
-            } catch { persisted = false; }
-          }
+          try {
+            // A timed-out batch persists as one expired row per sub-question
+            // so the card can answer them individually or all at once.
+            const expiredAt = askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
+            const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            db.transaction(() => {
+              for (const group of groups) {
+                insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, JSON.stringify(group.options), expiredAt, 0);
+              }
+            })();
+            updateCard(cardRow.id, { activity: "awaiting-answer" });
+            bb.realtime.publish("card-state", { cardId: cardRow.id });
+            persisted = true;
+          } catch { persisted = false; }
           const elapsed = Math.round((Date.now() - askedAt) / 1e3);
           if (!persisted) {
-            return { exitCode: 1, stdout: `The question could not be recorded (interrupted storage). STOP and wait: do NOT proceed with the workflow. On your next turn, if no pending question exists on the card, ask it ONCE more via bb stelow ask.` };
+            const whyPersistFailed = requestFailed ? "request failure" : `cancel reason "${cancelReason ?? "unknown"}"`;
+            return { exitCode: 1, stdout: `The question could not be recorded (interrupted storage after ${whyPersistFailed}). STOP and wait: do NOT proceed with the workflow. On your next turn, if no pending question exists on the card, ask it ONCE more via bb stelow ask.` };
           }
           const why = interruptionWhy(cancelReason, requestFailed, elapsed);
           return { exitCode: 1, stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (Gate pending) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };

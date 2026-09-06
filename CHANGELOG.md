@@ -16,21 +16,6 @@ and this project adheres to a single-version-per-release tag format
   card lists rounds newest-first with run status plus unregistered
   state-dir files. `brief.md` stays the fan-out
   aggregator; history carries timestamps.
-
-### Fixed
-
-- **Strategy picker on mobile.** The options list no longer nests its
-  own scroll region inside the sheet scroll (scroll trap); it expands
-  and the sheet scrolls as one column, autofocus is desktop-only so
-  the keyboard doesn't cover the list, and a fieldset min-width fix
-  removes the horizontal overflow. Disabled rows no longer hover.
-- **Blocked submits keep the draft.** A submit rejected for want of a
-  strategy (or a failed create) used to resolve successfully from the
-  composer's view, wiping what the user typed. Guards now throw so the
-  draft is kept, per the composer contract — in both creation dialogs.
-
-### Added
-
 - **Board/List on both boards.** Research gains the list view; the switch
   is now a quiet shared icon toggle beside the filters (a view
   preference, not a CTA) instead of a boxed segment next to the action
@@ -47,6 +32,24 @@ and this project adheres to a single-version-per-release tag format
   summary, and keywords — shared by the creation modal and "Explore
   another strategy" (which badges already-ran playbooks). No preselected
   default: Start stays disabled until an explicit pick.
+
+### Fixed
+
+- **Strategy picker on mobile.** The options list no longer nests its
+  own scroll region inside the sheet scroll (scroll trap); it expands
+  and the sheet scrolls as one column, autofocus is desktop-only so
+  the keyboard doesn't cover the list, and a fieldset min-width fix
+  removes the horizontal overflow. Disabled rows no longer hover.
+- **Blocked submits keep the draft.** A submit rejected for want of a
+  strategy (or a failed create) used to resolve successfully from the
+  composer's view, wiping what the user typed. Guards now throw so the
+  draft is kept, per the composer contract — in both creation dialogs.
+- **Ask refuses unknown threads fast.** `bb stelow ask --thread` with an
+  id that owns no card (provider session id, dirHash) exited 1 blaming
+  storage after showing the question nowhere; now it exits 2 naming the
+  fix ($BB_THREAD_ID). Prompts show the literal command, the storage
+  message carries the cancel reason, and the sync state file moved out
+  of `skills/` (daemon log spam).
 
 ### Changed
 
