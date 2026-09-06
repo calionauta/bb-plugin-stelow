@@ -21,6 +21,7 @@ import { parseResearchBrief, checkBriefItems } from "./lib/research-brief.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
+import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 
 const pluginDir = dirname(fileURLToPath(import.meta.url));
 const HELPER_SCRIPT = (() => {
@@ -1609,6 +1610,31 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ready: true, fingerprint: researchReadyFingerprint(brief.content) };
   }
 
+  // Failure cause for a dead worker with no output. thread.failed only
+  // carries system/error text, so a provider-side death (e.g. a 400 on the
+  // very first inference call) arrives with error=null and the card would sit
+  // at Failed with a blank last_error. The latest provider/error detail names
+  // the cause. Best-effort: never throws, never blocks the state write.
+  async function workerFailureCause(threadId: string): Promise<string | null> {
+    try {
+      const events = await bb.sdk.threads.events.list({ threadId, types: ["provider/error"], order: "desc", limit: "5" });
+      return failureCauseFromEvents(events ?? []);
+    } catch { return null; }
+  }
+
+  // Single writer for "the worker thread died". Keeps a recorded cause (event
+  // error or a previous last_error); otherwise resolves the provider detail
+  // once and stores it, so the Failed pill, the detail hero, and the inbox
+  // event all name the cause instead of going blank.
+  async function applyWorkerFailed(cardId: string, threadId: string, eventError: string | null) {
+    const recorded = getCard(cardId)?.last_error;
+    const specific = typeof eventError === "string" && eventError.trim() ? eventError.trim()
+      : typeof recorded === "string" && recorded.trim() ? recorded.trim()
+      : await workerFailureCause(threadId);
+    if (specific) updateCard(cardId, { activity: "error", last_error: specific });
+    else updateCard(cardId, { activity: "error" });
+  }
+
   // Research cards have no stages: sync only worker activity and attention.
   // A freshly-spawned research worker moves To-Do (pending) to Doing
   // (in-progress) on its first active poll — work visibly began. Done is
@@ -1663,7 +1689,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           logCardComment(card.id, "card", card.id, "agent", lastOutput);
         }
       } else if (status === "failed" || status === "error") {
-        updateCard(card.id, { activity: "error" });
+        await applyWorkerFailed(card.id, card.worker_thread_id!, null);
       }
     } catch (error) {
       updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -1898,11 +1924,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           logCardComment(cardId, "card", cardId, "agent", lastOutput);
         }
       } else if (status === "failed" || status === "error") {
-        // Mark the failure without touching last_error: a specific cause
-        // already recorded (e.g. from the thread.failed event) must survive,
-        // and a content-free generic message next to the Failed pill reads
-        // as duplication, so none is ever written here.
-        updateCard(cardId, { activity: "error" });
+        await applyWorkerFailed(cardId, card.worker_thread_id, null);
       }
     } catch (error) {
       updateCard(cardId, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -1920,11 +1942,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   bb.events.on("thread.failed", ({ thread, error }) => {
     const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(thread.id) as { id: string } | undefined;
     if (!row) return;
-    // Only a specific cause is worth storing. A null/empty event error means
-    // "failed for unknown reasons" — the activity pill already says Failed,
-    // so writing a generic sentence would duplicate it on every surface.
-    if (error) updateCard(row.id, { activity: "error", last_error: error });
-    else updateCard(row.id, { activity: "error" });
+    void applyWorkerFailed(row.id, thread.id, typeof error === "string" ? error : null);
   });
   // Reconcile card states with their worker threads after reloads (events only fire on transitions).
   const liveCards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;

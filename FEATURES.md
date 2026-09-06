@@ -125,6 +125,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   change offer Restart instead of Resume.
 - **Archive card** (`cancelCard`). Stops + archives the worker; history
   preserved. Behind a confirm dialog.
+- **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
+  A worker that dies before producing output (e.g. a provider 400 on the
+  first inference call) arrives with no error text; the latest
+  `provider/error` detail is resolved once and stored as the cards
+  `last_error`, so the Failed pill, the detail hero, and the inbox event
+  name the cause instead of going blank.
 - **Self-healing** (`syncThreadState`, 45s reconcile sweep, thread
   idle/active/failed events). Suspicious idle and stalls surface as
   paused with exactly one inbox event per idle period.
