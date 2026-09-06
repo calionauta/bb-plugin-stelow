@@ -230,10 +230,15 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 type DialogContentProps = React.ComponentPropsWithoutRef<
   typeof DialogPrimitive.Content
->;
+> & {
+  // Opt out of the bottom drawer on compact viewports: creation flows (new
+  // build / research card) read as lost in a sheet, so they stay a real modal
+  // — full-viewport with an explicit X — while still centering on desktop.
+  fullscreenOnMobile?: boolean;
+};
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
-  ({ className, children, ...props }, ref) => {
+  ({ className, children, fullscreenOnMobile = false, ...props }, ref) => {
     const { isCompactViewport, open, onOpenChange, titleId, descriptionId } =
       useResponsiveDialog();
     useBrowserDimmingModal(open);
@@ -242,6 +247,29 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     const scopeProps = usePortalScopeProps();
 
     if (isCompactViewport) {
+      if (fullscreenOnMobile) {
+        const domProps = stripRadixContentProps(props);
+        return (
+          <DialogPrimitive.Portal>
+            <DialogOverlay />
+            <DialogPrimitive.Content
+              ref={ref}
+              {...scopeProps}
+              className={cn(
+                "fixed inset-0 z-50 grid h-[100dvh] w-screen grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto border bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-sm duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+                className,
+              )}
+              {...domProps}
+            >
+              {children}
+              <DialogPrimitive.Close className="absolute right-4 top-4 cursor-pointer rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-state-active data-[state=open]:text-foreground">
+                <Icon name="X" className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        );
+      }
       const domProps = stripRadixContentProps(props);
       return (
         <ResponsiveDrawerShell

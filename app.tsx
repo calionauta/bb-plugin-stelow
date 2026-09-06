@@ -876,7 +876,7 @@ function BoardPanel() {
           ) : null}
 
           <Dialog open={createBuildOpen} onOpenChange={setCreateBuildOpen}>
-            <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
+            <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new card</DialogTitle>
                 <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and delivery process.</DialogDescription>
@@ -1218,7 +1218,7 @@ function ResearchPanel() {
           />
 
           <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStrategy(null); }}>
-            <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-3xl">
+            <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new research</DialogTitle>
                 <DialogDescription>Pick a strategy below, then describe what to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
@@ -3286,6 +3286,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [fanOutOpen, setFanOutOpen] = useState(false);
@@ -3340,6 +3341,17 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Archive failed.");
     }
+  }
+
+  async function doDelete() {
+    setDeleteOpen(false);
+    const result = await rpc.call("deleteCard", { cardId });
+    if (!result.deleted) {
+      toast.error(result.error ?? "Delete failed.");
+      return;
+    }
+    toast.success("Research deleted.");
+    onClose();
   }
 
   async function doRepair() {
@@ -3588,6 +3600,9 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
               <div className="flex flex-wrap items-center gap-4 border-t pt-3">
                 <button onClick={() => setRepairOpen(true)} title="Start over with a new worker on the same strategy. Comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
                 <button onClick={() => setArchiveOpen(true)} className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive research</button>
+                {card?.status === "archived" ? (
+                  <button onClick={() => setDeleteOpen(true)} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Delete…</button>
+                ) : null}
               </div>
               {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
             </CardDisclosure>
@@ -3656,6 +3671,15 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         confirmTone="destructive"
         onConfirm={doArchive}
       />
+      <ConfirmActionDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete this research permanently?"
+        description="The archived research, its comments, and its history are removed from Stelow and cannot be recovered."
+        confirmLabel="Delete"
+        confirmTone="destructive"
+        onConfirm={doDelete}
+      />
     </div>
   );
 }
@@ -3673,6 +3697,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [promoteName, setPromoteName] = useState("");
   const [promoting, setPromoting] = useState(false);
@@ -3742,6 +3767,17 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Archive failed.");
     }
+  }
+
+  async function doDelete() {
+    setDeleteOpen(false);
+    const result = await rpc.call("deleteCard", { cardId });
+    if (!result.deleted) {
+      toast.error(result.error ?? "Delete failed.");
+      return;
+    }
+    toast.success("Card deleted.");
+    onClose();
   }
 
   async function doPromote() {
@@ -4053,6 +4089,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               <div className="flex flex-wrap items-center gap-4 border-t pt-3">
                 <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
                 <button onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive card</button>
+                {card?.status === "archived" ? (
+                  <button onClick={() => setDeleteOpen(true)} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Delete…</button>
+                ) : null}
               </div>
               {detail?.githubLink ? (
                 <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
@@ -4147,6 +4186,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         confirmLabel="Archive"
         confirmTone="destructive"
         onConfirm={doArchive}
+      />
+      <ConfirmActionDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete this card permanently?"
+        description="The archived card, its comments, and its history are removed from Stelow and cannot be recovered."
+        confirmLabel="Delete"
+        confirmTone="destructive"
+        onConfirm={doDelete}
       />
       <Dialog open={githubPostOpen} onOpenChange={setGithubPostOpen}>
         <DialogContent>

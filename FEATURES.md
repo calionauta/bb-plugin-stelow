@@ -10,6 +10,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
   attachments, intent, planning depth, review checkpoints, agent preset from
   the analysis band. Spawns a hidden worker thread starting at triage.
+  The creation modal stays a real modal on phones (full-viewport with an
+  explicit close, `fullscreenOnMobile`) instead of collapsing into a
+  bottom sheet.
 - **GitHub issue import** (`listGithubCandidates`, `importGithubIssue`).
   Tagged issues land in Triage; fresh issues preselected; owning project
   resolved per repo; intent guessed from labels/title (user-correctable).
@@ -101,7 +104,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   timeline keeps count-only badges — files and navigation never share a
   shape.
 - **Manage** (preset pill + override, change preset, restart fresh,
-  archive, worker history with readable archived threads).
+  archive, delete archived cards behind a confirm, worker history with
+  readable archived threads).
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
@@ -125,10 +129,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   change offer Restart instead of Resume.
 - **Archive card** (`cancelCard`). Stops + archives the worker; history
   preserved. Behind a confirm dialog.
+- **Delete archived card** (`deleteCard`). Hard delete offered only on
+  archived cards from Manage, behind an English confirm dialog. Removes
+  the card row plus comments, presets, questions, inbox events, and
+  ledger rows; stops + archives the worker thread.
 - **Failure cause** (`workerFailureCause`, `lib/worker-failure.mjs`).
   A worker that dies before producing output (e.g. a provider 400 on the
   first inference call) arrives with no error text; the latest
-  `provider/error` detail is resolved once and stored as the cards
+  `provider/error` detail is resolved once and stored as the card's
   `last_error`, so the Failed pill, the detail hero, and the inbox event
   name the cause instead of going blank.
 - **Self-healing** (`syncThreadState`, 45s reconcile sweep, thread
@@ -175,7 +183,8 @@ investigation that feeds the delivery board.*
   The New research dialog shows the effective agent preset
   (`research` band default, else board default) with a Configure
   presets entry; per-investigation pins live in the card's Manage
-  section.
+  section. Like the build creation dialog, it stays a full-viewport
+  modal with an explicit close on phones (`fullscreenOnMobile`).
 - **Strategy picker** (`StrategyPicker`, `researchStrategies`). Visual
   radio-cards (emoji + name + one-line summary) with instant search over
   label, summary, and keywords; no preselected default — Start stays

@@ -259,6 +259,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ archived: z.boolean() }),
   },
+  deleteCard: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
+  },
   reseedCard: {
     input: z.object({ cardId: z.string(), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ reseeded: z.boolean(), error: z.string().nullable() }),
@@ -2603,6 +2607,29 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       updateCard(cardId, { status: "archived", activity: "idle" });
       return { archived: true };
+    },
+
+    async deleteCard({ cardId }) {
+      // Hard delete is terminal hygiene, not a workflow move: only archived
+      // cards qualify (archive stays the reversible exit; delete is the
+      // deliberate erasure). Foreign keys are declared but not enforced by
+      // the driver, so child rows are removed explicitly.
+      const card = getCard(cardId);
+      if (!card) return { deleted: false, error: ERR_CARD_NOT_FOUND };
+      if (card.status !== "archived") return { deleted: false, error: "Only archived cards can be deleted. Archive it first." };
+      if (card.worker_thread_id) {
+        try { await bb.sdk.threads.archive({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
+        try { await bb.sdk.threads.stop({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
+      }
+      db.prepare("DELETE FROM comments WHERE card_id = ?").run(cardId);
+      db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
+      db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);
+      db.prepare("DELETE FROM inbox_events WHERE card_id = ?").run(cardId);
+      db.prepare("DELETE FROM card_threads WHERE card_id = ?").run(cardId);
+      db.prepare("UPDATE github_imports SET card_id = NULL WHERE card_id = ?").run(cardId);
+      db.prepare("DELETE FROM cards WHERE id = ?").run(cardId);
+      bb.realtime.publish("board-changed", { cardId });
+      return { deleted: true, error: null };
     },
 
     async retryWorker({ cardId }) {
