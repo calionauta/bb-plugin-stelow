@@ -1833,15 +1833,9 @@ function OpenThreadButton({ threadId }: { threadId: string | null | undefined })
 
 function CardMetaRows({ card }: { card: CardItem }) {
   const attention = card.needsAttention;
-  const ready = card.researchReady === true && card.activity === "idle" && !attention;
   return (
     <>
-      {ready ? (
-        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-          <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
-          <span>Ready for review</span>
-        </div>
-      ) : null}      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
+      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
           <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
           <span>{attentionLabel(card)}</span>
@@ -1893,6 +1887,19 @@ function BoardCard({ card }: { card: CardItem }) {
   );
 }
 
+// Research cards carry ONE status everywhere. A brief with ranked
+// opportunities (researchReady, idle, nothing pending) reads "Ready for
+// review" instead of the column label — the same pill on the kanban card, the
+// list row, and the expanded view, so the board and the detail can never show
+// two competing states ("Doing" plus "Ready for review") or none at all.
+function ResearchStatusPill({ card, researchReady }: { card: CardItem; researchReady?: boolean }) {
+  const ready = (researchReady ?? card.researchReady) === true && card.activity === "idle" && !card.needsAttention;
+  if (ready) {
+    return <Pill tone="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" title="Research status — the brief has ranked opportunities. Review it, fan out build cards, then drag to Done."><span className="mr-1">✓</span>Ready for review</Pill>;
+  }
+  return <Pill tone={statusTone(card.status)} title="Research status — where this card stands. Done is a human drag after reviewing the brief."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>;
+}
+
 // Research-track card: strategy instead of stage/intent, opens in the
 // Research panel. Retry, attention, and activity reuse the delivery pieces.
 function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: string | null }) {
@@ -1926,7 +1933,7 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
         </span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <Pill tone={statusTone(card.status)}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>
+        <ResearchStatusPill card={card} />
         {strategyLabel ? <Pill className="ml-auto whitespace-nowrap" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
       </div>
       <CardMetaRows card={card} />
@@ -3408,6 +3415,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                       <p className="text-xs text-muted-foreground">Brief ready — review it below, fan out opportunities into build cards, then drag this card to Done.</p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <ResearchStatusPill card={card} researchReady={detail?.card.researchReady ?? card.researchReady} />
                       {strategyLabel ? <Pill tone="bg-primary/15 text-primary" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
