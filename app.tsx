@@ -18,6 +18,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
+import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
@@ -186,7 +187,8 @@ function boardColumnOf(card: Pick<CardItem, "status" | "stage">): string {
 // Research track columns: a deliberately dumb To-Do / Doing / Done flow.
 // Statuses reuse the shared enum (pending / in-progress / completed /
 // archived) so no migration or guard changes are needed; the mapping lives
-// in this one place.
+// in lib/card-question-state (shared with the server) so a waiting question
+// — activity, never status — can never push a Doing card back to To-Do.
 const RESEARCH_COLUMNS = ["todo", "doing", "done", "archived"] as const;
 const RESEARCH_COLUMN_LABELS: Record<string, string> = {
   todo: "To-Do",
@@ -195,10 +197,7 @@ const RESEARCH_COLUMN_LABELS: Record<string, string> = {
   archived: "Archived",
 };
 function researchColumnOf(card: Pick<CardItem, "status">): string {
-  if (card.status === "archived") return "archived";
-  if (card.status === "completed") return "done";
-  if (card.status === "in-progress" || card.status === "approved") return "doing";
-  return "todo";
+  return researchColumnForStatus(card.status);
 }
 
 type StelowTrack = "inbox" | "build" | "research";

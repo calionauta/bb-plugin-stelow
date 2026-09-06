@@ -35,6 +35,16 @@ and this project adheres to a single-version-per-release tag format
 
 ### Fixed
 
+- **Waiting on a question never moves the card.** Opening a structured
+  question stored the wait in `status` (`awaiting-answer`), which
+  normalized to `pending` — a Doing research card fell back to To-Do
+  while the question was open, and the ask transport forced
+  `in-progress`, dragging draft Triage cards to Running on their first
+  question. One rule now holds on both tracks: a pending question is
+  activity only, never board position (`lib/card-question-state`,
+  shared by server and board, pinned by a node test). Legacy rows heal
+  to `in-progress` on read and are rewritten on the next sync; worker
+  prompts and the README no longer promise a "Gate pending" column.
 - **Strategy picker on mobile.** The options list no longer nests its
   own scroll region inside the sheet scroll (scroll trap); it expands
   and the sheet scrolls as one column, autofocus is desktop-only so

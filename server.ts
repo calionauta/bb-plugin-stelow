@@ -7,6 +7,7 @@ import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
+import { healQuestionStatus, isQuestionStatus, questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
@@ -430,7 +431,10 @@ function array(value: unknown): unknown[] {
 
 function normalizeStatus(value: unknown): z.infer<typeof statusSchema> {
   const candidate = text(value, "pending");
-  return statusSchema.safeParse(candidate).success ? candidate as z.infer<typeof statusSchema> : "pending";
+  // Legacy rows stored the question wait in `status` ("awaiting-answer"):
+  // heal to in-progress (work visibly began) instead of pending.
+  const healed = healQuestionStatus(candidate);
+  return statusSchema.safeParse(healed).success ? healed as z.infer<typeof statusSchema> : "pending";
 }
 
 // Short human status for the GitHub completion summary (English).
@@ -1324,7 +1328,7 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
 
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
 
-Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card moves to "Gate pending" automatically. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}` }, ...workerAttachments],
@@ -1486,7 +1490,7 @@ ANY time you need user input, you MUST call the structured form:
 
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`,
       });
@@ -1657,17 +1661,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (status === "active" || status === "starting") {
         const pending = await fetchPendingQuestions(card.worker_thread_id);
         if (pending.length > 0) {
-          updateCard(card.id, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
+          // Waiting is activity, never board position: the card stays in its
+          // column (Doing) while the question waits. See lib/card-question-state.
+          updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
           resolveInboxEvents(card.id, now(), ["question"]);
           const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput };
-          if (card.status === "pending") updates.status = "in-progress";
+          if (card.status === "pending" || isQuestionStatus(card.status)) updates.status = "in-progress";
           updateCard(card.id, updates);
         }
       } else if (status === "idle" || status === "stopping") {
         const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(card.id) as { id: string } | undefined;
         if (expiredPending) {
-          updateCard(card.id, { activity: "awaiting-answer", last_assistant_text: lastOutput });
+          updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
           const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
           updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
@@ -1844,7 +1850,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (status === "active" || status === "starting") {
         const pending = await fetchPendingQuestions(card.worker_thread_id);
         if (pending.length > 0) {
-          updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput, status: "awaiting-answer" });
+          // Waiting is activity, never board position: the card stays in its
+          // stage column while the question waits. See lib/card-question-state.
+          updateCard(cardId, questionWaitUpdates(lastOutput));
         } else {
           // The worker moved on with nothing pending: any question event still
           // open for this card is stale (answered elsewhere or superseded).
@@ -1852,10 +1860,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // Keep freshly-created cards in the Triage column (draft) while the
           // workflow is still at the triage stage, even though the thread is
           // already active. Only move to Running (in-progress) once the agent
-          // has advanced past triage (current_stage != triage) or resumed from
-          // a gate (status was awaiting-answer).
+          // has advanced past triage (current_stage != triage). Legacy rows
+          // that stored the wait in `status` heal to in-progress (work began).
           const stillTriaging = currentStage === "triage" && card.status === "draft";
-          const nextStatus = stillTriaging ? "draft" : card.status === "draft" ? "in-progress" : card.status;
+          const nextStatus = stillTriaging ? "draft" : card.status === "draft" || isQuestionStatus(card.status) ? "in-progress" : card.status;
           const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput, status: nextStatus };
           if (currentStage !== card.stage) updates.stage = currentStage;
           updateCard(cardId, updates);
@@ -1869,7 +1877,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // card stays in its real stage column (no Gate-pending column) —
           // the attention flag from listCards/cardDetail signals it. Answering
           // on the card resumes the thread.
-          updateCard(cardId, { activity: "awaiting-answer", last_assistant_text: lastOutput });
+          updateCard(cardId, questionWaitUpdates(lastOutput));
         } else if (currentStage === "audit") {
           // `audit` is the workflow's terminal stage. Reaching it is not a
           // request for a human review: in Lean + Auto (and after any explicit
@@ -2709,7 +2717,7 @@ ANY time you need user input, you MUST call the structured form:
 
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card moves to the "Gate pending" column automatically. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}` }, ...cardAttachments(card.attachments)],
@@ -3213,7 +3221,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           requestFailed = true;
           result = { outcome: "cancelled", reason: "request-aborted" };
         } finally {
-          updateCard(cardRow.id, { activity: "running", status: "in-progress" });
+          // The ask call ended (answered, cancelled, or torn down): mark the
+          // worker running again. Activity only — board position is owned by
+          // the sync poll, the answer RPCs, and advance/moveCard, on both
+          // tracks. See lib/card-question-state.
+          updateCard(cardRow.id, askFinishedUpdates());
         }        // Cancellation without an answer falls into two buckets. Transient
         // infrastructure reasons (timeout, plugin reload/restart, aborted
         // request) mean the user simply never answered: persist the question
@@ -3223,9 +3235,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const cancelReason = result.outcome === "cancelled" ? result.reason : null;
         const transientCancel = requestFailed || classifyAskCancel(result.outcome, cancelReason) === "persist";
         if (transientCancel) {
-          // The user never answered within the window. Keep the card in
-          // "Gate pending" (awaiting-answer) so it is obvious a decision is
-          // still outstanding, and tell the agent to STOP and wait rather
+          // The user never answered within the window. Keep awaiting-answer
+          // activity on the card (same column, decision still outstanding)
+          // and tell the agent to STOP and wait rather
           // than guessing. The answer, when it arrives via the card, is
           // delivered as a comment that resumes the thread.
           // The persist itself is guarded: a reload landing exactly here
@@ -3253,7 +3265,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             return { exitCode: 1, stdout: `The question could not be recorded (interrupted storage after ${whyPersistFailed}). STOP and wait: do NOT proceed with the workflow. On your next turn, if no pending question exists on the card, ask it ONCE more via bb stelow ask.` };
           }
           const why = interruptionWhy(cancelReason, requestFailed, elapsed);
-          return { exitCode: 1, stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (Gate pending) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };
+          return { exitCode: 1, stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (same column, marked as waiting for your answer) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };
         }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }

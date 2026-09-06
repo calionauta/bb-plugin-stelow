@@ -4,13 +4,13 @@ Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows i
 
 ## What it adds
 
-- **Stelow board:** a bb navigation panel with Kanban columns for workflows, plus scopes and tasks. New cards start in **Triage**; they move to **Gate pending** while the agent waits on a structured question and to **Running** when the agent is actively working.
+- **Stelow board:** a bb navigation panel with Kanban columns for workflows, plus scopes and tasks. Build cards flow through Analyse, Plan, Execute and Review to Done; research cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item.
 - **Workflow actions:** start a Stelow agent thread, open generated artifacts, approve gates, advance stages, repair a stuck workflow, or archive a card.
 - **Native approval receipts:** approvals are written to `.stelow/approvals/{dirHash}/` using Stelow's canonical filenames.
 - **PRD and plan review:** `.md` artifacts can open with the Stelow reviewer; select text and append a contextual review comment.
-- **Blocking questions:** single-choice and multi-choice forms replace the composer through `bb ui.requestInput` and the `bb stelow ask` CLI. The card moves to Gate pending automatically while a question is open.
+- **Blocking questions:** single-choice and multi-choice forms replace the composer through `bb ui.requestInput` and the `bb stelow ask` CLI. The card stays in its column and signals it is waiting for an answer while a question is open.
 - **Agent presets:** assign a provider/model reasoning/permission profile to any card (schema mirrors the bb Tasks plugin). The worker thread is started with the preset's execution options.
-- **Sidebar badge:** the Stelow menu row shows a live count of Triage/Shaping/Running/Gate-pending cards.
+- **Sidebar badge:** the Stelow menu row shows a live count of unresolved inbox action items plus unseen recent completions.
 - **Agent integration:** `@workflow-name` mentions resolve fresh Stelow state into agent context.
 - **CLI:** inspect workflows, request structured input, advance stages, and manage presets.
 
@@ -42,8 +42,7 @@ bb plugin dev
 
 ## Use
 
-Open **Stelow** in bb's left navigation (the row shows a live badge of cards in
-Triage/Shaping/Running/Gate pending). Select a project with Stelow state, then:
+Open **Stelow** in bb's left navigation (the row shows a live badge of items needing your attention). Select a project with Stelow state, then:
 
 1. Choose the workflow's **Appetite** and **Review mode** above the composer
    (defaults: **Lean** and **Auto**). Then enter a product request in the
@@ -60,11 +59,10 @@ Triage/Shaping/Running/Gate pending). Select a project with Stelow state, then:
    default.
 2. The agent runs the triage → select → … pipeline and, the moment it needs a
    decision, opens a structured question. While a question is pending the card
-   sits in **Gate pending**. Reply in the form, in the thread, or from the card
+   stays in its column, marked as waiting for your answer. Reply in the form, in the thread, or from the card
    detail's "Answer in thread" action.
-3. If nobody answers before the ask timeout, the card shows the question as
-   **timed out** with the options still clickable — the agent proceeds with
-   its best judgment, and any late answer is delivered to the worker thread
+3. If nobody answers before the ask timeout, the question stays on the card as
+   answerable — the agent stops and waits instead of guessing, and any late answer is delivered to the worker thread
    for its next turn.
 4. Open product specs, interface proposals, and technical plans from the board.
 5. Select text in a document and add a review comment.
