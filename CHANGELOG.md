@@ -77,6 +77,18 @@ and this project adheres to a single-version-per-release tag format
   fix ($BB_THREAD_ID). Prompts show the literal command, the storage
   message carries the cancel reason, and the sync state file moved out
   of `skills/` (daemon log spam).
+- **Failed cards name their cause.** A worker that died before producing
+  output (e.g. a provider 400 on the first inference call) left the card
+  at Failed with a blank error. The latest `provider/error` detail is now
+  resolved once and stored as `last_error`
+  (`workerFailureCause`, `lib/worker-failure.mjs`, node-tested), so the
+  Failed pill, the detail hero, and the inbox event read
+  e.g. `Provider error 400: Internal server error`.
+- **One research status everywhere.** A ready brief rendered two competing
+  states on the kanban card (`Doing` + `Ready for review`) and no status
+  pill at all in the expanded view. `ResearchStatusPill` is now the single
+  status on the kanban card, the list row, and the expanded view —
+  `Ready for review` replaces the column label when the brief is ready.
 
 ### Changed
 
@@ -654,6 +666,16 @@ and this project adheres to a single-version-per-release tag format
   the stage. The intent label now shows the current intent next to the select.
 - **Ask timeout is configurable** via `STELOW_ASK_TIMEOUT_MS` (default 1h)
   for testing and tuning.
+- **Delete archived cards.** Manage on an archived card (research or
+  build) offers Delete behind an English confirm dialog (`deleteCard`
+  RPC: archived-only, removes the card row plus comments, presets,
+  questions, inbox events, and ledger rows, stops + archives the worker
+  thread). Archive stays the reversible exit; delete is the deliberate
+  erasure.
+- **Fullscreen creation on phones.** The New card / New research dialogs
+  stay real modals on compact viewports (full-viewport with an explicit
+  close, `fullscreenOnMobile` on `DialogContent`) instead of collapsing
+  into a bottom sheet; desktop centering is unchanged.
 
 ## [0.1.4] - 2026-08-20
 
