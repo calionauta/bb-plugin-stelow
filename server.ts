@@ -16,6 +16,7 @@ import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.m
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { parseResearchBrief, checkBriefItems } from "./lib/research-brief.mjs";
+import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills } from "./lib/workflow-skills-sync.mjs";
 
@@ -198,7 +199,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable(), kind: z.enum(["delivery", "research"]).nullable().optional() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["delivery", "research"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["delivery", "research"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), researchReady: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
@@ -247,7 +248,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["delivery", "research"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["delivery", "research"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), researchReady: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
@@ -1645,6 +1646,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ok: true, content, absolute, display: workspaceRelative(workspace.path, absolute) ?? "brief.md" };
   }
 
+  // Research readiness in one place (convention over configuration): the
+  // brief ## Opportunities checkboxes the fan-out dialog already parses via
+  // parseResearchBrief. The sync writer and both read-path attention flags
+  // share this predicate so they cannot diverge into "paused" vs "ready"
+  // again. Delivery keeps its own terminal convention (state.md audit stage)
+  // — each track reuses its canonical artifact, never a second definition.
+  async function researchReadiness(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null }> {
+    if (card.kind !== "research") return { ready: false, fingerprint: null };
+    const brief = await readResearchBrief(card).catch(() => null);
+    if (!brief || brief.ok !== true) return { ready: false, fingerprint: null };
+    if (!isResearchReadyForReview(brief.content)) return { ready: false, fingerprint: null };
+    return { ready: true, fingerprint: researchReadyFingerprint(brief.content) };
+  }
+
   // Research cards have no stages: sync only worker activity and attention.
   // A freshly-spawned research worker moves To-Do (pending) to Doing
   // (in-progress) on its first active poll — work visibly began. Done is
@@ -1675,11 +1690,24 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         if (expiredPending) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
-          const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
-          updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
-          const current = getCard(card.id);
-          if (current && current.status !== "archived" && current.status !== "completed" && idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
-            recordInboxEvent(current, "paused", "Idle with unfinished research — retry continues in place, restart begins fresh.", `paused:${card.id}:${idleAt}`, idleAt);
+          // Ready brief + idle worker is the expected terminal rest (the
+          // worker prompt tells the worker to STOP when the brief is
+          // complete) — never a stall. Resolve any paused signal and emit
+          // one completion per brief fingerprint; Done stays a human drag.
+          const readiness = await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
+          if (readiness.ready) {
+            const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
+            updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
+            resolveInboxEvents(card.id, now(), ["paused"]);
+            const readyCurrent = getCard(card.id);
+            if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Research ready for review — open the brief, then drag to Done.", `completed:${card.id}:brief:${readiness.fingerprint ?? "ready"}`, now());
+          } else {
+            const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
+            updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
+            const current = getCard(card.id);
+            if (current && current.status !== "archived" && current.status !== "completed" && idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
+              recordInboxEvent(current, "paused", "Idle with unfinished research — retry continues in place, restart begins fresh.", `paused:${card.id}:${idleAt}`, idleAt);
+            }
           }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
@@ -2315,10 +2343,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // (legacy), fall back to updated_at as the idle-onset proxy so they
         // still surface as needing attention instead of staying invisible.
         const idleAt = (row.last_idle_at && row.last_idle_at > 0) ? row.last_idle_at : row.updated_at;
-        const idleStuck = activity === "idle"
+        const idleCandidate = activity === "idle"
           && row.worker_thread_id !== null
           && !termStatus
           && now() - idleAt >= IDLE_ATTENTION_MS;
+        // A ready brief is the expected terminal rest, never stuck: share
+        // the sync predicate so list and sync cannot disagree. Checked only
+        // for otherwise-stuck research cards, so the brief read stays rare.
+        const researchReady = idleCandidate && row.kind === "research"
+          ? (await researchReadiness(row).catch(() => ({ ready: false as const, fingerprint: null as string | null }))).ready
+          : false;
+        const idleStuck = idleCandidate && !researchReady;
         const questionPending = activity === "awaiting-answer";
         const errorPending = Boolean(row.last_error) || activity === "error";
         const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
@@ -2343,6 +2378,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           activity,
           lastError: row.last_error,
           needsAttention,
+          researchReady,
           presetName: preset.name,
           presetProviderId: preset.provider_id,
           presetModelId: preset.model_id,
@@ -2501,10 +2537,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const effectiveActivity = (card.activity === "error" ? "error" : pending.length > 0 ? "awaiting-answer" : card.activity as "idle" | "running" | "awaiting-answer" | "error");
       const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(card.status));
       const idleAt = (card.last_idle_at && card.last_idle_at > 0) ? card.last_idle_at : card.updated_at;
-      const idleStuck = effectiveActivity === "idle"
+      const idleCandidate = effectiveActivity === "idle"
         && card.worker_thread_id !== null
         && !termStatus
         && now() - idleAt >= IDLE_ATTENTION_MS;
+      const researchReady = idleCandidate && card.kind === "research"
+        ? (await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }))).ready
+        : false;
+      const idleStuck = idleCandidate && !researchReady;
       const attentionKind = (idleStuck ? "idle"
         : effectiveActivity === "awaiting-answer" ? "question"
         : Boolean(card.last_error) || effectiveActivity === "error" ? "error"
@@ -2519,7 +2559,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const githubRow = db.prepare("SELECT repo, number, commented_at FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number; commented_at: number | null } | undefined;
       const githubLink = githubRow ? { repo: githubRow.repo, number: githubRow.number, url: `https://github.com/${githubRow.repo}/issues/${githubRow.number}`, postedAt: githubRow.commented_at ?? null } : null;
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: (card.kind === "research" ? "research" : "delivery") as "delivery" | "research", researchStrategy: card.research_strategy, researchStrategies: strategyList(card), status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: (card.kind === "research" ? "research" : "delivery") as "delivery" | "research", researchStrategy: card.research_strategy, researchStrategies: strategyList(card), status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, researchReady, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,

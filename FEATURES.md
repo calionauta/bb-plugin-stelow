@@ -198,6 +198,15 @@ investigation that feeds the delivery board.*
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as delivery. Stage advance and intent editing refuse on
   research cards with the valid exit named.
+- **Ready-for-review** (`isResearchReadyForReview`,
+  `lib/research-ready.mjs`). An idle worker with a brief that parses to
+  ≥1 opportunity is the expected terminal rest (the worker is told to
+  STOP when the brief is complete) — never a `paused` stall. The sync
+  resolves any paused signal and emits one `completed` event per brief
+  fingerprint (a grown brief earns a fresh one); the board shows a
+  `Ready for review` chip, the hero names the exit (review → fan out →
+  Done), and no `Resume` is offered for finished work. Done stays a
+  human drag after reviewing the brief.
 
 ## Cross-cutting rules (apply to every feature above)
 

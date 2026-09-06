@@ -1837,9 +1837,15 @@ function OpenThreadButton({ threadId }: { threadId: string | null | undefined })
 
 function CardMetaRows({ card }: { card: CardItem }) {
   const attention = card.needsAttention;
+  const ready = card.researchReady === true && card.activity === "idle" && !attention;
   return (
     <>
-      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
+      {ready ? (
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+          <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
+          <span>Ready for review</span>
+        </div>
+      ) : null}      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
           <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
           <span>{attentionLabel(card)}</span>
@@ -2847,6 +2853,16 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       sub: "The agent advances on its own. Nothing needs you right now.",
     };
   }
+  // Ready brief + idle worker is the expected terminal rest, not a stall:
+  // one calm sentence naming the exit (review → fan out → Done), never a
+  // Resume that would wake a finished worker for no reason.
+  if (card.activity === "idle" && (detail?.card.researchReady ?? card.researchReady) === true) {
+    return {
+      kind: "calm",
+      title: "Research ready for review",
+      sub: "The brief has opportunities — review it, fan out build cards, then drag to Done.",
+    };
+  }
   return {
     kind: "calm",
     title: `At ${stageLabel(card.stage)} — nothing needs you`,
@@ -3431,7 +3447,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                           {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the research.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
+                          ) : detail?.card.researchReady === true ? null : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
                           )}
                           <OpenThreadButton threadId={card.workerThreadId} />
@@ -3892,7 +3908,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                           {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
+                          ) : detail?.card.researchReady === true ? null : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
                           )}
                           <OpenThreadButton threadId={card.workerThreadId} />
