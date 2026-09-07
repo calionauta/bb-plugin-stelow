@@ -22,23 +22,46 @@ The plugin does **not** maintain a second workflow database. `stelow.json` and `
 
 ## Requirements
 
-1. A normal bb project backed by a local workspace source.
-2. Stelow skills: **bundled with the plugin** (shipped in `skills/`), so no
+1. bb desktop ≥ 0.38 ([getbb.app](https://getbb.app) — macOS one-click download,
+   `npx bb-app@latest` elsewhere; your agents run on your own subscriptions).
+2. A normal bb project backed by a local workspace source.
+3. Stelow skills: **bundled with the plugin** (shipped in `skills/`), so no
    external install step is required. The worker agent loads the stage guides
    from the plugin's own skills directory.
-3. A `stelow.json` created by a Stelow workflow for board data.
+4. A `stelow.json` created by a Stelow workflow for board data.
 
 The singleton bb personal project has no workspace source, so the board asks you to select/create a normal project.
 
 ## Install
+
+> Pending marketplace approval — install from this repository for now:
+
+```bash
+bb plugin install git:https://github.com/calionauta/bb-plugin-stelow.git --yes
+bb plugin list   # stelow should show as running
+```
+
+Or in bb: Extensions → Plugins → Add plugin, paste
+`git:https://github.com/calionauta/bb-plugin-stelow.git`, Install.
+Pin a release with `@vX.Y.Z` (e.g. `@v0.1.57`); update with
+`bb plugin update stelow`.
+
+Research cards also need the product playbooks from the agent skills hub:
+
+```bash
+npx skills add calionauta/stelow -g
+```
+
+(`bb skill list` to confirm. Third-party plugins are full-trust server code:
+install only sources you trust.)
+
+For development (clone + hot-reload):
 
 ```bash
 npm install
 bb plugin build
 bb plugin install . --yes
 ```
-
-For development:
 
 ```bash
 bb plugin dev
