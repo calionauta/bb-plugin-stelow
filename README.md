@@ -1,6 +1,10 @@
 # Stelow for bb
 
-Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows inside bb without replacing Stelow's portable skills or file contracts.
+Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows inside bb. 🚀 Created by the original author of Stelow.
+
+Turn humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks, then deliver through an orchestrated workflow — Shape Up proposals, interface trade-offs before code, typed scopes with spikes up front, gated reviews, and agent workers. 
+
+One board, one quiet inbox.
 
 ## What it adds
 
