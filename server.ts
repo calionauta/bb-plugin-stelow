@@ -15,7 +15,7 @@ import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/stage-bands.mjs";
-import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps } from "./lib/research-strategies.mjs";
+import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
@@ -41,6 +41,22 @@ const PLUGIN_ORCHESTRATOR_REF = nodeJoin(PLUGIN_SKILLS_DIR, "stelow-workflow-orc
 // the skills sync). No root-mirror fallbacks — a missing vendored copy is
 // a broken install and must fail closed, not silently use a stale mirror.
 const TRANSITIONS_REF = nodeJoin(PLUGIN_ORCHESTRATOR_REF, "transitions.md");
+
+// Strategy contracts: neutral per-strategy data (skill, contract, substeps)
+// comes from upstream `product-strategies.json` (synced to
+// data/product-strategies.json); presentation (label, blurb, emoji,
+// keywords) stays local. Merged in place so every existing consumer
+// (researchStrategyById, expectedSubsteps, RPC payloads) sees one list.
+// Missing/unparseable registry → embedded contracts stand (works against
+// older stelow checkouts).
+try {
+  const registry = JSON.parse(readFileSync(nodeJoin(pluginDir, "data", "product-strategies.json"), "utf8"));
+  const merged = mergeStrategyContracts(RESEARCH_STRATEGIES, registry);
+  RESEARCH_STRATEGIES.splice(0, RESEARCH_STRATEGIES.length, ...merged);
+} catch {
+  // Embedded contracts stand; import-time has no bb.log yet. The sync
+  // schedule keeps data/product-strategies.json fresh on a live daemon.
+}
 
 // Ground-truth freshness signal, written by scripts/postbuild.mjs. The panel
 // bundle and bb's plugin row are both sticky caches; the board footer renders

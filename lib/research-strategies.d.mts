@@ -14,3 +14,7 @@ export declare function researchStrategyById(id: string): ResearchStrategy | nul
 export declare function parseStrategyList(raw: unknown): string[];
 export declare function expectedSubsteps(strategyId: string): string[];
 export declare function missingSubsteps(strategyId: string, presentSlugs: unknown): string[];
+export declare function mergeStrategyContracts(
+  localList: ResearchStrategy[],
+  registry: { strategies?: Array<{ id?: unknown; skill?: unknown; contract?: unknown; substeps?: unknown }> } | null | undefined,
+): ResearchStrategy[];

@@ -56,3 +56,30 @@ assert.deepEqual(missingSubsteps("pricing", []), [], "single never reports missi
 assert.deepEqual(missingSubsteps("job-to-be-done", expectedSubsteps("job-to-be-done")), [], "complete set reports nothing missing");
 
 console.log("research contracts test ok: valid contracts, JTBD ten substeps, explicit missing");
+
+// mergeStrategyContracts: upstream neutral data overlays local presentation.
+import { mergeStrategyContracts } from "../lib/research-strategies.mjs";
+{
+  const local = [
+    { id: "jtbd", label: "JTBD", skill: "old-skill", blurb: "b", emoji: "e", keywords: [], contract: "single" },
+    { id: "pricing", label: "Pricing", skill: "s", blurb: "b", emoji: "e", keywords: [], contract: "single" },
+  ];
+  const registry = { strategies: [
+    { id: "jtbd", skill: "new-skill", contract: "composite", substeps: ["a", "b"] },
+    { id: "unknown-future", skill: "s", contract: "single" },
+    { id: "broken", skill: "", contract: "mega" },
+  ]};
+  const merged = mergeStrategyContracts(local, registry);
+  assert.equal(merged.length, 2, "unknown upstream ids are not adopted");
+  const jtbd = merged.find((e) => e.id === "jtbd");
+  assert.equal(jtbd.skill, "new-skill", "skill comes from upstream");
+  assert.equal(jtbd.contract, "composite", "contract comes from upstream");
+  assert.deepEqual(jtbd.substeps, ["a", "b"], "substeps come from upstream");
+  assert.equal(jtbd.label, "JTBD", "presentation stays local");
+  assert.equal(merged.find((e) => e.id === "pricing").contract, "single", "untouched stays");
+  assert.equal(local[0].contract, "single", "inputs are not mutated");
+}
+assert.deepEqual(mergeStrategyContracts([{ id: "x" }], null).length, 1, "null registry keeps local");
+assert.deepEqual(mergeStrategyContracts([{ id: "x", contract: "composite", substeps: ["a"] }], { strategies: "nope" }).length, 1, "malformed registry keeps local");
+
+console.log("research merge test ok: upstream overlay, local presentation, safe fallback");
