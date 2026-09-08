@@ -8,6 +8,23 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-08
+
+### Added
+
+- **Research index replaces brief end to end.** `research-index.md`
+  (Summary/Outputs/Opportunities) with native round files; output
+  contracts (`single`/`variant`/`composite` + JTBD substeps) in the
+  strategy registry; missing substeps surface on the card.
+- **`bb stelow fan-out`.** Opportunity-ID-only fan-out from workers
+  (RPC re-validates); prompt discipline requires structured user
+  confirmation first.
+- **Ask persist robustness.** Persist errors are logged with
+  card/thread context; one retry on lock contention; regression tests;
+  operator runbook in README.
+- **`bb stelow advance --dry-run/--json`, `bb stelow schema`.**
+  Exit codes pass through instead of collapsing.
+
 ## [0.2.0] - 2026-09-08
 
 ### Added
