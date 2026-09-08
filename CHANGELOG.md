@@ -8,6 +8,18 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-08
+
+### Changed
+
+- **Worker row is always visible under the hero**: preset pill +
+  provider/model, a real "Change preset…" outline button, and the
+  stale-preset warning with its restart action. Preset no longer hides
+  inside the collapsed Manage accordion.
+- **Manage is now a danger zone only** (restart fresh, archive, delete)
+  with real outline buttons — archive in destructive tone — plus worker
+  history.
+
 ## [0.3.1] - 2026-09-08
 
 ### Changed
