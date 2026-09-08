@@ -158,6 +158,12 @@ bb stelow ask \
   --option "Accessible"
 
 bb stelow preset list|add|remove|assign
+
+bb stelow advance --dry-run <stage>   # validate a transition without mutating
+bb stelow schema [command]            # machine-readable subcommand contracts
+bb stelow sync-scopes [--json]        # parse spec-tech scopes (auto-runs on advance to execution)
+bb stelow lock acquire|release|check --scope <id> [--file ...] [--ttl N] [--json]
+bb stelow config get <field> [default]
 ```
 
 ## Deploy / hot-reload (CRITICAL)

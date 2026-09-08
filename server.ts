@@ -3200,8 +3200,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
       { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>... (repeat --question groups to ask several at once)" },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
-      { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] <stage>" },
+      { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
+      { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
       { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
       { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
@@ -3344,8 +3345,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const args = argv.slice(1);
         const flag = (name: string) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
         const projectId = flag("--project") ?? ctx.projectId;
+        const dryRun = args.includes("--dry-run");
+        const json = args.includes("--json");
         const stage = flag("--stage") ?? args.find((arg) => !arg.startsWith("--") && arg !== projectId);
-        if (!projectId || !stage) return { exitCode: 2, stderr: "Usage: bb stelow advance [--project <proj_id>] [--stage <stage>] <stage>" };
+        if (!projectId || !stage) return { exitCode: 2, stderr: "Usage: bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" };
         // The agent runs this from within its worker thread; resolve the owning
         // card first so Personal/exploratory work uses its own workspace.
         const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
@@ -3355,8 +3358,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
         const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
         if (guard) return { exitCode: 1, stderr: guard };
-        const result = await runHelper(["advance", stage], rootPath, stateDir ?? undefined);
-        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
+        const helperArgs = ["advance", stage, ...(dryRun ? ["--dry-run"] : []), ...(json ? ["--json"] : [])];
+        const result = await runHelper(helperArgs, rootPath, stateDir ?? undefined);
+        // Helper exit codes are meaningful (2 = usage, 1 = invalid transition):
+        // pass through instead of collapsing.
+        if (result.code !== 0) return { exitCode: result.code ?? 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
+        // --dry-run validates only: no card writes, no band swap, no auto-sync.
+        if (dryRun) return { exitCode: 0, stdout: result.stdout };
         if (cliCard) updateCard(cliCard.id, { stage, status: stage === "audit" ? "completed" : "in-progress", activity: "running", last_error: null });
         // Band-preset swap: if the band of the stage just advanced to defines a
         // preset different from the one this worker was spawned with, respawn the
@@ -3402,8 +3410,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
         if (guard) return { exitCode: 1, stderr: guard };
         const result = await runHelper(json ? ["doctor", "--json"] : ["doctor"], rootPath, stateDir ?? undefined);
-        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "doctor found drift", stdout: result.stdout };
+        if (result.code !== 0) return { exitCode: result.code ?? 1, stderr: result.stderr || "doctor found drift", stdout: result.stdout };
         return { exitCode: 0, stdout: result.stdout };
+      }
+      if (argv[0] === "schema") {
+        const sub = argv[1];
+        if (sub && sub.startsWith("--")) return { exitCode: 2, stderr: "Usage: bb stelow schema [command]" };
+        const rootPath = await projectRoot(bb, ctx.projectId ?? null);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+        const result = await runHelper(sub ? ["schema", sub] : ["schema"], rootPath);
+        return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
       }
       if (argv[0] === "sync-scopes") {
         const args = argv.slice(1);
@@ -3523,7 +3539,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|preset" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|schema|preset" };
     },
   });
 
