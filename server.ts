@@ -3197,6 +3197,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] <stage>" },
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
+      { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
+      { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
+      { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -3352,6 +3355,19 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             }
           }
         }
+        // Entering execution seeds scope tracking best-effort: the vendored
+        // Step 2e (`scripts/stelow sync-scopes`) has no binary in a bb
+        // workspace, so the host performs the same call here. Explicit worker
+        // calls remain canonical; failures never block the advance.
+        if (stage === "execution") {
+          try {
+            const sync = await runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
+            const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
+            if (typeof parsed.synced === "number" && parsed.synced > 0) {
+              return { exitCode: 0, stdout: result.stdout + `\n(sync-scopes: synced ${parsed.synced} scopes)` };
+            }
+          } catch { /* best-effort only */ }
+        }
         return { exitCode: 0, stdout: result.stdout };
       }
       if (argv[0] === "doctor") {
@@ -3369,6 +3385,82 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (guard) return { exitCode: 1, stderr: guard };
         const result = await runHelper(json ? ["doctor", "--json"] : ["doctor"], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "doctor found drift", stdout: result.stdout };
+        return { exitCode: 0, stdout: result.stdout };
+      }
+      if (argv[0] === "sync-scopes") {
+        const args = argv.slice(1);
+        const flag = (name: string) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
+        const projectId = flag("--project") ?? ctx.projectId;
+        const passthrough: string[] = [];
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--project") { i++; continue; }
+          if (args[i] === "--name" || args[i] === "--json") { passthrough.push(args[i]!); if (args[i] === "--name") { passthrough.push(args[i + 1] ?? ""); i++; } continue; }
+          return { exitCode: 2, stderr: "Usage: bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" };
+        }
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
+        const rootPath = workspace?.path ?? await projectRoot(bb, projectId ?? null);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        if (guard) return { exitCode: 1, stderr: guard };
+        const result = await runHelper(["sync-scopes", ...passthrough], rootPath, stateDir ?? undefined);
+        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "sync-scopes failed", stdout: result.stdout };
+        return { exitCode: 0, stdout: result.stdout };
+      }
+      if (argv[0] === "lock") {
+        const args = argv.slice(1);
+        const op = args[0];
+        if (op !== "acquire" && op !== "release" && op !== "check") {
+          return { exitCode: 2, stderr: "Usage: bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" };
+        }
+        const rest: string[] = [];
+        let projectId: string | null = ctx.projectId ?? null;
+        for (let i = 1; i < args.length; i++) {
+          if (args[i] === "--project") { projectId = args[i + 1] ?? null; i++; continue; }
+          if (args[i] === "--scope" || args[i] === "--file" || args[i] === "--ttl" || args[i] === "--json") {
+            rest.push(args[i]!);
+            if (args[i] !== "--json") { rest.push(args[i + 1] ?? ""); i++; }
+            continue;
+          }
+          if (!args[i]!.startsWith("--")) { rest.push(args[i]!); continue; }
+          return { exitCode: 2, stderr: "Usage: bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" };
+        }
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
+        const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        if (guard) return { exitCode: 1, stderr: guard };
+        // Helper exit codes are meaningful here (1 = lock conflict): pass through.
+        const result = await runHelper(["lock", op, ...rest], rootPath, stateDir ?? undefined);
+        return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
+      }
+      if (argv[0] === "config") {
+        const args = argv.slice(1);
+        if (args[0] !== "get" || !args[1]) {
+          return { exitCode: 2, stderr: "Usage: bb stelow config get <field> [default] [--project <proj_id>]" };
+        }
+        const rest: string[] = ["get", args[1]];
+        if (args[2] && !args[2].startsWith("--")) rest.push(args[2]);
+        let projectId: string | null = ctx.projectId ?? null;
+        for (let i = 2; i < args.length; i++) {
+          if (args[i] === "--project") { projectId = args[i + 1] ?? null; i++; continue; }
+          if (args[i] === "--json") continue;
+          if (args[i]!.startsWith("--") && args[i] !== args[2]) {
+            return { exitCode: 2, stderr: "Usage: bb stelow config get <field> [default] [--project <proj_id>]" };
+          }
+        }
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
+        const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        if (guard) return { exitCode: 1, stderr: guard };
+        const result = await runHelper(["config", ...rest], rootPath, stateDir ?? undefined);
+        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "config failed", stdout: result.stdout };
         return { exitCode: 0, stdout: result.stdout };
       }
       if (argv[0] === "preset") {
@@ -3413,7 +3505,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|preset" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|preset" };
     },
   });
 
