@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-08
+
+### Changed
+
+- **Strategy contracts come from upstream.** `product-strategies.json`
+  syncs like the helper into `data/`; presentation stays local and the
+  embedded list stands when the file is absent. Contract drift between
+  playbooks and board is now structurally impossible.
+
 ## [0.3.0] - 2026-09-08
 
 ### Added
