@@ -200,6 +200,21 @@ thread and expect live threads to be interrupted.
 
 Approval creates a receipt only. The Stelow agent/router remains responsible for validating and advancing the state machine.
 
+## Operator runbook: stuck asks
+
+If a worker reports "The question could not be recorded" and the card stays
+`idle` with no pending question, the ask timed out (or was interrupted) while
+its persist to `expired_questions` failed. Diagnose in order:
+
+1. Plugin log (`~/.bb/plugins/stelow/logs/plugin.log`): look for `stelow ask
+   persist attempt` warnings — they name the card, thread, and exact DB error.
+2. A single `SQLITE_BUSY` / `database is locked` warning followed by success
+   is normal (one automatic retry); repeated non-busy errors mean the DB
+   handle is closed (hot-reload timing) or the disk is full — restart the
+   daemon outside active threads and retry the ask.
+3. To unstick the card: send any message on the worker thread — the worker
+   re-asks once, per protocol.
+
 ## Validate
 
 ```bash

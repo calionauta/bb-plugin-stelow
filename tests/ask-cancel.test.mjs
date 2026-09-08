@@ -21,3 +21,16 @@ assert.match(interruptionWhy("server-restarted", false, 12), /server-restarted/,
 assert.match(interruptionWhy(null, true, 3), /failed before delivery/, "throw path is honest");
 
 console.log("ask cancel test ok: full reason matrix, honest worker messaging");
+
+// Persist retry policy: only lock contention is retried, everything else
+// fails fast to the honest re-ask-once message (retrying a closed DB or a
+// schema mismatch would only delay it).
+import { isRetryablePersistError } from "../lib/ask-cancel.mjs";
+assert.equal(isRetryablePersistError("SqliteError: database is locked"), true, "locked DB retries");
+assert.equal(isRetryablePersistError("SQLITE_BUSY: snapshot"), true, "busy snapshot retries");
+assert.equal(isRetryablePersistError("SqliteError: no such table: expired_questions"), false, "schema mismatch fails fast");
+assert.equal(isRetryablePersistError("TypeError: Cannot read properties of null"), false, "disposed handle fails fast");
+assert.equal(isRetryablePersistError(null), false, "null fails fast");
+assert.equal(isRetryablePersistError(""), false, "empty fails fast");
+
+console.log("ask persist-retry test ok: busy retries once, everything else fails fast");

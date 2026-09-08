@@ -6,7 +6,7 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
-import { classifyAskCancel, interruptionWhy } from "./lib/ask-cancel.mjs";
+import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
@@ -3292,20 +3292,33 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // the worker to re-ask ONCE next turn instead of waiting on a
           // question that was never recorded.
           let persisted = false;
-          try {
-            // A timed-out batch persists as one expired row per sub-question
-            // so the card can answer them individually or all at once.
-            const expiredAt = askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
-            const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            db.transaction(() => {
-              for (const group of groups) {
-                insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, JSON.stringify(group.options), expiredAt, 0);
+          let persistError: string | null = null;
+          // Two attempts: a concurrent writer (reconcile timer, sync poll)
+          // can hold the lock briefly — SQLITE_BUSY is transient, not fatal.
+          for (let attempt = 1; attempt <= 2 && !persisted; attempt++) {
+            try {
+              // A timed-out batch persists as one expired row per sub-question
+              // so the card can answer them individually or all at once.
+              const expiredAt = askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
+              const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+              db.transaction(() => {
+                for (const group of groups) {
+                  insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, JSON.stringify(group.options), expiredAt, 0);
+                }
+              })();
+              updateCard(cardRow.id, { activity: "awaiting-answer" });
+              bb.realtime.publish("card-state", { cardId: cardRow.id });
+              persisted = true;
+            } catch (err) {
+              persistError = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+              bb.log.warn(`stelow ask persist attempt ${attempt}/2 failed (card ${cardRow.id}, thread ${threadId}): ${persistError}`);
+              if (isRetryablePersistError(persistError) && attempt === 1) {
+                await new Promise((resolve) => setTimeout(resolve, 250));
+              } else {
+                break;
               }
-            })();
-            updateCard(cardRow.id, { activity: "awaiting-answer" });
-            bb.realtime.publish("card-state", { cardId: cardRow.id });
-            persisted = true;
-          } catch { persisted = false; }
+            }
+          }
           const elapsed = Math.round((Date.now() - askedAt) / 1e3);
           if (!persisted) {
             const whyPersistFailed = requestFailed ? "request failure" : `cancel reason "${cancelReason ?? "unknown"}"`;
