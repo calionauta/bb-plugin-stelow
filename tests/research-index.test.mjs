@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseResearchBrief, checkBriefItems } from "../lib/research-brief.mjs";
+import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
 
 const BRIEF = `# Research brief: onboarding
 Strategy: Opportunity mapping
@@ -16,7 +16,7 @@ People stall at the paywall step.
 Extra notes.
 `;
 
-const parsed = parseResearchBrief(BRIEF);
+const parsed = parseResearchIndex(BRIEF);
 assert.equal(parsed.found, true, "finds the Opportunities section");
 assert.equal(parsed.opportunities.length, 3, "parses three checkboxes, ignores the plain bullet");
 assert.deepEqual(
@@ -36,18 +36,18 @@ assert.deepEqual(
 assert.ok(!parsed.opportunities.some((o) => o.title.includes("Extra")), "stops at the next h2");
 
 // Missing or divergent briefs parse as not-found, never garbage.
-assert.deepEqual(parseResearchBrief("# Brief\nNo opportunities here."), { found: false, opportunities: [] }, "missing section");
-assert.deepEqual(parseResearchBrief(""), { found: false, opportunities: [] }, "empty file");
-assert.deepEqual(parseResearchBrief(null), { found: false, opportunities: [] }, "null input");
+assert.deepEqual(parseResearchIndex("# Brief\nNo opportunities here."), { found: false, opportunities: [] }, "missing section");
+assert.deepEqual(parseResearchIndex(""), { found: false, opportunities: [] }, "empty file");
+assert.deepEqual(parseResearchIndex(null), { found: false, opportunities: [] }, "null input");
 
-// checkBriefItems flips only exact unchecked parser lines.
+// checkIndexItems flips only exact unchecked parser lines.
 const ids = [parsed.opportunities[0].id, parsed.opportunities[1].id, "nope-99"];
-const flipped = checkBriefItems(BRIEF, ids);
+const flipped = checkIndexItems(BRIEF, ids);
 assert.deepEqual(flipped.checked, [parsed.opportunities[0].id], "flips the unchecked match only");
 assert.match(flipped.updated, /- \[x\] Shorter trial/, "box checked in place");
 assert.match(flipped.updated, /- \[x\] Concierge onboarding — already selected/, "already-checked line untouched");
-const again = checkBriefItems(flipped.updated, ids);
+const again = checkIndexItems(flipped.updated, ids);
 assert.deepEqual(again.checked, [], "second flip is a no-op (idempotent)");
-assert.equal(checkBriefItems(BRIEF, []).checked.length, 0, "empty selection flips nothing");
+assert.equal(checkIndexItems(BRIEF, []).checked.length, 0, "empty selection flips nothing");
 
-console.log("research brief test ok: section bounds, groups, ids, idempotent flip");
+console.log("research index test ok: section bounds, groups, ids, idempotent flip");

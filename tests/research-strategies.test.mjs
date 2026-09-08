@@ -33,3 +33,26 @@ assert.deepEqual(parseStrategyList('["a","b"]'), [], "legacy id arrays are dropp
 assert.deepEqual(parseStrategyList(null), [], "nothing yields no history");
 
 console.log("research strategies test ok: unique ids, skill mapping, lookup, history");
+
+// Output contracts: every strategy declares single/variant/composite;
+// composite names its expected substeps for validation.
+import { expectedSubsteps, missingSubsteps } from "../lib/research-strategies.mjs";
+import { RESEARCH_STRATEGIES as STRATEGIES } from "../lib/research-strategies.mjs";
+for (const entry of STRATEGIES) {
+  assert.ok(["single", "variant", "composite"].includes(entry.contract), `${entry.id} has a valid contract`);
+  if (entry.contract === "composite") {
+    assert.ok(Array.isArray(entry.substeps) && entry.substeps.length > 0, `${entry.id} composite names substeps`);
+  }
+}
+assert.deepEqual(expectedSubsteps("pricing"), [], "single needs no validation");
+assert.deepEqual(expectedSubsteps("market-analysis"), [], "variant needs no validation");
+assert.deepEqual(expectedSubsteps("nope"), [], "unknown needs no validation");
+assert.equal(expectedSubsteps("job-to-be-done").length, 10, "JTBD full mapping names ten substeps");
+assert.deepEqual(missingSubsteps("job-to-be-done", ["contextual-segmentation", "job-map-steps"]), [
+  "thinking-styles", "jtbd-discovery", "competitors", "job-actors",
+  "situational-variables", "functional-needs", "financial-needs", "emotional-social-jobs",
+], "missing substeps reported explicitly");
+assert.deepEqual(missingSubsteps("pricing", []), [], "single never reports missing");
+assert.deepEqual(missingSubsteps("job-to-be-done", expectedSubsteps("job-to-be-done")), [], "complete set reports nothing missing");
+
+console.log("research contracts test ok: valid contracts, JTBD ten substeps, explicit missing");

@@ -1057,7 +1057,7 @@ type ResearchStrategyOption = { id: string; label: string; skill: string; blurb:
 
 // Second track beside Build: lightweight research (To-Do / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
-// the card produces a brief, and opportunities fan out into Build cards.
+// the card produces a index, and opportunities fan out into Build cards.
 function ResearchPanel() {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
@@ -1164,7 +1164,7 @@ function ResearchPanel() {
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Research started. The brief appears on the card.");
+      toast.success("Research started. The index appears on the card.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start research.");
       throw error;
@@ -1183,7 +1183,7 @@ function ResearchPanel() {
         <div className="mx-auto max-w-[1500px] space-y-4">
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces a brief; ranked opportunities fan out into {trackTitle("build")} cards.</p>
+              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces a index; ranked opportunities fan out into {trackTitle("build")} cards.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Research</h1>
               </div>
@@ -1210,13 +1210,13 @@ function ResearchPanel() {
               },
               {
                 title: "One strategy per round",
-                body: "Each round appends a new section to the brief — never rewrites it. Run another strategy from the card to compound perspectives; every round uses the research agent preset.",
+                body: "Each round appends a new section to the index — never rewrites it. Run another strategy from the card to compound perspectives; every round uses the research agent preset.",
                 preview: <p className="mt-2 rounded-md border bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground" title="Research agent preset">research: {effectiveResearchPreset?.name ?? "Default"}{researchBandPreset ? "" : " (board default)"}</p>,
                 action: <Button className="min-h-11" variant="outline" onClick={() => setResearchPresetsOpen(true)}>Configure presets</Button>,
               },
               {
                 title: `Ranked opportunities become ${trackTitle("build")} cards`,
-                body: "Check opportunities in the brief and fan out — each becomes a build card at triage, with a comment trail both ways so nothing duplicates.",
+                body: "Check opportunities in the index and fan out — each becomes a build card at triage, with a comment trail both ways so nothing duplicates.",
               },
             ]}
           />
@@ -1891,7 +1891,7 @@ function BoardCard({ card }: { card: CardItem }) {
   );
 }
 
-// Research cards carry ONE status everywhere. A brief with ranked
+// Research cards carry ONE status everywhere. A index with ranked
 // opportunities (researchReady, idle, nothing pending) reads "Ready for
 // review" instead of the column label — the same pill on the kanban card, the
 // list row, and the expanded view, so the board and the detail can never show
@@ -1899,9 +1899,9 @@ function BoardCard({ card }: { card: CardItem }) {
 function ResearchStatusPill({ card, researchReady }: { card: CardItem; researchReady?: boolean }) {
   const ready = (researchReady ?? card.researchReady) === true && card.activity === "idle" && !card.needsAttention;
   if (ready) {
-    return <Pill tone="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" title="Research status — the brief has ranked opportunities. Review it, fan out build cards, then drag to Done."><span className="mr-1">✓</span>Ready for review</Pill>;
+    return <Pill tone="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" title="Research status — the index has ranked opportunities. Review it, fan out build cards, then drag to Done."><span className="mr-1">✓</span>Ready for review</Pill>;
   }
-  return <Pill tone={statusTone(card.status)} title="Research status — where this card stands. Done is a human drag after reviewing the brief."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>;
+  return <Pill tone={statusTone(card.status)} title="Research status — where this card stands. Done is a human drag after reviewing the index."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>;
 }
 
 // Research-track card: strategy instead of stage/intent, opens in the
@@ -2860,14 +2860,14 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       sub: "The agent advances on its own. Nothing needs you right now.",
     };
   }
-  // Ready brief + idle worker is the expected terminal rest, not a stall:
+  // Ready index + idle worker is the expected terminal rest, not a stall:
   // one calm sentence naming the exit (review → fan out → Done), never a
   // Resume that would wake a finished worker for no reason.
   if (card.activity === "idle" && (detail?.card.researchReady ?? card.researchReady) === true) {
     return {
       kind: "calm",
       title: "Research ready for review",
-      sub: "The brief has opportunities — review it, fan out build cards, then drag to Done.",
+      sub: "The index has opportunities — review it, fan out build cards, then drag to Done.",
     };
   }
   return {
@@ -3046,13 +3046,13 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
   );
 }
 
-type ResearchBriefState = {
+type ResearchIndexState = {
   found: boolean;
-  briefPath: string | null;
+  indexPath: string | null;
   content: string | null;
   truncated: boolean;
   opportunities: Array<{ id: string; title: string; checked: boolean; group: string | null }>;
-  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
+  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
   looseFiles: Array<{ display: string; path: string; absolutePath: string; hostId: string }>;
   error: string | null;
 };
@@ -3066,10 +3066,10 @@ function formatRoundDate(iso: string | null): string {
 
 // Fan-out: turn checked opportunities into delivery Build cards. Mirrors the
 // GitHub-import dialog (checkbox list + bulk confirm); the server re-parses
-// the brief, spawns, and flips exactly the spawned boxes.
+// the index, spawns, and flips exactly the spawned boxes.
 function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
   open: boolean; onOpenChange: (next: boolean) => void; cardId: string;
-  opportunities: ResearchBriefState["opportunities"];
+  opportunities: ResearchIndexState["opportunities"];
   onFanned: () => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -3113,7 +3113,7 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Create build cards</DialogTitle>
-          <DialogDescription>Each selected opportunity becomes a delivery build card starting at triage. Spawned boxes check off in the brief so a retry never duplicates.</DialogDescription>
+          <DialogDescription>Each selected opportunity becomes a delivery build card starting at triage. Spawned boxes check off in the index so a retry never duplicates.</DialogDescription>
         </DialogHeader>
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing available — every opportunity was already fanned out or checked.</p>
@@ -3151,7 +3151,7 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
 
 // Composite research: run another strategy round on the same request. One
 // round at a time (single-select) — rounds accumulate as ### sections in
-// the brief, so the card stays a deterministic sequence, never a parallel
+// the index, so the card stays a deterministic sequence, never a parallel
 // batch to merge.
 function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onStarted }: {
   open: boolean; onOpenChange: (next: boolean) => void; cardId: string;
@@ -3177,7 +3177,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
         toast.error(result.error ?? "Could not start the strategy round.");
         return;
       }
-      toast.success(`Started a ${active.label} round — appending to the brief.`);
+      toast.success(`Started a ${active.label} round — appending to the index.`);
       onOpenChange(false);
       onStarted();
     } finally {
@@ -3189,7 +3189,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Explore another strategy</DialogTitle>
-          <DialogDescription>A fresh worker runs the strategy on the same request and appends a new section to the brief. Existing findings are never rewritten.</DialogDescription>
+          <DialogDescription>A fresh worker runs the strategy on the same request and appends a new section to the index. Existing findings are never rewritten.</DialogDescription>
         </DialogHeader>
         <StrategyPicker strategies={strategies} value={picked} onChange={setPicked} runIds={runIds} groupName="research-strategy-round" disabled={busy} />
         <DialogFooter>
@@ -3273,7 +3273,7 @@ function InboxEventBanner({ visible, event, sectionRef }: {
   );
 }
 
-// Research-track card detail: hero + brief + fan-out + artifacts + manage +
+// Research-track card detail: hero + index + fan-out + artifacts + manage +
 // conversation. Delivery-only surfaces (stages, timeline, gates, intent)
 // never render here; every leaf below is shared with the delivery body.
 function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, detail, onChanged }: {
@@ -3281,7 +3281,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
   card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [brief, setBrief] = useState<ResearchBriefState | null>(null);
+  const [index, setIndex] = useState<ResearchIndexState | null>(null);
   const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
   const [comment, setComment] = useState("");
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
@@ -3297,23 +3297,23 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
   const [strategyRunOpen, setStrategyRunOpen] = useState(false);
   const inboxEventRef = useRef<HTMLElement | null>(null);
 
-  const loadBrief = useCallback(async () => {
+  const loadIndex = useCallback(async () => {
     try {
-      const [briefResult, strategiesResult, eventResult] = await Promise.all([
-        rpc.call("researchBrief", { cardId }),
+      const [indexResult, strategiesResult, eventResult] = await Promise.all([
+        rpc.call("researchIndex", { cardId }),
         rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
         inboxEventId ? rpc.call("getNotification", { notificationId: inboxEventId, cardId }) : null,
       ]);
-      setBrief(briefResult);
+      setIndex(indexResult);
       setStrategies(strategiesResult.strategies);
       setInboxEvent(eventResult?.notification ?? null);
     } catch {
-      setBrief({ found: false, briefPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "Unable to load the brief." });
+      setIndex({ found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "Unable to load the index." });
     }
   }, [cardId, inboxEventId, rpc]);
 
-  useEffect(() => { void loadBrief(); }, [loadBrief]);
-  useDebouncedRealtime(["card-state"], () => { void loadBrief(); });
+  useEffect(() => { void loadIndex(); }, [loadIndex]);
+  useDebouncedRealtime(["card-state"], () => { void loadIndex(); });
   // Viewing a completed card marks its completion seen (read, never
   // resolved): the badge drops, Recent updates keeps the entry.
   useEffect(() => {
@@ -3367,7 +3367,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
     }
     toast.success("Fresh worker started on the same strategy.");
     onChanged();
-    void loadBrief();
+    void loadIndex();
   }
 
   async function doRetry() {
@@ -3402,15 +3402,15 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
   const strategyById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
   const strategyLabel = card ? joinStrategyLabels(card.researchStrategies ?? [card.researchStrategy], strategyById) : null;
   const primaryStrategyLabel = card ? (strategyById.get(card.researchStrategy ?? "") ?? card.researchStrategy) : null;
-  const available = brief?.opportunities.filter((item) => !item.checked) ?? [];
-  const briefGroups = useMemo(() => {
+  const available = index?.opportunities.filter((item) => !item.checked) ?? [];
+  const indexGroups = useMemo(() => {
     const seen: string[] = [];
-    for (const item of brief?.opportunities ?? []) {
+    for (const item of index?.opportunities ?? []) {
       const group = item.group ?? "Opportunities";
       if (!seen.includes(group)) seen.push(group);
     }
     return seen;
-  }, [brief]);
+  }, [index]);
 
   return (
     <div className="flex h-full flex-col">
@@ -3427,8 +3427,8 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
-                    {brief && brief.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? (
-                      <p className="text-xs text-muted-foreground">Brief ready — review it below, fan out opportunities into build cards, then drag this card to Done.</p>
+                    {index && index.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? (
+                      <p className="text-xs text-muted-foreground">Index ready — review it below, fan out opportunities into build cards, then drag this card to Done.</p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       <ResearchStatusPill card={card} researchReady={detail?.card.researchReady ?? card.researchReady} />
@@ -3478,34 +3478,34 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                 </div>
                 {pendingFirst && card.activity === "awaiting-answer" ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadBrief(); }} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} />
                   </div>
                 ) : null}
               </section>
             ) : null}
 
             <CardDisclosure
-              title="Research brief"
-              hint={brief && brief.found ? `${available.length} available · ${brief.opportunities.length} total` : brief?.briefPath ?? "the worker is writing it"}
+              title="Research index"
+              hint={index && index.found ? `${available.length} available · ${index.opportunities.length} total` : index?.indexPath ?? "the worker is writing it"}
               defaultOpen
             >
-              {!brief ? <p className="text-xs text-muted-foreground">Loading brief…</p> : null}
-              {brief && !brief.found ? <p className="text-xs text-muted-foreground">{brief.error ?? "No brief yet — the research is still running."}</p> : null}
-              {brief?.found && brief.content ? <div className="text-sm leading-relaxed"><Markdown content={brief.content} /></div> : null}
-              {brief?.truncated ? <p className="text-xs text-muted-foreground">Brief truncated for display — the full file lives at {brief.briefPath}.</p> : null}
-              {brief?.found && brief.opportunities.length > 0 ? (
+              {!index ? <p className="text-xs text-muted-foreground">Loading index…</p> : null}
+              {index && !index.found ? <p className="text-xs text-muted-foreground">{index.error ?? "No index yet — the research is still running."}</p> : null}
+              {index?.found && index.content ? <div className="text-sm leading-relaxed"><Markdown content={index.content} /></div> : null}
+              {index?.truncated ? <p className="text-xs text-muted-foreground">Index truncated for display — the full file lives at {index.indexPath}.</p> : null}
+              {index?.found && index.opportunities.length > 0 ? (
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({brief.opportunities.length})</h4>
+                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({index.opportunities.length})</h4>
                     <span className="flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy round on the same request — appends a new section to the brief.">Explore another strategy…</Button>
+                      <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy round on the same request — appends a new section to the index.">Explore another strategy…</Button>
                           <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Turn selected opportunities into delivery build cards.">Create build cards…</Button>
                     </span>
                   </div>
-                  {briefGroups.map((group) => (
+                  {indexGroups.map((group) => (
                     <div key={group} className="space-y-1">
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{group}</p>
-                      {(brief?.opportunities ?? []).filter((item) => (item.group ?? "Opportunities") === group).map((item) => (
+                      {(index?.opportunities ?? []).filter((item) => (item.group ?? "Opportunities") === group).map((item) => (
                         <div key={item.id} className="flex items-start gap-2 text-sm">
                           <span className="mt-0.5" aria-hidden>{item.checked ? "☑" : "☐"}</span>
                           <span className={item.checked ? "text-muted-foreground line-through" : ""}>{item.title}</span>
@@ -3515,13 +3515,13 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                   ))}
                 </div>
               ) : null}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => { onChanged(); void loadBrief(); }} /> : null}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => { onChanged(); void loadIndex(); }} /> : null}
             </CardDisclosure>
 
-            {(brief && (brief.rounds.length > 0 || brief.looseFiles.length > 0)) ? (
-              <CardDisclosure title="Rounds" hint={`${brief.rounds.length} round${brief.rounds.length === 1 ? "" : "s"} · newest first`}>
+            {(index && (index.rounds.length > 0 || index.looseFiles.length > 0)) ? (
+              <CardDisclosure title="Rounds" hint={`${index.rounds.length} round${index.rounds.length === 1 ? "" : "s"} · newest first`}>
                 <div className="space-y-1.5">
-                  {brief.rounds.map((round) => {
+                  {index.rounds.map((round) => {
                     const when = formatRoundDate(round.files[0]?.generatedAt || round.at);
                     return (
                       <div key={`${round.strategyId}-r${round.n}`} className="rounded-md border bg-muted/20 px-3 py-2">
@@ -3531,6 +3531,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                           {when ? <span className="text-xs text-muted-foreground">{when}</span> : null}
                           {round.status === "pending" ? <span className="text-xs text-muted-foreground">Running…</span> : null}
                           {round.status === "missing" ? <span className="text-xs text-muted-foreground">No file saved yet</span> : null}
+                          {round.missing.length > 0 ? <span className="text-xs text-amber-700 dark:text-amber-300" title="Expected sub-outputs not saved yet">Missing: {round.missing.join(", ")}</span> : null}
                         </div>
                         {round.files.length > 0 ? (
                           <div className="mt-1 flex flex-wrap gap-1.5">
@@ -3549,11 +3550,11 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                       </div>
                     );
                   })}
-                  {brief.looseFiles.length > 0 ? (
+                  {index.looseFiles.length > 0 ? (
                     <div className="rounded-md border border-dashed px-3 py-2">
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Other files in the state dir</p>
                       <div className="mt-1 flex flex-wrap gap-1.5">
-                        {brief.looseFiles.map((file) => (
+                        {index.looseFiles.map((file) => (
                           <button
                             key={file.path}
                             onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) })}
@@ -3621,7 +3622,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         open={repairOpen}
         onOpenChange={setRepairOpen}
         title="Restart with a fresh worker?"
-        description={`A new worker restarts ${primaryStrategyLabel ? `the ${primaryStrategyLabel} strategy` : "the original strategy"} from scratch with a clean brief — later rounds are discarded. Existing comments are kept. Try Retry first — restart only if the worker itself is broken.`}
+        description={`A new worker restarts ${primaryStrategyLabel ? `the ${primaryStrategyLabel} strategy` : "the original strategy"} from scratch with a clean index — later rounds are discarded. Existing comments are kept. Try Retry first — restart only if the worker itself is broken.`}
         confirmLabel="Restart fresh"
         confirmTone="default"
         onConfirm={doRepair}
@@ -3639,7 +3640,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         open={presetDialogOpen}
         onOpenChange={setPresetDialogOpen}
         cardId={cardId}
-        onChanged={() => { onChanged(); void loadBrief(); }}
+        onChanged={() => { onChanged(); void loadIndex(); }}
       />
       <ArtifactViewerDialog
         open={viewerFile !== null}
@@ -3648,15 +3649,15 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
         pendingQuestion={pendingFirst}
-        onQuestionAnswered={() => { setViewerFile(null); onChanged(); void loadBrief(); }}
+        onQuestionAnswered={() => { setViewerFile(null); onChanged(); void loadIndex(); }}
         onCommented={() => onChanged()}
       />
       <FanOutDialog
         open={fanOutOpen}
         onOpenChange={setFanOutOpen}
         cardId={cardId}
-        opportunities={brief?.opportunities ?? []}
-        onFanned={() => { onChanged(); void loadBrief(); }}
+        opportunities={index?.opportunities ?? []}
+        onFanned={() => { onChanged(); void loadIndex(); }}
       />
       <StrategyRunDialog
         open={strategyRunOpen}
@@ -3664,7 +3665,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         cardId={cardId}
         strategies={strategies}
         runIds={card?.researchStrategies ?? []}
-        onStarted={() => { onChanged(); void loadBrief(); }}
+        onStarted={() => { onChanged(); void loadIndex(); }}
       />
       <ConfirmActionDialog
         open={archiveOpen}

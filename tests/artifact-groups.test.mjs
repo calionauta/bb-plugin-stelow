@@ -9,7 +9,7 @@ const grouped = groupArtifactsByStage([
   item("planning", "spec-tech.md"),
   item("mystery", "x.md"),
   item("shape", "spec-product.md"),
-  item("research", "brief.md"),
+  item("research", "research-index.md"),
   item("shape", "critique.md"),
   { path: "orphan.md" },
 ]);

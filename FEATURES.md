@@ -194,40 +194,46 @@ investigation that feeds the delivery board.*
   "Explore another strategy" (which badges already-ran playbooks).
   Composite strategy runs on
   the same request: one round at a time, each appending a `###` section
-  to the brief — never parallel batches to merge. "Explore another
+  to the index — never parallel batches to merge. "Explore another
   strategy" starts a fresh worker on a new playbook; history pills join
   run labels (`A + B`); reseed restarts the original strategy clean.
-- **Research brief** (`researchBrief`, `parseResearchBrief`). The worker
-  writes `brief.md` (findings + `## Opportunities` checkboxes) into its
-  own state dir; the card renders it with per-strategy groups and
-  available/total counts. Non-conforming briefs refuse with an exit.
+- **Research index** (`researchIndex`, `parseResearchIndex`). The worker
+  writes `research-index.md` (Summary + Outputs table + `## Opportunities`
+  checkboxes) into its own state dir; the card renders it with per-strategy
+  groups and available/total counts. Non-conforming indexes refuse with an exit.
 - **Round files** (`researchRoundFiles`, `lib/research-rounds.mjs`). Every
   round persists its native playbook output verbatim (one file per
   round, one per sub-step when a playbook fans out, e.g. JTBD) under
   the state dir's `rounds/` and registers each in the manifest;
-  `brief.md` stays the machine-read aggregator for fan-out. The card
+  `research-index.md` stays the machine-read aggregator for fan-out. The card
   lists rounds newest-first with run status (ready / pending /
-  missing) plus unregistered state-dir files; history carries
-  timestamps.
-- **Fan-out** (`fanOutResearch`, `FanOutDialog`). Checked opportunities
+  missing) plus missing composite substeps plus unregistered state-dir files;
+  history carries timestamps.
+- **Output contracts** (`RESEARCH_STRATEGIES`). Each strategy declares
+  `single`, `variant`, or `composite` (+ expected substep slugs for
+  composite); missing substeps surface explicitly on the round, never as
+  silent done.
+- **Fan-out** (`fanOutResearch`, `FanOutDialog`, `bb stelow fan-out`). Checked opportunities
   become build cards at triage (exploratory research fans out
   into isolated exploratory cards); spawned boxes check off so retries
-  never duplicate; both-ways comment trail.
+  never duplicate; both-ways comment trail. Workers fan out via
+  `bb stelow fan-out --opportunity <id>` only after structured user
+  confirmation — IDs from the index, never prose.
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as delivery. Stage advance and intent editing refuse on
   research cards with the valid exit named.
 - **Ready-for-review** (`isResearchReadyForReview`,
-  `lib/research-ready.mjs`). An idle worker with a brief that parses to
+  `lib/research-ready.mjs`). An idle worker with an index that parses to
   ≥1 opportunity is the expected terminal rest (the worker is told to
-  STOP when the brief is complete) — never a `paused` stall. The sync
-  resolves any paused signal and emits one `completed` event per brief
-  fingerprint (a grown brief earns a fresh one); one status pill names the
+  STOP when the index is complete) — never a `paused` stall. The sync
+  resolves any paused signal and emits one `completed` event per index
+  fingerprint (a grown index earns a fresh one); one status pill names the
   state everywhere (`ResearchStatusPill`: `Ready for review` replaces the
   column label on the kanban card, the list row, and the expanded view —
   never a second competing chip, never missing), the hero names the exit
   (review → fan out → Done), and no `Resume` is offered for finished work.
-  Done stays a human drag after reviewing the brief.
+  Done stays a human drag after reviewing the index.
 
 ## Cross-cutting rules (apply to every feature above)
 

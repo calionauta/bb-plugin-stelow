@@ -15,9 +15,9 @@ import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/stage-bands.mjs";
-import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList } from "./lib/research-strategies.mjs";
+import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
-import { parseResearchBrief, checkBriefItems } from "./lib/research-brief.mjs";
+import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
@@ -287,9 +287,9 @@ export const rpcContract = defineRpcContract({
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
-  researchBrief: {
+  researchIndex: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ found: z.boolean(), briefPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string(), status: z.enum(["ready", "pending", "missing"]), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), looseFiles: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string() })), error: z.string().nullable() }),
+    output: z.object({ found: z.boolean(), indexPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string(), status: z.enum(["ready", "pending", "missing"]), missing: z.array(z.string()), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), looseFiles: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string() })), error: z.string().nullable() }),
   },
   fanOutResearch: {
     input: z.object({ cardId: z.string(), opportunityIds: z.array(z.string().min(1).max(120)).min(1).max(20) }).strict(),
@@ -1128,44 +1128,50 @@ export default async function plugin(bb: BbPluginApi) {
   // exploratory workspace; project cards keep using their declared source.
   //
   // kind "research" runs a stelow-product-* strategy instead of the delivery
-  // workflow: no stages, no gates, no advance. The worker writes brief.md
+  // workflow: no stages, no gates, no advance. The worker writes research-index.md
   // (exact shape below) into its own state dir; the user marks Done and
   // fans opportunities out into delivery cards from the plugin UI.
   function researchWorkerPrompt({ displayName, prompt, strategyLabel, strategyId, strategySkill, stateDirText, workspaceRoot, instructions, flavor, previousThreadId, roundNo, roundStamp, roundFile }: { displayName: string; prompt: string; strategyLabel: string; strategyId: string; strategySkill: string; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed" | "append"; previousThreadId: string | null; roundNo: number; roundStamp: string; roundFile: string }): string {
     const flavorLine = flavor === "initial"
       ? "This is a fresh research task."
       : flavor === "append"
-        ? "A previous strategy round already wrote to brief.md. Load the playbook below and APPEND a new ### section for it — never rewrite, delete, or re-check existing items."
+        ? "A previous strategy round already wrote to research-index.md. Load the playbook below and APPEND a new ### section for it — never rewrite, delete, or re-check existing items."
         : flavor === "restart"
-          ? "You are being restarted mid-research with a fresh worker. Re-read your brief.md and CONTINUE the research — do not start over unless the brief is empty."
-          : "The host re-seeded your state dir: start the research over with a fresh brief.md.";
-    return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the brief is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
+          ? "You are being restarted mid-research with a fresh worker. Re-read your research-index.md and CONTINUE the research — do not start over unless the index is empty."
+          : "The host re-seeded your state dir: start the research over with a fresh research-index.md.";
+    return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the index is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
 
 Step 1 — load the strategy playbook: the ${strategyLabel} method (${strategySkill}) comes from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb skill list\` to confirm it, then follow that playbook — not the stelow-workflow-* delivery skills, which do not apply here.
 
-Step 2 — research the request below inside this workspace. Research happens primarily on the WEB using your search tools — the playbook expects real-time sources (LinkedIn, X/Twitter, Reddit practitioner communities, industry reports), not prior knowledge. You may also read code and docs. If you genuinely have no web search tools available, say so explicitly in the brief instead of inventing findings — never fabricate market data, quotes, or statistics. You MUST NOT write product code or open pull requests. Research only.
+Step 2 — research the request below inside this workspace. Research happens primarily on the WEB using your search tools — the playbook expects real-time sources (LinkedIn, X/Twitter, Reddit practitioner communities, industry reports), not prior knowledge. You may also read code and docs. If you genuinely have no web search tools available, say so explicitly in the index instead of inventing findings — never fabricate market data, quotes, or statistics. You MUST NOT write product code or open pull requests. Research only.
 
-Step 3 — write your findings to <state-dir>/brief.md (create it) in EXACTLY this shape (headings verbatim, opportunities as checkboxes — the plugin parses them deterministically for fan-out):
+Step 3 — write your findings to <state-dir>/research-index.md (create it) in EXACTLY this shape (headings verbatim — the plugin parses them deterministically for review and fan-out):
 
-    # Research brief: ${displayName}
-    Strategy: ${strategyLabel}
-    ## Findings
-    <what you learned, concise>
+    # Research index: ${displayName}
+
+    ## Summary
+    <concise cross-strategy synthesis, evidence limits, key decisions — keep it short>
+
+    ## Outputs
+    | Strategy | Round | Output | Path | Notes |
+    | --- | --- | --- | --- | --- |
+    | ${strategyLabel} | ${roundNo} | <what this output is> | <path relative to ${workspaceRoot}> | <notes> |
+
     ## Opportunities
     ### ${strategyLabel} — <today's YYYY-MM-DD date>
     - [ ] <opportunity title> — <one-line why it matters>
 
-Unchecked boxes mean "available for fan-out". NEVER check a box yourself — the plugin checks the ones the user turns into build cards. If you run another strategy later, APPEND a new ### section under ## Opportunities; never rewrite existing items.
+Unchecked boxes mean "available for fan-out" and NOTHING else — they are not task state. NEVER check a box yourself — the plugin checks the ones the user turns into build cards. If you run another strategy later, APPEND a new ### section under ## Opportunities plus new rows under ## Outputs; never rewrite existing items.
 
-Step 3b — persist this round's native output IN ADDITION to the brief, never instead of it: OVERWRITE <workspaceRoot>/${roundFile} with the playbook's full result VERBATIM (the file already exists and is already registered — do NOT add a manifest block for it). If the playbook runs distinct sub-steps with separable outputs (e.g. JTBD's numbered prompts), save EACH next to it in the same directory, named <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md with the SAME stamp, where <substep-slug> is the lowercase-hyphenated sub-step name.
+Step 3b — persist this round's native output IN ADDITION to the index, never instead of it: OVERWRITE <workspaceRoot>/${roundFile} with the playbook's full result VERBATIM (the file already exists and is already registered — do NOT add a manifest block for it). If the playbook runs distinct sub-steps with separable outputs (e.g. JTBD's numbered prompts), save EACH next to it in the same directory, named <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md with the SAME stamp, where <substep-slug> is the lowercase-hyphenated sub-step name.
 
-Step 4 — register the brief plus any EXTRA sub-step files so each renders on the card: append one block per file to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
+Step 4 — register the index plus any EXTRA sub-step files so each renders on the card: append one block per file to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 
     artifacts:
       - stage: research
         kind: document
-        path: <brief.md path relative to ${workspaceRoot}>
-        label: Research brief
+        path: <research-index.md path relative to ${workspaceRoot}>
+        label: Research index
 (one more block per sub-step file, with label "Round ${roundNo} — ${strategyLabel} (<substep-slug>)" and its own path. The round's own file needs no block — it is pre-registered.)
 
 CRITICAL — User input contract:
@@ -1177,7 +1183,7 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
 
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
 
-On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question. There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the brief is complete with ranked opportunities, STOP and end your turn — the user reviews the brief, marks the card Done, and fans opportunities out into delivery cards. Stop early when the user archives the card.
+On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question. There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the index is complete with ranked opportunities, STOP and end your turn — the user reviews the index, marks the card Done, and fans opportunities out into delivery cards. If the user instead confirms specific opportunities in-thread, fan them out yourself ONLY after that structured confirmation: \`bb stelow fan-out --opportunity <id> [--opportunity ...]\` (ids from the index, never prose — the command refuses unknown ids). Stop early when the user archives the card.
 
 ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
@@ -1495,7 +1501,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
   }
 
-  // Resolve the research brief file for a card: always the card's own state
+  // Resolve the research index file for a card: always the card's own state
   // dir (never the project root, so many research cards can share one
   // project without colliding). Every refusal names its exit.
   // Round files for a research card, newest first. History entries carry
@@ -1506,17 +1512,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // files in the state dir surface as loose files. Fail-soft throughout.
   async function researchRoundFiles(workspacePath: string | null, hostId: string | null, stateDir: string | null, history: Array<{ id: string; at: string; file: string }>, live: boolean) {
     type RoundFile = { display: string; path: string; absolutePath: string; hostId: string; generatedAt: string };
-    type Round = { n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; files: RoundFile[] };
+    type Round = { n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; files: RoundFile[] };
     const rounds: Round[] = history.map((entry, index) => {
       const meta = researchStrategyById(entry.id);
-      return { n: index + 1, strategyId: entry.id, label: meta?.label ?? entry.id, emoji: meta?.emoji ?? "", at: entry.at, status: "missing" as const, files: [] };
+      return { n: index + 1, strategyId: entry.id, label: meta?.label ?? entry.id, emoji: meta?.emoji ?? "", at: entry.at, status: "missing" as const, missing: [], files: [] };
     });
     const looseFiles: Array<{ display: string; path: string; absolutePath: string; hostId: string }> = [];
     if (workspacePath && stateDir) {
       try {
         const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
         const manifest = stateBlob ? parseArtifactManifest(stateBlob).filter((fields) => fields.stage === "research" && typeof fields.path === "string") : [];
-        const known = new Set([join(stateDir, "brief.md"), join(stateDir, "state.md")]);
+        const known = new Set([join(stateDir, "research-index.md"), join(stateDir, "state.md")]);
         for (const round of rounds) {
           const primaryFull = resolveArtifactPath(workspacePath, history[round.n - 1].file);
           if (primaryFull) known.add(primaryFull);
@@ -1557,6 +1563,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     // Primary contents decide ready vs pending/missing (sequential reads over
     // a handful of small files; rounds are few by construction).
     for (const round of rounds) {
+      const present = round.files
+        .map((file) => parseRoundPath(file.path, round.strategyId)?.subskill)
+        .filter((slug): slug is string => typeof slug === "string");
+      round.missing = missingSubsteps(round.strategyId, present);
       const full = workspacePath ? resolveArtifactPath(workspacePath, history[round.n - 1].file) : null;
       const primaryLabel = `Round ${round.n} — ${round.label}`;
       if (full && hostId) {
@@ -1593,30 +1603,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return workspaceRelative(workspacePath, join(stateDirAbs, `${ROUNDS_DIR}/${base}`)) ?? `${ROUNDS_DIR}/${base}`;
   }
 
-  async function readResearchBrief(card: CardRow): Promise<{ ok: false; error: string } | { ok: true; content: string; absolute: string; display: string }> {
+  async function readResearchIndex(card: CardRow): Promise<{ ok: false; error: string } | { ok: true; content: string; absolute: string; display: string }> {
     const workspace = await cardWorkspace(card);
     if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
     if (!card.dir_hash) return { ok: false, error: "No workflow state for this research yet." };
     const stateDir = await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null);
     if (!stateDir) return { ok: false, error: "No workflow state for this research yet." };
-    const absolute = join(stateDir, "brief.md");
+    const absolute = join(stateDir, "research-index.md");
     const content = await bb.sdk.files.read({ path: absolute }).then((file) => file.content).catch(() => null);
-    if (content === null) return { ok: false, error: "No brief.md yet — the research is still running." };
-    return { ok: true, content, absolute, display: workspaceRelative(workspace.path, absolute) ?? "brief.md" };
+    if (content === null) return { ok: false, error: "No research-index.md yet — the research is still running." };
+    return { ok: true, content, absolute, display: workspaceRelative(workspace.path, absolute) ?? "research-index.md" };
   }
 
   // Research readiness in one place (convention over configuration): the
-  // brief ## Opportunities checkboxes the fan-out dialog already parses via
-  // parseResearchBrief. The sync writer and both read-path attention flags
+  // index ## Opportunities checkboxes the fan-out dialog already parses via
+  // parseResearchIndex. The sync writer and both read-path attention flags
   // share this predicate so they cannot diverge into "paused" vs "ready"
   // again. Delivery keeps its own terminal convention (state.md audit stage)
   // — each track reuses its canonical artifact, never a second definition.
   async function researchReadiness(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null }> {
     if (card.kind !== "research") return { ready: false, fingerprint: null };
-    const brief = await readResearchBrief(card).catch(() => null);
-    if (!brief || brief.ok !== true) return { ready: false, fingerprint: null };
-    if (!isResearchReadyForReview(brief.content)) return { ready: false, fingerprint: null };
-    return { ready: true, fingerprint: researchReadyFingerprint(brief.content) };
+    const index = await readResearchIndex(card).catch(() => null);
+    if (!index || index.ok !== true) return { ready: false, fingerprint: null };
+    if (!isResearchReadyForReview(index.content)) return { ready: false, fingerprint: null };
+    return { ready: true, fingerprint: researchReadyFingerprint(index.content) };
   }
 
   // Failure cause for a dead worker with no output. thread.failed only
@@ -1647,7 +1657,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // Research cards have no stages: sync only worker activity and attention.
   // A freshly-spawned research worker moves To-Do (pending) to Doing
   // (in-progress) on its first active poll — work visibly began. Done is
-  // always a human drag after reviewing the brief, never automatic.
+  // always a human drag after reviewing the index, never automatic.
   async function syncResearchThreadState(card: CardRow): Promise<void> {
     try {
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id! });
@@ -1674,17 +1684,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         if (expiredPending) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
-          // Ready brief + idle worker is the expected terminal rest (the
-          // worker prompt tells the worker to STOP when the brief is
+          // Ready index + idle worker is the expected terminal rest (the
+          // worker prompt tells the worker to STOP when the index is
           // complete) — never a stall. Resolve any paused signal and emit
-          // one completion per brief fingerprint; Done stays a human drag.
+          // one completion per index fingerprint; Done stays a human drag.
           const readiness = await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
           if (readiness.ready) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
             resolveInboxEvents(card.id, now(), ["paused"]);
             const readyCurrent = getCard(card.id);
-            if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Research ready for review — open the brief, then drag to Done.", `completed:${card.id}:brief:${readiness.fingerprint ?? "ready"}`, now());
+            if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Research ready for review — open the index, then drag to Done.", `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
           } else {
             const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
@@ -2324,9 +2334,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           && row.worker_thread_id !== null
           && !termStatus
           && now() - idleAt >= IDLE_ATTENTION_MS;
-        // A ready brief is the expected terminal rest, never stuck: share
+        // A ready index is the expected terminal rest, never stuck: share
         // the sync predicate so list and sync cannot disagree. Checked only
-        // for otherwise-stuck research cards, so the brief read stays rare.
+        // for otherwise-stuck research cards, so the index read stays rare.
         const researchReady = idleCandidate && row.kind === "research"
           ? (await researchReadiness(row).catch(() => ({ ready: false as const, fingerprint: null as string | null }))).ready
           : false;
@@ -2649,7 +2659,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Research workers never advance stages: a delivery-flavored nudge
       // would instruct them to run a machine that does not exist here.
       const nudge = card.kind === "research"
-        ? `Continue the Stelow research now. Re-read your brief.md first, then keep researching with the strategy playbook. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if you genuinely need NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — research has no stages. When the brief is complete with ranked opportunities, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.`
+        ? `Continue the Stelow research now. Re-read your research-index.md first, then keep researching with the strategy playbook. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if you genuinely need NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — research has no stages. When the index is complete with ranked opportunities, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.`
         : `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the current stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable here, do not park in chat waiting. Auto approves and advances itself; gated modes use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
       try {
         await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: nudge, mentions: [] }] });
@@ -2847,27 +2857,27 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id, presetId: presetId ?? null });
     },
 
-    // Resolve the research brief file for a card. Shared by researchBrief
+    // Resolve the research index file for a card. Shared by researchIndex
     // (read) and fanOutResearch (read + flip). Returns the error instead of
     // throwing so every refusal names its exit.
-    async researchBrief({ cardId }) {
+    async researchIndex({ cardId }) {
       const card = getCard(cardId);
-      const empty = { found: false, briefPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "" };
+      const empty = { found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "" };
       if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
-      if (card.kind !== "research") return { ...empty, error: "Only research cards have a brief. Delivery cards track scopes instead." };
-      const resolved = await readResearchBrief(card);
+      if (card.kind !== "research") return { ...empty, error: "Only research cards have an index. Delivery cards track scopes instead." };
+      const resolved = await readResearchIndex(card);
       if (!resolved.ok) return { ...empty, error: resolved.error };
       const history = strategyRounds(card);
       const live = ["running", "awaiting-answer"].includes(card.activity);
       const workspace = await cardWorkspace(card).catch(() => null);
       const stateDir = card.dir_hash && workspace?.path ? await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null) : null;
       const { rounds, looseFiles } = await researchRoundFiles(workspace?.path ?? null, workspace?.hostId ?? null, stateDir, history, live);
-      const parsed = parseResearchBrief(resolved.content);
-      if (!parsed.found) return { ...empty, briefPath: resolved.display, rounds, looseFiles, error: "No ## Opportunities section in the brief yet — the research is still running." };
+      const parsed = parseResearchIndex(resolved.content);
+      if (!parsed.found) return { ...empty, indexPath: resolved.display, rounds, looseFiles, error: "No ## Opportunities section in the index yet — the research is still running." };
       const LIMIT = 100_000;
       return {
         found: true,
-        briefPath: resolved.display,
+        indexPath: resolved.display,
         content: resolved.content.slice(0, LIMIT),
         truncated: resolved.content.length > LIMIT,
         opportunities: parsed.opportunities.map(({ id, title, checked, group }) => ({ id, title, checked, group })),
@@ -2882,13 +2892,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!card) return { ok: false, created: [], error: ERR_CARD_NOT_FOUND };
       if (card.kind !== "research") return { ok: false, created: [], error: "Only research cards fan out. This is already a build card." };
       if (card.status === "archived") return { ok: false, created: [], error: ERR_CARD_ARCHIVED };
-      const resolved = await readResearchBrief(card);
+      const resolved = await readResearchIndex(card);
       if (!resolved.ok) return { ok: false, created: [], error: resolved.error };
-      const parsed = parseResearchBrief(resolved.content);
-      if (!parsed.found) return { ok: false, created: [], error: "No ## Opportunities section in the brief yet — the research is still running." };
+      const parsed = parseResearchIndex(resolved.content);
+      if (!parsed.found) return { ok: false, created: [], error: "No ## Opportunities section in the index yet — the research is still running." };
       const wanted = new Set(opportunityIds);
       const matched = parsed.opportunities.filter((item) => wanted.has(item.id) && !item.checked);
-      if (matched.length === 0) return { ok: false, created: [], error: "None of the selected opportunities are still available — reopen the brief; they may already have been fanned out." };
+      if (matched.length === 0) return { ok: false, created: [], error: "None of the selected opportunities are still available — reopen the index; they may already have been fanned out." };
       const strategyLabel = researchStrategyById(card.research_strategy ?? "")?.label ?? "research";
       // Exploratory research fans out into fresh exploratory build cards (each
       // owns its isolated workspace) instead of piling every card's state
@@ -2900,7 +2910,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try {
           const spawned = await createCardInternal({
             projectId: targetProjectId,
-            prompt: `Spawned from research "${card.display_name ?? card.name}" (${strategyLabel}).\n\nOpportunity: ${item.title}\n\nResearch context: full brief at ${resolved.absolute} — read its ## Findings before triage. Treat the opportunity above as the request; classify intent first, then work it through the normal delivery workflow.`,
+            prompt: `Spawned from research "${card.display_name ?? card.name}" (${strategyLabel}).\n\nOpportunity: ${item.title}\n\nResearch context: full index at ${resolved.absolute} — read its ## Summary before triage. Treat the opportunity above as the request; classify intent first, then work it through the normal delivery workflow.`,
             attachments: [],
             intent: "unknown",
             appetite: "Lean",
@@ -2915,7 +2925,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       // Flip exactly the spawned boxes so a retry never double-spawns. Only
       // exact parser lines flip; a worker edit in between stays intact.
-      const flipped = checkBriefItems(resolved.content, matched.map((item) => item.id));
+      const flipped = checkIndexItems(resolved.content, matched.map((item) => item.id));
       if (flipped.checked.length > 0) {
         try {
           await bb.sdk.files.write({ path: resolved.absolute, content: flipped.updated });
@@ -2930,7 +2940,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async runResearchStrategy({ cardId, strategy }) {
       // Composite research: run another strategy round on the same card.
       // Spawns a fresh worker on the new playbook that APPENDS a new ###
-      // section to the brief — existing items are never rewritten. The
+      // section to the index — existing items are never rewritten. The
       // previous worker retires only after the new one is live (same safe
       // order as every respawn).
       const card = getCard(cardId);
@@ -2956,7 +2966,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const history = [...strategyRounds(card), { id: picked.id, at: roundAt, file: roundFile }];
       db.prepare("UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), cardId);
       const presetName = getPresetById(effective.id)?.name ?? effective.id;
-      logCardComment(cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the brief. Previous worker archived.`);
+      logCardComment(cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the index. Previous worker archived.`);
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, strategy: picked.id, error: null };
     },
@@ -3022,7 +3032,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async advanceCard({ cardId, stage }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, stdout: "", error: ERR_CARD_NOT_FOUND };
-      if (card.kind === "research") return { ok: false, stdout: "", error: "Research cards don't use stages — drag to Done when the brief is complete." };
+      if (card.kind === "research") return { ok: false, stdout: "", error: "Research cards don't use stages — drag to Done when the index is complete." };
       const workspace = await cardWorkspace(card);
       if (!workspace?.path) return { ok: false, stdout: "", error: ERR_WORKSPACE_UNAVAILABLE };
       const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.dir_hash) : null;
@@ -3206,6 +3216,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
       { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
+      { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -3497,6 +3508,31 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "config failed", stdout: result.stdout };
         return { exitCode: 0, stdout: result.stdout };
       }
+      if (argv[0] === "fan-out") {
+        // Worker-facing entry to the fanOutResearch RPC: opportunity IDs only,
+        // never prose. Confirmation happens beforehand via bb stelow ask —
+        // this command trusts IDs because the RPC re-validates them against
+        // the parsed index (unknown/already-checked ids refuse loudly).
+        const args = argv.slice(1);
+        const ids: string[] = [];
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--opportunity") { if (args[i + 1]) ids.push(args[i + 1]!); i++; continue; }
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--project") { i++; continue; }
+          return { exitCode: 2, stderr: "Usage: bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        if (ids.length === 0) return { exitCode: 2, stderr: "Pass at least one --opportunity <id> (opportunity ids from the research index, never prose)." };
+        const result = await bb.sdk.plugins.callRpc<{ ok: boolean; created: Array<{ cardId: string; title: string }>; error: string | null }>({
+          pluginId: "stelow",
+          method: "fanOutResearch",
+          input: { cardId, opportunityIds: ids },
+          outputSchema: z.any(),
+        });
+        if (!result.ok) return { exitCode: 1, stderr: result.error ?? "fan-out failed" };
+        return { exitCode: 0, stdout: `Fanned out ${result.created.length}: ${result.created.map((c) => `${c.title} (${c.cardId})`).join("; ")}` };
+      }
       if (argv[0] === "preset") {
         const sub = argv[1];
         const flag = (name: string, list: string[]) => { const index = list.indexOf(name); return index >= 0 ? list[index + 1] : undefined; };
@@ -3539,7 +3575,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|schema|preset" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|schema|fan-out|preset" };
     },
   });
 
