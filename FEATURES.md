@@ -105,9 +105,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
   shape.
-- **Manage** (preset pill + override, change preset, restart fresh,
-  archive, delete archived cards behind a confirm, worker history with
-  readable archived threads).
+- **Worker row** (always visible under the hero: preset pill +
+  provider/model, real "Change preset…" outline button, stale-preset
+  warning with restart action).
+- **Manage** (collapsed danger zone: restart fresh, archive, delete
+  archived cards behind confirms — all real outline buttons, archive
+  in destructive tone — plus worker history).
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads

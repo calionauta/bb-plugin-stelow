@@ -3484,6 +3484,23 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
               </section>
             ) : null}
 
+            <div className="flex flex-wrap items-center gap-2" aria-label="Worker configuration">
+              <Pill tone="bg-muted text-muted-foreground">
+                Research · {detail?.card.presetName ?? "default"}
+                {detail?.card.presetProviderId && detail?.card.presetModelId ? (
+                  <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
+                ) : null}
+              </Pill>
+              <Button size="sm" variant="outline" onClick={() => setPresetDialogOpen(true)} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">A change takes effect only when a new worker starts — Resume continues the current one.</p>
+            {presetStale ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+                <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
+                <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
+              </div>
+            ) : null}
+
             <CardDisclosure
               title="Research index"
               hint={index && index.found ? `${available.length} available · ${index.opportunities.length} total` : index?.indexPath ?? "the worker is writing it"}
@@ -3584,29 +3601,13 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
 
             <CardDisclosure
               title="Manage"
-              hint={`${detail?.card.presetName ?? "default"}${detail?.card.presetOverridden ? " · overridden" : ""}`}
+              hint="restart · archive · history"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <Pill tone="bg-muted text-muted-foreground">
-                  Research · {detail?.card.presetName ?? "default"}
-                  {detail?.card.presetProviderId && detail?.card.presetModelId ? (
-                    <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
-                  ) : null}
-                </Pill>
-                <button onClick={() => setPresetDialogOpen(true)} className="cursor-pointer min-h-11 rounded-md px-2 text-xs font-medium text-primary hover:underline">Change preset…</button>
-              </div>
-              <p className="text-xs text-muted-foreground">A change takes effect only when a new worker starts — Resume continues the current one.</p>
-              {presetStale ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
-                  <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
-                  <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                </div>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-4 border-t pt-3">
-                <button onClick={() => setRepairOpen(true)} title="Start over with a new worker on the same strategy. Comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                <button onClick={() => setArchiveOpen(true)} className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive research</button>
+                <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)} title="Start over with a new worker on the same strategy. Comments are kept.">Restart fresh…</Button>
+                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive research</Button>
                 {card?.status === "archived" ? (
-                  <button onClick={() => setDeleteOpen(true)} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Delete…</button>
+                  <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered.">Delete…</Button>
                 ) : null}
               </div>
               {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
@@ -3970,6 +3971,23 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               </section>
             ) : null}
 
+            <div className="flex flex-wrap items-center gap-2" aria-label="Worker configuration">
+              <Pill tone="bg-muted text-muted-foreground">
+                {card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ` : ""}{detail?.card.presetName ?? "default"}
+                {detail?.card.presetProviderId && detail?.card.presetModelId ? (
+                  <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
+                ) : null}
+              </Pill>
+              <Button size="sm" variant="outline" onClick={() => setPresetDialogOpen(true)} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Preset for the <strong>{card.stage ? stageLabel(card.stage) : "current"}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect only when a new worker starts — Resume continues the current one.</p>
+            {presetStale ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+                <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
+                <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
+              </div>
+            ) : null}
+
             {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
               title="What is happening"
@@ -4068,34 +4086,16 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             </CardDisclosure>
             </div>
 
-            {/* DISCLOSURE 2 — Manage (preset + danger zone, always collapsed) */}
+            {/* DISCLOSURE 2 — Manage (danger zone, always collapsed) */}
             <CardDisclosure
               title="Manage"
-              hint={`${detail?.card.presetName ?? "default"}${detail?.card.presetOverridden ? " · overridden" : ""}`}
+              hint="restart · archive · history"
             >
               <div className="flex flex-wrap items-center gap-2">
-                {card.stage ? (
-                  <Pill tone="bg-muted text-muted-foreground">
-                    {BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · {detail?.card.presetName ?? "default"}
-                    {detail?.card.presetProviderId && detail?.card.presetModelId ? (
-                      <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
-                    ) : null}
-                  </Pill>
-                ) : null}
-                <button onClick={() => setPresetDialogOpen(true)} className="cursor-pointer min-h-11 rounded-md px-2 text-xs font-medium text-primary hover:underline">Change preset…</button>
-              </div>
-              <p className="text-xs text-muted-foreground">Preset for the <strong>{stageLabel(card.stage)}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect only when a new worker starts — Resume continues the current one.</p>
-              {presetStale ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
-                  <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
-                  <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                </div>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-4 border-t pt-3">
-                <button onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-foreground hover:underline">Restart fresh…</button>
-                <button onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Archive card</button>
+                <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
+                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive card</Button>
                 {card?.status === "archived" ? (
-                  <button onClick={() => setDeleteOpen(true)} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered." className="cursor-pointer min-h-11 text-xs text-muted-foreground hover:text-destructive hover:underline">Delete…</button>
+                  <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered.">Delete…</Button>
                 ) : null}
               </div>
               {detail?.githubLink ? (
