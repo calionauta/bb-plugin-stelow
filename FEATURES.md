@@ -49,7 +49,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on both boards, via a quiet icon toggle beside the filters (a view
   preference, not a CTA).
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
-  needs-attention + reset. One shared bar: project + attention are the
+  needs-attention + reset; the Filters chip badges the active-filter count.
+  The attention count in each Build/Research header is a shortcut that turns
+  on the needs-attention filter. One shared bar: project + attention are the
   common facets, delivery adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
 - **First-run tours** (`Tour`). One shared stepper for Inbox, Build, and
