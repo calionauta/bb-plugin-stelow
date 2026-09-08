@@ -8,18 +8,21 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
-### Removed
-
-- **Legacy data handling.** Dropped the v0.1.5 empty-id preset repair
-  (new presets can no longer be created without an id), the
-  `markCardSeen` column cleanup, the `awaiting-answer`-in-`status`
-  healing, and the retired-skills sweep — with the producers fixed or
-  gone, old rows have no path back in. Sync state path is now explicit
-  (`statePath` option; production points outside `skills/`, ending the
-  daemon log spam).
+## [0.2.0] - 2026-09-08
 
 ### Added
 
+- **`bb stelow sync-scopes/lock/config` wrappers.** Same workspace/card
+  resolution as `advance`/`doctor`; `lock` preserves helper exit codes
+  (1 = conflict). Advancing into `execution` auto-syncs scopes
+  best-effort, so the vendored Step 2e works without a `scripts/stelow`
+  binary in the workspace.
+- **Worker prompt equivalents.** Spawn/reseed prompts point at the `bb
+  stelow` wrappers wherever vendored skills show `scripts/stelow`
+  commands (single shared sentence).
+- **Vendored content sync.** Single-source cli-tools, `visual_review.md`
+  canonical gate doc, R4 skill splits, fence fixes, link-integrity
+  repairs — all propagated from upstream with zero sync errors.
 - **Upstream delegation for advance mechanics.** `data/stelow` is now a
   synced copy of upstream `scripts/stelow` (mode-skips, gate refusals
   and non-git roots ported there first); the transitions mirror and its
