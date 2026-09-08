@@ -793,6 +793,11 @@ async function boardFromRoot(bb: BbPluginApi, rootPath: string, onlyDirHash?: st
 }
 
 export default async function plugin(bb: BbPluginApi) {
+  // Shared worker copy: the vendored skills show `scripts/stelow ...`
+  // commands, but bb workspaces have no such binary — the plugin wraps the
+  // same operations. One sentence everywhere so workers discover the
+  // sync-scopes/lock/config equivalents instead of failing on the path.
+  const CLI_EQUIVALENTS = "Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags.";
   const db = bb.storage.database();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS cards (
@@ -1272,7 +1277,7 @@ Step 1 — classify intent first: this card starts as intent=\`unknown\` (no int
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
-Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
@@ -1430,7 +1435,7 @@ ${prompt}` }, ...workerAttachments],
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: researchRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+        prompt: researchRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
 Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -2120,7 +2125,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         projectId,
         environment: { type: "project-default" },
         title: `Stelow: ${prompt.slice(0, 70)}`,
-        prompt: `Use the stelow workflow to shape and execute this request. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by bb-plugin-stelow — load them first. The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserve every gate (product, interface, tech plan, diff).\n\nRequest:\n${prompt}`,
+        prompt: `Use the stelow workflow to shape and execute this request. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by bb-plugin-stelow — load them first. The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}\n\nRequest:\n${prompt}`,
       });
       return { threadId: thread.id };
     },
@@ -2739,7 +2744,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: researchReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff).
+        input: [{ type: "text", mentions: [], text: researchReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
 Intent is currently \`${card.intent}\` in the re-seeded state.md. ${card.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
