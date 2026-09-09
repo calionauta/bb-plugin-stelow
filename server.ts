@@ -1190,6 +1190,8 @@ Step 4 — register the index plus any EXTRA sub-step files so each renders on t
         label: Research index
 (one more block per sub-step file, with label "Round ${roundNo} — ${strategyLabel} (<substep-slug>)" and its own path. The round's own file needs no block — it is pre-registered.)
 
+Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${workspaceRoot}>" display="<short file name>"}\` once per file (the index, the round file, and every sub-step file), each directive on its own line — bb renders these as clickable chips so the user can open, read, and comment on each output directly from the thread.
+
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
 
@@ -1721,7 +1723,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
-          logCardComment(card.id, "card", card.id, "agent", lastOutput);
+          logCardComment(card.id, "card", card.id, "agent", stripMessageDirectives(lastOutput));
         }
       } else if (status === "failed" || status === "error") {
         await applyWorkerFailed(card.id, card.worker_thread_id!, null);
@@ -1758,6 +1760,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const commentId = randomId("cmt");
     db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, target, targetId, author, body, now());
     return commentId;
+  }
+
+  // ::name{...} directives are bb's thread renderer syntax (the worker emits
+  // ::stelow-artifact chips per produced file). Card comments are rendered as
+  // plain Markdown, so strip the directive syntax there — the file names it
+  // carried are already present as natural text in the same message.
+  function stripMessageDirectives(text: string | null): string {
+    return String(text ?? "").replace(/::[a-zA-Z0-9_-]+\{[^}]*\}/g, " ").replace(/[ \t]{2,}/g, " ").trim();
   }
 
   // Ordered strategy history for a research card (first = primary).
@@ -1956,7 +1966,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
-          logCardComment(cardId, "card", cardId, "agent", lastOutput);
+          logCardComment(cardId, "card", cardId, "agent", stripMessageDirectives(lastOutput));
         }
       } else if (status === "failed" || status === "error") {
         await applyWorkerFailed(cardId, card.worker_thread_id, null);

@@ -203,10 +203,16 @@ investigation that feeds the delivery board.*
   to the index — never parallel batches to merge. "Explore another
   strategy" starts a fresh worker on a new playbook; history pills join
   run labels (`A + B`); reseed restarts the original strategy clean.
-- **Research index** (`researchIndex`, `parseResearchIndex`). The worker
-  writes `research-index.md` (Summary + Outputs table + `## Opportunities`
-  checkboxes) into its own state dir; the card renders it with per-strategy
-  groups and available/total counts. Non-conforming indexes refuse with an exit.
+- **Research index** (`researchIndex`, `parseResearchIndex`,
+  `lib/research-index-sections.mjs`). The worker writes `research-index.md`
+  (Summary + Outputs table + `## Opportunities` checkboxes) into its own
+  state dir; the card renders the Summary as prose and the Outputs table
+  with its Path column resolved to clickable artifact buttons (same
+  reviewer as build cards — read, quote, comment). Opportunities render as
+  a status list (✓ fanned out) — selection happens only in the fan-out
+  dialog, never fake checkboxes — plus available/total counts.
+  Non-conforming indexes fall back to the raw body without the
+  Opportunities section so nothing duplicates the fan-out panel.
 - **Round files** (`researchRoundFiles`, `lib/research-rounds.mjs`). Every
   round persists its native playbook output verbatim (one file per
   round, one per sub-step when a playbook fans out, e.g. JTBD) under
@@ -219,12 +225,21 @@ investigation that feeds the delivery board.*
   `single`, `variant`, or `composite` (+ expected substep slugs for
   composite); missing substeps surface explicitly on the round, never as
   silent done.
-- **Fan-out** (`fanOutResearch`, `FanOutDialog`, `bb stelow fan-out`). Checked opportunities
-  become build cards at triage (exploratory research fans out
-  into isolated exploratory cards); spawned boxes check off so retries
-  never duplicate; both-ways comment trail. Workers fan out via
-  `bb stelow fan-out --opportunity <id>` only after structured user
-  confirmation — IDs from the index, never prose.
+- **Fan-out** (`fanOutResearch`, `FanOutDialog`, `bb stelow fan-out`).
+  "Fan out to Build…" opens a selection-first dialog — nothing is
+  pre-checked, nothing creates until the user confirms the chosen
+  opportunities (selection resets only on open, never on background
+  index reloads). Checked opportunities become build cards at triage
+  (exploratory research fans out into isolated exploratory cards); spawned
+  boxes check off so retries never duplicate; both-ways comment trail.
+  Workers fan out via `bb stelow fan-out --opportunity <id>` only after
+  structured user confirmation — IDs from the index, never prose.
+- **Artifact chips in the thread** (`::stelow-artifact` message
+  directive). The research worker's final message emits one directive per
+  produced file (index + round + sub-steps), rendered by bb's thread
+  renderer as a clickable chip that opens the file in bb's viewer.
+  Directive syntax is stripped before the same message is mirrored into
+  card comments (plain Markdown there).
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as delivery. Stage advance and intent editing refuse on

@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
+import { parseResearchIndexSections, stripResearchOpportunities } from "./lib/research-index-sections.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import type { rpcContract } from "./server";
@@ -3064,6 +3065,14 @@ function formatRoundDate(iso: string | null): string {
   return new Date(time).toLocaleString();
 }
 
+// Path cells in the research index's Outputs table are workspace-relative
+// paths; normalize so they match the resolved round/loose file entries the
+// server already returns (which carry absolute paths + host ids for the
+// artifact viewer).
+function normalizeResearchPath(path: string): string {
+  return String(path ?? "").replace(/^\.\//, "").replace(/\/+$/, "").trim();
+}
+
 // Fan-out: turn checked opportunities into delivery Build cards. Mirrors the
 // GitHub-import dialog (checkbox list + bulk confirm); the server re-parses
 // the index, spawns, and flips exactly the spawned boxes.
@@ -3075,13 +3084,16 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
   const rpc = useRpc<typeof rpcContract>();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  // Selection resets ONLY when the dialog opens. The `opportunities` prop is
+  // a fresh array on every parent render (realtime index reloads), so it must
+  // never be a dependency here — otherwise a background reload re-checks
+  // everything while the user is mid-selection.
   useEffect(() => {
     if (!open) return;
-    const fresh: Record<string, boolean> = {};
-    for (const item of opportunities) if (!item.checked) fresh[item.id] = true;
-    setSelected(fresh);
+    setSelected({});
     setBusy(false);
-  }, [open, opportunities]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const available = opportunities.filter((item) => !item.checked);
   const groups = useMemo(() => {
     const seen: string[] = [];
@@ -3112,8 +3124,8 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Create build cards</DialogTitle>
-          <DialogDescription>Each selected opportunity becomes a delivery build card starting at triage. Spawned boxes check off in the index so a retry never duplicates.</DialogDescription>
+          <DialogTitle>Fan out to Build</DialogTitle>
+          <DialogDescription>Pick which opportunities become delivery build cards (starting at triage) — nothing is created until you confirm. Spawned cards check their box in the index so a retry never duplicates.</DialogDescription>
         </DialogHeader>
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing available — every opportunity was already fanned out or checked.</p>
@@ -3462,6 +3474,19 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
     }
     return seen;
   }, [index]);
+  // Structured body of the index: Summary prose + Outputs table with the Path
+  // column resolved to clickable artifact buttons (same viewer as build cards).
+  // Opportunities are intentionally NOT rendered from the raw markdown — the
+  // interactive fan-out panel below is the only surface that shows them.
+  const indexBody = useMemo(() => (index?.found && index.content ? parseResearchIndexSections(index.content) : null), [index]);
+  const knownIndexFiles = useMemo(() => {
+    const map = new Map<string, { display: string; path: string; absolutePath: string; hostId: string }>();
+    for (const round of index?.rounds ?? []) {
+      for (const file of round.files) map.set(normalizeResearchPath(file.path), file);
+    }
+    for (const file of index?.looseFiles ?? []) map.set(normalizeResearchPath(file.path), file);
+    return map;
+  }, [index]);
 
   return (
     <div className="flex h-full flex-col">
@@ -3557,7 +3582,57 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
             >
               {!index ? <p className="text-xs text-muted-foreground">Loading index…</p> : null}
               {index && !index.found ? <p className="text-xs text-muted-foreground">{index.error ?? "No index yet — the research is still running."}</p> : null}
-              {index?.found && index.content ? <div className="text-sm leading-relaxed"><Markdown content={index.content} /></div> : null}
+              {index?.found && index.content ? (
+                indexBody && (indexBody.summary !== null || indexBody.outputs.length > 0) ? (
+                  <div className="space-y-3">
+                    {indexBody.summary ? <div className="text-sm leading-relaxed"><Markdown content={indexBody.summary} /></div> : null}
+                    {indexBody.outputs.length > 0 ? (
+                      <div className="overflow-x-auto rounded-md border">
+                        <table className="w-full text-left text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/20 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              <th className="px-3 py-2">Strategy</th>
+                              <th className="px-3 py-2">Round</th>
+                              <th className="px-3 py-2">Output</th>
+                              <th className="px-3 py-2">Path</th>
+                              <th className="px-3 py-2">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {indexBody.outputs.map((row, rowIndex) => {
+                              const entry = knownIndexFiles.get(normalizeResearchPath(row.path));
+                              return (
+                                <tr key={`${row.path}-${rowIndex}`} className="border-b last:border-0">
+                                  <td className="px-3 py-2 align-top">{row.strategy || "—"}</td>
+                                  <td className="px-3 py-2 align-top">{row.round || "—"}</td>
+                                  <td className="px-3 py-2 align-top text-muted-foreground">{row.output || "—"}</td>
+                                  <td className="px-3 py-2 align-top">
+                                    {entry ? (
+                                      <button
+                                        onClick={() => setViewerFile({ display: entry.display, path: entry.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, entry.path, entry.hostId, entry.absolutePath) })}
+                                        title={`Open ${entry.display}`}
+                                        className="cursor-pointer min-h-11 rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:border-primary/50"
+                                      >
+                                        {entry.display} ↗
+                                      </button>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">{row.path}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 align-top text-muted-foreground">{row.notes || "—"}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  /* Contract-missing index: render the raw body without its Opportunities section so nothing duplicates the panel below. */
+                  <div className="text-sm leading-relaxed"><Markdown content={stripResearchOpportunities(index.content)} /></div>
+                )
+              ) : null}
               {index?.truncated ? <p className="text-xs text-muted-foreground">Index truncated for display — the full file lives at {index.indexPath}.</p> : null}
               {index?.found && index.opportunities.length > 0 ? (
                 <div className="space-y-2 border-t pt-3">
@@ -3565,7 +3640,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({index.opportunities.length})</h4>
                     <span className="flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy round on the same request — appends a new section to the index.">Explore another strategy…</Button>
-                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Turn selected opportunities into delivery build cards.">Create build cards…</Button>
+                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Choose opportunities, then create the delivery build cards.">Fan out to Build…</Button>
                     </span>
                   </div>
                   {indexGroups.map((group) => (
@@ -3573,8 +3648,10 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{group}</p>
                       {(index?.opportunities ?? []).filter((item) => (item.group ?? "Opportunities") === group).map((item) => (
                         <div key={item.id} className="flex items-start gap-2 text-sm">
-                          <span className="mt-0.5" aria-hidden>{item.checked ? "☑" : "☐"}</span>
+                          {/* Status overview only — selection happens in the fan-out dialog, so no fake checkboxes here. */}
+                          <span className="mt-0.5 w-4 shrink-0 text-center" aria-hidden>{item.checked ? "✓" : ""}</span>
                           <span className={item.checked ? "text-muted-foreground line-through" : ""}>{item.title}</span>
+                          {item.checked ? <span className="shrink-0 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">fanned out</span> : null}
                         </div>
                       ))}
                     </div>
