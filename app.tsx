@@ -4456,7 +4456,7 @@ export default definePluginApp((app) => {
   // they render from the plugin's own HugeIcons set.)
   app.slots.navPanel({
     id: STELOW_PANEL_ID,
-    title: "Stelow",
+    title: "Stelow — Product Workflow",
     icon: "Star",
     path: STELOW_PANEL_PATH,
     component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },
