@@ -674,8 +674,6 @@ function BoardPanel() {
     return boardPresets.find((preset) => preset.id === assignment?.presetId) ?? defaultWorkerPreset;
   };
   const analysisWorkerPreset = presetForBand("analysis");
-  const workerPolicy = ["analysis", "planning", "execution", "review"].map((band) => ({ band, preset: presetForBand(band) }));
-  const policySummary = workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`).join(" · ");
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
   const filteredCards = useMemo(() => cards.filter((card) => {
     if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
@@ -800,9 +798,18 @@ function BoardPanel() {
               ) : null}
             </div>
           </header>
-          <div className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
-            <span className="min-w-0 flex-1 truncate" title="Workers swap presets automatically at phase boundaries; unset phases inherit the card default">Agents per phase — {policySummary}</span>
-          </div>
+          <PresetOnboardingDialog
+            storageKey={STORAGE_KEYS.onboardBuild}
+            title="Choose your agents"
+            intro="Before the first card, set how workers run — and the defaults new cards start from."
+            onOpenPresets={() => setBoardPresetsOpen(true)}
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
+              <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+            </div>
+            <p className="text-xs">These travel with your next card and become the board defaults.</p>
+          </PresetOnboardingDialog>
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
               <span className="text-amber-700 dark:text-amber-300">Import issues needs a GitHub account linked in the <span className="font-medium">github</span> plugin.</span>
@@ -831,17 +838,11 @@ function BoardPanel() {
               <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
                 <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:justify-between">
                   <span>Settings</span>
-                  <span className="text-xs font-normal text-muted-foreground">Planning depth, review checkpoints, and agent configuration · Configure</span>
+                  <span className="text-xs font-normal text-muted-foreground">Planning depth and review checkpoints · Configure</span>
                 </summary>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
                   <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
-                  <div className="sm:col-span-2">
-                    <AgentConfigBox
-                      lines={workerPolicy.map(({ band, preset }) => `${band}: ${preset?.name ?? "Default"}`)}
-                      onConfigure={() => setBoardPresetsOpen(true)}
-                    />
-                  </div>
                 </div>
               </details>
             </DialogContent>
@@ -1135,9 +1136,12 @@ function ResearchPanel() {
             </div>
           </header>
 
-          <div className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
-            <span className="min-w-0 flex-1 truncate" title={`research: ${effectiveResearchPreset?.name ?? "Default"}`}>Investigations run on {effectiveResearchPreset?.name ?? "Default"}</span>
-          </div>
+          <PresetOnboardingDialog
+            storageKey={STORAGE_KEYS.onboardResearch}
+            title="Choose your research agent"
+            intro="Investigations run on the research band preset — set it once here, or pin a different preset per card in Manage."
+            onOpenPresets={() => setResearchPresetsOpen(true)}
+          />
 
           <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStrategy(null); }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
@@ -1362,9 +1366,12 @@ function ExplorePanel() {
             </div>
           </header>
 
-          <div className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
-            <span className="min-w-0 flex-1 truncate" title={`explore: ${effectiveResearchPreset?.name ?? "Default"}`}>Single-stage runs on {effectiveResearchPreset?.name ?? "Default"}</span>
-          </div>
+          <PresetOnboardingDialog
+            storageKey={STORAGE_KEYS.onboardExplore}
+            title="Choose your exploration agent"
+            intro="Explorations run on the research band preset — set it once here, or pin a different preset per card in Manage."
+            onOpenPresets={() => setResearchPresetsOpen(true)}
+          />
 
           <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStage(null); }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
@@ -1455,6 +1462,9 @@ const STORAGE_KEYS = {
   researchColumns: "stelow-research-columns-collapsed-v1",
   exploreColumns: "stelow-explore-columns-collapsed-v1",
   lastTab: "stelow-tab-v1",
+  onboardBuild: "stelow-onboard-build-v1",
+  onboardResearch: "stelow-onboard-research-v1",
+  onboardExplore: "stelow-onboard-explore-v1",
 } as const;
 
 type ParsedStelowRoute =
@@ -2573,14 +2583,13 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
             {questions.length > 1 ? <div className="text-xs text-amber-900/70 dark:text-amber-200/70">Question {index + 1} of {questions.length}</div> : null}
           </div>
           {questions.length > 1 ? (
-            <div className="flex flex-wrap gap-1" role="tablist" aria-label="Questions">
+            <div className="flex flex-wrap gap-1" role="group" aria-label="Questions">
               {questions.map((q, i) => {
                 const done = skipped.has(q.id) || merged(q.id).length > 0;
                 return (
                   <button
                     key={q.id}
-                    role="tab"
-                    aria-selected={i === index}
+                    aria-current={i === index ? "step" : undefined}
                     aria-label={`Question ${i + 1}${done ? " (answered)" : ""}`}
                     onClick={() => setIndex(i)}
                     className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-xs font-medium ${i === index ? "border-primary bg-primary/15 text-foreground" : done ? "border-emerald-500/50 bg-emerald-500/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}
@@ -2698,6 +2707,46 @@ function ExpiredQuestionsSection({ cardId, questions, onAnswered }: { cardId: st
 type PresetManagerPreset = { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean };
 const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "", modelId: "", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" };
 
+// First-visit setup dialog for the work tracks (Build / Research / Explore).
+// Unlike the removed Tour steppers, this earns its interruption: it ends
+// with the user having configured something (or explicitly skipping).
+// One Dialog primitive, track-specific copy; dismissal persists per
+// storageKey so it shows exactly once.
+function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPresets }: {
+  storageKey: string;
+  title: string;
+  intro: string;
+  children?: React.ReactNode;
+  onOpenPresets: () => void;
+}) {
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return window.localStorage.getItem(storageKey) !== "onboarded"; } catch { return false; }
+  });
+  function dismiss() {
+    setOpen(false);
+    try { window.localStorage.setItem(storageKey, "onboarded"); } catch { /* best-effort */ }
+  }
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{intro}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
+          <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>
+          {children}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { dismiss(); onOpenPresets(); }}>Open Agent Presets</Button>
+          <Button onClick={dismiss}>Got it</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -2706,6 +2755,10 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   onChanged: () => Promise<void>;
 }) {
   const [form, setForm] = useState(EMPTY_PRESET_FORM);
+  // The preset form stays collapsed until asked for: the list + band
+  // routing are the frequent jobs, authoring a preset is the rare one.
+  // Editing always expands (startEdit opens); closing the dialog resets.
+  const [formOpen, setFormOpen] = useState(false);
   const [options, setOptions] = useState<{ providers: { id: string; displayName: string }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
   const [bandPresets, setBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -2714,6 +2767,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   useEffect(() => {
     if (!open) {
       setForm(EMPTY_PRESET_FORM);
+      setFormOpen(false);
       setOptions({ providers: [], models: [] });
       return;
     }
@@ -2730,8 +2784,8 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
     return defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM;
   };
-  const startNew = () => { setForm(newPresetForm()); setMessage(null); };
-  const startEdit = (preset: PresetManagerPreset) => { setForm({ id: preset.id, name: preset.name, providerId: preset.providerId, modelId: preset.modelId, reasoningLevel: preset.reasoningLevel, permissionMode: preset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: preset.environmentKind as "project-default" | "new-worktree" }); setMessage(null); };
+  const startNew = () => { setForm(newPresetForm()); setFormOpen(true); setMessage(null); };
+  const startEdit = (preset: PresetManagerPreset) => { setForm({ id: preset.id, name: preset.name, providerId: preset.providerId, modelId: preset.modelId, reasoningLevel: preset.reasoningLevel, permissionMode: preset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: preset.environmentKind as "project-default" | "new-worktree" }); setFormOpen(true); setMessage(null); };
 
   async function save() {
     if (!form.name.trim()) { setMessage("Name is required."); return; }
@@ -2824,10 +2878,14 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
         </div>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           {formCatalogReady ? <>
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex items-center justify-between gap-2">
               <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
-              {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
+              <div className="flex shrink-0 gap-1">
+                {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
+                <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}>{formOpen ? "▾ Hide" : "▸ Show"}</Button>
+              </div>
             </div>
+            {formOpen ? <div id="preset-form-body">
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
@@ -2859,6 +2917,8 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
               <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
               <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
             </div>
+            </div>
+            : null}
           </> : <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
             <span className="size-6 animate-spin rounded-full border-2 border-muted border-t-primary" aria-hidden />
             <div><p className="text-sm font-medium">Preparing your preset form</p><p className="mt-1 text-xs text-muted-foreground">Loading the configured providers and models…</p></div>

@@ -58,12 +58,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on the needs-attention filter. One shared bar: project + attention are the
   common facets, build adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
-- **First-run guidance without tours.** No stepper onboarding: each track
-  carries one static info line where the preset routing lives (agents per
-  phase on Build, effective preset on Research/Explore), the Inbox header
-  states the batch-answer rule, and the strategy-round dialog states the
-  append-only rule. Only information no button already explains; nothing
-  to dismiss, nothing that changes shape.
+- **First-visit setup, not tours.** No stepper onboarding: Build, Research,
+  and Explore each open a setup dialog once (localStorage) that ends with
+  the user having configured something — agent presets via Agent Presets,
+  plus Planning depth + Review checkpoints as board defaults on Build.
+  Dismissing (Got it, Esc, or backdrop) never nags again.
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
@@ -172,6 +171,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Preset manager** (`listPresets`, `upsertPreset`, `deletePreset`,
   `setDefaultPreset`). Provider, model (catalog + searchable custom),
   reasoning, permission mode, environment kind. Built-ins protected.
+  The New-preset form stays collapsed behind Show/Hide (editing
+  auto-expands); list + band routing are the frequent jobs.
 - **Per-phase presets** (`listBandPresets`, `setBandPreset`).
   Analysis/planning/execution/review bands auto-swap workers at
   boundaries; unset bands inherit the card preset. Research has its own
