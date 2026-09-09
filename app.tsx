@@ -1582,7 +1582,8 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
         </div>
       ) : (
-        <fieldset className={`grid max-h-72 min-w-0 gap-2 overflow-y-auto overscroll-contain pr-0.5 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
+        <div className={`max-h-72 min-w-0 overflow-y-auto overscroll-contain p-1 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
+          <fieldset className="grid gap-2">
           <legend className="sr-only">Research strategy</legend>
           {visible.map((entry) => {
             const selected = value === entry.id;
@@ -1613,7 +1614,8 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
               </label>
             );
           })}
-        </fieldset>
+          </fieldset>
+        </div>
       )}
     </div>
   );
@@ -2150,7 +2152,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Card status — this card's current board state."><span className="mr-1">{statusGlyph(card.status)}</span>{card.kind === "research" ? (RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)) : statusLabel(card.status)}</Pill> : null}
+        {card ? card.kind === "research" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Research status — this card's current board state."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <><Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the delivery flow.">{COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status)}</Pill><Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title="Workflow status — the card's specific execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill></> : null}
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.10] - 2026-09-09
+
+### Fixed
+
+- **Clear open-card context.** Build card headers now distinguish their board
+  column from their workflow status; Research keeps its single shared status.
+- **Reliable strategy scrolling.** The full strategy-list area captures
+  trackpad scrolling, including gaps between cards.
+
 ## [0.3.9] - 2026-09-09
 
 ### Changed
