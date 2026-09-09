@@ -577,7 +577,7 @@ function InboxPanel() {
   return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions. Batched questions answer in one sitting.{loading && !firstLoad ? " Updating…" : ""}</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
-function BoardPanel() {
+function BoardPanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
@@ -803,6 +803,7 @@ function BoardPanel() {
             title="Choose your agents"
             intro="Before the first card, set how workers run — and the defaults new cards start from."
             onOpenPresets={() => setBoardPresetsOpen(true)}
+            active={active}
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
@@ -991,7 +992,7 @@ type ResearchStrategyOption = { id: string; label: string; skill: string; blurb:
 // Second track beside Build: lightweight research (To-Do / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
 // the card produces a index, and opportunities fan out into Build cards.
-function ResearchPanel() {
+function ResearchPanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
@@ -1141,6 +1142,7 @@ function ResearchPanel() {
             title="Choose your research agent"
             intro="Investigations run on the research band preset — set it once here, or pin a different preset per card in Manage."
             onOpenPresets={() => setResearchPresetsOpen(true)}
+            active={active}
           />
 
           <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStrategy(null); }}>
@@ -1224,7 +1226,7 @@ function ResearchPanel() {
   );
 }
 
-function ExplorePanel() {
+function ExplorePanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
@@ -1371,6 +1373,7 @@ function ExplorePanel() {
             title="Choose your exploration agent"
             intro="Explorations run on the research band preset — set it once here, or pin a different preset per card in Manage."
             onOpenPresets={() => setResearchPresetsOpen(true)}
+            active={active}
           />
 
           <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStage(null); }}>
@@ -1662,13 +1665,13 @@ function StelowPanel({ subPath }: { subPath: string }) {
         <InboxPanel />
       </div>
       <div className={tab === "build" ? "min-h-0 flex-1" : "hidden"}>
-        <BoardPanel />
+        <BoardPanel active={tab === "build"} />
       </div>
       <div className={tab === "research" ? "min-h-0 flex-1" : "hidden"}>
-        <ResearchPanel />
+        <ResearchPanel active={tab === "research"} />
       </div>
       <div className={tab === "explore" ? "min-h-0 flex-1" : "hidden"}>
-        <ExplorePanel />
+        <ExplorePanel active={tab === "explore"} />
       </div>
       <div className={tab === "about" ? "min-h-0 flex-1" : "hidden"}>
         <AboutPanel />
@@ -2711,18 +2714,24 @@ const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "",
 // Unlike the removed Tour steppers, this earns its interruption: it ends
 // with the user having configured something (or explicitly skipping).
 // One Dialog primitive, track-specific copy; dismissal persists per
-// storageKey so it shows exactly once.
-function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPresets }: {
+// storageKey so it shows exactly once. All panels stay mounted for
+// keep-alive, so the dialog opens only while its own track is active —
+// otherwise first visit would stack three dialogs at once.
+function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPresets, active }: {
   storageKey: string;
   title: string;
   intro: string;
   children?: React.ReactNode;
   onOpenPresets: () => void;
+  active: boolean;
 }) {
-  const [open, setOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try { return window.localStorage.getItem(storageKey) !== "onboarded"; } catch { return false; }
-  });
+  const [open, setOpen] = useState<boolean>(false);
+  useEffect(() => {
+    if (!active || open) return;
+    try {
+      if (window.localStorage.getItem(storageKey) !== "onboarded") setOpen(true);
+    } catch { /* best-effort */ }
+  }, [active, open, storageKey]);
   function dismiss() {
     setOpen(false);
     try { window.localStorage.setItem(storageKey, "onboarded"); } catch { /* best-effort */ }
