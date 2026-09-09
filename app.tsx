@@ -2204,6 +2204,22 @@ function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, rel
   return { kind: "host", hostId, path: absolutePath };
 }
 
+// Open an ask-option artifact in the card viewer. Same target convention
+// as every other artifact button: workspace target for exploratory cards,
+// host target otherwise.
+function openAskArtifact(
+  card: Pick<CardItem, "workspaceKind">,
+  fileEnvironmentId: string | null,
+  setViewerFile: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null) => void,
+  artifact: AskArtifact,
+): void {
+  setViewerFile({
+    display: artifact.display,
+    path: artifact.absolutePath ?? artifact.path,
+    target: fileLinkTarget(card.workspaceKind === "exploratory", fileEnvironmentId, artifact.path, artifact.hostId ?? "", artifact.absolutePath ?? artifact.path),
+  });
+}
+
 function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   const current = curIdx >= 0 ? curIdx : 0;
@@ -2539,18 +2555,50 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   );
 }
 
-type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; options: Array<{ label: string; description: string }> };
+type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
+type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
+
+// Per-option evidence: the inline glance (preview) and the openable source
+// of truth (artifact) share the upstream Option names from
+// orchestrator stages/ask-patterns.md. Preview expands in place everywhere;
+// the artifact opens in the viewer where a file opener exists (card), and
+// degrades to a plain filename where it doesn't (thread) — never a dead
+// button pretending to open.
+function OptionDetail({ option, onOpenArtifact }: { option: BatchItem["options"][number]; onOpenArtifact?: (artifact: AskArtifact) => void }) {
+  const artifact = option.artifact;
+  if (!option.preview && !artifact) return null;
+  return (
+    <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
+      {option.preview ? (
+        <details>
+          <summary className="inline-flex min-h-11 cursor-pointer items-center text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Preview</summary>
+          <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{option.preview}</pre>
+        </details>
+      ) : null}
+      {artifact ? (
+        onOpenArtifact ? (
+          <button onClick={() => onOpenArtifact(artifact)} className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium hover:bg-emerald-500/20" title={artifact.path}>
+            <span aria-hidden>📎</span><span>{artifact.display}</span><span aria-hidden>↗</span>
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" title={artifact.path}><span aria-hidden>📎</span>{artifact.display}</span>
+        )
+      ) : null}
+    </div>
+  );
+}
 
 // One sitting for every pending question: stepper with counter, per-question
 // radio (single) / checkbox (multi) options plus a free-text "Other", explicit
 // skip, and a single atomic submit — one worker resume, one inbox resolution.
-function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit }: {
+function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit, onOpenArtifact }: {
   questions: BatchItem[];
   allowSkip: boolean;
   busy: boolean;
   error: string | null;
   submitLabel: string;
   onSubmit: (answers: string[][]) => void;
+  onOpenArtifact?: (artifact: AskArtifact) => void;
 }) {
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
@@ -2623,16 +2671,18 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
             {current.options.map((option) => {
               const active = (selected[current.id] ?? []).includes(option.label);
               return (
-                <button
-                  key={option.label}
-                  role={current.multiple ? "checkbox" : "radio"}
-                  aria-checked={active}
-                  onClick={() => pick(current, option.label)}
-                  className={`min-h-11 cursor-pointer rounded-md border p-2 text-left text-sm ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
-                >
-                  <div className="font-medium">{current.multiple ? (active ? "☑ " : "☐ ") : (active ? "◉ " : "○ ")}{option.label}</div>
-                  {option.description ? <div className="text-xs text-muted-foreground">{option.description}</div> : null}
-                </button>
+                <div key={option.label} className="space-y-1">
+                  <button
+                    role={current.multiple ? "checkbox" : "radio"}
+                    aria-checked={active}
+                    onClick={() => pick(current, option.label)}
+                    className={`min-h-11 w-full cursor-pointer rounded-md border p-2 text-left text-sm ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
+                  >
+                    <div className="font-medium">{current.multiple ? (active ? "☑ " : "☐ ") : (active ? "◉ " : "○ ")}{option.label}</div>
+                    {option.description ? <div className="text-xs text-muted-foreground">{option.description}</div> : null}
+                  </button>
+                  <OptionDetail option={option} onOpenArtifact={onOpenArtifact} />
+                </div>
               );
             })}
           </div>
@@ -2667,7 +2717,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
   );
 }
 
-function QuestionBatch({ cardId, questions, mode, onAnswered }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void }) {
+function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact) => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2694,29 +2744,31 @@ function QuestionBatch({ cardId, questions, mode, onAnswered }: { cardId: string
     }
   }
   return (
-    <BatchStepper
-      questions={questions}
-      allowSkip={mode === "live"}
-      busy={busy}
-      error={error}
-      submitLabel={questions.length > 1 ? (mode === "live" ? `Submit ${questions.length} answers` : "Submit answers") : "Submit answer"}
-      onSubmit={(all) => void submit(all)}
-    />
+      <BatchStepper
+        questions={questions}
+        allowSkip={mode === "live"}
+        busy={busy}
+        error={error}
+        submitLabel={questions.length > 1 ? (mode === "live" ? `Submit ${questions.length} answers` : "Submit answers") : "Submit answer"}
+        onSubmit={(all) => void submit(all)}
+        onOpenArtifact={onOpenArtifact}
+      />
   );
 }
 
-function ExpiredQuestionsSection({ cardId, questions, onAnswered }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void }) {
+function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact) => void }) {
   if (questions.length === 0) return null;
   return (
     <section className="space-y-2">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">Timed-out questions waiting for your answer</h3>
       <p className="text-xs text-amber-900/70 dark:text-amber-200/70">The ask timed out, but the agent is waiting. Answering here resumes the workflow.</p>
-      <QuestionBatch
-        cardId={cardId}
-        mode="expired"
-        questions={questions.map((q) => ({ id: q.id, title: "Timed-out question", prompt: q.question, multiple: q.multiple, options: q.options }))}
-        onAnswered={onAnswered}
-      />
+        <QuestionBatch
+          cardId={cardId}
+          mode="expired"
+          questions={questions.map((q) => ({ id: q.id, title: "Timed-out question", prompt: q.question, multiple: q.multiple, options: q.options }))}
+          onAnswered={onAnswered}
+          onOpenArtifact={onOpenArtifact}
+        />
     </section>
   );
 }
@@ -3843,7 +3895,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                 </div>
                 {pendingFirst && card.activity === "awaiting-answer" ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} />
                   </div>
                 ) : null}
               </section>
@@ -3947,7 +3999,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                   ))}
                 </div>
               ) : null}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => { onChanged(); void loadIndex(); }} /> : null}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} onAnswered={() => { onChanged(); void loadIndex(); }} /> : null}
             </CardDisclosure>
 
             {(index && (index.rounds.length > 0 || index.looseFiles.length > 0)) ? (
@@ -4295,7 +4347,7 @@ function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, deta
                   onView={(file) => setViewerFile(file)}
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => onChanged()} /> : null}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} onAnswered={() => onChanged()} /> : null}
             </CardDisclosure>
 
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
@@ -4750,7 +4802,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                   </div>
                 </div>
               ) : null}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => void load()} /> : null}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} onAnswered={() => void load()} /> : null}
             </CardDisclosure>
 
             <div ref={artifactsRef}>
@@ -4934,9 +4986,9 @@ function PillsyStyles() {
 }
 
 function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionProps) {
-  const payload = interaction.payload as { question?: string; multiple?: boolean; options?: { label: string; description: string }[]; questions?: { question?: string; multiple?: boolean; options?: { label: string; description: string }[] }[] };
+  const payload = interaction.payload as { question?: string; multiple?: boolean; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; questions?: Array<{ question?: string; multiple?: boolean; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> }> };
   const clean = (options: unknown): BatchItem["options"] => Array.isArray(options)
-    ? options.filter((o): o is { label: string; description: string } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "" }))
+    ? options.filter((o): o is { label: string; description: string; preview: string | null; artifact: AskArtifact | null } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "", preview: typeof o.preview === "string" ? o.preview : null, artifact: o.artifact ?? null }))
     : [];
   // Batch payloads (one `bb stelow ask` call with repeated --question groups)
   // answer together; single-question payloads keep their exact shape.

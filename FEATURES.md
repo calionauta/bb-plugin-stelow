@@ -91,13 +91,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with
-  question counter (N of M), Prev/Next plus direct jump tabs, radio for
+  question counter (N of M), Prev/Next plus direct jump steps, radio for
   single-choice and checkbox for multi-choice, a free-text Other on every
   question, and explicit Skip (AI uses its recommendation). One atomic
   submit answers everything — one worker resume, one inbox resolution.
   Workers batch independent questions into one `bb stelow ask` call
   (repeat `--question` groups); dependent questions stay sequential.
   Timed-out asks stay answerable on the card, batched the same way.
+  Options carry descriptions plus optional detail: `preview` (inline
+  glance, expandable) and `artifact` (workspace-relative path opening in
+  the viewer on cards, plain filename in threads). Workers attach them
+  per option (`--desc/--preview/--artifact`); unresolvable paths degrade
+  to no affordance and never block answering. Option shapes mirror the
+  Option schema in upstream `ask-patterns.md` — one concept, two repos.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision.
 - **Intent correction** (`updateCardIntent`). Fix the card's kind

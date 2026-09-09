@@ -8,7 +8,7 @@ import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manif
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
-import { parseAskGroups, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
+import { parseAskGroups, cleanOptions, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
@@ -161,6 +161,23 @@ const attachmentSchema = z.object({
   type: z.enum(["localFile", "localImage"]),
 }).strict();
 
+// Ask option detail (mirrors the Option schema in
+// orchestrator stages/ask-patterns.md): preview is the inline glance,
+// artifact the openable source of truth. Both nullable so label-only
+// options (and every historical row) keep working unchanged.
+const askArtifactSchema = z.object({
+  path: z.string(),
+  display: z.string(),
+  absolutePath: z.string().nullable(),
+  hostId: z.string().nullable(),
+});
+const askOptionSchema = z.object({
+  label: z.string(),
+  description: z.string(),
+  preview: z.string().nullable(),
+  artifact: askArtifactSchema.nullable(),
+});
+
 const workflowSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -273,8 +290,8 @@ export const rpcContract = defineRpcContract({
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
-      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiresAt: z.number().nullable() })),
-      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(z.object({ label: z.string(), description: z.string() })), expiredAt: z.number() })),
+      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(askOptionSchema), expiresAt: z.number().nullable() })),
+      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(askOptionSchema), expiredAt: z.number() })),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable() })),
       // Environment of the worker thread: enables workspace-kind file links
@@ -1246,7 +1263,7 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--multiple]
 
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
 On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question. There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the index is complete with ranked opportunities, STOP and end your turn — the user reviews the index, marks the card Done, and fans opportunities out into build cards. If the user instead confirms specific opportunities in-thread, fan them out yourself ONLY after that structured confirmation: \`bb stelow fan-out --opportunity <id> [--opportunity ...]\` (ids from the index, never prose — the command refuses unknown ids). Stop early when the user archives the card.
 
@@ -1419,7 +1436,7 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
 Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
@@ -1593,7 +1610,7 @@ ANY time you need user input, you MUST call the structured form:
       --question "<a single clear question>" \\\\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
 Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
@@ -2087,20 +2104,39 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return list.filter((entry): entry is PendingAsk => entry.origin?.kind === "plugin" && entry.status === "pending");
   }
 
+  // Resolve a worker-authored artifact path (workspace-relative) into the
+  // viewer-ready shape. Fail-soft by design: an unresolvable path yields
+  // null and the option stays fully answerable — a bad path never blocks
+  // the question, it just offers no open affordance.
+  async function resolveAskArtifact(card: CardRow, rawPath: unknown): Promise<{ path: string; display: string; absolutePath: string | null; hostId: string | null } | null> {
+    if (typeof rawPath !== "string") return null;
+    const rel = rawPath.trim().replace(/^\.\//, "");
+    if (!rel || rel.length > 500) return null;
+    const workspace = await cardWorkspace(card).catch(() => null);
+    const full = workspace?.path ? resolveArtifactPath(workspace.path, rel) : null;
+    return { path: rel, display: rel.split("/").pop() || rel, absolutePath: full, hostId: workspace?.hostId ?? null };
+  }
+
   async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {
     if (!threadId) return [];
     try {
       const list = await bb.sdk.threads.interactions.list({ threadId });
+      const card = getCardByWorkerThread(threadId);
       const out: Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"] = [];
       for (const entry of pendingAsks(list)) {
         const expanded = expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload });
         for (const question of expanded) {
+          const options = [];
+          for (const option of question.options) {
+            const artifact = option.artifact && card ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : null;
+            options.push({ ...option, artifact });
+          }
           out.push({
             id: question.questionId,
             title: question.title,
             question: question.question,
             multiple: question.multiple,
-            options: question.options,
+            options,
             expiresAt: typeof entry.expiresAt === "number" ? entry.expiresAt : null,
           });
         }
@@ -2754,7 +2790,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const comments = db.prepare("SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as CommentRow[];
       const pending = await fetchPendingQuestions(card.worker_thread_id);
       const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; options: string; expired_at: number }>;
-      const expiredQuestions = expiredRows.map((row) => ({ id: row.id, question: row.question, multiple: Boolean(row.multiple), options: JSON.parse(row.options) as Array<{ label: string; description: string }>, expiredAt: row.expired_at }));
+      const expiredQuestions = [];
+      for (const row of expiredRows) {
+        let parsed: unknown = null;
+        try { parsed = JSON.parse(row.options); } catch { parsed = null; }
+        const options = [];
+        for (const option of cleanOptions(parsed)) {
+          options.push({ ...option, artifact: option.artifact ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : null });
+        }
+        expiredQuestions.push({ id: row.id, question: row.question, multiple: Boolean(row.multiple), options, expiredAt: row.expired_at });
+      }
       let projectName = card.project_id;
       const workspace = await cardWorkspace(card);
       let sourcePath: string | null = workspace?.path ?? null;
@@ -3072,7 +3117,7 @@ ANY time you need user input, you MUST call the structured form:
       --question "<a single clear question>" \\
       --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
 
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time.
+Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
 Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
@@ -3531,7 +3576,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     summary: "Inspect and interact with Stelow workflows",
     commands: [
       { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
-      { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>... (repeat --question groups to ask several at once)" },
+      { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]... (repeat --question groups to ask several at once)" },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
@@ -3572,8 +3617,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // times. Options/--multiple attach to the most recent --question.
         const parsed = parseAskGroups(argv.slice(1));
         if (!threadId) return { exitCode: 2, stderr: "Missing --thread <thr_id>." };
-        if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label>..." };
-        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, options: group.options.map((label) => ({ label, description: "" })) }));
+        if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]..." };
+        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
         const batched = groups.length > 1;
         // The thread must own a card: otherwise the question would surface
         // nowhere and the persist below would silently skip. Refuse fast

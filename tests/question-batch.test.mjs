@@ -13,7 +13,7 @@ import {
   const single = parseAskGroups(["--thread", "t", "--question", "Q?", "--option", "A", "--option", "B"]);
   assert.equal(single.error, undefined);
   assert.equal(single.groups.length, 1);
-  assert.deepEqual(single.groups[0], { question: "Q?", multiple: false, options: ["A", "B"] });
+  assert.deepEqual(single.groups[0], { question: "Q?", multiple: false, options: [{ label: "A", description: "", preview: null, artifact: null }, { label: "B", description: "", preview: null, artifact: null }] });
 }
 {
   const multi = parseAskGroups(["--question", "Q1?", "--option", "A", "--option", "B", "--question", "Q2?", "--multiple", "--option", "C", "--option", "D"]);
@@ -21,7 +21,7 @@ import {
   assert.equal(multi.groups.length, 2);
   assert.equal(multi.groups[0].multiple, false);
   assert.equal(multi.groups[1].multiple, true);
-  assert.deepEqual(multi.groups[1].options, ["C", "D"]);
+  assert.deepEqual(multi.groups[1].options.map((o) => o.label), ["C", "D"]);
 }
 {
   // --multiple before any --question is a usage error, not a silent attach.
@@ -102,4 +102,35 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   assert.match(multi, /B, C/);
 }
 
-console.log("question batch test ok: cli groups, expansion, atomic grouping, continuation");
+// Option detail flags attach to the most recent --option; caps bound payloads.
+{
+  const rich = parseAskGroups(["--question", "Q?", "--option", "A", "--desc", "Why A", "--preview", "```\nwire\n```", "--artifact", "rounds/a-r1.md", "--option", "B"]);
+  assert.equal(rich.error, undefined);
+  assert.deepEqual(rich.groups[0].options[0], { label: "A", description: "Why A", preview: "```\nwire\n```", artifact: { path: "rounds/a-r1.md" } });
+  assert.deepEqual(rich.groups[0].options[1], { label: "B", description: "", preview: null, artifact: null });
+}
+{
+  const stray = parseAskGroups(["--question", "Q?", "--desc", "orphan", "--option", "A", "--option", "B"]);
+  assert.match(stray.error, /must follow a --option/);
+}
+{
+  const long = parseAskGroups(["--question", "Q?", "--option", "A", "--preview", "x".repeat(5000), "--option", "B"]);
+  assert.equal(long.error, undefined);
+  assert.equal(long.groups[0].options[0].preview.length, 4000);
+}
+{
+  const badPath = parseAskGroups(["--question", "Q?", "--option", "A", "--artifact", "x".repeat(600), "--option", "B"]);
+  assert.match(badPath.error, /workspace-relative path/);
+}
+
+// Expansion keeps legacy label-only rows and normalizes rich options.
+{
+  const mixed = expandInteractionQuestions({ id: "i2", title: "T", payload: { question: "Q?", multiple: false, options: ["A", { label: "B", description: "d", preview: "p", artifact: { path: "f.md" } }, { label: "" }] } });
+  assert.equal(mixed.length, 1);
+  assert.deepEqual(mixed[0].options, [
+    { label: "A", description: "", preview: null, artifact: null },
+    { label: "B", description: "d", preview: "p", artifact: { path: "f.md" } },
+  ]);
+}
+
+console.log("question batch test ok: cli groups, option details, expansion, atomic grouping, continuation");
