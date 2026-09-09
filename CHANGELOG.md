@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.12] - 2026-09-09
+
+### Changed
+
+- **Sidebar label now reads "Stelow — Product Workflow"** so the panel's
+  purpose is explicit in bb's navigation: it is an opinionated product
+  workflow (Shape Up, gates, scopes), not a generic task runner.
+
+### Fixed
+
+- **A research round that mirrors the index is never presented as its
+  artifact.** When the round file only contains the research index (identical
+  content or the index heading), the playbook output was never written — the
+  round shows as missing instead of opening the wrong file as if it were the
+  round's output.
+- **Loose-file scans compose absolute paths from the listed directory.**
+  Entries from `files.list` are relative to the listed dir; treating them as
+  absolute broke loose-file links and let `research-index.md` / `state.md`
+  leak through as loose files.
+- **Research completions emit a single inbox event**, and user-initiated
+  board moves no longer ping the inbox with a "Completed" notification.
+  Previously recorded duplicate generic completions for research cards are
+  cleaned up on startup.
+
 ## [0.3.11] - 2026-09-09
 
 ### Fixed
