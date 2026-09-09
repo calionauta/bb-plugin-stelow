@@ -58,11 +58,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on the needs-attention filter. One shared bar: project + attention are the
   common facets, build adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
-- **First-run tours** (`Tour`). One shared stepper for Inbox, Build,
-  Research, and Explore: full steps on first use, a one-line summary bar once content
-  exists. Dismissing collapses to a one-line box in the same slot (never a
-  relocated button); expanding replays the stepper. State persists per
-  track in localStorage.
+- **First-run guidance without tours.** No stepper onboarding: each track
+  carries one static info line where the preset routing lives (agents per
+  phase on Build, effective preset on Research/Explore), the Inbox header
+  states the batch-answer rule, and the strategy-round dialog states the
+  append-only rule. Only information no button already explains; nothing
+  to dismiss, nothing that changes shape.
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
