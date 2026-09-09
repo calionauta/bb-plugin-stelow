@@ -22,6 +22,7 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections, stripResearchOpportunities } from "./lib/research-index-sections.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
+import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport.js";
@@ -181,28 +182,26 @@ function boardColumnOf(card: Pick<CardItem, "status" | "stage">): string {
   return STAGE_BAND[card.stage] ?? "analysis";
 }
 
-// Research track columns: a deliberately dumb To-Do / Doing / Done flow.
+// Lightweight-track columns (Research + Explore share them): a deliberately
+// dumb To-Do / Doing / Done flow. Canonical in lib/tracks (shared with the
+// server via lib/card-move) — these aliases keep existing call sites stable.
 // Statuses reuse the shared enum (pending / in-progress / completed /
 // archived) so no migration or guard changes are needed; the mapping lives
 // in lib/card-question-state (shared with the server) so a waiting question
 // — activity, never status — can never push a Doing card back to To-Do.
-const RESEARCH_COLUMNS = ["todo", "doing", "done", "archived"] as const;
-const RESEARCH_COLUMN_LABELS: Record<string, string> = {
-  todo: "To-Do",
-  doing: "Doing",
-  done: "Done",
-  archived: "Archived",
-};
+const RESEARCH_COLUMNS = LIGHTWEIGHT_COLUMNS as unknown as readonly ["todo", "doing", "done", "archived"];
+const RESEARCH_COLUMN_LABELS: Record<string, string> = LIGHTWEIGHT_COLUMN_LABELS;
 function researchColumnOf(card: Pick<CardItem, "status">): string {
   return researchColumnForStatus(card.status);
 }
 
-type StelowTrack = "inbox" | "build" | "research";
+type StelowTrack = "inbox" | "build" | "research" | "explore";
 // Single source for tracks: the tab bar, the router, and every navigation
 // helper read from here. Renaming a track (or reordering tabs) is one line.
 const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
   { key: "inbox", title: "Inbox", icon: "Mail", rootSubPath: "inbox" },
   { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
+  { key: "explore", title: "Explore", icon: "Target", rootSubPath: "explore" },
   { key: "build", title: "Build", icon: "Columns2", rootSubPath: "build" },
 ];
 function trackTitle(track: StelowTrack): string {
@@ -212,7 +211,7 @@ function trackRootSubPath(track: StelowTrack): string {
   return STELOW_TRACKS.find((entry) => entry.key === track)?.rootSubPath ?? "";
 }
 function trackOfCard(card: Pick<CardItem, "kind">): StelowTrack {
-  return card.kind === "research" ? "research" : "build";
+  return card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "build";
 }
 function cardSubPath(card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): string {
   const track = trackOfCard(card);
@@ -355,7 +354,7 @@ const REVIEW_MODE_OPTIONS = [
   { value: "Auto", label: "Auto", description: "The agent resolves gaps and proceeds without review gates." },
   { value: "Product Spec Gate", label: "Product Spec Gate", description: "Review the shaped product specification." },
   { value: "Product Spec + Interface Gates", label: "Product Spec + Interface Gates", description: "Review the product specification and interface direction." },
-  { value: "Product Spec + Interface + Scopes", label: "Product Spec + Interface + Scopes", description: "Also confirm the planned delivery scopes." },
+  { value: "Product Spec + Interface + Scopes", label: "Product Spec + Interface + Scopes", description: "Also confirm the planned build scopes." },
   { value: "Product Spec + Interface + Tech Review", label: "Product Spec + Interface + Tech Review", description: "Add technical-plan review before execution." },
   { value: "Product Spec + Interface + Tech Review + Code Diff", label: "Product Spec + Interface + Tech Review + Code Diff", description: "Use every review gate, including the final code diff." },
 ] as const;
@@ -443,7 +442,7 @@ function useBuildAccessory(): SidebarAccessoryHandle {
   const [count, setCount] = useState(0);
   const reload = useCallback(async () => {
     try {
-      const result = await rpc.call("listCards", { projectId: null, kind: "delivery" });
+      const result = await rpc.call("listCards", { projectId: null, kind: "build" });
       setCount(result.cards.filter((card) => card.status !== "completed" && card.status !== "archived").length);
     } catch {
       /* Keep the last known count while the host reconnects. */
@@ -473,7 +472,7 @@ function useResearchAccessory(): SidebarAccessoryHandle {
 }
 
 type InboxNotification = {
-  id: string; cardId: string; cardName: string; projectName: string; cardKind: "delivery" | "research";
+  id: string; cardId: string; cardName: string; projectName: string; cardKind: "build" | "research" | "explore";
   kind: "question" | "error" | "paused" | "completed";
   summary: string; occurredAt: number; readAt: number | null; resolvedAt: number | null; archivedAt: number | null;
 };
@@ -709,7 +708,7 @@ function BoardPanel() {
     try {
       const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult, buildResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
-        rpc.call("listCards", { projectId: targetId, kind: "delivery" }).catch(() => ({ cards: [] })),
+        rpc.call("listCards", { projectId: targetId, kind: "build" }).catch(() => ({ cards: [] })),
         rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
         rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
         rpc.call("board", { projectId: targetId }).catch(() => null),
@@ -912,7 +911,7 @@ function BoardPanel() {
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new card</DialogTitle>
-                <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and delivery process.</DialogDescription>
+                <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and build process.</DialogDescription>
               </DialogHeader>
               <NewThreadComposer
                 defaultProjectId={activeProjectId ?? undefined}
@@ -1151,7 +1150,7 @@ function ResearchPanel() {
   const strategyLabelById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
   const activeProjectId = researchProjectId ?? routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
-  // Research has its own band default (like each delivery phase). Unset means
+  // Research has its own band default (like each build phase). Unset means
   // "use the board default" — the same fallback the worker spawn applies, so
   // the dialog never promises a preset the worker won't get.
   const researchBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "research")?.presetId) ?? null;
@@ -1334,12 +1333,231 @@ function ResearchPanel() {
   );
 }
 
+function ExplorePanel() {
+  const { projectId: routeProjectId } = useBbContext();
+  const navigate = useBbNavigate();
+  const rpc = useRpc<typeof rpcContract>();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [cards, setCards] = useState<CardItem[]>([]);
+  const [stages, setStages] = useState<ResearchStrategyOption[]>([]);
+  const [presets, setPresets] = useState<PresetManagerPreset[]>([]);
+  const [researchBandPresets, setResearchBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
+  const [researchPresetsOpen, setResearchPresetsOpen] = useState(false);
+  const [exploreProjectId, setExploreProjectId] = useState<string | null>(routeProjectId);
+  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return { archived: true };
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEYS.exploreColumns);
+      if (!raw) return { archived: true };
+      const parsed = JSON.parse(raw) as Record<string, boolean>;
+      return typeof parsed === "object" && parsed ? parsed : { archived: true };
+    } catch { return { archived: true }; }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(STORAGE_KEYS.exploreColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
+  }, [collapsedColumns]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [stage, setStage] = useState<string | null>(null);
+  const [stageAttention, setStageAttention] = useState(0);
+  const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
+  const [filterAttention, setFilterAttention] = useState(false);
+
+  const load = useCallback(async (targetId: string | null) => {
+    setLoading(true);
+    try {
+      const [projectsResult, cardsResult, stagesResult, presetsResult, bandPresetsResult] = await Promise.all([
+        rpc.call("projects", {}).catch(() => null),
+        rpc.call("listCards", { projectId: targetId, kind: "explore" }).catch(() => ({ cards: [] })),
+        rpc.call("stageCatalog", {}).catch(() => ({ stages: [] })),
+        rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
+        rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
+      ]);
+      setProjects(projectsResult?.projects ?? []);
+      setCards(cardsResult.cards);
+      setStages(stagesResult.stages);
+      setPresets(presetsResult.presets);
+      setResearchBandPresets(bandPresetsResult.bands);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to load explore.");
+      setProjects([]);
+      setCards([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [rpc]);
+
+  useEffect(() => { void load(exploreProjectId ?? routeProjectId); }, [load, exploreProjectId, routeProjectId]);
+  useDebouncedRealtime(["card-state", "board-changed"], () => void load(exploreProjectId ?? routeProjectId));
+
+  const activeProjectId = exploreProjectId ?? routeProjectId;
+  const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
+  const researchBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "research")?.presetId) ?? null;
+  const effectiveResearchPreset = researchBandPreset ?? defaultPreset;
+  const stageLabelById = useMemo(() => new Map(stages.map((entry) => [entry.id, entry.label])), [stages]);
+  const filteredCards = useMemo(() => cards.filter((card) => {
+    if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
+    if (filterAttention && !card.needsAttention) return false;
+    return true;
+  }), [cards, filterProjectId, filterAttention]);
+  const grouped = useMemo(() => {
+    const groups: Record<string, CardItem[]> = Object.fromEntries(RESEARCH_COLUMNS.map((column) => [column, []]));
+    for (const card of filteredCards) {
+      (groups[researchColumnOf(card)] ?? groups.todo).push(card);
+    }
+    for (const column of Object.keys(groups)) {
+      groups[column]!.sort((a, b) => b.updatedAt - a.updatedAt);
+    }
+    return groups;
+  }, [filteredCards]);
+  const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
+
+  async function start(request: NewThreadRequest) {
+    const targetProjectId = request.projectId || activeProjectId;
+    if (!targetProjectId) return;
+    const textPart = request.input.find((part) => part.type === "text");
+    const text = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
+    const attachments = request.input
+      .filter((part): part is { type: "localFile" | "localImage"; path: string } => (part.type === "localFile" || part.type === "localImage") && "path" in part && typeof part.path === "string" && part.path.length > 0)
+      .map((part) => ({ type: part.type, path: part.path }));
+    if (!text.trim()) return;
+    if (!stage) {
+      toast.error("Pick a stage first.");
+      setStageAttention((count) => count + 1);
+      // Throw so the composer keeps the draft: a blocked submit must never
+      // lose what the user typed (SDK clears the draft only on resolve).
+      throw new Error("Pick a stage first.");
+    }
+    try {
+      const result = await rpc.call("createExploreCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, stageId: stage });
+      setPrompt("");
+      setCreateOpen(false);
+      navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
+      toast.success("Exploration started. The stage artifact appears on the card.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to start exploration.");
+      throw error;
+    }
+  }
+
+  async function moveCard(cardId: string, target: string) {
+    if (!(RESEARCH_COLUMNS as readonly string[]).includes(target)) return;
+    const result = await rpc.call("moveCard", { cardId, status: target as "todo" | "doing" | "done" | "archived" });
+    if (!result.ok) toast.error(result.error ?? "Move failed");
+  }
+
+  return (
+    <div className="flex h-full overflow-hidden bg-background">
+      <div className="flex-1 overflow-auto p-4 md:p-6">
+        <div className="mx-auto max-w-[1500px] space-y-4">
+          {loading && cards.length === 0 ? <TrackSkeleton columns={4} /> : <>
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Run one Stelow workflow stage on its own — no triage, no pipeline, no board sequence. Pick a stage, supply the input, and get the single artifact.</p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
+              </div>
+              {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
+                {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
+              </button> : null}
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}>New exploration</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the band default">Presets</Button>
+            </div>
+          </header>
+
+          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStage(null); }}>
+            <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Start new exploration</DialogTitle>
+                <DialogDescription>Pick one workflow stage below, then describe the input — an idea, an existing proposal, a codebase, a URL. The agent runs only that stage's playbook and saves the artifact.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4">
+                <div className="grid gap-1.5">
+                  <span className="text-xs font-medium text-foreground">Choose a stage</span>
+                  <StrategyPicker strategies={stages} value={stage} onChange={setStage} groupName="stage-pick" attentionSignal={stageAttention} noun="stages" legend="Workflow stage" />
+                </div>
+                <AgentConfigBox
+                  lines={[`Explore runs on ${effectiveResearchPreset?.name ?? "Default"}${researchBandPreset ? "" : " (board default)"}`]}
+                  onConfigure={() => setResearchPresetsOpen(true)}
+                />
+                <NewThreadComposer
+                  defaultProjectId={activeProjectId ?? undefined}
+                  defaultProviderId={effectiveResearchPreset?.providerId}
+                  defaultModel={effectiveResearchPreset?.modelId}
+                  defaultReasoningLevel={effectiveResearchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+                  defaultPermissionMode={effectiveResearchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+                  initialPrompt={prompt}
+                  placeholder="What should Stelow explore?"
+                  layout="contained"
+                  draftKey="stelow-explore-create"
+                  onSubmit={(request) => start(request)}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <PresetManagerDialog
+            open={researchPresetsOpen}
+            onOpenChange={setResearchPresetsOpen}
+            rpc={rpc}
+            presets={presets}
+            onChanged={() => load(exploreProjectId ?? routeProjectId)}
+          />
+
+          <div className="flex items-start gap-2 border-b pb-3">
+            <div className="min-w-0 flex-1">
+              <FiltersBar
+                projects={projects}
+                filterProjectId={filterProjectId}
+                filterAttention={filterAttention}
+                onProject={setFilterProjectId}
+                onAttention={setFilterAttention}
+                onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
+              />
+            </div>
+            <ViewToggle view={viewMode} onChange={setViewMode} label="Explore cards view" />
+          </div>
+          {viewMode === "board" ? (
+          <p className="text-xs text-muted-foreground">
+            <span className="sm:hidden">Swipe sideways to view every stage.</span>
+            <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
+          </p>
+          ) : null}
+          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} /> : (
+          <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: RESEARCH_COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
+            {RESEARCH_COLUMNS.map((column) => (
+              <BoardColumn
+                key={column}
+                column={column}
+                cards={grouped[column]}
+                collapsed={Boolean(collapsedColumns[column])}
+                onToggleCollapsed={() => setCollapsedColumns((current) => ({ ...current, [column]: !current[column] }))}
+                onDrop={(cardId) => moveCard(cardId, column)}
+                labels={RESEARCH_COLUMN_LABELS}
+                renderCard={(card) => <ExploreCard card={card} stageLabel={card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null} />}
+              />
+            ))}
+          </div>
+          )}
+          </>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // localStorage keys in one place: board/research column collapse and the
 // remembered track. Renaming a key is one line; readers never guess at
 // raw strings scattered through panels.
 const STORAGE_KEYS = {
   boardColumns: "stelow-columns-collapsed-v1",
   researchColumns: "stelow-research-columns-collapsed-v1",
+  exploreColumns: "stelow-explore-columns-collapsed-v1",
   lastTab: "stelow-tab-v1",
   buildTour: "stelow-tour-build-v1",
   researchTour: "stelow-tour-research-v1",
@@ -1363,7 +1581,8 @@ function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   if (normalized === "" || normalized === "build") return { kind: "track", track: "build" };
   if (normalized === "inbox") return { kind: "track", track: "inbox" };
   if (normalized === "research") return { kind: "track", track: "research" };
-  let match = normalized.match(/^(inbox|build|research)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
+  if (normalized === "explore") return { kind: "track", track: "explore" };
+  let match = normalized.match(/^(inbox|build|research|explore)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, origin: match[1] as StelowTrack };
   match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) return { kind: "bare-card", cardId: match[1]!, eventId: match[2] ?? null };
@@ -1372,7 +1591,7 @@ function parseStelowSubPath(subPath: string): ParsedStelowRoute {
 
 function StelowTabBar({ tab, counts, onSelect }: {
   tab: StelowTrack;
-  counts: { inbox: number; build: number; research: number };
+  counts: { inbox: number; build: number; research: number; explore: number };
   onSelect: (track: StelowTrack) => void;
 }) {
   const countFor = (key: StelowTrack) => counts[key];
@@ -1387,7 +1606,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
             role="tab"
             aria-selected={active}
             onClick={() => onSelect(entry.key)}
-            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Delivery board" : "Research board"}
+            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Build board" : entry.key === "research" ? "Research board" : "Single-stage runs"}
             className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:px-3 sm:text-sm ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
           >
             <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
@@ -1421,15 +1640,15 @@ function BareCardRoute({ cardId, eventId, navigate }: {
   cardId: string; eventId: string | null; navigate: ReturnType<typeof useBbNavigate>;
 }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [kind, setKind] = useState<"delivery" | "research" | null>(null);
+  const [kind, setKind] = useState<"build" | "research" | "explore" | null>(null);
   useEffect(() => {
     let cancelled = false;
     setKind(null);
     void rpc.call("listCards", { projectId: null }).then((result) => {
       if (cancelled) return;
       const found = result.cards.find((entry) => entry.id === cardId);
-      setKind(found ? found.kind : "delivery");
-    }).catch(() => { if (!cancelled) setKind("delivery"); });
+      setKind(found ? found.kind : "build");
+    }).catch(() => { if (!cancelled) setKind("build"); });
     return () => { cancelled = true; };
   }, [cardId, rpc]);
   if (!kind) return <div className="p-4"><PanelSkeleton rows={4} /></div>;
@@ -1446,7 +1665,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
     if (typeof window === "undefined") return "inbox";
     try {
       const raw = window.localStorage.getItem(STORAGE_KEYS.lastTab);
-      if (raw === "inbox" || raw === "build" || raw === "research") return raw;
+      if (raw === "inbox" || raw === "build" || raw === "research" || raw === "explore") return raw;
     } catch { /* default below */ }
     return "inbox";
   });
@@ -1474,7 +1693,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
   // visibly do nothing).
   const bare = subPath.replace(/^\/+|\/+$/g, "") === "";
   const tab = bare ? lastTab : route.track;
-  const counts = { inbox: inbox.count, build: build.count, research: research.count };
+  const counts = { inbox: inbox.count, build: build.count, research: research.count, explore: 0 };
   // Keep-alive: all three tracks stay mounted and only the active one
   // shows. Tab switches are instant (no reload flash) and every track
   // keeps its realtime subscription warm. First mount still loads once —
@@ -1490,6 +1709,9 @@ function StelowPanel({ subPath }: { subPath: string }) {
       </div>
       <div className={tab === "research" ? "min-h-0 flex-1" : "hidden"}>
         <ResearchPanel />
+      </div>
+      <div className={tab === "explore" ? "min-h-0 flex-1" : "hidden"}>
+        <ExplorePanel />
       </div>
     </div>
   );
@@ -1511,7 +1733,7 @@ function WorkflowChoiceSelect<T extends string>({ label, value, options, onChang
 // Visual strategy picker shared by the creation modal and the follow-up
 // round dialog: search field over emoji radio-cards, single select, no
 // preselected default. RunIds (follow-up) only badge already-run rows.
-function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, disabled = false, attentionSignal = 0 }: {
+function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, disabled = false, attentionSignal = 0, noun = "strategies", legend = "Research strategy" }: {
   strategies: ResearchStrategyOption[];
   value: string | null;
   onChange: (id: string) => void;
@@ -1521,6 +1743,8 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
   // Increment to draw attention to the picker (focus search + transient
   // ring). Used when submit is blocked for want of a selection.
   attentionSignal?: number;
+  noun?: string;
+  legend?: string;
 }) {
   const [query, setQuery] = useState("");
   const [flash, setFlash] = useState(false);
@@ -1559,10 +1783,10 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           ref={searchRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search strategies…"
+          placeholder={`Search ${noun}…`}
           autoFocus={!compact}
           disabled={disabled}
-          aria-label="Search strategies"
+          aria-label={`Search ${noun}`}
           className="h-11 w-full rounded-md border bg-background pr-9 pl-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
         />
         {query.length > 0 ? (
@@ -1571,20 +1795,20 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
       </div>
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {strategies.length === 0
-          ? "Loading strategies…"
+          ? `Loading ${noun}…`
           : needle.length > 0
-            ? `${visible.length} of ${strategies.length} strategies`
-            : `${strategies.length} strategies`}
+            ? `${visible.length} of ${strategies.length} ${noun}`
+            : `${strategies.length} ${noun}`}
       </p>
       {visible.length === 0 && strategies.length > 0 ? (
         <div className="rounded-md border border-dashed p-4 text-center">
-          <p className="text-sm text-muted-foreground">No strategies match “{query.trim()}”.</p>
+          <p className="text-sm text-muted-foreground">No {noun} match “{query.trim()}”.</p>
           <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
         </div>
       ) : (
         <div className={`max-h-72 min-w-0 overflow-y-auto overscroll-contain p-1 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
           <fieldset className="grid gap-2">
-          <legend className="sr-only">Research strategy</legend>
+          <legend className="sr-only">{legend}</legend>
           {visible.map((entry) => {
             const selected = value === entry.id;
             const ran = runIds.includes(entry.id);
@@ -1656,7 +1880,7 @@ function ProjectPill({ value, onChange, projects }: { value: string | null; onCh
 }
 
 // One filter bar for both boards (Archetype A: same components, same
-// affordances). Project + attention are the shared facets; delivery adds
+// affordances). Project + attention are the shared facets; build adds
 // stage/type/status/activity by passing their value + handler. Facets
 // without a handler are not rendered — Research gets the identical popover,
 // pills, and checkbox without a forked filter row.
@@ -1786,11 +2010,11 @@ function ViewToggle({ view, onChange, label }: { view: "board" | "list"; onChang
 }
 
 function ResearchList({ groups, navigate, strategyLabelById }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; strategyLabelById: Map<string, string> }) {
-  return <div className="space-y-5">{RESEARCH_COLUMNS.map((column) => {
-    const cards = groups[column] ?? [];
-    if (!cards.length) return null;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{RESEARCH_COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="space-y-2">{cards.map((card) => <ResearchCard key={card.id} card={card} strategyLabel={joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById)} />)}</div></section>;
-  })}</div>;
+  return <LightweightTrackList groups={groups} navigate={navigate} tagFor={(card) => joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById) || null} renderCard={(card, tag) => <ResearchCard card={card} strategyLabel={tag} />} />;
+}
+
+function ExploreList({ groups, navigate, stageLabelById }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; stageLabelById: Map<string, string> }) {
+  return <LightweightTrackList groups={groups} navigate={navigate} tagFor={(card) => (card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null)} renderCard={(card, tag) => <ExploreCard card={card} stageLabel={tag} />} />;
 }
 
 function BuildList({ groups, navigate }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate> }) {
@@ -1923,9 +2147,10 @@ function BoardCard({ card }: { card: CardItem }) {
   );
 }
 
-// Research-track card: strategy instead of stage/intent, opens in the
-// Research panel. Retry, attention, and activity reuse the delivery pieces.
-function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: string | null }) {
+// Lightweight-track card (Research + Explore share it — convention over
+// configuration): identical worker chrome, one tag pill whose label comes
+// from the track catalog (strategy for research, stage for explore).
+function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: CardItem; tagLabel: string | null; tagTitle: string; ariaNoun: string }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
   const running = card.activity === "running";
@@ -1946,7 +2171,7 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
       title="Click to inspect"
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
-      aria-label={`Open research ${card.displayName}.`}
+      aria-label={`Open ${ariaNoun} ${card.displayName}.`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
@@ -1955,12 +2180,35 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
           <ActivityPill activity={card.activity} />
         </span>
       </div>
-      {strategyLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <Pill className="ml-auto whitespace-nowrap" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill>
+      {tagLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <Pill className="ml-auto whitespace-nowrap" title={tagTitle}>{tagLabel}</Pill>
       </div> : null}
       <CardMetaRows card={card} />
     </div>
   );
+}
+
+// Research-track card: strategy instead of stage/intent, opens in the
+// Research panel. Retry, attention, and activity reuse the build pieces.
+function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: string | null }) {
+  return <LightweightTrackCard card={card} tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." ariaNoun="research" />;
+}
+
+// Explore-track card: the single workflow stage instead of strategy/intent,
+// opens in the Explore panel. Retry, attention, and activity reuse the same
+// pieces as the other tracks.
+function ExploreCard({ card, stageLabel }: { card: CardItem; stageLabel: string | null }) {
+  return <LightweightTrackCard card={card} tagLabel={stageLabel ?? card.exploreStage} tagTitle="Workflow stage — the single playbook this exploration runs." ariaNoun="exploration" />;
+}
+
+// Lightweight list view (Research + Explore share it): same grouping as the
+// board, one card per row. tagFor resolves the card's tag pill label.
+function LightweightTrackList({ groups, navigate, tagFor, renderCard }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; tagFor: (card: CardItem) => string | null; renderCard: (card: CardItem, tag: string | null) => React.ReactNode }) {
+  return <div className="space-y-5">{RESEARCH_COLUMNS.map((column) => {
+    const cards = groups[column] ?? [];
+    if (cards.length === 0) return null;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{RESEARCH_COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="space-y-2">{cards.map((card) => <div key={card.id}>{renderCard(card, tagFor(card))}</div>)}</div></section>;
+  })}</div>;
 }
 
 // Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a
@@ -2152,7 +2400,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? card.kind === "research" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Research status — this card's current board state."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <><Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the delivery flow.">{COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status)}</Pill><Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title="Workflow status — the card's specific execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill></> : null}
+        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <><Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the build flow.">{COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status)}</Pill><Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title="Workflow status — the card's specific execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill></> : null}
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />
@@ -3082,7 +3330,7 @@ function normalizeResearchPath(path: string): string {
   return String(path ?? "").replace(/^\.\//, "").replace(/\/+$/, "").trim();
 }
 
-// Fan-out: turn checked opportunities into delivery Build cards. Mirrors the
+// Fan-out: turn checked opportunities into build cards. Mirrors the
 // GitHub-import dialog (checkbox list + bulk confirm); the server re-parses
 // the index, spawns, and flips exactly the spawned boxes.
 function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
@@ -3134,7 +3382,7 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Select To Build</DialogTitle>
-          <DialogDescription>Select which opportunities become delivery build cards (starting at triage) — nothing is created until you confirm. Spawned cards check their box in the index so a retry never duplicates.</DialogDescription>
+          <DialogDescription>Select which opportunities become build cards (starting at triage) — nothing is created until you confirm. Spawned cards check their box in the index so a retry never duplicates.</DialogDescription>
         </DialogHeader>
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing available — every opportunity was already fanned out or checked.</p>
@@ -3224,7 +3472,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
   );
 }
 
-// Shared detail leaves. Delivery and research bodies render identical
+// Shared detail leaves. Build and research bodies render identical
 // worker history, conversation, and inbox-event banners — one definition
 // each instead of drifting copies.
 function WorkerHistoryList({ history }: { history: CardDetailResponse["workerHistory"] }) {
@@ -3346,8 +3594,8 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
 }
 
 // Research-track card detail: hero + index + fan-out + artifacts + worker +
-// conversation. Delivery-only surfaces (stages, timeline, gates, intent)
-// never render here; every leaf below is shared with the delivery body.
+// conversation. Build-only surfaces (stages, timeline, gates, intent)
+// never render here; every leaf below is shared with the build body.
 function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, detail, onChanged }: {
   cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
   card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
@@ -3648,7 +3896,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({index.opportunities.length})</h4>
                     <span className="flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy round on the same request — appends a new section to the index.">Explore another strategy…</Button>
-                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Select opportunities, then create the delivery build cards.">Select To Build</Button>
+                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Select opportunities, then create the build cards.">Select To Build</Button>
                     </span>
                   </div>
                   {indexGroups.map((group) => (
@@ -3802,6 +4050,275 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         onOpenChange={setDeleteOpen}
         title="Delete this research permanently?"
         description="The archived research, its comments, and its history are removed from Stelow and cannot be recovered."
+        confirmLabel="Delete"
+        confirmTone="destructive"
+        onConfirm={doDelete}
+      />
+    </div>
+  );
+}
+
+function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, detail, onChanged }: {
+  cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
+  card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [stages, setStages] = useState<ResearchStrategyOption[]>([]);
+  const [comment, setComment] = useState("");
+  const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
+  const [repairOpen, setRepairOpen] = useState(false);
+  const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
+  const inboxEventRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    rpc.call("stageCatalog", {}).then((result) => setStages(result.stages)).catch(() => {});
+  }, [rpc]);
+  useEffect(() => {
+    if (!inboxEventId) return;
+    rpc.call("getNotification", { notificationId: inboxEventId, cardId }).then((result) => setInboxEvent(result.notification ?? null)).catch(() => {});
+  }, [cardId, inboxEventId, rpc]);
+  // Viewing a completed card marks its completion seen (read, never
+  // resolved): the badge drops, Recent updates keeps the entry.
+  useEffect(() => {
+    if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
+  }, [cardId, card?.status, rpc]);
+  useEffect(() => {
+    if (!inboxEventId || !inboxEvent) return;
+    inboxEventRef.current?.scrollIntoView({ block: "nearest" });
+    inboxEventRef.current?.focus({ preventScroll: true });
+  }, [inboxEventId, inboxEvent]);
+
+  const stageLabel = card?.exploreStage ? (stages.find((entry) => entry.id === card.exploreStage)?.label ?? card.exploreStage) : null;
+
+  async function submitComment() {
+    if (!comment.trim()) return;
+    const result = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: comment.trim() });
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    setComment("");
+    onChanged();
+  }
+
+  async function doArchive() {
+    setArchiveOpen(false);
+    try {
+      await rpc.call("cancelCard", { cardId });
+      toast.success("Exploration archived.");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Archive failed.");
+    }
+  }
+
+  async function doDelete() {
+    setDeleteOpen(false);
+    const result = await rpc.call("deleteCard", { cardId });
+    if (!result.deleted) {
+      toast.error(result.error ?? "Delete failed.");
+      return;
+    }
+    toast.success("Exploration deleted.");
+    onClose();
+  }
+
+  async function doRepair() {
+    setRepairOpen(false);
+    const result = await rpc.call("reseedCard", { cardId });
+    if (!result.reseeded) {
+      toast.error(result.error ?? "Restart failed");
+      return;
+    }
+    toast.success("Fresh worker started on the same stage.");
+    onChanged();
+  }
+
+  async function doRetry() {
+    setRetrying(true);
+    try {
+      const result = await rpc.call("retryWorker", { cardId });
+      if (!result.ok) toast.error(result.error ?? "Retry failed. Try Restart fresh instead.");
+      else toast.success("Worker retried — continuing the exploration.");
+      onChanged();
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  async function doRestartWorker() {
+    setRestartWorkerOpen(false);
+    setRestarting(true);
+    try {
+      const result = await rpc.call("restartWorker", { cardId });
+      if (!result.ok) toast.error(result.error ?? "Restart failed.");
+      else toast.success("Worker restarted — continuing the exploration.");
+      onChanged();
+    } finally {
+      setRestarting(false);
+    }
+  }
+
+  const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
+  const hero = card ? heroFor(card, detail) : null;
+  const heroStyle = hero ? HERO_STYLE[hero.kind] : null;
+  const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex-1 overflow-auto p-4">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
+        {card ? (
+          <>
+            <InboxEventBanner visible={Boolean(inboxEventId) && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused"))} event={inboxEvent} sectionRef={inboxEventRef} />
+            {hero && heroStyle ? (
+              <section aria-label="Exploration status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
+                <div className="flex items-start gap-2.5">
+                  <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${heroStyle.dot}`} />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
+                    <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {stageLabel ? <Pill tone="bg-primary/15 text-primary" title="Workflow stage — the single playbook this exploration runs.">{stageLabel}</Pill> : null}
+                      {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 pt-3">
+                      {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
+                      {hero.kind === "error" && card.workerThreadId ? (
+                        <>
+                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
+                          {presetStale ? (
+                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the exploration.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
+                          ) : (
+                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
+                          )}
+                          <OpenThreadButton threadId={card.workerThreadId} />
+                        </>
+                      ) : null}
+                      {hero.kind === "paused" ? (
+                        <>
+                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
+                          {presetStale ? (
+                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the exploration.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
+                          ) : (
+                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title={card.lastError ? "Retry the failed worker in place — nothing is reset." : "Resume the idle worker in place — nothing is reset."}>{retrying ? "Retrying…" : card.lastError ? "Retry" : "Resume"}</Button>
+                          )}
+                          <OpenThreadButton threadId={card.workerThreadId} />
+                        </>
+                      ) : null}
+                      {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
+                        <OpenThreadButton threadId={card.workerThreadId} />
+                      ) : null}
+                      {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
+                        <>
+                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
+                          {presetStale ? (
+                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the exploration.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
+                          ) : (
+                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
+                          )}
+                          <OpenThreadButton threadId={card.workerThreadId} />
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+                {pendingFirst && card.activity === "awaiting-answer" ? (
+                  <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => onChanged()} />
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <WorkerSection
+              card={card}
+              detail={detail}
+              presetStale={presetStale}
+              restarting={restarting}
+              onRestartWorker={() => setRestartWorkerOpen(true)}
+              onRepair={() => setRepairOpen(true)}
+              onArchive={() => setArchiveOpen(true)}
+              onDelete={() => setDeleteOpen(true)}
+              onPreset={() => setPresetDialogOpen(true)}
+              presetPill={<>Explore · {detail?.card.presetName ?? "default"}</>}
+              presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
+              pillTitle="Preset for the next worker"
+            />
+
+            <CardDisclosure title="Artifact" hint={detail ? `${detail.artifacts.length}` : "produced files"} defaultOpen>
+              {detail ? (
+                <ArtifactGroups
+                  artifacts={detail.artifacts}
+                  workspaceKind={card.workspaceKind}
+                  fileEnvironmentId={detail.fileEnvironmentId}
+                  onView={(file) => setViewerFile(file)}
+                />
+              ) : <p className="text-xs text-muted-foreground">Loading…</p>}
+              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onAnswered={() => onChanged()} /> : null}
+            </CardDisclosure>
+
+            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
+
+          </>
+        ) : null}
+        </div>
+      </div>
+      <ConfirmActionDialog
+        open={repairOpen}
+        onOpenChange={setRepairOpen}
+        title="Restart with a fresh worker?"
+        description={`A new worker restarts ${stageLabel ? `the ${stageLabel} stage` : "the stage"} from scratch with a clean workspace — existing artifacts are discarded. Existing comments are kept. Try Retry first — restart only if the worker itself is broken.`}
+        confirmLabel="Restart fresh"
+        confirmTone="default"
+        onConfirm={doRepair}
+      />
+      <ConfirmActionDialog
+        open={restartWorkerOpen}
+        onOpenChange={setRestartWorkerOpen}
+        title="Restart the worker on the current preset?"
+        description="Stops the running worker and starts a fresh one on this card's preset, continuing the exploration (not from scratch). Use this to apply a preset change."
+        confirmLabel="Restart worker"
+        confirmTone="default"
+        onConfirm={doRestartWorker}
+      />
+      <PresetAssignDialog
+        open={presetDialogOpen}
+        onOpenChange={setPresetDialogOpen}
+        cardId={cardId}
+        onChanged={onChanged}
+      />
+      <ArtifactViewerDialog
+        open={viewerFile !== null}
+        onOpenChange={(next) => { if (!next) setViewerFile(null); }}
+        cardId={cardId}
+        file={viewerFile}
+        editorTarget={viewerFile?.target ?? null}
+        pendingQuestion={pendingFirst}
+        onQuestionAnswered={() => { setViewerFile(null); onChanged(); }}
+        onCommented={onChanged}
+      />
+      <ConfirmActionDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        title="Archive this exploration?"
+        description="The exploration is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
+        confirmLabel="Archive"
+        confirmTone="destructive"
+        onConfirm={doArchive}
+      />
+      <ConfirmActionDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete this exploration permanently?"
+        description="The archived exploration, its comments, and its history are removed from Stelow and cannot be recovered."
         confirmLabel="Delete"
         confirmTone="destructive"
         onConfirm={doDelete}
@@ -4021,7 +4538,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         {card && card.kind === "research" ? (
           <ResearchDetailBody cardId={cardId} inboxEventId={inboxEventId} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
         ) : null}
-        {card && card.kind !== "research" ? (
+        {card && card.kind === "explore" ? (
+          <ExploreDetailBody cardId={cardId} inboxEventId={inboxEventId} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
+        ) : null}
+        {card && card.kind === "build" ? (
           <>
             <InboxEventBanner visible={Boolean(inboxEventId) && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused"))} event={inboxEvent} sectionRef={inboxEventRef} />
             {/* HERO — one contextual sentence + one primary action (D primary, A type scale) */}
@@ -4410,12 +4930,12 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
 function OpenStelowAction({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [target, setTarget] = useState<{ cardId: string; kind: "delivery" | "research" } | null>(null);
+  const [target, setTarget] = useState<{ cardId: string; kind: "build" | "research" | "explore" } | null>(null);
   useEffect(() => {
     let cancelled = false;
     setTarget(null);
     void rpc.call("cardByWorkerThread", { threadId }).then((result) => {
-      if (!cancelled && result.cardId) setTarget({ cardId: result.cardId, kind: result.kind ?? "delivery" });
+      if (!cancelled && result.cardId) setTarget({ cardId: result.cardId, kind: result.kind ?? "build" });
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [rpc, threadId]);

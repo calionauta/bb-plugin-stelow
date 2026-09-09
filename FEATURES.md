@@ -36,12 +36,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 2. Orient myself
 *When I open Stelow, I want to see everything and find my card.*
 
-- **One panel, three tracks** (`StelowPanel`, `STELOW_TRACKS`). A single
-  Stelow sidebar row with Inbox / Build / Research tabs (subPath-routed,
+- **One panel, four tracks** (`StelowPanel`, `STELOW_TRACKS`). A single
+  Stelow sidebar row with Inbox / Build / Research / Explore tabs (subPath-routed,
   back-button friendly, last tab remembered). Track names, icons, and
   routes come from one table — renaming is one line. Legacy card links
   resolve the track live. Panel identity and every navigation flows
   through `STELOW_PANEL_ID` / `goToTrack` / `goToCard` / `goToInboxCard`.
+  The three card kinds (build / research / explore) are centralized in
+  `lib/tracks.mjs` — the server normalizes legacy `delivery` rows to
+  `build` silently, and the lightweight lifecycle (To-Do / Doing / Done)
+  plus worker bands come from the same module, never scattered ternaries.
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
   (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their
   stage's phase. Columns collapse (persisted); cards move via drag-drop.
@@ -52,7 +56,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   needs-attention + reset; the Filters chip badges the active-filter count.
   The attention count in each Build/Research header is a shortcut that turns
   on the needs-attention filter. One shared bar: project + attention are the
-  common facets, delivery adds the rest by config — Research renders the
+  common facets, build adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
 - **First-run tours** (`Tour`). One shared stepper for Inbox, Build, and
   Research: full steps on first use, a one-line summary bar once content
@@ -113,7 +117,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   archive, delete archived cards behind confirms — all real outline
   buttons, archive/delete in destructive tone. Worker history collapses
   inside the same section; GitHub import/completion lives here too
-  (delivery only).
+  (build only).
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
@@ -182,7 +186,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 ## 8. Research track
 *When I need to understand before building, I want a lightweight
-investigation that feeds the delivery board.*
+investigation that feeds the build board.*
 
 - **Research tab** (`ResearchPanel`). To-Do / Doing / Done / Archived
   columns over research cards only; shared `FiltersBar` (project +
@@ -242,8 +246,16 @@ investigation that feeds the delivery board.*
   card comments (plain Markdown there).
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,
   retry/restart/reseed, worker history, inbox, and realtime are the same
-  components as delivery. Stage advance and intent editing refuse on
+  components as build. Stage advance and intent editing refuse on
   research cards with the valid exit named.
+- **Artifact guarantee** (`lib/research-artifacts.mjs`,
+  `researchRoundIntegrity`). Round validity (non-empty, substantive,
+  never a mirror of the index) is enforced in code, not in prompt text:
+  the plugin pre-creates every round file at spawn, and readiness
+  requires a reviewable index AND every round valid. An index with an
+  invalid round is not Done — each invalid round surfaces as an inbox
+  error naming what to re-run. The worker prompt states the contract;
+  the sync is what makes it true.
 - **Completed research** (`isResearchReadyForReview`,
   `lib/research-ready.mjs`). An idle worker with an index that parses to
   ≥1 opportunity is complete — never a `paused` stall. The sync moves the
@@ -251,6 +263,34 @@ investigation that feeds the delivery board.*
   event per index fingerprint (a grown index earns a fresh one). The board
   column is the sole status; a user comment on a completed research card
   returns it to Doing and resumes the worker.
+
+## 9. Explore track
+*When I want a single product step without the board, I want one stage,
+one input, one artifact.*
+
+- **Explore tab** (`ExplorePanel`, `createExploreCard`, `stageCatalog`).
+  To-Do / Doing / Done / Archived columns over explore cards only;
+  shared `FiltersBar` (project + attention), collapsible columns,
+  per-tab active counts; no triage, no pipeline, no gates. The New
+  exploration dialog shows the effective agent preset (`research` band
+  default, else board default) with a Configure presets entry.
+- **Stage catalog** (`STAGE_CATALOG`, `lib/stage-catalog.mjs`). One entry
+  per single-runnable workflow stage (Shape Up, interface alternatives,
+  plan critiques, tech planning, codebase/UX critiques, testing
+  strategy, execution critique) mapping to its bundled skill. Single
+  source for the picker, the worker prompt, and the card detail.
+- **One artifact per card** (`exploreArtifact`,
+  `lib/research-artifacts.mjs`). The plugin pre-creates
+  `explore-<stage>.md` at spawn (reseed re-creates it after wiping);
+  Done requires real substance in that file, fingerprinted per content
+  so restarts earn a fresh completion event. Thin/missing artifacts
+  idle as unfinished, never as Done.
+- **Shared machinery.** Board column components, list view, status
+  pill, hero, questions, presets, retry/restart/reseed, worker
+  history, inbox, and realtime reuse the Research definitions
+  (`LightweightTrackCard`, `LightweightTrackList`,
+  `markThreadRunning`, `noteAgentOutput`) — Explore adds only its
+  catalog, prompt, and artifact path, never a forked copy.
 
 ## Cross-cutting rules (apply to every feature above)
 
