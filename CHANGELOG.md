@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.25] - 2026-09-09
+
+### Fixed
+
+- **One onboarding at a time.** Keep-alive mounts every track, so
+  first visit stacked three setup dialogs. The dialog now opens only
+  while its own track is active.
+
 ## [0.3.24] - 2026-09-09
 
 ### Added
