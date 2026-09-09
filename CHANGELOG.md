@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.4] - 2026-09-09
+
+### Added
+
+- **Clickable research outputs.** The research index now renders
+  structurally: Summary as prose, and the Outputs table with its Path
+  column resolved to clickable artifact buttons that open the same
+  reviewer as build cards (read, quote a passage, comment to the agent).
+- **Artifact chips in the thread.** The research worker's final message
+  emits `::stelow-artifact` directives per produced file (index + round +
+  sub-steps), rendered by bb as clickable chips that open the file in the
+  workspace viewer. Directive syntax is stripped before the message is
+  mirrored into card comments (plain Markdown there).
+
+### Changed
+
+- **Fan-out is selection-first.** The button is now "Fan out to Build…"
+  and the dialog starts with nothing pre-checked — nothing creates until
+  you confirm the chosen opportunities. Selection resets only when the
+  dialog opens, so a background index reload no longer re-checks
+  everything while you are mid-selection.
+- **No fake checkboxes in the index.** The opportunities list in the card
+  is a status overview — fanned-out items show a ✓ and "fanned out";
+  selection happens only in the fan-out dialog.
+- **No duplicated Opportunities section.** The raw index body no longer
+  renders its own `## Opportunities` list above the interactive panel;
+  contract-missing indexes fall back to the body without that section.
+
 ## [Unreleased]
 
 ## [0.3.3] - 2026-09-09
