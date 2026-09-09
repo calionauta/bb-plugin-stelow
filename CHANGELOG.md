@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.15] - 2026-09-09
+
+### Added
+
+- **About tab.** What Stelow is, what each track is for, a Learn-more
+  button to the stelow repo, and the running build stamp — product
+  identity in exactly one place instead of the Build header.
+- **Explore onboarding tour.** The Explore board joins the shared
+  first-run Tour (one stage / catalog / artifact), like Inbox, Build,
+  and Research.
+
+### Changed
+
+- **Build tab describes itself.** The header now explains the phased
+  board (Analyse → Plan → Execute → Review → Done); the generic
+  product tagline, About link, and version stamp moved to About.
+
 ## [0.3.14] - 2026-09-09
 
 ### Added
