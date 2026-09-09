@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.17] - 2026-09-09
+
+### Fixed
+
+- **Upstream version available immediately.** `data/stelow-package.json`
+  ships snapshotted (byte-identical to the sync source) so About shows
+  the Stelow version on fresh installs, not only after the first
+  skills sync.
+
 ## [0.3.16] - 2026-09-09
 
 ### Changed
