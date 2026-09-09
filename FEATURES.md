@@ -226,7 +226,7 @@ investigation that feeds the delivery board.*
   composite); missing substeps surface explicitly on the round, never as
   silent done.
 - **Fan-out** (`fanOutResearch`, `FanOutDialog`, `bb stelow fan-out`).
-  "Fan out to Build…" opens a selection-first dialog — nothing is
+  "Select To Build" opens a selection-first dialog — nothing is
   pre-checked, nothing creates until the user confirms the chosen
   opportunities (selection resets only on open, never on background
   index reloads). Checked opportunities become build cards at triage
@@ -244,17 +244,13 @@ investigation that feeds the delivery board.*
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as delivery. Stage advance and intent editing refuse on
   research cards with the valid exit named.
-- **Ready-for-review** (`isResearchReadyForReview`,
+- **Completed research** (`isResearchReadyForReview`,
   `lib/research-ready.mjs`). An idle worker with an index that parses to
-  ≥1 opportunity is the expected terminal rest (the worker is told to
-  STOP when the index is complete) — never a `paused` stall. The sync
-  resolves any paused signal and emits one `completed` event per index
-  fingerprint (a grown index earns a fresh one); one status pill names the
-  state everywhere (`ResearchStatusPill`: `Ready for review` replaces the
-  column label on the kanban card, the list row, and the expanded view —
-  never a second competing chip, never missing), the hero names the exit
-  (review → fan out → Done), and no `Resume` is offered for finished work.
-  Done stays a human drag after reviewing the index.
+  ≥1 opportunity is complete — never a `paused` stall. The sync moves the
+  card directly to Done, resolves paused signals, and emits one `completed`
+  event per index fingerprint (a grown index earns a fresh one). The board
+  column is the sole status; a user comment on a completed research card
+  returns it to Doing and resumes the worker.
 
 ## Cross-cutting rules (apply to every feature above)
 

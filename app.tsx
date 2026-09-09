@@ -1892,17 +1892,11 @@ function BoardCard({ card }: { card: CardItem }) {
   );
 }
 
-// Research cards carry ONE status everywhere. A index with ranked
-// opportunities (researchReady, idle, nothing pending) reads "Ready for
-// review" instead of the column label — the same pill on the kanban card, the
-// list row, and the expanded view, so the board and the detail can never show
-// two competing states ("Doing" plus "Ready for review") or none at all.
-function ResearchStatusPill({ card, researchReady }: { card: CardItem; researchReady?: boolean }) {
-  const ready = (researchReady ?? card.researchReady) === true && card.activity === "idle" && !card.needsAttention;
-  if (ready) {
-    return <Pill tone="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" title="Research status — the index has ranked opportunities. Review it, fan out build cards, then drag to Done."><span className="mr-1">✓</span>Ready for review</Pill>;
-  }
-  return <Pill tone={statusTone(card.status)} title="Research status — where this card stands. Done is a human drag after reviewing the index."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>;
+// Research cards use their board column as their only status. Completed
+// research moves directly to Done; reopening work through a comment moves it
+// back to Doing in the server, so the board remains the source of truth.
+function ResearchStatusPill({ card }: { card: CardItem; researchReady?: boolean }) {
+  return <Pill tone={statusTone(card.status)} title="Research status — where this card stands."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>;
 }
 
 // Research-track card: strategy instead of stage/intent, opens in the
@@ -2861,16 +2855,8 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       sub: "The agent advances on its own. Nothing needs you right now.",
     };
   }
-  // Ready index + idle worker is the expected terminal rest, not a stall:
-  // one calm sentence naming the exit (review → fan out → Done), never a
-  // Resume that would wake a finished worker for no reason.
-  if (card.activity === "idle" && (detail?.card.researchReady ?? card.researchReady) === true) {
-    return {
-      kind: "calm",
-      title: "Research ready for review",
-      sub: "The index has opportunities — review it, fan out build cards, then drag to Done.",
-    };
-  }
+  // A completed research index is represented by the Done column, not a
+  // separate review state. Keep the hero calm and let the board carry status.
   return {
     kind: "calm",
     title: `At ${stageLabel(card.stage)} — nothing needs you`,
@@ -3124,8 +3110,8 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Fan out to Build</DialogTitle>
-          <DialogDescription>Pick which opportunities become delivery build cards (starting at triage) — nothing is created until you confirm. Spawned cards check their box in the index so a retry never duplicates.</DialogDescription>
+          <DialogTitle>Select To Build</DialogTitle>
+          <DialogDescription>Select which opportunities become delivery build cards (starting at triage) — nothing is created until you confirm. Spawned cards check their box in the index so a retry never duplicates.</DialogDescription>
         </DialogHeader>
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing available — every opportunity was already fanned out or checked.</p>
@@ -3504,10 +3490,10 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
                     {index && index.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? (
-                      <p className="text-xs text-muted-foreground">Index ready — review it below, fan out opportunities into build cards, then drag this card to Done.</p>
+                      <p className="text-xs text-muted-foreground">Review the index below, select opportunities to build, then move this card to Done.</p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <ResearchStatusPill card={card} researchReady={detail?.card.researchReady ?? card.researchReady} />
+                      <ResearchStatusPill card={card} />
                       {strategyLabel ? <Pill tone="bg-primary/15 text-primary" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
@@ -3640,7 +3626,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({index.opportunities.length})</h4>
                     <span className="flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy round on the same request — appends a new section to the index.">Explore another strategy…</Button>
-                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Choose opportunities, then create the delivery build cards.">Fan out to Build…</Button>
+                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Select opportunities, then create the delivery build cards.">Select To Build</Button>
                     </span>
                   </div>
                   {indexGroups.map((group) => (

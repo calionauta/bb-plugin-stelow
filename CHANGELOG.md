@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.5] - 2026-09-09
+
+### Changed
+
+- **Research completes directly into Done.** Completed indexes no longer use
+  a separate review pill; Done is the single review surface. A new comment on
+  a completed research card reopens it in Doing.
+- **Selection-first build handoff.** The action is now "Select To Build";
+  selection starts empty and only confirmed opportunities create build cards.
+
 ## [0.3.4] - 2026-09-09
 
 ### Added
@@ -22,11 +32,6 @@ and this project adheres to a single-version-per-release tag format
 
 ### Changed
 
-- **Fan-out is selection-first.** The button is now "Fan out to Build…"
-  and the dialog starts with nothing pre-checked — nothing creates until
-  you confirm the chosen opportunities. Selection resets only when the
-  dialog opens, so a background index reload no longer re-checks
-  everything while you are mid-selection.
 - **No fake checkboxes in the index.** The opportunities list in the card
   is a status overview — fanned-out items show a ✓ and "fanned out";
   selection happens only in the fan-out dialog.

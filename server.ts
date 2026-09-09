@@ -1674,8 +1674,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   // Research cards have no stages: sync only worker activity and attention.
   // A freshly-spawned research worker moves To-Do (pending) to Doing
-  // (in-progress) on its first active poll — work visibly began. Done is
-  // always a human drag after reviewing the index, never automatic.
+  // (in-progress) on its first active poll. A completed index moves directly
+  // to Done; a later user comment reopens the card through addCardComment.
   async function syncResearchThreadState(card: CardRow): Promise<void> {
     try {
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id! });
@@ -1702,17 +1702,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         if (expiredPending) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
-          // Ready index + idle worker is the expected terminal rest (the
-          // worker prompt tells the worker to STOP when the index is
-          // complete) — never a stall. Resolve any paused signal and emit
-          // one completion per index fingerprint; Done stays a human drag.
+          // A completed index is the terminal research state: Done is the
+          // only review surface. Resolve paused signals and emit one completion
+          // per index fingerprint.
           const readiness = await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
           if (readiness.ready) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
-            updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
+            updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
             resolveInboxEvents(card.id, now(), ["paused"]);
             const readyCurrent = getCard(card.id);
-            if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Research ready for review — open the index, then drag to Done.", `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
+            if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Research completed — review the index in Done.", `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
           } else {
             const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
@@ -2630,7 +2629,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (target === "card" && card.worker_thread_id) {
         try {
           await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `User comment on card "${card.name}":\n\n${body}`, mentions: [] }] });
-          updateCard(cardId, { activity: "running" });
+          updateCard(cardId, { activity: "running", ...(card.kind === "research" && card.status === "completed" ? { status: "in-progress" as const } : {}) });
         } catch (error) {
           return { commentId, error: error instanceof Error ? error.message : "Failed to route comment to worker thread." };
         }
