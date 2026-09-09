@@ -1895,7 +1895,7 @@ function BoardCard({ card }: { card: CardItem }) {
 // Research cards use their board column as their only status. Completed
 // research moves directly to Done; reopening work through a comment moves it
 // back to Doing in the server, so the board remains the source of truth.
-function ResearchStatusPill({ card }: { card: CardItem; researchReady?: boolean }) {
+function ResearchStatusPill({ card }: { card: CardItem }) {
   return <Pill tone={statusTone(card.status)} title="Research status — where this card stands."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>;
 }
 
@@ -3529,7 +3529,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                           {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the research.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : detail?.card.researchReady === true ? null : (
+                          ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
                           )}
                           <OpenThreadButton threadId={card.workerThreadId} />
@@ -4052,7 +4052,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                           {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
                           {presetStale ? (
                             <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : detail?.card.researchReady === true ? null : (
+                          ) : (
                             <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
                           )}
                           <OpenThreadButton threadId={card.workerThreadId} />

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.6] - 2026-09-09
+
+### Fixed
+
+- **No stale review-state behavior.** Removed remaining `researchReady`
+  presentation paths and obsolete completion guidance; a completed index is
+  represented only by Done.
+
 ## [0.3.5] - 2026-09-09
 
 ### Changed
