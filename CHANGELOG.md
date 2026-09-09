@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.19] - 2026-09-09
+
+### Fixed
+
+- **Panels no longer flicker on every sync poll.** `updateCard` is now a
+  no-op (no write, no `card-state` publish, no `updated_at` bump) when
+  no field actually changed — previously every 45s poll reshuffled
+  board order, rewrote "Idle since" labels, and reloaded all panels.
+  Panel loads also enter the loading state only on first mount, so
+  background refreshes update silently instead of blanking to
+  skeletons and unmounting the tour.
+
 ## [0.3.18] - 2026-09-09
 
 ### Changed
