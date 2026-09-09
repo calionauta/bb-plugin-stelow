@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.29] - 2026-09-09
+
+### Fixed
+
+- **Thread asks never render an undefined artifact.** Option artifact
+  paths normalize through one shared pure function (parser, server,
+  thread renderer) instead of three hand-rolled variants.
+
 ## [0.3.28] - 2026-09-09
 
 ### Added
