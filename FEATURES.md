@@ -60,7 +60,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   identical popover, pills, and checkbox, never a forked row.
 - **First-run tours** (`Tour`). One shared stepper for Inbox, Build,
   Research, and Explore: full steps on first use, a one-line summary bar once content
-  exists, a quiet reopen once dismissed (per-track localStorage).
+  exists. Dismissing collapses to a one-line box in the same slot (never a
+  relocated button); expanding replays the stepper. State persists per
+  track in localStorage.
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.

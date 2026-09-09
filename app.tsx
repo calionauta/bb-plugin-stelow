@@ -615,12 +615,14 @@ function Tour({ storageKey, tourName, steps, hasData, ready = true, summary }: {
   // row. Do not mount either before the initial load finishes: otherwise the
   // full tour flashes, then collapses when cards arrive.
   if (!ready) return null;
+  // Dismissed collapses to a one-line box in the SAME slot — never a
+  // relocated button. Position and container stay put; only density
+  // changes, so the help entry point never jumps around the layout.
   if (dismissed) {
     return (
-      <div className="flex justify-end">
-        <button onClick={reopen} title={`Replay the ${tourName} tour`} className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-          How {tourName} works?
-        </button>
+      <div className="flex min-h-11 flex-wrap items-center gap-x-2 gap-y-1 rounded-md border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate">{tourName} tour</span>
+        <button onClick={reopen} aria-expanded={false} title={`Replay the ${tourName} tour`} className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Show</button>
       </div>
     );
   }
@@ -856,7 +858,7 @@ function BoardPanel() {
           {loading && cards.length === 0 ? <TrackSkeleton /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Carry ideas from triage through shaping, gated reviews, and scope-by-scope execution — Analyse, Plan, Execute, Review, then Done.</p>
+              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Carry ideas from triage through shaping, gated reviews, and scope-by-scope execution.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Build</h1>
               </div>
@@ -865,7 +867,7 @@ function BoardPanel() {
               </button> : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>New card</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>New issue</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing">Presets</Button>
               {githubStatus?.pluginAvailable ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}>Import issues</Button>
@@ -882,7 +884,7 @@ function BoardPanel() {
               {
                 title: "Start with an outcome",
                 body: "Describe what you want — a problem, an idea, a fix. Stelow triages it, then guides it through Analyse → Plan → Execute → Review.",
-                action: <Button className="min-h-11" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new card</Button>,
+                action: <Button className="min-h-11" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new issue</Button>,
               },
               {
                 title: "Each phase can use a different agent",
@@ -906,7 +908,7 @@ function BoardPanel() {
           <Dialog open={createBuildOpen} onOpenChange={setCreateBuildOpen}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
-                <DialogTitle>Start new card</DialogTitle>
+                <DialogTitle>Start new issue</DialogTitle>
                 <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and build process.</DialogDescription>
               </DialogHeader>
               <NewThreadComposer
@@ -1049,7 +1051,7 @@ function BoardPanel() {
               <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Stelow is an opinionated product workflow for humans and AI agents. Start with an outcome or problem; it guides the work through framing, critique, planning, execution, and review.</p>
               <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
-                <Button onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new card</Button>
+                <Button onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new issue</Button>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Learn about Stelow <span aria-hidden="true">↗</span></UrlLink>
               </div>
             </section>
