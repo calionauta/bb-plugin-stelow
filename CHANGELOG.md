@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.13] - 2026-09-09
+
+### Added
+
+- **Explore track.** A fourth tab for single-stage runs: pick one workflow
+  stage (Shape Up, interface alternatives, critiques, tech planning,
+  testing strategy…), supply the input, get one artifact
+  (`explore-<stage>.md`). No triage, no pipeline, no gates. Own catalog
+  (`stageCatalog`), card lifecycle (To-Do / Doing / Done), worker prompt,
+  completion event, and detail body — all other machinery (board
+  components, list view, status pill, inbox, retry/restart/reseed,
+  presets) reuses the Research definitions instead of forked copies.
+
+### Changed
+
+- **Card kind `delivery` is now `build`, everywhere.** RPC contract, card
+  rows, board copy ("Build board", "build flow", "build cards"), and code
+  (`BUILD_PHASES`, `BUILD_TERMINALS`). Legacy rows migrate silently:
+  stored `delivery` values read as `build` (`normalizeKind`) and converge
+  via a startup `UPDATE`. Track concepts (build / research / explore,
+  lightweight columns, worker bands) are centralized in
+  `lib/tracks.mjs` — one line to rename or extend.
+- **Artifact guarantee is enforced in code, not in prompt text.** Round
+  validity (non-empty, substantive, never a mirror of the index) lives in
+  `lib/research-artifacts.mjs` (unit-tested); the plugin pre-creates
+  every round and explore file at spawn (reseed re-creates after
+  wiping), and research readiness requires a reviewable index AND every
+  round valid. An index with an invalid round is not Done — each invalid
+  round surfaces as an inbox error naming what to re-run. The worker
+  prompt states the contract; the sync is what makes it true. (Kept in
+  the plugin per `AGENTS.md` owned-vs-vendored rules: `skills/` stays a
+  pristine upstream mirror; structure enforcement belongs to the host.)
+
 ## [0.3.12] - 2026-09-09
 
 ### Changed
