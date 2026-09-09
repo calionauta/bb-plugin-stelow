@@ -22,6 +22,7 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections, stripResearchOpportunities } from "./lib/research-index-sections.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
+import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
@@ -4987,8 +4988,16 @@ function PillsyStyles() {
 
 function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionProps) {
   const payload = interaction.payload as { question?: string; multiple?: boolean; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; questions?: Array<{ question?: string; multiple?: boolean; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> }> };
+  // Thread payloads carry raw artifact paths (no viewer here to resolve
+  // against); normalize to the shared shape so display never renders
+  // undefined. Open affordances stay card-only by design.
+  const toArtifact = (raw: unknown): AskArtifact | null => {
+    const path = typeof raw === "string" ? raw : (raw as { path?: unknown } | null)?.path;
+    const normalized = normalizeAskArtifactPath(path);
+    return normalized ? { ...normalized, absolutePath: null, hostId: null } : null;
+  };
   const clean = (options: unknown): BatchItem["options"] => Array.isArray(options)
-    ? options.filter((o): o is { label: string; description: string; preview: string | null; artifact: AskArtifact | null } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "", preview: typeof o.preview === "string" ? o.preview : null, artifact: o.artifact ?? null }))
+    ? options.filter((o): o is { label: string; description: string; preview: string | null; artifact: AskArtifact | null } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "", preview: typeof o.preview === "string" ? o.preview : null, artifact: toArtifact((o as { artifact?: unknown }).artifact) }))
     : [];
   // Batch payloads (one `bb stelow ask` call with repeated --question groups)
   // answer together; single-question payloads keep their exact shape.

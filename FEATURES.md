@@ -104,6 +104,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   per option (`--desc/--preview/--artifact`); unresolvable paths degrade
   to no affordance and never block answering. Option shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
+  Path validity has one pure definition (`normalizeAskArtifactPath`,
+  unit-tested) shared by parser, server, and thread renderer.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision.
 - **Intent correction** (`updateCardIntent`). Fix the card's kind

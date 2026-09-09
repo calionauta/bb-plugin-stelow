@@ -8,7 +8,7 @@ import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manif
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
-import { parseAskGroups, cleanOptions, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
+import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
@@ -2109,12 +2109,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // null and the option stays fully answerable — a bad path never blocks
   // the question, it just offers no open affordance.
   async function resolveAskArtifact(card: CardRow, rawPath: unknown): Promise<{ path: string; display: string; absolutePath: string | null; hostId: string | null } | null> {
-    if (typeof rawPath !== "string") return null;
-    const rel = rawPath.trim().replace(/^\.\//, "");
-    if (!rel || rel.length > 500) return null;
+    const normalized = normalizeAskArtifactPath(rawPath);
+    if (!normalized) return null;
     const workspace = await cardWorkspace(card).catch(() => null);
-    const full = workspace?.path ? resolveArtifactPath(workspace.path, rel) : null;
-    return { path: rel, display: rel.split("/").pop() || rel, absolutePath: full, hostId: workspace?.hostId ?? null };
+    const full = workspace?.path ? resolveArtifactPath(workspace.path, normalized.path) : null;
+    return { ...normalized, absolutePath: full, hostId: workspace?.hostId ?? null };
   }
 
   async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {

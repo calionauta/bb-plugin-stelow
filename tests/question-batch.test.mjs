@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   parseAskGroups,
+  normalizeAskArtifactPath,
   isBatchPayload,
   expandInteractionQuestions,
   splitQuestionId,
@@ -129,8 +130,18 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   assert.equal(mixed.length, 1);
   assert.deepEqual(mixed[0].options, [
     { label: "A", description: "", preview: null, artifact: null },
-    { label: "B", description: "d", preview: "p", artifact: { path: "f.md" } },
+    { label: "B", description: "d", preview: "p", artifact: { path: "f.md", display: "f.md" } },
   ]);
+}
+
+// Artifact path normalization: one shared verdict on validity.
+{
+  assert.deepEqual(normalizeAskArtifactPath("rounds/a-r1.md"), { path: "rounds/a-r1.md", display: "a-r1.md" }, "basename display");
+  assert.deepEqual(normalizeAskArtifactPath("./x.md"), { path: "x.md", display: "x.md" }, "leading ./ stripped");
+  assert.equal(normalizeAskArtifactPath(""), null, "empty has no affordance");
+  assert.equal(normalizeAskArtifactPath(null), null, "null has no affordance");
+  assert.equal(normalizeAskArtifactPath(42), null, "non-string has no affordance");
+  assert.equal(normalizeAskArtifactPath("x".repeat(501)), null, "over-cap has no affordance");
 }
 
 console.log("question batch test ok: cli groups, option details, expansion, atomic grouping, continuation");
