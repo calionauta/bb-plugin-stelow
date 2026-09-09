@@ -1362,9 +1362,9 @@ ${prompt}`;
     const seed = await seedWorkflow(bb, rootPath, slug, initialIntent, appetite, reviewMode);
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
-    // Spawn workers on their track's entry band (lib/tracks: lightweight
-    // tracks share the research band, build uses analysis). Falls back to
-    // the card/board default when the band is unconfigured.
+    // Spawn workers on their track's entry band (lib/tracks: each track
+    // owns its band). Falls back to the card/board default when the
+    // band is unconfigured.
     const spawnBand = bandForKind(kind ?? "build");
     const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(spawnBand) as { preset_id: string } | undefined;
     const spawnPreset = bandRow ? (getPresetById(bandRow.preset_id) ?? preset) : preset;
@@ -2826,7 +2826,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null;
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.name);
-      const preset = getPresetForBand(card.kind === "research" || card.kind === "explore" ? "research" : STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
+      const preset = getPresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
       // The helper owns the typed artifact manifest. Its stage is the durable
       // producer attribution rendered beside the workflow timeline.
       const artifacts = await (async () => {
@@ -3013,7 +3013,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
       if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
-      const effective = getPresetForBand(card.kind === "research" || card.kind === "explore" ? "research" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
+      const effective = getPresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
       const previousThreadId = card.worker_thread_id;
       const result = await respawnWorkerForBand(cardId, effective.id, "restart");
       if (result.ok) {

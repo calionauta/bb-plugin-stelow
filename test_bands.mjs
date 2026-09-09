@@ -17,8 +17,10 @@ assert.strictEqual(Object.keys(STAGE_TO_BAND).length, flat.length, "stage->band 
 assert.ok(Object.values(STAGE_BANDS).every((s) => s.length > 0), "some band is empty");
 for (const stage of flat) assert.ok(STAGE_TO_BAND[stage], `unmapped stage ${stage}`);
 
-// 2b. research investigations resolve to their own band, never analysis
+// 2b. research investigations and explore runs resolve to their own bands,
+// never analysis and never each other's.
 assert.strictEqual(STAGE_TO_BAND["research"], "research", "research stage must map to the research band");
+assert.strictEqual(STAGE_TO_BAND["explore"], "explore", "explore stage must map to the explore band");
 
 // 3. resolution: band override beats card preset beats idem
 const resolve = (bandDefs, cardPreset, band = "execution") => {

@@ -30,11 +30,11 @@ assert.equal(normalizeKind("delivery"), "build", "legacy delivery normalizes to 
 assert.equal(normalizeKind("build"), "build", "build stays build");
 assert.equal(normalizeKind("bogus"), "build", "unknown falls back to build");
 
-// Worker bands: build runs the analysis band, lightweight tracks share the
-// research band — one line to change, never scattered ternaries.
+// Worker bands: build runs the analysis band, research and explore each
+// have their own — one line to change, never scattered ternaries.
 assert.equal(bandForKind("build"), "analysis", "build band");
 assert.equal(bandForKind("research"), "research", "research band");
-assert.equal(bandForKind("explore"), "research", "explore band");
+assert.equal(bandForKind("explore"), "explore", "explore band");
 assert.equal(bandForKind("delivery"), "analysis", "legacy delivery band");
 
 console.log("tracks test ok: kinds, lightweight lifecycle, bands, legacy normalization");

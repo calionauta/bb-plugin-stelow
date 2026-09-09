@@ -805,6 +805,16 @@ function BoardPanel({ active }: { active: boolean }) {
             intro="Set the preset each phase runs with. Planning depth and review checkpoints are a separate choice — picked per card in New issue → Settings."
             onOpenPresets={() => setBoardPresetsOpen(true)}
             active={active}
+            secondTitle="Defaults for new cards"
+            secondBody={(
+              <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
+                <p>Planning depth and review checkpoints are chosen per card and remembered as the board defaults. Set them once here.</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
+                  <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+                </div>
+              </div>
+            )}
           />
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
@@ -1288,8 +1298,8 @@ function ExplorePanel({ active }: { active: boolean }) {
 
   const activeProjectId = exploreProjectId ?? routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
-  const researchBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "research")?.presetId) ?? null;
-  const effectiveResearchPreset = researchBandPreset ?? defaultPreset;
+  const exploreBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "explore")?.presetId) ?? null;
+  const effectiveExplorePreset = exploreBandPreset ?? defaultPreset;
   const stageLabelById = useMemo(() => new Map(stages.map((entry) => [entry.id, entry.label])), [stages]);
   const filteredCards = useMemo(() => cards.filter((card) => {
     if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
@@ -1366,7 +1376,7 @@ function ExplorePanel({ active }: { active: boolean }) {
           <PresetOnboardingDialog
             storageKey={STORAGE_KEYS.onboardExplore}
             title="Choose your exploration agent preset"
-            intro="Explorations run on the research band preset — set it once here, or pin a different preset per card in Manage."
+            intro="Explorations run on the explore band preset — set it once here, or pin a different preset per card in Manage."
             onOpenPresets={() => setResearchPresetsOpen(true)}
             active={active}
           />
@@ -1383,15 +1393,15 @@ function ExplorePanel({ active }: { active: boolean }) {
                   <StrategyPicker strategies={stages} value={stage} onChange={setStage} groupName="stage-pick" attentionSignal={stageAttention} noun="stages" legend="Workflow stage" />
                 </div>
                 <AgentConfigBox
-                  lines={[`Explore runs on ${effectiveResearchPreset?.name ?? "Default"}${researchBandPreset ? "" : " (board default)"}`]}
+                  lines={[`Explore runs on ${effectiveExplorePreset?.name ?? "Default"}${exploreBandPreset ? "" : " (board default)"}`]}
                   onConfigure={() => setResearchPresetsOpen(true)}
                 />
                 <NewThreadComposer
                   defaultProjectId={activeProjectId ?? undefined}
-                  defaultProviderId={effectiveResearchPreset?.providerId}
-                  defaultModel={effectiveResearchPreset?.modelId}
-                  defaultReasoningLevel={effectiveResearchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-                  defaultPermissionMode={effectiveResearchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
+                  defaultProviderId={effectiveExplorePreset?.providerId}
+                  defaultModel={effectiveExplorePreset?.modelId}
+                  defaultReasoningLevel={effectiveExplorePreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
+                  defaultPermissionMode={effectiveExplorePreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
                   initialPrompt={prompt}
                   placeholder="What should Stelow explore?"
                   layout="contained"
@@ -2784,39 +2794,56 @@ const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "",
 // storageKey so it shows exactly once. All panels stay mounted for
 // keep-alive, so the dialog opens only while its own track is active —
 // otherwise first visit would stack three dialogs at once.
-function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPresets, active }: {
+function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPresets, active, secondTitle, secondBody }: {
   storageKey: string;
   title: string;
   intro: string;
   children?: React.ReactNode;
   onOpenPresets: () => void;
   active: boolean;
+  secondTitle?: string;
+  secondBody?: React.ReactNode;
 }) {
   const [open, setOpen] = useState<boolean>(false);
+  const [step, setStep] = useState(0);
+  const hasSecond = !!secondTitle;
   useEffect(() => {
     if (!active || open) return;
     try {
-      if (window.localStorage.getItem(storageKey) !== "onboarded") setOpen(true);
+      if (window.localStorage.getItem(storageKey) !== "onboarded") { setStep(0); setOpen(true); }
     } catch { /* best-effort */ }
   }, [active, open, storageKey]);
   function dismiss() {
     setOpen(false);
+    setStep(0);
     try { window.localStorage.setItem(storageKey, "onboarded"); } catch { /* best-effort */ }
   }
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{intro}</DialogDescription>
+          <DialogTitle>{step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
+          <DialogDescription>{step === 1 ? "Defaults new cards start from." : intro}</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
-          <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>
-          {children}
-        </div>
+        {hasSecond ? <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of 2</p> : null}
+        {step === 1 && secondBody ? secondBody : (
+          <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
+            <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>
+            {children}
+          </div>
+        )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => { dismiss(); onOpenPresets(); }}>Open Agent Presets</Button>
-          <Button onClick={dismiss}>Got it</Button>
+          {step === 0 ? (
+            <>
+              <Button variant="outline" onClick={() => { dismiss(); onOpenPresets(); }}>Open Agent Presets</Button>
+              {hasSecond ? <Button onClick={() => setStep(1)}>Next</Button> : <Button onClick={dismiss}>Got it</Button>}
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => setStep(0)}>Back</Button>
+              <Button onClick={dismiss}>Done</Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

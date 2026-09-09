@@ -60,9 +60,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   identical popover, pills, and checkbox, never a forked row.
 - **First-visit setup, not tours.** No stepper onboarding: Build, Research,
   and Explore each open a setup dialog once (localStorage) about agent
-  presets — what they decide, band defaults, per-card pins. Planning
+  presets — what they decide, band defaults, per-card pins. Build adds a
+  second step for Planning depth + Review checkpoints as board defaults.
+  Each track owns its preset band (build phases, research, explore),
+  so changing one default never leaks into another. Planning
   depth + Review checkpoints stay where they belong (per card in
-  New issue → Settings). Dismissing (Got it, Esc, or backdrop) never
+  New issue → Settings). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
