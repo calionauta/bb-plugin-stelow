@@ -36,8 +36,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 2. Orient myself
 *When I open Stelow, I want to see everything and find my card.*
 
-- **One panel, four tracks** (`StelowPanel`, `STELOW_TRACKS`). A single
-  Stelow sidebar row with Inbox / Build / Research / Explore tabs (subPath-routed,
+- **One panel, five tracks** (`StelowPanel`, `STELOW_TRACKS`). A single
+  Stelow sidebar row with Inbox / Build / Research / Explore / About tabs (subPath-routed,
   back-button friendly, last tab remembered). Track names, icons, and
   routes come from one table — renaming is one line. Legacy card links
   resolve the track live. Panel identity and every navigation flows
@@ -58,15 +58,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on the needs-attention filter. One shared bar: project + attention are the
   common facets, build adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
-- **First-run tours** (`Tour`). One shared stepper for Inbox, Build, and
-  Research: full steps on first use, a one-line summary bar once content
+- **First-run tours** (`Tour`). One shared stepper for Inbox, Build,
+  Research, and Explore: full steps on first use, a one-line summary bar once content
   exists, a quiet reopen once dismissed (per-track localStorage).
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
 - **Sidebar badge.** Unresolved actions plus unseen recent completions
-  (7-day window); per-tab active counts. All realtime.
-- **Build stamp** (`buildInfo`). Version in the header so reloads are
+  (7-day window); per-tab active counts (About carries no count). All realtime.
+- **About tab** (`AboutPanel`). What Stelow is in one paragraph, what each
+  track is for, a Learn-more button to the stelow repo, and the running
+  build stamp (`buildInfo` RPC) — so work tracks describe themselves and
+  product identity lives in exactly one place.
+- **Build stamp** (`buildInfo`). Version on the About tab so reloads are
   checkable instead of vibes.
 
 ## 3. Decide and unblock

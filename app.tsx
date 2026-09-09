@@ -195,7 +195,7 @@ function researchColumnOf(card: Pick<CardItem, "status">): string {
   return researchColumnForStatus(card.status);
 }
 
-type StelowTrack = "inbox" | "build" | "research" | "explore";
+type StelowTrack = "inbox" | "build" | "research" | "explore" | "about";
 // Single source for tracks: the tab bar, the router, and every navigation
 // helper read from here. Renaming a track (or reordering tabs) is one line.
 const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
@@ -203,6 +203,7 @@ const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; ro
   { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
   { key: "explore", title: "Explore", icon: "Target", rootSubPath: "explore" },
   { key: "build", title: "Build", icon: "Columns2", rootSubPath: "build" },
+  { key: "about", title: "About", icon: "Info", rootSubPath: "about" },
 ];
 function trackTitle(track: StelowTrack): string {
   return STELOW_TRACKS.find((entry) => entry.key === track)?.title ?? track;
@@ -701,25 +702,22 @@ function BoardPanel() {
   const [importAssignee, setImportAssignee] = useState<string>("all");
   const [importBusy, setImportBusy] = useState(false);
   const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null } | null>(null);
 
   const load = useCallback(async (targetId: string | null) => {
     setLoading(true);
     try {
-      const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult, buildResult] = await Promise.all([
+      const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
         rpc.call("listCards", { projectId: targetId, kind: "build" }).catch(() => ({ cards: [] })),
         rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
         rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
         rpc.call("board", { projectId: targetId }).catch(() => null),
-        rpc.call("buildInfo", {}).catch(() => null),
       ]);
       setProjects(projectsResult?.projects ?? []);
       setCards(cardsResult.cards);
       setBoardPresets(presetsResult.presets);
       setBoardBandPresets(bandPresetsResult.bands);
       if (boardResult?.githubStatus) setGithubStatus(boardResult.githubStatus);
-      if (buildResult) setBuildInfo(buildResult);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       setProjects([]);
@@ -858,11 +856,9 @@ function BoardPanel() {
           {loading && cards.length === 0 ? <TrackSkeleton /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
+              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Carry ideas from triage through shaping, gated reviews, and scope-by-scope execution — Analyse, Plan, Execute, Review, then Done.</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-                <UrlLink href="https://github.com/calionauta/stelow" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">About Stelow <span aria-hidden="true">↗</span></UrlLink>
-                {buildInfo ? <span className="text-[11px] text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
               </div>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
@@ -1470,6 +1466,31 @@ function ExplorePanel() {
             </div>
           </header>
 
+          <Tour
+            storageKey={STORAGE_KEYS.exploreTour}
+            tourName="Explore"
+            hasData={cards.length > 0}
+            ready={!loading}
+            summary={<span title={`explore: ${effectiveResearchPreset?.name ?? "Default"}`}>Single-stage runs on {effectiveResearchPreset?.name ?? "Default"}</span>}
+            steps={[
+              {
+                title: "One stage, one artifact",
+                body: "Pick a single workflow stage — a Shape Up proposal, interface alternatives, a plan critique, a tech plan — supply the input, and get that stage's deliverable. No triage, no pipeline, no gates.",
+                action: <Button className="min-h-11" onClick={() => setCreateOpen(true)}>Start new exploration</Button>,
+              },
+              {
+                title: "The catalog is the menu",
+                body: "Each entry maps to one bundled playbook skill. Choose by outcome: shape an idea, review a proposal, plan the tech, or audit what shipped. Every run uses the explore agent preset.",
+                preview: <p className="mt-2 rounded-md border bg-background px-2 py-1.5 font-mono text-[11px] text-muted-foreground" title="Explore agent preset">explore: {effectiveResearchPreset?.name ?? "Default"}{researchBandPreset ? "" : " (board default)"}</p>,
+                action: <Button className="min-h-11" variant="outline" onClick={() => setResearchPresetsOpen(true)}>Configure presets</Button>,
+              },
+              {
+                title: "Done means a file exists",
+                body: "The card completes when explore-<stage>.md holds real content — verified by the worker before finishing and by the plugin before marking Done. Review the artifact, mark Done, archive.",
+              },
+            ]}
+          />
+
           <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStage(null); }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
@@ -1561,6 +1582,7 @@ const STORAGE_KEYS = {
   lastTab: "stelow-tab-v1",
   buildTour: "stelow-tour-build-v1",
   researchTour: "stelow-tour-research-v1",
+  exploreTour: "stelow-tour-explore-v1",
   inboxTour: "stelow-tour-inbox-v1",
 } as const;
 
@@ -1569,10 +1591,12 @@ type ParsedStelowRoute =
   | { kind: "card"; cardId: string; eventId: string | null; origin: StelowTrack }
   | { kind: "bare-card"; cardId: string; eventId: string | null };
 
-// One panel, three tracks. Grammar (routes are panel-relative):
+// One panel, five tracks. Grammar (routes are panel-relative):
 //   "" | "build"                 -> Build board ("" reopens the last tab)
 //   "inbox"                      -> Inbox list
 //   "research"                   -> Research board
+//   "explore"                    -> Explore board
+//   "about"                      -> About Stelow (no cards live here)
 //   "<track>/card/<id>[/event/]" -> card detail, back returns to <track>
 //   "card/<id>[/event/]"         -> trackless link: kind is resolved
 //                                  live, then rendered with back to its track.
@@ -1582,6 +1606,7 @@ function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   if (normalized === "inbox") return { kind: "track", track: "inbox" };
   if (normalized === "research") return { kind: "track", track: "research" };
   if (normalized === "explore") return { kind: "track", track: "explore" };
+  if (normalized === "about") return { kind: "track", track: "about" };
   let match = normalized.match(/^(inbox|build|research|explore)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, origin: match[1] as StelowTrack };
   match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
@@ -1591,7 +1616,7 @@ function parseStelowSubPath(subPath: string): ParsedStelowRoute {
 
 function StelowTabBar({ tab, counts, onSelect }: {
   tab: StelowTrack;
-  counts: { inbox: number; build: number; research: number; explore: number };
+  counts: { inbox: number; build: number; research: number; explore: number; about: number };
   onSelect: (track: StelowTrack) => void;
 }) {
   const countFor = (key: StelowTrack) => counts[key];
@@ -1606,12 +1631,14 @@ function StelowTabBar({ tab, counts, onSelect }: {
             role="tab"
             aria-selected={active}
             onClick={() => onSelect(entry.key)}
-            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Build board" : entry.key === "research" ? "Research board" : "Single-stage runs"}
+            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Build board" : entry.key === "research" ? "Research board" : entry.key === "explore" ? "Single-stage runs" : "What Stelow is"}
             className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:px-3 sm:text-sm ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
           >
             <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
             <span>{entry.title}</span>
-            <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${active ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"}`}>{count}</span>
+            {entry.key === "about" ? null : (
+              <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${active ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"}`}>{count}</span>
+            )}
           </button>
         );
       })}
@@ -1655,6 +1682,40 @@ function BareCardRoute({ cardId, eventId, navigate }: {
   return <StelowCardDetail cardId={cardId} eventId={eventId} backTrack={trackOfCard({ kind })} navigate={navigate} />;
 }
 
+// About track: what Stelow is, where to learn more, which build runs.
+// No cards live here — the tagline, repo link, and version stamp moved out
+// of Build so every work track describes itself instead of the product.
+function AboutPanel() {
+  const rpc = useRpc<typeof rpcContract>();
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.call("buildInfo", {}).then((result) => { if (!cancelled) setBuildInfo(result); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [rpc]);
+  return (
+    <div className="flex h-full overflow-hidden bg-background">
+      <div className="flex-1 overflow-auto p-4 md:p-6">
+        <div className="mx-auto max-w-[1500px] space-y-4">
+          <header>
+            <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="text-xl font-semibold tracking-tight">About</h1>
+              {buildInfo ? <span className="text-[11px] text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
+            </div>
+          </header>
+          <div className="grid max-w-2xl gap-3">
+            <p className="text-sm leading-6 text-foreground">Research investigates before building. Explore runs one workflow stage on its own. Build carries ideas through triage, shaping, gates, and execution. The inbox only interrupts when the agent needs you.</p>
+            <div>
+              <UrlLink href="https://github.com/calionauta/stelow" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Learn more about Stelow <span aria-hidden="true">↗</span></UrlLink>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StelowPanel({ subPath }: { subPath: string }) {
   const navigate = useBbNavigate();
   const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);
@@ -1665,7 +1726,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
     if (typeof window === "undefined") return "inbox";
     try {
       const raw = window.localStorage.getItem(STORAGE_KEYS.lastTab);
-      if (raw === "inbox" || raw === "build" || raw === "research" || raw === "explore") return raw;
+      if (raw === "inbox" || raw === "build" || raw === "research" || raw === "explore" || raw === "about") return raw;
     } catch { /* default below */ }
     return "inbox";
   });
@@ -1693,8 +1754,8 @@ function StelowPanel({ subPath }: { subPath: string }) {
   // visibly do nothing).
   const bare = subPath.replace(/^\/+|\/+$/g, "") === "";
   const tab = bare ? lastTab : route.track;
-  const counts = { inbox: inbox.count, build: build.count, research: research.count, explore: 0 };
-  // Keep-alive: all three tracks stay mounted and only the active one
+  const counts = { inbox: inbox.count, build: build.count, research: research.count, explore: 0, about: 0 };
+  // Keep-alive: all tracks stay mounted and only the active one
   // shows. Tab switches are instant (no reload flash) and every track
   // keeps its realtime subscription warm. First mount still loads once —
   // data has to come from somewhere.
@@ -1712,6 +1773,9 @@ function StelowPanel({ subPath }: { subPath: string }) {
       </div>
       <div className={tab === "explore" ? "min-h-0 flex-1" : "hidden"}>
         <ExplorePanel />
+      </div>
+      <div className={tab === "about" ? "min-h-0 flex-1" : "hidden"}>
+        <AboutPanel />
       </div>
     </div>
   );
