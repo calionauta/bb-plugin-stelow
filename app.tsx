@@ -2150,7 +2150,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? <span className="ml-2 text-muted-foreground" title="Workflow stage — where this work stands. Move it from the Progress timeline inside the card.">· {statusLabel(card.status)}{card.status !== card.stage ? ` · ${stageLabel(card.stage)}` : ""}</span> : null}
+        {card ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Card status — this card's current board state."><span className="mr-1">{statusGlyph(card.status)}</span>{card.kind === "research" ? (RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)) : statusLabel(card.status)}</Pill> : null}
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />
