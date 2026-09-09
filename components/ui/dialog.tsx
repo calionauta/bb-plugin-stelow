@@ -1,5 +1,6 @@
 /* shadcn/ui-derived */
 import * as React from "react";
+import { createPortal } from "react-dom";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Slot } from "@radix-ui/react-slot";
 
@@ -237,6 +238,83 @@ type DialogContentProps = React.ComponentPropsWithoutRef<
   fullscreenOnMobile?: boolean;
 };
 
+// Fullscreen fallback for compact viewports. Mirrors the old Radix branch
+// visually (full-viewport modal + explicit X) with zero Radix primitives,
+// so opening — or resizing into — a narrow viewport can never throw.
+// Escape closes, like the desktop modal.
+const CompactFullscreenContent = React.forwardRef<
+  HTMLDivElement,
+  {
+    className?: string;
+    domProps: Record<string, unknown>;
+    scopeProps: Record<string, unknown>;
+    open: boolean;
+    titleId: string;
+    descriptionId: string;
+    onOpenChange: (open: boolean) => void;
+    children: React.ReactNode;
+  }
+>(
+  (
+    {
+      className,
+      domProps,
+      scopeProps,
+      open,
+      titleId,
+      descriptionId,
+      onOpenChange,
+      children,
+    },
+    ref,
+  ) => {
+    React.useEffect(() => {
+      if (!open) return;
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === "Escape") onOpenChange(false);
+      };
+      document.addEventListener("keydown", onKeyDown);
+      return () => document.removeEventListener("keydown", onKeyDown);
+    }, [open, onOpenChange]);
+    if (typeof document === "undefined" || !open) return null;
+    return createPortal(
+      <>
+        <div
+          aria-hidden="true"
+          {...scopeProps}
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]"
+          onClick={() => onOpenChange(false)}
+        />
+        <div
+          ref={ref}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId || undefined}
+          aria-describedby={descriptionId || undefined}
+          {...scopeProps}
+          className={cn(
+            "fixed inset-0 z-50 grid h-[100dvh] w-screen grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto border bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))]",
+            className,
+          )}
+          {...domProps}
+        >
+          {children}
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close"
+            className="absolute right-4 top-4 cursor-pointer rounded-sm p-1 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          >
+            <Icon name="X" className="h-4 w-4" />
+          </button>
+        </div>
+      </>,
+      document.body,
+    );
+  },
+);
+CompactFullscreenContent.displayName = "CompactFullscreenContent";
+
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
   ({ className, children, fullscreenOnMobile = false, ...props }, ref) => {
     const { isCompactViewport, open, onOpenChange, titleId, descriptionId } =
@@ -247,27 +325,25 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     const scopeProps = usePortalScopeProps();
 
     if (isCompactViewport) {
+      // No Radix primitives here on purpose: compact mode renders children
+      // OUTSIDE DialogPrimitive.Root, so Portal/Overlay/Content/Close would
+      // throw "must be used within Dialog" — on open while narrow, and on
+      // every desktop→compact resize with a dialog open (which disabled the
+      // whole plugin slot for the session). Plain portaled divs instead.
       if (fullscreenOnMobile) {
-        const domProps = stripRadixContentProps(props);
         return (
-          <DialogPrimitive.Portal>
-            <DialogOverlay />
-            <DialogPrimitive.Content
-              ref={ref}
-              {...scopeProps}
-              className={cn(
-                "fixed inset-0 z-50 grid h-[100dvh] w-screen grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto border bg-background p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-sm duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-                className,
-              )}
-              {...domProps}
-            >
-              {children}
-              <DialogPrimitive.Close className="absolute right-4 top-4 cursor-pointer rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-state-active data-[state=open]:text-foreground">
-                <Icon name="X" className="h-4 w-4" />
-                <span className="sr-only">Close</span>
-              </DialogPrimitive.Close>
-            </DialogPrimitive.Content>
-          </DialogPrimitive.Portal>
+          <CompactFullscreenContent
+            ref={ref}
+            className={className}
+            domProps={stripRadixContentProps(props)}
+            scopeProps={scopeProps}
+            open={open}
+            titleId={titleId}
+            descriptionId={descriptionId}
+            onOpenChange={onOpenChange}
+          >
+            {children}
+          </CompactFullscreenContent>
         );
       }
       const domProps = stripRadixContentProps(props);

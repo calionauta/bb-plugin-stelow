@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.31] - 2026-09-09
+
+### Fixed
+
+- **Resizing into a narrow viewport no longer crashes the plugin.**
+  The compact fullscreen dialog rendered Radix Portal/Content without a
+  Radix Root (compact mode omits it), throwing on open-while-narrow and
+  on every desktop→narrow resize with a creation modal open — which
+  disabled the whole slot for the session. It now renders plain
+  portaled divs with the same look plus Escape-to-close.
+
 ## [0.3.30] - 2026-09-09
 
 ### Added
