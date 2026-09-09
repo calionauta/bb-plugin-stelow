@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.14] - 2026-09-09
+
+### Added
+
+- **`bb stelow verify` worker self-check.** The deterministic complement
+  to prompting: the worker runs the same predicates the sync gate
+  enforces before finishing (`PASS` per round, `FAIL` naming the fix,
+  `--json` for machines). Research and explore prompts require it;
+  prompt, CLI, and sync share one definition of PASS in
+  `lib/research-artifacts.mjs`, so the three can never disagree.
+
 ## [0.3.13] - 2026-09-09
 
 ### Added
