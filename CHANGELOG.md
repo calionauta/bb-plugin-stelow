@@ -8,6 +8,18 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-09
+
+### Changed
+
+- **Dedicated Worker section right under the hero** (both tracks). Preset
+  pill + provider/model, real "Change preset…" outline button, and the
+  note about when a preset applies are now one contextual block instead
+  of a floating row. Recovery/danger actions (restart fresh, archive,
+  delete) sit below a divider inside the same section, with worker
+  history collapsed below. The buried Manage accordion below Artifacts
+  is gone.
+
 ## [0.3.2] - 2026-09-08
 
 ### Changed
