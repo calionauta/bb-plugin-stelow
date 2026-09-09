@@ -1491,16 +1491,19 @@ function StelowTabBar({ tab, counts, onSelect }: {
   onSelect: (track: StelowTrack) => void;
 }) {
   const countFor = (key: StelowTrack) => counts[key];
+  // Route navigation, not tab panels: each track is its own subPath route,
+  // so this is a nav with aria-current (the GitHub repo-tabs pattern) —
+  // never a tablist, which would promise tabpanels and arrow-key behavior
+  // that routed views don't have.
   return (
-    <div role="tablist" aria-label="Stelow tracks" className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto border-b bg-card/80 px-2 py-1.5 sm:px-3">
+    <nav aria-label="Stelow tracks" className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto border-b bg-card/80 px-2 py-1.5 sm:px-3">
       {STELOW_TRACKS.map((entry) => {
         const active = tab === entry.key;
         const count = countFor(entry.key);
         return (
           <button
             key={entry.key}
-            role="tab"
-            aria-selected={active}
+            aria-current={active ? "page" : undefined}
             onClick={() => onSelect(entry.key)}
             title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Build board" : entry.key === "research" ? "Research board" : entry.key === "explore" ? "Single-stage runs" : "What Stelow is"}
             className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:px-3 sm:text-sm ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
@@ -1513,7 +1516,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }
 
@@ -4912,8 +4915,8 @@ function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: Plug
 }
 
 export default definePluginApp((app) => {
-  // One sidebar row for the whole plugin. Inbox, build, and research live
-  // on as subPath tracks (see STELOW_TRACKS).
+  // One sidebar row for the whole plugin. All tracks live on as subPath
+  // routes (see STELOW_TRACKS).
   // The badge counts what matters: unresolved inbox action items.
   // Sidebar icon truth: the host renders package.json#bb.branding.icon,
   // which WINS over this panel icon (plugin?.icon ?? panel icon in ZO).
@@ -4923,7 +4926,7 @@ export default definePluginApp((app) => {
   // they render from the plugin's own HugeIcons set.)
   app.slots.navPanel({
     id: STELOW_PANEL_ID,
-    title: "Stelow — Product Workflow",
+    title: "Stelow • Product Hub",
     icon: "Star",
     path: STELOW_PANEL_PATH,
     component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },

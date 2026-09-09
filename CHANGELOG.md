@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.23] - 2026-09-09
+
+### Changed
+
+- **Sidebar label reads Stelow • Product Hub.** Short, • separator,
+  names the place where everything product-related lives.
+- **Track switcher is a nav, not a tablist.** Route navigation gets
+  `nav` + `aria-current="page"` (the GitHub repo-tabs pattern) instead
+  of tab roles that promised tabpanels and arrow keys routed views
+  don't have. Same routes, same keyboard, honest semantics.
+
 ## [0.3.21] - 2026-09-09
 
 ### Changed
