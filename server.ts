@@ -62,17 +62,32 @@ try {
 }
 
 // Ground-truth freshness signal, written by scripts/postbuild.mjs. The panel
-// bundle and bb's plugin row are both sticky caches; the board footer renders
+// bundle and bb's plugin row are both sticky caches; the About tab renders
 // this so "did the reload take effect?" is checkable instead of vibes.
+// stelowVersion is the UPSTREAM release (synced data/stelow-package.json),
+// kept separate so the two versions can never be mistaken for each other.
 const BUILD_INFO = (() => {
   const fallback = { version: "dev", builtAt: null as string | null };
+  let version = fallback.version;
+  let builtAt = fallback.builtAt;
   for (const candidate of [nodeJoin(pluginDir, "version.json"), nodeJoin(pluginDir, "..", "version.json"), nodeJoin(pluginDir, "..", "package.json")]) {
     try {
       const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown; builtAt?: unknown };
-      if (typeof parsed.version === "string") return { version: parsed.version, builtAt: typeof parsed.builtAt === "string" ? parsed.builtAt : null };
+      if (typeof parsed.version === "string") {
+        version = parsed.version;
+        builtAt = typeof parsed.builtAt === "string" ? parsed.builtAt : null;
+        break;
+      }
     } catch { /* try next */ }
   }
-  return fallback;
+  let stelowVersion: string | null = null;
+  for (const candidate of [nodeJoin(pluginDir, "data", "stelow-package.json"), nodeJoin(pluginDir, "..", "data", "stelow-package.json")]) {
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown };
+      if (typeof parsed.version === "string") { stelowVersion = parsed.version; break; }
+    } catch { /* try next */ }
+  }
+  return { version, builtAt, stelowVersion };
 })();
 
 // Stage bands: groups of workflow stages that share a worker preset. A card's
@@ -420,7 +435,7 @@ export const rpcContract = defineRpcContract({
   },
   buildInfo: {
     input: z.object({}).strict(),
-    output: z.object({ version: z.string(), builtAt: z.string().nullable() }),
+    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable() }),
   },
 });
 
@@ -3499,7 +3514,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async buildInfo() {
-      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt };
+      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion };
     },
   });
 

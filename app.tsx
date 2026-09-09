@@ -1682,12 +1682,12 @@ function BareCardRoute({ cardId, eventId, navigate }: {
   return <StelowCardDetail cardId={cardId} eventId={eventId} backTrack={trackOfCard({ kind })} navigate={navigate} />;
 }
 
-// About track: what Stelow is, where to learn more, which build runs.
-// No cards live here — the tagline, repo link, and version stamp moved out
-// of Build so every work track describes itself instead of the product.
+// About track: what Stelow is vs what this plugin adds — one section each,
+// each with its own repo link and its own version, so the two releases can
+// never be mistaken for each other. No cards live here.
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null } | null>(null);
   useEffect(() => {
     let cancelled = false;
     void rpc.call("buildInfo", {}).then((result) => { if (!cancelled) setBuildInfo(result); }).catch(() => undefined);
@@ -1698,17 +1698,29 @@ function AboutPanel() {
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
           <header>
-            <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
               <h1 className="text-xl font-semibold tracking-tight">About</h1>
-              {buildInfo ? <span className="text-[11px] text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
             </div>
           </header>
-          <div className="grid max-w-2xl gap-3">
-            <p className="text-sm leading-6 text-foreground">Research investigates before building. Explore runs one workflow stage on its own. Build carries ideas through triage, shaping, gates, and execution. The inbox only interrupts when the agent needs you.</p>
-            <div>
-              <UrlLink href="https://github.com/calionauta/stelow" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Learn more about Stelow <span aria-hidden="true">↗</span></UrlLink>
-            </div>
+          <div className="grid max-w-2xl gap-5">
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-foreground">
+                Stelow {buildInfo?.stelowVersion ? <span className="text-[11px] font-normal text-muted-foreground">v{buildInfo.stelowVersion}</span> : null}
+              </h2>
+              <p className="text-sm leading-6 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
+              <div>
+                <UrlLink href="https://github.com/calionauta/stelow" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow repo <span aria-hidden="true">↗</span></UrlLink>
+              </div>
+            </section>
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-foreground">
+                bb-plugin-stelow {buildInfo ? <span className="text-[11px] font-normal text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
+              </h2>
+              <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
+              <div>
+                <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Plugin repo <span aria-hidden="true">↗</span></UrlLink>
+              </div>
+            </section>
           </div>
         </div>
       </div>

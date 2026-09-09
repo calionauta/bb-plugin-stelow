@@ -66,11 +66,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   row instead of a seeded notification — no badge or history pollution.
 - **Sidebar badge.** Unresolved actions plus unseen recent completions
   (7-day window); per-tab active counts (About carries no count). All realtime.
-- **About tab** (`AboutPanel`). What Stelow is in one paragraph, what each
-  track is for, a Learn-more button to the stelow repo, and the running
-  build stamp (`buildInfo` RPC) — so work tracks describe themselves and
-  product identity lives in exactly one place.
-- **Build stamp** (`buildInfo`). Version on the About tab so reloads are
+- **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
+  plugin — each with its own paragraph, repo link, and version side by
+  side (`buildInfo` carries both; the upstream version syncs with the
+  skills). Work tracks describe themselves; product identity lives in
+  exactly one place, never next to the wrong version.
+- **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 
 ## 3. Decide and unblock

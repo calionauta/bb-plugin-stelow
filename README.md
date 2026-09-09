@@ -2,13 +2,16 @@
 
 Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows inside bb. 🚀 Created by the original author of Stelow.
 
-Turn humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks, then deliver through an orchestrated workflow — Shape Up proposals, interface trade-offs before code, typed scopes with spikes up front, gated reviews, and agent workers. 
+Turn humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks, run single-stage explorations, then build through an orchestrated workflow — Shape Up proposals, interface trade-offs before code, typed scopes with spikes up front, gated reviews, and agent workers. 
 
 One board, one quiet inbox.
 
 ## What it adds
 
-- **Stelow board:** a bb navigation panel with Kanban columns for workflows, plus scopes and tasks. Build cards flow through Analyse, Plan, Execute and Review to Done; research cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item.
+- **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyse, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself; first-run tours teach each board once.
+- **Explore runs:** pick one workflow stage (Shape Up, interface alternatives, critiques, tech planning…), supply the input, get one artifact — no triage, no pipeline, no gates.
+- **Deterministic artifacts:** research round files and explore artifacts are pre-created by the plugin and validated in code; `bb stelow verify` lets the worker self-check before finishing.
+- **About tab:** what Stelow is vs what the plugin adds, with each repo link and each version side by side.
 - **Workflow actions:** start a Stelow agent thread, open generated artifacts, approve gates, advance stages, repair a stuck workflow, or archive a card.
 - **Native approval receipts:** approvals are written to `.stelow/approvals/{dirHash}/` using Stelow's canonical filenames.
 - **PRD and plan review:** `.md` artifacts can open with the Stelow reviewer; select text and append a contextual review comment.
@@ -16,7 +19,7 @@ One board, one quiet inbox.
 - **Agent presets:** assign a provider/model reasoning/permission profile to any card (schema mirrors the bb Tasks plugin). The worker thread is started with the preset's execution options.
 - **Sidebar badge:** the Stelow menu row shows a live count of unresolved inbox action items plus unseen recent completions.
 - **Agent integration:** `@workflow-name` mentions resolve fresh Stelow state into agent context.
-- **CLI:** inspect workflows, request structured input, advance stages, and manage presets.
+- **CLI:** inspect workflows, request structured input, advance stages, verify artifacts, fan out research, and manage presets.
 
 The plugin does **not** maintain a second workflow database. `stelow.json` and `.stelow/` remain the source of truth.
 
@@ -34,10 +37,10 @@ The singleton bb personal project has no workspace source, so the board asks you
 
 ## Install
 
-> Pending marketplace approval — install from this repository for now:
+> Pending marketplace approval — install a tracking release from this repository for now (update checks then keep working):
 
 ```bash
-bb plugin install git:https://github.com/calionauta/bb-plugin-stelow.git --yes
+bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@semver:^0.3.15" --yes
 bb plugin list   # stelow should show as running
 ```
 

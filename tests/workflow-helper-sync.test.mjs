@@ -19,6 +19,8 @@ try {
   const written = readFileSync(join(root, "data", "stelow"), "utf8");
   assert.ok(written.includes("do_advance"), "synced helper contains advance");
   assert.ok(written.includes("STELOW_STATEDIR"), "synced helper supports per-workflow dirs");
+  const pkg = JSON.parse(readFileSync(join(root, "data", "stelow-package.json"), "utf8"));
+  assert.match(pkg.version, /^\d+\.\d+\.\d+/, "synced upstream package carries a semver version");
 
   // Second run must be a no-op (state sha match) — no re-download, no churn.
   const before = readFileSync(join(root, "data", "stelow"), "utf8");
@@ -29,7 +31,7 @@ try {
   assert.equal(second.changed, false, "second sync reports unchanged");
   assert.equal(readFileSync(join(root, "data", "stelow"), "utf8"), before, "second sync touches nothing");
 
-  console.log("helper sync test ok: data/stelow synced from calionauta/stelow, idempotent on second run");
+  console.log("helper sync test ok: data/stelow + upstream version synced from calionauta/stelow, idempotent on second run");
 } catch (err) {
   const msg = String(err && err.message ? err.message : err);
   const netish = /fetch|network|ECONN|offline|timeout|unreachable|socket|getaddrinfo/i.test(msg);
