@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.27] - 2026-09-09
+
+### Added
+
+- **Reset onboarding** on the About tab (two-step confirm): clears the
+  first-visit flags so every track shows its setup dialog again.
+- **Header buttons carry icons** (Plus for creation, Settings for Agent
+  Presets, Github for import, Archive for the inbox archive toggle).
+
+### Changed
+
+- **Inbox order:** All-clear empty state first, Resolved history last.
+
 ## [0.3.26] - 2026-09-09
 
 ### Changed
