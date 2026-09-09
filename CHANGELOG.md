@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.24] - 2026-09-09
+
+### Added
+
+- **First-visit setup dialogs** on Build, Research, and Explore: agent
+  presets (plus Planning depth + Review checkpoints as board defaults
+  on Build), shown once each. Ends with configured state or an
+  explicit skip — never passive reading.
+
+### Changed
+
+- **Preset form collapses.** The New-preset form in Manage agent
+  presets stays behind Show/Hide; editing auto-expands.
+- **Create dialog slims down.** Start new issue drops the preset box
+  (Agent Presets lives in the header now); Settings keeps Planning
+  depth + Review checkpoints.
+- **Question stepper drops tab roles** for group + `aria-current="step"`.
+
+### Removed
+
+- **Track info bars.** The static preset-routing lines on Build,
+  Research, and Explore are gone — the setup dialog and the dialogs
+  that need the info carry it instead.
+
 ## [0.3.23] - 2026-09-09
 
 ### Changed
