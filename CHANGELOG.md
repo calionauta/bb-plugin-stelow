@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.8] - 2026-09-09
+
+### Fixed
+
+- **Stable track loading.** Build and Research now use page-shaped skeletons
+  during their first load, preventing the onboarding, filters, and board from
+  visibly assembling as RPC results arrive.
+- **Strategy selection.** Follow-up strategy selection persists user choice,
+  and strategy cards size to their content with contained scrolling.
+- **Concise cards.** Closed cards no longer repeat the board column's status.
+
 ## [0.3.7] - 2026-09-09
 
 ### Changed

@@ -496,6 +496,29 @@ function relativeTime(timestamp: number): string {
   return days === 1 ? "Yesterday" : `${days}d ago`;
 }
 
+function PanelSkeleton({ rows = 4 }: { rows?: number }) {
+  return <div className="space-y-3" aria-label="Loading" aria-busy="true">
+    {Array.from({ length: rows }, (_, index) => <div key={index} className="h-20 animate-pulse rounded-md border bg-muted/30" />)}
+  </div>;
+}
+
+// First-load placeholder mirrors the real Build/Research hierarchy: header,
+// one compact onboarding row, filters, then cards. Keeping this geometry
+// stable prevents the panel from visibly assembling around late RPC results.
+function TrackSkeleton({ columns = 5 }: { columns?: number }) {
+  return <div className="space-y-4" aria-label="Loading" aria-busy="true">
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="space-y-2"><div className="h-5 w-72 animate-pulse rounded bg-muted/50" /><div className="h-7 w-28 animate-pulse rounded bg-muted/50" /></div>
+      <div className="grid grid-cols-2 gap-2 sm:flex"><div className="h-11 w-28 animate-pulse rounded-md bg-muted/50" /><div className="h-11 w-24 animate-pulse rounded-md bg-muted/50" /></div>
+    </header>
+    <div className="h-11 animate-pulse rounded-md border bg-muted/30" />
+    <div className="flex items-center gap-2 border-b pb-3"><div className="h-9 flex-1 animate-pulse rounded-md bg-muted/50" /><div className="h-9 w-20 animate-pulse rounded-md bg-muted/50" /></div>
+    <div className="grid gap-3 lg:grid-cols-5">
+      {Array.from({ length: columns }, (_, index) => <section key={index} className="min-h-40 rounded-md border bg-muted/20 p-3"><div className="h-4 w-20 animate-pulse rounded bg-muted/50" /><div className="mt-3 h-20 animate-pulse rounded-md bg-muted/50" /></section>)}
+    </div>
+  </div>;
+}
+
 function InboxPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
@@ -549,7 +572,7 @@ function InboxPanel() {
   // content with a quiet updating hint instead of flashing.
   const firstLoad = loading && notifications.length === 0;
   const fatalError = loadError && notifications.length === 0;
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.{loading && !firstLoad ? " Updating…" : ""}</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header><Tour storageKey={STORAGE_KEYS.inboxTour} tourName="Inbox" hasData={notifications.length > 0} summary={action.length > 0 ? `${action.length} ${action.length === 1 ? "item needs" : "items need"} your decision` : "Decisions, failures, and completions land here"} steps={[{ title: "You only get pinged when needed", body: "Questions, worker failures, and pauses land here as action items; completions appear under Recent updates. The badge counts only what needs you." }, { title: "Action items look like this", body: "Each row names the card, what it needs, and when. Opening a row jumps straight to the card and event.", preview: <div aria-hidden className="mt-2 flex items-start gap-3 rounded-md border bg-background p-3 opacity-80"><span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-semibold text-amber-700 dark:text-amber-300">?</span><span className="min-w-0"><span className="block text-sm font-medium">Example card</span><span className="mt-0.5 block text-sm text-muted-foreground">Needs a decision. Which interface should we build?</span></span></div> }, { title: "Answer in one sitting", body: "Batched questions answer together with one submit — one worker resume, one resolution. Timed-out asks stay answerable on the card." }]} />{firstLoad ? <p className="text-sm text-muted-foreground">Loading Inbox…</p> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions.{loading && !firstLoad ? " Updating…" : ""}</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{showArchived ? "Back to Inbox" : "View archived"}</button></header><Tour storageKey={STORAGE_KEYS.inboxTour} tourName="Inbox" hasData={notifications.length > 0} summary={action.length > 0 ? `${action.length} ${action.length === 1 ? "item needs" : "items need"} your decision` : "Decisions, failures, and completions land here"} steps={[{ title: "You only get pinged when needed", body: "Questions, worker failures, and pauses land here as action items; completions appear under Recent updates. The badge counts only what needs you." }, { title: "Action items look like this", body: "Each row names the card, what it needs, and when. Opening a row jumps straight to the card and event.", preview: <div aria-hidden className="mt-2 flex items-start gap-3 rounded-md border bg-background p-3 opacity-80"><span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-xs font-semibold text-amber-700 dark:text-amber-300">?</span><span className="min-w-0"><span className="block text-sm font-medium">Example card</span><span className="mt-0.5 block text-sm text-muted-foreground">Needs a decision. Which interface should we build?</span></span></div> }, { title: "Answer in one sitting", body: "Batched questions answer together with one submit — one worker resume, one resolution. Timed-out asks stay answerable on the card." }]} />{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}</>}</div></div>;
 }
 
 // Shared first-run tour for every track (DRY: one stepper, one collapsed
@@ -564,11 +587,12 @@ type TourStep = {
   action?: React.ReactNode;
   preview?: React.ReactNode;
 };
-function Tour({ storageKey, tourName, steps, hasData, summary }: {
+function Tour({ storageKey, tourName, steps, hasData, ready = true, summary }: {
   storageKey: string;
   tourName: string;
   steps: TourStep[];
   hasData: boolean;
+  ready?: boolean;
   summary: React.ReactNode;
 }) {
   const [dismissed, setDismissed] = useState<boolean>(() => {
@@ -587,6 +611,10 @@ function Tour({ storageKey, tourName, steps, hasData, summary }: {
     setExpanded(true);
     try { window.localStorage.removeItem(storageKey); } catch { /* tours are best-effort */ }
   }
+  // Board data decides whether this is a first-run tour or a compact help
+  // row. Do not mount either before the initial load finishes: otherwise the
+  // full tour flashes, then collapses when cards arrive.
+  if (!ready) return null;
   if (dismissed) {
     return (
       <div className="flex justify-end">
@@ -828,6 +856,7 @@ function BoardPanel() {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
+          {loading && cards.length === 0 ? <TrackSkeleton /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
@@ -852,6 +881,7 @@ function BoardPanel() {
             storageKey={STORAGE_KEYS.buildTour}
             tourName="Build"
             hasData={cards.length > 0}
+            ready={!loading}
             summary={<span title={policySummary}>Agents per phase — {policySummary}</span>}
             steps={[
               {
@@ -1019,7 +1049,6 @@ function BoardPanel() {
             </div>
             <ViewToggle view={viewMode} onChange={setViewMode} label="Build cards view" />
           </div>
-          {loading ? <p className="text-sm text-muted-foreground">Loading Stelow…</p> : null}
           {cards.length === 0 && !loading ? (
             <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
               <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
@@ -1047,7 +1076,7 @@ function BoardPanel() {
               />
             ))}
           </div>}
-
+          </>}
         </div>
       </div>
     </div>
@@ -1182,6 +1211,7 @@ function ResearchPanel() {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
+          {loading && cards.length === 0 ? <TrackSkeleton columns={4} /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces a index; ranked opportunities fan out into {trackTitle("build")} cards.</p>
@@ -1202,6 +1232,7 @@ function ResearchPanel() {
             storageKey={STORAGE_KEYS.researchTour}
             tourName="Research"
             hasData={cards.length > 0}
+            ready={!loading}
             summary={<span title={`research: ${effectiveResearchPreset?.name ?? "Default"}`}>Investigations run on {effectiveResearchPreset?.name ?? "Default"}</span>}
             steps={[
               {
@@ -1274,8 +1305,6 @@ function ResearchPanel() {
             </div>
             <ViewToggle view={viewMode} onChange={setViewMode} label="Research cards view" />
           </div>
-          {loading ? <p className="text-sm text-muted-foreground">Loading research…</p> : null}
-
           {viewMode === "board" ? (
           <p className="text-xs text-muted-foreground">
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
@@ -1298,6 +1327,7 @@ function ResearchPanel() {
             ))}
           </div>
           )}
+          </>}
         </div>
       </div>
     </div>
@@ -1402,7 +1432,7 @@ function BareCardRoute({ cardId, eventId, navigate }: {
     }).catch(() => { if (!cancelled) setKind("delivery"); });
     return () => { cancelled = true; };
   }, [cardId, rpc]);
-  if (!kind) return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
+  if (!kind) return <div className="p-4"><PanelSkeleton rows={4} /></div>;
   return <StelowCardDetail cardId={cardId} eventId={eventId} backTrack={trackOfCard({ kind })} navigate={navigate} />;
 }
 
@@ -1552,7 +1582,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
         </div>
       ) : (
-        <fieldset className={`grid max-h-72 min-w-0 gap-2 overflow-y-auto pr-0.5 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
+        <fieldset className={`grid max-h-72 min-w-0 gap-2 overflow-y-auto overscroll-contain pr-0.5 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
           <legend className="sr-only">Research strategy</legend>
           {visible.map((entry) => {
             const selected = value === entry.id;
@@ -1560,7 +1590,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
             return (
               <label
                 key={entry.id}
-                className={`flex min-h-11 min-w-0 items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : "cursor-pointer"} ${selected ? "border-primary bg-primary/5" : disabled ? "" : "hover:bg-muted/50"}`}
+                className={`flex min-w-0 items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : "cursor-pointer"} ${selected ? "border-primary bg-primary/5" : disabled ? "" : "hover:bg-muted/50"}`}
               >
                 <input
                   type="radio"
@@ -1882,21 +1912,13 @@ function BoardCard({ card }: { card: CardItem }) {
           <ActivityPill activity={card.activity} />
         </span>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="truncate whitespace-nowrap rounded-md bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-foreground/80" title="Workflow stage — where this card stands. Move it from the Progress timeline inside the card.">{stageLabel(card.stage)}</span>
+      {(card.scopeSummary.scopesTotal > 0 || card.intent !== "unknown") ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
-        <Pill className="ml-auto whitespace-nowrap" title="Intent — the kind of card this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill>
-      </div>
+        {card.intent !== "unknown" ? <Pill className="ml-auto whitespace-nowrap" title="Intent — the kind of card this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
+      </div> : null}
       <CardMetaRows card={card} />
     </div>
   );
-}
-
-// Research cards use their board column as their only status. Completed
-// research moves directly to Done; reopening work through a comment moves it
-// back to Doing in the server, so the board remains the source of truth.
-function ResearchStatusPill({ card }: { card: CardItem }) {
-  return <Pill tone={statusTone(card.status)} title="Research status — where this card stands."><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill>;
 }
 
 // Research-track card: strategy instead of stage/intent, opens in the
@@ -1931,10 +1953,9 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
           <ActivityPill activity={card.activity} />
         </span>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <ResearchStatusPill card={card} />
-        {strategyLabel ? <Pill className="ml-auto whitespace-nowrap" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
-      </div>
+      {strategyLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <Pill className="ml-auto whitespace-nowrap" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill>
+      </div> : null}
       <CardMetaRows card={card} />
     </div>
   );
@@ -3163,8 +3184,8 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
   useEffect(() => {
     if (!open) return;
     setBusy(false);
-    setPicked(strategies.find((entry) => !runIds.includes(entry.id))?.id ?? strategies[0]?.id ?? null);
-  }, [open, strategies, runIds]);
+    setPicked((current) => current ?? strategies.find((entry) => !runIds.includes(entry.id))?.id ?? strategies[0]?.id ?? null);
+  }, [open]);
   const active = strategies.find((entry) => entry.id === picked) ?? null;
   async function confirm() {
     if (!active) return;
@@ -3184,7 +3205,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Explore another strategy</DialogTitle>
           <DialogDescription>A fresh worker runs the strategy on the same request and appends a new section to the index. Existing findings are never rewritten.</DialogDescription>
@@ -3493,7 +3514,6 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                       <p className="text-xs text-muted-foreground">Review the index below, select opportunities to build, then move this card to Done.</p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <ResearchStatusPill card={card} />
                       {strategyLabel ? <Pill tone="bg-primary/15 text-primary" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
