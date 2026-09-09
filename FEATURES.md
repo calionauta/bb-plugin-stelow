@@ -72,8 +72,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
   plugin — each with its own paragraph, repo link, and version side by
   side (`buildInfo` carries both; the upstream version syncs with the
-  skills). Work tracks describe themselves; product identity lives in
-  exactly one place, never next to the wrong version.
+  skills). The plugin section also offers Reset onboarding (two-step
+  confirm) to replay the first-visit setup dialogs. Work tracks describe
+  themselves; product identity lives in exactly one place, never next
+  to the wrong version.
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 
@@ -81,8 +83,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When the agent needs me, I want to answer or approve fast.*
 
 - **Inbox** (`InboxPanel`, `listNotifications`). Needs-you
-  (question/error/paused), recent completions, resolved history,
-  archived; per-item read/archive/restore; deep-links into card+event.
+  (question/error/paused), recent completions, an All-clear empty state,
+  resolved history last, archived; per-item read/archive/restore;
+  deep-links into card+event.
   The badge counts unresolved actions plus unseen recent completions
   (7-day window); opening a completed card marks it seen, never resolved.
 - **Structured questions** (`ask`, `answerQuestions`,
