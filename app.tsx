@@ -526,15 +526,17 @@ function InboxPanel() {
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Background refreshes must never flash loading UI (see BoardPanel).
+  const firstLoadRef = useRef(true);
   const load = useCallback(async () => {
-    setLoading(true);
+    if (firstLoadRef.current) setLoading(true);
     try {
       setNotifications((await rpc.call("listNotifications", { includeArchived: showArchived })).notifications);
       setLoadError(null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Unable to load Stelow Inbox.");
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); firstLoadRef.current = false; }
   }, [rpc, showArchived]);
   useEffect(() => { void load(); }, [load]);
   useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
@@ -679,6 +681,10 @@ function BoardPanel() {
     try { window.localStorage.setItem(STORAGE_KEYS.boardColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
+  // Background refreshes (realtime) must never flash loading UI: the Tour
+  // unmounts and skeletons blank the board while loading is true. Only the
+  // first load may set it; refreshes update state silently.
+  const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
   const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
@@ -706,7 +712,7 @@ function BoardPanel() {
   const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
 
   const load = useCallback(async (targetId: string | null) => {
-    setLoading(true);
+    if (firstLoadRef.current) setLoading(true);
     try {
       const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
@@ -722,10 +728,13 @@ function BoardPanel() {
       if (boardResult?.githubStatus) setGithubStatus(boardResult.githubStatus);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
-      setProjects([]);
-      setCards([]);
+      if (firstLoadRef.current) {
+        setProjects([]);
+        setCards([]);
+      }
     } finally {
       setLoading(false);
+      firstLoadRef.current = false;
     }
   }, [rpc]);
 
@@ -1110,6 +1119,8 @@ function ResearchPanel() {
     try { window.localStorage.setItem(STORAGE_KEYS.researchColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
+  // Background refreshes must never flash loading UI (see BoardPanel).
+  const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<string | null>(null);
@@ -1119,7 +1130,7 @@ function ResearchPanel() {
   const [filterAttention, setFilterAttention] = useState(false);
 
   const load = useCallback(async (targetId: string | null) => {
-    setLoading(true);
+    if (firstLoadRef.current) setLoading(true);
     try {
       const [projectsResult, cardsResult, strategiesResult, presetsResult, bandPresetsResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
@@ -1135,10 +1146,13 @@ function ResearchPanel() {
       setResearchBandPresets(bandPresetsResult.bands);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load research.");
-      setProjects([]);
-      setCards([]);
+      if (firstLoadRef.current) {
+        setProjects([]);
+        setCards([]);
+      }
     } finally {
       setLoading(false);
+      firstLoadRef.current = false;
     }
   }, [rpc]);
 
@@ -1356,6 +1370,8 @@ function ExplorePanel() {
     try { window.localStorage.setItem(STORAGE_KEYS.exploreColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
   }, [collapsedColumns]);
   const [loading, setLoading] = useState(true);
+  // Background refreshes must never flash loading UI (see BoardPanel).
+  const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<string | null>(null);
@@ -1365,7 +1381,7 @@ function ExplorePanel() {
   const [filterAttention, setFilterAttention] = useState(false);
 
   const load = useCallback(async (targetId: string | null) => {
-    setLoading(true);
+    if (firstLoadRef.current) setLoading(true);
     try {
       const [projectsResult, cardsResult, stagesResult, presetsResult, bandPresetsResult] = await Promise.all([
         rpc.call("projects", {}).catch(() => null),
@@ -1381,10 +1397,13 @@ function ExplorePanel() {
       setResearchBandPresets(bandPresetsResult.bands);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load explore.");
-      setProjects([]);
-      setCards([]);
+      if (firstLoadRef.current) {
+        setProjects([]);
+        setCards([]);
+      }
     } finally {
       setLoading(false);
+      firstLoadRef.current = false;
     }
   }, [rpc]);
 

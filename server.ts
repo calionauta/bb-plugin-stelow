@@ -2043,10 +2043,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     // are still in flight; writing then crashes the whole server process.
     if (!(db as unknown as { open?: boolean }).open) return;
     const previous = getCard(cardId);
-    const next = { updated_at: now(), ...fields };
-    const keys = Object.keys(next);
+    const keys = Object.keys(fields);
     if (keys.length === 0) return;
-    db.prepare(`UPDATE cards SET ${keys.map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...next });
+    // No-op guard: sync polls call updateCard every cycle, usually with
+    // identical values. Writing anyway would bump updated_at (reshuffling
+    // board order and "Idle since" labels) and publish card-state
+    // (reloading every panel) for zero visual change.
+    const asRecord = (value: unknown): Record<string, unknown> => value as Record<string, unknown>;
+    const changed = previous ? keys.filter((k) => asRecord(previous)[k] !== asRecord(fields)[k]) : keys;
+    if (previous && changed.length === 0) return;
+    const write: Record<string, unknown> = { updated_at: now() };
+    for (const k of changed) write[k] = asRecord(fields)[k];
+    db.prepare(`UPDATE cards SET ${Object.keys(write).map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...write });
     const current = getCard(cardId);
     if (previous && current) {
       if (current.status === "archived" || current.status === "completed") resolveInboxEvents(cardId, current.updated_at);

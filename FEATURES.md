@@ -160,7 +160,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   name the cause instead of going blank.
 - **Self-healing** (`syncThreadState`, 45s reconcile sweep, thread
   idle/active/failed events). Suspicious idle and stalls surface as
-  paused with exactly one inbox event per idle period.
+  paused with exactly one inbox event per idle period. No-op polls
+  write nothing and publish nothing — panels reload only on real
+  changes, and background refreshes never flash loading UI (first
+  load owns the skeleton).
 
 ## 6. Configure the workforce
 *When I want a different brain, cost, or permission, I want presets.*
