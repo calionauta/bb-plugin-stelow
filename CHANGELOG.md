@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.18] - 2026-09-09
+
+### Changed
+
+- **Dismissed tours collapse in place.** The Tour entry point keeps its
+  full-width slot and container in every state — dismissing folds it to
+  a one-line box with Show instead of swapping in a relocated button.
+- **Build speaks issues.** The creation entry points read New/Start new
+  issue (one name for manually created and imported work); the header
+  drops the phase list and describes the flow.
+
 ## [0.3.17] - 2026-09-09
 
 ### Fixed
