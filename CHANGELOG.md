@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.20] - 2026-09-09
+
+### Removed
+
+- **Onboarding tours.** The per-track Tour steppers are gone: audit
+  showed half their steps duplicated headers, buttons, and dialogs.
+  The three non-discoverable rules survive as static one-liners where
+  they apply (preset routing per track, batch answers in the Inbox
+  header, append-only rounds in the strategy dialog).
+
+### Fixed
+
+- Research header grammar ("an index").
+
 ## [0.3.19] - 2026-09-09
 
 ### Fixed
