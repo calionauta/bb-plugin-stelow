@@ -958,6 +958,11 @@ export default async function plugin(bb: BbPluginApi) {
   CREATE INDEX IF NOT EXISTS idx_inbox_events_visible ON inbox_events(archived_at, occurred_at DESC);`);
   const inboxColumns = db.prepare("PRAGMA table_info(inbox_events)").all() as Array<{ name: string }>;
   if (!inboxColumns.some((column) => column.name === "resolved_at")) db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
+  // One-time cleanup of a historical bug: research completions used to emit
+  // two events (the generic transition + the research-specific one). The
+  // generic rows are redundant noise for research cards — drop them. The
+  // duplicate-insert path is fixed upstream, so this converges on first run.
+  db.prepare(`DELETE FROM inbox_events WHERE kind = 'completed' AND summary = 'Completed. Review the final outcome.' AND card_id IN (SELECT id FROM cards WHERE kind = 'research')`).run();
 
   // card_threads is the worker ledger: one row per worker thread a card has
   // ever had (initial spawn, band-swap / manual restarts, reseeds). Old rows
@@ -1565,14 +1570,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
         // files.list is single-level: scan the state dir and its rounds/
         // subdir (no query — filter client-side, independent of query
-        // semantics).
+        // semantics). Entries come back relative to the listed dir, so the
+        // absolute path is composed here — treating the bare entry as
+        // absolute produced broken loose-file links (a relative path was
+        // read against the workspace root) and let research-index.md /
+        // state.md leak through as loose.
         const scanDirs = [stateDir, join(stateDir, ROUNDS_DIR)];
         for (const dir of scanDirs) {
           const listed = await bb.sdk.files.list({ path: dir }).catch(() => null);
           for (const entry of listed?.files ?? []) {
-            const abs = entry.path;
-            if (typeof abs !== "string" || !abs.endsWith(".md") || known.has(abs) || !hostId) continue;
-            looseFiles.push({ display: workspaceRelative(workspacePath, abs) ?? abs.split("/").pop()!, path: workspaceRelative(workspacePath, abs) ?? abs, absolutePath: abs, hostId });
+            const rel = typeof entry.path === "string" ? entry.path : "";
+            if (!rel.endsWith(".md")) continue;
+            const abs = isAbsolute(rel) ? rel : join(dir, rel);
+            if (known.has(abs) || !hostId) continue;
+            looseFiles.push({ display: workspaceRelative(workspacePath, abs) ?? rel.split("/").pop()!, path: workspaceRelative(workspacePath, abs) ?? rel, absolutePath: abs, hostId });
           }
         }
         looseFiles.sort((a, b) => (a.display < b.display ? -1 : 1));
@@ -1580,6 +1591,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
     // Primary contents decide ready vs pending/missing (sequential reads over
     // a handful of small files; rounds are few by construction).
+    // A round file that merely mirrors research-index.md (identical content or
+    // starting with the index heading) means the playbook output was never
+    // written to it — present it as missing instead of surfacing the wrong
+    // artifact as if it were the round's output.
+    const indexBlob = rounds.length > 0 && stateDir ? await bb.sdk.files.read({ path: join(stateDir, "research-index.md") }).then((f) => (typeof f.content === "string" ? f.content : null)).catch(() => null) : null;
+    const mirrorsIndex = (content: string | null): boolean => indexBlob !== null && content !== null && (content === indexBlob || /^\s*#\s*Research index\b/m.test(content));
     for (const round of rounds) {
       const present = round.files
         .map((file) => parseRoundPath(file.path, round.strategyId)?.subskill)
@@ -1589,12 +1606,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const primaryLabel = `Round ${round.n} — ${round.label}`;
       if (full && hostId) {
         const content = await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null);
-        if (typeof content === "string" && content.trim().length > 0) {
+        if (typeof content === "string" && content.trim().length > 0 && !mirrorsIndex(content)) {
           round.status = "ready";
           round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: round.at });
         } else {
           round.status = round.n === rounds.length && live ? "pending" : "missing";
-          if (round.status === "pending") round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: round.at });
+          // A still-running round whose file already mirrors the index has
+          // nothing worth opening yet — don't surface a wrong-artifact button.
+          if (round.status === "pending" && !(typeof content === "string" && mirrorsIndex(content))) round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: round.at });
         }
       } else {
         round.status = round.n === rounds.length && live ? "pending" : "missing";
@@ -1782,7 +1801,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   function getCardByWorkerThread(threadId: string): CardRow | undefined {
     return db.prepare("SELECT * FROM cards WHERE worker_thread_id = ?").get(threadId) as CardRow | undefined;
   }
-  function updateCard(cardId: string, fields: Partial<Omit<CardRow, "id" | "project_id" | "intent" | "prompt" | "name" | "created_at">>): void {
+  function updateCard(cardId: string, fields: Partial<Omit<CardRow, "id" | "project_id" | "intent" | "prompt" | "name" | "created_at">>, opts?: { suppressCompletionEvent?: boolean }): void {
     // Hot-reload race: bb closes the plugin DB while syncThreadState callbacks
     // are still in flight; writing then crashes the whole server process.
     if (!(db as unknown as { open?: boolean }).open) return;
@@ -1795,7 +1814,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (previous && current) {
       if (current.status === "archived" || current.status === "completed") resolveInboxEvents(cardId, current.updated_at);
       else if (current.activity === "running") resolveInboxEvents(cardId, current.updated_at, ["error", "paused"]);
-      if (previous.status !== "completed" && current.status === "completed") recordInboxEvent(current, "completed", "Completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
+      // Research cards emit their own completion event (syncResearchThreadState)
+      // and a manual board move needs no "Completed" ping — the human just
+      // did it. Only agent-driven delivery completions notify.
+      if (previous.status !== "completed" && current.status === "completed" && current.kind !== "research" && !opts?.suppressCompletionEvent) recordInboxEvent(current, "completed", "Completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "error" && current.activity === "error") recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "awaiting-answer" && current.activity === "awaiting-answer") recordInboxEvent(current, "question", "The agent is waiting for your answer to continue.", `question:${cardId}:${current.updated_at}`, current.updated_at);
     }
@@ -2806,7 +2828,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const decision = resolveCardMove(card.kind, status);
       if (!decision.ok) return { ok: false, error: decision.error };
       if (decision.move.type === "status") {
-        updateCard(cardId, { status: decision.move.status as "pending" | "in-progress" | "completed" | "archived" });
+        // User-initiated moves never ping the inbox with a completion: the
+        // human performed the action and already knows. Open action items
+        // still resolve (the card's state changed).
+        updateCard(cardId, { status: decision.move.status as "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
         return { ok: true, error: null };
       }
       // A phase move sets the card's stage to that phase's entry stage
