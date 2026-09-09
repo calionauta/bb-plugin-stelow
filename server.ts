@@ -1169,7 +1169,7 @@ Step 3 — write your findings to <state-dir>/research-index.md (create it) in E
     <concise cross-strategy synthesis, evidence limits, key decisions — keep it short>
 
     ## Outputs
-    | Strategy | Round | Output | Path | Notes |
+    | Strategy | Round | Output | Artifact | Notes |
     | --- | --- | --- | --- | --- |
     | ${strategyLabel} | ${roundNo} | <what this output is> | <path relative to ${workspaceRoot}> | <notes> |
 
@@ -1179,7 +1179,7 @@ Step 3 — write your findings to <state-dir>/research-index.md (create it) in E
 
 Unchecked boxes mean "available for fan-out" and NOTHING else — they are not task state. NEVER check a box yourself — the plugin checks the ones the user turns into build cards. If you run another strategy later, APPEND a new ### section under ## Opportunities plus new rows under ## Outputs; never rewrite existing items.
 
-Step 3b — persist this round's native output IN ADDITION to the index, never instead of it: OVERWRITE <workspaceRoot>/${roundFile} with the playbook's full result VERBATIM (the file already exists and is already registered — do NOT add a manifest block for it). If the playbook runs distinct sub-steps with separable outputs (e.g. JTBD's numbered prompts), save EACH next to it in the same directory, named <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md with the SAME stamp, where <substep-slug> is the lowercase-hyphenated sub-step name.
+Step 3b — persist this round's native output IN ADDITION to the index, never instead of it: write the playbook's full result VERBATIM to <workspaceRoot>/${roundFile} (the file already exists and is already registered — do NOT add a manifest block for it). Prefer your host's native file-write tool. If you must use a shell, write ONE file per command with a direct path, then read it back to verify it is non-empty; never combine the round, index, and state.md writes in one heredoc/command chain. If the playbook runs distinct sub-steps with separable outputs (e.g. JTBD's numbered prompts), save EACH next to it in the same directory, named <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md with the SAME stamp, where <substep-slug> is the lowercase-hyphenated sub-step name.
 
 Step 4 — register the index plus any EXTRA sub-step files so each renders on the card: append one block per file to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 

@@ -3354,6 +3354,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [index, setIndex] = useState<ResearchIndexState | null>(null);
+  const [indexRefresh, setIndexRefresh] = useState(0);
   const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
   const [comment, setComment] = useState("");
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
@@ -3384,8 +3385,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
     }
   }, [cardId, inboxEventId, rpc]);
 
-  useEffect(() => { void loadIndex(); }, [loadIndex]);
-  useDebouncedRealtime(["card-state"], () => { void loadIndex(); });
+  useEffect(() => { void loadIndex(); }, [loadIndex, indexRefresh]);
   // Viewing a completed card marks its completion seen (read, never
   // resolved): the badge drops, Recent updates keeps the entry.
   useEffect(() => {
@@ -3778,7 +3778,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         onOpenChange={setFanOutOpen}
         cardId={cardId}
         opportunities={index?.opportunities ?? []}
-        onFanned={() => { onChanged(); void loadIndex(); }}
+        onFanned={() => { onChanged(); setIndexRefresh((value) => value + 1); }}
       />
       <StrategyRunDialog
         open={strategyRunOpen}
@@ -3786,7 +3786,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         cardId={cardId}
         strategies={strategies}
         runIds={card?.researchStrategies ?? []}
-        onStarted={() => { onChanged(); void loadIndex(); }}
+        onStarted={() => { onChanged(); setIndexRefresh((value) => value + 1); }}
       />
       <ConfirmActionDialog
         open={archiveOpen}
@@ -3814,6 +3814,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
+  const [detailRefresh, setDetailRefresh] = useState(0);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState<string | null>(null);
@@ -3858,8 +3859,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     }
   }, [cardId, inboxEventId, rpc]);
 
-  useEffect(() => { void load(); }, [load]);
-  useDebouncedRealtime(["card-state"], () => { void load(); });
+  useEffect(() => { void load(); }, [load, detailRefresh]);
   // Viewing a completed card marks its completion seen (read, never
   // resolved): the badge drops, Recent updates keeps the entry. Fires on
   // mount-if-completed and on the transition; steady state never refires
@@ -4256,7 +4256,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
         pendingQuestion={pendingFirst}
-        onQuestionAnswered={() => { setViewerFile(null); void load(); }}
+        onQuestionAnswered={() => { setViewerFile(null); setDetailRefresh((value) => value + 1); }}
         onCommented={() => void load()}
       />
       {/* Advance preview: never jump stages blindly — show where you are, where

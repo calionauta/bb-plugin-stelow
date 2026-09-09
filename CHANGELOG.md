@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.11] - 2026-09-09
+
+### Fixed
+
+- **Stable expanded-card scrolling.** Detail views no longer reload from every
+  background card-state event; explicit actions refresh only the data they
+  changed, preserving the reader's scroll position.
+- **More reliable research output writes.** Research workers now label output
+  artifacts correctly and are instructed to use native file writing or verify
+  one shell write at a time rather than chain fragile heredocs.
+
 ## [0.3.10] - 2026-09-09
 
 ### Fixed
