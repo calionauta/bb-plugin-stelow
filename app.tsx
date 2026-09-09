@@ -3580,7 +3580,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                               <th className="px-3 py-2">Strategy</th>
                               <th className="px-3 py-2">Round</th>
                               <th className="px-3 py-2">Output</th>
-                              <th className="px-3 py-2">Path</th>
+                              <th className="px-3 py-2">Artifact</th>
                               <th className="px-3 py-2">Notes</th>
                             </tr>
                           </thead>
