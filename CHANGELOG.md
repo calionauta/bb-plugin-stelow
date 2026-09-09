@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.28] - 2026-09-09
+
+### Added
+
+- **Option details on asks.** Options carry `preview` (inline expandable
+  glance) and `artifact` (workspace-relative path opening in the card
+  viewer; plain filename in threads). Workers attach per option via
+  `--desc/--preview/--artifact`; bad paths degrade silently, never
+  block. Shapes mirror upstream `ask-patterns.md` Option schema.
+
+### Changed
+
+- **Question stepper drops tab roles** for group + `aria-current="step"`.
+
 ## [0.3.27] - 2026-09-09
 
 ### Added
