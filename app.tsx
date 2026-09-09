@@ -1602,7 +1602,7 @@ function AboutPanel() {
               </h2>
               <p className="text-sm leading-6 text-muted-foreground">Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.</p>
               <div>
-                <UrlLink href="https://github.com/calionauta/stelow" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow repo <span aria-hidden="true">↗</span></UrlLink>
+                <UrlLink href="https://github.com/calionauta/stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50">Stelow repo <span aria-hidden="true">↗</span></UrlLink>
               </div>
             </section>
             <section className="space-y-2">
@@ -1611,7 +1611,7 @@ function AboutPanel() {
               </h2>
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               <div className="flex flex-wrap items-center gap-2">
-                <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Plugin repo <span aria-hidden="true">↗</span></UrlLink>
+                <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50">Plugin repo <span aria-hidden="true">↗</span></UrlLink>
                 {confirmReset ? (
                   <>
                     <Button size="sm" variant="destructive" onClick={resetOnboarding} title="Clear onboarding state so every track shows its setup dialog again">Confirm reset</Button>
