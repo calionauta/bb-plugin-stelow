@@ -3273,7 +3273,58 @@ function InboxEventBanner({ visible, event, sectionRef }: {
   );
 }
 
-// Research-track card detail: hero + index + fan-out + artifacts + manage +
+// Shared worker block: preset readout + change action + recovery/danger
+// actions + worker history. Rendered right under the hero in both tracks so
+// everything about the worker lives in one contextual section instead of
+// floating rows and a buried accordion. Actions are real outline buttons
+// (archive/delete in destructive tone) — never underlined body text.
+function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onRepair, onArchive, onDelete, onPreset, presetPill, presetNote, pillTitle, githubLink }: {
+  card: CardItem | null;
+  detail: CardDetailResponse | null;
+  presetStale: boolean;
+  restarting: boolean;
+  onRestartWorker: () => void;
+  onRepair: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+  onPreset: () => void;
+  presetPill: React.ReactNode;
+  presetNote: React.ReactNode;
+  pillTitle?: string;
+  githubLink?: React.ReactNode;
+}) {
+  return (
+    <section aria-label="Worker" className="rounded-lg border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Pill tone="bg-muted text-muted-foreground" title={pillTitle}>
+          {presetPill}
+          {detail?.card.presetProviderId && detail?.card.presetModelId ? (
+            <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
+          ) : null}
+        </Pill>
+        <Button size="sm" variant="outline" onClick={onPreset} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>
+        <span className="text-xs text-muted-foreground">{presetNote}</span>
+      </div>
+      {presetStale ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+          <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
+          <Button size="sm" disabled={restarting} onClick={onRestartWorker}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
+        </div>
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+        <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button>
+        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive research</Button>
+        {card?.status === "archived" ? (
+          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered.">Delete…</Button>
+        ) : null}
+      </div>
+      {githubLink}
+      {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
+    </section>
+  );
+}
+
+// Research-track card detail: hero + index + fan-out + artifacts + worker +
 // conversation. Delivery-only surfaces (stages, timeline, gates, intent)
 // never render here; every leaf below is shared with the delivery body.
 function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, detail, onChanged }: {
@@ -3484,22 +3535,20 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
               </section>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2" aria-label="Worker configuration">
-              <Pill tone="bg-muted text-muted-foreground">
-                Research · {detail?.card.presetName ?? "default"}
-                {detail?.card.presetProviderId && detail?.card.presetModelId ? (
-                  <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
-                ) : null}
-              </Pill>
-              <Button size="sm" variant="outline" onClick={() => setPresetDialogOpen(true)} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>
-            </div>
-            <p className="text-xs text-muted-foreground">A change takes effect only when a new worker starts — Resume continues the current one.</p>
-            {presetStale ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
-                <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
-                <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
-              </div>
-            ) : null}
+            <WorkerSection
+              card={card}
+              detail={detail}
+              presetStale={presetStale}
+              restarting={restarting}
+              onRestartWorker={() => setRestartWorkerOpen(true)}
+              onRepair={() => setRepairOpen(true)}
+              onArchive={() => setArchiveOpen(true)}
+              onDelete={() => setDeleteOpen(true)}
+              onPreset={() => setPresetDialogOpen(true)}
+              presetPill={<>Research · {detail?.card.presetName ?? "default"}</>}
+              presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
+              pillTitle="Preset for the next worker"
+            />
 
             <CardDisclosure
               title="Research index"
@@ -3599,21 +3648,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
 
-            <CardDisclosure
-              title="Manage"
-              hint="restart · archive · history"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)} title="Start over with a new worker on the same strategy. Comments are kept.">Restart fresh…</Button>
-                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive research</Button>
-                {card?.status === "archived" ? (
-                  <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered.">Delete…</Button>
-                ) : null}
-              </div>
-              {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
-            </CardDisclosure>
-
-<CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
+            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
 
           </>
         ) : null}
@@ -3971,22 +4006,34 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               </section>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2" aria-label="Worker configuration">
-              <Pill tone="bg-muted text-muted-foreground">
-                {card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ` : ""}{detail?.card.presetName ?? "default"}
-                {detail?.card.presetProviderId && detail?.card.presetModelId ? (
-                  <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
-                ) : null}
-              </Pill>
-              <Button size="sm" variant="outline" onClick={() => setPresetDialogOpen(true)} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>
-            </div>
-            <p className="text-xs text-muted-foreground">Preset for the <strong>{card.stage ? stageLabel(card.stage) : "current"}</strong> phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"}. A change takes effect only when a new worker starts — Resume continues the current one.</p>
-            {presetStale ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
-                <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
-                <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
-              </div>
-            ) : null}
+            <WorkerSection
+              card={card}
+              detail={detail}
+              presetStale={presetStale}
+              restarting={restarting}
+              onRestartWorker={() => setRestartWorkerOpen(true)}
+              onRepair={() => setRepairOpen(true)}
+              onArchive={() => setArchiveOpen(true)}
+              onDelete={() => setDeleteOpen(true)}
+              onPreset={() => setPresetDialogOpen(true)}
+              presetPill={<>{card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ` : ""}{detail?.card.presetName ?? "default"}</>}
+              presetNote={<>{card.stage ? <strong>{stageLabel(card.stage)}</strong> : "current"} phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"} · applies to the next worker</>}
+              pillTitle={card.stage ? `Preset for the ${stageLabel(card.stage)} phase` : "Preset for the next worker"}
+              githubLink={detail?.githubLink ? (
+                <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
+                  <span>Imported from <UrlLink href={detail.githubLink.url} className="font-medium text-primary underline-offset-4 hover:underline">{detail.githubLink.repo}#{detail.githubLink.number}</UrlLink></span>
+                  {card.status === "completed" ? (
+                    detail.githubLink.postedAt ? (
+                      <span className="text-emerald-700 dark:text-emerald-300">✓ Completion summary posted to GitHub</span>
+                    ) : (
+                      <button onClick={() => { setGithubCloseIssue(false); setGithubPostOpen(true); }} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
+                    )
+                  ) : (
+                    <span>A completion summary can be posted once this card is Done.</span>
+                  )}
+                </div>
+              ) : null}
+            />
 
             {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
@@ -4086,36 +4133,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             </CardDisclosure>
             </div>
 
-            {/* DISCLOSURE 2 — Manage (danger zone, always collapsed) */}
-            <CardDisclosure
-              title="Manage"
-              hint="restart · archive · history"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => setRepairOpen(true)} title="Start over with a new worker from triage. Scope work and comments are kept.">Restart fresh…</Button>
-                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setArchiveOpen(true)} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive card</Button>
-                {card?.status === "archived" ? (
-                  <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => setDeleteOpen(true)} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered.">Delete…</Button>
-                ) : null}
-              </div>
-              {detail?.githubLink ? (
-                <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
-                  <span>Imported from <UrlLink href={detail.githubLink.url} className="font-medium text-primary underline-offset-4 hover:underline">{detail.githubLink.repo}#{detail.githubLink.number}</UrlLink></span>
-                  {card.status === "completed" ? (
-                    detail.githubLink.postedAt ? (
-                      <span className="text-emerald-700 dark:text-emerald-300">✓ Completion summary posted to GitHub</span>
-                    ) : (
-                      <button onClick={() => { setGithubCloseIssue(false); setGithubPostOpen(true); }} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
-                    )
-                  ) : (
-                    <span>A completion summary can be posted once this card is Done.</span>
-                  )}
-                </div>
-              ) : null}
-              {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
-            </CardDisclosure>
-            {/* DISCLOSURE 3 — Conversation (history + composer) */}
-<CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
+            {/* Conversation (history + composer) */}
+            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
 
           </>
         ) : null}

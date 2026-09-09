@@ -105,12 +105,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
   shape.
-- **Worker row** (always visible under the hero: preset pill +
-  provider/model, real "Change preset…" outline button, stale-preset
-  warning with restart action).
-- **Manage** (collapsed danger zone: restart fresh, archive, delete
-  archived cards behind confirms — all real outline buttons, archive
-  in destructive tone — plus worker history).
+- **Worker section** (`WorkerSection`, always visible right under the
+  hero in both tracks): preset pill + provider/model + inline note
+  (applies to the next worker — Resume keeps the current one), real
+  "Change preset…" outline button, stale-preset warning with restart
+  action, then a divider with recovery/danger actions — restart fresh,
+  archive, delete archived cards behind confirms — all real outline
+  buttons, archive/delete in destructive tone. Worker history collapses
+  inside the same section; GitHub import/completion lives here too
+  (delivery only).
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads
