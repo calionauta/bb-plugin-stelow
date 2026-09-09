@@ -17,7 +17,7 @@ import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/stage-bands.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
-import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds } from "./lib/research-artifacts.mjs";
+import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
 import { CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { STAGE_CATALOG, stageById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
@@ -1211,6 +1211,7 @@ Step 3b — write this round's native output NEXT TO the index, never instead of
 - one file per write command with a direct path; never combine round + index + state.md writes in one heredoc/command chain. Prefer your host's native file-write tool.
 - verify by reading ${roundFile} back: it must hold your playbook output with real substance (200+ chars) — never the research index, never empty. If the read-back fails any check, rewrite immediately before finishing.
 - fan-out sub-steps (e.g. JTBD's numbered prompts): save EACH beside it as <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md (same stamp; <substep-slug> is the lowercase-hyphenated sub-step name), verified the same way.
+- self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or names each failing round with the fix. Do NOT end your turn on a FAIL; rewrite and re-verify until PASS.
 
 Step 4 — register the index plus any EXTRA sub-step files so each renders on the card: append one block per file to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 
@@ -1253,7 +1254,7 @@ Step 1 — load the stage skill: ${stage.label} (${stage.skill}) is bundled with
 
 Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \`bb stelow advance\`. Do NOT run the build workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-orchestrator) — only the stage skill above. You may read code, docs, or files in the workspace to ground the work; use the structured form below only if the input is genuinely ambiguous.
 
-Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${stage.id}.md (create it; overwrite any existing content with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it back to verify it is non-empty.
+Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${stage.id}.md (create it; overwrite any existing content with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it back to verify it is non-empty. Self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or the fix. Do NOT end your turn on a FAIL.
 
 Step 4 — register the artifact so it renders on the card: append one block to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 
@@ -3516,6 +3517,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
       { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
+      { name: "verify", summary: "Verify this card's artifacts are valid (worker self-check)", usage: "bb stelow verify [--card <card_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -3832,6 +3834,39 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (!result.ok) return { exitCode: 1, stderr: result.error ?? "fan-out failed" };
         return { exitCode: 0, stdout: `Fanned out ${result.created.length}: ${result.created.map((c) => `${c.title} (${c.cardId})`).join("; ")}` };
       }
+      if (argv[0] === "verify") {
+        // Deterministic worker self-check: the same predicates the sync gate
+        // enforces (lib/research-artifacts), runnable BEFORE finishing so a
+        // worker fixes its own artifacts instead of the inbox flagging them
+        // after. Prompts require this; the sync stays the backstop.
+        const args = argv.slice(1);
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow verify [--card <card_id>] [--json]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        const asJson = args.includes("--json");
+        if (card.kind === "research") {
+          const readiness = await researchReadiness(card).catch(() => null);
+          if (!readiness) return { exitCode: 1, stderr: "Unable to read card state — retry verify." };
+          const report = researchVerifyReport(cardId, strategyRounds(card).length, readiness.ready || readiness.invalid.length > 0, readiness.invalid);
+          if (asJson) return { exitCode: report.pass ? 0 : 1, stdout: JSON.stringify(report, null, 2) };
+          const text = researchVerifyText(report);
+          return { exitCode: text.exitCode, ...(text.stdout ? { stdout: text.stdout } : {}), ...(text.stderr ? { stderr: text.stderr } : {}) };
+        }
+        if (card.kind === "explore") {
+          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
+          const report = exploreVerifyReport(cardId, card.explore_stage, artifact.ready);
+          if (asJson) return { exitCode: report.pass ? 0 : 1, stdout: JSON.stringify(report, null, 2) };
+          const text = exploreVerifyText(report);
+          return { exitCode: text.exitCode, ...(text.stdout ? { stdout: text.stdout } : {}), ...(text.stderr ? { stderr: text.stderr } : {}) };
+        }
+        return { exitCode: 2, stderr: `verify applies to research/explore cards; "${cardId}" is a build card (build completion is the audit stage, not an artifact file).` };
+      }
       if (argv[0] === "preset") {
         const sub = argv[1];
         const flag = (name: string, list: string[]) => { const index = list.indexOf(name); return index >= 0 ? list[index + 1] : undefined; };
@@ -3874,7 +3909,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|schema|fan-out|preset" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|schema|fan-out|verify|preset" };
     },
   });
 

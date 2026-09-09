@@ -5,6 +5,10 @@ import {
   isValidExploreContent,
   exploreArtifactFile,
   findInvalidRounds,
+  researchVerifyReport,
+  researchVerifyText,
+  exploreVerifyReport,
+  exploreVerifyText,
 } from "../lib/research-artifacts.mjs";
 
 const INDEX = "# Research index\n\n## Opportunities\n\n- [ ] Something\n";
@@ -43,4 +47,24 @@ const invalid = findInvalidRounds(history, (path) => files[path] ?? null, INDEX,
 assert.deepEqual(invalid, [{ n: 2, label: "B" }, { n: 3, label: "C" }], "invalid rounds named in order");
 assert.deepEqual(findInvalidRounds([], () => null, INDEX, null), [], "empty history is clean");
 
-console.log("research artifacts test ok: mirror detection, validity, integrity scan");
+// Verify reports: PASS needs a reviewable index AND zero invalid rounds —
+// the same verdict the sync gate, the CLI, and the prompt all share.
+const passReport = researchVerifyReport("card_1", 2, true, []);
+assert.equal(passReport.pass, true, "clean rounds pass");
+assert.deepEqual(researchVerifyText(passReport), { exitCode: 0, stdout: "PASS: research card_1 — index reviewable, all 2 round file(s) valid." }, "pass text");
+assert.deepEqual(researchVerifyReport("card_1", 2, true, [{ n: 2, label: "B" }]).pass, false, "invalid round fails even with reviewable index");
+const failRounds = researchVerifyText(researchVerifyReport("card_1", 2, true, [{ n: 2, label: "B" }]));
+assert.equal(failRounds.exitCode, 1, "round failure exits 1");
+assert.match(failRounds.stderr, /FAIL round 2 \(B\)/, "round failure names the round");
+const failIndex = researchVerifyText(researchVerifyReport("card_1", 0, false, []));
+assert.equal(failIndex.exitCode, 1, "unreviewable index exits 1");
+assert.match(failIndex.stderr, /not reviewable yet/, "index failure names the index");
+
+const explorePass = exploreVerifyReport("card_9", "shape-up", true);
+assert.equal(explorePass.pass, true, "real explore artifact passes");
+assert.deepEqual(exploreVerifyText(explorePass), { exitCode: 0, stdout: "PASS: explore card_9 — explore-shape-up.md holds the stage deliverable." }, "explore pass text");
+const exploreFail = exploreVerifyText(exploreVerifyReport("card_9", "shape-up", false));
+assert.equal(exploreFail.exitCode, 1, "thin explore artifact exits 1");
+assert.match(exploreFail.stderr, /explore-shape-up\.md is missing or thin/, "explore failure names the file");
+
+console.log("research artifacts test ok: mirror detection, validity, integrity scan, verify reports");
