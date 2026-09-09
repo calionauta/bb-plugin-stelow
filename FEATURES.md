@@ -59,10 +59,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   common facets, build adds the rest by config — Research renders the
   identical popover, pills, and checkbox, never a forked row.
 - **First-visit setup, not tours.** No stepper onboarding: Build, Research,
-  and Explore each open a setup dialog once (localStorage) that ends with
-  the user having configured something — agent presets via Agent Presets,
-  plus Planning depth + Review checkpoints as board defaults on Build.
-  Dismissing (Got it, Esc, or backdrop) never nags again.
+  and Explore each open a setup dialog once (localStorage) about agent
+  presets — what they decide, band defaults, per-card pins. Planning
+  depth + Review checkpoints stay where they belong (per card in
+  New issue → Settings). Dismissing (Got it, Esc, or backdrop) never
+  nags again; only the active track opens its dialog.
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.

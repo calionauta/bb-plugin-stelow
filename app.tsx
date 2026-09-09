@@ -800,17 +800,11 @@ function BoardPanel({ active }: { active: boolean }) {
           </header>
           <PresetOnboardingDialog
             storageKey={STORAGE_KEYS.onboardBuild}
-            title="Choose your agents"
-            intro="Before the first card, set how workers run — and the defaults new cards start from."
+            title="Choose your agent presets"
+            intro="Set the preset each phase runs with. Planning depth and review checkpoints are a separate choice — picked per card in New issue → Settings."
             onOpenPresets={() => setBoardPresetsOpen(true)}
             active={active}
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
-              <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
-            </div>
-            <p className="text-xs">These travel with your next card and become the board defaults.</p>
-          </PresetOnboardingDialog>
+          />
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
               <span className="text-amber-700 dark:text-amber-300">Import issues needs a GitHub account linked in the <span className="font-medium">github</span> plugin.</span>
@@ -1139,7 +1133,7 @@ function ResearchPanel({ active }: { active: boolean }) {
 
           <PresetOnboardingDialog
             storageKey={STORAGE_KEYS.onboardResearch}
-            title="Choose your research agent"
+            title="Choose your research agent preset"
             intro="Investigations run on the research band preset — set it once here, or pin a different preset per card in Manage."
             onOpenPresets={() => setResearchPresetsOpen(true)}
             active={active}
@@ -1370,7 +1364,7 @@ function ExplorePanel({ active }: { active: boolean }) {
 
           <PresetOnboardingDialog
             storageKey={STORAGE_KEYS.onboardExplore}
-            title="Choose your exploration agent"
+            title="Choose your exploration agent preset"
             intro="Explorations run on the research band preset — set it once here, or pin a different preset per card in Manage."
             onOpenPresets={() => setResearchPresetsOpen(true)}
             active={active}
@@ -2886,15 +2880,15 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           </div>
         </div>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
-          {formCatalogReady ? <>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
-              <div className="flex shrink-0 gap-1">
-                {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
-                <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}>{formOpen ? "▾ Hide" : "▸ Show"}</Button>
-              </div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
+            <div className="flex shrink-0 gap-1">
+              {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
+              <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" disabled={!formCatalogReady} onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}>{formOpen ? "▾ Hide" : "▸ Show"}</Button>
             </div>
-            {formOpen ? <div id="preset-form-body">
+          </div>
+          {formOpen ? (
+            formCatalogReady ? <div id="preset-form-body">
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
@@ -2927,11 +2921,11 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
               <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
             </div>
             </div>
-            : null}
-          </> : <div className="flex min-h-40 flex-col items-center justify-center gap-3 text-center">
-            <span className="size-6 animate-spin rounded-full border-2 border-muted border-t-primary" aria-hidden />
-            <div><p className="text-sm font-medium">Preparing your preset form</p><p className="mt-1 text-xs text-muted-foreground">Loading the configured providers and models…</p></div>
-          </div>}
+            : <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground" aria-hidden={false}>
+              <span className="size-4 animate-spin rounded-full border-2 border-muted border-t-primary" aria-hidden />
+              <span>Loading providers and models…</span>
+            </div>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
