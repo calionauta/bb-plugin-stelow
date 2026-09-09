@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.21] - 2026-09-09
+
+### Changed
+
+- **Preset buttons say what they manage.** Build/Research/Explore headers
+  read Agent Presets, matching the dialog title and the plugin's own
+  vocabulary (agent presets everywhere, never bare).
+
 ## [0.3.20] - 2026-09-09
 
 ### Removed
