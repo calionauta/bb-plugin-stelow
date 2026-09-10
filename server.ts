@@ -9,6 +9,7 @@ import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./l
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
+import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
@@ -26,7 +27,7 @@ import { resolveCardMove } from "./lib/card-move.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 
-const pluginDir = dirname(fileURLToPath(import.meta.url));
+const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
   const candidates = [
     nodeJoin(pluginDir, "data", "stelow"),
