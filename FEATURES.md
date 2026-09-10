@@ -138,7 +138,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Artifact inventory** (`ArtifactGroups`, `groupArtifactsByStage`). Every
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
-  shape.
+  shape. Timeline badges deep-link into the producing stage's group with
+  a highlight ring.
+- **Diff review** (`cardDiff`, host `experimental_Diff`). The working
+  tree vs HEAD, per file, inside the card — shown at the diff-gate and
+  audit stages only. Untracked files open in the viewer; non-repos and
+  clean trees state so explicitly. Read-only: never stages, never
+  mutates the index.
 - **Worker section** (`WorkerSection`, always visible right under the
   hero in both tracks): preset pill + provider/model + inline note
   (applies to the next worker — Resume keeps the current one), real

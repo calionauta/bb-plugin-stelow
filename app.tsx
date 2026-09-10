@@ -4,6 +4,7 @@ import {
   experimental_SourceCode as SourceCode,
   definePluginApp,
   UrlLink,
+  experimental_Diff as DiffView,
   experimental_FileLink as FileLink,
   experimental_NewThreadComposer as NewThreadComposer,
   useBbContext,
@@ -4559,6 +4560,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [artifactStage, setArtifactStage] = useState<string | null>(null);
+  type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean };
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffData, setDiffData] = useState<CardDiff | null>(null);
+  const [diffError, setDiffError] = useState<string | null>(null);
   const artifactsRef = useRef<HTMLDivElement | null>(null);
   // Count badges on the timeline deep-link here: open the section, remember
   // which stage was asked about (its group rings + scrolls into view), then
@@ -4948,6 +4953,50 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
             </div>
+
+            {card && (card.stage === "diff-gate" || card.stage === "audit") ? (
+            <CardDisclosure
+              title="Diff"
+              hint={diffData ? (diffData.isRepo ? `${diffData.files.length} files` : "not a git repository") : "working tree vs HEAD"}
+              open={diffOpen}
+              onToggle={(next) => {
+                setDiffOpen(next);
+                if (next && !diffData) {
+                  rpc.call("cardDiff", { cardId }).then(setDiffData).catch((err) => setDiffError(err instanceof Error ? err.message : "Unable to load diff."));
+                }
+              }}
+            >
+              {!diffData && !diffError ? <p className="text-xs text-muted-foreground">Loading…</p> : null}
+              {diffError ? <p className="text-xs text-destructive">{diffError}</p> : null}
+              {diffData && !diffData.isRepo ? <p className="text-xs text-muted-foreground">This card's workspace is not a git repository — no diff to review.</p> : null}
+              {diffData && diffData.isRepo && diffData.files.length === 0 ? <p className="text-xs text-muted-foreground">Working tree clean — nothing to review.</p> : null}
+              {diffData && diffData.files.length > 0 ? (
+                <div className="space-y-3">
+                  {diffData.files.map((file) => (
+                    <div key={file.path} className="space-y-1">
+                      <p className="text-[11px] font-semibold text-muted-foreground">{file.display}{file.isNew ? " · new" : ""}</p>
+                      {file.patch ? (
+                        DiffView ? (
+                          <DiffView patch={file.patch} path={file.path} view="unified" />
+                        ) : (
+                          <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre>
+                        )
+                      ) : (
+                        <button
+                          onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) })}
+                          className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20"
+                          title={`Open ${file.display}`}
+                        >
+                          <span aria-hidden>📄</span><span>Open {file.display}</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {diffData.truncated ? <p className="text-xs text-muted-foreground">Truncated — the full diff is larger than shown.</p> : null}
+                </div>
+              ) : null}
+            </CardDisclosure>
+            ) : null}
 
             {/* Conversation (history + composer) */}
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />

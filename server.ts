@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,7 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { STAGE_SEQUENCE } from "./lib/artifact-groups.mjs";
+import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
@@ -359,6 +360,10 @@ export const rpcContract = defineRpcContract({
   fanOutResearch: {
     input: z.object({ cardId: z.string(), opportunityIds: z.array(z.string().min(1).max(120)).min(1).max(20) }).strict(),
     output: z.object({ ok: z.boolean(), created: z.array(z.object({ cardId: z.string(), title: z.string() })), error: z.string().nullable() }),
+  },
+  cardDiff: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), error: z.string().nullable() }),
   },
   runResearchStrategy: {
     input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
@@ -3334,6 +3339,63 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, created, error: null };
+    },
+
+    // Working-tree diff for the diff-gate/audit review moment. Read-only:
+    // never stages, never mutates the index. Tracked modifications come
+    // from `git diff`; untracked files list as openable entries (no patch
+    // invented for them). Everything is capped; failures degrade to an
+    // explicit shape, never a throw past the contract.
+    async cardDiff({ cardId }) {
+      const empty = { found: false, isRepo: false, files: [], truncated: false, error: null as string | null };
+      const card = getCard(cardId);
+      if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
+      const workspace = await cardWorkspace(card).catch(() => null);
+      if (!workspace?.path) return { ...empty, error: ERR_WORKSPACE_UNAVAILABLE };
+      const runGit = (args: string[]): Promise<{ ok: boolean; stdout: string }> =>
+        new Promise((resolve) => {
+          execFile("git", args, { cwd: workspace.path, timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+            resolve({ ok: !error, stdout: typeof stdout === "string" ? stdout : "" });
+          });
+        });
+      const top = await runGit(["rev-parse", "--show-toplevel"]);
+      if (!top.ok || !top.stdout.trim()) return { ...empty, error: "Not a git repository." };
+      const toplevel = top.stdout.trim();
+      const hostId = workspace.hostId ?? "";
+      const files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }> = [];
+      let truncated = false;
+      const diff = await runGit(["diff", "--no-color", "--no-ext-diff", "--unified=3"]);
+      if (diff.ok && diff.stdout.trim()) {
+        const split = splitDiffByFile(diff.stdout);
+        truncated = truncated || split.truncated;
+        for (const entry of split.files) {
+          const absolute = resolveArtifactPath(toplevel, entry.path);
+          if (!absolute) continue;
+          files.push({ path: entry.path, display: entry.path.split("/").pop() || entry.path, patch: entry.patch, isNew: false, absolutePath: absolute, hostId });
+        }
+      }
+      if (files.length < MAX_DIFF_FILES) {
+        const status = await runGit(["status", "--porcelain=v1", "-z", "--untracked-files=normal"]);
+        if (status.ok && status.stdout) {
+          for (const line of status.stdout.split("\0")) {
+            if (files.length >= MAX_DIFF_FILES) { truncated = true; break; }
+            const match = /^\?\? (.+)$/.exec(line);
+            if (!match) continue;
+            let rel = match[1].trim().replace(/^\.\//, "");
+            if (rel.startsWith('"') && rel.endsWith('"')) {
+              try { rel = JSON.parse(rel); } catch { rel = rel.slice(1, -1); }
+            }
+            if (!rel || typeof rel !== "string") continue;
+            const absolute = resolveArtifactPath(toplevel, rel);
+            if (!absolute) continue;
+            if (files.some((f) => f.path === rel)) continue;
+            files.push({ path: rel, display: rel.split("/").pop() || rel, patch: null, isNew: true, absolutePath: absolute, hostId });
+          }
+        }
+      } else {
+        truncated = true;
+      }
+      return { found: true, isRepo: true, files, truncated, error: null };
     },
 
     async runResearchStrategy({ cardId, strategy }) {
