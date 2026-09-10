@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents, countsForInboxBadge, COMPLETED_BADGE_DAYS } from "../lib/inbox-events.mjs";
+import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge, COMPLETED_BADGE_DAYS } from "../lib/inbox-events.mjs";
 
 const db = new Database(":memory:");
 db.exec(`
@@ -49,7 +49,26 @@ assert.equal(resolveActionInboxEvents(db, "card_2", 601, ["question"]), 1, "answ
 assert.equal(resolveActionInboxEvents(db, "card_2", 602, ["bogus"]), 0, "unknown kinds resolve nothing");
 assert.equal(resolveActionInboxEvents(db, "card_2", 603, []), 0, "empty kind list resolves nothing");
 
+// A question's interaction id is stable across polls. Timestamp-derived keys
+// would have created a duplicate notification every time a worker briefly
+// reported running between two reads of the same pending question.
+db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_3", "Stable question", "stable-question", "project_1", "build");
+const questionSummary = "The agent is waiting for your answer to continue.";
+syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_1"], occurredAt: 700, createId: () => "evt_ask_1", summary: questionSummary });
+syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_1"], occurredAt: 735, createId: () => "evt_ask_1_retry", summary: questionSummary });
+let card3Questions = db.prepare("SELECT * FROM inbox_events WHERE card_id = ? AND kind = 'question'").all("card_3");
+assert.equal(card3Questions.length, 1, "the same pending interaction creates one durable notification");
+assert.equal(card3Questions[0].resolved_at, null, "the active interaction remains actionable");
+syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_2"], occurredAt: 800, createId: () => "evt_ask_2", summary: questionSummary });
+card3Questions = db.prepare("SELECT * FROM inbox_events WHERE card_id = ? AND kind = 'question' ORDER BY occurred_at").all("card_3");
+assert.equal(card3Questions.length, 2, "a genuinely new interaction gets its own notification");
+assert.equal(card3Questions[0].resolved_at, 800, "superseded and legacy question notifications are resolved");
+assert.equal(card3Questions[1].resolved_at, null, "the replacement interaction stays actionable");
+syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: [], occurredAt: 900, createId: () => "unused", summary: questionSummary });
+assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_at IS NULL").get("card_3").count, 0, "no pending interaction resolves all question notifications");
+
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_2");
+db.prepare("DELETE FROM cards WHERE id = ?").run("card_3");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_1");
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events").get().count, 0, "deleting a card cascades to its Inbox history");
 

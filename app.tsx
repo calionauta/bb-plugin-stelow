@@ -279,7 +279,6 @@ type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
 type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
 type CardComment = CardDetailResponse["comments"][number];
-type CardQuestion = CardDetailResponse["pendingQuestions"][number];
 type ExpiredQuestion = CardDetailResponse["expiredQuestions"][number];
 
 function activityLabel(activity: CardItem["activity"]) {
@@ -3258,12 +3257,10 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
 // source renderer for code, plus a comment box that posts to the card
 // (card comments route to the worker). The bb editor stays one click away
 // for edits, but review never needs it.
-function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, pendingQuestion, onQuestionAnswered, onCommented }: {
+function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, onCommented }: {
   open: boolean; onOpenChange: (next: boolean) => void; cardId: string;
   file: { display: string; path: string } | null;
   editorTarget: WorkspaceFileTarget | HostFileTarget | null;
-  pendingQuestion: CardQuestion | null;
-  onQuestionAnswered: () => void;
   onCommented: () => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -3330,12 +3327,6 @@ function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, 
           ) : null}
           {truncated ? <p className="mt-2 text-xs text-muted-foreground">Truncated preview — open in the editor for the full file.</p> : null}
         </div>
-        {pendingQuestion ? (
-          <div className="space-y-1">
-            <span className="text-xs font-medium text-muted-foreground">Decide without leaving — answering resumes the agent</span>
-            <QuestionBatch cardId={cardId} mode="live" questions={[{ id: pendingQuestion.id, title: pendingQuestion.title, prompt: pendingQuestion.question, multiple: pendingQuestion.multiple, options: pendingQuestion.options }]} onAnswered={onQuestionAnswered} />
-          </div>
-        ) : null}
         <div className="space-y-2">
           <span className="flex min-h-11 items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
             <span>Discuss excerpts with the agent{drafts.length ? ` (${drafts.length})` : ""}</span>
@@ -3416,8 +3407,8 @@ function CardDisclosure({ title, hint, action, children, defaultOpen = false, op
 // decision > error > paused > working > calm.
 type HeroKind = "decision" | "error" | "paused" | "working" | "calm";
 function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: HeroKind; title: string; sub: string } {
-  const pending = detail?.pendingQuestions?.length ?? 0;
-  if (card.activity === "awaiting-answer" && pending > 0) {
+  const pending = (detail?.pendingQuestions?.length ?? 0) + (detail?.expiredQuestions?.length ?? 0);
+  if (pending > 0) {
     return {
       kind: "decision",
       title: pending === 1 ? "Needs your decision to continue" : `Needs your decision — ${pending} questions`,
@@ -4145,11 +4136,12 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                     </div>
                   </div>
                 </div>
-                {pendingFirst && card.activity === "awaiting-answer" ? (
+                {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
                     <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} />
                   </div>
                 ) : null}
+                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => { onChanged(); void loadIndex(); }} /></div> : null}
               </section>
             ) : null}
 
@@ -4251,7 +4243,6 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
                   ))}
                 </div>
               ) : null}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} onAnswered={() => { onChanged(); void loadIndex(); }} /> : null}
             </CardDisclosure>
 
             {(index && (index.rounds.length > 0 || index.looseFiles.length > 0)) ? (
@@ -4354,8 +4345,6 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         cardId={cardId}
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
-        pendingQuestion={pendingFirst}
-        onQuestionAnswered={() => { setViewerFile(null); onChanged(); void loadIndex(); }}
         onCommented={() => onChanged()}
       />
       <FanOutDialog
@@ -4567,11 +4556,12 @@ function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, deta
                     </div>
                   </div>
                 </div>
-                {pendingFirst && card.activity === "awaiting-answer" ? (
+                {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
                     <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => onChanged()} />
                   </div>
                 ) : null}
+                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => onChanged()} /></div> : null}
               </section>
             ) : null}
 
@@ -4599,7 +4589,6 @@ function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, deta
                   onView={(file) => setViewerFile(file)}
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} onAnswered={() => onChanged()} /> : null}
             </CardDisclosure>
 
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
@@ -4638,8 +4627,6 @@ function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, deta
         cardId={cardId}
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
-        pendingQuestion={pendingFirst}
-        onQuestionAnswered={() => { setViewerFile(null); onChanged(); }}
         onCommented={onChanged}
       />
       <ConfirmActionDialog
@@ -4709,10 +4696,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const load = useCallback(async () => {
     try {
       const detailResult = await rpc.call("cardDetail", { cardId });
-      const listResult = await rpc.call("listCards", { projectId: detailResult.card.projectId });
       const eventResult = inboxEventId ? await rpc.call("getNotification", { notificationId: inboxEventId, cardId }) : null;
       setDetail(detailResult);
-      setCard(listResult.cards.find((entry) => entry.id === cardId) ?? null);
+      setCard(detailResult.card);
       setInboxEvent(eventResult?.notification ?? null);
       setError(null);
     } catch (err) {
@@ -4851,8 +4837,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     }
   }
 
-  // Hero + disclosures read the primary action off the card's own activity
-  // (no separate kind): decision > error > paused > working > calm.
+  // A fetched pending question wins over a possibly stale activity snapshot:
+  // decision > error > paused > working > calm.
   const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
 
   const hero = card ? heroFor(card, detail) : null;
@@ -4947,11 +4933,12 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     </div>
                   </div>
                 </div>
-                {pendingFirst && card.activity === "awaiting-answer" ? (
+                {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
                     <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => void load()} />
                   </div>
                 ) : null}
+                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => void load()} /></div> : null}
               </section>
             ) : null}
 
@@ -5063,7 +5050,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                   </div>
                 </div>
               ) : null}
-              {detail && detail.expiredQuestions.length > 0 ? <ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} onAnswered={() => void load()} /> : null}
             </CardDisclosure>
 
             <div ref={artifactsRef}>
@@ -5172,8 +5158,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         cardId={cardId}
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
-        pendingQuestion={pendingFirst}
-        onQuestionAnswered={() => { setViewerFile(null); setDetailRefresh((value) => value + 1); }}
         onCommented={() => void load()}
       />
       {/* Advance preview: never jump stages blindly — show where you are, where

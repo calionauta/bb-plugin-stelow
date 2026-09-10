@@ -11,7 +11,7 @@ import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
-import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
+import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
@@ -294,7 +294,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
@@ -1898,13 +1898,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // waiting is activity (never board position), and every agent output lands
   // as a card comment.
   async function markThreadRunning(card: CardRow, lastOutput: string | null): Promise<void> {
-    const pending = await fetchPendingQuestions(card.worker_thread_id);
+    const pending = await fetchPendingAsks(card.worker_thread_id);
+    if (pending === null) return;
+    syncPendingQuestionInbox(card, pending.map((entry) => entry.id));
     if (pending.length > 0) {
       // Waiting is activity, never board position: the card stays in its
       // column (Doing) while the question waits. See lib/card-question-state.
       updateCard(card.id, questionWaitUpdates(lastOutput));
     } else {
-      resolveInboxEvents(card.id, now(), ["question"]);
       const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput };
       if (card.status === "pending") updates.status = "in-progress";
       updateCard(card.id, updates);
@@ -1933,8 +1934,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (status === "active" || status === "starting") {
         await markThreadRunning(card, lastOutput);
       } else if (status === "idle" || status === "stopping") {
-        const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(card.id) as { id: string } | undefined;
-        if (expiredPending) {
+        const expiredQuestionIds = openExpiredQuestionIds(card.id);
+        syncPendingQuestionInbox(card, expiredQuestionIds);
+        if (expiredQuestionIds.length > 0) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
           // Readiness already gates on artifact integrity: ready means the
@@ -1997,8 +1999,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (status === "active" || status === "starting") {
         await markThreadRunning(card, lastOutput);
       } else if (status === "idle" || status === "stopping") {
-        const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(card.id) as { id: string } | undefined;
-        if (expiredPending) {
+        const expiredQuestionIds = openExpiredQuestionIds(card.id);
+        syncPendingQuestionInbox(card, expiredQuestionIds);
+        if (expiredQuestionIds.length > 0) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
           const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
@@ -2119,7 +2122,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Only agent-driven build completions notify.
       if (previous.status !== "completed" && current.status === "completed" && current.kind === "build" && !opts?.suppressCompletionEvent) recordInboxEvent(current, "completed", "Completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "error" && current.activity === "error") recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
-      if (previous.activity !== "awaiting-answer" && current.activity === "awaiting-answer") recordInboxEvent(current, "question", "The agent is waiting for your answer to continue.", `question:${cardId}:${current.updated_at}`, current.updated_at);
     }
     bb.realtime.publish("card-state", { cardId });
   }
@@ -2145,10 +2147,37 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (resolveActionInboxEvents(db, cardId, resolvedAt, kinds) > 0) bb.realtime.publish("inbox-changed", { cardId });
   }
 
+  function syncPendingQuestionInbox(card: CardRow, interactionIds: string[], occurredAt = now()): void {
+    const result = syncQuestionInboxEvents(db, {
+      cardId: card.id,
+      interactionIds,
+      occurredAt,
+      createId: () => randomId("evt"),
+      summary: "The agent is waiting for your answer to continue.",
+    });
+    if (result.inserted > 0 || result.resolved > 0) bb.realtime.publish("inbox-changed", { cardId: card.id });
+  }
+
+  function openExpiredQuestionIds(cardId: string): string[] {
+    return (db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at ASC").all(cardId) as Array<{ id: string }>)
+      .map((row) => `expired:${row.id}`);
+  }
+
   // Pending plugin interactions (stelow asks), narrowed so payload/title read.
   type PendingAsk = Extract<Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>>[number], { origin: { kind: "plugin" } }>;
   function pendingAsks(list: Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>>): PendingAsk[] {
     return list.filter((entry): entry is PendingAsk => entry.origin?.kind === "plugin" && entry.status === "pending");
+  }
+
+  async function fetchPendingAsks(threadId: string | null): Promise<PendingAsk[] | null> {
+    if (!threadId) return [];
+    try {
+      return pendingAsks(await bb.sdk.threads.interactions.list({ threadId }));
+    } catch {
+      // A failed read is unknown, not proof that a question disappeared.
+      // Callers must preserve the existing question state in this case.
+      return null;
+    }
   }
 
   // Resolve a worker-authored artifact path (workspace-relative) into the
@@ -2165,11 +2194,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {
     if (!threadId) return [];
+    const asks = await fetchPendingAsks(threadId);
+    if (asks === null) return [];
     try {
-      const list = await bb.sdk.threads.interactions.list({ threadId });
       const card = getCardByWorkerThread(threadId);
       const out: Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"] = [];
-      for (const entry of pendingAsks(list)) {
+      for (const entry of asks) {
         const expanded = expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload });
         for (const question of expanded) {
           const options = [];
@@ -2247,15 +2277,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
       }
       if (status === "active" || status === "starting") {
-        const pending = await fetchPendingQuestions(card.worker_thread_id);
+        const pending = await fetchPendingAsks(card.worker_thread_id);
+        if (pending === null) return;
+        syncPendingQuestionInbox(card, pending.map((entry) => entry.id));
         if (pending.length > 0) {
           // Waiting is activity, never board position: the card stays in its
           // stage column while the question waits. See lib/card-question-state.
           updateCard(cardId, questionWaitUpdates(lastOutput));
         } else {
-          // The worker moved on with nothing pending: any question event still
-          // open for this card is stale (answered elsewhere or superseded).
-          resolveInboxEvents(cardId, now(), ["question"]);
           // Keep freshly-created cards in the Triage column (draft) while the
           // workflow is still at the triage stage, even though the thread is
           // already active. Only move to Running (in-progress) once the agent
@@ -2267,9 +2296,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           updateCard(cardId, updates);
         }
       } else if (status === "idle" || status === "stopping") {
-        const expiredPending = db.prepare("SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0").get(cardId) as { id: string } | undefined;
+        const expiredQuestionIds = openExpiredQuestionIds(cardId);
+        syncPendingQuestionInbox(card, expiredQuestionIds);
         const transitioningIntoIdle = card.activity !== "idle";
-        if (expiredPending) {
+        if (expiredQuestionIds.length > 0) {
           // The worker stopped (likely a timed-out ask) but a question is
           // still unanswered. Keep the question surfaced via activity, but the
           // card stays in its real stage column (no Gate-pending column) —
@@ -2944,7 +2974,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       })();
       const stageSkips = skippedStages({ kind: normalizeKind(card.kind), intent: card.intent, reviewMode: workflowConfig.reviewMode, sequence: STAGE_SEQUENCE });
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,
