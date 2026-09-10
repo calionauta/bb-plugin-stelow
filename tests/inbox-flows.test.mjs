@@ -62,8 +62,11 @@ assert.equal(card3Questions[0].resolved_at, null, "the active interaction remain
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_2"], occurredAt: 800, createId: () => "evt_ask_2", summary: questionSummary });
 card3Questions = db.prepare("SELECT * FROM inbox_events WHERE card_id = ? AND kind = 'question' ORDER BY occurred_at").all("card_3");
 assert.equal(card3Questions.length, 2, "a genuinely new interaction gets its own notification");
-assert.equal(card3Questions[0].resolved_at, 800, "superseded and legacy question notifications are resolved");
+assert.equal(card3Questions[0].resolved_at, 800, "superseded question notifications are resolved");
 assert.equal(card3Questions[1].resolved_at, null, "the replacement interaction stays actionable");
+db.prepare("UPDATE inbox_events SET resolved_at = ? WHERE id = ?").run(850, "evt_ask_2");
+syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_2"], occurredAt: 860, createId: () => "evt_ask_2_again", summary: questionSummary });
+assert.equal(db.prepare("SELECT resolved_at FROM inbox_events WHERE id = ?").get("evt_ask_2").resolved_at, null, "a still-pending interaction reopens its resolved notification");
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: [], occurredAt: 900, createId: () => "unused", summary: questionSummary });
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_at IS NULL").get("card_3").count, 0, "no pending interaction resolves all question notifications");
 

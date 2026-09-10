@@ -221,10 +221,6 @@ export const rpcContract = defineRpcContract({
     input: z.object({}).strict(),
     output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() })) }),
   },
-  answerQuestion: {
-    input: z.object({ cardId: z.string(), answers: z.array(z.string()) }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
   answerQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().max(2_000)).max(10) })).min(1).max(12) }).strict(),
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
@@ -375,10 +371,6 @@ export const rpcContract = defineRpcContract({
   promoteCard: {
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
     output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), error: z.string().nullable() }),
-  },
-  answerExpiredQuestion: {
-    input: z.object({ cardId: z.string(), questionId: z.string(), answer: z.string().min(1).max(10_000) }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   answerExpiredQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answer: z.string().min(1).max(10_000) })).min(1).max(12) }).strict(),
@@ -1898,10 +1890,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // waiting is activity (never board position), and every agent output lands
   // as a card comment.
   async function markThreadRunning(card: CardRow, lastOutput: string | null): Promise<void> {
-    const pending = await fetchPendingAsks(card.worker_thread_id);
-    if (pending === null) return;
-    syncPendingQuestionInbox(card, pending.map((entry) => entry.id));
-    if (pending.length > 0) {
+    const questionIds = await syncOpenQuestionInbox(card);
+    if (questionIds === null) return;
+    if (questionIds.length > 0) {
       // Waiting is activity, never board position: the card stays in its
       // column (Doing) while the question waits. See lib/card-question-state.
       updateCard(card.id, questionWaitUpdates(lastOutput));
@@ -1934,9 +1925,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (status === "active" || status === "starting") {
         await markThreadRunning(card, lastOutput);
       } else if (status === "idle" || status === "stopping") {
-        const expiredQuestionIds = openExpiredQuestionIds(card.id);
-        syncPendingQuestionInbox(card, expiredQuestionIds);
-        if (expiredQuestionIds.length > 0) {
+        const questionIds = await syncOpenQuestionInbox(card);
+        if (questionIds === null) return;
+        if (questionIds.length > 0) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
           // Readiness already gates on artifact integrity: ready means the
@@ -1999,9 +1990,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (status === "active" || status === "starting") {
         await markThreadRunning(card, lastOutput);
       } else if (status === "idle" || status === "stopping") {
-        const expiredQuestionIds = openExpiredQuestionIds(card.id);
-        syncPendingQuestionInbox(card, expiredQuestionIds);
-        if (expiredQuestionIds.length > 0) {
+        const questionIds = await syncOpenQuestionInbox(card);
+        if (questionIds === null) return;
+        if (questionIds.length > 0) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
           const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
@@ -2155,7 +2146,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       createId: () => randomId("evt"),
       summary: "The agent is waiting for your answer to continue.",
     });
-    if (result.inserted > 0 || result.resolved > 0) bb.realtime.publish("inbox-changed", { cardId: card.id });
+    if (result.inserted > 0 || result.resolved > 0 || result.reopened > 0) bb.realtime.publish("inbox-changed", { cardId: card.id });
   }
 
   function openExpiredQuestionIds(cardId: string): string[] {
@@ -2178,6 +2169,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Callers must preserve the existing question state in this case.
       return null;
     }
+  }
+
+  async function syncOpenQuestionInbox(card: CardRow): Promise<string[] | null> {
+    const active = await fetchPendingAsks(card.worker_thread_id);
+    if (active === null) return null;
+    const questionIds = [...active.map((entry) => entry.id), ...openExpiredQuestionIds(card.id)];
+    syncPendingQuestionInbox(card, questionIds);
+    return questionIds;
+  }
+
+  function hasOpenQuestions(cardId: string, questionIds: string[] | null): boolean {
+    return questionIds !== null ? questionIds.length > 0 : openExpiredQuestionIds(cardId).length > 0;
   }
 
   // Resolve a worker-authored artifact path (workspace-relative) into the
@@ -2277,10 +2280,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
       }
       if (status === "active" || status === "starting") {
-        const pending = await fetchPendingAsks(card.worker_thread_id);
-        if (pending === null) return;
-        syncPendingQuestionInbox(card, pending.map((entry) => entry.id));
-        if (pending.length > 0) {
+        const questionIds = await syncOpenQuestionInbox(card);
+        if (questionIds === null) return;
+        if (questionIds.length > 0) {
           // Waiting is activity, never board position: the card stays in its
           // stage column while the question waits. See lib/card-question-state.
           updateCard(cardId, questionWaitUpdates(lastOutput));
@@ -2296,10 +2298,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           updateCard(cardId, updates);
         }
       } else if (status === "idle" || status === "stopping") {
-        const expiredQuestionIds = openExpiredQuestionIds(cardId);
-        syncPendingQuestionInbox(card, expiredQuestionIds);
+        const questionIds = await syncOpenQuestionInbox(card);
+        if (questionIds === null) return;
         const transitioningIntoIdle = card.activity !== "idle";
-        if (expiredQuestionIds.length > 0) {
+        if (questionIds.length > 0) {
           // The worker stopped (likely a timed-out ask) but a question is
           // still unanswered. Keep the question surfaced via activity, but the
           // card stays in its real stage column (no Gate-pending column) —
@@ -2479,29 +2481,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { outcome: "submitted" as const, answers: array(value.answers).filter((answer): answer is string => typeof answer === "string") };
     },
 
-    async answerQuestion({ cardId, answers }) {
-      const card = getCard(cardId);
-      if (!card?.worker_thread_id) return { ok: false as const, error: "This card has no worker thread." };
-      try {
-        const list = await bb.sdk.threads.interactions.list({ threadId: card.worker_thread_id });
-        const pending = pendingAsks(list)[0];
-        if (!pending) return { ok: false as const, error: "No open question awaits an answer on this card." };
-        await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId: pending.id, value: { answers } });
-        // A structured interaction resumes the waiting command but not a new
-        // agent turn. Send an explicit continuation so the worker proceeds.
-        const pendingExpanded = expandInteractionQuestions({ id: pending.id, title: pending.payload?.title, payload: pending.payload });
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation([{ question: pendingExpanded[0]?.question ?? "", answers }]), mentions: [] }] });
-        updateCard(cardId, { activity: "running", status: "in-progress" });
-        resolveInboxEvents(cardId, now(), ["question"]);
-        return { ok: true as const, error: null };
-      } catch (error) {
-        return { ok: false as const, error: error instanceof Error ? error.message : "Unable to answer the question." };
-      }
-    },
-
     async answerQuestions({ cardId, answers }) {
-      // Atomic batch answer: every pending question addressed in one RPC, one
-      // worker continuation, one inbox resolution — no fragmented pings.
+      // Atomic batch answer: one worker continuation and one Inbox
+      // reconciliation — no fragmented pings.
       const card = getCard(cardId);
       if (!card?.worker_thread_id) return { ok: false as const, answered: 0, error: "This card has no worker thread." };
       try {
@@ -2515,9 +2497,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
         const grouped = groupBatchAnswers(answers);
         const decisions: Array<{ question: string; answers: string[] }> = [];
+        const answeredInteractionIds = new Set<string>();
         for (const [interactionId, value] of grouped) {
           if (!pendingById.has(interactionId)) continue;
           await bb.sdk.threads.interactions.respond({ threadId: card.worker_thread_id, interactionId, value: { answers: value.answers } });
+          answeredInteractionIds.add(interactionId);
           if (value.kind === "single") {
             decisions.push({ question: questionText.get(interactionId) ?? "", answers: value.answers });
           } else {
@@ -2530,8 +2514,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // A structured interaction resumes the waiting command but not a new
         // agent turn. Exactly one continuation for the whole batch.
         await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
-        updateCard(cardId, { activity: "running", status: "in-progress" });
-        resolveInboxEvents(cardId, now(), ["question"]);
+        const unansweredIds = [...pendingById.keys()].filter((id) => !answeredInteractionIds.has(id));
+        const openQuestionIds = [...unansweredIds, ...openExpiredQuestionIds(cardId)];
+        syncPendingQuestionInbox(card, openQuestionIds);
+        updateCard(cardId, { activity: openQuestionIds.length > 0 ? "awaiting-answer" : "running", status: "in-progress" });
         return { ok: true as const, answered: decisions.length, error: null };
       } catch (error) {
         return { ok: false as const, answered: 0, error: error instanceof Error ? error.message : "Unable to answer the questions." };
@@ -2727,7 +2713,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // until answered, and idle (vs "waiting") is indistinguishable from a
           // prompt otherwise. Promote to awaiting-answer so the question shows.
           const pending = await fetchPendingQuestions(row.worker_thread_id);
-          if (pending.length > 0) activity = "awaiting-answer";
+          if (pending.length > 0 || openExpiredQuestionIds(row.id).length > 0) activity = "awaiting-answer";
         }
         // Unified attention signal: ONE flag answering "does this card need a
         // human right now?", plus the reason (kind) that decides the primary
@@ -2932,7 +2918,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       })();
       // Surface pending stelow ask interactions regardless of the stored activity:
       // an ask parks the card awaiting an answer even when the thread is idle.
-      const effectiveActivity = (card.activity === "error" ? "error" : pending.length > 0 ? "awaiting-answer" : card.activity as "idle" | "running" | "awaiting-answer" | "error");
+      const effectiveActivity = (card.activity === "error" ? "error" : pending.length > 0 || expiredQuestions.length > 0 ? "awaiting-answer" : card.activity as "idle" | "running" | "awaiting-answer" | "error");
       const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(card.status));
       const idleAt = (card.last_idle_at && card.last_idle_at > 0) ? card.last_idle_at : card.updated_at;
       const idleCandidate = effectiveActivity === "idle"
@@ -3525,31 +3511,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { ok: true, strategy: picked.id, error: null };
     },
 
-    async answerExpiredQuestion({ cardId, questionId, answer }) {
-      const card = getCard(cardId);
-      const question = card ? db.prepare("SELECT * FROM expired_questions WHERE id = ? AND card_id = ? AND answered = 0").get(questionId, cardId) as { thread_id: string; question: string; multiple: number; options: string } | undefined : undefined;
-      if (!card || !question) return { ok: false, error: "Question not found or already answered." };
-      logCardComment(cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${question.question}\nA: ${answer}`);
-      db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
-      // The question is answered — leave Gate pending. The threads.send below
-      // resumes the worker (thread.active → syncThreadState → running); if the
-      // thread fails to resume, idle is honest and the comment still records it.
-      updateCard(cardId, { activity: "running", status: "in-progress" });
-      resolveInboxEvents(cardId, now(), ["question"]);
-      bb.realtime.publish("card-state", { cardId });
-      // Deliver the answer to the worker thread so the agent picks it up and continues.
-      // Prefer the current worker: the row's thread may be stale after a restart.
-      try {
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id ?? question.thread_id, mode: "auto", input: [{ type: "text", text: `Answer to the question that timed out — continue the workflow now.\n\nQ: ${question.question}\nA: ${answer}`, mentions: [] }] });
-      } catch (error) {
-        // Thread may be stopped; the comment still records the answer.
-      }
-      return { ok: true, error: null };
-    },
-
     async answerExpiredQuestions({ cardId, answers }) {
-      // Atomic batch for timed-out questions: one comment trail, one resume
-      // message, one inbox resolution — same guarantees as answerQuestions.
+      // Atomic batch for timed-out questions: one comment trail and one resume
+      // message. Remaining open decisions stay actionable.
       const card = getCard(cardId);
       if (!card) return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
       const rows = new Map<string, { thread_id: string; question: string }>();
@@ -3570,8 +3534,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           decisions.push({ question: row.question, answer });
         }
       })();
-      updateCard(cardId, { activity: "running", status: "in-progress" });
-      resolveInboxEvents(cardId, now(), ["question"]);
+      const openQuestionIds = await syncOpenQuestionInbox(card);
+      updateCard(cardId, { activity: hasOpenQuestions(cardId, openQuestionIds) ? "awaiting-answer" : "running", status: "in-progress" });
       bb.realtime.publish("card-state", { cardId });
       if (threadId) {
         try {

@@ -15,7 +15,7 @@ export function syncQuestionInboxEvents(db: { prepare(query: string): { run(...v
   occurredAt: number;
   createId: () => string;
   summary: string;
-}): { inserted: number; resolved: number };
+}): { inserted: number; resolved: number; reopened: number };
 export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, kinds?: Array<"question" | "error" | "paused">): number;
 export function listInboxEvents(db: { prepare(query: string): { all(): unknown[] } }, includeArchived: boolean): unknown[];
 export declare const COMPLETED_BADGE_DAYS: number;
