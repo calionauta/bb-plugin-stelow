@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.36] - 2026-09-10
+
+### Changed
+
+- **Timeline tells the truth about skipped stages.** Off-route stages
+  render struck-through (not in this intent's route); mode-skipped
+  stages show ⊘ with the reason (e.g. skipped in Auto). Green now
+  means executed — computed per card from its intent + review mode,
+  cross-checked against transitions.md in tests.
+
 ## [0.3.35] - 2026-09-10
 
 ### Changed
