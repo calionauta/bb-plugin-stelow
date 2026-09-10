@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
+import { STAGE_SEQUENCE } from "./lib/artifact-groups.mjs";
+import { skippedStages } from "./lib/stage-skips.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
@@ -293,6 +295,7 @@ export const rpcContract = defineRpcContract({
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(askOptionSchema), expiresAt: z.number().nullable() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(askOptionSchema), expiredAt: z.number() })),
+      stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable() })),
       // Environment of the worker thread: enables workspace-kind file links
@@ -2886,6 +2889,26 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // GitHub round-trip is needed to render it.
       const githubRow = db.prepare("SELECT repo, number, commented_at FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number; commented_at: number | null } | undefined;
       const githubLink = githubRow ? { repo: githubRow.repo, number: githubRow.number, url: `https://github.com/${githubRow.repo}/issues/${githubRow.number}`, postedAt: githubRow.commented_at ?? null } : null;
+      // Workflow config for the skip model: review_mode/appetite live in the
+      // card's own state.md (seeded at creation, same source the worker
+      // reads). Missing state or fields fail open to Lean/Auto — and unknown
+      // modes/intents yield no skips, never invented ones.
+      const workflowConfig = await (async () => {
+        const fallback = { appetite: "Lean", reviewMode: "Auto" };
+        try {
+          if (!sourcePath || !card.dir_hash) return fallback;
+          const stateDir = await workflowStateDir(bb, sourcePath, card.dir_hash).catch(() => null);
+          if (!stateDir) return fallback;
+          const content = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+          if (typeof content !== "string") return fallback;
+          const clean = (v: string | undefined, d: string) => (v ?? "").trim().replace(/^["']|["']$/g, "") || d;
+          return {
+            appetite: clean(content.match(/^appetite:\s*(.+)$/m)?.[1], "Lean"),
+            reviewMode: clean(content.match(/^review_mode:\s*(.+)$/m)?.[1], "Auto"),
+          };
+        } catch { return fallback; }
+      })();
+      const stageSkips = skippedStages({ kind: normalizeKind(card.kind), intent: card.intent, reviewMode: workflowConfig.reviewMode, sequence: STAGE_SEQUENCE });
       return {
         card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
@@ -2894,6 +2917,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
         pendingQuestions: pending,
         expiredQuestions,
+        stageSkips,
         artifacts,
         workerHistory,
         fileEnvironmentId,

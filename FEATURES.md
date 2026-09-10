@@ -127,7 +127,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **What is happening** (`ScopesList`, `StageTimeline`). Scopes in
   dependency order with task counts, blockers, 17-stage timeline with
   position/next stages, manual advance/return behind a preview dialog
-  (what the target stage produces). Attachments, mentioned files,
+  (what the target stage produces). The timeline never paints everything
+  passed: off-route stages render struck-through (not in this intent's
+  route) and mode-skipped stages show ⊘ with the reason — green means
+  executed, nothing else does. Attachments, mentioned files,
   timed-out questions inline.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment

@@ -2245,10 +2245,12 @@ function openAskArtifact(
   });
 }
 
-function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void }) {
+function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts, skips, offRouteReason }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   const current = curIdx >= 0 ? curIdx : 0;
   const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
+  const offRoute = new Set(skips.offRoute);
+  const skipReasonByStage = new Map(skips.skipped.map((entry) => [entry.stage, entry.reason]));
   // group consecutive STAGE_SEQUENCE entries by STAGE_BAND
   const bands = new Map<string, string[]>();
   for (const stage of STAGE_SEQUENCE) {
@@ -2271,31 +2273,36 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
             <div className="flex gap-1 overflow-x-auto pb-0.5 md:flex-wrap md:overflow-visible">
               {stages.map((stage) => {
                 const idx = STAGE_SEQUENCE.indexOf(stage);
-                const passed = idx >= 0 && idx < current;
                 const isCurrent = stage === currentStage;
+                const isOffRoute = !isCurrent && offRoute.has(stage);
+                const skipReason = !isCurrent ? skipReasonByStage.get(stage) ?? null : null;
+                const passed = idx >= 0 && idx < current && !isOffRoute && !skipReason;
                 const canAdvance = idx === current + 1 && legal.has(stage);
                 const canRegress = passed && !isCurrent;
                 const clickable = canAdvance || canRegress;
                 const produced = artifacts.filter((artifact) => artifact.stage === stage);
+                const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : STAGE_PRODUCES[stage]);
                 return (
-                  <span key={stage} className="inline-flex shrink-0 items-center gap-1">
+                  <span key={stage} className={`inline-flex shrink-0 items-center gap-1 ${isOffRoute ? "opacity-60" : ""}`}>
                     <button
                       type="button"
                       disabled={!clickable || isCurrent}
-                      title={STAGE_PRODUCES[stage]}
+                      title={dimmedTitle}
                       onClick={() => onPick(stage)}
                       className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
                         ? "bg-primary/15 text-primary ring-2 ring-primary/60"
                         : passed
                         ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
+                        : skipReason ?? isOffRoute
+                        ? "border border-dashed border-border text-muted-foreground/70 hover:border-primary/50 hover:text-foreground"
                         : canAdvance
                         ? "cursor-pointer border border-primary/40 text-primary hover:bg-primary/10"
                         : "cursor-pointer border border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
                     }`}
                       >
-                        {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : canAdvance ? "·" : "·"}
-                        {stageLabel(stage)}
+                        {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : skipReason ? <span aria-hidden>⊘</span> : canAdvance ? "·" : "·"}
+                        <span className={isOffRoute ? "line-through" : ""}>{stageLabel(stage)}</span>
                         {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
                     </button>
                     {produced.length > 0 ? (
@@ -4865,6 +4872,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     artifacts={detail.artifacts}
                     onPick={(stage) => setPendingAdvance(stage)}
                     onShowArtifacts={(stage) => showArtifacts(stage)}
+                    skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
+                    offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
                 </div>
               ) : null}
