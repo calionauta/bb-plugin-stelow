@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.38] - 2026-09-10
+
+### Added
+
+- **Diff section on cards.** Working tree vs HEAD per file, rendered
+  with bb's own diff viewer (plain-text fallback when the host lacks
+  it) — visible at the diff-gate and audit stages, fetched lazily on
+  open. Untracked files open in the viewer; clean trees and non-repos
+  say so. Read-only throughout.
+
 ## [0.3.37] - 2026-09-10
 
 ### Fixed
