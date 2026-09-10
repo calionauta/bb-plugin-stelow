@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.46] - 2026-09-10
+
+### Changed
+
+- **Explore always runs at maximum depth.** New explorations seed
+  appetite Complete with the strongest review mode (was silent
+  Lean/Auto), and the worker prompt carries a depth contract: full
+  exploration, every variant the stage offers, ask instead of
+  auto-deciding — but never park for approval, since explore has no
+  gates and nowhere to advance to. No UI change (there were never
+  depth selects on Explore); artifact flow untouched.
+
 ## [0.3.45] - 2026-09-10
 
 ### Changed
