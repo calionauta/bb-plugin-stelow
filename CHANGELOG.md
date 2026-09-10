@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.37] - 2026-09-10
+
+### Fixed
+
+- **About shows the real version again.** The unified plugin root broke
+  the build-info lookup (it still probed the old dist-relative paths),
+  printing "vdev". Candidates now assume the unified root.
+
 ## [0.3.36] - 2026-09-10
 
 ### Changed

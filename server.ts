@@ -69,11 +69,13 @@ try {
 // this so "did the reload take effect?" is checkable instead of vibes.
 // stelowVersion is the UPSTREAM release (synced data/stelow-package.json),
 // kept separate so the two versions can never be mistaken for each other.
+// Note the candidates assume the UNIFIED root (see resolvePluginRoot):
+// version.json only exists under dist/, package.json at the root.
 const BUILD_INFO = (() => {
   const fallback = { version: "dev", builtAt: null as string | null };
   let version = fallback.version;
   let builtAt = fallback.builtAt;
-  for (const candidate of [nodeJoin(pluginDir, "version.json"), nodeJoin(pluginDir, "..", "version.json"), nodeJoin(pluginDir, "..", "package.json")]) {
+  for (const candidate of [nodeJoin(pluginDir, "version.json"), nodeJoin(pluginDir, "dist", "version.json"), nodeJoin(pluginDir, "package.json")]) {
     try {
       const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown; builtAt?: unknown };
       if (typeof parsed.version === "string") {
