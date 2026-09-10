@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.43] - 2026-09-10
+
+### Added
+
+- **One-click install per tool in About.** Each optional-tool row has
+  an Install button (explicit consent): official installers only,
+  everything into `~/.local/bin`, no sudo, success verified by
+  re-probe, failures show per-row error + install log. Rows are
+  alphabetical with plain-language benefit and technical notes.
+
 ## [0.3.42] - 2026-09-10
 
 ### Added
