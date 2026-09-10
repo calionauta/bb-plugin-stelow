@@ -167,7 +167,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Preset-staleness detection.** Cards whose worker predates a preset
   change offer Restart instead of Resume.
 - **Archive card** (`cancelCard`). Stops + archives the worker; history
-  preserved. Behind a confirm dialog.
+  preserved. Behind a confirm dialog. Drag-to-archived stops the worker
+  identically (shared shutdown) — parking never orphans a running
+  worker. Archived cards offer Delete instead of a redundant Archive.
 - **Delete archived card** (`deleteCard`). Hard delete offered only on
   archived cards from Manage, behind an English confirm dialog. Removes
   the card row plus comments, presets, questions, inbox events, and

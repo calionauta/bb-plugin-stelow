@@ -3766,7 +3766,9 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
         <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button>
-        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive</Button>
+        {card?.status === "archived" ? null : (
+          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive</Button>
+        )}
         {card?.status === "archived" ? (
           <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered.">Delete…</Button>
         ) : null}

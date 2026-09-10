@@ -2093,6 +2093,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
   }
 
+  // Worker shutdown shared by every path that parks a card: the Archive
+  // button, drag-to-archived, and hard delete. Archiving a card must never
+  // leave its worker running (burning tokens on a hidden board).
+  async function stopWorkerThread(threadId: string | null): Promise<void> {
+    if (!threadId) return;
+    try { await bb.sdk.threads.archive({ threadId }); } catch { /* already gone */ }
+    try { await bb.sdk.threads.stop({ threadId }); } catch { /* already gone */ }
+  }
+
   // Resolution is per-kind, never blanket: a worker moving again clears
   // failure/pause signals, but a question stays until it is answered.
   function resolveInboxEvents(cardId: string, resolvedAt: number, kinds: Array<"question" | "error" | "paused"> = ["question", "error", "paused"]): void {
@@ -2948,10 +2957,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async cancelCard({ cardId }) {
       const card = getCard(cardId);
       if (!card) return { archived: false };
-      if (card.worker_thread_id) {
-        try { await bb.sdk.threads.archive({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
-        try { await bb.sdk.threads.stop({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
-      }
+      await stopWorkerThread(card.worker_thread_id);
       updateCard(cardId, { status: "archived", activity: "idle" });
       return { archived: true };
     },
@@ -2964,10 +2970,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card) return { deleted: false, error: ERR_CARD_NOT_FOUND };
       if (card.status !== "archived") return { deleted: false, error: "Only archived cards can be deleted. Archive it first." };
-      if (card.worker_thread_id) {
-        try { await bb.sdk.threads.archive({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
-        try { await bb.sdk.threads.stop({ threadId: card.worker_thread_id }); } catch { /* ignore */ }
-      }
+      await stopWorkerThread(card.worker_thread_id);
       db.prepare("DELETE FROM comments WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);
@@ -3145,7 +3148,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (decision.move.type === "status") {
         // User-initiated moves never ping the inbox with a completion: the
         // human performed the action and already knows. Open action items
-        // still resolve (the card's state changed).
+        // still resolve (the card's state changed). Drag-to-archived stops
+        // the worker exactly like the Archive button — parking a card must
+        // never orphan a running worker.
+        if (decision.move.status === "archived") await stopWorkerThread(card.worker_thread_id);
         updateCard(cardId, { status: decision.move.status as "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
         return { ok: true, error: null };
       }
