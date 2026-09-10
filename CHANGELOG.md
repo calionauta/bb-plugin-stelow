@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.32] - 2026-09-09
+
+### Fixed
+
+- **Bundled installs resolve the plugin root.** Git-managed installs run
+  `dist/server.js`, so `import.meta.url` pointed at `dist/` and every
+  `skills/` read 404d (ENOENT on transitions.md at card creation).
+  The root now resolves to wherever transitions.md lives, covering
+  source, bundled, and unknown layouts (fail-open).
+- **Research modal trailing void.** The strategy picker's sr-only radio
+  inputs (absolute, 1px) escaped their capped scroll list and stretched
+  the dialog's scroll area by ~350px — invisible on shorter lists, which
+  is why Explore never showed it. The list now contains its absolutely
+  positioned descendants.
+
 ## [0.3.31] - 2026-09-09
 
 ### Fixed
