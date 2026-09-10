@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.3.49",
+  "version": "0.3.50",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
@@ -61,7 +61,7 @@
     "test:bands": "node test_bands.mjs",
     "test:paths": "node tests/plugin-paths.test.mjs",
     "test:helper-sync": "node tests/workflow-helper-sync.test.mjs",
-    "test:inbox": "node tests/inbox-flows.test.mjs",
+    "test:inbox": "node tests/inbox-flows.test.mjs && node tests/inbox-event-presentation.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "files": [
