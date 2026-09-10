@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.45] - 2026-09-10
+
+### Changed
+
+- **About refinements.** Optional-tools rows sorted alphabetically
+  with per-tool repository link; plannotator marked as unused in bb
+  (gates resolve in the plugin review UI — no install offered);
+  section headers bumped to readable size; repo buttons carry the
+  GitHub icon.
+
 ## [0.3.44] - 2026-09-10
 
 ### Added
