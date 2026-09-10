@@ -30,6 +30,7 @@ import { STAGE_CATALOG, stageById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
+import { isArchivedCard } from "./lib/worker-action-policy.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 
@@ -3119,7 +3120,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async reseedCard({ cardId, presetId }) {
       const card = getCard(cardId);
       if (!card) return { reseeded: false, error: ERR_CARD_NOT_FOUND };
-      if (card.status === "archived") return { reseeded: false, error: ERR_CARD_ARCHIVED };
+      if (isArchivedCard(card)) return { reseeded: false, error: ERR_CARD_ARCHIVED };
       const workspace = await cardWorkspace(card);
       const source = workspace?.hostId && workspace.path ? { path: workspace.path, hostId: workspace.hostId } : null;
       if (!source) return { reseeded: false, error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.` };
