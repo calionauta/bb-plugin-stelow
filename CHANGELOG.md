@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.34] - 2026-09-10
+
+### Fixed
+
+- **Drag-to-archived stops the worker.** Parking a card via drag used to
+  only flip its status, orphaning a live worker on a hidden board. It
+  now shares the Archive button's shutdown path.
+- **No Archive button on archived cards** (Delete stays as the only
+  destructive action there).
+
 ## [0.3.33] - 2026-09-10
 
 ### Fixed
