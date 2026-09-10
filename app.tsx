@@ -3913,26 +3913,18 @@ function WorkerLifecycleActions({ actions, onRepair, onArchive, onDelete }: {
   onArchive: () => void;
   onDelete: () => void;
 }) {
-  if (!actions.showRestartFresh && !actions.showStopAndArchive && !actions.showDelete) return null;
+  if (!actions.showRestartFresh && !actions.showArchive && !actions.showDelete) return null;
   return (
-    <div className="mt-3 border-t pt-3">
+    <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
       {actions.showRestartFresh ? <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button> : null}
-      {actions.showStopAndArchive || actions.showDelete ? (
-        <details className={actions.showRestartFresh ? "mt-2" : ""}>
-          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">Card actions</summary>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {actions.showStopAndArchive ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Stop the worker and move this card to Archived. Comments and history are preserved.">Stop & archive…</Button> : null}
-            {actions.showDelete ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered.">Delete…</Button> : null}
-          </div>
-        </details>
-      ) : null}
+      {actions.showArchive ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title={actions.hasActiveWorker ? "Archive this card. Its active worker will stop." : "Move this card to Archived. Comments and history are preserved."}>Archive card…</Button> : null}
+      {actions.showDelete ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered.">Delete…</Button> : null}
     </div>
   );
 }
 
 // Shared worker block: preset readout, state-appropriate recovery, and worker
-// history. Lifecycle actions are deliberately secondary: an active worker is
-// not presented as something that should be restarted or archived casually.
+// history. Lifecycle actions stay visually secondary without being hidden.
 function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onRepair, onArchive, onDelete, onPreset, presetPill, presetNote, pillTitle, githubLink }: {
   card: CardItem | null;
   detail: CardDetailResponse | null;
@@ -4411,9 +4403,9 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Stop and archive this research?"
-        description="The worker stops and the research moves to Archived. Comments and history are preserved."
-        confirmLabel="Stop & archive"
+        title="Archive this research?"
+        description="Moves this research to Archived. If its worker is active, Stelow stops it. Comments and history are preserved."
+        confirmLabel="Archive research"
         confirmTone="destructive"
         onConfirm={doArchive}
       />
@@ -4669,9 +4661,9 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Stop and archive this exploration?"
-        description="The worker stops and the exploration moves to Archived. Comments and history are preserved."
-        confirmLabel="Stop & archive"
+        title="Archive this exploration?"
+        description="Moves this exploration to Archived. If its worker is active, Stelow stops it. Comments and history are preserved."
+        confirmLabel="Archive exploration"
         confirmTone="destructive"
         onConfirm={doArchive}
       />
@@ -5225,9 +5217,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Stop and archive this card?"
-        description="The worker stops and the card moves to Archived. Comments and history are preserved."
-        confirmLabel="Stop & archive"
+        title="Archive this card?"
+        description="Moves this card to Archived. If its worker is active, Stelow stops it. Comments and history are preserved."
+        confirmLabel="Archive card"
         confirmTone="destructive"
         onConfirm={doArchive}
       />

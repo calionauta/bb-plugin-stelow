@@ -7,8 +7,9 @@ export declare function isArchivedCard(card: WorkerActionCard): boolean;
 
 export declare function workerActionPolicy(card: WorkerActionCard, needsAttention?: boolean): {
   archived: boolean;
+  hasActiveWorker: boolean;
   showPresetControls: boolean;
   showRestartFresh: boolean;
-  showStopAndArchive: boolean;
+  showArchive: boolean;
   showDelete: boolean;
 };
