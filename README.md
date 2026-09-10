@@ -32,6 +32,10 @@ The plugin does **not** maintain a second workflow database. `stelow.json` and `
    external install step is required. The worker agent loads the stage guides
    from the plugin's own skills directory.
 4. A `stelow.json` created by a Stelow workflow for board data.
+5. Optional host tools (all fail-soft — the plugin never installs binaries
+   itself): [`sem`](https://github.com/Ataraxy-Labs/sem) adds a one-line
+   entity summary to the card Diff section (`~/.local/bin/sem` on the host
+   is enough); without it the patch list renders on its own.
 
 The singleton bb personal project has no workspace source, so the board asks you to select/create a normal project.
 
