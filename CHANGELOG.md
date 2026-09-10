@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.39] - 2026-09-10
+
+### Fixed
+
+- **Diff review gaps (code-verified).** `cardDiff` now diffs against
+  HEAD — staged changes were invisible before, contradicting the
+  "working tree vs HEAD" label. Untracked dirs expand to individual
+  files (`-uall`; `skills/` no longer yields a broken Open button),
+  git runs at the repo toplevel (root-relative paths), and non-repo
+  returns `found:true/isRepo:false` so the UI stops confusing it with
+  card-not-found. Fresh repos without HEAD degrade to untracked-only.
+
 ## [0.3.38] - 2026-09-10
 
 ### Added
