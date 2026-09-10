@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.42] - 2026-09-10
+
+### Added
+
+- **Optional tools section in About.** Live presence probe (`toolStatus`
+  RPC) for sem, cymbal, ripwire, ast-grep and plannotator — each row
+  states the capability it unlocks plus the install command, so tools
+  can be added later without a setup wizard.
+
+### Fixed
+
+- **Onboarding reset covers presets.** Reset in About cleared three
+  track keys but kept the shared presets flag, so the presets step
+  never replayed. All four keys clear now. The Build dialog also drops
+  the "Step 2 of 2" counter when it opens straight at the defaults
+  panel (a counter referencing an unseen step made no sense).
+
 ## [0.3.41] - 2026-09-10
 
 ### Changed
