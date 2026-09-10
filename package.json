@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.3.43",
+  "version": "0.3.44",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
@@ -44,7 +44,7 @@
     "reload": "bb plugin reload stelow",
     "build:reload": "npm run build && npm run reload",
     "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:question-batch && npm run test:question-state && npm run test:github-lists && npm run test:promote && npm run test:research && npm run test:worker-ledger && npm run test:worker-failure && npm run test:workflow-lineage && npm run test:skills-sync && npm run test:skills-verify && npm run test:skills-tables && npm run test:contracts && npm run test:bands && npm run test:paths && npm run test:helper-sync",
-    "test:artifacts": "node tests/artifact-manifest.test.mjs && node tests/diff-split.test.mjs && node tests/sem-summary.test.mjs",
+    "test:artifacts": "node tests/artifact-manifest.test.mjs && node tests/diff-split.test.mjs && node tests/sem-summary.test.mjs && node tests/cymbal-changed.test.mjs",
     "test:ask-cancel": "node tests/ask-cancel.test.mjs",
     "test:question-state": "node tests/card-question-state.test.mjs",
     "test:question-batch": "node tests/question-batch.test.mjs",

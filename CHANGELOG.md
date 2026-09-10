@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.44] - 2026-09-10
+
+### Added
+
+- **Changed symbols in Diff via `cymbal`.** When installed,
+  `cardDiff` lists changed symbols with caller impact (blast radius
+  at a glance) below the entity summary — same HEAD baseline,
+  same fail-soft rule. Upstream skills also refined: Verification
+  sizes review by entities (sem-first) and runs affected tests
+  first (`sem impact --tests`); Execution mandates `sg -r` for
+  cross-file renames.
+
 ## [0.3.43] - 2026-09-10
 
 ### Added
