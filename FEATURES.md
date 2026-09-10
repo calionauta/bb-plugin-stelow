@@ -144,7 +144,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   tree vs HEAD, per file, inside the card — shown at the diff-gate and
   audit stages only. Untracked files open in the viewer; non-repos and
   clean trees state so explicitly. Read-only: never stages, never
-  mutates the index. When `sem` is installed on the host, a one-line
+  mutates the index.
+- **Optional tools** (`toolStatus`, About section). Live presence probe
+  for the host binaries the workflow can use (sem, cymbal, ripwire,
+  ast-grep, plannotator) with per-tool purpose and install command —
+  install anytime, everything degrades silently without them. When `sem` is installed on the host, a one-line
   entity summary (added/modified/deleted/renamed, cosmetic-only flag)
   heads the file list — absent otherwise, never an error.
 - **Worker section** (`WorkerSection`, always visible right under the

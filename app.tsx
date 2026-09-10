@@ -1592,15 +1592,61 @@ function BareCardRoute({ cardId, eventId, navigate }: {
 // About track: what Stelow is vs what this plugin adds — one section each,
 // each with its own repo link and its own version, so the two releases can
 // never be mistaken for each other. No cards live here.
+// Optional host binaries the workflow knows how to use. Presence is probed
+// live on the host (toolStatus); install commands are the canonical
+// one-liners from the upstream README's External Dependencies section.
+// Everything here is opt-in and fail-soft — the plugin never installs.
+const HOST_TOOLS: Array<{ id: string; name: string; use: string; install: string }> = [
+  { id: "sem", name: "sem", use: "Entity-level diffs (which functions changed, renames, cosmetic-only) — powers the Diff summary and agent audits.", install: "curl -fsSL https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh | sh" },
+  { id: "cymbal", name: "cymbal", use: "Codebase recon for Tech Preview, Feature Recon and Alignment Check (callers, impact).", install: "brew install 1broseidon/tap/cymbal" },
+  { id: "ripwire", name: "ripwire", use: "Cold-start orientation: ranked symbols, callers, blast radius, tests to run.", install: "RIPWIRE_REPO=redhat-et/ripwire bash -c \"$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)\"" },
+  { id: "ast-grep", name: "ast-grep", use: "Structural search and AST-safe cross-file rewrites.", install: "brew install ast-grep" },
+  { id: "plannotator", name: "plannotator", use: "Visual gate review with point-by-point annotations.", install: "curl -fsSL https://plannotator.ai/install.sh | bash -s -- --minimal" },
+];
+
+function HostToolsSection({ tools }: { tools: Array<{ id: string; present: boolean; version: string | null }> | null }) {
+  const byId = new Map((tools ?? []).map((tool) => [tool.id, tool]));
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold text-foreground">Optional tools</h2>
+      <p className="text-sm leading-6 text-muted-foreground">
+        Each tool unlocks a capability; without it the workflow falls back silently. Install anytime — no restart needed beyond reopening the tab.{" "}
+        <UrlLink href="https://github.com/calionauta/stelow#external-dependencies">Install guide ↗</UrlLink>
+      </p>
+      {!tools ? <p className="text-xs text-muted-foreground">Checking host tools…</p> : (
+      <div className="space-y-2">
+        {HOST_TOOLS.map((meta) => {
+          const hit = byId.get(meta.id);
+          const present = hit?.present === true;
+          return (
+            <div key={meta.id} className="rounded-lg border bg-muted/20 p-3">
+              <div className="flex items-center gap-2">
+                <span aria-hidden className={present ? "text-emerald-500" : "text-muted-foreground/50"}>{present ? "●" : "○"}</span>
+                <span className="font-mono text-xs font-semibold text-foreground">{meta.name}</span>
+                <span className="text-[11px] text-muted-foreground">{present ? (hit?.version ?? "installed") : "not installed"}</span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.use}</p>
+              {!present ? <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{meta.install}</pre> : null}
+            </div>
+          );
+        })}
+      </div>
+      )}
+    </section>
+  );
+}
+
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null } | null>(null);
-  // Two-step reset: first click arms the confirm, second clears the three
-  // onboarding keys so each track shows its setup dialog again on visit.
+  const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
+  // Two-step reset: first click arms the confirm, second clears all four
+  // onboarding keys so each track shows its setup dialogs again on visit.
   const [confirmReset, setConfirmReset] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void rpc.call("buildInfo", {}).then((result) => { if (!cancelled) setBuildInfo(result); }).catch(() => undefined);
+    void rpc.call("toolStatus", {}).then((result) => { if (!cancelled) setHostTools(result.tools); }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [rpc]);
   function resetOnboarding() {
@@ -1608,6 +1654,7 @@ function AboutPanel() {
       window.localStorage.removeItem(STORAGE_KEYS.onboardBuild);
       window.localStorage.removeItem(STORAGE_KEYS.onboardResearch);
       window.localStorage.removeItem(STORAGE_KEYS.onboardExplore);
+      window.localStorage.removeItem(STORAGE_KEYS.onboardPresets);
     } catch { /* best-effort */ }
     setConfirmReset(false);
     toast.success("Onboarding reset. Visit each tab to see it again.");
@@ -1646,9 +1693,10 @@ function AboutPanel() {
                 ) : (
                   <Button size="sm" variant="outline" onClick={() => setConfirmReset(true)} title="Show the first-visit setup dialogs again">Reset onboarding</Button>
                 )}
-              </div>
-            </section>
-          </div>
+                </div>
+              </section>
+              <HostToolsSection tools={hostTools} />
+            </div>
         </div>
       </div>
     </div>
@@ -2857,6 +2905,11 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
 }) {
   const [open, setOpen] = useState<boolean>(false);
   const [step, setStep] = useState(0);
+  // When the shared presets step was already acknowledged on another track,
+  // the dialog opens straight at the second panel — a "Step 2 of 2" counter
+  // would reference a step the user never saw, so it stays hidden.
+  const [singleStep, setSingleStep] = useState(false);
+  function showStep(next: 0 | 1, single: boolean) { setStep(next); setSingleStep(single); }
   const hasSecond = !!secondTitle;
   // Shared presets onboarding: configuring (or acknowledging) presets on
   // any track counts for all tracks — Research/Explore stay silent, Build
@@ -2872,16 +2925,16 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
     try {
       if (window.localStorage.getItem(storageKey) === "onboarded") return;
       if (isSharedDone()) {
-        if (hasSecond) { setStep(1); setOpen(true); }
+        if (hasSecond) { showStep(1, true); setOpen(true); }
         return;
       }
-      setStep(0);
+      showStep(0, false);
       setOpen(true);
     } catch { /* best-effort */ }
   }, [active, open, storageKey, hasSecond]);
   function dismiss() {
     setOpen(false);
-    setStep(0);
+    showStep(0, false);
     try { window.localStorage.setItem(storageKey, "onboarded"); } catch { /* best-effort */ }
     markSharedDone();
   }
@@ -2892,7 +2945,7 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
           <DialogTitle>{step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
           <DialogDescription>{step === 1 ? "Defaults new cards start from." : intro}</DialogDescription>
         </DialogHeader>
-        {hasSecond ? <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of 2</p> : null}
+        {hasSecond && !singleStep ? <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of 2</p> : null}
         {step === 1 && secondBody ? secondBody : (
           <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
             <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>

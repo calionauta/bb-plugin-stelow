@@ -466,6 +466,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({}).strict(),
     output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable() }),
   },
+  toolStatus: {
+    input: z.object({}).strict(),
+    output: z.object({ tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })) }),
+  },
 });
 
 type FilesApi = BbPluginApi["sdk"]["files"];
@@ -1667,6 +1671,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
     const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
+  }
+
+  // Resolve the `sem` binary: server-wide install at ~/.local/bin first
+  // (non-interactive PATH lacks it), PATH fallback otherwise.
+  function resolveSemBin(): string {
+    const home = typeof process.env.HOME === "string" ? process.env.HOME : "";
+    const candidate = home ? nodeJoin(home, ".local", "bin", "sem") : "";
+    return candidate && existsSync(candidate) ? candidate : "sem";
   }
 
   // Resolve the research index file for a card: always the card's own state
@@ -3409,11 +3421,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // and the git patch list below still renders on its own.
       let entitySummary: ReturnType<typeof summarizeSemDiff> = null;
       try {
-        const home = typeof process.env.HOME === "string" ? process.env.HOME : "";
-        const candidate = home ? nodeJoin(home, ".local", "bin", "sem") : "";
-        const semBin = candidate && existsSync(candidate) ? candidate : "sem";
         const semOut = await new Promise<string | null>((resolve) => {
-          execFile(semBin, ["diff", "-C", toplevel, "HEAD", "--format", "json", "--color", "never"], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+          execFile(resolveSemBin(), ["diff", "-C", toplevel, "HEAD", "--format", "json", "--color", "never"], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
             resolve(!error && typeof stdout === "string" ? stdout : null);
           });
         });
@@ -3688,6 +3697,35 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async buildInfo() {
       return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion };
+    },
+
+    // Presence probe for the optional host binaries the workflow knows how
+    // to use (About tab). Read-only `--version` calls, 8s each, parallel;
+    // anything missing/slow yields present:false — never a throw. One id
+    // per tool; bins are tried in order, first success wins.
+    async toolStatus() {
+      const candidates: Array<{ id: string; bins: string[] }> = [
+        { id: "sem", bins: [resolveSemBin()] },
+        { id: "ast-grep", bins: ["ast-grep", "sg"] },
+        { id: "cymbal", bins: ["cymbal"] },
+        { id: "ripwire", bins: ["ripwire"] },
+        { id: "plannotator", bins: ["plannotator"] },
+      ];
+      const probe = (bins: string[]): Promise<{ present: boolean; version: string | null }> => {
+        const [bin, ...rest] = bins;
+        if (!bin) return Promise.resolve({ present: false, version: null });
+        return new Promise((resolve) => {
+          execFile(bin, ["--version"], { timeout: 8000, maxBuffer: 64 * 1024 }, (error, stdout) => {
+            if (!error && typeof stdout === "string" && stdout.trim()) {
+              resolve({ present: true, version: stdout.trim().split("\n")[0]?.slice(0, 60) ?? null });
+              return;
+            }
+            void probe(rest).then(resolve);
+          });
+        });
+      };
+      const tools = await Promise.all(candidates.map(async ({ id, bins }) => ({ id, ...(await probe(bins)) })));
+      return { tools };
     },
   });
 
