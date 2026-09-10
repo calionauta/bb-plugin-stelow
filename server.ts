@@ -207,6 +207,15 @@ const questionOptionSchema = z.object({
   description: z.string().max(500),
 });
 
+const inboxEventSnapshotSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["question", "error", "paused", "completed"]),
+  summary: z.string(),
+  occurredAt: z.number(),
+  resolvedAt: z.number().nullable(),
+  archivedAt: z.number().nullable(),
+});
+
 export const rpcContract = defineRpcContract({
   board: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
@@ -245,7 +254,7 @@ export const rpcContract = defineRpcContract({
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
-    output: z.object({ notifications: z.array(z.object({ id: z.string(), cardId: z.string(), cardName: z.string(), projectName: z.string(), cardKind: z.enum(["build", "research", "explore"]), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number(), readAt: z.number().nullable(), resolvedAt: z.number().nullable(), archivedAt: z.number().nullable() })) }),
+    output: z.object({ notifications: z.array(inboxEventSnapshotSchema.extend({ cardId: z.string(), cardName: z.string(), projectName: z.string(), cardKind: z.enum(["build", "research", "explore"]), readAt: z.number().nullable() })) }),
   },
   markNotificationRead: {
     input: z.object({ notificationId: z.string() }).strict(),
@@ -269,7 +278,7 @@ export const rpcContract = defineRpcContract({
   },
   getNotification: {
     input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
-    output: z.object({ notification: z.object({ id: z.string(), kind: z.enum(["question", "error", "paused", "completed"]), summary: z.string(), occurredAt: z.number() }).nullable() }),
+    output: z.object({ notification: inboxEventSnapshotSchema.nullable() }),
   },
   readCardFile: {
     input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
@@ -2811,8 +2820,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async getNotification({ notificationId, cardId }) {
-      const row = db.prepare("SELECT id, kind, summary, occurred_at FROM inbox_events WHERE id = ? AND card_id = ?").get(notificationId, cardId) as { id: string; kind: InboxEventRow["kind"]; summary: string; occurred_at: number } | undefined;
-      return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at } : null };
+      const row = db.prepare("SELECT id, kind, summary, occurred_at, resolved_at, archived_at FROM inbox_events WHERE id = ? AND card_id = ?").get(notificationId, cardId) as Pick<InboxEventRow, "id" | "kind" | "summary" | "occurred_at" | "resolved_at" | "archived_at"> | undefined;
+      return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, resolvedAt: row.resolved_at, archivedAt: row.archived_at } : null };
     },
 
     async readCardFile({ cardId, path }) {

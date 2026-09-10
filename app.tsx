@@ -19,6 +19,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
+import { INBOX_EVENT_LABELS, inboxEventPresentation, isOpenInboxAction } from "./lib/inbox-event-presentation.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections, stripResearchOpportunities } from "./lib/research-index-sections.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
@@ -492,12 +493,37 @@ type InboxNotification = {
   summary: string; occurredAt: number; readAt: number | null; resolvedAt: number | null; archivedAt: number | null;
 };
 
+type InboxEventSnapshot = Pick<InboxNotification, "kind" | "summary" | "occurredAt" | "resolvedAt" | "archivedAt">;
+
 const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
-  question: { icon: "?", label: "Needs a decision", tone: "bg-amber-500/15 text-amber-700" },
-  error: { icon: "!", label: "Worker failed", tone: "bg-destructive/15 text-destructive" },
-  paused: { icon: "Ⅱ", label: "Paused", tone: "bg-amber-500/15 text-amber-700" },
-  completed: { icon: "✓", label: "Completed", tone: "bg-emerald-500/15 text-emerald-700" },
+  question: { icon: "?", label: INBOX_EVENT_LABELS.question, tone: "bg-amber-500/15 text-amber-700" },
+  error: { icon: "!", label: INBOX_EVENT_LABELS.error, tone: "bg-destructive/15 text-destructive" },
+  paused: { icon: "Ⅱ", label: INBOX_EVENT_LABELS.paused, tone: "bg-amber-500/15 text-amber-700" },
+  completed: { icon: "✓", label: INBOX_EVENT_LABELS.completed, tone: "bg-emerald-500/15 text-emerald-700" },
 };
+
+function inboxEventDescription(event: InboxEventSnapshot): string {
+  const { stateLabel } = inboxEventPresentation(event);
+  return stateLabel ? "This Inbox update is kept for history." : event.summary;
+}
+
+function inboxEventText(event: InboxEventSnapshot): string {
+  const { label } = inboxEventPresentation(event);
+  const description = inboxEventDescription(event);
+  return description.toLowerCase().includes(label.toLowerCase()) ? description : `${label}. ${description}`;
+}
+
+function inboxEventTime(event: InboxEventSnapshot): string {
+  const { stateAt, stateLabel } = inboxEventPresentation(event);
+  return stateLabel ? `${stateLabel} ${relativeTime(stateAt)}` : relativeTime(stateAt);
+}
+
+function shouldShowInboxEventBanner(event: InboxEventSnapshot | null, hero: { kind: HeroKind } | null): boolean {
+  if (!event || !isOpenInboxAction(event)) return true;
+  return !((event.kind === "question" && hero?.kind === "decision")
+    || (event.kind === "error" && hero?.kind === "error")
+    || (event.kind === "paused" && hero?.kind === "paused"));
+}
 
 function relativeTime(timestamp: number): string {
   const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
@@ -572,10 +598,11 @@ function InboxPanel() {
       <div className="divide-y rounded-md border">
         {entries.map((entry) => {
           const copy = INBOX_COPY[entry.kind];
+          const presentation = inboxEventPresentation(entry);
           return <div key={entry.id} className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
             <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-              <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${copy.tone}`}>{copy.icon}</span>
-              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{entry.summary.toLowerCase().includes(copy.label.toLowerCase()) ? entry.summary : `${copy.label}. ${entry.summary}`}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(entry.occurredAt).toLocaleString()}>{entry.projectName} · {relativeTime(entry.occurredAt)}</span></span>
+              <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${presentation.tone ?? copy.tone}`}>{copy.icon}</span>
+              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(inboxEventPresentation(entry).stateAt).toLocaleString()}>{entry.projectName} · {inboxEventTime(entry)}</span></span>
             </button>
             <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
           </div>;
@@ -3855,17 +3882,28 @@ function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen 
 
 function InboxEventBanner({ visible, event, sectionRef }: {
   visible: boolean;
-  event: { kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null;
+  event: InboxEventSnapshot | null;
   sectionRef: React.RefObject<HTMLElement | null>;
 }) {
   if (!visible) return null;
+  const presentation = event ? inboxEventPresentation(event) : null;
   return (
-    <section ref={sectionRef} tabIndex={-1} className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Inbox notification">
-      <p className="text-sm font-semibold">{event ? `${INBOX_COPY[event.kind].label}.` : "Opened from Stelow Inbox."}</p>
-      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{event?.summary ?? "This notification is no longer available."}</p>
-      {event ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(event.occurredAt).toLocaleString()}>{relativeTime(event.occurredAt)}</p> : null}
+    <section ref={sectionRef} tabIndex={-1} className={`rounded-lg border p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${presentation?.tone ? "border-border bg-muted/40" : "border-amber-500/40 bg-amber-500/10"}`} aria-label="Inbox notification">
+      <p className="text-sm font-semibold">{presentation ? `${presentation.label}.` : "Opened from Stelow Inbox."}</p>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{event ? inboxEventDescription(event) : "This notification is no longer available."}</p>
+      {event && presentation ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(presentation.stateAt).toLocaleString()}>{inboxEventTime(event)}</p> : null}
     </section>
   );
+}
+
+function useInboxEventFocus(eventId: string | null, event: InboxEventSnapshot | null, sectionRef: React.RefObject<HTMLElement | null>) {
+  const focusedEventId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!eventId || !event || focusedEventId.current === eventId) return;
+    focusedEventId.current = eventId;
+    sectionRef.current?.scrollIntoView({ block: "nearest" });
+    sectionRef.current?.focus({ preventScroll: true });
+  }, [event, eventId, sectionRef]);
 }
 
 // Shared worker block: preset readout + change action + recovery/danger
@@ -3924,16 +3962,15 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
 // Research-track card detail: hero + index + fan-out + artifacts + worker +
 // conversation. Build-only surfaces (stages, timeline, gates, intent)
 // never render here; every leaf below is shared with the build body.
-function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, detail, onChanged }: {
+function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate, card, detail, onChanged }: {
   cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
-  card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
+  inboxEvent: InboxEventSnapshot | null; card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [index, setIndex] = useState<ResearchIndexState | null>(null);
   const [indexRefresh, setIndexRefresh] = useState(0);
   const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
   const [comment, setComment] = useState("");
-  const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -3948,18 +3985,16 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
 
   const loadIndex = useCallback(async () => {
     try {
-      const [indexResult, strategiesResult, eventResult] = await Promise.all([
+      const [indexResult, strategiesResult] = await Promise.all([
         rpc.call("researchIndex", { cardId }),
         rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
-        inboxEventId ? rpc.call("getNotification", { notificationId: inboxEventId, cardId }) : null,
       ]);
       setIndex(indexResult);
       setStrategies(strategiesResult.strategies);
-      setInboxEvent(eventResult?.notification ?? null);
     } catch {
       setIndex({ found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "Unable to load the index." });
     }
-  }, [cardId, inboxEventId, rpc]);
+  }, [cardId, rpc]);
 
   useEffect(() => { void loadIndex(); }, [loadIndex, indexRefresh]);
   // Viewing a completed card marks its completion seen (read, never
@@ -3967,11 +4002,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
   useEffect(() => {
     if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
   }, [cardId, card?.status, rpc]);
-  useEffect(() => {
-    if (!inboxEventId || !inboxEvent) return;
-    inboxEventRef.current?.scrollIntoView({ block: "nearest" });
-    inboxEventRef.current?.focus({ preventScroll: true });
-  }, [inboxEventId, inboxEvent]);
+  useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
 
   async function submitComment() {
     if (!comment.trim()) return;
@@ -4079,7 +4110,7 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {card ? (
           <>
-            <InboxEventBanner visible={Boolean(inboxEventId) && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused"))} event={inboxEvent} sectionRef={inboxEventRef} />
+            <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
             {hero && heroStyle ? (
               <section aria-label="Research status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
                 <div className="flex items-start gap-2.5">
@@ -4384,14 +4415,13 @@ function ResearchDetailBody({ cardId, inboxEventId, onClose, navigate, card, det
   );
 }
 
-function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, detail, onChanged }: {
+function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate, card, detail, onChanged }: {
   cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
-  card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
+  inboxEvent: InboxEventSnapshot | null; card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [stages, setStages] = useState<ResearchStrategyOption[]>([]);
   const [comment, setComment] = useState("");
-  const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
   const [repairOpen, setRepairOpen] = useState(false);
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -4405,20 +4435,12 @@ function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, deta
   useEffect(() => {
     rpc.call("stageCatalog", {}).then((result) => setStages(result.stages)).catch(() => {});
   }, [rpc]);
-  useEffect(() => {
-    if (!inboxEventId) return;
-    rpc.call("getNotification", { notificationId: inboxEventId, cardId }).then((result) => setInboxEvent(result.notification ?? null)).catch(() => {});
-  }, [cardId, inboxEventId, rpc]);
   // Viewing a completed card marks its completion seen (read, never
   // resolved): the badge drops, Recent updates keeps the entry.
   useEffect(() => {
     if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
   }, [cardId, card?.status, rpc]);
-  useEffect(() => {
-    if (!inboxEventId || !inboxEvent) return;
-    inboxEventRef.current?.scrollIntoView({ block: "nearest" });
-    inboxEventRef.current?.focus({ preventScroll: true });
-  }, [inboxEventId, inboxEvent]);
+  useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
 
   const stageLabel = card?.exploreStage ? (stages.find((entry) => entry.id === card.exploreStage)?.label ?? card.exploreStage) : null;
 
@@ -4502,7 +4524,7 @@ function ExploreDetailBody({ cardId, inboxEventId, onClose, navigate, card, deta
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {card ? (
           <>
-            <InboxEventBanner visible={Boolean(inboxEventId) && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused"))} event={inboxEvent} sectionRef={inboxEventRef} />
+            <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
             {hero && heroStyle ? (
               <section aria-label="Exploration status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
                 <div className="flex items-start gap-2.5">
@@ -4674,7 +4696,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [githubPosting, setGithubPosting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
-  const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
+  const [inboxEvent, setInboxEvent] = useState<InboxEventSnapshot | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [artifactStage, setArtifactStage] = useState<string | null>(null);
@@ -4707,6 +4729,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   }, [cardId, inboxEventId, rpc]);
 
   useEffect(() => { void load(); }, [load, detailRefresh]);
+  useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
   // Viewing a completed card marks its completion seen (read, never
   // resolved): the badge drops, Recent updates keeps the entry. Fires on
   // mount-if-completed and on the transition; steady state never refires
@@ -4714,11 +4737,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   useEffect(() => {
     if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
   }, [cardId, card?.status, rpc]);
-  useEffect(() => {
-    if (!inboxEventId || !inboxEvent) return;
-    inboxEventRef.current?.scrollIntoView({ block: "nearest" });
-    inboxEventRef.current?.focus({ preventScroll: true });
-  }, [inboxEventId, inboxEvent]);
+  useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
 
   async function submitComment() {
     if (!comment.trim()) return;
@@ -4866,14 +4885,14 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {card && card.kind === "research" ? (
-          <ResearchDetailBody cardId={cardId} inboxEventId={inboxEventId} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
+          <ResearchDetailBody cardId={cardId} inboxEventId={inboxEventId} inboxEvent={inboxEvent} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
         ) : null}
         {card && card.kind === "explore" ? (
-          <ExploreDetailBody cardId={cardId} inboxEventId={inboxEventId} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
+          <ExploreDetailBody cardId={cardId} inboxEventId={inboxEventId} inboxEvent={inboxEvent} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
         ) : null}
         {card && card.kind === "build" ? (
           <>
-            <InboxEventBanner visible={Boolean(inboxEventId) && !((inboxEvent?.kind === "question" && hero?.kind === "decision") || (inboxEvent?.kind === "error" && hero?.kind === "error") || (inboxEvent?.kind === "paused" && hero?.kind === "paused"))} event={inboxEvent} sectionRef={inboxEventRef} />
+            <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
             {/* HERO — one contextual sentence + one primary action (D primary, A type scale) */}
             {hero && heroStyle ? (
               <section aria-label="Card status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
