@@ -4962,7 +4962,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               onToggle={(next) => {
                 setDiffOpen(next);
                 if (next && !diffData) {
-                  rpc.call("cardDiff", { cardId }).then(setDiffData).catch((err) => setDiffError(err instanceof Error ? err.message : "Unable to load diff."));
+                  rpc.call("cardDiff", { cardId }).then((d) => { setDiffData(d); if (!d.found && d.error) setDiffError(d.error); }).catch((err) => setDiffError(err instanceof Error ? err.message : "Unable to load diff."));
                 }
               }}
             >
