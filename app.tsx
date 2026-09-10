@@ -26,6 +26,7 @@ import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
+import { workerActionPolicy } from "./lib/worker-action-policy.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport.js";
@@ -1152,7 +1153,7 @@ function ResearchPanel({ active }: { active: boolean }) {
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Research started. The index appears on the card.");
+      toast.success("Research started. Results will appear on this card when ready.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start research.");
       throw error;
@@ -1173,7 +1174,7 @@ function ResearchPanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Research</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces an index; ranked opportunities fan out into {trackTitle("build")} cards.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Get a concise research result with prioritized opportunities you can turn into {trackTitle("build")} cards.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1381,7 +1382,7 @@ function ExplorePanel({ active }: { active: boolean }) {
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Exploration started. The stage artifact appears on the card.");
+      toast.success("Exploration started. The result will appear on this card when ready.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start exploration.");
       throw error;
@@ -1402,7 +1403,7 @@ function ExplorePanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Run one Stelow workflow stage on its own — no triage, no pipeline, no board sequence. Pick a stage, supply the input, and get the single artifact.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Run one workflow stage to get a focused result. Pick the approach, supply the input, and review the outcome on the card.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1425,7 +1426,7 @@ function ExplorePanel({ active }: { active: boolean }) {
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new exploration</DialogTitle>
-                <DialogDescription>Pick one workflow stage below, then describe the input — an idea, an existing proposal, a codebase, a URL. The agent runs only that stage's playbook and saves the artifact.</DialogDescription>
+                <DialogDescription>Pick one workflow stage below, then describe the input — an idea, an existing proposal, a codebase, or a URL. The agent runs that approach and returns a focused result.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4">
                 <div className="grid gap-1.5">
@@ -3735,7 +3736,7 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Select To Build</DialogTitle>
-          <DialogDescription>Select which opportunities become build cards (starting at triage) — nothing is created until you confirm. Spawned cards check their box in the index so a retry never duplicates.</DialogDescription>
+          <DialogDescription>Select which opportunities become build cards (starting at triage) — nothing is created until you confirm. Created cards are marked here so retrying never duplicates them.</DialogDescription>
         </DialogHeader>
         {available.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing available — every opportunity was already fanned out or checked.</p>
@@ -3799,7 +3800,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
         toast.error(result.error ?? "Could not start the strategy round.");
         return;
       }
-      toast.success(`Started a ${active.label} round — appending to the index.`);
+      toast.success(`Started a ${active.label} research round. Results will be added to this card.`);
       onOpenChange(false);
       onStarted();
     } finally {
@@ -3811,7 +3812,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
       <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Explore another strategy</DialogTitle>
-          <DialogDescription>A fresh worker runs the strategy on the same request and appends a new section to the index. Existing findings are never rewritten.</DialogDescription>
+          <DialogDescription>A fresh worker applies another approach to the same request. Its findings are added without overwriting existing results.</DialogDescription>
         </DialogHeader>
         <StrategyPicker strategies={strategies} value={picked} onChange={setPicked} runIds={runIds} groupName="research-strategy-round" disabled={busy} />
         <DialogFooter>
@@ -3906,11 +3907,32 @@ function useInboxEventFocus(eventId: string | null, event: InboxEventSnapshot | 
   }, [event, eventId, sectionRef]);
 }
 
-// Shared worker block: preset readout + change action + recovery/danger
-// actions + worker history. Rendered right under the hero in both tracks so
-// everything about the worker lives in one contextual section instead of
-// floating rows and a buried accordion. Actions are real outline buttons
-// (archive/delete in destructive tone) — never underlined body text.
+function WorkerLifecycleActions({ actions, onRepair, onArchive, onDelete }: {
+  actions: ReturnType<typeof workerActionPolicy>;
+  onRepair: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}) {
+  if (!actions.showRestartFresh && !actions.showStopAndArchive && !actions.showDelete) return null;
+  return (
+    <div className="mt-3 border-t pt-3">
+      {actions.showRestartFresh ? <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button> : null}
+      {actions.showStopAndArchive || actions.showDelete ? (
+        <details className={actions.showRestartFresh ? "mt-2" : ""}>
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">Card actions</summary>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {actions.showStopAndArchive ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Stop the worker and move this card to Archived. Comments and history are preserved.">Stop & archive…</Button> : null}
+            {actions.showDelete ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered.">Delete…</Button> : null}
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+// Shared worker block: preset readout, state-appropriate recovery, and worker
+// history. Lifecycle actions are deliberately secondary: an active worker is
+// not presented as something that should be restarted or archived casually.
 function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onRepair, onArchive, onDelete, onPreset, presetPill, presetNote, pillTitle, githubLink }: {
   card: CardItem | null;
   detail: CardDetailResponse | null;
@@ -3926,9 +3948,10 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
   pillTitle?: string;
   githubLink?: React.ReactNode;
 }) {
+  const actions = workerActionPolicy(card, Boolean(detail?.card.needsAttention));
   return (
     <section aria-label="Worker" className="rounded-lg border p-3">
-      <div className="flex flex-wrap items-center gap-2">
+      {actions.showPresetControls ? <div className="flex flex-wrap items-center gap-2">
         <Pill tone="bg-muted text-muted-foreground" title={pillTitle}>
           {presetPill}
           {detail?.card.presetProviderId && detail?.card.presetModelId ? (
@@ -3937,22 +3960,14 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
         </Pill>
         <Button size="sm" variant="outline" onClick={onPreset} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>
         <span className="text-xs text-muted-foreground">{presetNote}</span>
-      </div>
-      {presetStale ? (
+      </div> : null}
+      {actions.showPresetControls && presetStale ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
           <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
           <Button size="sm" disabled={restarting} onClick={onRestartWorker}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
         </div>
       ) : null}
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
-        <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button>
-        {card?.status === "archived" ? null : (
-          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive</Button>
-        )}
-        {card?.status === "archived" ? (
-          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered.">Delete…</Button>
-        ) : null}
-      </div>
+      <WorkerLifecycleActions actions={actions} onRepair={onRepair} onArchive={onArchive} onDelete={onDelete} />
       {githubLink}
       {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
     </section>
@@ -4120,7 +4135,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
                     {index && index.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? (
-                      <p className="text-xs text-muted-foreground">Review the index below, select opportunities to build, then move this card to Done.</p>
+                      <p className="text-xs text-muted-foreground">Review the results below, select opportunities to build, then move this card to Done.</p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       {strategyLabel ? <Pill tone="bg-primary/15 text-primary" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
@@ -4192,12 +4207,12 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
             />
 
             <CardDisclosure
-              title="Research index"
-              hint={index && index.found ? `${available.length} available · ${index.opportunities.length} total` : index?.indexPath ?? "the worker is writing it"}
+              title="Research results"
+              hint={index && index.found ? `${available.length} available · ${index.opportunities.length} total` : "being prepared"}
               defaultOpen
             >
-              {!index ? <p className="text-xs text-muted-foreground">Loading index…</p> : null}
-              {index && !index.found ? <p className="text-xs text-muted-foreground">{index.error ?? "No index yet — the research is still running."}</p> : null}
+              {!index ? <p className="text-xs text-muted-foreground">Preparing results…</p> : null}
+              {index && !index.found ? <p className="text-xs text-muted-foreground">Results are still being prepared.</p> : null}
               {index?.found && index.content ? (
                 indexBody && (indexBody.summary !== null || indexBody.outputs.length > 0) ? (
                   <div className="space-y-3">
@@ -4249,13 +4264,13 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                   <div className="text-sm leading-relaxed"><Markdown content={stripResearchOpportunities(index.content)} /></div>
                 )
               ) : null}
-              {index?.truncated ? <p className="text-xs text-muted-foreground">Index truncated for display — the full file lives at {index.indexPath}.</p> : null}
+              {index?.truncated ? <p className="text-xs text-muted-foreground">Results are shortened here. Open the full research file at {index.indexPath}.</p> : null}
               {index?.found && index.opportunities.length > 0 ? (
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({index.opportunities.length})</h4>
                     <span className="flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy round on the same request — appends a new section to the index.">Explore another strategy…</Button>
+                      <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy on the same request. Its findings are added to these results.">Explore another strategy…</Button>
                           <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Select opportunities, then create the build cards.">Select To Build</Button>
                     </span>
                   </div>
@@ -4329,7 +4344,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
               </CardDisclosure>
             ) : null}
 
-            <CardDisclosure title="Artifacts" hint={detail ? `${detail.artifacts.length}` : "produced files"}>
+            <CardDisclosure title="Supporting files" hint={detail ? `${detail.artifacts.length}` : "produced files"}>
               {detail ? (
                 <ArtifactGroups
                   artifacts={detail.artifacts}
@@ -4350,7 +4365,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
         open={repairOpen}
         onOpenChange={setRepairOpen}
         title="Restart with a fresh worker?"
-        description={`A new worker restarts ${primaryStrategyLabel ? `the ${primaryStrategyLabel} strategy` : "the original strategy"} from scratch with a clean index — later rounds are discarded. Existing comments are kept. Try Retry first — restart only if the worker itself is broken.`}
+        description={`A new worker restarts ${primaryStrategyLabel ? `the ${primaryStrategyLabel} strategy` : "the original strategy"} from scratch with clean research results — later rounds are discarded. Existing comments are kept. Try Retry first — restart only if the worker itself is broken.`}
         confirmLabel="Restart fresh"
         confirmTone="default"
         onConfirm={doRepair}
@@ -4396,9 +4411,9 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Archive this research?"
-        description="The research is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
-        confirmLabel="Archive"
+        title="Stop and archive this research?"
+        description="The worker stops and the research moves to Archived. Comments and history are preserved."
+        confirmLabel="Stop & archive"
         confirmTone="destructive"
         onConfirm={doArchive}
       />
@@ -4602,7 +4617,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
               pillTitle="Preset for the next worker"
             />
 
-            <CardDisclosure title="Artifact" hint={detail ? `${detail.artifacts.length}` : "produced files"} defaultOpen>
+            <CardDisclosure title="Result" hint={detail ? `Files: ${detail.artifacts.length}` : "being prepared"} defaultOpen>
               {detail ? (
                 <ArtifactGroups
                   artifacts={detail.artifacts}
@@ -4654,9 +4669,9 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Archive this exploration?"
-        description="The exploration is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
-        confirmLabel="Archive"
+        title="Stop and archive this exploration?"
+        description="The worker stops and the exploration moves to Archived. Comments and history are preserved."
+        confirmLabel="Stop & archive"
         confirmTone="destructive"
         onConfirm={doArchive}
       />
@@ -5210,9 +5225,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
       <ConfirmActionDialog
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
-        title="Archive this card?"
-        description="The card is moved to the Archived column and the worker thread is stopped. Comments and history are preserved."
-        confirmLabel="Archive"
+        title="Stop and archive this card?"
+        description="The worker stops and the card moves to Archived. Comments and history are preserved."
+        confirmLabel="Stop & archive"
         confirmTone="destructive"
         onConfirm={doArchive}
       />

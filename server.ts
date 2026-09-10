@@ -1229,6 +1229,8 @@ export default async function plugin(bb: BbPluginApi) {
   // workflow: no stages, no gates, no advance. The worker writes research-index.md
   // (exact shape below) into its own state dir; the user marks Done and
   // fans opportunities out into build cards from the plugin UI.
+  const CARD_OWNER_RULES = "You are the card owner: preserve context, ask the user, and publish the canonical result yourself. Do not split this card's initial workflow into subagents. You may delegate only independent work with a distinct input and output file, then review and synthesize it yourself. Never delegate structured questions, card state changes, lifecycle commands, or the canonical result.";
+
   function researchWorkerPrompt({ displayName, prompt, strategyLabel, strategyId, strategySkill, stateDirText, workspaceRoot, instructions, flavor, previousThreadId, roundNo, roundStamp, roundFile }: { displayName: string; prompt: string; strategyLabel: string; strategyId: string; strategySkill: string; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed" | "append"; previousThreadId: string | null; roundNo: number; roundStamp: string; roundFile: string }): string {
     const flavorLine = flavor === "initial"
       ? "This is a fresh research task."
@@ -1237,7 +1239,7 @@ export default async function plugin(bb: BbPluginApi) {
         : flavor === "restart"
           ? "You are being restarted mid-research with a fresh worker. Re-read your research-index.md and CONTINUE the research — do not start over unless the index is empty."
           : "The host re-seeded your state dir: start the research over with a fresh research-index.md.";
-    return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the index is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
+    return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${CARD_OWNER_RULES} ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the index is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
 
 Step 1 — load the strategy playbook: the ${strategyLabel} method (${strategySkill}) comes from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb skill list\` to confirm it, then follow that playbook — not the stelow-workflow-* build skills, which do not apply here.
 
@@ -1303,7 +1305,7 @@ ${prompt}`;
       : flavor === "restart"
         ? "You are being restarted mid-exploration with a fresh worker. Re-read your artifact and CONTINUE — do not start over unless it is empty."
         : "The host re-seeded your state dir: run the stage again from scratch.";
-    return `You are running a SINGLE-STAGE Stelow exploration inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the artifact is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
+    return `You are running a SINGLE-STAGE Stelow exploration inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${CARD_OWNER_RULES} ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the artifact is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
 
 Step 1 — load the stage skill: ${stage.label} (${stage.skill}) is bundled with this plugin (\`bb skill list\` shows it). Load it and follow its instructions exactly.
 
@@ -1444,7 +1446,7 @@ ${prompt}`;
       reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
       permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
       executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-      input: [{ type: "text", mentions: [], text: researchPrompt ?? explorePrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status.
+      input: [{ type: "text", mentions: [], text: researchPrompt ?? explorePrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES}
 
 Step 1 — classify intent first: this card starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
 
@@ -1627,7 +1629,7 @@ ${prompt}` }, ...workerAttachments],
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
 Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -1846,7 +1848,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (!stateDir) return { ok: false, error: "No workflow state for this research yet." };
     const absolute = join(stateDir, "research-index.md");
     const content = await bb.sdk.files.read({ path: absolute }).then((file) => file.content).catch(() => null);
-    if (content === null) return { ok: false, error: "No research-index.md yet — the research is still running." };
+    if (content === null) return { ok: false, error: "Research results are still being prepared." };
     return { ok: true, content, absolute, display: workspaceRelative(workspace.path, absolute) ?? "research-index.md" };
   }
 
@@ -1950,7 +1952,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             resolveInboxEvents(card.id, now(), ["paused"]);
             const readyCurrent = getCard(card.id);
             if (readyCurrent) {
-              recordInboxEvent(readyCurrent, "completed", "Research completed — review the index in Done.", `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
+              recordInboxEvent(readyCurrent, "completed", "Research complete — results ready to review in Done.", `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
             }
           } else {
             const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
@@ -1958,7 +1960,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             const current = getCard(card.id);
             if (current && current.status !== "archived" && current.status !== "completed") {
               for (const round of readiness.invalid) {
-                recordInboxEvent(current, "error", `Round ${round.n} (${round.label}) artifact is missing or mirrors the index — restart the round to regenerate it.`, `round-invalid:${card.id}:${round.n}`, now());
+                recordInboxEvent(current, "error", `Round ${round.n} (${round.label}) is incomplete — restart it to regenerate the result.`, `round-invalid:${card.id}:${round.n}`, now());
               }
               if (idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
                 recordInboxEvent(current, "paused", "Idle with unfinished research — retry continues in place, restart begins fresh.", `paused:${card.id}:${idleAt}`, idleAt);
@@ -2011,7 +2013,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
             resolveInboxEvents(card.id, now(), ["paused"]);
             const readyCurrent = getCard(card.id);
-            if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Explore complete — review the artifact in Done.", `explore-completed:${card.id}:${artifact.fingerprint ?? "ready"}`, now());
+            if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Exploration complete — result ready to review in Done.", `explore-completed:${card.id}:${artifact.fingerprint ?? "ready"}`, now());
           } else if (!artifact.ready) {
             const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
@@ -3117,6 +3119,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async reseedCard({ cardId, presetId }) {
       const card = getCard(cardId);
       if (!card) return { reseeded: false, error: ERR_CARD_NOT_FOUND };
+      if (card.status === "archived") return { reseeded: false, error: ERR_CARD_ARCHIVED };
       const workspace = await cardWorkspace(card);
       const source = workspace?.hostId && workspace.path ? { path: workspace.path, hostId: workspace.hostId } : null;
       if (!source) return { reseeded: false, error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.` };
@@ -3192,7 +3195,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
 Intent is currently \`${card.intent}\` in the re-seeded state.md. ${card.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -3320,7 +3323,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const card = getCard(cardId);
       const empty = { found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "" };
       if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
-      if (card.kind !== "research") return { ...empty, error: "Only research cards have an index. Build cards track scopes instead." };
+      if (card.kind !== "research") return { ...empty, error: "Only research cards have results to review. Build cards track scopes instead." };
       const resolved = await readResearchIndex(card);
       if (!resolved.ok) return { ...empty, error: resolved.error };
       const history = strategyRounds(card);
@@ -3329,7 +3332,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const stateDir = card.dir_hash && workspace?.path ? await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null) : null;
       const { rounds, looseFiles } = await researchRoundFiles(workspace?.path ?? null, workspace?.hostId ?? null, stateDir, history, live);
       const parsed = parseResearchIndex(resolved.content);
-      if (!parsed.found) return { ...empty, indexPath: resolved.display, rounds, looseFiles, error: "No ## Opportunities section in the index yet — the research is still running." };
+      if (!parsed.found) return { ...empty, indexPath: resolved.display, rounds, looseFiles, error: "Research results are still being prepared." };
       const LIMIT = 100_000;
       return {
         found: true,
@@ -3351,7 +3354,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const resolved = await readResearchIndex(card);
       if (!resolved.ok) return { ok: false, created: [], error: resolved.error };
       const parsed = parseResearchIndex(resolved.content);
-      if (!parsed.found) return { ok: false, created: [], error: "No ## Opportunities section in the index yet — the research is still running." };
+      if (!parsed.found) return { ok: false, created: [], error: "Research results are still being prepared." };
       const wanted = new Set(opportunityIds);
       const matched = parsed.opportunities.filter((item) => wanted.has(item.id) && !item.checked);
       if (matched.length === 0) return { ok: false, created: [], error: "None of the selected opportunities are still available — reopen the index; they may already have been fanned out." };
@@ -3515,7 +3518,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const history = [...strategyRounds(card), { id: picked.id, at: roundAt, file: roundFile }];
       db.prepare("UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), cardId);
       const presetName = getPresetById(effective.id)?.name ?? effective.id;
-      logCardComment(cardId, "card", cardId, "agent", `Started a ${picked.label} round on preset "${presetName}" — appending to the index. Previous worker archived.`);
+      logCardComment(cardId, "card", cardId, "agent", `Started a ${picked.label} research round on preset "${presetName}". Results will be added to this card. Previous worker archived.`);
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, strategy: picked.id, error: null };
     },
