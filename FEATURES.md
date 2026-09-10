@@ -62,10 +62,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   and Explore each open a setup dialog once (localStorage) about agent
   presets — what they decide, band defaults, per-card pins. Build adds a
   second step for Planning depth + Review checkpoints as board defaults.
+  Preset setup counts across tracks: configuring on one tab silences the
+  others (Build still opens into its defaults step). Opening Agent
+  Presets never dismisses the setup dialog underneath.
   Each track owns its preset band (build phases, research, explore),
-  so changing one default never leaks into another. Planning
-  depth + Review checkpoints stay where they belong (per card in
-  New issue → Settings). Dismissing (Got it/Done, Esc, or backdrop) never
+  so changing one default never leaks into another. Manage agent
+  presets groups bands by track (Research, Explore, Build) instead of a
+  flat phase list. Planning depth + Review checkpoints stay where they
+  belong (per card in New issue → Settings, mirrored in the Build setup
+  step). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
@@ -190,9 +195,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   auto-expands); list + band routing are the frequent jobs.
 - **Per-phase presets** (`listBandPresets`, `setBandPreset`).
   Analysis/planning/execution/review bands auto-swap workers at
-  boundaries; unset bands inherit the card preset. Research has its own
-  `research` band default, configured from the Research board's New
-  research dialog (falls back to the board default when unset).
+  boundaries; unset bands inherit the card preset. Research and Explore
+  have their own band defaults, configured from each board's Agent
+  Presets entry (fall back to the board default when unset).
 - **Per-card override** (`assignPreset`). Pinned preset for one card;
   takes effect on (re)start, with a stale-worker warning until then.
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
@@ -224,7 +229,7 @@ investigation that feeds the build board.*
 
 - **Research tab** (`ResearchPanel`). To-Do / Doing / Done / Archived
   columns over research cards only; shared `FiltersBar` (project +
-  attention) plus the Research tour; collapsible columns; per-tab
+  attention); collapsible columns; per-tab
   active counts; no stages, no gates.
   The New research dialog shows the effective agent preset
   (`research` band default, else board default) with a Configure
@@ -306,7 +311,7 @@ one input, one artifact.*
   To-Do / Doing / Done / Archived columns over explore cards only;
   shared `FiltersBar` (project + attention), collapsible columns,
   per-tab active counts; no triage, no pipeline, no gates. The New
-  exploration dialog shows the effective agent preset (`research` band
+  exploration dialog shows the effective agent preset (`explore` band
   default, else board default) with a Configure presets entry.
 - **Stage catalog** (`STAGE_CATALOG`, `lib/stage-catalog.mjs`). One entry
   per single-runnable workflow stage (Shape Up, interface alternatives,

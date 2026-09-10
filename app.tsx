@@ -783,10 +783,8 @@ function BoardPanel({ active }: { active: boolean }) {
           {loading && cards.length === 0 ? <TrackSkeleton /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Carry ideas from triage through shaping, gated reviews, and scope-by-scope execution.</p>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-              </div>
+              <h1 className="text-xl font-semibold tracking-tight">Build</h1>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Carry ideas from triage through shaping, gated reviews, and scope-by-scope execution.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -844,11 +842,17 @@ function BoardPanel({ active }: { active: boolean }) {
               <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
                 <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:justify-between">
                   <span>Settings</span>
-                  <span className="text-xs font-normal text-muted-foreground">Planning depth and review checkpoints · Configure</span>
+                  <span className="text-xs font-normal text-muted-foreground">Planning depth, review checkpoints, and agent configuration · Configure</span>
                 </summary>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
                   <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+                  <div className="sm:col-span-2">
+                    <AgentConfigBox
+                      lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
+                      onConfigure={() => setBoardPresetsOpen(true)}
+                    />
+                  </div>
                 </div>
               </details>
             </DialogContent>
@@ -1128,10 +1132,8 @@ function ResearchPanel({ active }: { active: boolean }) {
           {loading && cards.length === 0 ? <TrackSkeleton columns={4} /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces an index; ranked opportunities fan out into {trackTitle("build")} cards.</p>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h1 className="text-xl font-semibold tracking-tight">Research</h1>
-              </div>
+              <h1 className="text-xl font-semibold tracking-tight">Research</h1>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Investigate a question with product strategies, one round at a time. The card produces an index; ranked opportunities fan out into {trackTitle("build")} cards.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1359,10 +1361,8 @@ function ExplorePanel({ active }: { active: boolean }) {
           {loading && cards.length === 0 ? <TrackSkeleton columns={4} /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="max-w-2xl text-sm leading-5 text-muted-foreground">Run one Stelow workflow stage on its own — no triage, no pipeline, no board sequence. Pick a stage, supply the input, and get the single artifact.</p>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
-              </div>
+              <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Run one Stelow workflow stage on its own — no triage, no pipeline, no board sequence. Pick a stage, supply the input, and get the single artifact.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1473,6 +1473,7 @@ const STORAGE_KEYS = {
   onboardBuild: "stelow-onboard-build-v1",
   onboardResearch: "stelow-onboard-research-v1",
   onboardExplore: "stelow-onboard-explore-v1",
+  onboardPresets: "stelow-onboard-presets-v1",
 } as const;
 
 type ParsedStelowRoute =
@@ -1794,7 +1795,7 @@ function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, d
           <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
         </div>
       ) : (
-        <div className={`max-h-72 min-w-0 overflow-y-auto overscroll-contain p-1 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
+        <div className={`relative max-h-72 min-w-0 overflow-y-auto overscroll-contain p-1 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
           <fieldset className="grid gap-2">
           <legend className="sr-only">{legend}</legend>
           {visible.map((entry) => {
@@ -2807,16 +2808,32 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
   const [open, setOpen] = useState<boolean>(false);
   const [step, setStep] = useState(0);
   const hasSecond = !!secondTitle;
+  // Shared presets onboarding: configuring (or acknowledging) presets on
+  // any track counts for all tracks — Research/Explore stay silent, Build
+  // still opens straight into its defaults step.
+  const isSharedDone = () => {
+    try { return window.localStorage.getItem(STORAGE_KEYS.onboardPresets) === "onboarded"; } catch { return false; }
+  };
+  const markSharedDone = () => {
+    try { window.localStorage.setItem(STORAGE_KEYS.onboardPresets, "onboarded"); } catch { /* best-effort */ }
+  };
   useEffect(() => {
     if (!active || open) return;
     try {
-      if (window.localStorage.getItem(storageKey) !== "onboarded") { setStep(0); setOpen(true); }
+      if (window.localStorage.getItem(storageKey) === "onboarded") return;
+      if (isSharedDone()) {
+        if (hasSecond) { setStep(1); setOpen(true); }
+        return;
+      }
+      setStep(0);
+      setOpen(true);
     } catch { /* best-effort */ }
-  }, [active, open, storageKey]);
+  }, [active, open, storageKey, hasSecond]);
   function dismiss() {
     setOpen(false);
     setStep(0);
     try { window.localStorage.setItem(storageKey, "onboarded"); } catch { /* best-effort */ }
+    markSharedDone();
   }
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
@@ -2835,7 +2852,7 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
         <DialogFooter>
           {step === 0 ? (
             <>
-              <Button variant="outline" onClick={() => { dismiss(); onOpenPresets(); }}>Open Agent Presets</Button>
+              <Button variant="outline" onClick={() => { markSharedDone(); onOpenPresets(); }}>Open Agent Presets</Button>
               {hasSecond ? <Button onClick={() => setStep(1)}>Next</Button> : <Button onClick={dismiss}>Got it</Button>}
             </>
           ) : (
@@ -2956,27 +2973,68 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           ))}
         </div>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
-          <h4 className="mb-2 text-sm font-semibold">Worker preset per workflow phase</h4>
-          <p className="mb-2 text-xs text-muted-foreground">Each phase uses its own preset. The worker is switched automatically when a card reaches a phase with a different preset; cards with no phase preset use the card's preset (or default).</p>
-          <div className="grid gap-2">
-            {bandPresets.map((band) => (
-              <div key={band.band} className="flex items-center gap-2 text-sm">
-                <span className="w-24 shrink-0 capitalize">{band.band}</span>
-                <select
-                  className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
-                  value={band.presetId ?? ""}
-                  onChange={(event) => {
-                    const value = event.target.value || null;
-                    setBusy(true);
-                    void rpc.call("setBandPreset", { band: band.band, presetId: value }).then(() => { void onChanged(); void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([])); }).catch(() => setMessage("Failed to set phase preset.")).finally(() => setBusy(false));
-                  }}
-                >
-                  <option value="">Use card default</option>
-                  {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-                </select>
-                <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title={band.stages.join(", ")}>{band.stages.join(", ")}</span>
+          <h4 className="mb-2 text-sm font-semibold">Worker preset per track</h4>
+          <p className="mb-2 text-xs text-muted-foreground">Each track runs on its own preset. Build phases can each override it; the worker switches automatically at phase boundaries. Unset rows fall back to the card preset (or default).</p>
+          <div className="grid gap-3">
+            {[
+              { track: "Research", bands: ["research"] },
+              { track: "Explore", bands: ["explore"] },
+              { track: "Build", bands: ["analysis", "planning", "execution", "review"] },
+            ].map((group) => (
+              <div key={group.track} className="space-y-2">
+                <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.track}</h5>
+                {group.bands.map((bandName) => {
+                  const band = bandPresets.find((entry) => entry.band === bandName);
+                  if (!band) return null;
+                  return (
+                    <div key={band.band} className="flex items-center gap-2 text-sm">
+                      <span className="w-24 shrink-0 capitalize">{group.track === "Build" ? band.band : "preset"}</span>
+                      <select
+                        className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                        value={band.presetId ?? ""}
+                        onChange={(event) => {
+                          const value = event.target.value || null;
+                          setBusy(true);
+                          void rpc.call("setBandPreset", { band: band.band, presetId: value }).then(() => { void onChanged(); void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([])); }).catch(() => setMessage("Failed to set phase preset.")).finally(() => setBusy(false));
+                        }}
+                      >
+                        <option value="">Use card default</option>
+                        {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                      </select>
+                      <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title={band.stages.join(", ")}>{band.stages.join(", ")}</span>
+                    </div>
+                  );
+                })}
               </div>
             ))}
+            {(() => {
+              const known = new Set(["research", "explore", "analysis", "planning", "execution", "review"]);
+              const extra = bandPresets.filter((entry) => !known.has(entry.band));
+              if (extra.length === 0) return null;
+              return (
+                <div className="space-y-2">
+                  <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Other</h5>
+                  {extra.map((band) => (
+                    <div key={band.band} className="flex items-center gap-2 text-sm">
+                      <span className="w-24 shrink-0 capitalize">{band.band}</span>
+                      <select
+                        className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                        value={band.presetId ?? ""}
+                        onChange={(event) => {
+                          const value = event.target.value || null;
+                          setBusy(true);
+                          void rpc.call("setBandPreset", { band: band.band, presetId: value }).then(() => { void onChanged(); void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([])); }).catch(() => setMessage("Failed to set phase preset.")).finally(() => setBusy(false));
+                        }}
+                      >
+                        <option value="">Use card default</option>
+                        {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                      </select>
+                      <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title={band.stages.join(", ")}>{band.stages.join(", ")}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
