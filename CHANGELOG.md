@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.40] - 2026-09-10
+
+### Added
+
+- **Entity summary in Diff via `sem`.** When the `sem` binary is
+  installed on the host, `cardDiff` heads the patch list with a
+  one-line entity summary (added/modified/deleted/renamed/moved,
+  cosmetic-only flag) from `sem diff HEAD --format json` — same
+  baseline as the git diff, fully local, no cloud. Absent `sem`,
+  timeout, or off-shape output degrades to no summary line, never an
+  error. Server now ships with `sem` installed (`~/.local/bin`).
+
 ## [0.3.39] - 2026-09-10
 
 ### Fixed
