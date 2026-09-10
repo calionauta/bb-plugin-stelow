@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.47] - 2026-09-10
+
+### Fixed
+
+- **Card creation works again across all tracks.** Build, Research, and
+  Explore shared an INSERT with 25 placeholders for 24 columns. SQL
+  placeholders now derive from the canonical column list, with a mismatch
+  guard and regression contract test.
+
 ## [0.3.46] - 2026-09-10
 
 ### Changed
