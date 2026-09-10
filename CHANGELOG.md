@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.33] - 2026-09-10
+
+### Fixed
+
+- **Single status pill at terminals.** Archived/completed build cards
+  rendered "Archived Archived" (column + status resolving to the same
+  word) — now one pill.
+- **Archive button reads Archive everywhere** (was "Archive research"
+  on all cards).
+- **Timeline pills match Pill density** (`min-h-8`, same metrics as
+  status pills instead of 44px targets).
+
 ## [0.3.32] - 2026-09-09
 
 ### Fixed

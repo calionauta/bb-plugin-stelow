@@ -313,7 +313,20 @@ function Pill({ children, tone = "bg-muted text-muted-foreground", className = "
   return <span title={title} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
 }
 
-// Activity is a transient worker state — subordinated to the status pill and
+// Build cards show board column + workflow status — except at terminals,
+// where both resolve to the same word ("Archived Archived"). One pill then.
+function BuildStatusPills({ card }: { card: CardItem }) {
+  const column = COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status);
+  const status = statusLabel(card.status);
+  if (column === status) {
+    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board status — this card's current state."><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill>;
+  }
+  return (<>
+    <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the build flow.">{column}</Pill>
+    <Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title="Workflow status — the card's specific execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill>
+  </>);
+}
+
 // given a distinct (dashed) visual so it reads as "suspended/transient", never
 // as a competing solid state. Repose (idle with nothing pending) renders
 // nothing: a paused worker is the normal resting state, not an alert.
@@ -2271,7 +2284,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
                       disabled={!clickable || isCurrent}
                       title={STAGE_PRODUCES[stage]}
                       onClick={() => onPick(stage)}
-                      className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-11 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
                         ? "bg-primary/15 text-primary ring-2 ring-primary/60"
                         : passed
@@ -2291,7 +2304,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
                         onClick={() => onShowArtifacts(stage)}
                         title={`Show ${produced.length} artifact${produced.length === 1 ? "" : "s"} from ${stageLabel(stage)} in Artifacts below`}
                         aria-label={`Show ${produced.length} artifact${produced.length === 1 ? "" : "s"} from ${stageLabel(stage)} in Artifacts below`}
-                        className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-0.5 rounded-full border border-border bg-muted/40 px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                        className="inline-flex min-h-8 min-w-8 cursor-pointer items-center justify-center gap-0.5 rounded-full border border-border bg-muted/40 px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                       >
                         <span aria-hidden>📄</span>
                         {produced.length}
@@ -2405,7 +2418,7 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <><Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the build flow.">{COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status)}</Pill><Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title="Workflow status — the card's specific execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{statusLabel(card.status)}</Pill></> : null}
+        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <BuildStatusPills card={card} /> : null}
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />
@@ -3753,7 +3766,7 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
         <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button>
-        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive research</Button>
+        <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title="Move to Archived and stop the worker. Comments and history are preserved.">Archive</Button>
         {card?.status === "archived" ? (
           <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived research. Comments and history are removed and cannot be recovered.">Delete…</Button>
         ) : null}
