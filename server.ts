@@ -7,6 +7,7 @@ import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
 import { STAGE_SEQUENCE } from "./lib/artifact-groups.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
+import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
@@ -363,7 +364,7 @@ export const rpcContract = defineRpcContract({
   },
   cardDiff: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), error: z.string().nullable() }),
+    output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), entitySummary: z.object({ total: z.number(), fileCount: z.number(), added: z.number(), modified: z.number(), deleted: z.number(), renamed: z.number(), moved: z.number(), cosmeticOnly: z.boolean() }).nullable(), error: z.string().nullable() }),
   },
   runResearchStrategy: {
     input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
@@ -3347,7 +3348,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // invented for them). Everything is capped; failures degrade to an
     // explicit shape, never a throw past the contract.
     async cardDiff({ cardId }) {
-      const empty = { found: false, isRepo: false, files: [], truncated: false, error: null as string | null };
+      const empty = { found: false, isRepo: false, files: [], truncated: false, entitySummary: null as ReturnType<typeof summarizeSemDiff>, error: null as string | null };
       const card = getCard(cardId);
       if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
       const workspace = await cardWorkspace(card).catch(() => null);
@@ -3359,7 +3360,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           });
         });
       const top = await runGit(["rev-parse", "--show-toplevel"]);
-      if (!top.ok || !top.stdout.trim()) return { found: true, isRepo: false, files: [], truncated: false, error: "Not a git repository." };
+      if (!top.ok || !top.stdout.trim()) return { ...empty, found: true, error: "Not a git repository." };
       const toplevel = top.stdout.trim();
       const hostId = workspace.hostId ?? "";
       const files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }> = [];
@@ -3401,7 +3402,26 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       } else {
         truncated = true;
       }
-      return { found: true, isRepo: true, files, truncated, error: null };
+      // Entity-level summary via `sem` when installed (server-wide binary at
+      // ~/.local/bin/sem, PATH fallback). Same HEAD baseline as the git diff
+      // above; untracked files are excluded by sem itself. Strictly additive:
+      // any failure (missing binary, timeout, off-shape JSON) yields null
+      // and the git patch list below still renders on its own.
+      let entitySummary: ReturnType<typeof summarizeSemDiff> = null;
+      try {
+        const home = typeof process.env.HOME === "string" ? process.env.HOME : "";
+        const candidate = home ? nodeJoin(home, ".local", "bin", "sem") : "";
+        const semBin = candidate && existsSync(candidate) ? candidate : "sem";
+        const semOut = await new Promise<string | null>((resolve) => {
+          execFile(semBin, ["diff", "-C", toplevel, "HEAD", "--format", "json", "--color", "never"], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+            resolve(!error && typeof stdout === "string" ? stdout : null);
+          });
+        });
+        if (semOut) {
+          try { entitySummary = summarizeSemDiff(JSON.parse(semOut)); } catch { entitySummary = null; }
+        }
+      } catch { entitySummary = null; }
+      return { found: true, isRepo: true, files, truncated, entitySummary, error: null };
     },
 
     async runResearchStrategy({ cardId, strategy }) {

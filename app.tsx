@@ -2225,6 +2225,23 @@ type HostFileTarget = { kind: "host"; hostId: string; path: string };
 // Host-kind links cannot resolve exploratory paths, which live outside
 // provisioned environments — so exploratory cards use the worker thread's
 // environment + worktree-relative path, everything else keeps host links.
+// One-line entity summary for the Diff section ("4 entities · 2 added,
+// 1 modified, 1 deleted"). Null when sem is absent or found nothing — the
+// patch list renders on its own either way.
+function formatEntitySummary(summary: { total: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null): string | null {
+  if (!summary || summary.total <= 0) return null;
+  const parts = [
+    summary.added > 0 ? `${summary.added} added` : null,
+    summary.modified > 0 ? `${summary.modified} modified` : null,
+    summary.deleted > 0 ? `${summary.deleted} deleted` : null,
+    summary.renamed > 0 ? `${summary.renamed} renamed` : null,
+    summary.moved > 0 ? `${summary.moved} moved` : null,
+  ].filter((part): part is string => part !== null);
+  const head = `${summary.total} ${summary.total === 1 ? "entity" : "entities"}`;
+  const tail = summary.cosmeticOnly ? " · cosmetic only" : "";
+  return parts.length > 0 ? `${head} · ${parts.join(" · ")}${tail}` : `${head}${tail}`;
+}
+
 function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, relPath: string | null, hostId: string, absolutePath: string): WorkspaceFileTarget | HostFileTarget {
   if (useWorkspace && environmentId && relPath) return { kind: "workspace", environmentId, path: relPath };
   return { kind: "host", hostId, path: absolutePath };
@@ -4560,7 +4577,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [artifactStage, setArtifactStage] = useState<string | null>(null);
-  type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean };
+  type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean; entitySummary: { total: number; fileCount: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null };
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffData, setDiffData] = useState<CardDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
@@ -4972,6 +4989,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               {diffData && diffData.isRepo && diffData.files.length === 0 ? <p className="text-xs text-muted-foreground">Working tree clean — nothing to review.</p> : null}
               {diffData && diffData.files.length > 0 ? (
                 <div className="space-y-3">
+                  {formatEntitySummary(diffData.entitySummary) ? (
+                    <p className="text-[11px] text-muted-foreground">{formatEntitySummary(diffData.entitySummary)}</p>
+                  ) : null}
                   {diffData.files.map((file) => (
                     <div key={file.path} className="space-y-1">
                       <p className="text-[11px] font-semibold text-muted-foreground">{file.display}{file.isNew ? " · new" : ""}</p>

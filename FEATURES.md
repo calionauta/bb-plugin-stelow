@@ -144,7 +144,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   tree vs HEAD, per file, inside the card — shown at the diff-gate and
   audit stages only. Untracked files open in the viewer; non-repos and
   clean trees state so explicitly. Read-only: never stages, never
-  mutates the index.
+  mutates the index. When `sem` is installed on the host, a one-line
+  entity summary (added/modified/deleted/renamed, cosmetic-only flag)
+  heads the file list — absent otherwise, never an error.
 - **Worker section** (`WorkerSection`, always visible right under the
   hero in both tracks): preset pill + provider/model + inline note
   (applies to the next worker — Resume keeps the current one), real
