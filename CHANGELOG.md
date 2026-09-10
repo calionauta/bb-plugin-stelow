@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.35] - 2026-09-10
+
+### Changed
+
+- **Timeline artifact badges deep-link with context.** Clicking a
+  stage's count opens Artifacts scrolled to that stage's group with a
+  highlight ring — no more landing on the bare section top. The
+  section now reads as the audit trail (`N files · audit trail`).
+
 ## [0.3.34] - 2026-09-10
 
 ### Fixed

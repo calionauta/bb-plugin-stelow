@@ -2325,18 +2325,30 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
 // stage in canonical order. Rows are file affordances (open the viewer),
 // never pills among status pills — the timeline keeps count-only badges so
 // navigation and files never share a shape. Used by both track details.
-function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView }: {
+// highlightStage (from a timeline count badge) rings that stage's group and
+// brings it into view, so the jump lands on the files asked about — never
+// the bare section top.
+function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, highlightStage }: {
   artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>;
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+  highlightStage?: string | null;
 }) {
   const groups = useMemo(() => groupArtifactsByStage(artifacts), [artifacts]);
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    highlightRef.current?.scrollIntoView({ block: "nearest" });
+  }, [highlightStage, groups.length]);
   if (groups.length === 0) return <p className="text-xs text-muted-foreground">No artifacts yet — they appear here as stages complete.</p>;
   return (
     <div className="space-y-3">
       {groups.map((group) => (
-        <div key={group.stage} className="space-y-1">
+        <div
+          key={group.stage}
+          ref={group.stage === highlightStage ? highlightRef : undefined}
+          className={`space-y-1 rounded-md p-1 transition ${group.stage === highlightStage ? "bg-primary/5 ring-2 ring-primary/50" : ""}`}
+        >
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{stageLabel(group.stage)} ({group.items.length})</p>
           <div className="divide-y divide-border rounded-md border">
             {group.items.map((file) => (
@@ -4539,11 +4551,14 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const [inboxEvent, setInboxEvent] = useState<{ kind: InboxNotification["kind"]; summary: string; occurredAt: number } | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
+  const [artifactStage, setArtifactStage] = useState<string | null>(null);
   const artifactsRef = useRef<HTMLDivElement | null>(null);
-  // Count badges on the timeline deep-link here: open the section, then
-  // bring it into view. Instant scroll (no smooth) to respect reduced
-  // motion by default.
-  const showArtifacts = useCallback(() => {
+  // Count badges on the timeline deep-link here: open the section, remember
+  // which stage was asked about (its group rings + scrolls into view), then
+  // bring the section into view. Instant scroll (no smooth) to respect
+  // reduced motion by default.
+  const showArtifacts = useCallback((stage: string | null) => {
+    if (stage) setArtifactStage(stage);
     setArtifactsOpen(true);
     requestAnimationFrame(() => artifactsRef.current?.scrollIntoView({ block: "nearest" }));
   }, []);
@@ -4849,7 +4864,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     nextStages={detail.nextStages}
                     artifacts={detail.artifacts}
                     onPick={(stage) => setPendingAdvance(stage)}
-                    onShowArtifacts={() => showArtifacts()}
+                    onShowArtifacts={(stage) => showArtifacts(stage)}
                   />
                 </div>
               ) : null}
@@ -4909,7 +4924,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
             <div ref={artifactsRef}>
             <CardDisclosure
               title="Artifacts"
-              hint={detail ? `${detail.artifacts.length}` : "produced files"}
+              hint={detail ? `${detail.artifacts.length} files · audit trail` : "produced files"}
               open={artifactsOpen}
               onToggle={setArtifactsOpen}
             >
@@ -4919,6 +4934,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                   workspaceKind={card.workspaceKind}
                   fileEnvironmentId={detail.fileEnvironmentId}
                   onView={(file) => setViewerFile(file)}
+                  highlightStage={artifactStage}
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
