@@ -1,5 +1,6 @@
 import { spawn, execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
@@ -469,6 +470,10 @@ export const rpcContract = defineRpcContract({
   toolStatus: {
     input: z.object({}).strict(),
     output: z.object({ tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })) }),
+  },
+  installTool: {
+    input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire", "plannotator"]) }).strict(),
+    output: z.object({ ok: z.boolean(), version: z.string().nullable(), log: z.string() }),
   },
 });
 
@@ -1673,12 +1678,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
   }
 
-  // Resolve the `sem` binary: server-wide install at ~/.local/bin first
+  // Resolve a host binary: server-wide install at ~/.local/bin first
   // (non-interactive PATH lacks it), PATH fallback otherwise.
-  function resolveSemBin(): string {
-    const home = typeof process.env.HOME === "string" ? process.env.HOME : "";
-    const candidate = home ? nodeJoin(home, ".local", "bin", "sem") : "";
-    return candidate && existsSync(candidate) ? candidate : "sem";
+  const homeDir = typeof process.env.HOME === "string" ? process.env.HOME : "";
+  const localBinDir = homeDir ? nodeJoin(homeDir, ".local", "bin") : "";
+  function resolveLocalBin(name: string): string {
+    const absolute = localBinDir ? nodeJoin(localBinDir, name) : "";
+    return absolute && existsSync(absolute) ? absolute : name;
   }
 
   // Resolve the research index file for a card: always the card's own state
@@ -3422,7 +3428,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       let entitySummary: ReturnType<typeof summarizeSemDiff> = null;
       try {
         const semOut = await new Promise<string | null>((resolve) => {
-          execFile(resolveSemBin(), ["diff", "-C", toplevel, "HEAD", "--format", "json", "--color", "never"], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+          execFile(resolveLocalBin("sem"), ["diff", "-C", toplevel, "HEAD", "--format", "json", "--color", "never"], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
             resolve(!error && typeof stdout === "string" ? stdout : null);
           });
         });
@@ -3705,11 +3711,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // per tool; bins are tried in order, first success wins.
     async toolStatus() {
       const candidates: Array<{ id: string; bins: string[] }> = [
-        { id: "sem", bins: [resolveSemBin()] },
-        { id: "ast-grep", bins: ["ast-grep", "sg"] },
-        { id: "cymbal", bins: ["cymbal"] },
-        { id: "ripwire", bins: ["ripwire"] },
-        { id: "plannotator", bins: ["plannotator"] },
+        { id: "sem", bins: [resolveLocalBin("sem")] },
+        { id: "ast-grep", bins: [resolveLocalBin("ast-grep"), resolveLocalBin("sg")] },
+        { id: "cymbal", bins: [resolveLocalBin("cymbal")] },
+        { id: "ripwire", bins: [resolveLocalBin("ripwire")] },
+        { id: "plannotator", bins: [resolveLocalBin("plannotator")] },
       ];
       const probe = (bins: string[]): Promise<{ present: boolean; version: string | null }> => {
         const [bin, ...rest] = bins;
@@ -3726,6 +3732,73 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       };
       const tools = await Promise.all(candidates.map(async ({ id, bins }) => ({ id, ...(await probe(bins)) })));
       return { tools };
+    },
+
+    // Install one optional tool on explicit user request (About tab button).
+    // Static command map — no user input reaches a shell. Everything lands
+    // in ~/.local/bin (what resolveLocalBin probes); never sudo, never
+    // outside HOME. Success is verified by re-probing, not by exit code
+    // alone; the log tail explains failures inline in the UI.
+    async installTool({ id }) {
+      const tailLines = (text: string) => text.split("\n").slice(-25).join("\n").slice(-2000);
+      const run = (cmd: string, args: string[], extraEnv: Record<string, string> = {}): Promise<{ code: number; out: string }> =>
+        new Promise((resolve) => {
+          execFile(cmd, args, { timeout: 300000, maxBuffer: 1024 * 1024, env: { ...process.env, ...extraEnv } }, (error, stdout, stderr) => {
+            const out = `${typeof stdout === "string" ? stdout : ""}\n${typeof stderr === "string" ? stderr : ""}`.trim();
+            resolve({ code: error ? 1 : 0, out });
+          });
+        });
+      const tmpScript = `.stelow-tool-install-${id}-${process.pid}-${Date.now()}.sh`;
+      const tmpPath = nodeJoin(tmpdir(), tmpScript);
+      let log = "";
+      try {
+        if (id === "sem" || id === "ripwire" || id === "plannotator") {
+          const scripts: Record<string, { url: string; args: string[]; env: Record<string, string> }> = {
+            sem: { url: "https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh", args: [], env: {} },
+            ripwire: { url: "https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh", args: [], env: { RIPWIRE_REPO: "redhat-et/ripwire", RIPWIRE_INSTALL_YES: "1", RIPWIRE_NO_ACTIVATE: "1" } },
+            plannotator: { url: "https://plannotator.ai/install.sh", args: ["--minimal", "--non-interactive"], env: {} },
+          };
+          const spec = scripts[id]!;
+          const download = await run("curl", ["-fsSL", "--max-time", "120", spec.url, "-o", tmpPath]);
+          log += download.out;
+          if (download.code !== 0) return { ok: false, version: null, log: tailLines(log) || "Download failed." };
+          const install = await run("bash", [tmpPath, ...spec.args], spec.env);
+          log += `\n${install.out}`;
+          if (install.code !== 0) return { ok: false, version: null, log: tailLines(log) || "Installer failed." };
+        } else if (id === "ast-grep") {
+          // --prefix keeps it in ~/.local (default global prefix is
+          // root-owned on servers); bins land in ~/.local/bin.
+          const prefix = localBinDir ? nodeJoin(homeDir, ".local") : "";
+          const install = await run("npm", ["install", "-g", ...(prefix ? ["--prefix", prefix] : []), "@ast-grep/cli"]);
+          log += install.out;
+          if (install.code !== 0) return { ok: false, version: null, log: tailLines(log) || "npm install failed." };
+        } else {
+          // cymbal via go install (CGO per upstream README); GOBIN pins the
+          // binary into ~/.local/bin instead of ~/go/bin.
+          const install = await run("go", ["install", "github.com/1broseidon/cymbal@latest"], {
+            ...(localBinDir ? { GOBIN: localBinDir } : {}),
+            CGO_CFLAGS: "-DSQLITE_ENABLE_FTS5",
+          });
+          log += install.out;
+          if (install.code !== 0) return { ok: false, version: null, log: tailLines(log) || "go install failed." };
+        }
+      } finally {
+        try { unlinkSync(tmpPath); } catch { /* best-effort */ }
+      }
+      const bins: Record<string, string[]> = {
+        sem: [resolveLocalBin("sem")],
+        "ast-grep": [resolveLocalBin("ast-grep"), resolveLocalBin("sg")],
+        cymbal: [resolveLocalBin("cymbal")],
+        ripwire: [resolveLocalBin("ripwire")],
+        plannotator: [resolveLocalBin("plannotator")],
+      };
+      for (const bin of bins[id] ?? []) {
+        const check = await run(bin, ["--version"]);
+        if (check.code === 0 && check.out.trim()) {
+          return { ok: true, version: check.out.trim().split("\n")[0]?.slice(0, 60) ?? null, log: tailLines(log) || "Installed." };
+        }
+      }
+      return { ok: false, version: null, log: tailLines(log) || "Installed but the binary did not respond." };
     },
   });
 

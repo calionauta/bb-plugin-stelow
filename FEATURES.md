@@ -145,10 +145,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   audit stages only. Untracked files open in the viewer; non-repos and
   clean trees state so explicitly. Read-only: never stages, never
   mutates the index.
-- **Optional tools** (`toolStatus`, About section). Live presence probe
+- **Optional tools** (`toolStatus`, `installTool`, About section). Live presence probe
   for the host binaries the workflow can use (sem, cymbal, ripwire,
   ast-grep, plannotator) with per-tool purpose and install command —
-  install anytime, everything degrades silently without them. When `sem` is installed on the host, a one-line
+  install anytime, everything degrades silently without them. Each row
+  also offers one-click install (explicit consent, official installers
+  only, ~/.local/bin, verified by re-probe) with per-row error + log. When `sem` is installed on the host, a one-line
   entity summary (added/modified/deleted/renamed, cosmetic-only flag)
   heads the file list — absent otherwise, never an error.
 - **Worker section** (`WorkerSection`, always visible right under the

@@ -1595,22 +1595,29 @@ function BareCardRoute({ cardId, eventId, navigate }: {
 // Optional host binaries the workflow knows how to use. Presence is probed
 // live on the host (toolStatus); install commands are the canonical
 // one-liners from the upstream README's External Dependencies section.
-// Everything here is opt-in and fail-soft — the plugin never installs.
-const HOST_TOOLS: Array<{ id: string; name: string; use: string; install: string }> = [
-  { id: "sem", name: "sem", use: "Entity-level diffs (which functions changed, renames, cosmetic-only) — powers the Diff summary and agent audits.", install: "curl -fsSL https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh | sh" },
-  { id: "cymbal", name: "cymbal", use: "Codebase recon for Tech Preview, Feature Recon and Alignment Check (callers, impact).", install: "brew install 1broseidon/tap/cymbal" },
-  { id: "ripwire", name: "ripwire", use: "Cold-start orientation: ranked symbols, callers, blast radius, tests to run.", install: "RIPWIRE_REPO=redhat-et/ripwire bash -c \"$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)\"" },
-  { id: "ast-grep", name: "ast-grep", use: "Structural search and AST-safe cross-file rewrites.", install: "brew install ast-grep" },
-  { id: "plannotator", name: "plannotator", use: "Visual gate review with point-by-point annotations.", install: "curl -fsSL https://plannotator.ai/install.sh | bash -s -- --minimal" },
+// Everything here is opt-in and fail-soft — the plugin never installs
+// unless you press the button (explicit consent), and every capability
+// keeps working with its built-in fallback until then.
+const HOST_TOOLS: Array<{ id: "ast-grep" | "cymbal" | "plannotator" | "ripwire" | "sem"; name: string; plain: string; tech: string; install: string }> = [
+  { id: "ast-grep", name: "ast-grep", plain: "Find code patterns and rename across files without touching text inside strings — when refactoring.", tech: "Structural AST search with safe rewrite; used for refactors that change signatures.", install: "npm install -g @ast-grep/cli" },
+  { id: "cymbal", name: "cymbal", plain: "See who calls each function and what breaks if you change it — before touching code.", tech: "Symbol graph (refs, impact, trace); used in Tech Preview, Feature Recon and Alignment Check.", install: "brew install 1broseidon/tap/cymbal" },
+  { id: "plannotator", name: "plannotator", plain: "Open the plan in a browser to comment point by point before approving a gate.", tech: "Visual review with structured annotations; portable receipt in .stelow/approvals.", install: "curl -fsSL https://plannotator.ai/install.sh | bash -s -- --minimal" },
+  { id: "ripwire", name: "ripwire", plain: "First read of an unfamiliar codebase: what matters, where to enter, what to test.", tech: "Token-budgeted symbol map (symbols, callers, blast radius).", install: "RIPWIRE_REPO=redhat-et/ripwire bash -c \"$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)\"" },
+  { id: "sem", name: "sem", plain: "Tell which functions and types changed — not just which lines — including renames.", tech: "Entity-level diff via tree-sitter; powers the Diff summary and agent audits.", install: "curl -fsSL https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh | sh" },
 ];
 
-function HostToolsSection({ tools }: { tools: Array<{ id: string; present: boolean; version: string | null }> | null }) {
+function HostToolsSection({ tools, onInstall, installingId, errors }: {
+  tools: Array<{ id: string; present: boolean; version: string | null }> | null;
+  onInstall: (id: "ast-grep" | "cymbal" | "plannotator" | "ripwire" | "sem") => void;
+  installingId: string | null;
+  errors: Record<string, string>;
+}) {
   const byId = new Map((tools ?? []).map((tool) => [tool.id, tool]));
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-semibold text-foreground">Optional tools</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        Each tool unlocks a capability; without it the workflow falls back silently. Install anytime — no restart needed beyond reopening the tab.{" "}
+        Each tool switches a capability to its best version. Without it, the same step still works with the built-in fallback — just with less depth. Install anytime; effects apply on next use.{" "}
         <UrlLink href="https://github.com/calionauta/stelow#external-dependencies">Install guide ↗</UrlLink>
       </p>
       {!tools ? <p className="text-xs text-muted-foreground">Checking host tools…</p> : (
@@ -1618,15 +1625,35 @@ function HostToolsSection({ tools }: { tools: Array<{ id: string; present: boole
         {HOST_TOOLS.map((meta) => {
           const hit = byId.get(meta.id);
           const present = hit?.present === true;
+          const busy = installingId === meta.id;
+          const error = errors[meta.id];
           return (
             <div key={meta.id} className="rounded-lg border bg-muted/20 p-3">
               <div className="flex items-center gap-2">
                 <span aria-hidden className={present ? "text-emerald-500" : "text-muted-foreground/50"}>{present ? "●" : "○"}</span>
                 <span className="font-mono text-xs font-semibold text-foreground">{meta.name}</span>
                 <span className="text-[11px] text-muted-foreground">{present ? (hit?.version ?? "installed") : "not installed"}</span>
+                {!present ? (
+                  <span className="ml-auto">
+                    <Button size="sm" variant="outline" disabled={busy || installingId !== null} onClick={() => onInstall(meta.id)} title={`Install ${meta.name} now`}>
+                      {busy ? "Installing…" : "Install"}
+                    </Button>
+                  </span>
+                ) : null}
               </div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.use}</p>
-              {!present ? <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{meta.install}</pre> : null}
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.plain}</p>
+              <p className="mt-0.5 font-mono text-[11px] leading-5 text-muted-foreground/80">{meta.tech}</p>
+              {!present && !busy ? <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{meta.install}</pre> : null}
+              {busy ? <p className="mt-1.5 text-[11px] text-muted-foreground">Installing — can take a couple minutes. The row flips to ● on success.</p> : null}
+              {error ? (
+                <div className="mt-1.5 space-y-1">
+                  <p className="text-[11px] text-destructive">Install failed: {error.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 220) ?? "unknown error"}</p>
+                  <details>
+                    <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">Install log</summary>
+                    <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{error}</pre>
+                  </details>
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -1640,6 +1667,26 @@ function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null } | null>(null);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
+  const [installingToolId, setInstallingToolId] = useState<string | null>(null);
+  const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
+  function installHostTool(id: "ast-grep" | "cymbal" | "plannotator" | "ripwire" | "sem") {
+    setInstallingToolId(id);
+    setInstallErrors((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    void rpc.call("installTool", { id }).then((result) => {
+      if (result.ok) {
+        void rpc.call("toolStatus", {}).then((status) => setHostTools(status.tools)).catch(() => undefined);
+      } else {
+        setInstallErrors((prev) => ({ ...prev, [id]: result.log || "Install failed." }));
+      }
+    }).catch((error) => {
+      setInstallErrors((prev) => ({ ...prev, [id]: error instanceof Error ? error.message : "Install failed." }));
+    }).finally(() => setInstallingToolId(null));
+  }
   // Two-step reset: first click arms the confirm, second clears all four
   // onboarding keys so each track shows its setup dialogs again on visit.
   const [confirmReset, setConfirmReset] = useState(false);
@@ -1695,7 +1742,7 @@ function AboutPanel() {
                 )}
                 </div>
               </section>
-              <HostToolsSection tools={hostTools} />
+              <HostToolsSection tools={hostTools} onInstall={installHostTool} installingId={installingToolId} errors={installErrors} />
             </div>
         </div>
       </div>
