@@ -57,7 +57,7 @@
     "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",
     "test:skills-verify": "node tests/skills-sync-verify.test.mjs",
     "test:skills-tables": "node tests/skills-tables.test.mjs",
-    "test:contracts": "node tests/workflow-contracts.test.mjs",
+    "test:contracts": "node tests/workflow-contracts.test.mjs && node tests/card-insert-contract.test.mjs",
     "test:bands": "node test_bands.mjs",
     "test:paths": "node tests/plugin-paths.test.mjs",
     "test:helper-sync": "node tests/workflow-helper-sync.test.mjs",
