@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.41] - 2026-09-10
+
+### Changed
+
+- **README documents optional host tools.** `sem` is now listed under
+  Requirements as the opt-in binary behind the Diff entity summary —
+  the plugin never installs binaries itself (fail-soft by design).
+
 ## [0.3.40] - 2026-09-10
 
 ### Added
