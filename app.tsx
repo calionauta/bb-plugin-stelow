@@ -2337,6 +2337,18 @@ function formatEntitySummary(summary: { total: number; added: number; modified: 
   return parts.length > 0 ? `${head} · ${parts.join(" · ")}${tail}` : `${head}${tail}`;
 }
 
+// Blast-radius line for the Diff section ("mul · 3 callers (1 test); add ·
+// no callers"). Null when cymbal is absent or found no symbols.
+function formatChangedSymbols(symbols: Array<{ symbol: string; callers: number; testCallers: number }> | null): string | null {
+  if (!symbols || symbols.length === 0) return null;
+  return symbols.map((entry) => {
+    const impact = entry.callers === 0
+      ? "no callers"
+      : `${entry.callers} caller${entry.callers === 1 ? "" : "s"}${entry.testCallers > 0 ? ` (${entry.testCallers} test${entry.testCallers === 1 ? "" : "s"})` : ""}`;
+    return `${entry.symbol} · ${impact}`;
+  }).join("; ");
+}
+
 function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, relPath: string | null, hostId: string, absolutePath: string): WorkspaceFileTarget | HostFileTarget {
   if (useWorkspace && environmentId && relPath) return { kind: "workspace", environmentId, path: relPath };
   return { kind: "host", hostId, path: absolutePath };
@@ -4677,7 +4689,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [artifactStage, setArtifactStage] = useState<string | null>(null);
-  type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean; entitySummary: { total: number; fileCount: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null };
+  type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean; entitySummary: { total: number; fileCount: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null; changedSymbols: Array<{ symbol: string; files: string[]; callers: number; testCallers: number }> | null };
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffData, setDiffData] = useState<CardDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
@@ -5091,6 +5103,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                 <div className="space-y-3">
                   {formatEntitySummary(diffData.entitySummary) ? (
                     <p className="text-[11px] text-muted-foreground">{formatEntitySummary(diffData.entitySummary)}</p>
+                  ) : null}
+                  {formatChangedSymbols(diffData.changedSymbols) ? (
+                    <p className="text-[11px] text-muted-foreground" title="Changed symbols with caller impact (cymbal)">{formatChangedSymbols(diffData.changedSymbols)}</p>
                   ) : null}
                   {diffData.files.map((file) => (
                     <div key={file.path} className="space-y-1">

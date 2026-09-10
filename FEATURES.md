@@ -152,7 +152,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   also offers one-click install (explicit consent, official installers
   only, ~/.local/bin, verified by re-probe) with per-row error + log. When `sem` is installed on the host, a one-line
   entity summary (added/modified/deleted/renamed, cosmetic-only flag)
-  heads the file list — absent otherwise, never an error.
+  heads the file list — absent otherwise, never an error. When `cymbal`
+  is installed, a second line lists changed symbols with caller impact
+  (blast radius at a glance) under the same fail-soft rule.
 - **Worker section** (`WorkerSection`, always visible right under the
   hero in both tracks): preset pill + provider/model + inline note
   (applies to the next worker — Resume keeps the current one), real

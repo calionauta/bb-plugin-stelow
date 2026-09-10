@@ -9,6 +9,7 @@ import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manif
 import { STAGE_SEQUENCE } from "./lib/artifact-groups.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
+import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
@@ -365,7 +366,7 @@ export const rpcContract = defineRpcContract({
   },
   cardDiff: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), entitySummary: z.object({ total: z.number(), fileCount: z.number(), added: z.number(), modified: z.number(), deleted: z.number(), renamed: z.number(), moved: z.number(), cosmeticOnly: z.boolean() }).nullable(), error: z.string().nullable() }),
+    output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), entitySummary: z.object({ total: z.number(), fileCount: z.number(), added: z.number(), modified: z.number(), deleted: z.number(), renamed: z.number(), moved: z.number(), cosmeticOnly: z.boolean() }).nullable(), changedSymbols: z.array(z.object({ symbol: z.string(), files: z.array(z.string()), callers: z.number(), testCallers: z.number() })).nullable(), error: z.string().nullable() }),
   },
   runResearchStrategy: {
     input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
@@ -3366,7 +3367,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // invented for them). Everything is capped; failures degrade to an
     // explicit shape, never a throw past the contract.
     async cardDiff({ cardId }) {
-      const empty = { found: false, isRepo: false, files: [], truncated: false, entitySummary: null as ReturnType<typeof summarizeSemDiff>, error: null as string | null };
+      const empty = { found: false, isRepo: false, files: [], truncated: false, entitySummary: null as ReturnType<typeof summarizeSemDiff>, changedSymbols: null as ReturnType<typeof summarizeCymbalChanged>, error: null as string | null };
       const card = getCard(cardId);
       if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
       const workspace = await cardWorkspace(card).catch(() => null);
@@ -3436,7 +3437,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           try { entitySummary = summarizeSemDiff(JSON.parse(semOut)); } catch { entitySummary = null; }
         }
       } catch { entitySummary = null; }
-      return { found: true, isRepo: true, files, truncated, entitySummary, error: null };
+      // Changed symbols with caller impact via `cymbal` when installed.
+      // Same HEAD baseline; cwd=toplevel (cymbal only operates on the
+      // current worktree). Strictly additive like the sem summary above.
+      let changedSymbols: ReturnType<typeof summarizeCymbalChanged> = null;
+      try {
+        const cymOut = await new Promise<string | null>((resolve) => {
+          execFile(resolveLocalBin("cymbal"), ["changed", "--base", "HEAD", "--json", "--max-symbols", "20", "--max-impact", "100"], { cwd: toplevel, timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+            resolve(!error && typeof stdout === "string" ? stdout : null);
+          });
+        });
+        if (cymOut) {
+          try { changedSymbols = summarizeCymbalChanged(JSON.parse(cymOut)); } catch { changedSymbols = null; }
+        }
+      } catch { changedSymbols = null; }
+      return { found: true, isRepo: true, files, truncated, entitySummary, changedSymbols, error: null };
     },
 
     async runResearchStrategy({ cardId, strategy }) {
