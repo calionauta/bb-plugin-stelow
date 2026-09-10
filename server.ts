@@ -301,7 +301,7 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
-      attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable() })),
+      attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
@@ -364,7 +364,7 @@ export const rpcContract = defineRpcContract({
   },
   researchIndex: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ found: z.boolean(), indexPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string(), status: z.enum(["ready", "pending", "missing"]), missing: z.array(z.string()), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), looseFiles: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string() })), error: z.string().nullable() }),
+    output: z.object({ found: z.boolean(), indexPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string(), status: z.enum(["ready", "pending", "missing"]), missing: z.array(z.string()), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), error: z.string().nullable() }),
   },
   fanOutResearch: {
     input: z.object({ cardId: z.string(), opportunityIds: z.array(z.string().min(1).max(120)).min(1).max(20) }).strict(),
@@ -1707,7 +1707,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // paths instead of guessing: ready when the file has content, pending
   // while the round's worker is alive, missing otherwise. Manifest
   // sub-step files join the round sharing their stamp; unregistered .md
-  // files in the state dir surface as loose files. Fail-soft throughout.
+  // files declared in the typed manifest join their recorded round. Never
+  // surface arbitrary files from the state directory as user-facing results.
+  // Fail-soft throughout.
   async function researchRoundFiles(workspacePath: string | null, hostId: string | null, stateDir: string | null, history: Array<{ id: string; at: string; file: string }>, live: boolean) {
     type RoundFile = { display: string; path: string; absolutePath: string; hostId: string; generatedAt: string };
     type Round = { n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; files: RoundFile[] };
@@ -1715,20 +1717,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const meta = researchStrategyById(entry.id);
       return { n: index + 1, strategyId: entry.id, label: meta?.label ?? entry.id, emoji: meta?.emoji ?? "", at: entry.at, status: "missing" as const, missing: [], files: [] };
     });
-    const looseFiles: Array<{ display: string; path: string; absolutePath: string; hostId: string }> = [];
     if (workspacePath && stateDir) {
       try {
         const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
         const manifest = stateBlob ? parseArtifactManifest(stateBlob).filter((fields) => fields.stage === "research" && typeof fields.path === "string") : [];
-        const known = new Set([join(stateDir, "research-index.md"), join(stateDir, "state.md")]);
-        for (const round of rounds) {
-          const primaryFull = resolveArtifactPath(workspacePath, history[round.n - 1].file);
-          if (primaryFull) known.add(primaryFull);
-        }
-        for (const fields of manifest) {
-          const full = fields.path ? resolveArtifactPath(workspacePath, fields.path) : null;
-          if (full) known.add(full);
-        }
         // Sub-step extras join the round sharing strategy + stamp.
         for (const round of rounds) {
           const stamp = parseRoundPath(history[round.n - 1].file, round.strategyId)?.stamp;
@@ -1743,25 +1735,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
           round.files.sort((a, b) => (a.display < b.display ? -1 : 1));
         }
-        // files.list is single-level: scan the state dir and its rounds/
-        // subdir (no query — filter client-side, independent of query
-        // semantics). Entries come back relative to the listed dir, so the
-        // absolute path is composed here — treating the bare entry as
-        // absolute produced broken loose-file links (a relative path was
-        // read against the workspace root) and let research-index.md /
-        // state.md leak through as loose.
-        const scanDirs = [stateDir, join(stateDir, ROUNDS_DIR)];
-        for (const dir of scanDirs) {
-          const listed = await bb.sdk.files.list({ path: dir }).catch(() => null);
-          for (const entry of listed?.files ?? []) {
-            const rel = typeof entry.path === "string" ? entry.path : "";
-            if (!rel.endsWith(".md")) continue;
-            const abs = isAbsolute(rel) ? rel : join(dir, rel);
-            if (known.has(abs) || !hostId) continue;
-            looseFiles.push({ display: workspaceRelative(workspacePath, abs) ?? rel.split("/").pop()!, path: workspaceRelative(workspacePath, abs) ?? rel, absolutePath: abs, hostId });
-          }
-        }
-        looseFiles.sort((a, b) => (a.display < b.display ? -1 : 1));
       } catch { /* fail-soft: history-only rounds, no extras or orphans */ }
     }
     // Primary contents decide ready vs pending/missing (sequential reads over
@@ -1793,7 +1766,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         round.status = round.n === rounds.length && live ? "pending" : "missing";
       }
     }
-    return { rounds: rounds.reverse(), looseFiles };
+    return { rounds: rounds.reverse() };
   }
 
   // Deterministic artifact guarantee (enforced in code, not in prompt):
@@ -2888,6 +2861,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           ...attachment,
           display: workspaceRelative(sourcePath ?? "", attachment.path) ?? basename(attachment.path),
           relPath: sourcePath ? workspaceRelative(sourcePath, absolute) : null,
+          absolutePath: absolute,
+          hostId: sourceHostId,
         };
       });
       // Environment backing the worker thread's worktree. Workspace-kind file
@@ -3322,7 +3297,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // throwing so every refusal names its exit.
     async researchIndex({ cardId }) {
       const card = getCard(cardId);
-      const empty = { found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "" };
+      const empty = { found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], error: "" };
       if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
       if (card.kind !== "research") return { ...empty, error: "Only research cards have results to review. Build cards track scopes instead." };
       const resolved = await readResearchIndex(card);
@@ -3331,9 +3306,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const live = ["running", "awaiting-answer"].includes(card.activity);
       const workspace = await cardWorkspace(card).catch(() => null);
       const stateDir = card.dir_hash && workspace?.path ? await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null) : null;
-      const { rounds, looseFiles } = await researchRoundFiles(workspace?.path ?? null, workspace?.hostId ?? null, stateDir, history, live);
+      const { rounds } = await researchRoundFiles(workspace?.path ?? null, workspace?.hostId ?? null, stateDir, history, live);
       const parsed = parseResearchIndex(resolved.content);
-      if (!parsed.found) return { ...empty, indexPath: resolved.display, rounds, looseFiles, error: "Research results are still being prepared." };
+      if (!parsed.found) return { ...empty, indexPath: resolved.display, rounds, error: "Research results are still being prepared." };
       const LIMIT = 100_000;
       return {
         found: true,
@@ -3342,7 +3317,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         truncated: resolved.content.length > LIMIT,
         opportunities: parsed.opportunities.map(({ id, title, checked, group }) => ({ id, title, checked, group })),
         rounds,
-        looseFiles,
         error: null,
       };
     },

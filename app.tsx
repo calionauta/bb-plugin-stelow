@@ -21,8 +21,8 @@ import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { INBOX_EVENT_LABELS, inboxEventPresentation, isOpenInboxAction } from "./lib/inbox-event-presentation.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
-import { parseResearchIndexSections, stripResearchOpportunities } from "./lib/research-index-sections.mjs";
-import { STAGE_SEQUENCE, groupArtifactsByStage } from "./lib/artifact-groups.mjs";
+import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
+import { STAGE_SEQUENCE, groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
@@ -2482,52 +2482,119 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
   );
 }
 
-// Shared artifact inventory: every artifact together, grouped by producing
-// stage in canonical order. Rows are file affordances (open the viewer),
-// never pills among status pills — the timeline keeps count-only badges so
-// navigation and files never share a shape. Used by both track details.
-// highlightStage (from a timeline count badge) rings that stage's group and
-// brings it into view, so the jump lands on the files asked about — never
-// the bare section top.
-function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, highlightStage }: {
-  artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>;
+type ArtifactInventoryFile = { kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note?: string | null };
+type ArtifactInventoryGroup = { id: string; title: string; items: ArtifactInventoryFile[] };
+
+function artifactFilename(path: string): string {
+  const clean = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return clean.split("/").pop() || path;
+}
+
+function formatArtifactDate(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
+}
+
+// One visual inventory for every card type. Each track supplies its durable
+// grouping axis (Build stage, Research round, Explore stage); rows always mean
+// an actual file that opens in the viewer.
+function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView, highlightGroupId }: {
+  groups: ArtifactInventoryGroup[];
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
-  highlightStage?: string | null;
+  highlightGroupId?: string | null;
 }) {
-  const groups = useMemo(() => groupArtifactsByStage(artifacts), [artifacts]);
   const highlightRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     highlightRef.current?.scrollIntoView({ block: "nearest" });
-  }, [highlightStage, groups.length]);
-  if (groups.length === 0) return <p className="text-xs text-muted-foreground">No artifacts yet — they appear here as stages complete.</p>;
+  }, [highlightGroupId, groups.length]);
+  if (groups.length === 0) return <p className="text-xs text-muted-foreground">No artifacts yet — they appear here as work completes.</p>;
   return (
     <div className="space-y-3">
       {groups.map((group) => (
         <div
-          key={group.stage}
-          ref={group.stage === highlightStage ? highlightRef : undefined}
-          className={`space-y-1 rounded-md p-1 transition ${group.stage === highlightStage ? "bg-primary/5 ring-2 ring-primary/50" : ""}`}
+          key={group.id}
+          ref={group.id === highlightGroupId ? highlightRef : undefined}
+          className={`space-y-1 rounded-md p-1 transition ${group.id === highlightGroupId ? "bg-primary/5 ring-2 ring-primary/50" : ""}`}
         >
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{stageLabel(group.stage)} ({group.items.length})</p>
+          <div className="flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p>{group.title}</p>
+            <span className="shrink-0 normal-case tracking-normal">{group.items.length} artifact{group.items.length === 1 ? "" : "s"}</span>
+          </div>
           <div className="divide-y divide-border rounded-md border">
             {group.items.map((file) => (
               <button
                 key={file.path}
                 onClick={() => onView({ display: file.display, path: file.absolutePath, target: fileLinkTarget(workspaceKind === "exploratory", fileEnvironmentId, file.path, file.hostId, file.absolutePath) })}
-                className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                title={`Review ${file.display} — ${stageLabel(group.stage)} · ${file.kind}`}
+                className="flex min-h-11 w-full cursor-pointer items-start gap-2 px-2 py-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                title={`Open ${file.display} (${file.path})`}
               >
-                <span aria-hidden>📄</span>
-                <span className="min-w-0 flex-1 truncate font-medium text-foreground">{file.display}</span>
-                <span className="shrink-0 text-muted-foreground">{file.kind}</span>
+                <span className="mt-0.5" aria-hidden>📄</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-foreground">{file.display}</span>
+                  <span className="block truncate text-muted-foreground">{[formatArtifactDate(file.generatedAt), `File: ${artifactFilename(file.path)}`].filter(Boolean).join(" · ")}</span>
+                  {file.note ? <span className="mt-0.5 block text-muted-foreground">{file.note}</span> : null}
+                </span>
+                <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span>
               </button>
             ))}
           </div>
         </div>
       ))}
     </div>
+  );
+}
+
+// Build and Explore use stages as their canonical grouping axis. Keeping this
+// adapter preserves the shared inventory while avoiding a second renderer.
+function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, highlightStage, groupTitleForStage }: {
+  artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>;
+  workspaceKind: string;
+  fileEnvironmentId: string | null;
+  onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
+  highlightStage?: string | null;
+  groupTitleForStage?: (stage: string) => string;
+}) {
+  const groups = useMemo<ArtifactInventoryGroup[]>(() => groupArtifactsByStage(artifacts).map((group) => ({
+    id: group.stage,
+    title: groupTitleForStage?.(group.stage) ?? stageLabel(group.stage),
+    items: group.items,
+  })), [artifacts, groupTitleForStage]);
+  return <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} highlightGroupId={highlightStage} />;
+}
+
+function InputFiles({ card, detail, onView }: { card: CardItem; detail: CardDetailResponse | null; onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void }) {
+  const files = detail?.attachments ?? [];
+  if (files.length === 0) return null;
+  return (
+    <CardDisclosure title="Input files" hint={`${files.length} file${files.length === 1 ? "" : "s"}`} defaultOpen>
+      <p className="text-xs text-muted-foreground">Files attached when this card was started.</p>
+      <div className="mt-2 divide-y divide-border rounded-md border">
+        {files.map((file) => {
+          const canOpen = Boolean(file.hostId && file.absolutePath);
+          const body = <>
+            <span className="mt-0.5" aria-hidden>{file.type === "localImage" ? "🖼️" : "📎"}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground">{file.display}</span>
+              <span className="block truncate text-muted-foreground">File: {artifactFilename(file.path)}</span>
+            </span>
+            {canOpen ? <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span> : null}
+          </>;
+          return canOpen ? (
+            <button
+              key={`${file.type}:${file.path}`}
+              onClick={() => onView({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.relPath ?? file.path, file.hostId!, file.absolutePath) })}
+              className="flex min-h-11 w-full cursor-pointer items-start gap-2 px-2 py-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              title={`Open ${file.display}`}
+            >
+              {body}
+            </button>
+          ) : <div key={`${file.type}:${file.path}`} className="flex min-h-11 items-start gap-2 px-2 py-2 text-xs">{body}</div>;
+        })}
+      </div>
+    </CardDisclosure>
   );
 }
 
@@ -3665,24 +3732,8 @@ type ResearchIndexState = {
   truncated: boolean;
   opportunities: Array<{ id: string; title: string; checked: boolean; group: string | null }>;
   rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
-  looseFiles: Array<{ display: string; path: string; absolutePath: string; hostId: string }>;
   error: string | null;
 };
-
-function formatRoundDate(iso: string | null): string {
-  if (!iso) return "";
-  const time = new Date(iso).getTime();
-  if (Number.isNaN(time)) return "";
-  return new Date(time).toLocaleString();
-}
-
-// Path cells in the research index's Outputs table are workspace-relative
-// paths; normalize so they match the resolved round/loose file entries the
-// server already returns (which carry absolute paths + host ids for the
-// artifact viewer).
-function normalizeResearchPath(path: string): string {
-  return String(path ?? "").replace(/^\.\//, "").replace(/\/+$/, "").trim();
-}
 
 // Fan-out: turn checked opportunities into build cards. Mirrors the
 // GitHub-import dialog (checkbox list + bulk confirm); the server re-parses
@@ -3999,7 +4050,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
       setIndex(indexResult);
       setStrategies(strategiesResult.strategies);
     } catch {
-      setIndex({ found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], looseFiles: [], error: "Unable to load the index." });
+      setIndex({ found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], error: "Unable to load the index." });
     }
   }, [cardId, rpc]);
 
@@ -4089,27 +4140,10 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const strategyLabel = card ? joinStrategyLabels(card.researchStrategies ?? [card.researchStrategy], strategyById) : null;
   const primaryStrategyLabel = card ? (strategyById.get(card.researchStrategy ?? "") ?? card.researchStrategy) : null;
   const available = index?.opportunities.filter((item) => !item.checked) ?? [];
-  const indexGroups = useMemo(() => {
-    const seen: string[] = [];
-    for (const item of index?.opportunities ?? []) {
-      const group = item.group ?? "Opportunities";
-      if (!seen.includes(group)) seen.push(group);
-    }
-    return seen;
-  }, [index]);
-  // Structured body of the index: Summary prose + Outputs table with the Path
-  // column resolved to clickable artifact buttons (same viewer as build cards).
-  // Opportunities are intentionally NOT rendered from the raw markdown — the
-  // interactive fan-out panel below is the only surface that shows them.
+  // The index supplies research findings and friendly labels; the round
+  // history remains the only source of openable files.
   const indexBody = useMemo(() => (index?.found && index.content ? parseResearchIndexSections(index.content) : null), [index]);
-  const knownIndexFiles = useMemo(() => {
-    const map = new Map<string, { display: string; path: string; absolutePath: string; hostId: string }>();
-    for (const round of index?.rounds ?? []) {
-      for (const file of round.files) map.set(normalizeResearchPath(file.path), file);
-    }
-    for (const file of index?.looseFiles ?? []) map.set(normalizeResearchPath(file.path), file);
-    return map;
-  }, [index]);
+  const artifactGroups = useMemo<ArtifactInventoryGroup[]>(() => groupResearchArtifacts(index?.rounds, indexBody?.outputs), [index?.rounds, indexBody?.outputs]);
 
   return (
     <div className="flex h-full flex-col">
@@ -4198,153 +4232,47 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
               pillTitle="Preset for the next worker"
             />
 
+            <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
+
             <CardDisclosure
-              title="Research results"
+              title="Research summary"
               hint={index && index.found ? `${available.length} available · ${index.opportunities.length} total` : "being prepared"}
               defaultOpen
             >
               {!index ? <p className="text-xs text-muted-foreground">Preparing results…</p> : null}
               {index && !index.found ? <p className="text-xs text-muted-foreground">Results are still being prepared.</p> : null}
-              {index?.found && index.content ? (
-                indexBody && (indexBody.summary !== null || indexBody.outputs.length > 0) ? (
-                  <div className="space-y-3">
-                    {indexBody.summary ? <div className="text-sm leading-relaxed"><Markdown content={indexBody.summary} /></div> : null}
-                    {indexBody.outputs.length > 0 ? (
-                      <div className="overflow-x-auto rounded-md border">
-                        <table className="w-full text-left text-sm">
-                          <thead>
-                            <tr className="border-b bg-muted/20 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                              <th className="px-3 py-2">Strategy</th>
-                              <th className="px-3 py-2">Round</th>
-                              <th className="px-3 py-2">Output</th>
-                              <th className="px-3 py-2">Artifact</th>
-                              <th className="px-3 py-2">Notes</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {indexBody.outputs.map((row, rowIndex) => {
-                              const entry = knownIndexFiles.get(normalizeResearchPath(row.path));
-                              return (
-                                <tr key={`${row.path}-${rowIndex}`} className="border-b last:border-0">
-                                  <td className="px-3 py-2 align-top">{row.strategy || "—"}</td>
-                                  <td className="px-3 py-2 align-top">{row.round || "—"}</td>
-                                  <td className="px-3 py-2 align-top text-muted-foreground">{row.output || "—"}</td>
-                                  <td className="px-3 py-2 align-top">
-                                    {entry ? (
-                                      <button
-                                        onClick={() => setViewerFile({ display: entry.display, path: entry.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, entry.path, entry.hostId, entry.absolutePath) })}
-                                        title={`Open ${entry.display}`}
-                                        className="cursor-pointer min-h-11 rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:border-primary/50"
-                                      >
-                                        {entry.display} ↗
-                                      </button>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">{row.path}</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 align-top text-muted-foreground">{row.notes || "—"}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  /* Contract-missing index: render the raw body without its Opportunities section so nothing duplicates the panel below. */
-                  <div className="text-sm leading-relaxed"><Markdown content={stripResearchOpportunities(index.content)} /></div>
-                )
-              ) : null}
+              {index?.found && indexBody?.summary ? <div className="text-sm leading-relaxed"><Markdown content={indexBody.summary} /></div> : null}
+              {index?.found && artifactGroups.length > 0 ? <p className="text-xs text-muted-foreground">Read the artifacts for the full evidence and detail.</p> : null}
               {index?.truncated ? <p className="text-xs text-muted-foreground">Results are shortened here. Open the full research file at {index.indexPath}.</p> : null}
               {index?.found && index.opportunities.length > 0 ? (
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities ({index.opportunities.length})</h4>
+                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities</h4>
                     <span className="flex flex-wrap items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy on the same request. Its findings are added to these results.">Explore another strategy…</Button>
                           <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Select opportunities, then create the build cards.">Select To Build</Button>
                     </span>
                   </div>
-                  {indexGroups.map((group) => (
-                    <div key={group} className="space-y-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{group}</p>
-                      {(index?.opportunities ?? []).filter((item) => (item.group ?? "Opportunities") === group).map((item) => (
-                        <div key={item.id} className="flex items-start gap-2 text-sm">
-                          {/* Status overview only — selection happens in the fan-out dialog, so no fake checkboxes here. */}
-                          <span className="mt-0.5 w-4 shrink-0 text-center" aria-hidden>{item.checked ? "✓" : ""}</span>
-                          <span className={item.checked ? "text-muted-foreground line-through" : ""}>{item.title}</span>
-                          {item.checked ? <span className="shrink-0 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">fanned out</span> : null}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
+                  <ul className="space-y-1">
+                    {index.opportunities.map((item) => (
+                      <li key={item.id} className="flex items-start gap-2 text-sm">
+                        <span className="mt-0.5 shrink-0" aria-hidden>•</span>
+                        <span className={item.checked ? "text-muted-foreground line-through" : ""}>{item.title}</span>
+                        {item.checked ? <span className="shrink-0 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">fanned out</span> : null}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
             </CardDisclosure>
 
-            {(index && (index.rounds.length > 0 || index.looseFiles.length > 0)) ? (
-              <CardDisclosure title="Rounds" hint={`${index.rounds.length} round${index.rounds.length === 1 ? "" : "s"} · newest first`}>
-                <div className="space-y-1.5">
-                  {index.rounds.map((round) => {
-                    const when = formatRoundDate(round.files[0]?.generatedAt || round.at);
-                    return (
-                      <div key={`${round.strategyId}-r${round.n}`} className="rounded-md border bg-muted/20 px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-                          <span aria-hidden>{round.emoji}</span>
-                          <span className="font-medium">Round {round.n} — {round.label}</span>
-                          {when ? <span className="text-xs text-muted-foreground">{when}</span> : null}
-                          {round.status === "pending" ? <span className="text-xs text-muted-foreground">Running…</span> : null}
-                          {round.status === "missing" ? <span className="text-xs text-muted-foreground">No file saved yet</span> : null}
-                          {round.missing.length > 0 ? <span className="text-xs text-amber-700 dark:text-amber-300" title="Expected sub-outputs not saved yet">Missing: {round.missing.join(", ")}</span> : null}
-                        </div>
-                        {round.files.length > 0 ? (
-                          <div className="mt-1 flex flex-wrap gap-1.5">
-                            {round.files.map((file) => (
-                              <button
-                                key={file.path}
-                                onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) })}
-                                title={`Open ${file.display}`}
-                                className="cursor-pointer min-h-11 rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:border-primary/50"
-                              >
-                                {file.display} ↗
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                  {index.looseFiles.length > 0 ? (
-                    <div className="rounded-md border border-dashed px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Other files in the state dir</p>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {index.looseFiles.map((file) => (
-                          <button
-                            key={file.path}
-                            onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) })}
-                            title={`Open ${file.display}`}
-                            className="cursor-pointer min-h-11 rounded-md border bg-background px-2.5 py-1 text-xs font-medium hover:border-primary/50"
-                          >
-                            {file.display} ↗
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </CardDisclosure>
-            ) : null}
-
-            <CardDisclosure title="Supporting files" hint={detail ? `${detail.artifacts.length}` : "produced files"}>
-              {detail ? (
-                <ArtifactGroups
-                  artifacts={detail.artifacts}
-                  workspaceKind={card.workspaceKind}
-                  fileEnvironmentId={detail.fileEnvironmentId}
-                  onView={(file) => setViewerFile(file)}
-                />
-              ) : <p className="text-xs text-muted-foreground">Loading…</p>}
+            <CardDisclosure title="Artifacts" hint={artifactGroups.length > 0 ? `${artifactGroups.reduce((total, group) => total + group.items.length, 0)} files · newest round first` : "being prepared"} defaultOpen>
+              <ArtifactInventory
+                groups={artifactGroups}
+                workspaceKind={card.workspaceKind}
+                fileEnvironmentId={detail?.fileEnvironmentId ?? null}
+                onView={(file) => setViewerFile(file)}
+              />
             </CardDisclosure>
 
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
@@ -4609,13 +4537,16 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
               pillTitle="Preset for the next worker"
             />
 
-            <CardDisclosure title="Result" hint={detail ? `Files: ${detail.artifacts.length}` : "being prepared"} defaultOpen>
+            <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
+
+            <CardDisclosure title="Artifacts" hint={detail ? `${detail.artifacts.length} files` : "being prepared"} defaultOpen>
               {detail ? (
                 <ArtifactGroups
                   artifacts={detail.artifacts}
                   workspaceKind={card.workspaceKind}
                   fileEnvironmentId={detail.fileEnvironmentId}
                   onView={(file) => setViewerFile(file)}
+                  groupTitleForStage={() => stageLabel ?? "Exploration"}
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
@@ -4997,6 +4928,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               ) : null}
             />
 
+            <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
+
             {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
               title="What is happening"
@@ -5024,38 +4957,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
                     skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
                     offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
-                </div>
-              ) : null}
-              {detail?.attachments && detail.attachments.length > 0 ? (
-                <div className="space-y-1 border-t pt-3">
-                  <span className="text-xs font-medium text-muted-foreground">Attachments ({detail.attachments.length}):</span>
-                  <div className="flex flex-wrap gap-1">
-                    {detail.attachments.map((attachment) => {
-                      const canPreview = card.workspaceKind === "exploratory" && detail.fileEnvironmentId && attachment.relPath;
-                      return canPreview ? (
-                        <button
-                          key={`${attachment.type}:${attachment.path}`}
-                          onClick={() => setViewerFile({ display: attachment.display, path: attachment.relPath ?? attachment.path, target: fileLinkTarget(true, detail.fileEnvironmentId, attachment.relPath, "", "") })}
-                          className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20"
-                          title={`Review ${attachment.display}`}
-                        >
-                          <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
-                          <span>{attachment.display}</span>
-                        </button>
-                      ) : (
-                        <button
-                          key={`${attachment.type}:${attachment.path}`}
-                          onClick={() => card.workerThreadId && navigate.toThread(card.workerThreadId)}
-                        disabled={!card.workerThreadId}
-                        className="disabled:cursor-not-allowed cursor-pointer inline-flex min-h-11 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20 disabled:opacity-50"
-                        title="Open the worker thread; BB renders this original attachment there."
-                      >
-                        <span>{attachment.type === "localImage" ? "🖼️" : "📎"}</span>
-                        <span>{attachment.display}</span>
-                      </button>
-                      );
-                    })}
-                  </div>
                 </div>
               ) : null}
               {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
