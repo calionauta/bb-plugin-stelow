@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.3.64",
+  "version": "0.3.65",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
@@ -71,6 +71,7 @@
   "files": [
     "dist",
     "data",
+    "assets",
     "scripts/postbuild.mjs",
     "server.ts",
     "app.tsx",

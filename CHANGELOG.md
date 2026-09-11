@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.65] - 2026-09-11
+
+### Fixed
+
+- **The About logo is now delivered with the running plugin.** Assets are
+  copied into the runtime bundle and declared in the package, with a
+  regression test for both publication contracts.
+
 ## [0.3.64] - 2026-09-11
 
 ### Added
