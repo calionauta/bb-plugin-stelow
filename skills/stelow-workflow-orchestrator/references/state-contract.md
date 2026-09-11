@@ -61,7 +61,6 @@ artifacts:
     kind: document
     label: spec product v1
     path: .stelow/2026-08-13/abc123/plans/spec-product_v1.md
-    generated_at: 2026-08-13T10:00:00Z
 history:
   - stage: setup
     at: 2026-08-13T09:00:00Z

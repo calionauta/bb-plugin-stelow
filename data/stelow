@@ -428,7 +428,7 @@ for walk_root, _, files in os.walk(statedir):
         relative = os.path.relpath(os.path.realpath(absolute), os.path.realpath(os.getcwd())).replace(os.sep, "/")
         if relative in known_paths: continue
         stem = os.path.splitext(filename)[0].replace("_", " ").replace("-", " ").strip()
-        artifacts.append({"stage": current, "kind": "document", "label": stem, "path": relative, "generated_at": timestamp})
+        artifacts.append({"stage": current, "kind": "document", "label": stem, "path": relative})
         known_paths.add(relative)
 manifest = ["artifacts:"]
 for item in artifacts:
@@ -437,7 +437,6 @@ for item in artifacts:
         f"    kind: {item.get('kind', 'document')}",
         f"    label: {item.get('label', os.path.basename(item['path']))}",
         f"    path: {item['path']}",
-        f"    generated_at: {item.get('generated_at', timestamp)}",
     ])
 if artifact_start is None:
     lines.extend(manifest)

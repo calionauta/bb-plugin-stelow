@@ -3885,11 +3885,11 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
 // Shared detail leaves. Build and research bodies render identical
 // worker history, conversation, and inbox-event banners — one definition
 // each instead of drifting copies.
-function WorkerHistoryList({ history }: { history: CardDetailResponse["workerHistory"] }) {
+function WorkerHistoryList({ history, separated = false }: { history: CardDetailResponse["workerHistory"]; separated?: boolean }) {
   const navigate = useBbNavigate();
   if (history.length === 0) return null;
   return (
-    <details className="border-t pt-2">
+    <details className={separated ? "mt-3 border-t pt-2" : ""}>
       <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Worker history ({history.length}) — archived threads stay readable</summary>
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (
@@ -3963,15 +3963,16 @@ function useInboxEventFocus(eventId: string | null, event: InboxEventSnapshot | 
   }, [event, eventId, sectionRef]);
 }
 
-function WorkerLifecycleActions({ actions, onRepair, onArchive, onDelete }: {
+function WorkerLifecycleActions({ actions, onRepair, onArchive, onDelete, separated = false }: {
   actions: ReturnType<typeof workerActionPolicy>;
   onRepair: () => void;
   onArchive: () => void;
   onDelete: () => void;
+  separated?: boolean;
 }) {
   if (!actions.showRestartFresh && !actions.showArchive && !actions.showDelete) return null;
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+    <div className={separated ? "mt-3 flex flex-wrap items-center gap-2 border-t pt-3" : "flex flex-wrap items-center gap-2"}>
       {actions.showRestartFresh ? <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button> : null}
       {actions.showArchive ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title={actions.hasActiveWorker ? "Archive this card. Its active worker will stop." : "Move this card to Archived. Comments and history are preserved."}>Archive card…</Button> : null}
       {actions.showDelete ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered.">Delete…</Button> : null}
@@ -3997,6 +3998,9 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
   githubLink?: React.ReactNode;
 }) {
   const actions = workerActionPolicy(card, Boolean(detail?.card.needsAttention));
+  const hasLifecycleActions = actions.showRestartFresh || actions.showArchive || actions.showDelete;
+  const hasPreset = actions.showPresetControls;
+  const hasGithubLink = Boolean(githubLink);
   return (
     <section aria-label="Worker" className="rounded-lg border p-3">
       {actions.showPresetControls ? <div className="flex flex-wrap items-center gap-2">
@@ -4015,9 +4019,9 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
           <Button size="sm" disabled={restarting} onClick={onRestartWorker}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
         </div>
       ) : null}
-      <WorkerLifecycleActions actions={actions} onRepair={onRepair} onArchive={onArchive} onDelete={onDelete} />
-      {githubLink}
-      {detail ? <WorkerHistoryList history={detail.workerHistory} /> : null}
+      <WorkerLifecycleActions actions={actions} onRepair={onRepair} onArchive={onArchive} onDelete={onDelete} separated={hasPreset} />
+      {githubLink ? <div className={hasPreset || hasLifecycleActions ? "mt-3 border-t pt-3" : ""}>{githubLink}</div> : null}
+      {detail ? <WorkerHistoryList history={detail.workerHistory} separated={hasPreset || hasLifecycleActions || hasGithubLink} /> : null}
     </section>
   );
 }
@@ -4919,7 +4923,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               presetNote={<>{card.stage ? <strong>{stageLabel(card.stage)}</strong> : "current"} phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"} · applies to the next worker</>}
               pillTitle={card.stage ? `Preset for the ${stageLabel(card.stage)} phase` : "Preset for the next worker"}
               githubLink={detail?.githubLink ? (
-                <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>Imported from <UrlLink href={detail.githubLink.url} className="font-medium text-primary underline-offset-4 hover:underline">{detail.githubLink.repo}#{detail.githubLink.number}</UrlLink></span>
                   {card.status === "completed" ? (
                     detail.githubLink.postedAt ? (

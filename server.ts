@@ -546,6 +546,13 @@ function join(root: string, relative: string): string {
   return `${root.replace(/\/$/, "")}/${relative.replace(/^\//, "")}`;
 }
 
+function fileTimestamp(file: { modifiedAtMs?: unknown } | null, fallback: string): string {
+  const modifiedAtMs = file?.modifiedAtMs;
+  return typeof modifiedAtMs === "number" && Number.isFinite(modifiedAtMs) && modifiedAtMs > 0
+    ? new Date(modifiedAtMs).toISOString()
+    : fallback;
+}
+
 function safeRelative(path: string): string {
   if (!path || path.startsWith("/") || path.split("/").some((part) => part === "..")) {
     throw new Error("Path must stay inside the project workspace.");
@@ -1731,7 +1738,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             if (!parsed || parsed.roundNo !== round.n || parsed.stamp !== stamp) continue;
             const full = resolveArtifactPath(workspacePath, fields.path);
             if (!full) continue;
-            round.files.push({ display: fields.label ?? full.split("/").pop()!, path: fields.path, absolutePath: full, hostId, generatedAt: fields.generated_at ?? round.at });
+            const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
+            if (!artifact) continue;
+            round.files.push({ display: fields.label ?? full.split("/").pop()!, path: fields.path, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
           }
           round.files.sort((a, b) => (a.display < b.display ? -1 : 1));
         }
@@ -1752,15 +1761,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const full = workspacePath ? resolveArtifactPath(workspacePath, history[round.n - 1].file) : null;
       const primaryLabel = `Round ${round.n} — ${round.label}`;
       if (full && hostId) {
-        const content = await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null);
+        const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
+        const content = artifact?.content ?? null;
         if (isValidRoundContent(content, indexBlob)) {
           round.status = "ready";
-          round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: round.at });
+          round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
         } else {
           round.status = round.n === rounds.length && live ? "pending" : "missing";
           // A still-running round whose file already mirrors the index has
           // nothing worth opening yet — don't surface a wrong-artifact button.
-          if (round.status === "pending" && !(typeof content === "string" && researchRoundMirrorsIndex(content, indexBlob))) round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: round.at });
+          if (round.status === "pending" && !(typeof content === "string" && researchRoundMirrorsIndex(content, indexBlob))) round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
         }
       } else {
         round.status = round.n === rounds.length && live ? "pending" : "missing";
@@ -2898,8 +2908,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // project-relative path; absolute paths and traversal are rejected.
           const full = resolveArtifactPath(sourcePath, relPath);
           if (!full) continue;
-          const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
-          if (exists && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fields.generated_at ?? "", absolutePath: full, hostId: sourceHostId });
+          const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
+          if (artifact && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId });
         }
         return list;
       })();
