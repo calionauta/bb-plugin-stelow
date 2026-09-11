@@ -28,6 +28,7 @@ import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import { workerActionPolicy } from "./lib/worker-action-policy.mjs";
+import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport.js";
@@ -1586,12 +1587,7 @@ function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
 }) {
   const back = () => goToTrack(navigate, backTrack);
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
-      <CardDetailHeader cardId={cardId} onBack={back} />
-      <div className="flex-1 overflow-auto">
-        <CardDetailBody cardId={cardId} inboxEventId={eventId} onClose={back} navigate={navigate} />
-      </div>
-    </div>
+    <CardDetailBody cardId={cardId} inboxEventId={eventId} onClose={back} onBack={back} navigate={navigate} />
   );
 }
 
@@ -2268,7 +2264,7 @@ function BoardCard({ card }: { card: CardItem }) {
       </div>
       {(card.scopeSummary.scopesTotal > 0 || card.intent !== "unknown") ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
-        {card.intent !== "unknown" ? <Pill className="ml-auto whitespace-nowrap" title="Intent — the kind of card this is. The agent sets it during triage; correct it here if it got it wrong.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
+        {card.intent !== "unknown" ? <Pill className="ml-auto whitespace-nowrap" title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
       </div> : null}
       <CardMetaRows card={card} />
     </div>
@@ -2607,54 +2603,144 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
-function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string; onBack: () => void; restartFocusKey?: number }) {
+function CardActionsMenu({ card, onRestartFresh, onArchive, onDelete, onReclassify }: {
+  card: CardItem;
+  onRestartFresh: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+  onReclassify: (intent: string) => Promise<boolean>;
+}) {
+  const actions = workerActionPolicy(card, card.needsAttention);
+  const [open, setOpen] = useState(false);
+  const [reclassifyOpen, setReclassifyOpen] = useState(false);
+  const [nextIntent, setNextIntent] = useState(card.intent);
+  const [reclassifying, setReclassifying] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePress = (event: MouseEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePress);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsidePress);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+  const choose = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+  const canReclassify = canReclassifyWorkflow(card);
+  return (
+    <>
+      <div ref={rootRef} className="relative shrink-0">
+        <Button
+          ref={triggerRef}
+          size="icon"
+          variant="ghost"
+          aria-label="Card actions"
+          aria-expanded={open}
+          aria-controls={`card-actions-${card.id}`}
+          title="Card actions"
+          onClick={() => setOpen((value) => !value)}
+          className="min-h-11 min-w-11"
+        >
+          <Icon name="MoreHorizontal" className="h-4 w-4" aria-hidden />
+        </Button>
+        {open ? (
+          <div id={`card-actions-${card.id}`} role="group" aria-label="Card actions" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-md border bg-popover p-1 text-sm shadow-md">
+            {canReclassify ? (
+              <button type="button" onClick={() => choose(() => { setNextIntent(card.intent); setReclassifyOpen(true); })} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Reclassify workflow…</button>
+            ) : null}
+            {actions.showRestartFresh ? (
+              <button type="button" onClick={() => choose(onRestartFresh)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Restart fresh…</button>
+            ) : null}
+            {(canReclassify || actions.showRestartFresh) && (actions.showArchive || actions.showDelete) ? <div className="my-1 border-t" /> : null}
+            {actions.showArchive ? (
+              <button type="button" onClick={() => choose(onArchive)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Archive card…</button>
+            ) : null}
+            {actions.showDelete ? (
+              <button type="button" onClick={() => choose(onDelete)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Delete permanently…</button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <Dialog open={reclassifyOpen} onOpenChange={setReclassifyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reclassify and restart from triage?</DialogTitle>
+            <DialogDescription>
+              This starts a fresh worker from triage on the selected workflow type. Existing comments and history stay as the record of the previous attempt; its route, pending stages, and plan are recalculated.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium">Workflow type</span>
+            <select value={nextIntent} onChange={(event) => setNextIntent(event.target.value)} className="h-10 rounded-md border bg-background px-2 text-sm">
+              <option value="new-product">New product</option>
+              <option value="feature">Feature</option>
+              <option value="bugfix">Bug fix</option>
+              <option value="refactor">Refactor</option>
+              <option value="investigate">Investigate</option>
+              <option value="unknown">Unknown intent</option>
+            </select>
+          </label>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline" disabled={reclassifying}>Cancel</Button></DialogClose>
+            <Button disabled={reclassifying || nextIntent === card.intent} onClick={() => {
+              setReclassifying(true);
+              void onReclassify(nextIntent).then((restarted) => { if (restarted) setReclassifyOpen(false); }).finally(() => setReclassifying(false));
+            }}>{reclassifying ? "Restarting…" : "Reclassify & restart"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, onReclassify }: {
+  card: CardItem | null;
+  onBack?: () => void;
+  onRestartFresh: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+  onReclassify: (intent: string) => Promise<boolean>;
+}) {
   const rpc = useRpc<typeof rpcContract>();
-  const [card, setCard] = useState<CardItem | null>(null);
-  const [pendingIntent, setPendingIntent] = useState<string | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    let cancelled = false;
-    void rpc.call("listCards", { projectId: null }).then((result) => {
-      if (cancelled) return;
-      setCard(result.cards.find((entry) => entry.id === cardId) ?? null);
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [cardId, rpc]);
-  useDebouncedRealtime(["card-state"], () => {
-    void rpc.call("listCards", { projectId: null }).then((result) => {
-      setCard(result.cards.find((entry) => entry.id === cardId) ?? null);
-    }).catch(() => undefined);
-  });
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onBack(); };
+    if (!onBack) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) onBack();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
-  useEffect(() => {
-    if (restartFocusKey === undefined) return;
-    closeRef.current?.focus();
-  }, [restartFocusKey]);
   async function applyIntent(nextIntent: string) {
-    const result = await rpc.call("updateCardIntent", { cardId, intent: nextIntent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" });
+    if (!card) return;
+    const result = await rpc.call("updateCardIntent", { cardId: card.id, intent: nextIntent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" });
     if (!result.ok) {
       toast.error(result.error ?? "Could not change intent.");
       return;
     }
-    if (result.pastTriage && !result.notified) {
-      toast.error("Intent changed, but the worker could not be notified. Use Retry so it picks up the change.");
-    } else if (result.pastTriage) {
-      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent} — worker notified. Appetite and stage path unchanged.`);
-    } else {
-      toast.success(`Intent changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
-    }
+    toast.success(`Workflow type changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
   }
   return (
-    <>
     <header className="flex items-center gap-2 border-b bg-card/80 px-3 py-1.5">
-      <button onClick={onBack} title="Back to board (Esc)" className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
+      {onBack ? <button onClick={onBack} title="Back to board (Esc)" className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
         <span aria-hidden>←</span>
         <span>Board</span>
-      </button>
+      </button> : null}
       <nav className="min-w-0 flex-1 truncate text-xs text-muted-foreground" aria-label="Breadcrumb">
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
@@ -2663,20 +2749,14 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
       </nav>
       {card ? <>
         <ActivityPill activity={card.activity} />
-        {card.kind !== "research" ? (
+        {canEditWorkflowIntent(card) ? (
         <select
           aria-label="Intent"
-          title="Intent — the kind of card this is. The agent sets it during triage; correct it here if it got it wrong."
+          title="Workflow type — correct it while this card is still in triage."
           value={card.intent}
           onChange={(event) => {
             const nextIntent = event.target.value;
             if (nextIntent === card.intent) return;
-            // Past triage the intent already shaped appetite and the stage path,
-            // so changing it is a correction with consequences — confirm first.
-            if (card.stage !== "triage") {
-              setPendingIntent(nextIntent);
-              return;
-            }
             void applyIntent(nextIntent);
           }}
           className="h-6 max-w-32 cursor-pointer truncate rounded-full border border-transparent bg-transparent text-xs font-medium text-muted-foreground hover:border-border hover:text-foreground"
@@ -2689,21 +2769,13 @@ function CardDetailHeader({ cardId, onBack, restartFocusKey }: { cardId: string;
           <option value="unknown">Unknown intent</option>
         </select>
         ) : null}
+        {card.kind === "build" && !canEditWorkflowIntent(card) ? <Pill tone="bg-muted text-muted-foreground" title="Workflow type chosen at triage. Reclassify from Card actions to restart with a different route.">{INTENT_LABEL[card.intent] ?? "Unknown intent"}</Pill> : null}
+        <CardActionsMenu card={card} onRestartFresh={onRestartFresh} onArchive={onArchive} onDelete={onDelete} onReclassify={onReclassify} />
       </> : null}
-      <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+      {onBack ? <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <Icon name="X" className="h-4 w-4" aria-hidden />
-      </button>
+      </button> : null}
     </header>
-    <ConfirmActionDialog
-      open={pendingIntent !== null}
-      onOpenChange={(next) => { if (!next) setPendingIntent(null); }}
-      title="Change intent after triage?"
-      description={card && pendingIntent ? `This card is already at the ${stageLabel(card.stage)} stage. Changing the intent to ${INTENT_LABEL[pendingIntent] ?? pendingIntent} updates the label and notifies the worker, but appetite and the stage path chosen under the old intent are not recomputed.` : "Changing the intent updates the label and notifies the worker."}
-      confirmLabel="Change intent"
-      confirmTone="default"
-      onConfirm={() => { const next = pendingIntent; setPendingIntent(null); if (next) void applyIntent(next); }}
-    />
-    </>
   );
 }
 
@@ -3963,34 +4035,14 @@ function useInboxEventFocus(eventId: string | null, event: InboxEventSnapshot | 
   }, [event, eventId, sectionRef]);
 }
 
-function WorkerLifecycleActions({ actions, onRepair, onArchive, onDelete, separated = false }: {
-  actions: ReturnType<typeof workerActionPolicy>;
-  onRepair: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
-  separated?: boolean;
-}) {
-  if (!actions.showRestartFresh && !actions.showArchive && !actions.showDelete) return null;
-  return (
-    <div className={separated ? "mt-3 flex flex-wrap items-center gap-2 border-t pt-3" : "flex flex-wrap items-center gap-2"}>
-      {actions.showRestartFresh ? <Button size="sm" variant="outline" onClick={onRepair} title="Start over with a new worker. Comments are kept.">Restart fresh…</Button> : null}
-      {actions.showArchive ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onArchive} title={actions.hasActiveWorker ? "Archive this card. Its active worker will stop." : "Move this card to Archived. Comments and history are preserved."}>Archive card…</Button> : null}
-      {actions.showDelete ? <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onDelete} title="Permanently delete this archived card. Comments and history are removed and cannot be recovered.">Delete…</Button> : null}
-    </div>
-  );
-}
-
 // Shared worker block: preset readout, state-appropriate recovery, and worker
-// history. Lifecycle actions stay visually secondary without being hidden.
-function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onRepair, onArchive, onDelete, onPreset, presetPill, presetNote, pillTitle, githubLink }: {
+// history. Card lifecycle actions deliberately live in the card header.
+function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onPreset, presetPill, presetNote, pillTitle, githubLink }: {
   card: CardItem | null;
   detail: CardDetailResponse | null;
   presetStale: boolean;
   restarting: boolean;
   onRestartWorker: () => void;
-  onRepair: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
   onPreset: () => void;
   presetPill: React.ReactNode;
   presetNote: React.ReactNode;
@@ -3998,7 +4050,6 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
   githubLink?: React.ReactNode;
 }) {
   const actions = workerActionPolicy(card, Boolean(detail?.card.needsAttention));
-  const hasLifecycleActions = actions.showRestartFresh || actions.showArchive || actions.showDelete;
   const hasPreset = actions.showPresetControls;
   const hasGithubLink = Boolean(githubLink);
   return (
@@ -4019,9 +4070,8 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
           <Button size="sm" disabled={restarting} onClick={onRestartWorker}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
         </div>
       ) : null}
-      <WorkerLifecycleActions actions={actions} onRepair={onRepair} onArchive={onArchive} onDelete={onDelete} separated={hasPreset} />
-      {githubLink ? <div className={hasPreset || hasLifecycleActions ? "mt-3 border-t pt-3" : ""}>{githubLink}</div> : null}
-      {detail ? <WorkerHistoryList history={detail.workerHistory} separated={hasPreset || hasLifecycleActions || hasGithubLink} /> : null}
+      {githubLink ? <div className={hasPreset ? "mt-3 border-t pt-3" : ""}>{githubLink}</div> : null}
+      {detail ? <WorkerHistoryList history={detail.workerHistory} separated={hasPreset || hasGithubLink} /> : null}
     </section>
   );
 }
@@ -4038,12 +4088,9 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const [indexRefresh, setIndexRefresh] = useState(0);
   const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
   const [comment, setComment] = useState("");
-  const [repairOpen, setRepairOpen] = useState(false);
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [fanOutOpen, setFanOutOpen] = useState(false);
@@ -4082,40 +4129,6 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
     onChanged();
   }
 
-  async function doArchive() {
-    setArchiveOpen(false);
-    try {
-      await rpc.call("cancelCard", { cardId });
-      toast.success("Research archived.");
-      onClose();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Archive failed.");
-    }
-  }
-
-  async function doDelete() {
-    setDeleteOpen(false);
-    const result = await rpc.call("deleteCard", { cardId });
-    if (!result.deleted) {
-      toast.error(result.error ?? "Delete failed.");
-      return;
-    }
-    toast.success("Research deleted.");
-    onClose();
-  }
-
-  async function doRepair() {
-    setRepairOpen(false);
-    const result = await rpc.call("reseedCard", { cardId });
-    if (!result.reseeded) {
-      toast.error(result.error ?? "Restart failed");
-      return;
-    }
-    toast.success("Fresh worker started on the same strategy.");
-    onChanged();
-    void loadIndex();
-  }
-
   async function doRetry() {
     setRetrying(true);
     try {
@@ -4147,7 +4160,6 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
   const strategyById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
   const strategyLabel = card ? joinStrategyLabels(card.researchStrategies ?? [card.researchStrategy], strategyById) : null;
-  const primaryStrategyLabel = card ? (strategyById.get(card.researchStrategy ?? "") ?? card.researchStrategy) : null;
   const available = index?.opportunities.filter((item) => !item.checked) ?? [];
   // The index supplies research findings and friendly labels; the round
   // history remains the only source of openable files.
@@ -4233,9 +4245,6 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
               presetStale={presetStale}
               restarting={restarting}
               onRestartWorker={() => setRestartWorkerOpen(true)}
-              onRepair={() => setRepairOpen(true)}
-              onArchive={() => setArchiveOpen(true)}
-              onDelete={() => setDeleteOpen(true)}
               onPreset={() => setPresetDialogOpen(true)}
               presetPill={<>Research · {detail?.card.presetName ?? "default"}</>}
               presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
@@ -4292,15 +4301,6 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
         </div>
       </div>
       <ConfirmActionDialog
-        open={repairOpen}
-        onOpenChange={setRepairOpen}
-        title="Restart with a fresh worker?"
-        description={`A new worker restarts ${primaryStrategyLabel ? `the ${primaryStrategyLabel} strategy` : "the original strategy"} from scratch with clean research results — later rounds are discarded. Existing comments are kept. Try Retry first — restart only if the worker itself is broken.`}
-        confirmLabel="Restart fresh"
-        confirmTone="default"
-        onConfirm={doRepair}
-      />
-      <ConfirmActionDialog
         open={restartWorkerOpen}
         onOpenChange={setRestartWorkerOpen}
         title="Restart the worker on the current preset?"
@@ -4338,24 +4338,6 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
         runIds={card?.researchStrategies ?? []}
         onStarted={() => { onChanged(); setIndexRefresh((value) => value + 1); }}
       />
-      <ConfirmActionDialog
-        open={archiveOpen}
-        onOpenChange={setArchiveOpen}
-        title="Archive this research?"
-        description="Moves this research to Archived. If its worker is active, Stelow stops it. Comments and history are preserved."
-        confirmLabel="Archive research"
-        confirmTone="destructive"
-        onConfirm={doArchive}
-      />
-      <ConfirmActionDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete this research permanently?"
-        description="The archived research, its comments, and its history are removed from Stelow and cannot be recovered."
-        confirmLabel="Delete"
-        confirmTone="destructive"
-        onConfirm={doDelete}
-      />
     </div>
   );
 }
@@ -4367,12 +4349,9 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
   const rpc = useRpc<typeof rpcContract>();
   const [stages, setStages] = useState<ResearchStrategyOption[]>([]);
   const [comment, setComment] = useState("");
-  const [repairOpen, setRepairOpen] = useState(false);
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
@@ -4397,39 +4376,6 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
       return;
     }
     setComment("");
-    onChanged();
-  }
-
-  async function doArchive() {
-    setArchiveOpen(false);
-    try {
-      await rpc.call("cancelCard", { cardId });
-      toast.success("Exploration archived.");
-      onClose();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Archive failed.");
-    }
-  }
-
-  async function doDelete() {
-    setDeleteOpen(false);
-    const result = await rpc.call("deleteCard", { cardId });
-    if (!result.deleted) {
-      toast.error(result.error ?? "Delete failed.");
-      return;
-    }
-    toast.success("Exploration deleted.");
-    onClose();
-  }
-
-  async function doRepair() {
-    setRepairOpen(false);
-    const result = await rpc.call("reseedCard", { cardId });
-    if (!result.reseeded) {
-      toast.error(result.error ?? "Restart failed");
-      return;
-    }
-    toast.success("Fresh worker started on the same stage.");
     onChanged();
   }
 
@@ -4538,9 +4484,6 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
               presetStale={presetStale}
               restarting={restarting}
               onRestartWorker={() => setRestartWorkerOpen(true)}
-              onRepair={() => setRepairOpen(true)}
-              onArchive={() => setArchiveOpen(true)}
-              onDelete={() => setDeleteOpen(true)}
               onPreset={() => setPresetDialogOpen(true)}
               presetPill={<>Explore · {detail?.card.presetName ?? "default"}</>}
               presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
@@ -4568,15 +4511,6 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
         </div>
       </div>
       <ConfirmActionDialog
-        open={repairOpen}
-        onOpenChange={setRepairOpen}
-        title="Restart with a fresh worker?"
-        description={`A new worker restarts ${stageLabel ? `the ${stageLabel} stage` : "the stage"} from scratch with a clean workspace — existing artifacts are discarded. Existing comments are kept. Try Retry first — restart only if the worker itself is broken.`}
-        confirmLabel="Restart fresh"
-        confirmTone="default"
-        onConfirm={doRepair}
-      />
-      <ConfirmActionDialog
         open={restartWorkerOpen}
         onOpenChange={setRestartWorkerOpen}
         title="Restart the worker on the current preset?"
@@ -4599,29 +4533,11 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
         editorTarget={viewerFile?.target ?? null}
         onCommented={onChanged}
       />
-      <ConfirmActionDialog
-        open={archiveOpen}
-        onOpenChange={setArchiveOpen}
-        title="Archive this exploration?"
-        description="Moves this exploration to Archived. If its worker is active, Stelow stops it. Comments and history are preserved."
-        confirmLabel="Archive exploration"
-        confirmTone="destructive"
-        onConfirm={doArchive}
-      />
-      <ConfirmActionDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete this exploration permanently?"
-        description="The archived exploration, its comments, and its history are removed from Stelow and cannot be recovered."
-        confirmLabel="Delete"
-        confirmTone="destructive"
-        onConfirm={doDelete}
-      />
     </div>
   );
 }
 
-function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
+function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; onBack?: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
@@ -4737,15 +4653,16 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
     }
   }
 
-  async function doRepair() {
+  async function doRepair(intent?: string): Promise<boolean> {
     setRepairOpen(false);
-    const result = await rpc.call("reseedCard", { cardId });
+    const result = await rpc.call("reseedCard", { cardId, ...(intent ? { intent: intent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" } : {}) });
     if (!result.reseeded) {
       toast.error(result.error ?? "Restart failed");
-      return;
+      return false;
     }
-    toast.success("Fresh worker started from triage.");
+    toast.success(result.reclassified ? `Workflow reclassified as ${INTENT_LABEL[intent ?? ""] ?? intent} and restarted from triage.` : "Fresh worker started from triage.");
     await load();
+    return true;
   }
 
   async function doRetry() {
@@ -4829,6 +4746,14 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
 
   return (
     <div className="flex h-full flex-col">
+      <CardDetailHeader
+        card={card}
+        onBack={onBack}
+        onRestartFresh={() => setRepairOpen(true)}
+        onArchive={() => setArchiveOpen(true)}
+        onDelete={() => setDeleteOpen(true)}
+        onReclassify={doRepair}
+      />
       <div className="flex-1 overflow-auto p-4">
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -4915,9 +4840,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
               presetStale={presetStale}
               restarting={restarting}
               onRestartWorker={() => setRestartWorkerOpen(true)}
-              onRepair={() => setRepairOpen(true)}
-              onArchive={() => setArchiveOpen(true)}
-              onDelete={() => setDeleteOpen(true)}
               onPreset={() => setPresetDialogOpen(true)}
               presetPill={<>{card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ` : ""}{detail?.card.presetName ?? "default"}</>}
               presetNote={<>{card.stage ? <strong>{stageLabel(card.stage)}</strong> : "current"} phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"} · applies to the next worker</>}
@@ -5072,7 +4994,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, navigate }: { cardId: s
         description="Reseed state.md and stelow.json so a new worker restarts from the triage stage. Existing scope work and comments are kept. Try Retry first — restart only if the worker itself is broken."
         confirmLabel="Restart fresh"
         confirmTone="default"
-        onConfirm={doRepair}
+        onConfirm={() => void doRepair()}
       />
       <ConfirmActionDialog
         open={restartWorkerOpen}

@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.58] - 2026-09-11
+
+### Changed
+
+- **Card actions now live where the card is identified.** A compact
+  **Card actions** menu in the detail header holds Restart fresh, Archive,
+  and permanent Delete. The Worker section now contains only worker context,
+  preset controls, and history.
+- **Workflow type is safe after triage.** Build cards can be classified while
+  in triage. Afterwards the type is a read-only pill; **Reclassify workflow…**
+  starts a fresh worker from triage on the selected route rather than silently
+  changing a label beneath an existing plan. Research and Explore never show
+  the Build-only type control.
+
+### Fixed
+
+- **Lifecycle updates refresh every open card surface.** Archive, delete, and
+  reclassification now publish card state changes, including the thread-panel
+  view.
+
 ## [0.3.47] - 2026-09-10
 
 ### Fixed

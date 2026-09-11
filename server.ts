@@ -31,6 +31,7 @@ import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard } from "./lib/worker-action-policy.mjs";
+import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 
@@ -295,7 +296,7 @@ export const rpcContract = defineRpcContract({
   },
   updateCardIntent: {
     input: z.object({ cardId: z.string(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]) }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable(), pastTriage: z.boolean(), notified: z.boolean() }),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
@@ -331,8 +332,8 @@ export const rpcContract = defineRpcContract({
     output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
   },
   reseedCard: {
-    input: z.object({ cardId: z.string(), presetId: z.string().nullable().optional() }).strict(),
-    output: z.object({ reseeded: z.boolean(), error: z.string().nullable() }),
+    input: z.object({ cardId: z.string(), presetId: z.string().nullable().optional(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).optional() }).strict(),
+    output: z.object({ reseeded: z.boolean(), error: z.string().nullable(), reclassified: z.boolean() }),
   },
   retryWorker: {
     input: z.object({ cardId: z.string() }).strict(),
@@ -2975,10 +2976,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async updateCardIntent({ cardId, intent }) {
       const card = getCard(cardId);
-      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND, pastTriage: false, notified: false };
-      if (card.kind === "research" || card.kind === "explore") return { ok: false, error: "Research and Explore cards don't use intent — the strategy or stage defines the work.", pastTriage: false, notified: false };
-      const previousIntent = card.intent;
-      const pastTriage = card.stage !== "triage";
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
+      if (!canEditWorkflowIntent(card)) return { ok: false, error: card.kind !== "build" ? "Only Build cards use a workflow type." : "This workflow has already left triage. Reclassify it from Card actions to restart from triage." };
       const ts = now();
       db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, ts, cardId);
       // Keep state.md intent in sync so the agent sees the corrected intent.
@@ -2993,20 +2992,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
         }
       } catch { /* state.md sync is best-effort */ }
-      // Past triage the label change alone leaves the worker behind: appetite and
-      // the stage path were chosen under the old intent and are not recomputed.
-      // Notify the worker directly (same mechanism as user comments) so it learns
-      // about the correction instead of discovering a silently edited state.md.
-      let notified = false;
-      if (pastTriage && intent !== previousIntent && card.worker_thread_id) {
-        try {
-          await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The user corrected this card's intent from "${previousIntent}" to "${intent}". The card label and state.md are updated. Appetite and the stage path chosen under the old intent are unchanged — keep working from the current stage (${card.stage}) unless the new intent clearly invalidates completed work, in which case ask the user via the question form instead of silently switching tracks.`, mentions: [] }] });
-          updateCard(cardId, { activity: "running" });
-          notified = true;
-        } catch { /* worker unreachable — caller surfaces the fallback */ }
-      }
       bb.realtime.publish("card-state", { cardId });
-      return { ok: true, error: null, pastTriage, notified };
+      return { ok: true, error: null };
     },
 
     async addCardComment({ cardId, target, targetId, body }) {
@@ -3030,6 +3017,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card) return { archived: false };
       await stopWorkerThread(card.worker_thread_id);
       updateCard(cardId, { status: "archived", activity: "idle" });
+      bb.realtime.publish("card-state", { cardId });
+      bb.realtime.publish("board-changed", { cardId });
       return { archived: true };
     },
 
@@ -3049,6 +3038,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       db.prepare("DELETE FROM card_threads WHERE card_id = ?").run(cardId);
       db.prepare("UPDATE github_imports SET card_id = NULL WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM cards WHERE id = ?").run(cardId);
+      bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { deleted: true, error: null };
     },
@@ -3102,23 +3092,26 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { ok: result.ok, error: result.error ?? null };
     },
 
-    async reseedCard({ cardId, presetId }) {
+    async reseedCard({ cardId, presetId, intent: requestedIntent }) {
       const card = getCard(cardId);
-      if (!card) return { reseeded: false, error: ERR_CARD_NOT_FOUND };
-      if (isArchivedCard(card)) return { reseeded: false, error: ERR_CARD_ARCHIVED };
+      if (!card) return { reseeded: false, error: ERR_CARD_NOT_FOUND, reclassified: false };
+      if (isArchivedCard(card)) return { reseeded: false, error: ERR_CARD_ARCHIVED, reclassified: false };
+      const intentDecision = resolveReseedIntent(card, requestedIntent);
+      if (!intentDecision) return { reseeded: false, error: "Only Build cards use a workflow type.", reclassified: false };
+      const { intent, reclassified } = intentDecision;
       const workspace = await cardWorkspace(card);
       const source = workspace?.hostId && workspace.path ? { path: workspace.path, hostId: workspace.hostId } : null;
-      if (!source) return { reseeded: false, error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.` };
+      if (!source) return { reseeded: false, error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.`, reclassified: false };
       // Re-seed into a fresh per-workflow dir so the card gets a clean state file.
-      const seed = await seedWorkflow(bb, source.path, card.name, card.intent, "Core", "Auto", true);
-      if (seed.error) return { reseeded: false, error: seed.error };
+      const seed = await seedWorkflow(bb, source.path, card.name, intent, "Core", "Auto", true);
+      if (seed.error) return { reseeded: false, error: seed.error, reclassified: false };
       if (seed.dirHash) {
         db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(seed.dirHash, now(), cardId);
       }
       let preset: PresetRow;
       if (presetId) {
         const found = getPresetById(presetId);
-        if (!found) return { reseeded: false, error: ERR_PRESET_NOT_FOUND };
+        if (!found) return { reseeded: false, error: ERR_PRESET_NOT_FOUND, reclassified: false };
         preset = found;
         db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, now());
       } else {
@@ -3127,9 +3120,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const previousThreadId = card.worker_thread_id;
       const params = presetAttachmentParams(preset);
       const researchStrategy = card.kind === "research" ? researchStrategyById(card.research_strategy ?? "") : null;
-      if (card.kind === "research" && !researchStrategy) return { reseeded: false, error: "This research has no known strategy. Archive it and start a new one." };
+      if (card.kind === "research" && !researchStrategy) return { reseeded: false, error: "This research has no known strategy. Archive it and start a new one.", reclassified: false };
       const exploreStage = card.kind === "explore" ? stageById(card.explore_stage ?? "") : null;
-      if (card.kind === "explore" && !exploreStage) return { reseeded: false, error: "This explore card has no known stage. Archive it and start a new one." };
+      if (card.kind === "explore" && !exploreStage) return { reseeded: false, error: "This explore card has no known stage. Archive it and start a new one.", reclassified: false };
       // Reseed wipes the state dir: reuse the round's own file path so the
       // re-run recreates exactly what the rounds list expects.
       const reseedRoundNo = Math.max(1, strategyList(card).length);
@@ -3183,7 +3176,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
         input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
-Intent is currently \`${card.intent}\` in the re-seeded state.md. ${card.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
+Intent is currently \`${intent}\` in the re-seeded state.md. ${intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form:
@@ -3203,10 +3196,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try { await bb.sdk.threads.archive({ threadId: previousThreadId }); } catch { /* ignore */ }
         try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
       }
-      updateCard(cardId, { stage: card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "triage", status: card.kind === "research" || card.kind === "explore" ? "pending" : card.status, activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
+      db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, now(), cardId);
+      updateCard(cardId, { stage: card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "triage", status: freshStatusForReseed(card, reclassified), activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
       recordWorkerThread(db, cardId, newThread.id, preset.id, "reseed");
       if (seed.dirHash) void recordWorkflowLineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
-      return { reseeded: true, error: null };
+      bb.realtime.publish("card-state", { cardId });
+      return { reseeded: true, error: null, reclassified };
     },
 
     async moveCard({ cardId, status }) {

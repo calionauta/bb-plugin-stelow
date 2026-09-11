@@ -116,8 +116,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   unit-tested) shared by parser, server, and thread renderer.
 - **Gate approvals** (`approveGate`). Product/interface/plan/diff gates
   with receipt files; review entry surfaces the artifact under decision.
-- **Intent correction** (`updateCardIntent`). Fix the card's kind
-  anytime; past triage it confirms first and notifies the worker.
+- **Workflow classification.** Correct the type freely while a Build card
+  is in triage (`updateCardIntent`). After triage, **Card actions →
+  Reclassify workflow…** starts a fresh worker from triage on the new route;
+  it never changes only the label beneath an existing plan.
 
 ## 4. Follow one card
 *When I open a card, I want the full picture without reading the thread.*
