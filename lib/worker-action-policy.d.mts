@@ -13,3 +13,10 @@ export declare function workerActionPolicy(card: WorkerActionCard, needsAttentio
   showArchive: boolean;
   showDelete: boolean;
 };
+
+export declare function workerSectionPolicy(card: WorkerActionCard, needsAttention?: boolean, content?: {
+  hasGithubLink?: boolean;
+  historyCount?: number;
+}): ReturnType<typeof workerActionPolicy> & {
+  showSection: boolean;
+};

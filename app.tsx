@@ -27,8 +27,9 @@ import { STAGE_SEQUENCE, groupArtifactsByStage, groupResearchArtifacts } from ".
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
-import { workerActionPolicy } from "./lib/worker-action-policy.mjs";
+import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
+import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport.js";
@@ -3575,13 +3576,8 @@ function CardDisclosure({ title, hint, action, children, defaultOpen = false, op
 // decision > error > paused > working > calm.
 type HeroKind = "decision" | "error" | "paused" | "working" | "calm";
 function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: HeroKind; title: string; sub: string } {
-  if (card.status === "archived") {
-    return {
-      kind: "calm",
-      title: "Archived",
-      sub: "This card is kept for reference. No action is needed.",
-    };
-  }
+  const archived = archivedCardDetailPresentation(card, stageLabel);
+  if (archived) return archived.hero;
   const pending = (detail?.pendingQuestions?.length ?? 0) + (detail?.expiredQuestions?.length ?? 0);
   if (pending > 0) {
     return {
@@ -4056,11 +4052,11 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
   pillTitle?: string;
   githubLink?: React.ReactNode;
 }) {
-  const actions = workerActionPolicy(card, Boolean(detail?.card.needsAttention));
-  const hasPreset = actions.showPresetControls;
   const hasGithubLink = Boolean(githubLink);
   const hasHistory = Boolean(detail?.workerHistory.length);
-  if (!hasPreset && !hasGithubLink && !hasHistory) return null;
+  const actions = workerSectionPolicy(card, Boolean(detail?.card.needsAttention), { hasGithubLink, historyCount: detail?.workerHistory.length ?? 0 });
+  const hasPreset = actions.showPresetControls;
+  if (!actions.showSection) return null;
   return (
     <section aria-label="Worker" className="rounded-lg border p-3">
       {actions.showPresetControls ? <div className="flex flex-wrap items-center gap-2">
@@ -4736,6 +4732,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
   const hero = card ? heroFor(card, detail) : null;
   const heroStyle = hero ? HERO_STYLE[hero.kind] : null;
+  const archivedPresentation = card ? archivedCardDetailPresentation(card, stageLabel) : null;
   // Provider/model are fixed at spawn: a preset change only lands when a new
   // worker starts. Retry continues the SAME thread, so while the running
   // worker predates the override the hero must offer Restart, not Resume.
@@ -4873,21 +4870,21 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
             {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
-              title={card.status === "archived" ? "Workflow history" : "What is happening"}
-              hint={card.status === "archived" ? `Ended at ${stageLabel(card.stage)}` : scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : stageLabel(card.stage)}
+              title={archivedPresentation?.workflow.title ?? "What is happening"}
+              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : stageLabel(card.stage))}
               defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
             >
-              {card.stage === "select" ? (
+              {card.stage === "select" && !archivedPresentation ? (
                 <p className="text-xs text-muted-foreground">
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
-              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">{card.status === "archived" ? "No scopes were created before this card was archived." : "No scopes broken down yet — the agent is still shaping the card."}</p>}
+              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? "No scopes broken down yet — the agent is still shaping the card."}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.status === "archived" ? "Workflow progress" : "Progress"}</h4>
-                    <span className="text-xs text-muted-foreground">{card.status === "archived" ? "Archived before completion" : "Agent advances alone · click a lit stage to override"}</span>
+                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{archivedPresentation?.workflow.progressTitle ?? "Progress"}</h4>
+                    <span className="text-xs text-muted-foreground">{archivedPresentation?.workflow.progressHint ?? "Agent advances alone · click a lit stage to override"}</span>
                   </div>
                   <StageTimeline
                     currentStage={card.stage}

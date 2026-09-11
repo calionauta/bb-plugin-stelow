@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.62] - 2026-09-11
+
+### Changed
+
+- **Card lifecycle regressions now have explicit coverage.** Shared policies
+  govern Worker visibility and archived-card presentation; contract tests keep
+  the UI and RPC lifecycle rules aligned. The full test command runs them.
+
 ## [0.3.61] - 2026-09-11
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.3.61",
+  "version": "0.3.62",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
@@ -43,7 +43,7 @@
     "build": "bb plugin build && node scripts/postbuild.mjs",
     "reload": "bb plugin reload stelow",
     "build:reload": "npm run build && npm run reload",
-    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:question-batch && npm run test:question-state && npm run test:github-lists && npm run test:promote && npm run test:research && npm run test:worker-ledger && npm run test:worker-failure && npm run test:worker-actions && npm run test:workflow-intent && npm run test:workflow-lineage && npm run test:skills-sync && npm run test:skills-verify && npm run test:skills-tables && npm run test:contracts && npm run test:bands && npm run test:paths && npm run test:helper-sync",
+    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:question-batch && npm run test:question-state && npm run test:github-lists && npm run test:promote && npm run test:research && npm run test:worker-ledger && npm run test:worker-failure && npm run test:worker-actions && npm run test:workflow-intent && npm run test:card-details && npm run test:workflow-lineage && npm run test:skills-sync && npm run test:skills-verify && npm run test:skills-tables && npm run test:contracts && npm run test:bands && npm run test:paths && npm run test:helper-sync",
     "test:artifacts": "node tests/artifact-manifest.test.mjs && node tests/diff-split.test.mjs && node tests/sem-summary.test.mjs && node tests/cymbal-changed.test.mjs",
     "test:ask-cancel": "node tests/ask-cancel.test.mjs",
     "test:question-state": "node tests/card-question-state.test.mjs",
@@ -55,6 +55,7 @@
     "test:worker-failure": "node tests/worker-failure.test.mjs",
     "test:worker-actions": "node tests/worker-action-policy.test.mjs",
     "test:workflow-intent": "node tests/workflow-intent-policy.test.mjs",
+    "test:card-details": "node tests/card-detail-presentation.test.mjs && node tests/card-lifecycle-contract.test.mjs",
     "test:workflow-lineage": "node tests/workflow-lineage.test.mjs",
     "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",
     "test:skills-verify": "node tests/skills-sync-verify.test.mjs",
