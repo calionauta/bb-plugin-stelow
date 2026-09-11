@@ -68,4 +68,27 @@ for (const [name, handler] of [["idle", idleHandler], ["active", activeHandler],
 const doArchive = appFunction("doArchive", "async function doDelete");
 assert.match(doArchive, /if \(!result\.archived\)/, "a refused archive surfaces an error instead of a false success");
 
+// Archived terminality binds every worker-touching or state-moving RPC, not
+// just the poll path: each refuses upfront with the named exit.
+const move = rpcMethod("moveCard", "promoteCard");
+assert.match(move, /if \(isArchivedCard\(card\)\) return \{ ok: false, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse board moves");
+const advance = rpcMethod("advanceCard", "advance");
+assert.match(advance, /if \(isArchivedCard\(card\)\) return \{ ok: false, stdout: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse stage advances");
+const answer = rpcMethod("answerQuestions", "startWorkflow");
+assert.match(answer, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse batch answers");
+const answerExpired = rpcMethod("answerExpiredQuestions", "advanceCard");
+assert.match(answerExpired, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse expired answers");
+const comment = rpcMethod("addCardComment", "cancelCard");
+assert.match(comment, /if \(isArchivedCard\(card\)\) return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse new comments");
+
+// The single updateCard choke point strips resuscitations twice: against the
+// read-time snapshot and, for async callers whose write lands after Archive,
+// against a fresh write-time read.
+assert.match(server, /stripArchivedResuscitation\(previous\?\.status, fields/, "every status write passes the archived-terminal rule");
+assert.match(server, /stripArchivedResuscitation\(latest\?\.status, write\)/, "mid-flight archives cannot resuscitate at write time");
+// The sync entry skips archived cards before any thread read, and the ask
+// CLI names archived threads instead of misreporting ownership.
+assert.match(server, /if \(!card\?\.worker_thread_id \|\| isArchivedCard\(card\)\) return;/, "sync polls never touch archived cards");
+assert.match(server, /if \(cardRow\.status === "archived"\) return \{ exitCode: 2, stderr: "This card is archived\." \}/, "ask on an archived thread names the state");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

@@ -2111,7 +2111,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (previous && changed.length === 0) return;
     const write: Record<string, unknown> = { updated_at: now() };
     for (const k of changed) write[k] = asRecord(effective)[k];
-    db.prepare(`UPDATE cards SET ${Object.keys(write).map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...write });
+    // Write-time terminal re-check: async callers read the card, await
+    // network, then write — Archive may have landed in between. Re-strip
+    // against a fresh read so a pre-archive snapshot can never resuscitate.
+    const latest = getCard(cardId);
+    const finalWrite = stripArchivedResuscitation(latest?.status, write) as Record<string, unknown>;
+    if (Object.keys(finalWrite).every((k) => k === "updated_at")) return;
+    db.prepare(`UPDATE cards SET ${Object.keys(finalWrite).map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...finalWrite });
     const current = getCard(cardId);
     if (previous && current) {
       if (current.status === "archived" || current.status === "completed") resolveInboxEvents(cardId, current.updated_at);
@@ -2236,7 +2242,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   async function syncThreadState(cardId: string): Promise<void> {
     const card = getCard(cardId);
-    if (!card?.worker_thread_id) return;
+    if (!card?.worker_thread_id || isArchivedCard(card)) return;
     if (card.kind === "research") {
       await syncResearchThreadState(card);
       return;
@@ -2494,6 +2500,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // reconciliation — no fragmented pings.
       const card = getCard(cardId);
       if (!card?.worker_thread_id) return { ok: false as const, answered: 0, error: "This card has no worker thread." };
+      if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
       try {
         const list = await bb.sdk.threads.interactions.list({ threadId: card.worker_thread_id });
         const pendingById = new Map(pendingAsks(list).map((entry) => [entry.id, entry]));
@@ -3011,6 +3018,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async addCardComment({ cardId, target, targetId, body }) {
       const card = getCard(cardId);
       if (!card) return { commentId: "", error: ERR_CARD_NOT_FOUND };
+      if (isArchivedCard(card)) return { commentId: "", error: ERR_CARD_ARCHIVED };
       const commentId = logCardComment(cardId, target, targetId, "user", body);
       if (target === "card" && card.worker_thread_id) {
         try {
@@ -3219,6 +3227,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async moveCard({ cardId, status }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
+      if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
       // Track routing lives in lib/card-move (unit-tested): research moves
       // statuses, build moves phases + terminals, each side refuses the
       // other's columns with the valid exit named.
@@ -3530,6 +3539,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // message. Remaining open decisions stay actionable.
       const card = getCard(cardId);
       if (!card) return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
+      if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
       const rows = new Map<string, { thread_id: string; question: string }>();
       for (const item of answers) {
         const row = db.prepare("SELECT * FROM expired_questions WHERE id = ? AND card_id = ? AND answered = 0").get(item.questionId, cardId) as { thread_id: string; question: string } | undefined;
@@ -3564,6 +3574,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async advanceCard({ cardId, stage }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, stdout: "", error: ERR_CARD_NOT_FOUND };
+      if (isArchivedCard(card)) return { ok: false, stdout: "", error: ERR_CARD_ARCHIVED };
       if (card.kind === "research") return { ok: false, stdout: "", error: "Research cards don't use stages — a completed index moves them to Done automatically." };
       if (card.kind === "explore") return { ok: false, stdout: "", error: "Explore cards don't use stages — a completed artifact moves them to Done automatically." };
       const workspace = await cardWorkspace(card);
@@ -3894,8 +3905,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // nowhere and the persist below would silently skip. Refuse fast
         // with the fix (this is almost always a provider session id passed
         // where the bb worker thread id belongs) instead of blaming storage.
-        const cardRow = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string } | undefined;
+        const cardRow = db.prepare("SELECT id, status FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string; status: string } | undefined;
         if (!cardRow) return { exitCode: 2, stderr: `No card owns thread "${threadId}". Pass your bb worker thread id ($BB_THREAD_ID, a thr_* id — confirm with: echo $BB_THREAD_ID), never a provider session id nor a workflow dirHash (pw-*).` };
+        if (cardRow.status === "archived") return { exitCode: 2, stderr: "This card is archived." };
         updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
         let requestFailed = false;

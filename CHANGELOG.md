@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.68] - 2026-09-11
+
+### Fixed
+
+- **Archived terminality, second pass.** Gap analysis found five more
+  resuscitation routes the first fix did not cover: `updateCard` re-strips
+  against a fresh write-time read (a poll that read before Archive can no
+  longer write after it), the sync entry skips archived cards before any
+  thread read, and move/advance/answers/comments refuse archived cards
+  with the named exit instead of half-executing. Dragging out of Archived
+  now explains itself instead of silently no-op'ing.
+
 ## [0.3.67] - 2026-09-11
 
 ### Fixed
