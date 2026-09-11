@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.60] - 2026-09-11
+
+### Fixed
+
+- **Archived cards now present one terminal state.** Their detail hero says
+  **Archived** rather than implying the old workflow phase is still active.
+
 ## [0.3.59] - 2026-09-11
 
 ### Fixed

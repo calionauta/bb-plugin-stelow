@@ -3575,6 +3575,13 @@ function CardDisclosure({ title, hint, action, children, defaultOpen = false, op
 // decision > error > paused > working > calm.
 type HeroKind = "decision" | "error" | "paused" | "working" | "calm";
 function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: HeroKind; title: string; sub: string } {
+  if (card.status === "archived") {
+    return {
+      kind: "calm",
+      title: "Archived",
+      sub: "This card is kept for reference. No action is needed.",
+    };
+  }
   const pending = (detail?.pendingQuestions?.length ?? 0) + (detail?.expiredQuestions?.length ?? 0);
   if (pending > 0) {
     return {
