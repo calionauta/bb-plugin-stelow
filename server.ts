@@ -16,6 +16,7 @@ import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./l
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
+import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
@@ -100,6 +101,9 @@ const BUILD_INFO = (() => {
   }
   return { version, builtAt, stelowVersion };
 })();
+
+// Memoized About logo data URI (loaded on first About visit).
+let aboutLogoCache: string | null | undefined;
 
 // Stage bands: groups of workflow stages that share a worker preset. A card's
 // worker swaps presets only at band boundaries (analysis -> planning -> execution
@@ -470,6 +474,10 @@ export const rpcContract = defineRpcContract({
   buildInfo: {
     input: z.object({}).strict(),
     output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable() }),
+  },
+  aboutLogo: {
+    input: z.object({}).strict(),
+    output: z.object({ dataUri: z.string().nullable() }),
   },
   toolStatus: {
     input: z.object({}).strict(),
@@ -3721,6 +3729,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async buildInfo() {
       return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion };
+    },
+
+    // About identity mark. Served as a data URI (never a static file URL —
+    // see lib/about-logo.mjs), read once from the source root and memoized.
+    // Missing asset yields null and the tab falls back to text, never a
+    // broken image.
+    async aboutLogo() {
+      if (aboutLogoCache === undefined) aboutLogoCache = loadAboutLogo(pluginDir);
+      return { dataUri: aboutLogoCache ?? null };
     },
 
     // Presence probe for the optional host binaries the workflow knows how

@@ -47,8 +47,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-const STELOW_LOGO_URL = new URL("./assets/stelow-logo.png", import.meta.url).href;
-
 type ProjectList = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][number];
 
@@ -1696,6 +1694,7 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null } | null>(null);
+  const [aboutLogo, setAboutLogo] = useState<string | null>(null);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
   const [installingToolId, setInstallingToolId] = useState<string | null>(null);
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
@@ -1723,6 +1722,7 @@ function AboutPanel() {
   useEffect(() => {
     let cancelled = false;
     void rpc.call("buildInfo", {}).then((result) => { if (!cancelled) setBuildInfo(result); }).catch(() => undefined);
+    void rpc.call("aboutLogo", {}).then((result) => { if (!cancelled && result.dataUri) setAboutLogo(result.dataUri); }).catch(() => undefined);
     void rpc.call("toolStatus", {}).then((result) => { if (!cancelled) setHostTools(result.tools); }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [rpc]);
@@ -1747,9 +1747,11 @@ function AboutPanel() {
           </header>
           <div className="grid max-w-2xl gap-5">
             <section className="space-y-2">
-              <div className="flex justify-center py-1">
-                <img src={STELOW_LOGO_URL} alt="Stelow — Your Product Team" className="w-56 max-w-full object-contain sm:w-64" />
-              </div>
+              {aboutLogo ? (
+                <div className="flex justify-center py-1">
+                  <img src={aboutLogo} alt="Stelow — Your Product Team" className="w-56 max-w-full object-contain sm:w-64" />
+                </div>
+              ) : null}
               <h2 className="text-base font-semibold text-foreground">
                 Stelow {buildInfo?.stelowVersion ? <span className="text-[11px] font-normal text-muted-foreground">v{buildInfo.stelowVersion}</span> : null}
               </h2>

@@ -22,8 +22,7 @@ function copyTree(src, dest) {
 copyTree(join(pluginRoot, "data"), join(dist, "data"));
 copyTree(join(pluginRoot, "references"), join(dist, "references"));
 copyTree(join(pluginRoot, "skills"), join(dist, "skills"));
-copyTree(join(pluginRoot, "assets"), join(dist, "assets"));
-console.log("postbuild: data/, reference/, skills/ and assets/ copied to dist/");
+console.log("postbuild: data/, references/ and skills/ copied to dist/");
 
 // Freshness signal: the panel and bb caches are sticky, so the UI shows the
 // exact running build (version + build time) instead of leaving users

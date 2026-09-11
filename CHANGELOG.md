@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.66] - 2026-09-11
+
+### Fixed
+
+- **The About logo now actually renders on managed installs.** bb's builder
+  has no image loader and serves only the built `app.js`/`app.css`, so the
+  previous runtime `./assets/*.png` URL always 404'd outside a local
+  checkout. The mark is now a 512 px asset served lazily as a data URI over
+  a new `aboutLogo` RPC (memoized, null-safe with a text fallback), keeping
+  the board bundles untouched. The dead `dist/assets` postbuild copy is
+  gone; `tests/about-logo.test.mjs` locks the delivery contract, the asset
+  budget, and the ban on runtime static-asset URLs.
+
 ## [0.3.65] - 2026-09-11
 
 ### Fixed

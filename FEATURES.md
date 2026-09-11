@@ -80,7 +80,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
   plugin — each with its own paragraph, repo link, and version side by
   side (`buildInfo` carries both; the upstream version syncs with the
-  skills). The plugin section also offers Reset onboarding (two-step
+  skills). The Stelow section opens with the identity mark, served lazily
+  as a data URI over the `aboutLogo` RPC (bb serves only built bundles,
+  never static files) with a silent text fallback. The plugin section also offers Reset onboarding (two-step
   confirm) to replay the first-visit setup dialogs. Work tracks describe
   themselves; product identity lives in exactly one place, never next
   to the wrong version.
