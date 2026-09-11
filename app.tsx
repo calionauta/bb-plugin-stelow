@@ -4630,7 +4630,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   async function doArchive() {
     setArchiveOpen(false);
     try {
-      await rpc.call("cancelCard", { cardId });
+      const result = await rpc.call("cancelCard", { cardId });
+      if (!result.archived) {
+        toast.error("Archive did not take — the card is gone.");
+        return;
+      }
       toast.success("Card archived.");
       onClose();
     } catch (err) {

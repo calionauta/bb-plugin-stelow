@@ -31,7 +31,7 @@ import { STAGE_CATALOG, stageById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
-import { isArchivedCard } from "./lib/worker-action-policy.mjs";
+import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
@@ -2096,17 +2096,21 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     // are still in flight; writing then crashes the whole server process.
     if (!(db as unknown as { open?: boolean }).open) return;
     const previous = getCard(cardId);
-    const keys = Object.keys(fields);
+    // Archived is terminal: strip any status change that would resuscitate
+    // the card (a stopping worker settling after Archive is the classic
+    // case). Archiving itself always passes through.
+    const effective = stripArchivedResuscitation(previous?.status, fields as Record<string, unknown>) as typeof fields;
+    const keys = Object.keys(effective);
     if (keys.length === 0) return;
     // No-op guard: sync polls call updateCard every cycle, usually with
     // identical values. Writing anyway would bump updated_at (reshuffling
     // board order and "Idle since" labels) and publish card-state
     // (reloading every panel) for zero visual change.
     const asRecord = (value: unknown): Record<string, unknown> => value as Record<string, unknown>;
-    const changed = previous ? keys.filter((k) => asRecord(previous)[k] !== asRecord(fields)[k]) : keys;
+    const changed = previous ? keys.filter((k) => asRecord(previous)[k] !== asRecord(effective)[k]) : keys;
     if (previous && changed.length === 0) return;
     const write: Record<string, unknown> = { updated_at: now() };
-    for (const k of changed) write[k] = asRecord(fields)[k];
+    for (const k of changed) write[k] = asRecord(effective)[k];
     db.prepare(`UPDATE cards SET ${Object.keys(write).map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...write });
     const current = getCard(cardId);
     if (previous && current) {
@@ -2365,15 +2369,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
 
   bb.events.on("thread.idle", ({ thread }) => {
-    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(thread.id) as { id: string } | undefined;
+    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
     if (row) void syncThreadState(row.id);
   });
   bb.events.on("thread.active", ({ thread }) => {
-    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(thread.id) as { id: string } | undefined;
+    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
     if (row) void syncThreadState(row.id);
   });
   bb.events.on("thread.failed", ({ thread, error }) => {
-    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ?").get(thread.id) as { id: string } | undefined;
+    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
     if (!row) return;
     void applyWorkerFailed(row.id, thread.id, typeof error === "string" ? error : null);
   });

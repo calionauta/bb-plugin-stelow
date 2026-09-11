@@ -55,4 +55,17 @@ assert.doesNotMatch(menu, /Stop & archive/, "two distinct lifecycle actions are 
 const worker = appFunction("WorkerSection", "// Research-track card detail");
 assert.doesNotMatch(worker, /Archive card|Delete permanently|Restart fresh/, "Worker contains worker context only, never card lifecycle actions");
 
+// Archived is terminal: the single updateCard choke point strips
+// resuscitations, worker-thread events never reach archived cards, and the
+// Archive button honors a refused archive instead of celebrating it.
+assert.match(server, /stripArchivedResuscitation\(previous\?\.status, fields/, "every status write passes the archived-terminal rule");
+const idleHandler = server.slice(server.indexOf('bb.events.on("thread.idle"'), server.indexOf('bb.events.on("thread.active"'));
+const activeHandler = server.slice(server.indexOf('bb.events.on("thread.active"'), server.indexOf('bb.events.on("thread.failed"'));
+const failedHandler = server.slice(server.indexOf('bb.events.on("thread.failed"'), server.indexOf("// Reconcile card states"));
+for (const [name, handler] of [["idle", idleHandler], ["active", activeHandler], ["failed", failedHandler]]) {
+  assert.match(handler, /status != 'archived'/, `thread.${name} events never sync archived cards`);
+}
+const doArchive = appFunction("doArchive", "async function doDelete");
+assert.match(doArchive, /if \(!result\.archived\)/, "a refused archive surfaces an error instead of a false success");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

@@ -192,7 +192,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Archive card** (`cancelCard`). Stops + archives the worker; history
   preserved. Behind a confirm dialog. Drag-to-archived stops the worker
   identically (shared shutdown) — parking never orphans a running
-  worker. Archived cards offer Delete instead of a redundant Archive.
+  worker. Archived is terminal: settling worker threads can never flip
+  the card back (single `updateCard` rule). Archived cards offer Delete
+  instead of a redundant Archive.
 - **Delete archived card** (`deleteCard`). Hard delete offered only on
   archived cards from Manage, behind an English confirm dialog. Removes
   the card row plus comments, presets, questions, inbox events, and

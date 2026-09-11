@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.67] - 2026-09-11
+
+### Fixed
+
+- **Archived cards stay archived.** Stopping the worker after Archive could
+  settle late and flip the card back to Done (idle thread + terminal
+  `audit` stage = spurious completion). `updateCard` now strips any status
+  change out of `archived` in one shared rule, worker-thread events skip
+  archived cards, and the Archive button reports a refused archive instead
+  of a false success.
+
+### Added
+
+- **Fresh-install safety net.** CI runs typecheck + the full suite on every
+  push/PR, and `tests/fresh-install.test.mjs` locks the first-boot
+  contract: marketplace entries, every source-root read, packaging
+  (`skills/`, `lib/`, `components/`, `hooks/` now ship), and
+  fresh/upgrade-safe migrations.
+
 ## [0.3.66] - 2026-09-11
 
 ### Fixed

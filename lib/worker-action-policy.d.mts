@@ -5,6 +5,11 @@ export declare type WorkerActionCard = {
 
 export declare function isArchivedCard(card: WorkerActionCard): boolean;
 
+export declare function stripArchivedResuscitation(
+  previousStatus: string | null | undefined,
+  fields: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null | undefined;
+
 export declare function workerActionPolicy(card: WorkerActionCard, needsAttention?: boolean): {
   archived: boolean;
   hasActiveWorker: boolean;
