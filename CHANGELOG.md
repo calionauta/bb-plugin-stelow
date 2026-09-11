@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.63] - 2026-09-11
+
+### Changed
+
+- **Boards now explain their agent-led workflow in plain language.** Build,
+  Research, and Explore describe the specialized AI skills that run each card
+  and preserve the user's role at Build review gates.
+- **Kanban columns retain a deliberate reading width.** Open columns stay
+  between 240 and 320 px; collapsed columns stay 56 px. A shared layout helper
+  keeps Build, Research, and Explore aligned on wide screens.
+
 ## [0.3.62] - 2026-09-11
 
 ### Changed

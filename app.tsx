@@ -27,6 +27,7 @@ import { STAGE_SEQUENCE, groupArtifactsByStage, groupResearchArtifacts } from ".
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
+import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
@@ -828,7 +829,7 @@ function BoardPanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Carry ideas from triage through shaping, gated reviews, and scope-by-scope execution.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent carries each card through specialized skills—from triage to scope-by-scope execution—pausing only for your decisions at gated reviews.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1021,7 +1022,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
-          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} /> : <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
+          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(COLUMNS, collapsedColumns) }}>
             {COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
@@ -1177,7 +1178,7 @@ function ResearchPanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Research</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Get a concise research result with prioritized opportunities you can turn into {trackTitle("build")} cards.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent applies specialized research skills to surface prioritized opportunities you can turn into {trackTitle("build")} cards.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1255,7 +1256,7 @@ function ResearchPanel({ active }: { active: boolean }) {
           </p>
           ) : null}
           {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} /> : (
-          <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: RESEARCH_COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
+          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
@@ -1406,7 +1407,7 @@ function ExplorePanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Run one workflow stage to get a focused result. Pick the approach, supply the input, and review the outcome on the card.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Choose one specialized skill and an AI agent runs it on your input, returning a focused result on the card.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1484,7 +1485,7 @@ function ExplorePanel({ active }: { active: boolean }) {
           </p>
           ) : null}
           {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} /> : (
-          <div className="grid gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: RESEARCH_COLUMNS.map((column) => collapsedColumns[column] ? "minmax(56px, 0.5fr)" : "minmax(220px, 1.5fr)").join(" ") }}>
+          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
