@@ -63,7 +63,7 @@ First paragraph of the synthesis with evidence limits.
 Second paragraph, still summary.
 
 ## Outputs
-| Strategy | Round | Output | Path | Notes |
+| Strategy | Round | Output | Artifact | Notes |
 | --- | --- | --- | --- | --- |
 | Evolutionary strategy | 1 | Evolutionary diagnosis, stepping-stones, forces | .stelow/2026-09-09/pw-abc/rounds/evolutionary-r1-20260909-0035.md | Web-first research |
 | Jobs to be done | 2 | Job map steps | .stelow/2026-09-09/pw-abc/rounds/jtbd-r2-20260909-0100.md | second round |

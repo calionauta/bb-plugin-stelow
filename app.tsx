@@ -4144,6 +4144,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   // history remains the only source of openable files.
   const indexBody = useMemo(() => (index?.found && index.content ? parseResearchIndexSections(index.content) : null), [index]);
   const artifactGroups = useMemo<ArtifactInventoryGroup[]>(() => groupResearchArtifacts(index?.rounds, indexBody?.outputs), [index?.rounds, indexBody?.outputs]);
+  const artifactCount = artifactGroups.reduce((total, group) => total + group.items.length, 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -4266,7 +4267,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
               ) : null}
             </CardDisclosure>
 
-            <CardDisclosure title="Artifacts" hint={artifactGroups.length > 0 ? `${artifactGroups.reduce((total, group) => total + group.items.length, 0)} files · newest round first` : "being prepared"} defaultOpen>
+            <CardDisclosure title="Artifacts" hint={artifactCount > 0 ? `${artifactCount} ${artifactCount === 1 ? "file" : "files"} · newest round first` : "being prepared"} defaultOpen>
               <ArtifactInventory
                 groups={artifactGroups}
                 workspaceKind={card.workspaceKind}

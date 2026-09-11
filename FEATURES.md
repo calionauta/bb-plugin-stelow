@@ -271,7 +271,7 @@ investigation that feeds the build board.*
   `lib/research-index-sections.mjs`). The worker writes `research-index.md`
   (Summary + Outputs table + `## Opportunities` checkboxes) into its own
   state dir; the card renders the Summary as prose and the Outputs table
-  with its Path column resolved to clickable artifact buttons (same
+  with its Artifact column resolved to clickable artifact buttons (same
   reviewer as build cards — read, quote, comment). Opportunities render as
   a status list (✓ fanned out) — selection happens only in the fan-out
   dialog, never fake checkboxes — plus available/total counts.
