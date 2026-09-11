@@ -22,6 +22,7 @@ import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { INBOX_EVENT_LABELS, inboxEventPresentation, isOpenInboxAction } from "./lib/inbox-event-presentation.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
+import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { STAGE_SEQUENCE, groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { STAGE_BANDS } from "./lib/stage-bands.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
@@ -3773,6 +3774,10 @@ function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
       const result = await rpc.call("fanOutResearch", { cardId, opportunityIds: chosen.map((item) => item.id) });
       if (!result.ok) {
         toast.error(result.error ?? "Could not create build cards.");
+        if (result.created.length > 0) {
+          onOpenChange(false);
+          onFanned();
+        }
         return;
       }
       toast.success(`Created ${result.created.length} ${result.created.length === 1 ? "build card" : "build cards"}.`);
@@ -4237,7 +4242,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
 
             <CardDisclosure
               title="Research summary"
-              hint={index && index.found ? `${available.length} available · ${index.opportunities.length} total` : "being prepared"}
+              hint={index && index.found ? researchOpportunityHint(available.length, index.opportunities.length) : "being prepared"}
               defaultOpen
             >
               {!index ? <p className="text-xs text-muted-foreground">Preparing results…</p> : null}

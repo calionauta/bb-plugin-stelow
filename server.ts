@@ -3340,6 +3340,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // project.
       const targetProjectId = card.workspace_kind === "exploratory" ? "proj_personal" : card.project_id;
       const created: Array<{ cardId: string; title: string }> = [];
+      const createdOpportunityIds: string[] = [];
+      let failure: string | null = null;
       for (const item of matched) {
         try {
           const spawned = await createCardInternal({
@@ -3353,21 +3355,29 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           });
           const spawnedCard = getCard(spawned.cardId);
           created.push({ cardId: spawned.cardId, title: spawnedCard?.display_name ?? spawnedCard?.name ?? item.title });
+          createdOpportunityIds.push(item.id);
         } catch (error) {
-          return { ok: false, created, error: error instanceof Error ? error.message : "Could not spawn a build card." };
+          failure = error instanceof Error ? error.message : "Could not spawn a build card.";
+          break;
         }
       }
-      // Flip exactly the spawned boxes so a retry never double-spawns. Only
-      // exact parser lines flip; a worker edit in between stays intact.
-      const flipped = checkIndexItems(resolved.content, matched.map((item) => item.id));
+      // Persist exactly the successfully spawned opportunities before
+      // reporting a partial failure, so retrying does not duplicate them.
+      const flipped = checkIndexItems(resolved.content, createdOpportunityIds);
       if (flipped.checked.length > 0) {
         try {
           await bb.sdk.files.write({ path: resolved.absolute, content: flipped.updated });
         } catch { /* boxes stay unchecked; the comment below still trails */ }
       }
-      logCardComment(cardId, "card", cardId, "agent", `Fanned out ${created.length} ${created.length === 1 ? "opportunity" : "opportunities"} into build: ${created.map((entry) => entry.title).join("; ")}.`);
+      if (created.length > 0) {
+        logCardComment(cardId, "card", cardId, "agent", `Fanned out ${created.length} ${created.length === 1 ? "opportunity" : "opportunities"} into build: ${created.map((entry) => entry.title).join("; ")}.`);
+      }
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
+      if (failure) {
+        const prefix = created.length > 0 ? `Created ${created.length} ${created.length === 1 ? "build card" : "build cards"} before the remaining opportunities could not be created. ` : "";
+        return { ok: false, created, error: `${prefix}${failure}` };
+      }
       return { ok: true, created, error: null };
     },
 
