@@ -47,6 +47,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+const STELOW_LOGO_URL = new URL("./assets/stelow-logo.png", import.meta.url).href;
+
 type ProjectList = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
 type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][number];
 
@@ -1745,6 +1747,9 @@ function AboutPanel() {
           </header>
           <div className="grid max-w-2xl gap-5">
             <section className="space-y-2">
+              <div className="flex justify-center py-1">
+                <img src={STELOW_LOGO_URL} alt="Stelow — Your Product Team" className="w-56 max-w-full object-contain sm:w-64" />
+              </div>
               <h2 className="text-base font-semibold text-foreground">
                 Stelow {buildInfo?.stelowVersion ? <span className="text-[11px] font-normal text-muted-foreground">v{buildInfo.stelowVersion}</span> : null}
               </h2>

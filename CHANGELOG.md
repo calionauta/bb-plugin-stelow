@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.64] - 2026-09-11
+
+### Added
+
+- **A responsive Stelow identity mark in About.** The centered, transparent
+  logo is bundled with the plugin and remains a compact 224–256 px wide,
+  leaving the operational boards focused on work.
+
 ## [0.3.63] - 2026-09-11
 
 ### Changed
