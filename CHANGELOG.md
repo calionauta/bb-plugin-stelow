@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.61] - 2026-09-11
+
+### Fixed
+
+- **Archived workflow details are clearly historical.** The former live
+  progress section now says **Workflow history**, records where the card
+  ended, and no longer implies an agent is still shaping it.
+
 ## [0.3.60] - 2026-09-11
 
 ### Fixed

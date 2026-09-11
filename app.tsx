@@ -4873,8 +4873,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
             {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
-              title="What is happening"
-              hint={scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : stageLabel(card.stage)}
+              title={card.status === "archived" ? "Workflow history" : "What is happening"}
+              hint={card.status === "archived" ? `Ended at ${stageLabel(card.stage)}` : scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : stageLabel(card.stage)}
               defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
             >
               {card.stage === "select" ? (
@@ -4882,12 +4882,12 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
-              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">No scopes broken down yet — the agent is still shaping the card.</p>}
+              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">{card.status === "archived" ? "No scopes were created before this card was archived." : "No scopes broken down yet — the agent is still shaping the card."}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Progress</h4>
-                    <span className="text-xs text-muted-foreground">Agent advances alone · click a lit stage to override</span>
+                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.status === "archived" ? "Workflow progress" : "Progress"}</h4>
+                    <span className="text-xs text-muted-foreground">{card.status === "archived" ? "Archived before completion" : "Agent advances alone · click a lit stage to override"}</span>
                   </div>
                   <StageTimeline
                     currentStage={card.stage}
