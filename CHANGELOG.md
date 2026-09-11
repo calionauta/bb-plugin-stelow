@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.59] - 2026-09-11
+
+### Fixed
+
+- **Archived cards are immutable in the UI.** An archived Build card that
+  stopped during triage now shows its workflow type as read-only context,
+  never as an editable selector.
+- **Worker is omitted when it has nothing to say.** Archived cards without
+  worker history, preset controls, or a GitHub link no longer render an empty
+  bordered section.
+
 ## [0.3.58] - 2026-09-11
 
 ### Changed

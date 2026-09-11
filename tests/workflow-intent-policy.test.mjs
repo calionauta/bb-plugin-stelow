@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { canEditWorkflowIntent, canReclassifyWorkflow, freshStatusForReseed, resolveReseedIntent } from "../lib/workflow-intent-policy.mjs";
 
 assert.equal(canEditWorkflowIntent({ kind: "build", stage: "triage", status: "draft" }), true, "Build type is editable only during triage");
+assert.equal(canEditWorkflowIntent({ kind: "build", stage: "triage", status: "archived" }), false, "an archived triage card is immutable");
 assert.equal(canEditWorkflowIntent({ kind: "build", stage: "planning", status: "in-progress" }), false, "a planned Build card must reclassify instead of silently changing route");
 assert.equal(canEditWorkflowIntent({ kind: "explore", stage: "explore", status: "in-progress" }), false, "Explore never has a Build workflow type");
 

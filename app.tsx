@@ -2769,7 +2769,7 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, o
           <option value="unknown">Unknown intent</option>
         </select>
         ) : null}
-        {card.kind === "build" && !canEditWorkflowIntent(card) ? <Pill tone="bg-muted text-muted-foreground" title="Workflow type chosen at triage. Reclassify from Card actions to restart with a different route.">{INTENT_LABEL[card.intent] ?? "Unknown intent"}</Pill> : null}
+        {card.kind === "build" && !canEditWorkflowIntent(card) ? <Pill tone="bg-muted text-muted-foreground" title={canReclassifyWorkflow(card) ? "Workflow type chosen at triage. Reclassify from Card actions to restart with a different route." : "Workflow type chosen at triage."}>{INTENT_LABEL[card.intent] ?? "Unknown intent"}</Pill> : null}
         <CardActionsMenu card={card} onRestartFresh={onRestartFresh} onArchive={onArchive} onDelete={onDelete} onReclassify={onReclassify} />
       </> : null}
       {onBack ? <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
@@ -4052,6 +4052,8 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
   const actions = workerActionPolicy(card, Boolean(detail?.card.needsAttention));
   const hasPreset = actions.showPresetControls;
   const hasGithubLink = Boolean(githubLink);
+  const hasHistory = Boolean(detail?.workerHistory.length);
+  if (!hasPreset && !hasGithubLink && !hasHistory) return null;
   return (
     <section aria-label="Worker" className="rounded-lg border p-3">
       {actions.showPresetControls ? <div className="flex flex-wrap items-center gap-2">
@@ -4071,7 +4073,7 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
         </div>
       ) : null}
       {githubLink ? <div className={hasPreset ? "mt-3 border-t pt-3" : ""}>{githubLink}</div> : null}
-      {detail ? <WorkerHistoryList history={detail.workerHistory} separated={hasPreset || hasGithubLink} /> : null}
+      {detail && hasHistory ? <WorkerHistoryList history={detail.workerHistory} separated={hasPreset || hasGithubLink} /> : null}
     </section>
   );
 }
