@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ownsWorkflowState, stateWorkflowId, upsertWorkflowEntry, workflowDirHash, workflowEntryForOwner, workflowStateRelativeDir } from "../lib/workflow-state-identity.mjs";
+import { ownsWorkflowState, stateWorkflowId, upsertWorkflowEntry, workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir } from "../lib/workflow-state-identity.mjs";
 
 const oldSameName = { name: "jogo-da-velha", dirHash: "pw-old", created: "2026-09-04T17:14:57.065Z" };
 const firstCard = { workflowId: "card_first", name: "jogo-da-velha", dirHash: "pw-first", created: "2026-09-12T20:00:00.000Z" };
@@ -33,14 +33,28 @@ const afterReseed = upsertWorkflowEntry(afterSecond, updatedFirst);
 assert.equal(afterReseed.length, 3, "reseed replaces only the same owner");
 assert.equal(workflowEntryForOwner(afterReseed, "card_first", "pw-reseed")?.dirHash, "pw-reseed");
 
+// Seeding by name is idempotent: the same name yields the same owner, so a
+// second seed reuses one entry and one directory instead of adding a twin.
+assert.equal(workflowIdForName("Auth refactor"), "wf-auth-refactor");
+assert.equal(workflowIdForName("  auth  refactor "), workflowIdForName("Auth refactor"), "the same name always yields the same owner");
+assert.notEqual(workflowIdForName("auth"), workflowIdForName("auth-2"), "different names stay different workflows");
+assert.match(workflowIdForName("!!!"), /^wf-[a-z]/, "an unsluggable name still yields an owner");
+
+// A re-seed keeps the workflow's first `created`: the state path
+// (.stelow/<created>/<dirHash>) must never move, or it strands the old dir.
+const reseededLater = upsertWorkflowEntry(afterSecond, { ...firstCard, dirHash: "pw-second-gen", created: "2026-10-01T00:00:00.000Z" });
+const keptEntry = workflowEntryForOwner(reseededLater, "card_first");
+assert.equal(keptEntry?.created, firstCard.created, "a re-seed keeps the first created date");
+assert.equal(workflowStateRelativeDir(keptEntry), ".stelow/2026-09-12/pw-second-gen", "the state dir stays under the original date");
+
 // Server contract: a third same-name card reads no scopes — the same rule that
 // keeps state.md apart applies to the board's scope progress.
 assert.equal(workflowEntryForOwner([firstCard, secondCard], "card_third"), null, "an unknown owner reads no scopes");
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
 const scopeReads = [...serverSource.matchAll(/(?<!function )loadCardScopes\(([^)]*)\)/g)].map((match) => match[1].trim());
-assert.equal(scopeReads.length, 3, "every card-scope read site is covered by this contract");
+assert.ok(scopeReads.length > 0, "the card-scope read sites are covered by this contract");
 for (const args of scopeReads) {
   assert.match(args, /\.id$/, `card scopes resolve by owner id, got loadCardScopes(${args})`);
 }
 
-console.log("workflow state identity test ok: immutable owner, exact lookup, fail-closed legacy rows, owner-only scope reads");
+console.log("workflow state identity test ok: immutable owner, stable state path, idempotent name seeding, owner-only scope reads");

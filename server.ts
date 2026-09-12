@@ -22,7 +22,7 @@ import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStalen
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
-import { workflowDirHash, workflowEntryForOwner, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
+import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
@@ -577,9 +577,6 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
     mkdirSync(join(rootPath, ".stelow/approvals"), { recursive: true });
     mkdirSync(join(rootPath, "skills/stelow-workflow-orchestrator/references"), { recursive: true });
 
-    let dirHash: string;
-    const date = new Date().toISOString().slice(0, 10);
-
     let trackingData: LooseRecord = {};
     try { trackingData = JSON.parse(readFileSync(trackingPath, "utf8")) as LooseRecord; } catch { /* create fresh */ }
     if (!Array.isArray(trackingData.workflows)) trackingData.workflows = [];
@@ -594,12 +591,20 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
       && await bb.sdk.files.read({ path: join(rootPath, `${entryDir}/state.md`) })
         .then((file) => ownsWorkflowState(file.content, workflowId))
         .catch(() => false);
-    if (reusable) {
-      dirHash = text(record(entry).dirHash);
-    } else {
-      dirHash = workflowDirHash(workflowId, fresh);
+    // Seeding an owner that is already seeded is a no-op: it returns the
+    // workflow's own paths and leaves its entry, stage, and progress alone.
+    if (reusable && entryDir) {
+      const existingDir = join(rootPath, entryDir);
+      return { statePath: join(existingDir, "state.md"), stateDir: existingDir, dirHash: text(record(entry).dirHash), error: null };
     }
-    const stateDir = join(rootPath, `.stelow/${date}/${dirHash}`);
+    const dirHash = workflowDirHash(workflowId, fresh);
+    // One function owns the path shape, so what is written here is exactly what
+    // workflowStateDir() later resolves. `created` pins the path's date segment
+    // to the workflow's first seed, so a re-seed never moves its directory.
+    const created = text(record(entry).created) || new Date().toISOString();
+    const relativeDir = workflowStateRelativeDir({ created, dirHash });
+    if (!relativeDir) return { statePath: null, stateDir: null, dirHash: null, error: "Unable to derive the workflow state directory." };
+    const stateDir = join(rootPath, relativeDir);
     mkdirSync(stateDir, { recursive: true });
     const statePath = join(stateDir, "state.md");
     const stateBlob = await bb.sdk.files.read({ path: statePath }).then((f) => f.content).catch(() => "");
@@ -612,7 +617,7 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
       writeFileSync(transitionsPath, readFileSync(TRANSITIONS_REF, "utf8"), "utf8");
     }
 
-    trackingData.workflows = upsertWorkflowEntry(workflows, { workflowId, name, description: "", status: "in-progress", cwd: rootPath, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite, review_mode: reviewMode } });
+    trackingData.workflows = upsertWorkflowEntry(workflows, { workflowId, name, description: "", status: "in-progress", cwd: rootPath, dirHash, created, updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite, review_mode: reviewMode } });
     writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
     return { statePath, stateDir, dirHash, error: null };
   } catch (error) {
@@ -896,7 +901,7 @@ export default async function plugin(bb: BbPluginApi) {
   // commands, but bb workspaces have no such binary — the plugin wraps the
   // same operations. One sentence everywhere so workers discover the
   // sync-scopes/lock/config equivalents instead of failing on the path.
-  const CLI_EQUIVALENTS = "Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags.";
+  const CLI_EQUIVALENTS = "Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow seed`, `bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Seed through `bb stelow seed` only: it binds the workflow to its owner, which the raw script cannot.";
   const db = bb.storage.database();
   // Sync state lives beside data.db (stable across managed-install cache
   // rotations), never in the plugin root: a fresh cache dir would otherwise
@@ -2571,7 +2576,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async ensureWorkflow({ projectId, name, intent }) {
       const rootPath = await projectRoot(bb, projectId);
       if (!rootPath) return { rootPath: null, statePath: null, error: "Project workspace path is unavailable." };
-      const result = await seedWorkflow(bb, rootPath, randomId("workflow"), name, intent);
+      const result = await seedWorkflow(bb, rootPath, workflowIdForName(name), name, intent);
       if (result.error) return { rootPath, statePath: null, error: result.error };
       bb.realtime.publish("board-changed", { reason: "seeded" });
       return { rootPath, statePath: result.statePath, error: null };
@@ -4035,7 +4040,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (!projectId || !name || !intent) return { exitCode: 2, stderr: "Usage: bb stelow seed --project <proj_id> --name <name> --intent <intent>" };
         const rootPath = await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Project workspace path is unavailable." };
-        const result = await seedWorkflow(bb, rootPath, randomId("workflow"), name, intent);
+        const result = await seedWorkflow(bb, rootPath, workflowIdForName(name), name, intent);
         return result.error ? { exitCode: 1, stderr: result.error } : { exitCode: 0, stdout: result.statePath ?? "" };
       }
       if (argv[0] === "advance") {
