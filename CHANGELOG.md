@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.0] - 2026-09-12
+
+### Added
+
+- **One workflow vocabulary.** Build now consistently speaks in terms of
+  workflows, phases, and stages, while Explore calls its independent choices
+  techniques.
+- **Project-worker handoff.** Promoting work creates a project-owned worker
+  while preserving the originating thread's lineage.
+- **Quality and security gates.** CI checks quality, generated artifacts, and
+  dependency vulnerabilities.
+
+### Fixed
+
+- **Thread continuity after promotion.** Opening a promoted thread now leads
+  to its project worker; a failed handoff keeps the original worker active.
+
 ## [0.3.80] - 2026-09-12
 
 ### Changed

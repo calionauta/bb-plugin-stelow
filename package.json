@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.3.80",
+  "version": "0.4.0",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
