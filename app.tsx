@@ -833,7 +833,7 @@ function BoardPanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent carries each card through specialized skills—from triage to scope-by-scope execution—pausing only for your decisions at gated reviews.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent carries each card through specialized techniques—from triage to scope-by-scope execution—pausing for your decisions wherever your review mode requires it.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1413,7 +1413,7 @@ function ExplorePanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Choose a single stage from the {trackTitle("build")} workflow — an AI agent runs it on your input, returning a focused result on the card.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Choose a single technique from the {trackTitle("build")} workflow — an AI agent runs it on your input, returning a focused result on the card.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1436,12 +1436,12 @@ function ExplorePanel({ active }: { active: boolean }) {
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new exploration</DialogTitle>
-                <DialogDescription>Pick one workflow stage below, then describe the input — an idea, an existing proposal, a codebase, or a URL. The agent runs that approach and returns a focused result.</DialogDescription>
+                  <DialogDescription>Pick one technique below, then describe the input — an idea, an existing proposal, a codebase, or a URL. The agent runs that approach and returns a focused result.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4">
                 <div className="grid gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Choose a stage</span>
-                  <StrategyPicker strategies={stages} value={stage} onChange={setStage} groupName="stage-pick" attentionSignal={stageAttention} noun="stages" legend="Workflow stage" />
+                  <span className="text-xs font-medium text-foreground">Choose a technique</span>
+                  <StrategyPicker strategies={stages} value={stage} onChange={setStage} groupName="stage-pick" attentionSignal={stageAttention} noun="techniques" legend="Technique" />
                 </div>
                 <AgentConfigBox
                   lines={[`Explore runs on ${effectiveExplorePreset?.name ?? "Default"}${exploreBandPreset ? "" : " (board default)"}`]}
@@ -1598,7 +1598,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
             key={entry.key}
             aria-current={active ? "page" : undefined}
             onClick={() => onSelect(entry.key)}
-            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Build board" : entry.key === "research" ? "Research board" : entry.key === "explore" ? "Single-stage runs" : "What Stelow is"}
+            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Build board" : entry.key === "research" ? "Research board" : entry.key === "explore" ? "Single-technique runs" : "What Stelow is"}
             className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:px-3 sm:text-sm ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
           >
             <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
@@ -2249,11 +2249,11 @@ function ViewToggle({ view, onChange, label }: { view: "board" | "list"; onChang
 }
 
 function ResearchList({ groups, navigate, strategyLabelById, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; strategyLabelById: Map<string, string>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} tagFor={(card) => joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById) || null} renderCard={(card, tag) => <ResearchCard card={card} strategyLabel={tag} />} />;
+  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} metaFor={(card) => joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById) || null} />;
 }
 
 function ExploreList({ groups, navigate, stageLabelById, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; stageLabelById: Map<string, string>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} tagFor={(card) => (card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null)} renderCard={(card, tag) => <ExploreCard card={card} stageLabel={tag} />} />;
+  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} metaFor={(card) => (card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null)} />;
 }
 
 function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
@@ -2262,8 +2262,20 @@ function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<s
     if (!cards.length) return null;
     const isCollapsed = collapsed[column] === true;
     const label = COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => goToCard(navigate, card, card.id)} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div> : null}</section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={`${stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
   })}</div>;
+}
+
+// One list row for all three tracks (convention over configuration):
+// Build's row geometry is the standard; per-track context rides the meta
+// line (stage + scopes, strategy, technique). Kanban tiles stay rich;
+// list rows stay dense and keyboard-native.
+function TrackListRow({ card, meta, onOpen }: {
+  card: CardItem;
+  meta: string | null;
+  onOpen: () => void;
+}) {
+  return <button onClick={onOpen} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -2435,22 +2447,22 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
   return <LightweightTrackCard card={card} tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." ariaNoun="research" />;
 }
 
-// Explore-track card: the single workflow stage instead of strategy/intent,
-// opens in the Explore panel. Retry, attention, and activity reuse the same
-// pieces as the other tracks.
+// Explore-track card: a single technique (one isolated Build-workflow skill)
+// instead of strategy/intent, opens in the Explore panel. Retry, attention,
+// and activity reuse the same pieces as the other tracks.
 function ExploreCard({ card, stageLabel }: { card: CardItem; stageLabel: string | null }) {
-  return <LightweightTrackCard card={card} tagLabel={stageLabel ?? card.exploreStage} tagTitle="Workflow stage — the single playbook this exploration runs." ariaNoun="exploration" />;
+  return <LightweightTrackCard card={card} tagLabel={stageLabel ?? card.exploreStage} tagTitle="Technique — the focused approach this exploration runs." ariaNoun="exploration" />;
 }
 
 // Lightweight list view (Research + Explore share it): same grouping as the
 // board, one card per row. tagFor resolves the card's tag pill label.
-function LightweightTrackList({ groups, navigate, tagFor, renderCard, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; tagFor: (card: CardItem) => string | null; renderCard: (card: CardItem, tag: string | null) => React.ReactNode; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
+function LightweightTrackList({ groups, navigate, metaFor, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; metaFor: (card: CardItem) => string | null; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
   return <div className="space-y-5">{RESEARCH_COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (cards.length === 0) return null;
     const isCollapsed = collapsed[column] === true;
     const label = RESEARCH_COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="space-y-2">{cards.map((card) => <div key={card.id}>{renderCard(card, tagFor(card))}</div>)}</div> : null}</section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={metaFor(card)} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -2613,7 +2625,7 @@ function formatArtifactDate(value: string): string | null {
 }
 
 // One visual inventory for every card type. Each track supplies its durable
-// grouping axis (Build stage, Research round, Explore stage); rows always mean
+// grouping axis (Build stage, Research round, Explore technique); rows always mean
 // an actual file that opens in the viewer.
 function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView, highlightGroupId }: {
   groups: ArtifactInventoryGroup[];
@@ -4548,7 +4560,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {stageLabel ? <Pill tone="bg-primary/15 text-primary" title="Workflow stage — the single playbook this exploration runs.">{stageLabel}</Pill> : null}
+                      {stageLabel ? <Pill tone="bg-primary/15 text-primary" title="Technique — the focused approach this exploration runs.">{stageLabel}</Pill> : null}
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-3">

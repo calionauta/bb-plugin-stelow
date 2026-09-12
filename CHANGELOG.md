@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.79] - 2026-09-12
+
+### Changed
+
+- **Explore speaks technique, not stage.** The track header, creation
+  modal, picker, tags, and sidebar tooltip share one vocabulary with
+  Build ("specialized techniques"); data fields keep their names.
+- **One list row for all tracks.** Build geometry is the standard;
+  strategy/technique context rides the meta line. Kanban tiles untouched.
+- **Build header honesty.** Gated pauses read as conditional on the
+  review mode (Auto never pauses) instead of promised.
+
 ## [0.3.78] - 2026-09-12
 
 ### Changed

@@ -103,6 +103,13 @@ assert.match(app, /if \(column === status \|\| card\.status === "completed"\)/, 
 
 // Track headers describe the agent outcome, not internal filenames.
 assert.match(app, /applies specialized research strategy to surface prioritized opportunities/, "research header names the strategy outcome");
-assert.match(app, /Choose a single stage from the \{trackTitle\("build"\)\} workflow/, "explore header names the single build stage");
+assert.match(app, /Choose a single technique from the \{trackTitle\("build"\)\} workflow/, "explore header names one build technique, not a stage");
+assert.match(app, /carries each card through specialized techniques/, "build header shares the technique vocabulary");
+assert.match(app, /wherever your review mode requires it/, "gated pauses read as conditional, never promised");
+assert.doesNotMatch(app, /Choose a single stage from|Choose one specialized skill and an AI agent runs it/, "stage/skill wording is gone from explore headers");
+
+// One list row for all tracks: Build geometry standard, context per meta.
+assert.match(app, /function TrackListRow\(\{ card, meta, onOpen \}/, "all three list views share one row");
+assert.match(app, /<TrackListRow key=\{card\.id\} card=\{card\} meta=\{metaFor\(card\)\}/, "lightweight lists render the shared row");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");
