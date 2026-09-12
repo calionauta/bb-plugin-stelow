@@ -22,6 +22,7 @@ import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStalen
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
+import { workflowDirHash, workflowEntryForOwner, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
@@ -534,17 +535,18 @@ async function projectRoot(bb: BbPluginApi, projectId: string | null): Promise<s
   }
 }
 
-// Resolve the per-workflow state dir (.stelow/<date>/<dirHash>) that owns a
-// card's state.md. dirHash is stored on the card; the workflow's created date
-// comes from stelow.json. Returns null if the workflow entry is missing.
-async function workflowStateDir(bb: BbPluginApi, rootPath: string, dirHash: string): Promise<string | null> {
+// Resolve a card's state only when both persisted ownership records agree.
+// A matching name or dirHash alone is deliberately insufficient: projects can
+// contain repeated requests and converted exploratory workspaces.
+async function workflowStateDir(bb: BbPluginApi, rootPath: string, workflowId: string, dirHash: string): Promise<string | null> {
   try {
     const tracking = await readJson(bb.sdk.files, join(rootPath, "stelow.json"));
-    const workflow = array(tracking?.workflows).find((raw) => text(record(raw).dirHash) === dirHash);
-    if (!workflow) return null;
-    const created = text(record(workflow).created).slice(0, 10);
-    if (!created) return null;
-    return join(rootPath, `.stelow/${created}/${dirHash}`);
+    const workflow = workflowEntryForOwner(array(tracking?.workflows), workflowId, dirHash);
+    const relativeDir = workflowStateRelativeDir(workflow);
+    if (!relativeDir) return null;
+    const stateDir = join(rootPath, relativeDir);
+    const state = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((file) => file.content).catch(() => null);
+    return ownsWorkflowState(state, workflowId) ? stateDir : null;
   } catch {
     return null;
   }
@@ -568,7 +570,7 @@ function safeRelative(path: string): string {
   return path;
 }
 
-async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, intent: string, appetite = "Core", reviewMode = "Auto", fresh = false): Promise<{ statePath: string | null; stateDir: string | null; dirHash: string | null; error: string | null }> {
+async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: string, name: string, intent: string, appetite = "Core", reviewMode = "Auto", fresh = false): Promise<{ statePath: string | null; stateDir: string | null; dirHash: string | null; error: string | null }> {
   const transitionsPath = join(rootPath, "skills/stelow-workflow-orchestrator/references/transitions.md");
   const trackingPath = join(rootPath, "stelow.json");
   try {
@@ -582,30 +584,27 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
     try { trackingData = JSON.parse(readFileSync(trackingPath, "utf8")) as LooseRecord; } catch { /* create fresh */ }
     if (!Array.isArray(trackingData.workflows)) trackingData.workflows = [];
 
-    let trackingOwner = "";
-    try {
-      const existing = await bb.sdk.files.read({ path: trackingPath });
-      const parsed = JSON.parse(existing.content) as LooseRecord;
-      trackingOwner = text((Array.isArray(parsed.workflows) && parsed.workflows.find((w) => text(record(w).name) === name) ? record(parsed.workflows.find((w) => text(record(w).name) === name)) : {}).name);
-    } catch { /* fresh file */ }
-
-    // Each card/workflow owns its state at .stelow/<date>/<dirHash>/state.md.
-    // Reuse an existing dirHash when a workflow entry already exists for this
-    // name AND its state file still lives there (same card re-seeded); otherwise
-    // mint a fresh dirHash so two cards never share a state file.
-    const entry = (trackingData.workflows as Array<LooseRecord>).find((workflow) => text(workflow.name) === name && text(workflow.dirHash));
-    if (!fresh && entry && entry.dirHash && (await bb.sdk.files.read({ path: join(rootPath, `.stelow/${text(entry.created).slice(0, 10)}/${text(entry.dirHash)}/state.md`) }).then((f) => f.content.includes("current_stage:")).catch(() => false))) {
-      dirHash = text(entry.dirHash);
+    // A name is a label, not an identity. Reuse is reserved for this exact
+    // immutable owner (a card id for panel work) and requires both the index
+    // and the state file to agree. Legacy name-only rows are never adopted.
+    const workflows = trackingData.workflows as unknown[];
+    const entry = workflowEntryForOwner(workflows, workflowId);
+    const entryDir = workflowStateRelativeDir(entry);
+    const reusable = !fresh && entry && entryDir
+      && await bb.sdk.files.read({ path: join(rootPath, `${entryDir}/state.md`) })
+        .then((file) => ownsWorkflowState(file.content, workflowId))
+        .catch(() => false);
+    if (reusable) {
+      dirHash = text(record(entry).dirHash);
     } else {
-      dirHash = `pw-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+      dirHash = workflowDirHash(workflowId, fresh);
     }
     const stateDir = join(rootPath, `.stelow/${date}/${dirHash}`);
     mkdirSync(stateDir, { recursive: true });
     const statePath = join(stateDir, "state.md");
     const stateBlob = await bb.sdk.files.read({ path: statePath }).then((f) => f.content).catch(() => "");
-    const stateOwner = text(stateBlob.match(/^name:\s*(\S+)/m)?.[1]);
-    if (!stateBlob.includes("current_stage:") || stateOwner !== name) {
-      const body = STATE_TEMPLATE.replace("<workflow-name>", name).replace("<new-product|feature|bugfix|refactor|investigate|unknown>", intent);
+    if (!stateBlob.includes("current_stage:") || !ownsWorkflowState(stateBlob, workflowId)) {
+      const body = STATE_TEMPLATE.replace("<workflow-id>", workflowId).replace("<workflow-name>", name).replace("<new-product|feature|bugfix|refactor|investigate|unknown>", intent);
       writeFileSync(statePath, body.replace("appetite: Core", `appetite: ${appetite}`).replace("review_mode: Auto", `review_mode: ${reviewMode}`), "utf8");
     }
 
@@ -613,15 +612,8 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, name: string, int
       writeFileSync(transitionsPath, readFileSync(TRANSITIONS_REF, "utf8"), "utf8");
     }
 
-    const existingIndex = (trackingData.workflows as Array<LooseRecord>).findIndex((workflow) => workflow.name === name);
-    if (existingIndex === -1) {
-      (trackingData.workflows as unknown[]).push({ name, description: "", status: "in-progress", cwd: rootPath, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite, review_mode: reviewMode } });
-      writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
-    } else if (fresh) {
-      const workflows = trackingData.workflows as Array<LooseRecord>;
-      workflows[existingIndex] = { ...workflows[existingIndex], cwd: rootPath, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), status: "in-progress", stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, config: { appetite, review_mode: reviewMode } };
-      writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
-    }
+    trackingData.workflows = upsertWorkflowEntry(workflows, { workflowId, name, description: "", status: "in-progress", cwd: rootPath, dirHash, created: new Date().toISOString(), updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite, review_mode: reviewMode } });
+    writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
     return { statePath, stateDir, dirHash, error: null };
   } catch (error) {
     return { statePath: null, stateDir: null, dirHash: null, error: error instanceof Error ? error.message : "Unable to seed workflow." };
@@ -725,9 +717,12 @@ function loadCardScopes(rootPath: string | null, name: string): Awaited<ReturnTy
   return workflowScopes(match);
 }
 
-async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string, stateDir?: string | null): Promise<string | null> {
+async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string, stateDir?: string | null, requireOwnedState = false): Promise<string | null> {
   const tracking = join(rootPath, "stelow.json");
   const transitions = join(rootPath, "skills/stelow-workflow-orchestrator/references/transitions.md");
+  if (requireOwnedState && !stateDir) {
+    return "This card's workflow state cannot be verified. Reseed the card; Stelow will not use project-root state as a fallback.";
+  }
   const state = stateDir ? join(stateDir, "state.md") : join(rootPath, "state.md");
   if (!existsSync(transitions)) {
     mkdirSync(dirname(transitions), { recursive: true });
@@ -1256,7 +1251,7 @@ export default async function plugin(bb: BbPluginApi) {
   // workflow: no stages, no gates, no advance. The worker writes research-index.md
   // (exact shape below) into its own state dir; the user marks Done and
   // fans opportunities out into build cards from the plugin UI.
-  const CARD_OWNER_RULES = "You are the card owner: preserve context, ask the user, and publish the canonical result yourself. Do not split this card's initial workflow into subagents. You may delegate only independent work with a distinct input and output file, then review and synthesize it yourself. Never delegate structured questions, card state changes, lifecycle commands, or the canonical result.";
+  const CARD_OWNER_RULES = "You are the card owner: preserve context, ask the user, and publish the canonical result yourself. workflow_id is an immutable ownership marker: never edit it, copy another workflow's state, or use a project-root state.md as a substitute. Do not split this card's initial workflow into subagents. You may delegate only independent work with a distinct input and output file, then review and synthesize it yourself. Never delegate structured questions, card state changes, lifecycle commands, or the canonical result.";
 
   function researchWorkerPrompt({ displayName, prompt, strategyLabel, strategyId, strategySkill, stateDirText, workspaceRoot, instructions, flavor, previousThreadId, roundNo, roundStamp, roundFile }: { displayName: string; prompt: string; strategyLabel: string; strategyId: string; strategySkill: string; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed" | "append"; previousThreadId: string | null; roundNo: number; roundStamp: string; roundFile: string }): string {
     const flavorLine = flavor === "initial"
@@ -1411,7 +1406,7 @@ ${prompt}`;
       throw new Error(`Unknown explore technique "${stageId ?? ""}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
     }
     const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : "unknown";
-    const seed = await seedWorkflow(bb, rootPath, slug, initialIntent, appetite, reviewMode);
+    const seed = await seedWorkflow(bb, rootPath, cardId, slug, initialIntent, appetite, reviewMode);
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
     // Spawn workers on their track's entry band (lib/tracks: each track
@@ -1596,7 +1591,10 @@ ${prompt}` }, ...workerAttachments],
     // the respawned worker is told the correct path — never a guessed date.
     let stateDir: string | null = null;
     if (row.dir_hash && projectPath) {
-      stateDir = await workflowStateDir(bb, projectPath, row.dir_hash).catch(() => null);
+      stateDir = await workflowStateDir(bb, projectPath, row.id, row.dir_hash).catch(() => null);
+    }
+    if (row.dir_hash && !stateDir) {
+      return { ok: false, error: "This card's workflow state cannot be verified. Reseed it before restarting its worker." };
     }
     const stateHint = stateDir ?? (row.dir_hash ? ".stelow/<date>/" + row.dir_hash : "<project>/.stelow/<date>/<dirHash>");
     // Research cards restart with the strategy prompt, never the build
@@ -1807,7 +1805,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   async function researchRoundIntegrity(card: CardRow): Promise<Array<{ n: number; label: string }>> {
     const workspace = await cardWorkspace(card);
     if (!workspace?.path || !card.dir_hash) return [];
-    const stateDir = await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null);
+    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
     if (!stateDir) return [];
     const history = strategyRounds(card);
     if (history.length === 0) return [];
@@ -1847,7 +1845,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const workspace = await cardWorkspace(card);
     if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
     if (!card.dir_hash) return { ok: false, error: "No workflow state for this research yet." };
-    const stateDir = await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null);
+    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
     if (!stateDir) return { ok: false, error: "No workflow state for this research yet." };
     const absolute = join(stateDir, "research-index.md");
     const content = await bb.sdk.files.read({ path: absolute }).then((file) => file.content).catch(() => null);
@@ -2042,7 +2040,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   async function exploreArtifact(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null }> {
     const workspace = await cardWorkspace(card);
     if (!workspace?.path || !card.dir_hash || !card.explore_stage) return { ready: false, fingerprint: null };
-    const stateDir = await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null);
+    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
     if (!stateDir) return { ready: false, fingerprint: null };
     const full = join(stateDir, exploreArtifactFile(card.explore_stage));
     const content = await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null);
@@ -2268,13 +2266,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const stateBlob = await (async () => {
         if (!projectPath) return null;
         if (card.dir_hash) {
-          const stateDir = await workflowStateDir(bb, projectPath, card.dir_hash);
+          const stateDir = await workflowStateDir(bb, projectPath, card.id, card.dir_hash);
           if (stateDir) {
             return await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
           }
+          return null;
         }
         return await bb.sdk.files.read({ path: join(projectPath, "state.md") }).then((f) => f.content).catch(() => null);
       })();
+
+      if (card.dir_hash && !stateBlob) {
+        updateCard(cardId, { activity: "error", last_error: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." });
+        return;
+      }
 
       // Sync intent from state.md if the agent recorded a decision during triage.
       if (card.intent === "unknown" && stateBlob) {
@@ -2566,7 +2570,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async ensureWorkflow({ projectId, name, intent }) {
       const rootPath = await projectRoot(bb, projectId);
       if (!rootPath) return { rootPath: null, statePath: null, error: "Project workspace path is unavailable." };
-      const result = await seedWorkflow(bb, rootPath, name, intent);
+      const result = await seedWorkflow(bb, rootPath, randomId("workflow"), name, intent);
       if (result.error) return { rootPath, statePath: null, error: result.error };
       bb.realtime.publish("board-changed", { reason: "seeded" });
       return { rootPath, statePath: result.statePath, error: null };
@@ -2927,8 +2931,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         if (!sourcePath) return [];
         const stateBlob = await (async () => {
           if (card.dir_hash) {
-            const stateDir = await workflowStateDir(bb, sourcePath, card.dir_hash);
+            const stateDir = await workflowStateDir(bb, sourcePath, card.id, card.dir_hash);
             if (stateDir) return await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+            return null;
           }
           return await bb.sdk.files.read({ path: join(sourcePath, "state.md") }).then((f) => f.content).catch(() => null);
         })();
@@ -2978,7 +2983,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const fallback = { appetite: "Lean", reviewMode: "Auto" };
         try {
           if (!sourcePath || !card.dir_hash) return fallback;
-          const stateDir = await workflowStateDir(bb, sourcePath, card.dir_hash).catch(() => null);
+          const stateDir = await workflowStateDir(bb, sourcePath, card.id, card.dir_hash).catch(() => null);
           if (!stateDir) return fallback;
           const content = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
           if (typeof content !== "string") return fallback;
@@ -3017,7 +3022,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       try {
         const workspace = await cardWorkspace(card);
         if (workspace?.path) {
-          const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.dir_hash) : null;
+          const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash) : null;
+          if (card.dir_hash && !stateDir) return { ok: false, error: "Workflow state ownership cannot be verified. Reseed this card before changing its workflow type." };
           const statePath = stateDir ? join(stateDir, "state.md") : join(workspace.path, "state.md");
           const existing = await bb.sdk.files.read({ path: statePath }).catch(() => null);
           if (existing) {
@@ -3137,7 +3143,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const source = workspace?.hostId && workspace.path ? { path: workspace.path, hostId: workspace.hostId } : null;
       if (!source) return { reseeded: false, error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.`, reclassified: false };
       // Re-seed into a fresh per-workflow dir so the card gets a clean state file.
-      const seed = await seedWorkflow(bb, source.path, card.name, intent, "Core", "Auto", true);
+      const seed = await seedWorkflow(bb, source.path, card.id, card.name, intent, "Core", "Auto", true);
       if (seed.error) return { reseeded: false, error: seed.error, reclassified: false };
       if (seed.dirHash) {
         db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(seed.dirHash, now(), cardId);
@@ -3353,7 +3359,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const history = strategyRounds(card);
       const live = ["running", "awaiting-answer"].includes(card.activity);
       const workspace = await cardWorkspace(card).catch(() => null);
-      const stateDir = card.dir_hash && workspace?.path ? await workflowStateDir(bb, workspace.path, card.dir_hash).catch(() => null) : null;
+      const stateDir = card.dir_hash && workspace?.path ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null) : null;
       const { rounds } = await researchRoundFiles(workspace?.path ?? null, workspace?.hostId ?? null, stateDir, history, live);
       const parsed = parseResearchIndex(resolved.content);
       if (!parsed.found) return { ...empty, indexPath: resolved.display, rounds, error: "Research results are still being prepared." };
@@ -3541,7 +3547,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const roundStamp = roundTimestamp();
       const roundAt = new Date(now()).toISOString();
       const fanoutWorkspace = await cardWorkspace(card).catch(() => null);
-      const fanoutStateDir = card.dir_hash && fanoutWorkspace?.path ? await workflowStateDir(bb, fanoutWorkspace.path, card.dir_hash).catch(() => null) : null;
+      const fanoutStateDir = card.dir_hash && fanoutWorkspace?.path ? await workflowStateDir(bb, fanoutWorkspace.path, card.id, card.dir_hash).catch(() => null) : null;
       const roundFile = fanoutStateDir && fanoutWorkspace?.path
         ? roundRelPath(fanoutStateDir, fanoutWorkspace.path, roundFileName(picked.id, roundNo, roundStamp))
         : "";
@@ -3601,9 +3607,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (card.kind === "explore") return { ok: false, stdout: "", error: "Explore cards don't use stages — a completed artifact moves them to Done automatically." };
       const workspace = await cardWorkspace(card);
       if (!workspace?.path) return { ok: false, stdout: "", error: ERR_WORKSPACE_UNAVAILABLE };
-      const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.dir_hash) : null;
+      const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash) : null;
       const source = { path: workspace.path, hostId: workspace.hostId };
-      const guard = await ensureProjectArtifacts(bb, source.path, stateDir);
+      const guard = await ensureProjectArtifacts(bb, source.path, stateDir, Boolean(card.dir_hash));
       if (guard) return { ok: false, stdout: "", error: guard };
       const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
       if (result.code !== 0) return { ok: false, stdout: result.stdout, error: result.stderr || "stelow advance failed" };
@@ -4028,7 +4034,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (!projectId || !name || !intent) return { exitCode: 2, stderr: "Usage: bb stelow seed --project <proj_id> --name <name> --intent <intent>" };
         const rootPath = await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Project workspace path is unavailable." };
-        const result = await seedWorkflow(bb, rootPath, name, intent);
+        const result = await seedWorkflow(bb, rootPath, randomId("workflow"), name, intent);
         return result.error ? { exitCode: 1, stderr: result.error } : { exitCode: 0, stdout: result.statePath ?? "" };
       }
       if (argv[0] === "advance") {
@@ -4045,8 +4051,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const workspace = cliCard ? await cardWorkspace(cliCard) : null;
         const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
         if (guard) return { exitCode: 1, stderr: guard };
         const helperArgs = ["advance", stage, ...(dryRun ? ["--dry-run"] : []), ...(json ? ["--json"] : [])];
         const result = await runHelper(helperArgs, rootPath, stateDir ?? undefined);
@@ -4096,8 +4102,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const workspace = cliCard ? await cardWorkspace(cliCard) : null;
         const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
         if (guard) return { exitCode: 1, stderr: guard };
         const result = await runHelper(json ? ["doctor", "--json"] : ["doctor"], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: result.code ?? 1, stderr: result.stderr || "doctor found drift", stdout: result.stdout };
@@ -4125,8 +4131,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const workspace = cliCard ? await cardWorkspace(cliCard) : null;
         const rootPath = workspace?.path ?? await projectRoot(bb, projectId ?? null);
         if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
         if (guard) return { exitCode: 1, stderr: guard };
         const result = await runHelper(["sync-scopes", ...passthrough], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "sync-scopes failed", stdout: result.stdout };
@@ -4154,8 +4160,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const workspace = cliCard ? await cardWorkspace(cliCard) : null;
         const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
         if (guard) return { exitCode: 1, stderr: guard };
         // Helper exit codes are meaningful here (1 = lock conflict): pass through.
         const result = await runHelper(["lock", op, ...rest], rootPath, stateDir ?? undefined);
@@ -4180,8 +4186,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const workspace = cliCard ? await cardWorkspace(cliCard) : null;
         const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir);
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
         if (guard) return { exitCode: 1, stderr: guard };
         const result = await runHelper(["config", ...rest], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "config failed", stdout: result.stdout };

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.1] - 2026-09-12
+
+### Fixed
+
+- **Card-owned workflow state.** A workflow now carries an immutable owner id
+  in both `stelow.json` and `state.md`; equal names can never reuse another
+  card's directory, stage, or artifacts.
+- **Fail-closed state reads.** Cards with unverifiable ownership stop with a
+  reseed instruction instead of falling back to project-root state.
+
 ## [0.4.0] - 2026-09-12
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
@@ -61,7 +61,7 @@
     "test:worker-actions": "node tests/worker-action-policy.test.mjs",
     "test:workflow-intent": "node tests/workflow-intent-policy.test.mjs",
     "test:card-details": "node tests/card-detail-presentation.test.mjs && node tests/card-lifecycle-contract.test.mjs",
-    "test:workflow-lineage": "node tests/workflow-lineage.test.mjs",
+    "test:workflow-lineage": "node tests/workflow-lineage.test.mjs && node tests/workflow-state-identity.test.mjs",
     "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",
     "test:skills-verify": "node tests/skills-sync-verify.test.mjs",
     "test:skills-tables": "node tests/skills-tables.test.mjs",

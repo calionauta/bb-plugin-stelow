@@ -24,6 +24,7 @@ for (const stage of template) {
 assert.deepEqual([...STAGE_SEQUENCE].sort(), [...headers].sort(), "board order matches the transition contract set");
 assert.equal(new Set(STAGE_SEQUENCE).size, STAGE_SEQUENCE.length, "board order has no duplicates");
 assert.ok(STATE_TEMPLATE.includes("current_stage: triage"), "template starts at triage");
+assert.ok(STATE_TEMPLATE.includes("workflow_id: <workflow-id>"), "template carries immutable workflow ownership");
 assert.equal(WORKFLOW_STAGES.length, STAGE_SEQUENCE.length, "one catalog owns the ordered workflow stages");
 for (const stage of WORKFLOW_STAGES) {
   assert.equal(stageLabel(stage.id), stage.label, `${stage.id} has one display label`);
