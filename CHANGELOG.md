@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.74] - 2026-09-12
+
+### Added
+
+- **About discloses the npx-resolved dependencies.** A "Ready via npx"
+  group lists the skills hub, ctx7, and last30days with usage and consent
+  rules — info only, no probe, no buttons.
+
 ## [0.3.73] - 2026-09-12
 
 ### Changed

@@ -55,6 +55,8 @@ assert.match(app, /skills · synced /, "About shows a compact sync status, not a
 assert.match(app, /setSkillsOpen\(true\)/, "sync status opens the vendored-skills dialog");
 assert.match(app, /Vendored Stelow skills/, "dialog names the vendored skill inventory");
 assert.match(app, /Reinstall .* at its latest release/, "installed tools offer reinstall-as-update");
+assert.match(app, /Ready via npx/, "npx-resolved dependencies are listed without probe or buttons");
+assert.match(app, /last30days/, "social-signal skill is disclosed with its consent rule");
 assert.doesNotMatch(app, /plannotator/, "About never references the bb-unused tool");
 assert.doesNotMatch(server, /plannotator/, "server drops the bb-unused tool entirely");
 

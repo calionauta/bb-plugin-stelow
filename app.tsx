@@ -1631,6 +1631,15 @@ const HOST_TOOLS: Array<{ id: "ast-grep" | "cymbal" | "ripwire" | "sem"; name: s
   { id: "sem", name: "sem", repo: "https://github.com/Ataraxy-Labs/sem", plain: "Tell which functions and types changed — not just which lines — including renames.", tech: "Entity-level diff via tree-sitter; powers the Diff summary and agent audits.", install: "curl -fsSL https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh | sh" },
 ];
 
+// Resolved on demand through npx — no host install, nothing to probe, no
+// buttons. Listed so the full dependency surface is visible in one place;
+// each entry names who consumes it and under which consent.
+const NPX_TOOLS: Array<{ name: string; repo: string; plain: string; tech: string; usage: string }> = [
+  { name: "npx skills", repo: "https://github.com/vercel-labs/skills", plain: "The skills hub workers use to fetch playbooks and stack-matched skills on demand.", tech: "Ships with Node.js; invoked per use, never installed globally by the plugin.", usage: "npx skills add calionauta/stelow" },
+  { name: "ctx7", repo: "https://github.com/upstash/context7", plain: "Current, version-specific library docs while writing code — never for choosing the stack.", tech: "Auto-installs on first npx invocation; guided OAuth setup (terminal) only raises limits.", usage: "npx @vedanth/context7 docs /vercel/next.js \"app router\"" },
+  { name: "last30days", repo: "https://github.com/mvanhorn/last30days-skill", plain: "Social recency signal for market research — complementary source only, installed per use with your confirmation.", tech: "Agent skill, never a binary; workers ask before adding it.", usage: "npx skills add mvanhorn/last30days-skill@last30days" },
+];
+
 function HostToolsSection({ tools, onInstall, installingId, errors }: {
   tools: Array<{ id: string; present: boolean; version: string | null }> | null;
   onInstall: (id: "ast-grep" | "cymbal" | "ripwire" | "sem") => void;
@@ -1692,6 +1701,21 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
         })}
       </div>
       )}
+      <h3 className="pt-2 text-sm font-semibold text-foreground">Ready via npx — no install needed</h3>
+      <p className="text-xs leading-5 text-muted-foreground">Resolved on demand, not probed: npx fetches these on first use. Nothing to install, no buttons — listed so every dependency Stelow touches is visible.</p>
+      <div className="space-y-2">
+        {NPX_TOOLS.map((meta) => (
+          <div key={meta.name} className="rounded-lg border bg-muted/20 p-3">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-semibold text-foreground">{meta.name}</span>
+              <UrlLink href={meta.repo} title={`${meta.name} repository`} className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:border-primary/50 hover:text-foreground"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden /></UrlLink>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.plain}</p>
+            <p className="mt-0.5 font-mono text-[11px] leading-5 text-muted-foreground/80">{meta.tech}</p>
+            <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{meta.usage}</pre>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

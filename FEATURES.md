@@ -155,7 +155,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   install anytime, everything degrades silently without them. Each row
   also offers one-click install (explicit consent, official installers
   only, ~/.local/bin, verified by re-probe) with per-row error + log, plus
-  one-click reinstall-as-update for installed tools. When `sem` is installed on the host, a one-line
+  one-click reinstall-as-update for installed tools. A separate "Ready via
+  npx" group discloses the on-demand dependencies (npx skills hub, ctx7,
+  last30days) with usage and consent rules — info only, no buttons. When `sem` is installed on the host, a one-line
   entity summary (added/modified/deleted/renamed, cosmetic-only flag)
   heads the file list — absent otherwise, never an error. When `cymbal`
   is installed, a second line lists changed symbols with caller impact
