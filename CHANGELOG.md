@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.71] - 2026-09-12
+
+### Changed
+
+- **All stelow-* skills ship vendored, not just workflow.** The upstream
+  sync discovers every top-level `skills/stelow-*/` directory (product
+  playbooks included) and prunes retired names; worker prompts prefer the
+  local copy with `npx skills add` as fallback only. Sync state moved to
+  the stable plugin data dir (survives managed-install cache rotations)
+  and one fail-soft pass runs at boot — About never shows "never" after
+  a plugin update again.
+
 ## [0.3.70] - 2026-09-12
 
 ### Fixed

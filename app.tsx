@@ -1767,7 +1767,7 @@ function AboutPanel() {
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               {buildInfo ? (
                 <p className="text-xs text-muted-foreground" title={buildInfo.skillsSyncedAt ? `Upstream skills verified ${new Date(buildInfo.skillsSyncedAt).toLocaleString()}` : "Upstream skills not yet verified on this host"}>
-                  Workflow skills synced {buildInfo.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}
+                  Stelow skills synced {buildInfo.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}
                 </p>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">

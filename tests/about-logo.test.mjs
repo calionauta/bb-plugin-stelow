@@ -51,6 +51,6 @@ assert.equal(manifest.files.includes("assets"), true, "plugin package carries as
 assert.match(server, /skillsSyncedAt: z\.number\(\)\.nullable\(\)/, "buildInfo exposes the skills verification timestamp");
 assert.match(server, /skillsSyncedAt: readLastSyncAt\(SYNC_STATE_FILE\)/, "verification timestamp is read live, not memoized");
 assert.match(syncLib, /if \(result\.errors\.length === 0\) (nextState|state)\[SYNC_TIMESTAMP_KEY\] = Date\.now\(\);/, "only clean verifications advance the timestamp");
-assert.match(app, /Workflow skills synced /, "About renders the skills verification age");
+assert.match(app, /Stelow skills synced /, "About renders the skills verification age");
 
 console.log("about logo test ok: data URI delivery, budget, and no static-asset URLs");

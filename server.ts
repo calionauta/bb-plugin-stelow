@@ -903,6 +903,17 @@ export default async function plugin(bb: BbPluginApi) {
   // sync-scopes/lock/config equivalents instead of failing on the path.
   const CLI_EQUIVALENTS = "Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags.";
   const db = bb.storage.database();
+  // Sync state lives beside data.db (stable across managed-install cache
+  // rotations), never in the plugin root: a fresh cache dir would otherwise
+  // show "never synced" and re-download everything for up to 6h after each
+  // plugin update. Falls back to the plugin root when the db path is odd.
+  const pluginDataDir = (() => {
+    try {
+      const name = (db as unknown as { name?: unknown }).name;
+      if (typeof name === "string" && name.length > 0 && name !== ":memory:") return dirname(name);
+    } catch { /* fall through */ }
+    return pluginDir;
+  })();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS cards (
       id TEXT PRIMARY KEY,
@@ -1258,7 +1269,7 @@ export default async function plugin(bb: BbPluginApi) {
           : "The host re-seeded your state dir: start the research over with a fresh research-index.md.";
     return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside the workspace (${workspaceRoot}). ${CARD_OWNER_RULES} ${flavorLine}${previousThreadId ? ` Previous worker thread: ${previousThreadId} (archived). If the index is thin, its turn history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.` : ""}
 
-Step 1 — load the strategy playbook: the ${strategyLabel} method (${strategySkill}) comes from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb skill list\` to confirm it, then follow that playbook — not the stelow-workflow-* build skills, which do not apply here.
+Step 1 — load the strategy playbook: the ${strategyLabel} method (${strategySkill}) is provided by this plugin \u2014 use \`bb skill list\` to confirm it (fetch via \`npx skills add calionauta/stelow\` only if missing), then follow that playbook — not the stelow-workflow-* build skills, which do not apply here.
 
 Step 2 — research the request below inside this workspace. Research happens primarily on the WEB using your search tools — the playbook expects real-time sources (LinkedIn, X/Twitter, Reddit practitioner communities, industry reports), not prior knowledge. You may also read code and docs. If you genuinely have no web search tools available, say so explicitly in the index instead of inventing findings — never fabricate market data, quotes, or statistics. You MUST NOT write product code or open pull requests. Research only.
 
@@ -1646,7 +1657,7 @@ ${prompt}` }, ...workerAttachments],
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
 Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -2417,21 +2428,25 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }));
 
   // Auto-sync the vendored Stelow workflow skills + helper script from the
-  // calionauta/stelow repo. Runs every 6h; fail-soft (network issues just
-  // log, never break the plugin). Product playbooks are NOT vendored —
-  // workers consume them from the agent skills hub (npx skills add
-  // calionauta/stelow). State lives at the plugin root (never inside
-  // skills/, which bb scans for skill candidates).
+  // Upstream skill sync (calionauta/stelow main): workflow skills AND
+  // product playbooks, vendored into the plugin so workers load them from
+  // `bb skill list` with no network at card time. Runs every 6h plus once
+  // at boot (a fresh managed-install cache has no sync state yet);
+  // fail-soft (network issues just log, never break the plugin).
+  // State lives in the plugin data dir (never inside skills/, which bb
+  // scans for skill candidates, and never in the ephemeral install cache).
   const SKILLS_SYNC_CRON = process.env.STELOW_SKILLS_SYNC_CRON ?? "33 */6 * * *";
-  const SYNC_STATE_FILE = nodeJoin(pluginDir, ".sync-state.json");
-  bb.background.schedule("stelow-skills-sync", SKILLS_SYNC_CRON, async () => {
+  const SYNC_STATE_FILE = nodeJoin(pluginDataDir, ".sync-state.json");
+  async function runUpstreamSync() {
     try {
       await syncWorkflowSkills(PLUGIN_SKILLS_DIR, { log: (m) => bb.log.info(m), statePath: SYNC_STATE_FILE });
       await syncHelperScript(pluginDir, { log: (m) => bb.log.info(m), statePath: SYNC_STATE_FILE });
     } catch (e) {
       bb.log.warn(`stelow-skills-sync failed (fail-soft): ${e instanceof Error ? e.message : String(e)}`);
     }
-  });
+  }
+  bb.background.schedule("stelow-skills-sync", SKILLS_SYNC_CRON, () => void runUpstreamSync());
+  void runUpstreamSync();
 
   // NOTE: a previous revision stopped every live worker thread here. Removed:
   // dispose fires on every hot-reload (dev + build:reload), so it massacred
@@ -2544,7 +2559,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         projectId,
         environment: { type: "project-default" },
         title: `Stelow: ${prompt.slice(0, 70)}`,
-        prompt: `Use the stelow workflow to shape and execute this request. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by bb-plugin-stelow — load them first. The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}\n\nRequest:\n${prompt}`,
+        prompt: `Use the stelow workflow to shape and execute this request. The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by bb-plugin-stelow — load them first. The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}\n\nRequest:\n${prompt}`,
       });
       return { threadId: thread.id };
     },
@@ -3194,7 +3209,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) come from the stelow repo via the agent skills hub (\`npx skills add calionauta/stelow\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
 Intent is currently \`${intent}\` in the re-seeded state.md. ${intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 

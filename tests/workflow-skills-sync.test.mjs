@@ -28,6 +28,24 @@ try {
   assert.equal(second.errors.length, 0, "second sync has no errors");
   assert.equal(second.changed, false, "second sync reports unchanged");
 
+  assert.ok(
+    existsSync(join(target, "stelow-product-pricing", "SKILL.md")),
+    "product playbooks ship vendored, not just workflow skills",
+  );
+
+  // Retired skills prune by directory: a stale stelow-* dir disappears,
+  // anything not starting with stelow- is never touched.
+  const retired = join(target, "stelow-product-workflow");
+  const foreign = join(target, "other-thing");
+  mkdirSync(retired, { recursive: true });
+  writeFileSync(join(retired, "SKILL.md"), "# retired");
+  mkdirSync(foreign, { recursive: true });
+  writeFileSync(join(foreign, "x.md"), "# foreign");
+  const third = await syncWorkflowSkills(target, { log: () => {} });
+  assert.equal(third.errors.length, 0, "prune run has no errors");
+  assert.ok(!existsSync(retired), "retired stelow-* dir pruned");
+  assert.ok(existsSync(join(foreign, "x.md")), "non-stelow dirs untouched");
+
   assert.equal(WORKFLOW_SKILLS.length, 14, "exactly 14 core skills are vendored");
   assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-entry"), "workflow entry is vendored");
   assert.ok(WORKFLOW_SKILLS.includes("stelow-workflow-router"), "workflow router is vendored");
