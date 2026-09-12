@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.69] - 2026-09-12
+
+### Added
+
+- **About shows upstream-skills freshness.** Every upstream verification
+  (changed files or not) records its timestamp, `buildInfo` serves it
+  live, and the About tab renders "Workflow skills synced X ago" next to
+  the plugin version — the 6h auto-sync is now visible instead of silent.
+
 ## [0.3.68] - 2026-09-11
 
 ### Fixed

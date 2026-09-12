@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { gitBlobSha } from "../lib/workflow-skills-sync.mjs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { SYNC_TIMESTAMP_KEY, gitBlobSha, readLastSyncAt } from "../lib/workflow-skills-sync.mjs";
 
 // Git blob-sha vectors: sha1("blob <len>\0<content>").
 assert.equal(gitBlobSha(""), "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", "empty blob vector");
@@ -9,5 +12,21 @@ assert.equal(gitBlobSha(Buffer.from("hello")), gitBlobSha("hello"), "Buffer and 
 // Guards the sync against CDN staleness: bytes whose blob sha differs from
 // the tree sha must never be recorded as synced.
 assert.notEqual(gitBlobSha("stale bytes"), gitBlobSha("fresh bytes"), "different bytes hash differently");
+
+// The About tab's "skills synced X ago" reads the verification timestamp
+// from the sync state file: present and plausible, never a throw.
+const probeDir = mkdtempSync(join(tmpdir(), "stelow-sync-ts-"));
+try {
+  const probe = join(probeDir, ".sync-state.json");
+  assert.equal(readLastSyncAt(probe), null, "missing state yields no timestamp");
+  writeFileSync(probe, JSON.stringify({ [SYNC_TIMESTAMP_KEY]: 1_700_000_000_000 }));
+  assert.equal(readLastSyncAt(probe), 1_700_000_000_000, "recorded timestamp round-trips");
+  writeFileSync(probe, JSON.stringify({ [SYNC_TIMESTAMP_KEY]: "yesterday" }));
+  assert.equal(readLastSyncAt(probe), null, "garbage timestamp yields no timestamp");
+  writeFileSync(probe, "not json");
+  assert.equal(readLastSyncAt(probe), null, "corrupt state yields no timestamp");
+} finally {
+  rmSync(probeDir, { recursive: true, force: true });
+}
 
 console.log("skills sync verify test ok: git blob-sha vectors");

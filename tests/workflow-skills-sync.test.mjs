@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { syncWorkflowSkills, WORKFLOW_SKILLS } from "../lib/workflow-skills-sync.mjs";
@@ -46,9 +46,12 @@ try {
     assert.ok(existsSync(state2), "state lands at the explicit path");
     const strays = readdirSync(target2).filter((e) => e.startsWith("."));
     assert.deepEqual(strays, [], "no dotfiles inside skills/");
-    const b = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
-    assert.equal(b.changed, false, "explicit-state second run is a no-op");
-    assert.equal(b.errors.length, 0, "explicit-state second run has no errors");
+  const b = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
+  assert.equal(b.changed, false, "explicit-state second run is a no-op");
+  assert.equal(b.errors.length, 0, "explicit-state second run has no errors");
+  const syncedAt = JSON.parse(readFileSync(state2, "utf8"))["$syncedAt"];
+  assert.equal(typeof syncedAt, "number", "sync records its verification timestamp");
+  assert.ok(syncedAt > 0 && syncedAt <= Date.now(), "verification timestamp is plausible");
 
     // Legacy in-skills state migrates once: it is consumed (no redundant
     // re-download storm beyond the single migration run) and then removed.

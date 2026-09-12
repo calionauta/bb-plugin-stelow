@@ -21,3 +21,7 @@ export function syncHelperScript(
 export function gitBlobSha(content: Uint8Array | string): string;
 
 export const WORKFLOW_SKILLS: string[];
+
+export const SYNC_TIMESTAMP_KEY: string;
+
+export function readLastSyncAt(stateFile: string): number | null;

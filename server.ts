@@ -33,7 +33,7 @@ import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/resear
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
-import { WORKFLOW_SKILLS, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
+import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
@@ -473,7 +473,7 @@ export const rpcContract = defineRpcContract({
   },
   buildInfo: {
     input: z.object({}).strict(),
-    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable() }),
+    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skillsSyncedAt: z.number().nullable() }),
   },
   aboutLogo: {
     input: z.object({}).strict(),
@@ -3743,7 +3743,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async buildInfo() {
-      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion };
+      // skillsSyncedAt is read live (not memoized like BUILD_INFO): the 6h
+      // upstream sync lands between About visits.
+      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion, skillsSyncedAt: readLastSyncAt(SYNC_STATE_FILE) };
     },
 
     // About identity mark. Served as a data URI (never a static file URL —

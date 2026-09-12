@@ -1693,7 +1693,7 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
 
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skillsSyncedAt: number | null } | null>(null);
   const [aboutLogo, setAboutLogo] = useState<string | null>(null);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
   const [installingToolId, setInstallingToolId] = useState<string | null>(null);
@@ -1765,6 +1765,11 @@ function AboutPanel() {
                 bb-plugin-stelow {buildInfo ? <span className="text-[11px] font-normal text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
               </h2>
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
+              {buildInfo ? (
+                <p className="text-xs text-muted-foreground" title={buildInfo.skillsSyncedAt ? `Upstream skills verified ${new Date(buildInfo.skillsSyncedAt).toLocaleString()}` : "Upstream skills not yet verified on this host"}>
+                  Workflow skills synced {buildInfo.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}
+                </p>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
                 {confirmReset ? (

@@ -45,4 +45,10 @@ assert.match(server, /aboutLogo:\s*\{/, "server exposes the aboutLogo RPC");
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 assert.equal(manifest.files.includes("assets"), true, "plugin package carries assets for the RPC to read");
 
+// buildInfo carries the upstream-skills verification timestamp and the
+// About tab renders it next to the plugin version.
+assert.match(server, /skillsSyncedAt: z\.number\(\)\.nullable\(\)/, "buildInfo exposes the skills verification timestamp");
+assert.match(server, /skillsSyncedAt: readLastSyncAt\(SYNC_STATE_FILE\)/, "verification timestamp is read live, not memoized");
+assert.match(app, /Workflow skills synced /, "About renders the skills verification age");
+
 console.log("about logo test ok: data URI delivery, budget, and no static-asset URLs");
