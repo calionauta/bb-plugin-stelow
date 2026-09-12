@@ -91,4 +91,18 @@ assert.match(server, /stripArchivedResuscitation\(latest\?\.status, write\)/, "m
 assert.match(server, /if \(!card\?\.worker_thread_id \|\| isArchivedCard\(card\)\) return;/, "sync polls never touch archived cards");
 assert.match(server, /if \(cardRow\.status === "archived"\) return \{ exitCode: 2, stderr: "This card is archived\." \}/, "ask on an archived thread names the state");
 
+// List-view groups collapse with archived collapsed by default and stored
+// choices surviving reloads; completed build cards read as one state.
+assert.match(app, /buildListGroups: "stelow-build-list-groups-collapsed-v1"/, "build list collapse persists");
+assert.match(app, /researchListGroups: "stelow-research-list-groups-collapsed-v1"/, "research list collapse persists");
+assert.match(app, /exploreListGroups: "stelow-explore-list-groups-collapsed-v1"/, "explore list collapse persists");
+assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
+assert.match(app, /aria-expanded=\{!isCollapsed\}/, "list group toggles expose expansion state");
+assert.match(app, /card\?\.status === "completed" \? "Completed without scoped execution\."/, "completed cards never claim shaping is in progress");
+assert.match(app, /if \(column === status \|\| card\.status === "completed"\)/, "completed build cards show one pill, not Done + Completed");
+
+// Track headers describe the agent outcome, not internal filenames.
+assert.match(app, /applies specialized research strategy to surface prioritized opportunities/, "research header names the strategy outcome");
+assert.match(app, /Choose a single stage from the \{trackTitle\("build"\)\} workflow/, "explore header names the single build stage");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

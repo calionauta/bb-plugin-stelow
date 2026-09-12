@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.78] - 2026-09-12
+
+### Changed
+
+- **List-view groups collapse.** Build, Research, and Explore lists get
+  the kanban toggle treatment per group, persisted per track with
+  Archived collapsed by default.
+- **Track headers describe outcomes.** Research names the chosen
+  strategy; Explore names the single Build stage it runs.
+- **Done reads once.** Completed build cards show one Done pill instead
+  of Done + Completed, and scopeless completed cards no longer claim the
+  agent is still shaping.
+
 ## [0.3.77] - 2026-09-12
 
 ### Changed

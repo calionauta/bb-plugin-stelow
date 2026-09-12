@@ -324,8 +324,11 @@ function Pill({ children, tone = "bg-muted text-muted-foreground", className = "
 function BuildStatusPills({ card }: { card: CardItem }) {
   const column = COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status);
   const status = statusLabel(card.status);
-  if (column === status) {
-    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board status — this card's current state."><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill>;
+  // Completed reads as one state: the column ("Done") already says it, so a
+  // second "Completed" pill only duplicates. (Archived already collapses to
+  // one via the equality below.)
+  if (column === status || card.status === "completed") {
+    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board status — this card's current state."><span className="mr-1">{statusGlyph(card.status)}</span>{column}</Pill>;
   }
   return (<>
     <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the build flow.">{column}</Pill>
@@ -661,6 +664,7 @@ function BoardPanel({ active }: { active: boolean }) {
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
@@ -1022,7 +1026,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
-          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(COLUMNS, collapsedColumns) }}>
+          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(COLUMNS, collapsedColumns) }}>
             {COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
@@ -1078,6 +1082,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   const [strategy, setStrategy] = useState<string | null>(null);
   const [strategyAttention, setStrategyAttention] = useState(0);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
 
@@ -1178,7 +1183,7 @@ function ResearchPanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Research</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent applies specialized research skills to surface prioritized opportunities you can turn into {trackTitle("build")} cards.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent applies specialized research strategy to surface prioritized opportunities you can turn into {trackTitle("build")} cards.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1255,7 +1260,7 @@ function ResearchPanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} /> : (
+          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -1310,6 +1315,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   const [stage, setStage] = useState<string | null>(null);
   const [stageAttention, setStageAttention] = useState(0);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
 
@@ -1407,7 +1413,7 @@ function ExplorePanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Choose one specialized skill and an AI agent runs it on your input, returning a focused result on the card.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Choose a single stage from the {trackTitle("build")} workflow — an AI agent runs it on your input, returning a focused result on the card.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -1484,7 +1490,7 @@ function ExplorePanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} /> : (
+          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -1519,7 +1525,30 @@ const STORAGE_KEYS = {
   onboardResearch: "stelow-onboard-research-v1",
   onboardExplore: "stelow-onboard-explore-v1",
   onboardPresets: "stelow-onboard-presets-v1",
+  buildListGroups: "stelow-build-list-groups-collapsed-v1",
+  researchListGroups: "stelow-research-list-groups-collapsed-v1",
+  exploreListGroups: "stelow-explore-list-groups-collapsed-v1",
 } as const;
+
+// Collapsible list-view groups with archived collapsed by default. Stored
+// choices win over the default (spread after), matching the kanban column
+// behavior; unknown keys are inert.
+function useCollapsedGroups(storageKey: string) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return { archived: true };
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return { archived: true };
+      const parsed = JSON.parse(raw) as Record<string, boolean>;
+      return typeof parsed === "object" && parsed ? { archived: true, ...parsed } : { archived: true };
+    } catch { return { archived: true }; }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(storageKey, JSON.stringify(collapsed)); } catch { /* ignore */ }
+  }, [storageKey, collapsed]);
+  return [collapsed, setCollapsed] as const;
+}
 
 type ParsedStelowRoute =
   | { kind: "track"; track: StelowTrack }
@@ -2219,19 +2248,21 @@ function ViewToggle({ view, onChange, label }: { view: "board" | "list"; onChang
   );
 }
 
-function ResearchList({ groups, navigate, strategyLabelById }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; strategyLabelById: Map<string, string> }) {
-  return <LightweightTrackList groups={groups} navigate={navigate} tagFor={(card) => joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById) || null} renderCard={(card, tag) => <ResearchCard card={card} strategyLabel={tag} />} />;
+function ResearchList({ groups, navigate, strategyLabelById, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; strategyLabelById: Map<string, string>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
+  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} tagFor={(card) => joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById) || null} renderCard={(card, tag) => <ResearchCard card={card} strategyLabel={tag} />} />;
 }
 
-function ExploreList({ groups, navigate, stageLabelById }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; stageLabelById: Map<string, string> }) {
-  return <LightweightTrackList groups={groups} navigate={navigate} tagFor={(card) => (card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null)} renderCard={(card, tag) => <ExploreCard card={card} stageLabel={tag} />} />;
+function ExploreList({ groups, navigate, stageLabelById, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; stageLabelById: Map<string, string>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
+  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} tagFor={(card) => (card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null)} renderCard={(card, tag) => <ExploreCard card={card} stageLabel={tag} />} />;
 }
 
-function BuildList({ groups, navigate }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate> }) {
+function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
   return <div className="space-y-5">{COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => goToCard(navigate, card, card.id)} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div></section>;
+    const isCollapsed = collapsed[column] === true;
+    const label = COLUMN_LABELS[column] ?? column;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <button key={card.id} onClick={() => goToCard(navigate, card, card.id)} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName} · {stageLabel(card.stage)}{card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -2413,11 +2444,13 @@ function ExploreCard({ card, stageLabel }: { card: CardItem; stageLabel: string 
 
 // Lightweight list view (Research + Explore share it): same grouping as the
 // board, one card per row. tagFor resolves the card's tag pill label.
-function LightweightTrackList({ groups, navigate, tagFor, renderCard }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; tagFor: (card: CardItem) => string | null; renderCard: (card: CardItem, tag: string | null) => React.ReactNode }) {
+function LightweightTrackList({ groups, navigate, tagFor, renderCard, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; tagFor: (card: CardItem) => string | null; renderCard: (card: CardItem, tag: string | null) => React.ReactNode; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
   return <div className="space-y-5">{RESEARCH_COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (cards.length === 0) return null;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{RESEARCH_COLUMN_LABELS[column] ?? column}</h2><span className="text-xs text-muted-foreground">{cards.length}</span></div><div className="space-y-2">{cards.map((card) => <div key={card.id}>{renderCard(card, tagFor(card))}</div>)}</div></section>;
+    const isCollapsed = collapsed[column] === true;
+    const label = RESEARCH_COLUMN_LABELS[column] ?? column;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="space-y-2">{cards.map((card) => <div key={card.id}>{renderCard(card, tagFor(card))}</div>)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -4968,7 +5001,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
-              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? "No scopes broken down yet — the agent is still shaping the card."}</p>}
+              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex items-center gap-2">

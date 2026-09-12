@@ -51,7 +51,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   stage's phase. Columns collapse (persisted); cards move via drag-drop.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
-  preference, not a CTA).
+  preference, not a CTA). Groups collapse per track (persisted; Archived
+  starts collapsed).
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
   needs-attention + reset; the Filters chip badges the active-filter count.
   The attention count in each Build/Research header is a shortcut that turns
