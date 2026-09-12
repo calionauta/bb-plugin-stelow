@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.2] - 2026-09-12
+
+### Fixed
+
+- **Scopes follow the owner.** Card progress is read through the workflow's
+  immutable owner id instead of its name, and the board keeps one summary per
+  card instead of one per project. Two cards carrying the same request no
+  longer display each other's scopes or task counts.
+
 ## [0.4.1] - 2026-09-12
 
 ### Fixed
@@ -15,6 +24,13 @@ and this project adheres to a single-version-per-release tag format
   card's directory, stage, or artifacts.
 - **Fail-closed state reads.** Cards with unverifiable ownership stop with a
   reseed instruction instead of falling back to project-root state.
+
+### Changed
+
+- **Legacy workflows are not adopted.** State written before `0.4.1` carries no
+  owner id, so it stays deliberately unverifiable: reseed such a card to give
+  it a fresh, owned state directory. Nothing is guessed by name or by a
+  matching `dir_hash`.
 
 ## [0.4.0] - 2026-09-12
 

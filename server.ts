@@ -705,14 +705,15 @@ function parseNextStages(rootPath: string | null, currentStage: string): string[
   return Array.from(stages);
 }
 
-function loadCardScopes(rootPath: string | null, name: string): Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"] {
+// Scopes follow the immutable owner, never the name: two cards carrying the
+// same request must not read each other's scope progress.
+function loadCardScopes(rootPath: string | null, workflowId: string): Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"] {
   if (!rootPath) return [];
   const tracking = join(rootPath, "stelow.json");
   if (!existsSync(tracking)) return [];
   let trackingData: LooseRecord;
   try { trackingData = JSON.parse(readFileSync(tracking, "utf8")) as LooseRecord; } catch { return []; }
-  const workflows = array(trackingData.workflows);
-  const match = workflows.find((entry) => text(record(entry).name) === name) as LooseRecord | undefined;
+  const match = workflowEntryForOwner(array(trackingData.workflows), workflowId) as LooseRecord | null;
   if (!match) return [];
   return workflowScopes(match);
 }
@@ -2672,7 +2673,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!link) return { ok: false, commentUrl: null, error: "This card was not imported from a GitHub issue." };
       if (normalizeStatus(card.status) !== "completed") return { ok: false, commentUrl: null, error: "Only completed cards can report back to GitHub." };
       const workspace = await cardWorkspace(card).catch(() => null);
-      const scopes = workspace?.path ? loadCardScopes(workspace.path, card.name) : [];
+      const scopes = workspace?.path ? loadCardScopes(workspace.path, card.id) : [];
       const doneScopes = scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length;
       const tasksTotal = scopes.reduce((total, scope) => total + scope.tasks.length, 0);
       const tasksDone = scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0);
@@ -2715,25 +2716,25 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const rows = (projectId && kind ? stmt.all(projectId, kind) : projectId ? stmt.all(projectId) : kind ? stmt.all(kind) : stmt.all()) as CardRow[];
       const projectsList = await bb.sdk.projects.list();
       const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
-      // Scope summaries share one workspace read per root: many cards can sit
-      // in the same project, and stelow.json parsing is pure local IO.
+      // One parse per card: stelow.json parsing is pure local IO, but a shared
+      // workspace must never mean a shared summary.
       const scopeCache = new Map<string, { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number }>();
       const emptySummary = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0 };
       async function scopeSummary(row: CardRow): Promise<typeof emptySummary> {
         try {
           const workspace = await cardWorkspace(row);
           if (!workspace?.path) return emptySummary;
-          const cached = scopeCache.get(workspace.path);
+          const cached = scopeCache.get(row.id);
           if (cached) return cached;
           const done = (status: string): boolean => ["done", "completed"].includes(status);
-          const scopes = loadCardScopes(workspace.path, row.name);
+          const scopes = loadCardScopes(workspace.path, row.id);
           const summary = {
             scopesTotal: scopes.length,
             scopesDone: scopes.filter((scope) => done(scope.status)).length,
             tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0),
             tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => done(task.status)).length, 0),
           };
-          scopeCache.set(workspace.path, summary);
+          scopeCache.set(row.id, summary);
           return summary;
         } catch {
           return emptySummary;
@@ -2923,7 +2924,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }).catch(() => null)
         : null;
       const nextStages = parseNextStages(sourcePath, card.stage);
-      const scopes = loadCardScopes(sourcePath, card.name);
+      const scopes = loadCardScopes(sourcePath, card.id);
       const preset = getPresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
       // The helper owns the typed artifact manifest. Its stage is the durable
       // producer attribution rendered beside the workflow timeline.

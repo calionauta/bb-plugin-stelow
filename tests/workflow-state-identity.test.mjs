@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ownsWorkflowState, stateWorkflowId, upsertWorkflowEntry, workflowDirHash, workflowEntryForOwner, workflowStateRelativeDir } from "../lib/workflow-state-identity.mjs";
 
 const oldSameName = { name: "jogo-da-velha", dirHash: "pw-old", created: "2026-09-04T17:14:57.065Z" };
@@ -30,4 +33,14 @@ const afterReseed = upsertWorkflowEntry(afterSecond, updatedFirst);
 assert.equal(afterReseed.length, 3, "reseed replaces only the same owner");
 assert.equal(workflowEntryForOwner(afterReseed, "card_first", "pw-reseed")?.dirHash, "pw-reseed");
 
-console.log("workflow state identity test ok: immutable owner, exact lookup, fail-closed legacy rows");
+// Server contract: a third same-name card reads no scopes — the same rule that
+// keeps state.md apart applies to the board's scope progress.
+assert.equal(workflowEntryForOwner([firstCard, secondCard], "card_third"), null, "an unknown owner reads no scopes");
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const scopeReads = [...serverSource.matchAll(/(?<!function )loadCardScopes\(([^)]*)\)/g)].map((match) => match[1].trim());
+assert.equal(scopeReads.length, 3, "every card-scope read site is covered by this contract");
+for (const args of scopeReads) {
+  assert.match(args, /\.id$/, `card scopes resolve by owner id, got loadCardScopes(${args})`);
+}
+
+console.log("workflow state identity test ok: immutable owner, exact lookup, fail-closed legacy rows, owner-only scope reads");
