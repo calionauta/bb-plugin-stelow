@@ -58,6 +58,11 @@ assert.match(app, /Reinstall .* at its latest release/, "installed tools offer r
 assert.match(app, /Ready via npx/, "npx-resolved dependencies are listed without probe or buttons");
 assert.match(app, /last30days/, "social-signal skill is disclosed with its consent rule");
 assert.match(app, /thermo-nuclear/, "nuclear review gate skill is disclosed");
+assert.match(
+  app,
+  /thermo-nuclear", repo: "https:\/\/github\.com\/cursor\/plugins\/tree\/main\/cursor-team-kit\/skills\/thermo-nuclear-code-quality-review"/,
+  "thermo-nuclear links the original skill, never an embedded copy",
+);
 assert.doesNotMatch(app, /npx skills add|npx @vedanth/, "About shows no runnable commands — workers resolve everything");
 assert.doesNotMatch(app, /plannotator/, "About never references the bb-unused tool");
 assert.doesNotMatch(server, /plannotator/, "server drops the bb-unused tool entirely");

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.76] - 2026-09-12
+
+### Changed
+
+- **About links the original thermo-nuclear skill.** The npx group row
+  now points at `cursor/plugins` instead of showing no link.
+
 ## [0.3.75] - 2026-09-12
 
 ### Changed

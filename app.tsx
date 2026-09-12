@@ -1639,7 +1639,7 @@ const NPX_TOOLS: Array<{ name: string; repo?: string; plain: string; tech: strin
   { name: "npx skills", repo: "https://github.com/vercel-labs/skills", plain: "The skills hub workers use to fetch playbooks and stack-matched skills on demand.", tech: "Ships with Node.js; invoked per use, never installed globally by the plugin." },
   { name: "ctx7", repo: "https://github.com/upstash/context7", plain: "Current, version-specific library docs while writing code — never for choosing the stack.", tech: "Auto-installs on first npx invocation; guided OAuth setup (terminal) only raises limits." },
   { name: "last30days", repo: "https://github.com/mvanhorn/last30days-skill", plain: "Social recency signal for market research — complementary source only.", tech: "Agent skill, never a binary; workers add it per use, only with your confirmation." },
-  { name: "thermo-nuclear", plain: "Optional ultra-strict final code review, gated by appetite and risk.", tech: "Agent skill from the cursor/plugins hub package; documented manual checks apply when absent." },
+  { name: "thermo-nuclear", repo: "https://github.com/cursor/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review", plain: "Optional ultra-strict final code review, gated by appetite and risk.", tech: "Agent skill from the cursor/plugins hub package; documented manual checks apply when absent." },
 ];
 
 function HostToolsSection({ tools, onInstall, installingId, errors }: {
