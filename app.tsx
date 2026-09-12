@@ -5005,7 +5005,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
               title={archivedPresentation?.workflow.title ?? "What is happening"}
-              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : stageLabel(card.stage))}
+              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : card?.status === "completed" ? undefined : stageLabel(card.stage))}
               defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
             >
               {card.stage === "select" && !archivedPresentation ? (

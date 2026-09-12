@@ -99,6 +99,7 @@ assert.match(app, /exploreListGroups: "stelow-explore-list-groups-collapsed-v1"/
 assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
 assert.match(app, /aria-expanded=\{!isCollapsed\}/, "list group toggles expose expansion state");
 assert.match(app, /card\?\.status === "completed" \? "Completed without scoped execution\."/, "completed cards never claim shaping is in progress");
+assert.match(app, /card\?\.status === "completed" \? undefined : stageLabel\(card\.stage\)/, "completed cards carry no stale stage hint");
 assert.match(app, /if \(column === status \|\| card\.status === "completed"\)/, "completed build cards show one pill, not Done + Completed");
 
 // Track headers describe the agent outcome, not internal filenames.
