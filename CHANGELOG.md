@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.3] - 2026-09-12
+
+### Fixed
+
+- **Config reads follow the card.** `bb stelow config get` returned the values
+  of whichever workflow came first in the project index, so a worker read
+  another card's appetite and review mode — and the review gates that follow
+  from them. The vendored helper now resolves this card's own workflow entry by
+  owner id, then by its state directory.
+- **Vendored helper refreshed** to upstream `1.4.4-alpha`, which also carries
+  artifact timestamps in the generated manifest.
+
 ## [0.4.2] - 2026-09-12
 
 ### Fixed
