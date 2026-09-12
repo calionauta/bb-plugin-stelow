@@ -55,5 +55,7 @@ assert.match(app, /skills · synced /, "About shows a compact sync status, not a
 assert.match(app, /setSkillsOpen\(true\)/, "sync status opens the vendored-skills dialog");
 assert.match(app, /Vendored Stelow skills/, "dialog names the vendored skill inventory");
 assert.match(app, /Reinstall .* at its latest release/, "installed tools offer reinstall-as-update");
+assert.doesNotMatch(app, /plannotator/, "About never references the bb-unused tool");
+assert.doesNotMatch(server, /plannotator/, "server drops the bb-unused tool entirely");
 
 console.log("about logo test ok: data URI delivery, budget, and no static-asset URLs");

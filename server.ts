@@ -484,7 +484,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })) }),
   },
   installTool: {
-    input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire", "plannotator"]) }).strict(),
+    input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire"]) }).strict(),
     output: z.object({ ok: z.boolean(), version: z.string().nullable(), log: z.string() }),
   },
 });
@@ -3789,7 +3789,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         { id: "ast-grep", bins: [resolveLocalBin("ast-grep"), resolveLocalBin("sg")] },
         { id: "cymbal", bins: [resolveLocalBin("cymbal")] },
         { id: "ripwire", bins: [resolveLocalBin("ripwire")] },
-        { id: "plannotator", bins: [resolveLocalBin("plannotator")] },
       ];
       const probe = (bins: string[]): Promise<{ present: boolean; version: string | null }> => {
         const [bin, ...rest] = bins;
@@ -3826,11 +3825,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const tmpPath = nodeJoin(tmpdir(), tmpScript);
       let log = "";
       try {
-        if (id === "sem" || id === "ripwire" || id === "plannotator") {
+        if (id === "sem" || id === "ripwire") {
           const scripts: Record<string, { url: string; args: string[]; env: Record<string, string> }> = {
             sem: { url: "https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh", args: [], env: {} },
             ripwire: { url: "https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh", args: [], env: { RIPWIRE_REPO: "redhat-et/ripwire", RIPWIRE_INSTALL_YES: "1", RIPWIRE_NO_ACTIVATE: "1" } },
-            plannotator: { url: "https://plannotator.ai/install.sh", args: ["--minimal", "--non-interactive"], env: {} },
           };
           const spec = scripts[id]!;
           const download = await run("curl", ["-fsSL", "--max-time", "120", spec.url, "-o", tmpPath]);
@@ -3864,7 +3862,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         "ast-grep": [resolveLocalBin("ast-grep"), resolveLocalBin("sg")],
         cymbal: [resolveLocalBin("cymbal")],
         ripwire: [resolveLocalBin("ripwire")],
-        plannotator: [resolveLocalBin("plannotator")],
       };
       for (const bin of bins[id] ?? []) {
         const check = await run(bin, ["--version"]);

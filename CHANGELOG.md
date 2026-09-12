@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.73] - 2026-09-12
+
+### Changed
+
+- **About lists only tools bb honors.** plannotator never runs inside
+  bb (gates resolve in the plugin review UI), so its row, probe, and
+  installer are gone; the upstream reference stays linked. Intro copy
+  drops the sem/cymbal name-drop (already per-row) and "Install guide"
+  becomes the honest "Learn more".
+
 ## [0.3.72] - 2026-09-12
 
 ### Changed

@@ -1624,17 +1624,16 @@ function BareCardRoute({ cardId, eventId, navigate }: {
 // Everything here is opt-in and fail-soft — the plugin never installs
 // unless you press the button (explicit consent), and every capability
 // keeps working with its built-in fallback until then.
-const HOST_TOOLS: Array<{ id: "ast-grep" | "cymbal" | "plannotator" | "ripwire" | "sem"; name: string; repo: string; plain: string; tech: string; install: string; unusedInBb?: string }> = [
+const HOST_TOOLS: Array<{ id: "ast-grep" | "cymbal" | "ripwire" | "sem"; name: string; repo: string; plain: string; tech: string; install: string }> = [
   { id: "ast-grep", name: "ast-grep", repo: "https://github.com/ast-grep/ast-grep", plain: "Find code patterns and rename across files without touching text inside strings — when refactoring.", tech: "Structural AST search with safe rewrite; used for refactors that change signatures.", install: "npm install -g @ast-grep/cli" },
   { id: "cymbal", name: "cymbal", repo: "https://github.com/1broseidon/cymbal", plain: "See who calls each function and what breaks if you change it — before touching code.", tech: "Symbol graph (refs, impact, trace); used in Tech Preview, Feature Recon and Alignment Check.", install: "brew install 1broseidon/tap/cymbal" },
-  { id: "plannotator", name: "plannotator", repo: "https://plannotator.ai", plain: "Open the plan in a browser to comment point by point before approving a gate.", tech: "Visual review with structured annotations; portable receipt in .stelow/approvals.", install: "curl -fsSL https://plannotator.ai/install.sh | bash -s -- --minimal", unusedInBb: "Not used in bb — gates resolve in the plugin review UI, and the plugin never invokes this binary." },
   { id: "ripwire", name: "ripwire", repo: "https://github.com/redhat-et/ripwire", plain: "First read of an unfamiliar codebase: what matters, where to enter, what to test.", tech: "Token-budgeted symbol map (symbols, callers, blast radius).", install: "RIPWIRE_REPO=redhat-et/ripwire bash -c \"$(curl -fsSL https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh)\"" },
   { id: "sem", name: "sem", repo: "https://github.com/Ataraxy-Labs/sem", plain: "Tell which functions and types changed — not just which lines — including renames.", tech: "Entity-level diff via tree-sitter; powers the Diff summary and agent audits.", install: "curl -fsSL https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh | sh" },
 ];
 
 function HostToolsSection({ tools, onInstall, installingId, errors }: {
   tools: Array<{ id: string; present: boolean; version: string | null }> | null;
-  onInstall: (id: "ast-grep" | "cymbal" | "plannotator" | "ripwire" | "sem") => void;
+  onInstall: (id: "ast-grep" | "cymbal" | "ripwire" | "sem") => void;
   installingId: string | null;
   errors: Record<string, string>;
 }) {
@@ -1643,8 +1642,8 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
     <section className="space-y-2">
       <h2 className="text-base font-semibold text-foreground">Optional tools</h2>
       <p className="text-sm leading-6 text-muted-foreground">
-        Recommended by Stelow, honored here. Workers use these tools when present; the plugin itself uses sem and cymbal for the Diff section. Without one, the same step still works with the built-in fallback — just with less depth. Install anytime; effects apply on next use.{" "}
-        <UrlLink href="https://github.com/calionauta/stelow#external-dependencies">Install guide ↗</UrlLink>
+        Recommended by Stelow, honored here. Workers use these tools when present; without one, the same step still works with the built-in fallback — just with less depth. Install anytime; effects apply on next use.{" "}
+        <UrlLink href="https://github.com/calionauta/stelow#external-dependencies">Learn more ↗</UrlLink>
       </p>
       {!tools ? <p className="text-xs text-muted-foreground">Checking host tools…</p> : (
       <div className="space-y-2">
@@ -1660,14 +1659,14 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
                 <span className="font-mono text-xs font-semibold text-foreground">{meta.name}</span>
                 <UrlLink href={meta.repo} title={`${meta.name} repository`} className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:border-primary/50 hover:text-foreground"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden /></UrlLink>
                 <span className="text-[11px] text-muted-foreground">{present ? (hit?.version ?? "installed") : "not installed"}</span>
-                {!present && !meta.unusedInBb ? (
+                {!present ? (
                   <span className="ml-auto">
                     <Button size="sm" variant="outline" disabled={busy || installingId !== null} onClick={() => onInstall(meta.id)} title={`Install ${meta.name} now`}>
                       {busy ? "Installing…" : "Install"}
                     </Button>
                   </span>
                 ) : null}
-                {present && !meta.unusedInBb ? (
+                {present ? (
                   <span className="ml-auto">
                     <Button size="sm" variant="ghost" disabled={busy || installingId !== null} onClick={() => onInstall(meta.id)} title={`Reinstall ${meta.name} at its latest release`}>
                       {busy ? "Updating…" : "Update"}
@@ -1677,8 +1676,7 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
               </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.plain}</p>
               <p className="mt-0.5 font-mono text-[11px] leading-5 text-muted-foreground/80">{meta.tech}</p>
-              {meta.unusedInBb ? <p className="mt-1 text-[11px] italic leading-5 text-muted-foreground/80">{meta.unusedInBb}</p> : null}
-              {!present && !busy && !meta.unusedInBb ? <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{meta.install}</pre> : null}
+              {!present && !busy ? <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{meta.install}</pre> : null}
               {busy ? <p className="mt-1.5 text-[11px] text-muted-foreground">Installing — can take a couple minutes. The row flips to ● on success.</p> : null}
               {error ? (
                 <div className="mt-1.5 space-y-1">
@@ -1706,7 +1704,7 @@ function AboutPanel() {
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
   const [installingToolId, setInstallingToolId] = useState<string | null>(null);
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
-  function installHostTool(id: "ast-grep" | "cymbal" | "plannotator" | "ripwire" | "sem") {
+  function installHostTool(id: "ast-grep" | "cymbal" | "ripwire" | "sem") {
     setInstallingToolId(id);
     setInstallErrors((prev) => {
       if (!(id in prev)) return prev;

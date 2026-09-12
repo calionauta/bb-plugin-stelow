@@ -151,7 +151,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   mutates the index.
 - **Optional tools** (`toolStatus`, `installTool`, About section). Live presence probe
   for the host binaries the workflow can use (sem, cymbal, ripwire,
-  ast-grep, plannotator) with per-tool purpose and install command —
+  ast-grep) with per-tool purpose and install command —
   install anytime, everything degrades silently without them. Each row
   also offers one-click install (explicit consent, official installers
   only, ~/.local/bin, verified by re-probe) with per-row error + log, plus
