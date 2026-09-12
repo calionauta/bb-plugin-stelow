@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.5] - 2026-09-12
+
+### Changed
+
+- **A seeded workflow owner is named like everything else.** A workflow a
+  human seeds now carries `sw_<name>` instead of `wf-<name>`, in the same shape
+  as the ids the host mints (`card_…`, `proj_…`, `thr_…`) and readable as
+  "a stelow workflow". A card-owned workflow still carries that card's id, so
+  the two can never be confused for one another.
+- **Every compatibility path is gone.** Removed: the `delivery` → `build`
+  branch and the SQL statement that converged stored rows, the
+  `lib/stage-bands.mjs` re-export shim (its consumers read
+  `lib/workflow-vocabulary.mjs` directly), and the in-skills sync-state
+  migration. An unrecognized stored kind still reads as a build — one
+  `normalizeKind` answers that, and nothing else repeats the literals.
+- **No "legacy" vocabulary left in the plugin.** Comments, tests, and
+  `FEATURES.md` describe what the code does now; nothing points at a previous
+  design or calls the current one a fallback. The board's own schema
+  migrations stay, because they carry existing cards forward rather than
+  keeping an old code path alive.
+
+### Fixed
+
+- **Vendored skills and helper refreshed** to upstream `1.4.5-alpha`, which
+  drops the last legacy wording there: a permissions row documenting
+  `.stelow/state/current-stage.json` (a file the helper no longer writes), a
+  scope-init row blaming a missing `created` timestamp on "legacy behavior",
+  and the helper's own header. All 135 vendored files are byte-identical to
+  upstream, verified by blob sha.
+
 ## [0.4.4] - 2026-09-12
 
 ### Changed
