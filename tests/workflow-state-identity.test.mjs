@@ -57,4 +57,23 @@ for (const args of scopeReads) {
   assert.match(args, /\.id$/, `card scopes resolve by owner id, got loadCardScopes(${args})`);
 }
 
-console.log("workflow state identity test ok: immutable owner, stable state path, idempotent name seeding, owner-only scope reads");
+// Server contract: whatever seeds, seeds an owner. Card work binds the card id;
+// human-seeded work derives a stable owner from its name. A freshly minted id
+// here is how a second, unresolvable state directory gets created.
+const seedOwners = [...serverSource.matchAll(/seedWorkflow\(bb, [^,]+, ([^,]+),/g)].map((match) => match[1].trim());
+assert.ok(seedOwners.length >= 4, "every seed call site is covered by this contract");
+for (const owner of seedOwners) {
+  assert.ok(
+    /(\.id|Id)$/.test(owner) || owner.startsWith("workflowIdForName("),
+    `seeding binds an owner, got seedWorkflow(bb, rootPath, ${owner}, ...)`,
+  );
+}
+
+// Server contract: the seed writes the state path through the resolver that
+// readers use, keeps the workflow's first `created`, and re-seeds by returning
+// the existing directory — never by deriving a path of its own or adding a twin.
+assert.match(serverSource, /workflowStateRelativeDir\(\{ created, dirHash \}\)/, "the seed derives its state dir through the same resolver readers use");
+assert.match(serverSource, /if \(reusable && entryDir\)/, "re-seeding an owned workflow is a no-op");
+assert.ok(!/const date = new Date\(\)\.toISOString\(\)\.slice/.test(serverSource), "the seed no longer derives the path date segment itself");
+
+console.log("workflow state identity test ok: immutable owner, owner-bound seeding, stable state path, idempotent re-seed, owner-only scope reads");
