@@ -1013,7 +1013,7 @@ function BoardPanel({ active }: { active: boolean }) {
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Stelow is an opinionated product workflow for humans and AI agents. Start with an outcome or problem; it guides the work through framing, critique, planning, execution, and review.</p>
               <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
                 <Button onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new issue</Button>
-                <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Learn about Stelow <span aria-hidden="true">↗</span></UrlLink>
+                <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground">Learn about Stelow <span aria-hidden="true">↗</span></UrlLink>
               </div>
             </section>
           ) : null}
@@ -1633,11 +1633,13 @@ const HOST_TOOLS: Array<{ id: "ast-grep" | "cymbal" | "ripwire" | "sem"; name: s
 
 // Resolved on demand through npx — no host install, nothing to probe, no
 // buttons. Listed so the full dependency surface is visible in one place;
-// each entry names who consumes it and under which consent.
-const NPX_TOOLS: Array<{ name: string; repo: string; plain: string; tech: string; usage: string }> = [
-  { name: "npx skills", repo: "https://github.com/vercel-labs/skills", plain: "The skills hub workers use to fetch playbooks and stack-matched skills on demand.", tech: "Ships with Node.js; invoked per use, never installed globally by the plugin.", usage: "npx skills add calionauta/stelow" },
-  { name: "ctx7", repo: "https://github.com/upstash/context7", plain: "Current, version-specific library docs while writing code — never for choosing the stack.", tech: "Auto-installs on first npx invocation; guided OAuth setup (terminal) only raises limits.", usage: "npx @vedanth/context7 docs /vercel/next.js \"app router\"" },
-  { name: "last30days", repo: "https://github.com/mvanhorn/last30days-skill", plain: "Social recency signal for market research — complementary source only, installed per use with your confirmation.", tech: "Agent skill, never a binary; workers ask before adding it.", usage: "npx skills add mvanhorn/last30days-skill@last30days" },
+// each entry names who consumes it and under which consent. No commands
+// shown: you never run anything here, workers resolve it automatically.
+const NPX_TOOLS: Array<{ name: string; repo?: string; plain: string; tech: string }> = [
+  { name: "npx skills", repo: "https://github.com/vercel-labs/skills", plain: "The skills hub workers use to fetch playbooks and stack-matched skills on demand.", tech: "Ships with Node.js; invoked per use, never installed globally by the plugin." },
+  { name: "ctx7", repo: "https://github.com/upstash/context7", plain: "Current, version-specific library docs while writing code — never for choosing the stack.", tech: "Auto-installs on first npx invocation; guided OAuth setup (terminal) only raises limits." },
+  { name: "last30days", repo: "https://github.com/mvanhorn/last30days-skill", plain: "Social recency signal for market research — complementary source only.", tech: "Agent skill, never a binary; workers add it per use, only with your confirmation." },
+  { name: "thermo-nuclear", plain: "Optional ultra-strict final code review, gated by appetite and risk.", tech: "Agent skill from the cursor/plugins hub package; documented manual checks apply when absent." },
 ];
 
 function HostToolsSection({ tools, onInstall, installingId, errors }: {
@@ -1652,7 +1654,7 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
       <h2 className="text-base font-semibold text-foreground">Optional tools</h2>
       <p className="text-sm leading-6 text-muted-foreground">
         Recommended by Stelow, honored here. Workers use these tools when present; without one, the same step still works with the built-in fallback — just with less depth. Install anytime; effects apply on next use.{" "}
-        <UrlLink href="https://github.com/calionauta/stelow#external-dependencies">Learn more ↗</UrlLink>
+        <UrlLink href="https://github.com/calionauta/stelow#external-dependencies" className="underline underline-offset-4 hover:text-foreground">Learn more ↗</UrlLink>
       </p>
       {!tools ? <p className="text-xs text-muted-foreground">Checking host tools…</p> : (
       <div className="space-y-2">
@@ -1702,17 +1704,18 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
       </div>
       )}
       <h3 className="pt-2 text-sm font-semibold text-foreground">Ready via npx — no install needed</h3>
-      <p className="text-xs leading-5 text-muted-foreground">Resolved on demand, not probed: npx fetches these on first use. Nothing to install, no buttons — listed so every dependency Stelow touches is visible.</p>
+      <p className="text-xs leading-5 text-muted-foreground">You never run anything below — workers resolve these automatically when a step needs them. Listed so every dependency Stelow touches is visible.</p>
       <div className="space-y-2">
         {NPX_TOOLS.map((meta) => (
           <div key={meta.name} className="rounded-lg border bg-muted/20 p-3">
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-semibold text-foreground">{meta.name}</span>
-              <UrlLink href={meta.repo} title={`${meta.name} repository`} className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:border-primary/50 hover:text-foreground"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden /></UrlLink>
+              {meta.repo ? (
+                <UrlLink href={meta.repo} title={`${meta.name} repository`} className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:border-primary/50 hover:text-foreground"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden /></UrlLink>
+              ) : null}
             </div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.plain}</p>
             <p className="mt-0.5 font-mono text-[11px] leading-5 text-muted-foreground/80">{meta.tech}</p>
-            <pre className="mt-1.5 overflow-x-auto rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{meta.usage}</pre>
           </div>
         ))}
       </div>

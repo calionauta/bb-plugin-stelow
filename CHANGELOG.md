@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.75] - 2026-09-12
+
+### Changed
+
+- **About npx group shows no commands.** Usage snippets looked like
+  instructions; workers resolve everything, so rows now state that
+  instead — plus the thermo-nuclear gate skill. Text links read as links
+  (persistent underline).
+
 ## [0.3.74] - 2026-09-12
 
 ### Added
