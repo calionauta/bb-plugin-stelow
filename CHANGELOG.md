@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.70] - 2026-09-12
+
+### Fixed
+
+- **Skills verification age is honest.** The timestamp now advances only
+  on fully clean syncs; a partial failure leaves the previous stamp, so
+  About shows growing age instead of a fresh lie during outages.
+
 ## [0.3.69] - 2026-09-12
 
 ### Added
