@@ -47,6 +47,11 @@ assert.doesNotMatch(server, /"CREATE TABLE (?!IF NOT EXISTS)/, "migrations never
 assert.match(server, /CREATE TABLE IF NOT EXISTS cards/, "first boot creates the cards table");
 assert.match(server, /CREATE TABLE IF NOT EXISTS presets/, "first boot creates the presets table");
 
+// Sync safety: a truncated GitHub tree must refuse the whole sync instead
+// of pruning valid local skills as "retired".
+const syncLib = readFileSync(new URL("lib/workflow-skills-sync.mjs", root), "utf8");
+assert.match(syncLib, /if \(data\.truncated\) throw/, "truncated upstream tree refuses the sync");
+
 // Engine floors must stay satisfiable: the marketplace entry resolves only
 // compatible tags, and managed installs validate these ranges.
 assert.match(manifest.engines.bb, />=\d+\.\d+/, "bb engine floor is declared");

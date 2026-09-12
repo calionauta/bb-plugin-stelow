@@ -82,7 +82,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   side (`buildInfo` carries both; the upstream version syncs with the
   skills). The Stelow section opens with the identity mark, served lazily
   as a data URI over the `aboutLogo` RPC (bb serves only built bundles,
-  never static files) with a silent text fallback. The plugin section also shows when upstream skills were last verified ("Stelow skills synced X ago"; every stelow-* skill ships vendored, state survives plugin updates, one fail-soft sync runs at boot) and offers Reset onboarding (two-step
+  never static files) with a silent text fallback. The plugin section shows a compact sync status (● dot + "N skills · synced X ago", opening the vendored inventory grouped Workflow/Product) and offers Reset onboarding (two-step
   confirm) to replay the first-visit setup dialogs. Work tracks describe
   themselves; product identity lives in exactly one place, never next
   to the wrong version.
@@ -154,7 +154,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   ast-grep, plannotator) with per-tool purpose and install command —
   install anytime, everything degrades silently without them. Each row
   also offers one-click install (explicit consent, official installers
-  only, ~/.local/bin, verified by re-probe) with per-row error + log. When `sem` is installed on the host, a one-line
+  only, ~/.local/bin, verified by re-probe) with per-row error + log, plus
+  one-click reinstall-as-update for installed tools. When `sem` is installed on the host, a one-line
   entity summary (added/modified/deleted/renamed, cosmetic-only flag)
   heads the file list — absent otherwise, never an error. When `cymbal`
   is installed, a second line lists changed symbols with caller impact
@@ -249,8 +250,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `@` workspace files in any composer, including the board's.
 - **Realtime.** `card-state`, `board-changed`, `inbox-changed` keep
   panels, badges, and open cards live (debounced).
-- **Background services.** Workflow-skills sync from `calionauta/stelow`
-  (content-hash verified), scheduled reconcile, build stamp.
+- **Background services.** Upstream skills sync from `calionauta/stelow`
+  (every stelow-* skill, content-hash verified, retired names pruned;
+  state in the stable data dir, one fail-soft pass at boot),
+  scheduled reconcile, build stamp.
 
 ## 8. Research track
 *When I need to understand before building, I want a lightweight

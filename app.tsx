@@ -1667,6 +1667,13 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
                     </Button>
                   </span>
                 ) : null}
+                {present && !meta.unusedInBb ? (
+                  <span className="ml-auto">
+                    <Button size="sm" variant="ghost" disabled={busy || installingId !== null} onClick={() => onInstall(meta.id)} title={`Reinstall ${meta.name} at its latest release`}>
+                      {busy ? "Updating…" : "Update"}
+                    </Button>
+                  </span>
+                ) : null}
               </div>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">{meta.plain}</p>
               <p className="mt-0.5 font-mono text-[11px] leading-5 text-muted-foreground/80">{meta.tech}</p>
@@ -1693,8 +1700,9 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
 
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skillsSyncedAt: number | null } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skillsSyncedAt: number | null; skills: string[] } | null>(null);
   const [aboutLogo, setAboutLogo] = useState<string | null>(null);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
   const [installingToolId, setInstallingToolId] = useState<string | null>(null);
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
@@ -1737,6 +1745,7 @@ function AboutPanel() {
     toast.success("Onboarding reset. Visit each tab to see it again.");
   }
   return (
+    <>
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
@@ -1766,8 +1775,16 @@ function AboutPanel() {
               </h2>
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               {buildInfo ? (
-                <p className="text-xs text-muted-foreground" title={buildInfo.skillsSyncedAt ? `Upstream skills verified ${new Date(buildInfo.skillsSyncedAt).toLocaleString()}` : "Upstream skills not yet verified on this host"}>
-                  Stelow skills synced {buildInfo.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span aria-hidden className={buildInfo.skillsSyncedAt ? "text-emerald-500" : "text-amber-500"}>●</span>
+                  <button
+                    type="button"
+                    onClick={() => setSkillsOpen(true)}
+                    className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground"
+                    title={buildInfo.skillsSyncedAt ? `Upstream skills verified ${new Date(buildInfo.skillsSyncedAt).toLocaleString()} — click to see which` : "Upstream skills not yet verified on this host — click to see which"}
+                  >
+                    {buildInfo.skills.length} skills · synced {buildInfo.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}
+                  </button>
                 </p>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
@@ -1787,6 +1804,36 @@ function AboutPanel() {
         </div>
       </div>
     </div>
+    <Dialog open={skillsOpen} onOpenChange={setSkillsOpen}>
+      <DialogContent className="max-h-[80vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle>Vendored Stelow skills</DialogTitle>
+          <DialogDescription>
+            Synced from calionauta/stelow {buildInfo?.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}. Workers load these from the plugin — no network at card time.
+          </DialogDescription>
+        </DialogHeader>
+        {(["stelow-workflow-", "stelow-product-"] as const).map((prefix) => {
+          const group = (buildInfo?.skills ?? []).filter((name) => name.startsWith(prefix));
+          if (!group.length) return null;
+          return (
+            <div key={prefix} className="mt-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {prefix === "stelow-workflow-" ? "Workflow" : "Product playbooks"} ({group.length})
+              </h3>
+              <ul className="mt-1 space-y-0.5">
+                {group.map((name) => (
+                  <li key={name} className="font-mono text-xs text-foreground">{name.replace(prefix, "")}</li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+        <div className="mt-4">
+          <UrlLink href="https://github.com/calionauta/stelow/tree/main/skills" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Upstream skills ↗</UrlLink>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

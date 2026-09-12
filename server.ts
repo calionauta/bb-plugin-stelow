@@ -1,5 +1,5 @@
 import { spawn, execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -473,7 +473,7 @@ export const rpcContract = defineRpcContract({
   },
   buildInfo: {
     input: z.object({}).strict(),
-    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skillsSyncedAt: z.number().nullable() }),
+    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skillsSyncedAt: z.number().nullable(), skills: z.array(z.string()) }),
   },
   aboutLogo: {
     input: z.object({}).strict(),
@@ -3758,9 +3758,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async buildInfo() {
-      // skillsSyncedAt is read live (not memoized like BUILD_INFO): the 6h
-      // upstream sync lands between About visits.
-      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion, skillsSyncedAt: readLastSyncAt(SYNC_STATE_FILE) };
+      // skillsSyncedAt and skills are read live (not memoized like
+      // BUILD_INFO): the 6h upstream sync lands between About visits.
+      let skills: string[] = [];
+      try {
+        skills = readdirSync(PLUGIN_SKILLS_DIR, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && e.name.startsWith("stelow-"))
+          .map((e) => e.name)
+          .sort();
+      } catch { /* panel shows an empty list */ }
+      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion, skillsSyncedAt: readLastSyncAt(SYNC_STATE_FILE), skills };
     },
 
     // About identity mark. Served as a data URI (never a static file URL —

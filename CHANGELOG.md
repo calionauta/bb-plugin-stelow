@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.72] - 2026-09-12
+
+### Changed
+
+- **About sync status, demoted to a signal.** The paragraph is now a
+  quiet status line (● dot + "N skills · synced X ago") opening the
+  vendored inventory grouped Workflow/Product. Installed optional tools
+  gained one-click reinstall-as-update.
+
+### Fixed
+
+- **Truncated upstream trees refuse the sync.** A partial GitHub tree
+  could previously prune valid local skills as "retired"; fail-soft now
+  keeps everything instead.
+
 ## [0.3.71] - 2026-09-12
 
 ### Changed
