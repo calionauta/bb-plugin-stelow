@@ -105,9 +105,17 @@ assert.match(app, /if \(column === status \|\| card\.status === "completed"\)/, 
 // Track headers describe the agent outcome, not internal filenames.
 assert.match(app, /applies specialized research strategy to surface prioritized opportunities/, "research header names the strategy outcome");
 assert.match(app, /Choose a single technique from the \{trackTitle\("build"\)\} workflow/, "explore header names one build technique, not a stage");
-assert.match(app, /carries each card through specialized techniques/, "build header shares the technique vocabulary");
+assert.match(app, /carries each card through a structured workflow/, "build header names its full workflow, not a one-off technique");
 assert.match(app, /wherever your review mode requires it/, "gated pauses read as conditional, never promised");
 assert.doesNotMatch(app, /Choose a single stage from|Choose one specialized skill and an AI agent runs it/, "stage/skill wording is gone from explore headers");
+
+// Promotion is a true ownership handoff: a new project worker takes over only
+// after it starts, and a failed handoff restores the exploratory card.
+const promote = rpcMethod("promoteCard", "researchStrategies");
+assert.match(promote, /respawnWorkerForBand\(cardId, preset\.id, "project-promotion", \{ previousProjectId: card\.project_id \}\)/, "promotion starts a worker in the new project");
+assert.match(promote, /workspace_kind = 'exploratory'/, "failed handoff restores the exploratory workspace");
+assert.match(promote, /The card remains exploratory; its existing worker is still active/, "failed handoff explains the safe state");
+assert.match(app, /Open thread then opens that project worker; the earlier thread stays in Worker history\./, "the promotion dialog explains thread continuity before committing");
 
 // One list row for all tracks: Build geometry standard, context per meta.
 assert.match(app, /function TrackListRow\(\{ card, meta, onOpen \}/, "all three list views share one row");

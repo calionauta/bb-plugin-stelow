@@ -36,7 +36,11 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "better-sqlite3": "^12.0.0",
+    "dependency-cruiser": "^18.2.0",
     "hono": "^4.11.9",
+    "jscpd": "^5.2.0",
+    "knip": "^6.35.1",
+    "oxlint": "^1.82.0",
     "typescript": "^5.7.0"
   },
   "scripts": {
@@ -68,7 +72,15 @@
     "test:fresh": "node tests/fresh-install.test.mjs",
     "test:helper-sync": "node tests/workflow-helper-sync.test.mjs",
     "test:inbox": "node tests/inbox-flows.test.mjs && node tests/inbox-event-presentation.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint app.tsx server.ts components hooks lib tests",
+    "deadcode": "knip --no-exit-code --include files,dependencies,unlisted,unresolved",
+    "duplicates": "jscpd --min-lines 30 --min-tokens 150 --reporters console --silent app.tsx server.ts components hooks lib tests",
+    "architecture": "depcruise --config .dependency-cruiser.cjs app.tsx server.ts components hooks lib",
+    "quality:report": "npm run lint && npm run deadcode && npm run duplicates",
+    "quality": "npm run typecheck && npm test && npm run quality:report && npm run architecture",
+    "security:production": "npm audit --omit=dev --audit-level=high",
+    "security:full": "npm audit --audit-level=high"
   },
   "files": [
     "dist",

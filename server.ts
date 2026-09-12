@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
-import { STAGE_SEQUENCE } from "./lib/artifact-groups.mjs";
+import { STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
@@ -22,12 +22,11 @@ import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStalen
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
-import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/stage-bands.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
 import { CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
-import { STAGE_CATALOG, stageById } from "./lib/stage-catalog.mjs";
+import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
@@ -385,7 +384,7 @@ export const rpcContract = defineRpcContract({
   },
   promoteCard: {
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
-    output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), error: z.string().nullable() }),
+    output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), threadId: z.string().nullable(), error: z.string().nullable() }),
   },
   answerExpiredQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answer: z.string().min(1).max(10_000) })).min(1).max(12) }).strict(),
@@ -1407,9 +1406,9 @@ ${prompt}`;
     if (isResearch && !researchStrategy) {
       throw new Error(`Unknown research strategy "${strategy ?? ""}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
     }
-    const exploreStage = isExplore ? stageById(stageId ?? "") : null;
+    const exploreStage = isExplore ? techniqueById(stageId ?? "") : null;
     if (isExplore && !exploreStage) {
-      throw new Error(`Unknown explore stage "${stageId ?? ""}". Pick one of: ${STAGE_CATALOG.map((entry) => entry.id).join(", ")}.`);
+      throw new Error(`Unknown explore technique "${stageId ?? ""}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
     }
     const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : "unknown";
     const seed = await seedWorkflow(bb, rootPath, slug, initialIntent, appetite, reviewMode);
@@ -1584,7 +1583,7 @@ ${prompt}` }, ...workerAttachments],
   // same per-workflow state dir (dir_hash) so the new worker re-reads the
   // already-advanced state.md and continues from the current stage — no context
   // is re-created or reset. The old worker is archived/stopped by this helper.
-  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append"; roundNo?: number; roundStamp?: string; roundFile?: string }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
+  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append"; roundNo?: number; roundStamp?: string; roundFile?: string; previousProjectId?: string | null }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
     const row = getCard(cardId);
     if (!row) return { ok: false, error: ERR_CARD_NOT_FOUND };
     const preset = getPresetById(presetId);
@@ -1609,8 +1608,8 @@ ${prompt}` }, ...workerAttachments],
     const runStrategyId = row.kind === "research" ? (opts?.strategyId ?? history[history.length - 1] ?? row.research_strategy ?? "") : null;
     const researchStrategy = row.kind === "research" ? researchStrategyById(runStrategyId ?? "") : null;
     if (row.kind === "research" && !researchStrategy) return { ok: false, error: "This research has no known strategy. Archive it and start a new one." };
-    const exploreStage = row.kind === "explore" ? stageById(row.explore_stage ?? "") : null;
-    if (row.kind === "explore" && !exploreStage) return { ok: false, error: "This explore card has no known stage. Archive it and start a new one." };
+    const exploreStage = row.kind === "explore" ? techniqueById(row.explore_stage ?? "") : null;
+    if (row.kind === "explore" && !exploreStage) return { ok: false, error: "This explore card has no known technique. Archive it and start a new one." };
     // Restart reuses the round's own file (idempotent rewrite); a fresh
     // spawn passes its own. Fall back to a composed path only when history
     // carries none (shouldn't happen for spawned rounds).
@@ -1661,7 +1660,7 @@ ${prompt}` }, ...workerAttachments],
 
 Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
-You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. Read your state.md and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already settled in state.md. Pick up exactly where the workflow left off.${row.worker_thread_id ? ` Previous worker thread: ${row.worker_thread_id} (archived, same project). If state.md is thin — e.g. the previous worker stalled silently — its turn history may hold the missing context; retrieve it with \`bb thread output ${row.worker_thread_id}\`.` : ""}
+You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. Read your state.md and transitions.md, and CONTINUE the workflow from the current stage. Do not restart from triage; do not re-confirm what is already settled in state.md. Pick up exactly where the workflow left off.${row.worker_thread_id ? ` Previous worker thread: ${row.worker_thread_id} (archived before this handoff). If state.md is thin — e.g. the previous worker stalled silently — its turn history may hold the missing context; retrieve it with \`bb thread output ${row.worker_thread_id}\`.` : ""}
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form:
@@ -1696,7 +1695,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           const tag = "@previous-worker";
           const mentionText = `Continuity link — ${tag} is the archived worker this thread replaces. Consult it if state.md is thin.`;
           const start = mentionText.indexOf(tag);
-          await bb.sdk.threads.send({ threadId: newThread.id, mode: "auto", input: [{ type: "text", text: mentionText, mentions: [{ start, end: start + tag.length, resource: { kind: "thread", label: `Stelow: ${row.display_name ?? row.name} (previous)`, threadId: row.worker_thread_id, projectId: row.project_id } }] }] });
+          await bb.sdk.threads.send({ threadId: newThread.id, mode: "auto", input: [{ type: "text", text: mentionText, mentions: [{ start, end: start + tag.length, resource: { kind: "thread", label: `Stelow: ${row.display_name ?? row.name} (previous)`, threadId: row.worker_thread_id, projectId: opts?.previousProjectId ?? row.project_id } }] }] });
         } catch { /* mention nicety; prompt reference suffices */ }
       }
       return { ok: true, threadId: newThread.id };
@@ -3156,8 +3155,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const params = presetAttachmentParams(preset);
       const researchStrategy = card.kind === "research" ? researchStrategyById(card.research_strategy ?? "") : null;
       if (card.kind === "research" && !researchStrategy) return { reseeded: false, error: "This research has no known strategy. Archive it and start a new one.", reclassified: false };
-      const exploreStage = card.kind === "explore" ? stageById(card.explore_stage ?? "") : null;
-      if (card.kind === "explore" && !exploreStage) return { reseeded: false, error: "This explore card has no known stage. Archive it and start a new one.", reclassified: false };
+      const exploreStage = card.kind === "explore" ? techniqueById(card.explore_stage ?? "") : null;
+      if (card.kind === "explore" && !exploreStage) return { reseeded: false, error: "This explore card has no known technique. Archive it and start a new one.", reclassified: false };
       // Reseed wipes the state dir: reuse the round's own file path so the
       // re-run recreates exactly what the rounds list expects.
       const reseedRoundNo = Math.max(1, strategyList(card).length);
@@ -3268,27 +3267,25 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async promoteCard({ cardId, name }) {
-      // Turns exploratory scratch into a real BB project. Files never move
-      // and the worker keeps running: the new project's source IS the card's
-      // workspace path, so cardWorkspace resolves the identical state.md
-      // before and after. Only exploratory cards qualify — project cards
-      // already have a project, so the UI hides this option for them and the
-      // server refuses with that exit named.
+      // Promotion is a worker handoff, not only a workspace relabel. Files
+      // remain in place, but the old exploratory worker is replaced by a new
+      // worker belonging to the new project. That makes Open thread truthful
+      // and prevents two workers from writing the same workflow state.
       const card = getCard(cardId);
-      if (!card) return { ok: false, projectId: null, projectName: null, error: ERR_CARD_NOT_FOUND };
+      if (!card) return { ok: false, projectId: null, projectName: null, threadId: null, error: ERR_CARD_NOT_FOUND };
       if (card.workspace_kind !== "exploratory") {
         const projectName = await bb.sdk.projects.get({ projectId: card.project_id }).then((p) => p.name).catch(() => card.project_id);
-        return { ok: false, projectId: null, projectName: null, error: `This card already lives in project "${projectName}" — nothing to promote.` };
+        return { ok: false, projectId: null, projectName: null, threadId: null, error: `This card already lives in project "${projectName}" — nothing to promote.` };
       }
-      if (card.status === "archived") return { ok: false, projectId: null, projectName: null, error: ERR_CARD_ARCHIVED };
+      if (card.status === "archived") return { ok: false, projectId: null, projectName: null, threadId: null, error: ERR_CARD_ARCHIVED };
       const workspace = await cardWorkspace(card);
-      if (!workspace?.path) return { ok: false, projectId: null, projectName: null, error: ERR_WORKSPACE_UNAVAILABLE };
-      if (!workspace.hostId) return { ok: false, projectId: null, projectName: null, error: "Workspace host is unavailable." };
+      if (!workspace?.path) return { ok: false, projectId: null, projectName: null, threadId: null, error: ERR_WORKSPACE_UNAVAILABLE };
+      if (!workspace.hostId) return { ok: false, projectId: null, projectName: null, threadId: null, error: "Workspace host is unavailable." };
       const projectName = normalizePromoteName(name, card.display_name ?? card.name);
       const projects = await bb.sdk.projects.list().catch(() => []);
       const decision = findAdoptableProject(projects, projectName, workspace.path);
       if (decision.action === "conflict") {
-        return { ok: false, projectId: null, projectName: null, error: `A project named "${projectName}" already exists — pick another name.` };
+        return { ok: false, projectId: null, projectName: null, threadId: null, error: `A project named "${projectName}" already exists — pick another name.` };
       }
       let projectId: string;
       try {
@@ -3296,17 +3293,27 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           ? decision.project.id
           : (await bb.sdk.projects.create({ name: projectName, source: { type: "local_path", hostId: workspace.hostId, path: workspace.path } })).id;
       } catch (error) {
-        return { ok: false, projectId: null, projectName: null, error: error instanceof Error ? error.message : "Could not create the project." };
+        return { ok: false, projectId: null, projectName: null, threadId: null, error: error instanceof Error ? error.message : "Could not create the project." };
       }
-      // project_id is deliberately outside updateCard's contract (it excludes
-      // ownership moves), so this writes it explicitly. Nulling the
-      // exploratory path/host flips future cardWorkspace resolution to the
-      // new project's source — the same directory.
+      // Temporarily bind the card to the target project so the common respawn
+      // helper uses the exact project source and projectId. If that spawn
+      // fails, revert this ownership change: the old worker was never stopped
+      // and the card stays coherent in its exploratory workspace.
       db.prepare("UPDATE cards SET project_id = ?, workspace_kind = 'project', workspace_path = NULL, workspace_host_id = NULL, updated_at = ? WHERE id = ?").run(projectId, now(), cardId);
-      logCardComment(cardId, "card", cardId, "agent", `Turned into project "${projectName}". Files stayed in place; the worker continues from the current stage.`);
+      const preset = card.kind === "build"
+        ? getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId)
+        : getPresetForCard(cardId);
+      const handoff = await respawnWorkerForBand(cardId, preset.id, "project-promotion", { previousProjectId: card.project_id });
+      if (!handoff.ok || !handoff.threadId) {
+        db.prepare("UPDATE cards SET project_id = ?, workspace_kind = 'exploratory', workspace_path = ?, workspace_host_id = ?, activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run(card.project_id, workspace.path, workspace.hostId, card.activity, card.last_error, now(), cardId);
+        bb.realtime.publish("card-state", { cardId });
+        bb.realtime.publish("board-changed", { cardId });
+        return { ok: false, projectId: null, projectName: null, threadId: null, error: `Could not start the project worker. The card remains exploratory; its existing worker is still active. ${handoff.error ?? "Try again."}` };
+      }
+      logCardComment(cardId, "card", cardId, "agent", `Moved into project "${projectName}". Files stayed in place; a new project worker continues from the current stage. The exploratory worker is archived in Worker history.`);
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
-      return { ok: true, projectId, projectName, error: null };
+      return { ok: true, projectId, projectName, threadId: handoff.threadId, error: null };
     },
 
     async researchStrategies() {
@@ -3322,15 +3329,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async createExploreCard({ projectId, environment, prompt, attachments, stageId, presetId }) {
-      const picked = stageById(stageId);
+      const picked = techniqueById(stageId);
       if (!picked) {
-        throw new Error(`Unknown explore stage "${stageId}". Pick one of: ${STAGE_CATALOG.map((entry) => entry.id).join(", ")}.`);
+        throw new Error(`Unknown explore technique "${stageId}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
       }
       return createCardInternal({ projectId, environment, prompt, attachments, intent: "explore", appetite: "Complete", reviewMode: "Product Spec + Interface + Tech Review + Code Diff", kind: "explore", stageId: picked.id, presetId: presetId ?? null });
     },
 
     async stageCatalog() {
-      return { stages: STAGE_CATALOG.map(({ id, label, skill, emoji, blurb, keywords }) => ({ id, label, skill, emoji, blurb, keywords })) };
+      return { stages: TECHNIQUE_CATALOG.map(({ id, label, skill, emoji, blurb, keywords }) => ({ id, label, skill, emoji, blurb, keywords })) };
     },
 
     // Resolve the research index file for a card. Shared by researchIndex

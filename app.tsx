@@ -23,8 +23,8 @@ import { INBOX_EVENT_LABELS, inboxEventPresentation, isOpenInboxAction } from ".
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
-import { STAGE_SEQUENCE, groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
-import { STAGE_BANDS } from "./lib/stage-bands.mjs";
+import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
+import { PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_TO_BAND, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
@@ -114,60 +114,10 @@ function statusLabel(status: string) {
   return STATUS_LABELS[status] ?? status;
 }
 
-const STAGE_LABELS: Record<string, string> = {
-  triage: "Triage",
-  select: "Pick intent",
-  setup: "Setup",
-  context: "Context",
-  shape: "Shape proposal",
-  critique: "Critique",
-  gate: "Product gate",
-  scope: "Scope",
-  interface: "Interface",
-  "int-gate": "Interface gate",
-  selection: "Interface selection",
-  planning: "Tech planning",
-  "plan-gate": "Plan gate",
-  execution: "Execution",
-  verification: "Verification",
-  "diff-gate": "Diff gate",
-  audit: "Audit",
-  research: "Research",
-};
-
-// What each stage produces / does, for the confirmation preview before advancing.
-const STAGE_PRODUCES: Record<string, string> = {
-  triage: "Reviews the current state and picks what to work on next.",
-  select: "Chooses an item / group from the triage inbox to turn into a workflow.",
-  setup: "Prepares the repo and environment the workflow will run in.",
-  context: "Gathers project context the shaping step needs.",
-  shape: "Writes a Shape Up proposal (spec-product_vN.md) for the chosen item.",
-  critique: "Challenges the proposal before it is gated.",
-  gate: "Product gate: decides whether the shaped idea is accepted, rejected, or reworked.",
-  scope: "Breaks the approved idea into a concrete scope of work.",
-  interface: "Designs the user-facing interface for the scope.",
-  "int-gate": "Interface gate: accepts, rejects, or reworks the interface design.",
-  selection: "Selects which interface variant to implement.",
-  planning: "Writes the technical plan (PLAN.md) from the interface and scope.",
-  "plan-gate": "Plan gate: accepts, rejects, or reworks the tech plan.",
-  execution: "Implements the plan across the defined scope.",
-  verification: "Verifies the implementation against the plan.",
-  "diff-gate": "Diff gate: checks the implementation diff before completion.",
-  audit: "Final audit of the finished work.",
-};
-
-// Canonical linear order of the 17 workflow stages (mirrors stages.yaml). The
-// timeline uses this to give position (passed / current / upcoming); legal
-// transitions still come from nextStages (parsed from transitions.md).
-// Single-sourced from lib/artifact-groups (which also ranks artifact groups)
-// so the two never drift apart.
-// Which phase (band) each stage belongs to — shown as a visual group label on
-// the timeline. Derived from lib/stage-bands.mjs (single source shared with
-// the server); they are an aggregation of stages, not a rival axis.
-const STAGE_BAND: Record<string, string> = Object.fromEntries(
-  Object.entries(STAGE_BANDS).flatMap(([band, stages]) => stages.map((stage) => [stage, band])),
-);
-const BAND_LABEL: Record<string, string> = { analysis: "Analyse", planning: "Plan", execution: "Execute", review: "Review", research: "Research" };
+// Stages are ordered workflow checkpoints; phases are board-level groups.
+// Explore calls its independent, one-off choices techniques instead.
+const STAGE_BAND = STAGE_TO_BAND;
+const BAND_LABEL: Record<string, string> = { ...PHASE_LABELS, research: "Research", explore: "Explore" };
 // Board columns ARE the workflow phases + terminals. Active cards sit in the
 // column of their current phase (STAGE_BAND[stage]); a card is a board column,
 // not a status. Terminals: completed / archived. Blocked was removed because
@@ -258,9 +208,6 @@ function joinStrategyLabels(ids: Array<string | null | undefined>, byId: Map<str
   return labels.length > 0 ? labels.join(" + ") : null;
 }
 
-function stageLabel(stage: string) {
-  return STAGE_LABELS[stage] ?? stage;
-}
 // Position of a stage in the canonical sequence (-1 if unknown).
 function stageIndex(stage: string) {
   return STAGE_SEQUENCE.indexOf(stage);
@@ -833,7 +780,7 @@ function BoardPanel({ active }: { active: boolean }) {
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent carries each card through specialized techniques—from triage to scope-by-scope execution—pausing for your decisions wherever your review mode requires it.</p>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent carries each card through a structured workflow—from triage to scope-by-scope execution—pausing for your decisions wherever your review mode requires it.</p>
               {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
                 {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
               </button> : null}
@@ -4785,7 +4732,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         return;
       }
       setPromoteOpen(false);
-      toast.success(`Turned into project "${result.projectName}".`);
+      toast.success(`Project "${result.projectName}" created — a new project worker is continuing the workflow.`);
       await load();
     } finally {
       setPromoting(false);
@@ -5233,7 +5180,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             <DialogTitle>Turn into project?</DialogTitle>
             <DialogDescription className="space-y-2">
               <p>
-                Creates a BB project from this workspace. Files stay in place and the worker continues from the current stage.
+                Files stay in place. To keep one writer for this workflow, Stelow archives the exploratory worker and starts a new worker in the project from the current stage. Open thread then opens that project worker; the earlier thread stays in Worker history.
               </p>
             </DialogDescription>
           </DialogHeader>

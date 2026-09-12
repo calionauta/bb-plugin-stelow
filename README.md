@@ -70,6 +70,21 @@ bb plugin build
 bb plugin install . --yes
 ```
 
+### Development checks
+
+After `npm install`, one command gives both people and coding agents the
+current quality picture:
+
+```bash
+npm run quality:report
+```
+
+It reports lint, unused-code, and duplication findings without blocking an
+existing checkout on its initial backlog. `npm run architecture` is the
+enforced boundary check; `npm run security:full` fails on high/critical npm
+advisories. CI runs all of these automatically. Socket's deeper package scan
+is optional and requires the repository's own Socket API token.
+
 ```bash
 bb plugin dev
 ```

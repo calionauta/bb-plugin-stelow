@@ -1,0 +1,10 @@
+export type WorkflowPhase = "analysis" | "planning" | "execution" | "review";
+export declare const WORKFLOW_PHASES: Array<{ id: WorkflowPhase; label: string }>;
+export declare const WORKFLOW_STAGES: Array<{ id: string; label: string; phase: WorkflowPhase; produces: string }>;
+export declare const STAGE_SEQUENCE: string[];
+export declare const STAGE_LABELS: Record<string, string>;
+export declare const STAGE_PRODUCES: Record<string, string>;
+export declare const PHASE_LABELS: Record<string, string>;
+export declare const STAGE_BANDS: Record<string, string[]>;
+export declare const STAGE_TO_BAND: Record<string, string>;
+export declare function stageLabel(stage: string): string;

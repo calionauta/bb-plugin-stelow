@@ -1,12 +1,12 @@
-name: ci
+name: security
 
 on:
-  push:
-    branches: [master]
-  pull_request:
+  schedule:
+    - cron: "23 7 * * 1"
+  workflow_dispatch:
 
 jobs:
-  verify:
+  audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,7 +15,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run quality:report
-      - run: npm run architecture
-      - run: npm test
+      - run: npm run security:production
+      - run: npm run security:full

@@ -1,4 +1,4 @@
-export interface ExploreStage {
+export interface ExploreTechnique {
   id: string;
   label: string;
   skill: string;
@@ -7,5 +7,11 @@ export interface ExploreStage {
   keywords: string[];
 }
 
-export declare const STAGE_CATALOG: ExploreStage[];
-export declare function stageById(id: string): ExploreStage | null;
+export declare const TECHNIQUE_CATALOG: ExploreTechnique[];
+export declare function techniqueById(id: string): ExploreTechnique | null;
+/** @deprecated Use ExploreTechnique / TECHNIQUE_CATALOG. */
+export type ExploreStage = ExploreTechnique;
+/** @deprecated Use TECHNIQUE_CATALOG. */
+export declare const STAGE_CATALOG: ExploreTechnique[];
+/** @deprecated Use techniqueById. */
+export declare function stageById(id: string): ExploreTechnique | null;
