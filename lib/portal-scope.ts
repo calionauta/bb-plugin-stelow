@@ -8,7 +8,7 @@
  * plugin's compiled stylesheet (`@scope ([data-bb-plugin="<id>"], …)`) to
  * reach it. `__BB_PLUGIN_ID__` is an esbuild define stamped by
  * `bb plugin build`; outside that pipeline (registry copies, tests) it is
- * undefined and the generic root attribute alone keeps legacy behavior. In
+ * undefined and the generic root attribute alone applies. In
  * the host app the same hook reads the plugin-slot context instead, so host
  * overlays stay out of plugin scopes. The portaled-overlay marker is shared
  * with the host copy and lets Electron route pointer input to visible

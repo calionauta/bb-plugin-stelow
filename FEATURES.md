@@ -39,12 +39,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **One panel, five tracks** (`StelowPanel`, `STELOW_TRACKS`). A single
   Stelow sidebar row with Inbox / Build / Research / Explore / About tabs (subPath-routed,
   back-button friendly, last tab remembered). Track names, icons, and
-  routes come from one table — renaming is one line. Legacy card links
-  resolve the track live. Panel identity and every navigation flows
+  routes come from one table — renaming is one line. A card link resolves
+  its track live. Panel identity and every navigation flows
   through `STELOW_PANEL_ID` / `goToTrack` / `goToCard` / `goToInboxCard`.
   The three card kinds (build / research / explore) are centralized in
-  `lib/tracks.mjs` — the server normalizes legacy `delivery` rows to
-  `build` silently, and the lightweight lifecycle (To-Do / Doing / Done)
+  `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
+  track, and the lightweight lifecycle (To-Do / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
   (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their

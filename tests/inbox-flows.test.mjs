@@ -92,10 +92,10 @@ assert.equal(countsForInboxBadge({ ...freshDone, occurredAt: NOW + DAY }, NOW), 
 
 db.close();
 
-const legacyDb = new Database(":memory:");
-legacyDb.exec("CREATE TABLE inbox_events (id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL, read_at INTEGER, archived_at INTEGER)");
-const legacyColumns = legacyDb.prepare("PRAGMA table_info(inbox_events)").all();
-if (!legacyColumns.some((column) => column.name === "resolved_at")) legacyDb.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
-assert.ok(legacyDb.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "resolved_at"), "legacy Inbox databases gain the resolution column safely");
-legacyDb.close();
+const olderDb = new Database(":memory:");
+olderDb.exec("CREATE TABLE inbox_events (id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL, summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL, read_at INTEGER, archived_at INTEGER)");
+const olderColumns = olderDb.prepare("PRAGMA table_info(inbox_events)").all();
+if (!olderColumns.some((column) => column.name === "resolved_at")) olderDb.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
+assert.ok(olderDb.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "resolved_at"), "an Inbox database without the column gains it safely");
+olderDb.close();
 console.log("inbox flows test ok: dedupe, resolve, completion, archive, and history visibility");

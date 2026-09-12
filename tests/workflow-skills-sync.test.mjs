@@ -93,14 +93,6 @@ try {
     const syncedAt = JSON.parse(readFileSync(state2, "utf8"))["$syncedAt"];
     assert.equal(typeof syncedAt, "number", "sync records its verification timestamp");
     assert.ok(syncedAt > 0 && syncedAt <= Date.now(), "verification timestamp is plausible");
-
-    // Legacy in-skills state migrates once: it is consumed (no redundant
-    // re-download storm beyond the single migration run) and then removed.
-    const legacy = join(target2, ".sync-state.json");
-    writeFileSync(legacy, JSON.stringify({ "stelow-workflow-orchestrator/SKILL.md": "deadbeef" }));
-    const c = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
-    assertCleanSync(c, "migration run");
-    assert.ok(!existsSync(legacy), "legacy in-skills state removed after migration");
   } finally {
     rmSync(root2, { recursive: true, force: true });
   }

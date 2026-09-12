@@ -8,7 +8,7 @@ const oldSameName = { name: "jogo-da-velha", dirHash: "pw-old", created: "2026-0
 const firstCard = { workflowId: "card_first", name: "jogo-da-velha", dirHash: "pw-first", created: "2026-09-12T20:00:00.000Z" };
 const secondCard = { workflowId: "card_second", name: "jogo-da-velha", dirHash: "pw-second", created: "2026-09-12T20:01:00.000Z" };
 
-// A legacy name-only row is intentionally unclaimable: guessing is how cards
+// A row with a name but no owner is intentionally unclaimable: guessing is how cards
 // used to inherit each other's state.
 assert.equal(workflowEntryForOwner([oldSameName], "card_first"), null);
 
@@ -35,10 +35,11 @@ assert.equal(workflowEntryForOwner(afterReseed, "card_first", "pw-reseed")?.dirH
 
 // Seeding by name is idempotent: the same name yields the same owner, so a
 // second seed reuses one entry and one directory instead of adding a twin.
-assert.equal(workflowIdForName("Auth refactor"), "wf-auth-refactor");
+assert.equal(workflowIdForName("Auth refactor"), "sw_auth-refactor", "a seeded owner reads as a stelow workflow");
 assert.equal(workflowIdForName("  auth  refactor "), workflowIdForName("Auth refactor"), "the same name always yields the same owner");
 assert.notEqual(workflowIdForName("auth"), workflowIdForName("auth-2"), "different names stay different workflows");
-assert.match(workflowIdForName("!!!"), /^wf-[a-z]/, "an unsluggable name still yields an owner");
+assert.match(workflowIdForName("!!!"), /^sw_[a-z]/, "an unsluggable name still yields an owner");
+assert.ok(!workflowIdForName("auth").startsWith("card_"), "a seeded owner can never collide with a card owner");
 
 // A re-seed keeps the workflow's first `created`: the state path
 // (.stelow/<created>/<dirHash>) must never move, or it strands the old dir.

@@ -42,10 +42,10 @@ import {
 assert.equal(isBatchPayload({ questions: [] }), true);
 assert.equal(isBatchPayload({ question: "x", options: [] }), false);
 {
-  const legacy = expandInteractionQuestions({ id: "i1", title: "T", payload: { question: "Q?", multiple: false, options: [{ label: "A", description: "" }] } });
-  assert.equal(legacy.length, 1);
-  assert.equal(legacy[0].questionId, "i1", "legacy id stays the interaction id (compat)");
-  assert.equal(legacy[0].index, 0);
+  const single = expandInteractionQuestions({ id: "i1", title: "T", payload: { question: "Q?", multiple: false, options: [{ label: "A", description: "" }] } });
+  assert.equal(single.length, 1);
+  assert.equal(single[0].questionId, "i1", "a single question keeps the interaction id");
+  assert.equal(single[0].index, 0);
 }
 {
   const batch = expandInteractionQuestions({
@@ -124,7 +124,7 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   assert.match(badPath.error, /workspace-relative path/);
 }
 
-// Expansion keeps legacy label-only rows and normalizes rich options.
+// Expansion keeps label-only options and normalizes rich ones.
 {
   const mixed = expandInteractionQuestions({ id: "i2", title: "T", payload: { question: "Q?", multiple: false, options: ["A", { label: "B", description: "d", preview: "p", artifact: { path: "f.md" } }, { label: "" }] } });
   assert.equal(mixed.length, 1);

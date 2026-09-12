@@ -20,13 +20,11 @@ assert.equal(LIGHTWEIGHT_COLUMN_LABELS.done, "Done", "column labels");
 assert.equal(isValidKind("build"), true, "build is valid");
 assert.equal(isValidKind("research"), true, "research is valid");
 assert.equal(isValidKind("explore"), true, "explore is valid");
-assert.equal(isValidKind("delivery"), false, "delivery is not a kind anymore");
 assert.equal(isLightweightKind("research"), true, "research is lightweight");
 assert.equal(isLightweightKind("explore"), true, "explore is lightweight");
 assert.equal(isLightweightKind("build"), false, "build is not lightweight");
 
-// Legacy rows migrate silently: delivery reads as build.
-assert.equal(normalizeKind("delivery"), "build", "legacy delivery normalizes to build");
+// One place normalizes a stored kind: an unrecognized value is a build.
 assert.equal(normalizeKind("build"), "build", "build stays build");
 assert.equal(normalizeKind("bogus"), "build", "unknown falls back to build");
 
@@ -35,6 +33,6 @@ assert.equal(normalizeKind("bogus"), "build", "unknown falls back to build");
 assert.equal(bandForKind("build"), "analysis", "build band");
 assert.equal(bandForKind("research"), "research", "research band");
 assert.equal(bandForKind("explore"), "explore", "explore band");
-assert.equal(bandForKind("delivery"), "analysis", "legacy delivery band");
+assert.equal(bandForKind("bogus"), "analysis", "an unrecognized kind takes the build band");
 
-console.log("tracks test ok: kinds, lightweight lifecycle, bands, legacy normalization");
+console.log("tracks test ok: kinds, lightweight lifecycle, bands, kind normalization");

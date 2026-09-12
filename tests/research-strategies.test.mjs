@@ -29,7 +29,7 @@ assert.equal(researchStrategyById("nope"), null, "unknown id resolves to null");
 // Strategy history: strict {id, at, file} rows project to ids;
 // repeats are preserved as separate rounds, garbage degrades honestly.
 assert.deepEqual(parseStrategyList('[{"id":"a","at":"t","file":"f"},{"id":"a","at":"t2","file":"f2"}]'), ["a", "a"], "repeats preserved");
-assert.deepEqual(parseStrategyList('["a","b"]'), [], "legacy id arrays are dropped");
+assert.deepEqual(parseStrategyList('["a","b"]'), [], "an id array is not a strategy list");
 assert.deepEqual(parseStrategyList(null), [], "nothing yields no history");
 
 console.log("research strategies test ok: unique ids, skill mapping, lookup, history");

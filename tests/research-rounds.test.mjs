@@ -13,10 +13,10 @@ assert.equal(slugify("Job Map Steps!!"), "job-map-steps", "slugify");
 assert.match(roundTimestamp(new Date("2026-09-05T18:35:00Z")), /^\d{8}-\d{4}$/, "stamp shape");
 
 // History is strict [{id, at, file}]: file defaults to "" (missing, never
-// vanished); legacy shapes and anything else degrade to [].
+// vanished); an unrecognized shape degrades to [].
 assert.deepEqual(normalizeHistory('[{"id":"a","at":"t","file":"f"}]'), [{ id: "a", at: "t", file: "f" }], "round entry");
 assert.deepEqual(normalizeHistory('[{"id":"a","at":"t"}]'), [{ id: "a", at: "t", file: "" }], "missing file defaults empty");
-assert.deepEqual(normalizeHistory('["a","b"]'), [], "legacy id arrays are dropped");
+assert.deepEqual(normalizeHistory('["a","b"]'), [], "an id array is not a history either");
 assert.deepEqual(normalizeHistory('[{"id":"a"}]'), [], "entries missing id/at are dropped");
 assert.deepEqual(normalizeHistory(null), [], "nothing yields no history");
 assert.deepEqual(normalizeHistory("not-json"), [], "corrupt JSON yields no history");

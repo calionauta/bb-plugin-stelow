@@ -6,7 +6,7 @@
 //   2. Every band has at least one stage.
 //   3. Resolution honors band-override, falls back to card preset, then default.
 import assert from "node:assert";
-import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/stage-bands.mjs";
+import { STAGE_BANDS, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 
 // 1. no overlap / no duplicates across bands
 const flat = Object.values(STAGE_BANDS).flat();

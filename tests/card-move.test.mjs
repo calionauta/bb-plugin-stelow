@@ -24,9 +24,10 @@ for (const column of ["todo", "doing", "done"]) {
   assert.match(refused.error, /workflow phases/, `build refusal names the exit (${column})`);
 }
 
-// Legacy "delivery" kind reads as build (tracks v1 rename, silent migration).
-assert.deepEqual(resolveCardMove("delivery", "analysis"), { ok: true, move: { type: "phase", phase: "analysis" } }, "legacy delivery still enters phases");
-assert.equal(resolveCardMove("delivery", "todo").ok, false, "legacy delivery refuses lightweight columns");
+// An unrecognized stored kind resolves as build: it enters phases and refuses
+// the lightweight columns, exactly like a build card.
+assert.deepEqual(resolveCardMove("bogus", "analysis"), { ok: true, move: { type: "phase", phase: "analysis" } }, "an unrecognized kind still enters phases");
+assert.equal(resolveCardMove("bogus", "todo").ok, false, "an unrecognized kind refuses lightweight columns");
 
 // Unknown targets and unknown kinds refuse everywhere.
 assert.equal(resolveCardMove("research", "bogus").ok, false, "research refuses unknown");

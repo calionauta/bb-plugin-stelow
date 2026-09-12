@@ -110,7 +110,7 @@ let aboutLogoCache: string | null | undefined;
 // -> review), so context continuity is preserved within a band. Research and
 // explore cards run single stages with their own band so lightweight tracks
 // have an explicit preset default independent of the build analysis phase.
-// Bands live in lib/stage-bands.mjs (single source shared with the panel).
+// Bands live in lib/workflow-vocabulary.mjs (single source shared with the panel).
 
 // Pi exposes every route it can delegate to (OpenRouter, OpenCode, Bifrost,
 // etc.). Stelow's Pi presets intentionally offer only the configured Bifrost
@@ -583,7 +583,8 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
 
     // A name is a label, not an identity. Reuse is reserved for this exact
     // immutable owner (a card id for panel work) and requires both the index
-    // and the state file to agree. Legacy name-only rows are never adopted.
+    // and the state file to agree. An entry that carries no owner id is never
+    // adopted, and neither is a state file that names someone else.
     const workflows = trackingData.workflows as unknown[];
     const entry = workflowEntryForOwner(workflows, workflowId);
     const entryDir = workflowStateRelativeDir(entry);
@@ -1011,9 +1012,6 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "kind")) {
     db.exec("ALTER TABLE cards ADD COLUMN kind TEXT NOT NULL DEFAULT 'build'");
   }
-  // Silent migration for the tracks v1 rename: legacy "delivery" rows read
-  // as "build" everywhere (see normalizeKind), this converges stored rows.
-  try { db.prepare("UPDATE cards SET kind = 'build' WHERE kind = 'delivery'").run(); } catch { /* column may not exist yet on first run */ }
   if (!cardColumns.some((column) => column.name === "research_strategy")) {
     db.exec("ALTER TABLE cards ADD COLUMN research_strategy TEXT");
   }
@@ -1086,9 +1084,9 @@ export default async function plugin(bb: BbPluginApi) {
   CREATE INDEX IF NOT EXISTS idx_card_threads_card ON card_threads(card_id, started_at DESC);`);
 
   // github_imports tracks which tagged GitHub issues have been pulled into
-  // cards. Created outside the historical migration array (the recorded
-  // _bb_migrations has a legacy-unknown sentinel at id 6), matching the
-  // stage_presets / inbox_events pattern.
+  // cards. Created outside the migration array (an older installation records
+  // a different migration count), matching the stage_presets / inbox_events
+  // pattern.
   db.exec(`CREATE TABLE IF NOT EXISTS github_imports (
     issue_key TEXT PRIMARY KEY,
     repo TEXT NOT NULL,
