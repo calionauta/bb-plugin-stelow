@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.4] - 2026-09-12
+
+### Changed
+
+- **Seeding by name is idempotent.** `bb stelow seed --name X` derives the
+  workflow's owner from the name, so seeding the same workflow again returns
+  its own paths instead of adding a look-alike row and a second state
+  directory. Workers are told to seed through `bb stelow seed`, which binds the
+  owner the raw script cannot.
+
+### Fixed
+
+- **A workflow's state directory never moves.** Re-seeding keeps the workflow's
+  first `created` date, and the seed writes the path through the same function
+  that later resolves it, so a state directory can no longer be stranded or
+  written where no reader looks.
+- **The upstream sync spends one request per tick.** Each run fetched the
+  GitHub tree twice (once for the skills, once for the helper) against a 60
+  request/hour unauthenticated budget, so a busy hour turned into a silent
+  "nothing updated". The tree is now shared for a minute — the sync still
+  verifies every blob's sha before writing, and the next tick picks up
+  anything newer.
+- **Vendored skills match upstream again.** The `config get` fix shipped with
+  a `read-config.md` still describing the old lookup, because a rate-limited
+  sync had failed softly and left the file behind. Every vendored file is now
+  byte-identical to `calionauta/stelow@main`, verified by blob sha.
+- **The sync self-check reports what actually failed.** Offline and
+  rate-limited GitHub is the sync's own fail-soft path, but the check crashed
+  the build instead of skipping, because it never saw the sync's error text.
+  It now claims network trouble only for network trouble, still fails hard on
+  a real defect (missing file, truncated tree, sha mismatch), and verifies the
+  vendored helper and skills offline so a skipped run is not a silent one.
+
 ## [0.4.3] - 2026-09-12
 
 ### Fixed

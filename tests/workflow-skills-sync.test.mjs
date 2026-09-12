@@ -1,18 +1,41 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { syncWorkflowSkills, WORKFLOW_SKILLS } from "../lib/workflow-skills-sync.mjs";
 
 // Guard: if GitHub is unreachable (offline/CI), skip rather than fail — the
 // offline invariants (idempotence, no-op on second run) still run when online.
 const target = mkdtempSync(join(tmpdir(), "stelow-skills-test-"));
+const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-let ok = true;
+// GitHub being offline or rate-limited is the sync's normal fail-soft path —
+// it reports those in `errors` and never throws. Skip only those; a missing
+// file upstream, a truncated tree, or a sha mismatch is a real defect.
+const UNAVAILABLE = /(403|429|50\d)\b|fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|offline|timeout|unreachable|socket|getaddrinfo|stale \S+: content sha mismatch/i;
+
+/** Throw with the sync's own error text, so the guard above can classify it. */
+function assertCleanSync(result, label) {
+  if (result.errors.length) throw new Error(`${label} failed: ${result.errors.join("; ")}`);
+}
+
+/** Offline still proves every vendored skill shipped. */
+function assertVendoredSkills() {
+  const skillsDir = join(pluginRoot, "skills");
+  for (const skill of WORKFLOW_SKILLS) {
+    assert.ok(existsSync(join(skillsDir, skill, "SKILL.md")), `${skill} ships a SKILL.md`);
+  }
+  assert.ok(
+    existsSync(join(skillsDir, "stelow-workflow-orchestrator", "references", "transitions.md")),
+    "orchestrator references/transitions.md present (correct nesting)",
+  );
+}
+
 try {
   const first = await syncWorkflowSkills(target, { log: () => {} });
 
-  assert.equal(first.errors.length, 0, "first sync has no errors");
+  assertCleanSync(first, "first sync");
   assert.ok(first.created.length > 0, "first sync created files");
   assert.ok(existsSync(join(target, "stelow-workflow-orchestrator", "SKILL.md")), "orchestrator SKILL.md present");
   assert.ok(
@@ -22,10 +45,10 @@ try {
 
   // Second run must be a no-op (state file skip) — no re-download, no churn.
   const second = await syncWorkflowSkills(target, { log: () => {} });
+  assertCleanSync(second, "second sync");
   assert.equal(second.created.length, 0, "second sync creates nothing");
   assert.equal(second.updated.length, 0, "second sync updates nothing");
   assert.equal(second.removed.length, 0, "second sync removes nothing");
-  assert.equal(second.errors.length, 0, "second sync has no errors");
   assert.equal(second.changed, false, "second sync reports unchanged");
 
   assert.ok(
@@ -42,7 +65,7 @@ try {
   mkdirSync(foreign, { recursive: true });
   writeFileSync(join(foreign, "x.md"), "# foreign");
   const third = await syncWorkflowSkills(target, { log: () => {} });
-  assert.equal(third.errors.length, 0, "prune run has no errors");
+  assertCleanSync(third, "prune run");
   assert.ok(!existsSync(retired), "retired stelow-* dir pruned");
   assert.ok(existsSync(join(foreign, "x.md")), "non-stelow dirs untouched");
 
@@ -59,24 +82,24 @@ try {
     const state2 = join(root2, ".sync-state.json");
     mkdirSync(target2, { recursive: true });
     const a = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
-    assert.equal(a.errors.length, 0, "explicit-state sync has no errors");
+    assertCleanSync(a, "explicit-state sync");
     assert.ok(a.created.length > 0, "explicit-state sync created files");
     assert.ok(existsSync(state2), "state lands at the explicit path");
     const strays = readdirSync(target2).filter((e) => e.startsWith("."));
     assert.deepEqual(strays, [], "no dotfiles inside skills/");
-  const b = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
-  assert.equal(b.changed, false, "explicit-state second run is a no-op");
-  assert.equal(b.errors.length, 0, "explicit-state second run has no errors");
-  const syncedAt = JSON.parse(readFileSync(state2, "utf8"))["$syncedAt"];
-  assert.equal(typeof syncedAt, "number", "sync records its verification timestamp");
-  assert.ok(syncedAt > 0 && syncedAt <= Date.now(), "verification timestamp is plausible");
+    const b = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
+    assertCleanSync(b, "explicit-state second run");
+    assert.equal(b.changed, false, "explicit-state second run is a no-op");
+    const syncedAt = JSON.parse(readFileSync(state2, "utf8"))["$syncedAt"];
+    assert.equal(typeof syncedAt, "number", "sync records its verification timestamp");
+    assert.ok(syncedAt > 0 && syncedAt <= Date.now(), "verification timestamp is plausible");
 
     // Legacy in-skills state migrates once: it is consumed (no redundant
     // re-download storm beyond the single migration run) and then removed.
     const legacy = join(target2, ".sync-state.json");
     writeFileSync(legacy, JSON.stringify({ "stelow-workflow-orchestrator/SKILL.md": "deadbeef" }));
     const c = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
-    assert.equal(c.errors.length, 0, "migration run has no errors");
+    assertCleanSync(c, "migration run");
     assert.ok(!existsSync(legacy), "legacy in-skills state removed after migration");
   } finally {
     rmSync(root2, { recursive: true, force: true });
@@ -87,9 +110,14 @@ try {
   );
 } catch (err) {
   const msg = String(err && err.message ? err.message : err);
-  const netish = /fetch|network|ECONN|offline|timeout|unreachable|socket|getaddrinfo/i.test(msg);
-  if (netish) {
-    console.log(`workflow-skills-sync test SKIPPED (network unavailable): ${msg}`);
+  if (UNAVAILABLE.test(msg)) {
+    try {
+      assertVendoredSkills();
+      console.log(`workflow-skills-sync test SKIPPED (GitHub unavailable); vendored skills verified offline: ${msg}`);
+    } catch (offlineError) {
+      console.error(`workflow-skills-sync test FAILED: vendored skills invalid — ${offlineError.message}`);
+      process.exit(1);
+    }
   } else {
     console.error(`workflow-skills-sync test FAILED: ${msg}`);
     process.exit(1);
