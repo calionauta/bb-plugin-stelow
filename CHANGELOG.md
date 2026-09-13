@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.6.1] - 2026-09-13
+
+### Fixed
+
+- **Legacy migration fallback.** Tracking entries seeded before the
+  immutable-owner scheme carry no `workflowId`, so nine archived cards
+  kept `pw-` hashes after the v0.6.0 move. They now match by their
+  unique stored hash; owner-keyed entries keep the strict path.
+
 ## [0.6.0] - 2026-09-13
 
 ### Added
