@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.8.1] - 2026-09-13
+
+### Fixed
+
+- **Split parent lifecycle.** A fully approved split now archives and stops
+  the parent worker atomically, so an archived card cannot keep consuming
+  agent turns.
+
 ## [0.8.0] - 2026-09-13
 
 ### Added

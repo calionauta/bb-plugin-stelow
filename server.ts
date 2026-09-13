@@ -4764,6 +4764,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         db.prepare("UPDATE split_proposals SET consumed_at = ? WHERE card_id = ?").run(Date.now(), cardId);
         const { remaining, archiveParent } = splitRemainder(slices, outcome.approved);
         if (archiveParent) {
+          // Full split parks the parent just like an Archive button or a
+          // drag to Archived. The command's stdout is guidance, not a
+          // lifecycle guarantee: end its worker here so it cannot consume a
+          // turn after its card has disappeared from active work.
+          await stopWorkerThread(card.worker_thread_id);
           updateCard(cardId, { status: "archived", activity: "idle" });
           return { exitCode: 0, stdout: `Split into ${created.length} build ${created.length === 1 ? "card" : "cards"}: ${created.map((entry) => entry.slice).join("; ")}. The parent card is archived — stop: your workflow ends here.` };
         }
