@@ -29,14 +29,10 @@ assert.match(seedBlock, /getCardByWorkerThread\(ctx\.threadId\)/, "the seed hand
 assert.match(seedBlock, /cardWorkerSeedRefusal\(/, "a card worker seed is refused through the guard");
 assert.match(seedBlock, /workflowStateDir\(bb, seedRoot, seedCard\.id, seedCard\.dir_hash\)/, "the refusal redirects to the card's own state dir");
 
-// Server contract: both build prompts state the workflow is pre-seeded so
-// the worker never reaches for seed in the first place (backticks are
-// escaped in the TS template literal, hence \\?`).
-assert.match(serverSource, /never run \\?`bb stelow seed\\?` \(it is refused for card workers/, "the spawn prompt forbids seeding");
-assert.equal(
-  (serverSource.match(/never run \\?`bb stelow seed\\?` \(it is refused for card workers/g) ?? []).length >= 2,
-  true,
-  "spawn and reseed prompts both forbid seeding",
-);
+// Server contract: build prompts state the workflow is pre-seeded so the
+// worker never reaches for seed in the first place. The clause lives in
+// the NEVER_SEED const and every spawn path references it — covered by
+// tests/prompt-contracts.test.mjs; here just pin the single definition.
+assert.match(serverSource, /const NEVER_SEED = "/, "the seed ban is a single-source const");
 
 console.log("card seed guard test ok: refusal copy, card-worker seed refusal, pre-seeded prompts");

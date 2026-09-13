@@ -109,6 +109,6 @@ assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${re
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(serverSource, /ensureAutoContinueColumns\(db\)/, "the migration ensures the budget columns");
 assert.match(serverSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
-assert.match(serverSource, /threads\.events\.list\(\{ threadId: card\.worker_thread_id, order: "desc", limit: "40" \}\)/, "the scan reads recent turn events");
+assert.match(serverSource, /threads\.events\.list\(\{ threadId: card\.worker_thread_id, order: "desc", limit: "100", types: \["turn\/completed", "turn\/started", "item\/completed"\] \}\)/, "the scan reads turn boundaries and completions only");
 
 console.log("auto-continue test ok: decision matrix, budget, migration, advance scan, shared nudge, prompt discipline");
