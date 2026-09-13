@@ -3783,8 +3783,10 @@ function PreviewSection({ cardId }: { cardId: string }) {
         <span className="flex items-center gap-2">
           <span className={`text-xs font-medium ${PREVIEW_STATE_TONE[info.state]}`}>{stateLabel}</span>
           {/* The canonical action decision, so the button and the runtime can
-              never disagree about what a state offers. */}
-          {previewAction(info.state, true) === "stop" ? (
+              never disagree about what a state offers. `available` is always
+              true here (the early return above), passed explicitly so the
+              call states its real input instead of a magic literal. */}
+          {previewAction(info.state, info.available) === "stop" ? (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("previewStop")}>{busy ? "Stopping…" : "Stop"}</Button>
           ) : (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("previewStart")}>{busy ? "Starting…" : "Start"}</Button>
