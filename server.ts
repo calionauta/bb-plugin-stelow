@@ -38,7 +38,7 @@ import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
-import { MAX_SPLIT_CHILDREN, MIN_SPLIT_CHILDREN, SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
+import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
@@ -970,11 +970,11 @@ export default async function plugin(bb: BbPluginApi) {
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
   const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
-  // Explicit split: one card is one workflow, so a triage worker that finds
-  // 2+ clearly independent items proposes the split through a structured
-  // ask — never by acting. The host creates cards only from a recorded,
+  // Explicit split: one card is one workflow. This is deliberately a
+  // high bar, not a "two bullets means two cards" rule: the default is one
+  // focused card with scopes. The host creates cards only from a recorded,
   // human-approved proposal (`bb stelow split` takes no content args).
-  const SPLIT_PROTOCOL = "Split explicitly: if the request holds 2 or more clearly independent items, open ONE split ask at triage before advancing — `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its slice>...` plus exactly one `--option \"Keep as one card\"` (exact label). Each option carries its slice in --desc (+ --artifact when the slice references files). Then STOP and wait for the answer. Never split unilaterally, never invent cards, never advance past triage on a proposed split until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived parent means stop.";
+  const SPLIT_PROTOCOL = "Split is exceptional, not a checklist decomposition: DEFAULT to one focused card with scoped work. Propose ONE split only at triage — or, if it becomes clear only there, at Choose work (`select`) before committing its choice — when there are 2+ substantial, end-to-end deliverables that each have a distinct user outcome, acceptance criterion, and independently auditable workflow. Do NOT split merely because the request has bullets, files, UI/API pieces, sequential steps, or small fixes; keep shared implementation, one outcome, or tightly coupled changes together. Each proposed child must be worth its own normal workflow; if that is doubtful, keep one card. When the high bar is met, open `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its outcome and done criterion>...` plus exactly one `--option \"Keep as one card\"` (exact label). Each option carries its slice in --desc (+ --artifact when the slice references files). Then STOP and wait for the answer. Never split unilaterally, never invent cards, and do not advance from the current split point until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived parent means stop.";
   const db = bb.storage.database();
   // Sync state lives beside data.db (stable across managed-install cache
   // rotations), never in the plugin root: a fresh cache dir would otherwise
@@ -1101,6 +1101,7 @@ export default async function plugin(bb: BbPluginApi) {
   // never create cards, so there is no worker verb that takes card content.
   db.exec(`CREATE TABLE IF NOT EXISTS split_proposals (
     card_id TEXT PRIMARY KEY,
+    question TEXT NOT NULL DEFAULT '',
     slices TEXT NOT NULL,
     selected TEXT,
     asked_at INTEGER NOT NULL,
@@ -2891,11 +2892,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // Split proposals answered on the card land here instead of the
         // blocking call above: record the selection on the pending proposal
         // row so `bb stelow split` trusts the row, never a worker claim.
+        // Matched by question text — answers to any OTHER question on the
+        // card must never land in the split row (that corruption would read
+        // as user approval for slices nobody picked).
         {
-          const flat = decisions.flatMap((decision) => decision.answers).filter((answer): answer is string => typeof answer === "string");
-          if (flat.length > 0) {
+          const proposal = db.prepare("SELECT question FROM split_proposals WHERE card_id = ? AND selected IS NULL").get(cardId) as { question: string } | undefined;
+          const wanted = (proposal?.question ?? "").trim();
+          const flat = wanted
+            ? decisions.filter((decision) => decision.question.trim() === wanted).flatMap((decision) => decision.answers)
+            : [];
+          const picked = flat.filter((answer): answer is string => typeof answer === "string");
+          if (picked.length > 0) {
             db.prepare("UPDATE split_proposals SET selected = ?, answered_at = ? WHERE card_id = ? AND selected IS NULL")
-              .run(JSON.stringify(flat), Date.now(), cardId);
+              .run(JSON.stringify(picked), Date.now(), cardId);
           }
         }
         // A structured interaction resumes the waiting command but not a new
@@ -4349,6 +4358,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // call — a refused shape never pings the human.
         if (tag === "split") {
           if (groups.length !== 1) return { exitCode: 2, stderr: "A split ask carries exactly one question: the proposed cards as its options, plus one \"Keep as one card\" option." };
+          if (!groups[0]!.multiple) return { exitCode: 2, stderr: "A split ask must use --multiple so the user can approve more than one substantial deliverable (or choose Keep as one card)." };
           const splitCard = getCard(cardRow.id);
           if (!splitCard) return { exitCode: 2, stderr: `Unknown card "${cardRow.id}".` };
           if (splitCard.kind !== "build") return { exitCode: 2, stderr: "Only build cards split. Research and explore cards are single-stage by design." };
@@ -4364,8 +4374,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             .map((o) => ({ title: o.label, desc: o.description }));
           const invalid = validateSplitSlices(slices);
           if (invalid) return { exitCode: 2, stderr: invalid };
-          db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, NULL, ?, NULL, NULL, '[]')")
-            .run(cardRow.id, JSON.stringify(slices), Date.now());
+          db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, question, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, ?, NULL, ?, NULL, NULL, '[]')")
+            .run(cardRow.id, groups[0]!.question, JSON.stringify(slices), Date.now());
         }
         updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;

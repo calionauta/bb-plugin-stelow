@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.8.0] - 2026-09-13
+
+### Added
+
+- **Exceptional card splitting.** Triage — or Choose work before its
+  choice is committed — can offer a human-approved, multi-select split
+  only for substantial, independently auditable deliverables. The default
+  is one focused card with scopes: bullets, files, UI/API slices,
+  sequential steps, and small fixes stay together. The host, never the
+  worker, creates the approved child cards and preserves their lineage;
+  "Keep as one card" is always available.
+
 ## [0.7.2] - 2026-09-13
 
 ### Fixed
