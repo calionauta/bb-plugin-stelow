@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.11] - 2026-09-13
+
+### Fixed
+
+- **Prompt clauses are single-source.** The seed ban and turn discipline
+  were pasted per prompt and the band-swap restart prompt carried neither.
+  Both are now consts referenced by all three build spawn paths, pinned by
+  a prompt-contract test; `CLI_EQUIVALENTS` no longer routes workers to
+  seed.
+- **Narrower advance scan.** The finished-turn scan reads turn boundaries
+  and completions only (limit 100) instead of the last 40 unfiltered
+  events.
+
 ## [0.4.10] - 2026-09-13
 
 ### Fixed
