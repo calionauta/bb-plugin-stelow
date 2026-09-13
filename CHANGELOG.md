@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.6.0] - 2026-09-13
+
+### Added
+
+- **Stelow identity prefix (`sw-`).** Per-workflow state dirs, cardless
+  workflow ids, and both generators share one prefix. A boot migration
+  renames existing `pw-` dirs, approvals, and both indexes exactly once
+  (idempotent, fail-soft per card). Upstream `scripts/stelow` aligned in
+  the same release.
+- **Done-nudge at audit.** The audit-idle auto-complete inference is
+  removed: an audit-idle worker is resumed with the done instruction
+  (`shouldDoneNudge`, max 2), then pauses with the instruction on the
+  card. Completed cards read "Done — ready to review".
+- **Preview reliability.** A start that never announces an address fails
+  after 60s with its log attached; the log opens itself while starting
+  or failed, with a live elapsed clock; `previewShare` RPC backs a
+  working "Share this port" retry.
+- **Stage visibility.** Closed build cards name their stage (timeline
+  tone + breathe pulse) instead of a bare "Working"; the open card's
+  current stage pulses with the same effect. Preview moves above "What
+  is happening"; Start/Stop/Refresh share one button pattern; copy is an
+  in-input icon button; every preview button is pointer-shaped; pairing
+  hints navigate to the pairing dashboard instead of highlighting dead
+  text.
+
 ## [0.5.0] - 2026-09-13
 
 ### Added
