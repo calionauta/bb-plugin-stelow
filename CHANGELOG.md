@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.7] - 2026-09-13
+
+### Fixed
+
+- **An app in a subdirectory is found.** Probing the workspace root only meant a
+  finished deliverable reported "No web app detected" whenever the agent had
+  created it in a folder of its own — which is what agents do. Detection now
+  descends exactly one level, and picks a directory by convention: the one named
+  after the card first (agents name the folder after the work), a single
+  candidate second, and otherwise nothing rather than a guess —
+  `.stelow/preview.json` stays the way to name one.
+- **A self-contained page is a deliverable.** A lone `index.html` was offered
+  only when a caller asked for it, so the simplest possible product had no
+  preview at all. It is now detected, served from **its own directory** (so
+  nothing above it is exposed) and bound to loopback.
+
 ## [0.4.6] - 2026-09-13
 
 ### Added

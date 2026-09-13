@@ -35,7 +35,7 @@ import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
-import { PREVIEW_PROBE_FILES, detectPreview, parseDeclaredPreview, previewCommand, previewFailed, previewReady, previewSnapshot } from "./lib/preview-detect.mjs";
+import { PREVIEW_PROBE_FILES, detectPreview, parseDeclaredPreview, pickAppDir, previewAppDirs, previewCommand, previewFailed, previewReady, previewSnapshot } from "./lib/preview-detect.mjs";
 import { parseShareExpose } from "./lib/preview-reach.mjs";
 import { PREVIEW_LOG_LIMIT, PREVIEW_MAX_SESSIONS, appendLog, pickPort, previewKey, previewLogText, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
 
@@ -1884,11 +1884,43 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return workspace?.path ? { checkout: workspace.path, hostId: workspace.hostId, environment: null } : null;
   }
 
-  /** Detection for a card's checkout, with the declared override applied. */
-  async function previewDetectFor(checkout: string) {
-    const snapshot = await previewProbe(checkout);
+  /** Detection for one directory, with that directory's declared override applied. */
+  async function previewDetectAt(dir: string) {
+    const snapshot = await previewProbe(dir);
     const declared = snapshot.read(".stelow/preview.json");
-    return { detection: detectPreview(snapshot, { declared }), declared: parseDeclaredPreview(declared) };
+    return { detection: detectPreview(snapshot, { declared, allowStatic: true }), declared: parseDeclaredPreview(declared) };
+  }
+
+  /**
+   * Where the app actually is, and what it is. The workspace root first; when
+   * nothing there is a web app, exactly one level down — agents routinely put
+   * the deliverable in a subdirectory named after the work, and a root-only
+   * search would answer "nothing to preview" for a finished product.
+   *
+   * A self-contained `index.html` counts: it is a deliverable, and it is served
+   * from its own directory, so nothing above it is ever exposed.
+   */
+  async function previewAppRoot(checkout: string, slug: string | null) {
+    const atRoot = await previewDetectAt(checkout);
+    if (atRoot.detection) return { ...atRoot, root: checkout };
+    let names: string[] = [];
+    try {
+      names = readdirSync(checkout, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch {
+      return { detection: null, declared: null, root: checkout };
+    }
+    const found: string[] = [];
+    const probes = new Map<string, Awaited<ReturnType<typeof previewDetectAt>>>();
+    for (const name of previewAppDirs(names)) {
+      const probe = await previewDetectAt(nodeJoin(checkout, name));
+      if (probe.detection) {
+        found.push(name);
+        probes.set(name, probe);
+      }
+    }
+    const chosen = pickAppDir(found, slug);
+    const probe = chosen ? probes.get(chosen) : null;
+    return probe ? { ...probe, root: nodeJoin(checkout, chosen as string) } : { detection: null, declared: null, root: checkout };
   }
 
   function killPreview(session: PreviewSession): void {
@@ -1902,13 +1934,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   async function previewStart(card: CardRow): Promise<{ ok: boolean; error: string | null; session: PreviewSession | null }> {
     const target = await previewTarget(card);
     if (!target) return { ok: false, error: "Workspace path is unavailable.", session: null };
-    const key = previewKey(target.hostId, target.checkout);
-    const existing = previewSessions.get(key);
-    if (existing && (existing.state === "starting" || existing.state === "running")) {
-      return { ok: true, error: null, session: existing };
-    }
-    const { detection } = await previewDetectFor(target.checkout);
+    // A live session this card already has is the answer before any probing:
+    // the dev server is up, so where it runs is settled.
+    const own = [...previewSessions.values()].find((entry) => entry.cardId === card.id && (entry.state === "starting" || entry.state === "running"));
+    if (own) return { ok: true, error: null, session: own };
+    const app = await previewAppRoot(target.checkout, card.name);
+    const { detection } = app;
     if (!detection) return { ok: false, error: "No web app detected in this workspace.", session: null };
+    const key = previewKey(target.hostId, app.root);
+    const shared = previewSessions.get(key);
+    if (shared && (shared.state === "starting" || shared.state === "running")) {
+      return { ok: true, error: null, session: shared };
+    }
     const live = [...previewSessions.values()].filter((entry) => entry.state === "starting" || entry.state === "running");
     if (live.length >= PREVIEW_MAX_SESSIONS) {
       return { ok: false, error: `Stop one of the ${PREVIEW_MAX_SESSIONS} running previews first.`, session: null };
@@ -1918,7 +1955,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (port === null) return { ok: false, error: "No free port is available.", session: null };
     const command = previewCommand(detection, port);
     const session: PreviewSession = {
-      key, cardId: card.id, hostId: target.hostId, checkout: target.checkout, command, port,
+      key, cardId: card.id, hostId: target.hostId, checkout: app.root, command, port,
       state: "starting", detection, log: { lines: [], carry: "" }, error: null,
       startedAt: now(), child: null, exposed: false,
     };
@@ -1930,7 +1967,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const env: Record<string, string> = { ...(process.env as Record<string, string>), PORT: String(port), HOST: "127.0.0.1", BROWSER: "none", CI: "1" };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn("bash", ["-lc", command], { cwd: target.checkout, env, stdio: ["ignore", "pipe", "pipe"] });
+      child = spawn("bash", ["-lc", command], { cwd: app.root, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch (error) {
       session.state = "failed";
       session.error = error instanceof Error ? error.message : "Unable to start the dev server.";
@@ -1971,8 +2008,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   async function previewStop(card: CardRow): Promise<{ ok: boolean; error: string | null }> {
     const target = await previewTarget(card);
     if (!target) return { ok: false, error: "Workspace path is unavailable." };
-    const session = previewSessions.get(previewKey(target.hostId, target.checkout));
+    // Stop what this card is running, wherever that is: the app directory is
+    // discovered from the same convention the start used, so the two cannot
+    // disagree about which server belongs to this card.
+    const direct = [...previewSessions.values()].find((entry) => entry.cardId === card.id && entry.hostId === target.hostId);
+    const app = direct ? null : await previewAppRoot(target.checkout, card.name);
+    const session = direct ?? previewSessions.get(previewKey(target.hostId, app?.root ?? target.checkout));
     if (!session) return { ok: true, error: null };
+    session.cardId = card.id;
     // Mark it stopped BEFORE signalling: a stop the user asked for must not read
     // as a crash when the process closes with a signal code.
     const wasExposed = session.exposed;
@@ -1991,16 +2034,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   async function previewView(card: CardRow, appOrigin: string | null = null) {
     const target = await previewTarget(card);
     if (!target) return previewShape({ error: "Workspace path is unavailable." });
-    const session = previewSessions.get(previewKey(target.hostId, target.checkout)) ?? null;
-    const { detection, declared } = await previewDetectFor(target.checkout);
-    if (!detection) return previewShape({ detection: null, checkout: target.checkout });
+    const app = await previewAppRoot(target.checkout, card.name);
+    const { detection, declared } = app;
+    const session = previewSessions.get(previewKey(target.hostId, app.root)) ?? null;
+    if (!detection) return previewShape({ detection: null, checkout: app.root });
     // A session that already holds a share answers from what it proved, so a
     // panel refresh does not shell out to Connect every time.
     const paired = session?.exposed ? true : (await connectStatus()).paired;
     const share = session && paired && session.exposed
       ? await connectShareFor(session.port).then((url) => (url ? { url, port: session.port } : null))
       : null;
-    return previewShape({ detection, declared, session, paired, share, checkout: target.checkout, appOrigin, source: previewSourceLabel(target.environment) });
+    return previewShape({ detection, declared, session, paired, share, checkout: app.root, appOrigin, source: previewSourceLabel(target.environment) });
   }
 
   // Resolve a host binary: server-wide install at ~/.local/bin first

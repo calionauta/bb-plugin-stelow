@@ -2,6 +2,9 @@
 export declare const PREVIEW_CONFIG_REL: string;
 export declare const PREVIEW_PROBE_FILES: readonly string[];
 export declare const PREVIEW_TIERS: readonly string[];
+export declare const PREVIEW_SKIP_DIRS: readonly string[];
+export declare function previewAppDirs(names: unknown): string[];
+export declare function pickAppDir(detecting: unknown, slug?: string | null): string | null;
 export interface PreviewSnapshot {
   exists(rel: string): boolean;
   read(rel: string): string | null;
@@ -21,6 +24,6 @@ export declare function parseDeclaredPreview(raw: unknown): { command: string; p
 export declare function parsePreviewUrl(text: unknown): { url: string; port: number } | null;
 export declare function previewReady(output: string, port: number | null): { url: string; port: number } | null;
 export declare function previewFailed(output: string): string | null;
-export declare function detectPreview(snapshot: PreviewSnapshot, options?: { declared?: string | null; allowStatic?: boolean }): PreviewDetection | null;
+export declare function detectPreview(snapshot: PreviewSnapshot, options?: { declared?: string | null; allowStatic?: boolean; dir?: string | null }): PreviewDetection | null;
 export declare function previewCommand(detection: PreviewDetection | null, port: number | null): string;
 export declare function previewLabel(detection: PreviewDetection | null): string;

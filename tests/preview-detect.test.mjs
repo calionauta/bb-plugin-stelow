@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { PREVIEW_PROBE_FILES, detectPreview, parseDeclaredPreview, parsePreviewUrl, previewCommand, previewFailed, previewLabel, previewReady, previewSnapshot } from "../lib/preview-detect.mjs";
+import { PREVIEW_PROBE_FILES, detectPreview, parseDeclaredPreview, parsePreviewUrl, pickAppDir, previewAppDirs, previewCommand, previewFailed, previewLabel, previewReady, previewSnapshot } from "../lib/preview-detect.mjs";
 
 const snap = (files) => previewSnapshot(files);
 
@@ -59,10 +59,30 @@ assert.equal(fastapi.command, "python3 -m uvicorn main:app --reload");
 assert.equal(detectPreview(snap({ "requirements.txt": "requests" })), null, "a library project is not a server");
 assert.equal(detectPreview(snap({ "app.py": "print('hi')" })), null, "a module marker must actually be there");
 
-// --- Static pages are offered only when explicitly allowed. ------------------
+// --- A self-contained page is a deliverable, served from its own directory. --
 const html = snap({ "index.html": "<html></html>" });
-assert.equal(detectPreview(html), null, "a static page is not offered by default");
-assert.equal(detectPreview(html, { allowStatic: true }).framework, "static");
+assert.equal(detectPreview(html), null, "a static page is not offered without the caller asking");
+const page = detectPreview(html, { allowStatic: true });
+assert.equal(page.framework, "static");
+assert.match(page.command, /--bind 127\.0\.0\.1/, "a served directory must still bind loopback");
+assert.equal(previewCommand(page, 8080), "python3 -m http.server --bind 127.0.0.1 8080");
+assert.equal(detectPreview(snap({ "index.htm": "<html></html>" }), { allowStatic: true }).framework, "static");
+assert.equal(detectPreview(snap({ "public/index.html": "<html></html>" }), { allowStatic: true }), null, "a nested page is found by directory discovery, not guessed from a fixed list");
+
+// --- Finding the app one level down, without guessing. ----------------------
+// Agents routinely create the deliverable in a subdirectory named after the
+// work; a root-only search would answer "nothing to preview" for a product that
+// is finished and sitting right there.
+assert.deepEqual(previewAppDirs(["web", "api", ".git", "node_modules", "skills", "dist", "target", ".stelow"]), ["api", "web"]);
+assert.deepEqual(previewAppDirs([]), []);
+assert.deepEqual(previewAppDirs(null), []);
+assert.equal(pickAppDir(["api", "web"], "web"), "web", "the directory named after the card wins");
+assert.equal(pickAppDir(["jogo-da-velha"], "Jogo da Velha"), "jogo-da-velha", "a display name normalizes to its slug");
+assert.equal(pickAppDir(["only"], null), "only", "a single candidate is unambiguous");
+assert.equal(pickAppDir(["api", "web"], "nothing-matches"), null, "two candidates and no name match is not a guess");
+assert.equal(pickAppDir(["api", "web"], null), null);
+assert.equal(pickAppDir([], "web"), null);
+assert.equal(pickAppDir(["api", "web"], "Api"), "api", "a slug match is case-insensitive");
 
 // --- Reading the server's own announcement beats guessing the port. ----------
 assert.deepEqual(parsePreviewUrl("  ➜  Local:   http://localhost:5173/"), { url: "http://localhost:5173", port: 5173 });
@@ -102,4 +122,4 @@ for (const [label, files, framework] of [
 }
 assert.equal(PREVIEW_PROBE_FILES.includes("package-lock.json"), true, "a lockfile is what names the runner");
 
-console.log("preview detect test ok: declared/framework/static tiers, output parsing, port injection, probe sufficiency");
+console.log("preview detect test ok: declared/framework/static tiers, output parsing, port injection, probe sufficiency, app-dir discovery");

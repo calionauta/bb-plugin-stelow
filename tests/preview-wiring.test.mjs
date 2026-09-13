@@ -56,6 +56,25 @@ assert.ok(
 );
 assert.match(onClose, /session\.state !== "stopped"/, "the close handler must not overwrite a deliberate stop");
 
+// --- The app is found where it actually is. --------------------------------
+// The workspace root is tried first, and discovery descends only when the root
+// has nothing: descending first would let a stray example app outrank the real
+// deliverable.
+const appRoot = slice("async function previewAppRoot(", "async function previewStart(");
+assert.ok(
+  appRoot.indexOf("await previewDetectAt(checkout)") < appRoot.indexOf("readdirSync("),
+  "the workspace root must be probed before any directory is searched",
+);
+assert.match(appRoot, /if \(atRoot\.detection\) return/, "a root detection must short-circuit the search");
+assert.match(appRoot, /previewAppDirs\(names\)/, "candidate directories come from the shared filter");
+assert.match(appRoot, /pickAppDir\(found, slug\)/, "the choice comes from the shared convention, not an ad-hoc first match");
+assert.match(slice("async function previewDetectAt(", "async function previewAppRoot("), /allowStatic: true/, "a self-contained page is a deliverable and must be offered");
+// The process must run in the directory that is served, or a subdirectory app
+// would be started from the wrong cwd (and a static server would expose the
+// whole workspace instead of just the page).
+assert.match(start, /cwd: app\.root/, "the dev server must run in the resolved app directory");
+assert.match(start, /previewKey\(target\.hostId, app\.root\)/, "sessions are keyed by the app directory, so two cards on one app share it");
+
 // --- The worker's own checkout wins over the project source. ----------------
 // A `new-worktree` preset runs the agent in a bb-managed worktree, while
 // cardWorkspace() reports the project source. Reading files from the source
