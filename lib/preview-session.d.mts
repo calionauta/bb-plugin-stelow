@@ -4,7 +4,7 @@ export declare const PREVIEW_PORT_MIN: number;
 export declare const PREVIEW_PORT_MAX: number;
 export declare const PREVIEW_MAX_SESSIONS: number;
 export declare function previewSourceLabel(environment: { isWorktree?: boolean; workspaceProvisionType?: string | null; branchName?: string | null } | null | undefined): string;
-export declare const PREVIEW_STATES: readonly string[];
+export declare const PREVIEW_STATES: readonly ["stopped", "starting", "running", "failed"];
 export declare function previewKey(hostId: string | null | undefined, path: string | null | undefined): string;
 export interface PreviewLogState {
   lines: string[];
@@ -21,8 +21,6 @@ export interface PreviewHint {
 export declare function previewHints(options?: {
   paired?: boolean;
   reach?: { provider: string } | null;
-  effectiveUrl?: string | null;
-  hasServerAccessProvider?: boolean;
 }): PreviewHint[];
 export declare function previewTransparency(options: {
   detection: { framework: string; evidence: string } | null;

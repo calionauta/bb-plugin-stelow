@@ -31,6 +31,7 @@ import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
+import { previewAction } from "./lib/preview-session.mjs";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -3769,6 +3770,8 @@ function PreviewSection({ cardId }: { cardId: string }) {
   // the frame's `src` narrowed to a string without a non-null assertion.
   const framedUrl = running && info.frame === "frame" && info.url && !frameHidden ? info.url : null;
   const framed = framedUrl !== null;
+  // The same narrowing for the open-in-a-tab affordance.
+  const openUrl = running && info.url ? info.url : null;
   const stateLabel = info.state === "starting" ? "Starting…" : info.state === "running" ? "Running" : info.state === "failed" ? "Failed" : "Not running";
 
   return (
@@ -3779,7 +3782,9 @@ function PreviewSection({ cardId }: { cardId: string }) {
       action={
         <span className="flex items-center gap-2">
           <span className={`text-xs font-medium ${PREVIEW_STATE_TONE[info.state]}`}>{stateLabel}</span>
-          {running || info.state === "starting" ? (
+          {/* The canonical action decision, so the button and the runtime can
+              never disagree about what a state offers. */}
+          {previewAction(info.state, true) === "stop" ? (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("previewStop")}>{busy ? "Stopping…" : "Stop"}</Button>
           ) : (
             <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("previewStart")}>{busy ? "Starting…" : "Start"}</Button>
@@ -3810,9 +3815,9 @@ function PreviewSection({ cardId }: { cardId: string }) {
         </div>
       ) : null}
 
-      {running && !framed && info.url ? (
+      {openUrl && !framed ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => navigate.openUrl(info.url as string)}>Open in a new tab</Button>
+          <Button size="sm" variant="outline" onClick={() => navigate.openUrl(openUrl)}>Open in a new tab</Button>
           {info.frame === "frame" ? <Button size="sm" variant="ghost" onClick={() => setFrameHidden(false)}>Show preview</Button> : null}
         </div>
       ) : null}
@@ -5196,6 +5201,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </div>
               ) : null}
             </CardDisclosure>
+
+            <PreviewSection cardId={card.id} />
 
             <div ref={artifactsRef}>
             <CardDisclosure

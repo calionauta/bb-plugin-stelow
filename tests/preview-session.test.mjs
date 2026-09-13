@@ -36,9 +36,9 @@ assert.equal(unpaired[0].action, "Pair bb connect");
 assert.match(unpaired[0].text, /localhost works here/i, "the unpaired hint says what still works");
 const localPaired = previewHints({ paired: true, reach: { provider: "local" } });
 assert.equal(localPaired[0].action, "Share this port");
-const declared = previewHints({ paired: true, reach: { provider: "declared" }, effectiveUrl: "https://bb.example.com" });
+const declared = previewHints({ paired: true, reach: { provider: "declared" } });
+assert.equal(declared.length, 1);
 assert.equal(declared[0].text, "Using the URL declared in .stelow/preview.json.");
-assert.equal(declared[1].text.includes("https://bb.example.com"), true, "a published server address is surfaced, not hidden");
 
 // --- Transparency: the exact thing that will run, copyable by the user. -----
 assert.equal(previewTransparency({ detection: null, command: "x", port: 1, checkout: "/x" }), null);

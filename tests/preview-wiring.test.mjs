@@ -3,12 +3,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Preview wiring: the preview's own modules are pure and unit-tested, but the
-// effects live in server.ts, which the test harness never executes. These are
-// the source-level invariants whose breach is a real bug — a dev server exposed
-// past the account gate, an orphaned process after a reload, a stale public
-// share, or a panel that blocks on a bonus. Each assertion names the bug it
-// prevents, so a future edit that breaks one knows what it broke.
+// Preview wiring: the lifecycle itself is NOT tested here — it lives in
+// lib/preview-runtime and is driven for real by preview-runtime.test.mjs. What
+// remains is the handful of invariants only server.ts can break, because they
+// are about what the host provides and how the host is torn down. Each
+// assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(root, "server.ts"), "utf8");
 
@@ -21,109 +20,72 @@ function slice(start, end) {
   return source.slice(from, to);
 }
 
-// --- The dev server binds loopback only. ------------------------------------
-// A dev server on 0.0.0.0 is reachable without the account gate that makes a
-// Connect share safe, and dev servers run with the user's own credentials.
-const start = slice("async function previewStart(", "async function previewStop(");
-assert.match(start, /HOST: "127\.0\.0\.1"/, "the dev server must be started on loopback");
-assert.ok(!/HOST: "0\.0\.0\.0"/.test(source), "nothing may bind the dev server to every interface");
+// --- The host hands the runtime real effects, or nothing works. -------------
+const wiring = slice("const preview = createPreviewRuntime({", "bb.onDispose(");
+assert.match(wiring, /readFile: \(path\) => bb\.sdk\.files\.read\(\{ path \}\)/, "the runtime must read files through the host");
+assert.match(wiring, /listDirs: \(dir\) =>/, "the runtime must be able to list a directory");
+assert.match(wiring, /spawnProcess: \(command, options\) => spawn\("bash", \["-lc", command\]/, "the dev server runs through a login shell in the app directory");
+assert.match(wiring, /runConnect,/);
+assert.match(wiring, /baseEnv: process\.env/, "the dev server inherits the server's own environment");
 
-// --- Exposure is a bonus, never a gate. -------------------------------------
-// If the share had to resolve first, an unpaired server would hang in
-// "starting" forever instead of working at localhost.
-assert.ok(
-  start.indexOf('session.state = "running"') < start.indexOf("connectShareFor(port)"),
-  "the preview must be running before the share is attempted",
-);
-assert.match(start, /connectShareFor\(port\)\.then\(\(url\) => \{ if \(url\) session\.exposed = true; \}\)/, "a failed share must leave the preview running anyway");
+// --- A reload or disable must not leave a dev server behind. ---------------
+// The runtime cannot know when the plugin goes away, so this wiring is the
+// only thing standing between a plugin update and an orphaned process holding
+// a port.
+assert.match(source, /bb\.onDispose\(\(\) => preview\.dispose\(\)\)/, "dispose must be wired to the plugin lifetime");
 
-// --- Every exit path releases the share and the process. --------------------
-// A share left behind keeps a private URL published after the user stopped the
-// server; a process left behind keeps a port held after a reload.
-const onClose = slice('child.on("close"', "});\n    return { ok: true");
-assert.match(onClose, /connectUnexpose\(port\)/, "a dev server that exits must release its share");
-const disposed = slice("bb.onDispose(() => {", "});\n");
-assert.match(disposed, /killPreview\(session\)/, "a reload or disable must stop the dev servers it started");
-assert.match(disposed, /connectUnexpose\(session\.port\)/, "a reload or disable must release the shares it created");
+// --- The lifecycle lives in the library, not back in a handler. ------------
+// AGENTS.md: new state logic belongs in lib/ with a node test. A second state
+// machine here would be untestable and would drift from the tested one.
+for (const leaked of ["previewSessions", "killPreview", "connectUnexpose", "absorb"]) {
+  assert.ok(!source.includes(leaked), `server.ts must not re-implement the lifecycle (${leaked})`);
+}
 
-// --- A stop the user asked for is not a crash. ------------------------------
-// SIGTERM closes with a signal, not code 0; reporting that as "failed" would
-// tell the user their preview broke when they simply stopped it.
-const stop = slice("async function previewStop(", "async function previewView(");
-assert.ok(
-  stop.indexOf('session.state = "stopped"') < stop.indexOf("killPreview(session)"),
-  "the stop must be recorded before the process is signalled",
-);
-assert.match(onClose, /session\.state !== "stopped"/, "the close handler must not overwrite a deliberate stop");
-
-// --- The app is found where it actually is. --------------------------------
-// The workspace root is tried first, and discovery descends only when the root
-// has nothing: descending first would let a stray example app outrank the real
-// deliverable.
-const appRoot = slice("async function previewAppRoot(", "async function previewStart(");
-assert.ok(
-  appRoot.indexOf("await previewDetectAt(checkout)") < appRoot.indexOf("readdirSync("),
-  "the workspace root must be probed before any directory is searched",
-);
-assert.match(appRoot, /if \(atRoot\.detection\) return/, "a root detection must short-circuit the search");
-assert.match(appRoot, /previewAppDirs\(names\)/, "candidate directories come from the shared filter");
-assert.match(appRoot, /pickAppDir\(found, slug\)/, "the choice comes from the shared convention, not an ad-hoc first match");
-assert.match(slice("async function previewDetectAt(", "async function previewAppRoot("), /allowStatic: true/, "a self-contained page is a deliverable and must be offered");
-// The process must run in the directory that is served, or a subdirectory app
-// would be started from the wrong cwd (and a static server would expose the
-// whole workspace instead of just the page).
-assert.match(start, /cwd: app\.root/, "the dev server must run in the resolved app directory");
-assert.match(start, /previewKey\(target\.hostId, app\.root\)/, "sessions are keyed by the app directory, so two cards on one app share it");
-
-// --- The worker's own checkout wins over the project source. ----------------
+// --- The worker's own checkout wins over the project source. --------------
 // A `new-worktree` preset runs the agent in a bb-managed worktree, while
 // cardWorkspace() reports the project source. Reading files from the source
 // would preview the wrong code, and the user would be looking at mainline.
-const target = slice("async function previewTarget(", "function killPreview(");
-assert.ok(
-  target.indexOf("workerEnvironmentOf(card)") < target.indexOf("cardWorkspace(card)"),
-  "the worker's environment must be tried before the project source",
-);
+const target = slice("async function previewTarget(", "async function previewTargetFor(");
+// Both markers are required to exist first: a missing one makes indexOf -1,
+// and -1 < n would pass the comparison below with the call deleted entirely.
+const workerFirst = target.indexOf("workerEnvironmentOf(card)");
+const sourceFallback = target.indexOf("cardWorkspace(card)");
+assert.notEqual(workerFirst, -1, "previewTarget must consult the worker's environment");
+assert.notEqual(sourceFallback, -1, "previewTarget must fall back to the project source");
+assert.ok(workerFirst < sourceFallback, "the worker's environment must be tried before the project source");
 assert.match(target, /environment\?\.path/, "a worker environment without a path must fall through, not win empty");
+assert.match(target, /source: previewSourceLabel/, "the target must carry the label the panel shows");
+assert.match(target, /slug: card\.name/, "the card's own name is the convention that picks between app directories");
 const workerEnv = slice("async function workerEnvironmentOf(", "async function previewTarget(");
 assert.match(workerEnv, /status === "ready"/, "a retired or destroyed environment is not a checkout to preview");
-assert.match(workerEnv, /\.catch\(\(\) => null\)|catch \{/, "a removed environment must fall back, not throw");
+assert.match(workerEnv, /\?\.catch\(\(\) => null\)|catch \{/, "a removed environment must fall back, not throw");
 
-// --- The machine is never left holding servers nobody is watching. ----------
-// Assert the COMPARISON, not the identifier: the identifier also appears in the
-// refusal message, so matching the name alone would pass with the check deleted.
-const ceiling = start.search(/length\s*>=\s*PREVIEW_MAX_SESSIONS/);
-assert.notEqual(ceiling, -1, "a live-session count must be compared against the ceiling");
-assert.ok(ceiling < start.indexOf("spawn("), "the ceiling must be checked before a process is started");
-// Connect's answer moves only when the user pairs; the panel refreshes far more
-// often than that, so a per-refresh subprocess would be pure waste.
-const connect = slice("async function connectStatus(", "async function readConnectStatus(");
-assert.match(connect, /connectCache/, "the connect probe must be cached");
-assert.ok(connect.indexOf("connectCache") < connect.indexOf("readConnectStatus()"), "the cache must be consulted before the probe");
-
-// --- One renderer, so the panel and the CLI cannot diverge. -----------------
-// The join lives in lib/preview-session and is called from exactly one function.
-// A second place that builds a view would be a second set of rules to keep in
-// step, and the two would drift the first time one of them changed.
-const view = slice("async function previewView(", "// Resolve a host binary:");
-assert.equal(view.split("previewShape(").length - 1, 3, "previewView is the only place the view is joined");
-assert.equal(source.split("previewShape(").length - 1, 3, "no other function joins a preview view");
-assert.match(slice("async previewState({ cardId, appOrigin })", "async previewStart({ cardId })"), /previewView\(card, appOrigin \?\? null\)/, "the panel renders the shared view");
+// --- One renderer, so the panel and the CLI cannot diverge. ---------------
+const view = slice("async function previewView(", "async function previewStart(");
+assert.equal(view.split("previewShape(").length - 1, 1, "the missing-workspace answer is the only view built here");
+assert.match(view, /preview\.view\(target, appOrigin\)/, "the panel renders the shared view");
 const cli = slice('if (argv[0] === "preview") {', 'if (argv[0] === "fan-out") {');
-assert.match(cli, /previewView\(card\)/, "the CLI renders the same view the panel does");
-assert.ok(!cli.includes("available:"), "the CLI must not build its own view");
+assert.match(cli, /previewView\(card\.id\)/, "the CLI renders the same view the panel does");
 assert.match(cli, /previewText\(view\)/, "the CLI prints the shared renderer's text");
+assert.ok(!cli.includes("available:"), "the CLI must not build its own view");
+assert.match(cli, /--card/, "a worker must be able to name the card it is previewing");
+assert.match(cli, /--json/, "the CLI must offer machine-readable output to the worker that asked");
 
-// --- Detection cannot be silently skipped. ---------------------------------
-for (const moduleName of ["preview-detect.mjs", "preview-reach.mjs", "preview-session.mjs"]) {
-  assert.ok(source.includes(`./lib/${moduleName}`), `server.ts must import ${moduleName}`);
-}
-
-// --- The RPC contract and the shape agree on the lifecycle. -----------------
+// --- The RPC contract and the shape agree on the lifecycle. ---------------
+// The state list has one definition (PREVIEW_STATES); a hand-copied literal
+// here would let the two drift, and the panel would validate a state the view
+// never produces.
 const contract = slice("  previewState: {", "  previewStart: {");
-for (const state of ["stopped", "starting", "running", "failed"]) {
-  assert.ok(contract.includes(`"${state}"`), `the preview RPC must accept the ${state} state`);
-}
+assert.match(contract, /state: z\.enum\(\[\.\.\.PREVIEW_STATES\]\)/, "the RPC must validate against the shared state list");
 assert.ok(contract.includes("frameReason: z.string().nullable()"), "why a preview cannot be framed must reach the panel");
+for (const field of ["url", "command", "checkout", "log", "hints"]) {
+  assert.ok(contract.includes(`${field}:`), `the panel needs ${field}`);
+}
 
-console.log("preview wiring test ok: loopback bind, exposure is a bonus, every exit releases, one renderer, contract agrees");
+// --- The public surface is reachable from both callers. -------------------
+assert.match(slice("    async previewStart({ cardId }) {", "    async previewStop({ cardId }) {"), /previewStart\(cardId\)/, "the RPC must reach the runtime's start");
+assert.match(slice("    async previewStop({ cardId }) {", "  });"), /previewStop\(cardId\)/, "the RPC must reach the runtime's stop");
+assert.match(source, /\{ name: "preview", summary:/, "the CLI must document the subcommand");
+assert.match(source, /createPreviewRuntime/, "server.ts must construct the runtime");
+
+console.log("preview wiring test ok: host effects wired, dispose wired, lifecycle in lib, worker checkout first, one renderer, shared state list");

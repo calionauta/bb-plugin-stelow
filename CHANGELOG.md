@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.8] - 2026-09-13
+
+### Fixed
+
+- **The preview is on the card you actually build.** The section was mounted in
+  the research and explore bodies only, so the one card the feature exists for —
+  a build card whose workspace is a web app — never offered it. It is now on all
+  three tracks.
+- **A log line cannot fail a running preview.** The failure patterns were
+  re-checked against the whole log for as long as the process lived, so any
+  later line that merely read like a startup error (`not found:`, `cannot find`)
+  flipped a working server to Failed. Failure is now judged while the server is
+  starting; once it is up, output is a log and not a verdict.
+- **A card whose checkout moved gets its own server.** Sessions were also found
+  by card id, so after a worktree was recreated the panel could show the
+  previous directory's server, and a Stop could report success without stopping
+  the one that was actually running. A session is now found by the checkout it
+  serves, and nothing else.
+- **Stop releases the share and forgets the run.** The port's Connect share was
+  released only when the session happened to record that it had been exposed,
+  and stopped sessions stayed in memory for the life of the process.
+
+### Changed
+
+- **The preview lifecycle moved to `lib/preview-runtime.mjs`.** Which checkout
+  owns a server, when it becomes ready, what is released on stop or dispose —
+  all of it was inline in a `server.ts` handler, which is what `AGENTS.md`
+  forbids and what made the old wiring test grep the source for strings. Every
+  effect (read, spawn, connect) is injected, so the whole lifecycle runs in
+  tests against a fake process and `server.ts` only supplies the effects.
+- **One Connect client.** Three hand-rolled `bb connect … --json` calls, each
+  with its own copy of the same brace-matching JSON extraction, are now one.
+- **One definition of loopback.** `preview-detect` re-implemented the
+  bind-address-to-browse-address mapping; it now uses the canonical helper in
+  `preview-reach`, which also reads a bracketed IPv6 host correctly.
+- **Dead surface removed:** the unreachable `localOnly` reach branch (nothing
+  could set it), two unreachable hint branches with their unused parameters,
+  `reachLabel`, and the hand-copied state list that duplicated
+  `PREVIEW_STATES` — which the RPC contract now validates against directly.
+- **`previewStart`/`previewStop` return `{ ok, error }`.** The extra `state`
+  field was never read: every caller re-reads the view, which is the one
+  renderer the panel and the CLI share.
+- **`FEATURES.md`** now lists Preview, which the feature never added — a
+  user-facing feature without an entry does not exist.
+
 ## [0.4.7] - 2026-09-13
 
 ### Fixed

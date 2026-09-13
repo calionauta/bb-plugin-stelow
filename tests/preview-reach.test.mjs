@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { browseHost, isLoopbackHost, localPreviewUrl, parseShareExpose, previewFrameVerdict, reachLabel, resolvePreviewReach } from "../lib/preview-reach.mjs";
+import { browseHost, isLoopbackHost, localPreviewUrl, parseShareExpose, previewFrameVerdict, resolvePreviewReach } from "../lib/preview-reach.mjs";
 
 // --- Bind addresses are not browse addresses. --------------------------------
 assert.equal(browseHost("0.0.0.0"), "localhost");
@@ -36,9 +36,6 @@ assert.equal(unpaired.provider, "local");
 assert.equal(unpaired.url, "http://localhost:5173");
 assert.match(unpaired.reason, /pair bb connect/, "an unpaired server says how to become reachable");
 assert.equal(resolvePreviewReach({ port: null, paired: false }), null, "no port yet is no URL");
-const forced = resolvePreviewReach({ port: 5173, paired: true, share: '{"url":"https://srv--5173.getbb.app"}', localOnly: true });
-assert.equal(forced.provider, "local", "a workspace that asked for local-only keeps loopback");
-assert.equal(resolvePreviewReach({ port: null, paired: true, share: null, localOnly: true }), null);
 
 // A share whose port differs from the announced one is trusted over the guess.
 assert.equal(resolvePreviewReach({ port: 3000, paired: true, share: '{"url":"https://srv--5174.getbb.app","port":5174}' }).port, 5174);
@@ -59,8 +56,5 @@ assert.equal(previewFrameVerdict("https://srv--5173.getbb.app", { appOrigin: "ht
 assert.equal(previewFrameVerdict("https://bb.example.com.evil.test", { appOrigin: "https://bb.example.com" }).mode, "frame", "a lookalike host is not the same origin");
 assert.equal(previewFrameVerdict("not a url").mode, "copy");
 assert.equal(previewFrameVerdict("file:///tmp/index.html").mode, "copy");
-
-assert.equal(reachLabel({ provider: "share" }), "Shared");
-assert.equal(reachLabel(null), "No address yet");
 
 console.log("preview reach test ok: declared/share/local ladder, unpaired fallback, framing verdict");

@@ -151,6 +151,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   audit stages only. Untracked files open in the viewer; non-repos and
   clean trees state so explicitly. Read-only: never stages, never
   mutates the index.
+- **Preview** (`PreviewSection`, `previewState`/`previewStart`/`previewStop`,
+  `bb stelow preview`). Runs the card's own web app and shows it inside the
+  panel: the stack is detected from the workspace (Next/Vite/Astro/Svelte,
+  Go, Django/FastAPI/Flask/Streamlit, a self-contained page), the dev server
+  starts on loopback in the worker's own checkout — the project source when
+  that worktree is gone — and the running app renders in a sandboxed frame
+  with "Open in a new tab" always beside it. One action per state; the exact
+  command, port, checkout and log are always on screen. Reaching it from
+  another device uses the bb connect share URL when paired and loopback when
+  not: exposure is never a gate, and the panel says which one it is. One
+  server per checkout, so two cards on one source share it, capped at 3
+  running previews; a workspace with nothing to serve shows no button.
 - **Optional tools** (`toolStatus`, `installTool`, About section). Live presence probe
   for the host binaries the workflow can use (sem, cymbal, ripwire,
   ast-grep) with per-tool purpose and install command —
