@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.7.0] - 2026-09-13
+
+### Changed
+
+- **BREAKING (alpha): migration machinery removed.** The one-pass
+  `pw-` → `sw-` boot migration ran everywhere it needed to and is
+  deleted — no compat shims for dead prefixes, no legacy branches.
+  Installs that never ran v0.6.x keep working (resolution never matched
+  on prefix), but old `pw-` state is no longer renamed automatically.
+- **Vendored helper synced** to upstream (native `sw-` generation).
+
 ## [0.6.2] - 2026-09-13
 
 ### Fixed
