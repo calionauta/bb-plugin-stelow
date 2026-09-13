@@ -291,8 +291,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   audit with no next step.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
-  share one prefix; a boot migration renames existing `pw-` dirs and both
-  indexes exactly once.
+  share one prefix.
 - **Host-served playbook** (`bb stelow playbook [--card]`,
   `lib/playbook.mjs`). The card's state file, transitions, and the
   ordered reading list for its current stage as exact paths — workers

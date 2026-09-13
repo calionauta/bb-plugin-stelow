@@ -2734,72 +2734,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   bb.background.schedule("stelow-skills-sync", SKILLS_SYNC_CRON, () => void runUpstreamSync());
   void runUpstreamSync();
 
-  // One-pass pw- → sw- standardization (v0.6.0, lib/dir-prefix-migration).
-  // Stored state identity moved prefixes in both generators (owner-derived
-  // here, random upstream); directories already on disk follow now. Runs at
-  // every boot because it is idempotent — a migrated install finds no pw-
-  // hashes and moves nothing — so a card seeded between deploy and helper
-  // sync still converges. Fail-soft per card: one stuck workflow never
-  // blocks the rest, and metadata is only rewritten after its dirs move.
-  async function migrateDirPrefixToSw(): Promise<void> {
-    try {
-      const { planDirRename, applyDirRename, migrateTrackingHashes, legacyEntryForHash, migratedCounterpartForHash, swDirHash } = await import("./lib/dir-prefix-migration.mjs");
-      const rows = db.prepare("SELECT id, dir_hash FROM cards WHERE dir_hash LIKE 'pw-%'").all() as Array<{ id: string; dir_hash: string }>;
-      if (rows.length === 0) return;
-      let moved = 0;
-      for (const row of rows) {
-        try {
-          const card = getCard(row.id);
-          const rootPath = card ? (await cardWorkspace(card))?.path : null;
-          if (!card || !rootPath) continue;
-          const trackingPath = join(rootPath, "stelow.json");
-          let tracking: LooseRecord;
-          try {
-            tracking = JSON.parse(readFileSync(trackingPath, "utf8")) as LooseRecord;
-          } catch {
-            bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (stelow.json unreadable)`);
-            continue;
-          }
-          const entry = workflowEntryForOwner(array(tracking.workflows), card.id, row.dir_hash)
-            ?? legacyEntryForHash(array(tracking.workflows), row.dir_hash);
-          const plan = planDirRename(entry ? { ...(entry as Record<string, unknown>), workflowId: card.id } : null);
-          if (!plan) {
-            // Shared-hash reunion (clone/reseed twins): the directory already
-            // migrated under the twin card, so this card adopts the hash with
-            // a metadata-only update — no second move, nothing rewritten.
-            const twin = migratedCounterpartForHash(array(tracking.workflows), row.dir_hash);
-            if (twin) {
-              db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(swDirHash(row.dir_hash), now(), card.id);
-              moved += 1;
-              bb.log.info(`stelow: card ${card.id} adopted already-migrated ${swDirHash(row.dir_hash)} (shared seed)`);
-              continue;
-            }
-            bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (no resolvable state dir for ${row.dir_hash})`);
-            continue;
-          }
-          const applied = applyDirRename(rootPath, plan);
-          if (applied.state === "collision") {
-            bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (${plan.toStateRel} already exists)`);
-            continue;
-          }
-          const migrated = migrateTrackingHashes(tracking.workflows, [{ fromHash: plan.fromHash, toHash: plan.toHash }]);
-          if (migrated.changed > 0) {
-            tracking.workflows = migrated.workflows;
-            writeFileSync(trackingPath, `${JSON.stringify(tracking, null, 2)}\n`, "utf8");
-          }
-          db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(plan.toHash, now(), card.id);
-          moved += 1;
-          bb.log.info(`stelow: renamed ${plan.fromHash} → ${plan.toHash} (${applied.moved.map((m) => m.to).join(", ") || "metadata only"})`);
-        } catch (error) {
-          bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (${error instanceof Error ? error.message : String(error)})`);
-        }
-      }
-      if (moved > 0) bb.log.info(`stelow: dir prefix migration moved ${moved} workflow${moved === 1 ? "" : "s"} pw- → sw-`);
-    } catch (error) {
-      bb.log.warn(`stelow: dir prefix migration failed (fail-soft): ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  void migrateDirPrefixToSw();
+  // NOTE: v0.6.0–v0.6.2 shipped a one-pass pw- → sw- boot migration. It ran,
+  // production converged (zero pw- hashes and dirs), and the code was
+  // removed: early alpha, no compat shims for dead prefixes.
 
   // NOTE: a previous revision stopped every live worker thread here. Removed:
   // dispose fires on every hot-reload (dev + build:reload), so it massacred

@@ -3926,6 +3926,18 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       sub: card.lastError ?? "Something went wrong. Retry continues in place; restart begins fresh.",
     };
   }
+  // A completed card is done being worked — say so plainly, before any
+  // idle-based branch can misfire on it. "At Audit" on a finished card read
+  // as "the agent is auditing" or "waiting for me", when neither is true:
+  // the outcome below is ready to review. (includes() like statusTone
+  // below: the contract narrows this union upstream of here.)
+  if (["completed", "done"].includes(card.status)) {
+    return {
+      kind: "calm",
+      title: "Done — ready to review",
+      sub: `The workflow finished${card.stage ? ` at ${stageLabel(card.stage)}` : ""}. The result is below.`,
+    };
+  }
   // Prominent paused state only when the idle is known-stuck (past the grace
   // period), never for the routine seconds-long idle between agent turns.
   // Firing it on every turn would cry wolf and teach the signal to be ignored.
