@@ -2743,7 +2743,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // blocks the rest, and metadata is only rewritten after its dirs move.
   async function migrateDirPrefixToSw(): Promise<void> {
     try {
-      const { planDirRename, applyDirRename, migrateTrackingHashes } = await import("./lib/dir-prefix-migration.mjs");
+      const { planDirRename, applyDirRename, migrateTrackingHashes, legacyEntryForHash } = await import("./lib/dir-prefix-migration.mjs");
       const rows = db.prepare("SELECT id, dir_hash FROM cards WHERE dir_hash LIKE 'pw-%'").all() as Array<{ id: string; dir_hash: string }>;
       if (rows.length === 0) return;
       let moved = 0;
@@ -2760,8 +2760,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (stelow.json unreadable)`);
             continue;
           }
-          const entry = workflowEntryForOwner(array(tracking.workflows), card.id, row.dir_hash);
-          const plan = planDirRename(entry);
+          const entry = workflowEntryForOwner(array(tracking.workflows), card.id, row.dir_hash)
+            ?? legacyEntryForHash(array(tracking.workflows), row.dir_hash);
+          const plan = planDirRename(entry ? { ...(entry as Record<string, unknown>), workflowId: card.id } : null);
           if (!plan) {
             bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (no resolvable state dir for ${row.dir_hash})`);
             continue;

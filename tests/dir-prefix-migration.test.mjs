@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyDirRename, migrateTrackingHashes, needsPrefixMigration, planDirRename, swDirHash } from "../lib/dir-prefix-migration.mjs";
+import { applyDirRename, legacyEntryForHash, migrateTrackingHashes, needsPrefixMigration, planDirRename, swDirHash } from "../lib/dir-prefix-migration.mjs";
 
 // Regression: the pw- → sw- standardization (v0.6.0) must move every stored
 // identity exactly once — state dir, approvals dir, and both indexes (cards
@@ -50,4 +50,22 @@ assert.equal(tracked.changed, 1, "only the pw- entry rewrites");
 assert.equal(tracked.workflows[0].dirHash, "sw-card_1", "stelow.json follows the move");
 assert.equal(tracked.workflows[1].dirHash, "sw-card_2", "migrated entries are untouched");
 
-console.log("dir prefix migration test ok: plan, real renames, idempotent rerun, index rewrite");
+// Legacy schema: entries seeded before the immutable-owner scheme carry no
+// workflowId. They still migrate — matched by their unique stored hash —
+// while owner-keyed entries keep the strict path and never reach the fallback.
+const legacyWorkflows = [
+  { name: "old thing", dirHash: "pw-legacy1", created: "2026-09-09T12:00:00.000Z" },
+  { workflowId: "card_9", dirHash: "pw-card_9", created: "2026-09-13T10:00:00.000Z" },
+];
+assert.deepEqual(legacyEntryForHash(legacyWorkflows, "pw-legacy1")?.dirHash, "pw-legacy1", "a legacy entry matches by hash alone");
+assert.equal(legacyEntryForHash(legacyWorkflows, "pw-card_9"), null, "an owner-keyed entry never falls back");
+assert.equal(legacyEntryForHash(legacyWorkflows, "pw-missing"), null, "an unknown hash matches nothing");
+assert.equal(legacyEntryForHash(legacyWorkflows, null), null, "a missing hash matches nothing");
+const legacyPlan = planDirRename({ ...legacyEntryForHash(legacyWorkflows, "pw-legacy1"), workflowId: "card_legacy" });
+assert.deepEqual(
+  { from: legacyPlan.fromStateRel, to: legacyPlan.toStateRel },
+  { from: ".stelow/2026-09-09/pw-legacy1", to: ".stelow/2026-09-09/sw-legacy1" },
+  "a legacy entry plans the same move off its own created date",
+);
+
+console.log("dir prefix migration test ok: plan, real renames, idempotent rerun, index rewrite, legacy fallback");
