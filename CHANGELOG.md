@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.10] - 2026-09-13
+
+### Fixed
+
+- **Silent turns that advanced the stage resume too.** Text-only progress
+  missed tool-only turns: a worker could run `bb stelow advance` to
+  completion and idle without narrating, leaving the chat text unchanged
+  and the watchdog quiet. The idle branch now scans the finished turn's
+  events for a completed advance (scoped to the last turn boundary;
+  `--dry-run`/`--help` probes excluded, `lib/auto-continue.mjs`
+  `lastTurnAdvancedStages`). A user-stopped thread whose final partial
+  turn advanced nothing still stays paused.
+
 ## [0.4.9] - 2026-09-13
 
 ### Fixed
