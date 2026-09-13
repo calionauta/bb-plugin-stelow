@@ -35,6 +35,9 @@ import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
+import { PREVIEW_PROBE_FILES, detectPreview, parseDeclaredPreview, previewCommand, previewFailed, previewReady, previewSnapshot } from "./lib/preview-detect.mjs";
+import { parseShareExpose } from "./lib/preview-reach.mjs";
+import { PREVIEW_LOG_LIMIT, PREVIEW_MAX_SESSIONS, appendLog, pickPort, previewKey, previewLogText, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -487,7 +490,44 @@ export const rpcContract = defineRpcContract({
     input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire"]) }).strict(),
     output: z.object({ ok: z.boolean(), version: z.string().nullable(), log: z.string() }),
   },
+  previewState: {
+    input: z.object({ cardId: z.string(), appOrigin: z.string().nullable().optional() }).strict(),
+    output: z.object({
+      available: z.boolean(),
+      error: z.string().nullable(),
+      checkout: z.string().nullable(),
+      source: z.string().nullable(),
+      label: z.string().nullable(),
+      evidence: z.string().nullable(),
+      state: z.enum(["stopped", "starting", "running", "failed"]),
+      command: z.string().nullable(),
+      port: z.number().nullable(),
+      url: z.string().nullable(),
+      provider: z.string().nullable(),
+      reason: z.string().nullable(),
+      frame: z.enum(["frame", "open", "copy"]).nullable(),
+      frameReason: z.string().nullable(),
+      paired: z.boolean(),
+      hints: z.array(z.object({ tone: z.enum(["info", "warn"]), text: z.string(), action: z.string().nullable() })),
+      log: z.string(),
+      startedAt: z.number().nullable(),
+    }),
+  },
+  previewStart: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), state: z.string() }),
+  },
+  previewStop: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), state: z.string() }),
+  },
 });
+
+/**
+ * The preview view the panel renders. Derived from the RPC contract itself, so
+ * the frontend type cannot drift from what the server actually validates.
+ */
+export type PreviewInfo = z.infer<typeof rpcContract.previewState.output>;
 
 type FilesApi = BbPluginApi["sdk"]["files"];
 type Workflow = z.infer<typeof workflowSchema>;
@@ -1718,6 +1758,251 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
   }
 
+  // --- Preview: one dev server per checkout. --------------------------------
+  //
+  // The identity is the checkout (host + path), not the card: two cards on one
+  // project's source are the same code, so one process serves both instead of
+  // two racing for the same port. Nothing here is configured per card — the
+  // workspace is probed and the stack answers, and `.stelow/preview.json` is
+  // the only override. Everything that runs is shown to the user verbatim
+  // (see previewTransparency), because a hidden command is an untrustworthy one.
+
+  type PreviewSession = {
+    key: string;
+    cardId: string;
+    hostId: string | null;
+    checkout: string;
+    command: string;
+    port: number;
+    state: "starting" | "running" | "failed" | "stopped";
+    detection: ReturnType<typeof detectPreview>;
+    log: { lines: string[]; carry: string };
+    error: string | null;
+    startedAt: number;
+    child: ReturnType<typeof spawn> | null;
+    exposed: boolean;
+  };
+
+  const previewSessions = new Map<string, PreviewSession>();
+
+  // A reload or disable must not leave a dev server running behind the user's
+  // back: the processes are ours, so shutting them down is ours too.
+  bb.onDispose(() => {
+    for (const session of previewSessions.values()) {
+      killPreview(session);
+      void connectUnexpose(session.port);
+    }
+    previewSessions.clear();
+  });
+
+  function runCommand(command: string, args: string[], options: { cwd?: string } = {}): Promise<{ code: number | null; out: string }> {
+    return new Promise((resolveRun) => {
+      execFile(command, args, { cwd: options.cwd, env: { ...(process.env as Record<string, string>) }, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+        const code = error && typeof (error as { code?: unknown }).code === "number" ? (error as { code: number }).code : error ? 1 : 0;
+        resolveRun({ code, out: `${stdout ?? ""}${stderr ?? ""}` });
+      });
+    });
+  }
+
+  /** Read exactly PREVIEW_PROBE_FILES — the bounded set detection may consult. */
+  async function previewProbe(checkout: string) {
+    const entries = await Promise.all(PREVIEW_PROBE_FILES.map(async (rel) => {
+      const content = await bb.sdk.files.read({ path: nodeJoin(checkout, rel) }).then((file) => file.content).catch(() => null);
+      return content === null ? null : ([rel, content] as const);
+    }));
+    return previewSnapshot(new Map(entries.filter((entry): entry is readonly [string, string] => entry !== null)));
+  }
+
+  /**
+   * Connect's own answer, read — never assumed. Fail-soft: unpaired is safe.
+   * Cached briefly because the answer only moves when the user pairs, and the
+   * panel refreshes far more often than that.
+   */
+  const CONNECT_STATUS_TTL_MS = 30_000;
+  let connectCache: { at: number; value: { paired: boolean; share: unknown } } | null = null;
+
+  async function connectStatus(): Promise<{ paired: boolean; share: unknown }> {
+    if (connectCache && now() - connectCache.at < CONNECT_STATUS_TTL_MS) return connectCache.value;
+    const value = await readConnectStatus();
+    connectCache = { at: now(), value };
+    return value;
+  }
+
+  async function readConnectStatus(): Promise<{ paired: boolean; share: unknown }> {
+    const result = await runCommand(resolveLocalBin("bb"), ["connect", "status", "--json"]).catch(() => null);
+    if (!result || result.code !== 0) return { paired: false, share: null };
+    const match = result.out.match(/\{[\s\S]*\}/);
+    if (!match) return { paired: false, share: null };
+    try {
+      const parsed = JSON.parse(match[0]) as { paired?: unknown; shares?: unknown };
+      return { paired: Boolean(parsed?.paired), share: parsed };
+    } catch {
+      return { paired: false, share: null };
+    }
+  }
+
+  /** The URL a Connect share resolves to, re-read after exposing a port. */
+  async function connectShareFor(port: number): Promise<string | null> {
+    const result = await runCommand(resolveLocalBin("bb"), ["connect", "expose", String(port), "--json"]).catch(() => null);
+    if (!result || result.code !== 0) return null;
+    const match = result.out.match(/\{[\s\S]*\}/);
+    return match ? parseShareExpose(match[0])?.url ?? null : null;
+  }
+
+  async function connectUnexpose(port: number): Promise<void> {
+    await runCommand(resolveLocalBin("bb"), ["connect", "unexpose", String(port), "--json"]).catch(() => undefined);
+  }
+
+  type PreviewEnvironment = { path?: string | null; hostId?: string | null; isWorktree?: boolean; workspaceProvisionType?: string | null; branchName?: string | null } | null;
+  type PreviewTarget = { checkout: string; hostId: string | null; environment: PreviewEnvironment };
+
+  /** The environment backing the card's worker thread, while it still exists. */
+  async function workerEnvironmentOf(card: CardRow): Promise<PreviewEnvironment> {
+    if (!card.worker_thread_id) return null;
+    try {
+      const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id });
+      const environmentId = (thread as { environmentId?: unknown }).environmentId;
+      if (typeof environmentId !== "string" || !environmentId) return null;
+      const environment = await bb.sdk.environments.get({ environmentId });
+      return environment?.status === "ready" && environment.path ? environment : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Where a preview runs. The worker's own checkout wins, because that is the
+   * directory the agent actually wrote to — a `new-worktree` preset runs in a
+   * bb-managed worktree, not in the project source. The project source is the
+   * fallback once that environment is gone, and the label travels with the
+   * target so the panel always names the codebase the user is looking at.
+   */
+  async function previewTarget(card: CardRow): Promise<PreviewTarget | null> {
+    const environment = await workerEnvironmentOf(card);
+    if (environment?.path) return { checkout: environment.path, hostId: environment.hostId ?? null, environment };
+    const workspace = await cardWorkspace(card);
+    return workspace?.path ? { checkout: workspace.path, hostId: workspace.hostId, environment: null } : null;
+  }
+
+  /** Detection for a card's checkout, with the declared override applied. */
+  async function previewDetectFor(checkout: string) {
+    const snapshot = await previewProbe(checkout);
+    const declared = snapshot.read(".stelow/preview.json");
+    return { detection: detectPreview(snapshot, { declared }), declared: parseDeclaredPreview(declared) };
+  }
+
+  function killPreview(session: PreviewSession): void {
+    const child = session.child;
+    if (!child || child.exitCode !== null) return;
+    try { child.kill("SIGTERM"); } catch { /* already gone */ }
+    const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* gone */ } }, 5_000);
+    timer.unref?.();
+  }
+
+  async function previewStart(card: CardRow): Promise<{ ok: boolean; error: string | null; session: PreviewSession | null }> {
+    const target = await previewTarget(card);
+    if (!target) return { ok: false, error: "Workspace path is unavailable.", session: null };
+    const key = previewKey(target.hostId, target.checkout);
+    const existing = previewSessions.get(key);
+    if (existing && (existing.state === "starting" || existing.state === "running")) {
+      return { ok: true, error: null, session: existing };
+    }
+    const { detection } = await previewDetectFor(target.checkout);
+    if (!detection) return { ok: false, error: "No web app detected in this workspace.", session: null };
+    const live = [...previewSessions.values()].filter((entry) => entry.state === "starting" || entry.state === "running");
+    if (live.length >= PREVIEW_MAX_SESSIONS) {
+      return { ok: false, error: `Stop one of the ${PREVIEW_MAX_SESSIONS} running previews first.`, session: null };
+    }
+    const taken = live.map((entry) => entry.port);
+    const port = pickPort(detection.port, taken);
+    if (port === null) return { ok: false, error: "No free port is available.", session: null };
+    const command = previewCommand(detection, port);
+    const session: PreviewSession = {
+      key, cardId: card.id, hostId: target.hostId, checkout: target.checkout, command, port,
+      state: "starting", detection, log: { lines: [], carry: "" }, error: null,
+      startedAt: now(), child: null, exposed: false,
+    };
+    previewSessions.set(key, session);
+
+    // Loopback only: Connect shares loopback ports, and a dev server bound to
+    // every interface would be reachable without the account gate that makes a
+    // share safe.
+    const env: Record<string, string> = { ...(process.env as Record<string, string>), PORT: String(port), HOST: "127.0.0.1", BROWSER: "none", CI: "1" };
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn("bash", ["-lc", command], { cwd: target.checkout, env, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (error) {
+      session.state = "failed";
+      session.error = error instanceof Error ? error.message : "Unable to start the dev server.";
+      return { ok: false, error: session.error, session };
+    }
+    session.child = child;
+    const absorb = (chunk: Buffer) => {
+      session.log = appendLog(session.log, chunk.toString("utf8"), PREVIEW_LOG_LIMIT);
+      const text = previewLogText(session.log);
+      const failure = previewFailed(text);
+      if (failure) {
+        session.state = "failed";
+        session.error = failure;
+        return;
+      }
+      if (session.state === "starting" && previewReady(text, port)) {
+        session.state = "running";
+        // Exposing is a bonus, never a gate: an unpaired server keeps working
+        // at localhost, and the panel says so.
+        void connectShareFor(port).then((url) => { if (url) session.exposed = true; });
+      }
+    };
+    child.stdout?.on("data", absorb);
+    child.stderr?.on("data", absorb);
+    child.on("error", (error) => { session.state = "failed"; session.error = error.message; });
+    child.on("close", (code) => {
+      session.child = null;
+      // A session already marked stopped was stopped on purpose.
+      if (session.state !== "stopped" && session.state !== "failed") {
+        session.state = code === 0 ? "stopped" : "failed";
+        if (code !== 0) session.error = `The dev server exited with code ${code ?? "unknown"}.`;
+      }
+      void connectUnexpose(port);
+    });
+    return { ok: true, error: null, session };
+  }
+
+  async function previewStop(card: CardRow): Promise<{ ok: boolean; error: string | null }> {
+    const target = await previewTarget(card);
+    if (!target) return { ok: false, error: "Workspace path is unavailable." };
+    const session = previewSessions.get(previewKey(target.hostId, target.checkout));
+    if (!session) return { ok: true, error: null };
+    // Mark it stopped BEFORE signalling: a stop the user asked for must not read
+    // as a crash when the process closes with a signal code.
+    const wasExposed = session.exposed;
+    session.state = "stopped";
+    session.error = null;
+    killPreview(session);
+    if (wasExposed) await connectUnexpose(session.port);
+    return { ok: true, error: null };
+  }
+
+  /**
+   * The I/O half of the view: resolve the checkout, probe it, ask Connect, and
+   * hand the facts to the pure join in lib/preview-session. The panel (RPC) and
+   * the CLI both render that result, so they cannot describe a run differently.
+   */
+  async function previewView(card: CardRow, appOrigin: string | null = null) {
+    const target = await previewTarget(card);
+    if (!target) return previewShape({ error: "Workspace path is unavailable." });
+    const session = previewSessions.get(previewKey(target.hostId, target.checkout)) ?? null;
+    const { detection, declared } = await previewDetectFor(target.checkout);
+    if (!detection) return previewShape({ detection: null, checkout: target.checkout });
+    // A session that already holds a share answers from what it proved, so a
+    // panel refresh does not shell out to Connect every time.
+    const paired = session?.exposed ? true : (await connectStatus()).paired;
+    const share = session && paired && session.exposed
+      ? await connectShareFor(session.port).then((url) => (url ? { url, port: session.port } : null))
+      : null;
+    return previewShape({ detection, declared, session, paired, share, checkout: target.checkout, appOrigin, source: previewSourceLabel(target.environment) });
+  }
+
   // Resolve a host binary: server-wide install at ~/.local/bin first
   // (non-interactive PATH lacks it), PATH fallback otherwise.
   const homeDir = typeof process.env.HOME === "string" ? process.env.HOME : "";
@@ -2700,7 +2985,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (closeIssue) {
         try {
           await g.setIssueState({ repo: link.repo, number: link.number, state: "closed" });
-        } catch (error) {
+        } catch {
           return { ok: false, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: "Comment posted, but the automatic close failed — close the issue manually on GitHub." };
         }
       }
@@ -3888,6 +4173,26 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       return { ok: false, version: null, log: tailLines(log) || "Installed but the binary did not respond." };
     },
+
+    async previewState({ cardId, appOrigin }) {
+      const card = getCard(cardId);
+      if (!card) throw new Error(ERR_CARD_NOT_FOUND);
+      return await previewView(card, appOrigin ?? null);
+    },
+
+    async previewStart({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) throw new Error(ERR_CARD_NOT_FOUND);
+      const result = await previewStart(card);
+      return { ok: result.ok, error: result.error, state: result.session?.state ?? "stopped" };
+    },
+
+    async previewStop({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) throw new Error(ERR_CARD_NOT_FOUND);
+      const result = await previewStop(card);
+      return { ok: result.ok, error: result.error, state: "stopped" };
+    },
   });
 
   bb.cli.register({
@@ -3897,6 +4202,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
       { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]... (repeat --question groups to ask several at once)" },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
+      { name: "preview", summary: "Run and inspect a card workspace's dev server", usage: "bb stelow preview [status|start|stop] [--card <card_id>] [--json]" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
       { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
@@ -4196,6 +4502,34 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const result = await runHelper(["config", ...rest], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "config failed", stdout: result.stdout };
         return { exitCode: 0, stdout: result.stdout };
+      }
+      if (argv[0] === "preview") {
+        // Worker-facing preview control: the same decisions the panel uses, so a
+        // worker can start, inspect, and stop the dev server it just built. The
+        // checkout is the identity, so two cards on one workspace share it.
+        const args = argv.slice(1);
+        const action = ["status", "start", "stop"].includes(args[0] ?? "") ? args[0]! : "status";
+        const json = args.includes("--json");
+        let cardId: string | null = null;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1] ?? null; i++; continue; }
+          if (args[i]!.startsWith("--")) {
+            return { exitCode: 2, stderr: "Usage: bb stelow preview [status|start|stop] [--card <card_id>] [--json]" };
+          }
+        }
+        const card = cardId ? getCard(cardId) : ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        if (!card) return { exitCode: 1, stderr: "No card found. Pass --card <card_id>, or run this from a card's worker thread." };
+        if (action === "start" || action === "stop") {
+          const result = action === "start" ? await previewStart(card) : await previewStop(card);
+          const view = await previewView(card);
+          if (json) return { exitCode: result.ok ? 0 : 1, stdout: `${JSON.stringify(view)}\n` };
+          if (!result.ok) return { exitCode: 1, stderr: `${result.error ?? `${action} failed`}\n` };
+          return { exitCode: 0, stdout: previewText(view) };
+        }
+        const view = await previewView(card);
+        if (json) return { exitCode: 0, stdout: `${JSON.stringify(view)}\n` };
+        if (!view.available) return { exitCode: 1, stderr: `${view.error ?? "No web app detected in this workspace."}\n` };
+        return { exitCode: 0, stdout: previewText(view) };
       }
       if (argv[0] === "fan-out") {
         // Worker-facing entry to the fanOutResearch RPC: opportunity IDs only,

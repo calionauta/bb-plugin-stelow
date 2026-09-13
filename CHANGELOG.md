@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.6] - 2026-09-13
+
+### Added
+
+- **Preview: run a card's web app and look at it, from the card.** A card whose
+  workspace is a web app now offers a Preview section — it detects the stack
+  (Next, Vite, Astro, Nuxt, SvelteKit, Remix, CRA, Go via `make`/`go run`,
+  Django, FastAPI, Flask, Streamlit), picks the command and the port, starts the
+  server on loopback, waits for the address the server announces in its own
+  output, and shows it inline with an always-visible "Open in a new tab".
+  Detection is convention over configuration: nothing to configure, and
+  `.stelow/preview.json` (`command`, `port`, `url`) is the only override.
+- **A reachable address, without Tailscale or a port hand-off.** The address
+  ladder is the project's declared `url`, then a **bb connect share URL** (bb's
+  own sanctioned remote route — `bb connect expose`, unexposed when the server
+  stops), then loopback. An unpaired server keeps working at localhost and the
+  panel says exactly that, instead of failing. A same-origin proxy was evaluated
+  and rejected: `bb.http.route` is exact-match, so arbitrary dev-server asset
+  paths cannot be forwarded.
+- **Transparency for everything that runs.** The panel always shows the exact
+  command, the port, the checkout, and which checkout it is — the **worker's own
+  worktree when it exists** (a `new-worktree` card runs there, not in the
+  project source), else the project source. A bounded server log is one click
+  away.
+- **One preview per checkout, never per card.** Two cards on one project's
+  source are the same code, so they share one server instead of racing for the
+  same port. A restart reuses the same port, so a bookmarked address stays
+  valid, and at most three run at once so a machine cannot accumulate servers
+  nobody is watching.
+- **`bb stelow preview [status|start|stop] [--card <id>] [--json]`**, sharing the
+  same view the panel renders, so the CLI and the UI can never describe a run
+  differently.
+
+### Security
+
+- **The panel never frames this app's own origin.** A dev preview is framed with
+  `allow-same-origin` so the app under test keeps its own storage and cookies;
+  that is safe only while the framed document is a different origin, so
+  `previewFrameVerdict` refuses a same-origin address outright. It also refuses
+  to embed when the app itself refuses framing (Django's default) or when an
+  https client cannot mix a plain-http origin.
+- **Dev servers bind loopback only.** A server bound to every interface would be
+  reachable without the account gate that makes a Connect share safe.
+
 ## [0.4.5] - 2026-09-12
 
 ### Changed

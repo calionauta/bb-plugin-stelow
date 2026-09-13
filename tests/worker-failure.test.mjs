@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { truncateCause, summarizeProviderDetail, failureCauseFromEvents } from "../lib/worker-failure.mjs";
+import { summarizeProviderDetail, failureCauseFromEvents } from "../lib/worker-failure.mjs";
 
 // The 400-before-first-output shape: provider detail carries code + JSON.
 assert.equal(
