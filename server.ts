@@ -943,7 +943,17 @@ export default async function plugin(bb: BbPluginApi) {
   // commands, but bb workspaces have no such binary — the plugin wraps the
   // same operations. One sentence everywhere so workers discover the
   // sync-scopes/lock/config equivalents instead of failing on the path.
-  const CLI_EQUIVALENTS = "Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow seed`, `bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Seed through `bb stelow seed` only: it binds the workflow to its owner, which the raw script cannot.";
+  // Seed is a cardless/human operation: card workflows are pre-seeded at
+  // spawn and the seed CLI refuses card workers, so the copy must never
+  // invite a card worker to seed (that orphaned a project-root workflow).
+  const CLI_EQUIVALENTS = "Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers.";
+  // Prompt clauses that every build spawn path must carry. They are consts
+  // (not pasted prose) so a new spawn site cannot silently drop one — the
+  // prompt-contract test fails when a site stops referencing them. This is
+  // what burned us before: spawn and reseed taught the seed ban and the
+  // turn discipline while the band-swap restart prompt carried neither.
+  const NEVER_SEED = "Your workflow is already seeded in your state dir above — never run `bb stelow seed` (it is refused for card workers; seeding again orphans a second workflow outside your card).";
+  const TURN_DISCIPLINE = "Turn discipline: never end a turn with a bare progress report while current_stage is not `audit` and no question is pending — narrating progress is not finishing it. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured `bb stelow ask`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run `bb stelow status` and take the next stage action instead.";
   const db = bb.storage.database();
   // Sync state lives beside data.db (stable across managed-install cache
   // rotations), never in the plugin root: a fresh cache dir would otherwise
@@ -1522,9 +1532,9 @@ Step 1 — classify intent first: this card starts as intent=\`unknown\` (no int
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
-Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Your workflow is already seeded in your state dir above — never run \`bb stelow seed\` (it is refused for card workers; seeding again orphans a second workflow outside your card). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
-Turn discipline: never end a turn with a bare progress report while current_stage is not \`audit\` and no question is pending — narrating progress is not finishing it, and each bare report idles the card until a human resumes you. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured \`bb stelow ask\`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run \`bb stelow status\` and take the next stage action instead.
+${TURN_DISCIPLINE}
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
@@ -1704,7 +1714,9 @@ ${prompt}` }, ...workerAttachments],
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+
+${TURN_DISCIPLINE}
 
 Intent is currently \`${row.intent}\` in state.md. ${row.intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -2533,7 +2545,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           let autoAdvanced = false;
           if (!autoProgressed) {
             try {
-              const recent = await bb.sdk.threads.events.list({ threadId: card.worker_thread_id, order: "desc", limit: "40" });
+              // Narrow to turn boundaries + completions: deltas and usage
+              // events are noise for this scan, and a tool-heavy turn holds
+              // more than a handful of completions.
+              const recent = await bb.sdk.threads.events.list({ threadId: card.worker_thread_id, order: "desc", limit: "100", types: ["turn/completed", "turn/started", "item/completed"] });
               autoAdvanced = lastTurnAdvancedStages(recent);
             } catch { autoAdvanced = false; }
           }
@@ -3440,9 +3455,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Your workflow is already seeded in your state dir above — never run \`bb stelow seed\` (it is refused for card workers; seeding again orphans a second workflow outside your card). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
 
-Turn discipline: never end a turn with a bare progress report while current_stage is not \`audit\` and no question is pending — narrating progress is not finishing it. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured \`bb stelow ask\`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run \`bb stelow status\` and take the next stage action instead.
+${TURN_DISCIPLINE}
 
 Intent is currently \`${intent}\` in the re-seeded state.md. ${intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
