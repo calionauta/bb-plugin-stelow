@@ -139,6 +139,7 @@ assert.match(serverSource, /Split is exceptional, not a checklist decomposition/
 assert.match(serverSource, /Each proposed child must be worth its own normal workflow/, "the worker must reject micro-splits");
 assert.match(serverSource, /Do NOT split merely because the request has bullets, files, UI\/API pieces, sequential steps, or small fixes/, "the split threshold names common false positives");
 assert.match(serverSource, /A split ask must use --multiple/, "the host enforces multi-select for an approved split");
+assert.match(serverSource, /if \(archiveParent\) \{\s*\/\/ Full split parks[\s\S]*?await stopWorkerThread\(card\.worker_thread_id\);/, "a fully split parent stops its worker before archiving");
 assert.ok(!serverSource.includes('updateCard(cliCard.id, { stage, status: stage === "audit" ? "completed"'), "the worker advance never completes — done does");
 
 console.log("prompt contracts test ok: single-source clauses, all build spawn paths covered, no seed invitation, done/playbook/split verbs, preset fence, no audit inference, explicit split");
