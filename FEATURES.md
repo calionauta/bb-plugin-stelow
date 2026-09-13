@@ -197,6 +197,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **Retry** (`retryWorker`). Nudges the same worker in place; nothing
   resets. Refused on archived cards.
+- **Auto-continue** (`syncThreadState`, `lib/auto-continue.mjs`). A worker
+  that narrates progress and stops idles after every stage (the provider
+  ends a turn on any final text). While the finished turn left fresh
+  output or stage progress, no question is pending, and the per-stage
+  budget (10 consecutive resumes without a stage advance) remains, the
+  host resumes the worker in place with the same nudge a manual Retry
+  sends — no human click per stage. A silent stop or an exhausted budget
+  still surfaces as paused with exactly one inbox event per idle period;
+  manual Retry/Restart reseeds the budget.
 - **Restart worker** (`restartWorker`). Fresh thread on the current
   preset from the current stage; applies preset changes. Predecessor
   archived with an inline mention for context.
@@ -256,7 +265,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **`bb stelow` CLI.** status, ask, seed, advance, doctor, preset management,
   fan-out, verify. Advance mechanics delegate to the upstream `stelow`
   helper (synced like skills, no fork); transitions always resolve from
-  the vendored copy.
+  the vendored copy. `seed` refuses card workers (`lib/card-seed-guard.mjs`):
+  their workflow is pre-seeded at spawn with the card id as owner, and a
+  second seed would orphan a name-derived workflow at the project root —
+  the refusal redirects to the card's own state dir.
 - **Worker self-check** (`bb stelow verify [--card] [--json]`). The same
   predicates the sync gate enforces, runnable by the worker before
   finishing: per-round PASS/FAIL for research, artifact check for

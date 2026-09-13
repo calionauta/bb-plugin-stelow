@@ -36,6 +36,8 @@ import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from
 import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
+import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
+import { ensureAutoContinueColumns, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "./lib/auto-continue.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
@@ -1060,6 +1062,9 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "explore_stage")) {
     db.exec("ALTER TABLE cards ADD COLUMN explore_stage TEXT");
   }
+  // Auto-continue budget for chatty workers (lib/auto-continue): consecutive
+  // resumes without a stage advance, reset whenever the stage moves.
+  ensureAutoContinueColumns(db);
   // stage_presets may not be applied by bb.storage.migrate on existing DBs,
   // so ensure it idempotently here as well. Band validity is enforced by
   // setBandPreset against STAGE_BANDS — the schema carries no band allowlist.
@@ -1517,7 +1522,9 @@ Step 1 — classify intent first: this card starts as intent=\`unknown\` (no int
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
-Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Your workflow is already seeded in your state dir above — never run \`bb stelow seed\` (it is refused for card workers; seeding again orphans a second workflow outside your card). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+
+Turn discipline: never end a turn with a bare progress report while current_stage is not \`audit\` and no question is pending — narrating progress is not finishing it, and each bare report idles the card until a human resumes you. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured \`bb stelow ask\`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run \`bb stelow status\` and take the next stage action instead.
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
@@ -1556,7 +1563,7 @@ ${prompt}` }, ...workerAttachments],
     return { cardId, threadId: thread.id };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null };
   type PresetRow = {
@@ -2509,6 +2516,29 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // falsely raise "Paused — resume it" after the idle grace period.
           updateCard(cardId, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: now(), last_error: null, stage: currentStage });
         } else {
+          // Auto-continue (lib/auto-continue): the provider ends a turn on
+          // any final text, so a worker that narrates progress idles after
+          // every stage with work remaining. While the finished turn left
+          // fresh output behind, no question is pending, and the per-stage
+          // budget remains, resume the worker in place instead of waiting
+          // for a human Resume. Recording last_assistant_text here consumes
+          // the progress signal, so a still-idle thread cannot trigger a
+          // second nudge on the next poll; an exhausted budget falls through
+          // to the paused path below.
+          const autoProgressed = lastOutput != null && lastOutput !== card.last_assistant_text;
+          const autoDecision = shouldAutoContinue({
+            status, stage: currentStage, questionPending: questionIds.length > 0,
+            transitioningIntoIdle, progressed: autoProgressed,
+            autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
+          });
+          if (autoDecision.proceed) {
+            const autoSent = await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: buildContinueNudge(), mentions: [] }] }).then(() => true).catch(() => false);
+            if (autoSent) {
+              const autoNext = nextAutoContinue({ stage: currentStage, autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null });
+              updateCard(cardId, { activity: "running", last_assistant_text: lastOutput, last_idle_at: null, last_error: null, auto_continue_count: autoNext.count, auto_continue_stage: autoNext.stage });
+              return;
+            }
+          }
           // Backfill last_idle_at on the first poll that observes an already-idle
           // card missing it, so it starts its own idle-stuck clock instead
           // of falling through.
@@ -2621,6 +2651,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // in-flight work with a "Stopped manually" on each update. Workers now
   // survive reloads; boot reconcile re-syncs their state, and a truly dead
   // plugin surfaces as an honest worker error on the next bb stelow call.
+
+  // Shared continue copy: the manual Retry action and the auto-continue
+  // watchdog send the same nudge, so a worker cannot tell (or behave
+  // differently for) a human resume from an automatic one.
+  function buildContinueNudge(): string {
+    return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the current stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable here, do not park in chat waiting. Auto approves and advances itself; gated modes use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
+  }
 
   bb.rpc.register(rpcContract, {
     board: async ({ projectId }) => {
@@ -3263,10 +3300,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         ? `Continue the Stelow research now. Re-read your research-index.md first, then keep researching with the strategy playbook. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if you genuinely need NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — research has no stages. When the index is complete with ranked opportunities, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.`
         : card.kind === "explore"
           ? `Continue the Stelow explore task now. Re-read your explore artifact and the stage skill, then keep working on the stage deliverable. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — explore has no stages. When the stage deliverable is complete, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.`
-        : `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the current stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable here, do not park in chat waiting. Auto approves and advances itself; gated modes use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
+          : buildContinueNudge();
       try {
         await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: nudge, mentions: [] }] });
-        updateCard(cardId, { activity: "running", last_error: null });
+        // A manual resume is a fresh human verdict that the worker should be
+        // working: reset the auto-continue budget with it, or the next fresh
+        // stop would fall straight through to paused on an exhausted budget.
+        const retryReset = resetAutoContinue();
+        updateCard(cardId, { activity: "running", last_error: null, auto_continue_count: retryReset.count, auto_continue_stage: retryReset.stage });
         bb.realtime.publish("card-state", { cardId });
         return { ok: true, error: null };
       } catch (error) {
@@ -3292,6 +3333,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const presetName = getPresetById(effective.id)?.name ?? effective.id;
         const continueText = card.kind === "research" ? "continuing the research" : card.kind === "explore" ? "continuing the explore run" : `continuing from the ${card.stage} stage`;
         logCardComment(cardId, "card", cardId, "agent", previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`);
+        // A fresh worker earns a fresh auto-continue budget: the previous
+        // worker's stalls say nothing about this one.
+        const restartReset = resetAutoContinue();
+        updateCard(cardId, { auto_continue_count: restartReset.count, auto_continue_stage: restartReset.stage });
         bb.realtime.publish("card-state", { cardId });
       }
       return { ok: result.ok, error: result.error ?? null };
@@ -3379,7 +3424,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). Your workflow is already seeded in your state dir above — never run \`bb stelow seed\` (it is refused for card workers; seeding again orphans a second workflow outside your card). Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS}
+
+Turn discipline: never end a turn with a bare progress report while current_stage is not \`audit\` and no question is pending — narrating progress is not finishing it. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured \`bb stelow ask\`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run \`bb stelow status\` and take the next stage action instead.
 
 Intent is currently \`${intent}\` in the re-seeded state.md. ${intent === "unknown" ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — ask via the form below only if genuinely ambiguous." : "Use it — do NOT ask the user to pick or confirm intent again."} Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -3402,7 +3449,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
       }
       db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, now(), cardId);
-      updateCard(cardId, { stage: card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "triage", status: freshStatusForReseed(card, reclassified), activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null });
+      const reseedReset = resetAutoContinue();
+      updateCard(cardId, { stage: card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "triage", status: freshStatusForReseed(card, reclassified), activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null, auto_continue_count: reseedReset.count, auto_continue_stage: reseedReset.stage });
       recordWorkerThread(db, cardId, newThread.id, preset.id, "reseed");
       if (seed.dirHash) void recordWorkflowLineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
       bb.realtime.publish("card-state", { cardId });
@@ -4210,6 +4258,20 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const name = flag("--name");
         const intent = flag("--intent");
         if (!projectId || !name || !intent) return { exitCode: 2, stderr: "Usage: bb stelow seed --project <proj_id> --name <name> --intent <intent>" };
+        // Card workers are pre-seeded at spawn with the card id as owner. A
+        // seed from inside a card thread would mint a name-derived owner at
+        // the project root — an orphan no card resolves back — so refuse with
+        // the card's own state dir as the redirect (lib/card-seed-guard).
+        const seedCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        if (seedCard) {
+          const seedWorkspace = await cardWorkspace(seedCard);
+          const seedRoot = seedWorkspace?.path ?? await projectRoot(bb, projectId);
+          let seedStateDir: string | null = null;
+          if (seedRoot && seedCard.dir_hash) {
+            seedStateDir = await workflowStateDir(bb, seedRoot, seedCard.id, seedCard.dir_hash);
+          }
+          return { exitCode: 1, stderr: cardWorkerSeedRefusal({ cardName: seedCard.name, stateDirText: seedStateDir }) };
+        }
         const rootPath = await projectRoot(bb, projectId);
         if (!rootPath) return { exitCode: 1, stderr: "Project workspace path is unavailable." };
         const result = await seedWorkflow(bb, rootPath, workflowIdForName(name), name, intent);
