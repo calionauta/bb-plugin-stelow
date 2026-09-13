@@ -38,6 +38,7 @@ import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
+import { MAX_SPLIT_CHILDREN, MIN_SPLIT_CHILDREN, SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
@@ -969,6 +970,11 @@ export default async function plugin(bb: BbPluginApi) {
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
   const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
+  // Explicit split: one card is one workflow, so a triage worker that finds
+  // 2+ clearly independent items proposes the split through a structured
+  // ask — never by acting. The host creates cards only from a recorded,
+  // human-approved proposal (`bb stelow split` takes no content args).
+  const SPLIT_PROTOCOL = "Split explicitly: if the request holds 2 or more clearly independent items, open ONE split ask at triage before advancing — `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its slice>...` plus exactly one `--option \"Keep as one card\"` (exact label). Each option carries its slice in --desc (+ --artifact when the slice references files). Then STOP and wait for the answer. Never split unilaterally, never invent cards, never advance past triage on a proposed split until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived parent means stop.";
   const db = bb.storage.database();
   // Sync state lives beside data.db (stable across managed-install cache
   // rotations), never in the plugin root: a fresh cache dir would otherwise
@@ -1090,6 +1096,21 @@ export default async function plugin(bb: BbPluginApi) {
   // Auto-continue budget for chatty workers (lib/auto-continue): consecutive
   // resumes without a stage advance, reset whenever the stage moves.
   ensureAutoContinueColumns(db);
+  // Card-split proposals (lib/split-proposal): one recorded, human-approved
+  // proposal per card. The host executes it on `bb stelow split` — workers
+  // never create cards, so there is no worker verb that takes card content.
+  db.exec(`CREATE TABLE IF NOT EXISTS split_proposals (
+    card_id TEXT PRIMARY KEY,
+    slices TEXT NOT NULL,
+    selected TEXT,
+    asked_at INTEGER NOT NULL,
+    answered_at INTEGER,
+    consumed_at INTEGER,
+    created TEXT NOT NULL DEFAULT '[]'
+  )`);
+  if (!cardColumns.some((column) => column.name === "split_from")) {
+    db.exec("ALTER TABLE cards ADD COLUMN split_from TEXT");
+  }
   // stage_presets may not be applied by bb.storage.migrate on existing DBs,
   // so ensure it idempotently here as well. Band validity is enforced by
   // setBandPreset against STAGE_BANDS — the schema carries no band allowlist.
@@ -1568,6 +1589,8 @@ Before asking, summarize what you read so the user can answer with context. Do n
 
 ${DONE_PROTOCOL}
 
+${SPLIT_PROTOCOL}
+
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}` }, ...workerAttachments],
     });
@@ -1756,6 +1779,8 @@ Before asking a question, first summarize what you read (files, plan, codebase) 
 
 ${DONE_PROTOCOL}
 
+${SPLIT_PROTOCOL}
+
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`,
       });
       // The new worker is live — only now retire the old one (archive+stop), so a
@@ -1867,6 +1892,26 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return environment?.status === "ready" && environment.path ? environment : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Current workflow stage for a card, preferring state.md (the machine's
+   * own record, written by `advance`) over the DB mirror. Falls back to the
+   * DB stage when state cannot be verified — callers gate on known stages,
+   * so an unverifiable read only ever narrows, never widens.
+   */
+  async function cardStageSlug(card: CardRow): Promise<string | null> {
+    try {
+      const workspace = await cardWorkspace(card).catch(() => null);
+      const rootPath = workspace?.path ?? null;
+      if (!rootPath || !card.dir_hash) return card.stage ?? null;
+      const dir = await workflowStateDir(bb, rootPath, card.id, card.dir_hash).catch(() => null);
+      const blob = dir ? await bb.sdk.files.read({ path: join(dir, "state.md") }).then((file) => file.content).catch(() => null) : null;
+      const stage = blob ? text(blob.match(/current_stage:\s*(\S+)/m)?.[1]) : "";
+      return stage || (card.stage ?? null);
+    } catch {
+      return card.stage ?? null;
     }
   }
 
@@ -2843,6 +2888,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           }
         }
         if (decisions.length === 0) return { ok: false as const, answered: 0, error: "No open question awaits an answer on this card." };
+        // Split proposals answered on the card land here instead of the
+        // blocking call above: record the selection on the pending proposal
+        // row so `bb stelow split` trusts the row, never a worker claim.
+        {
+          const flat = decisions.flatMap((decision) => decision.answers).filter((answer): answer is string => typeof answer === "string");
+          if (flat.length > 0) {
+            db.prepare("UPDATE split_proposals SET selected = ?, answered_at = ? WHERE card_id = ? AND selected IS NULL")
+              .run(JSON.stringify(flat), Date.now(), cardId);
+          }
+        }
         // A structured interaction resumes the waiting command but not a new
         // agent turn. Exactly one continuation for the whole batch.
         await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
@@ -3540,6 +3595,8 @@ Before asking a question, first summarize what you read (files, plan, codebase) 
 
 ${DONE_PROTOCOL}
 
+${SPLIT_PROTOCOL}
+
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}` }, ...cardAttachments(card.attachments)],
       });
@@ -4224,6 +4281,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "preview", summary: "Run and inspect a card workspace's dev server", usage: "bb stelow preview [status|start|stop] [--card <card_id>] [--json]" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
       { name: "done", summary: "Commit workflow completion (verified in code)", usage: "bb stelow done [--card <card_id>]" },
+      { name: "split", summary: "Execute the approved card-split proposal (no content args)", usage: "bb stelow split [--card <card_id>]" },
       { name: "playbook", summary: "Print this card's exact state and playbook paths", usage: "bb stelow playbook [--card <card_id>]" },
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
       { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
@@ -4258,10 +4316,22 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (argv[0] === "ask") {
         const flag = (name: string) => { const index = argv.indexOf(name); return index >= 0 ? argv[index + 1] : undefined; };
         const threadId = flag("--thread") ?? ctx.threadId;
+        // --tag marks a machine-readable ask kind. Tags are a closed set:
+        // today only `split` (card-split proposals at triage, lib/split-proposal).
+        // parseAskGroups ignores unknown flags, so strip the tag pair before
+        // parsing instead of letting it ride along silently.
+        const tagValues: string[] = [];
+        const askArgv: string[] = [];
+        for (let i = 1; i < argv.length; i++) {
+          if (argv[i] === "--tag") { tagValues.push(argv[i + 1] ?? ""); i++; continue; }
+          askArgv.push(argv[i]!);
+        }
+        const tag = tagValues.length > 0 ? tagValues[tagValues.length - 1]! : null;
+        if (tag !== null && tag !== "split") return { exitCode: 2, stderr: "Unknown --tag. The only worker ask tag is --tag split (card-split proposals at triage)." };
         // Repeated --question groups ask several questions in ONE blocking
         // call: the human answers them together instead of being pinged N
         // times. Options/--multiple attach to the most recent --question.
-        const parsed = parseAskGroups(argv.slice(1));
+        const parsed = parseAskGroups(askArgv);
         if (!threadId) return { exitCode: 2, stderr: "Missing --thread <thr_id>." };
         if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]..." };
         const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
@@ -4273,6 +4343,30 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const cardRow = db.prepare("SELECT id, status FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string; status: string } | undefined;
         if (!cardRow) return { exitCode: 2, stderr: `No card owns thread "${threadId}". Pass your bb worker thread id ($BB_THREAD_ID, a thr_* id — confirm with: echo $BB_THREAD_ID), never a provider session id nor a workflow dirHash (sw-*).` };
         if (cardRow.status === "archived") return { exitCode: 2, stderr: "This card is archived." };
+        // A split proposal ask (lib/split-proposal): options are proposed
+        // child cards, recorded by the host and executed by `bb stelow
+        // split` after approval. Validated and stored BEFORE the blocking
+        // call — a refused shape never pings the human.
+        if (tag === "split") {
+          if (groups.length !== 1) return { exitCode: 2, stderr: "A split ask carries exactly one question: the proposed cards as its options, plus one \"Keep as one card\" option." };
+          const splitCard = getCard(cardRow.id);
+          if (!splitCard) return { exitCode: 2, stderr: `Unknown card "${cardRow.id}".` };
+          if (splitCard.kind !== "build") return { exitCode: 2, stderr: "Only build cards split. Research and explore cards are single-stage by design." };
+          const splitStage = await cardStageSlug(splitCard);
+          if (splitStage !== "triage" && splitStage !== "select") {
+            return { exitCode: 2, stderr: `Refused: this workflow is at \`${splitStage ?? "an unknown stage"}\`, past the split point. Splits happen at triage — past setup the card stays whole and scopes carry the breakdown.` };
+          }
+          const splitOptions = groups[0]!.options;
+          const keepCount = splitOptions.filter((o) => o.label.trim().toLowerCase() === SPLIT_KEEP_LABEL.toLowerCase()).length;
+          if (keepCount !== 1) return { exitCode: 2, stderr: `A split ask needs exactly one "${SPLIT_KEEP_LABEL}" option (exact label) so the user can veto.` };
+          const slices = splitOptions
+            .filter((o) => o.label.trim().toLowerCase() !== SPLIT_KEEP_LABEL.toLowerCase())
+            .map((o) => ({ title: o.label, desc: o.description }));
+          const invalid = validateSplitSlices(slices);
+          if (invalid) return { exitCode: 2, stderr: invalid };
+          db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, NULL, ?, NULL, NULL, '[]')")
+            .run(cardRow.id, JSON.stringify(slices), Date.now());
+        }
         updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
         let requestFailed = false;
@@ -4355,6 +4449,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const why = interruptionWhy(cancelReason, requestFailed, elapsed);
           return { exitCode: 1, stdout: `${why} STOP and wait: do NOT proceed with the workflow. The question is still pending on the card (same column, marked as waiting for your answer) and remains answerable. When the user answers it on the card, the answer is delivered here as a message and you may continue. If you are re-asked about this same question later, do not re-ask the user again — wait for the card answer.` };
         }
+        // The host records what the human approved on a split proposal — right
+        // here for the blocking call, and in answerQuestions for card-side
+        // answers. `bb stelow split` trusts this row, never a worker claim.
+        if (tag === "split" && result.outcome === "submitted") {
+          const value = record(result.value);
+          const picked = array(value.answers).filter((answer): answer is string => typeof answer === "string");
+          db.prepare("UPDATE split_proposals SET selected = ?, answered_at = ? WHERE card_id = ? AND selected IS NULL")
+            .run(JSON.stringify(picked), Date.now(), cardRow.id);
+        }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }
       if (argv[0] === "seed") {
@@ -4406,7 +4509,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (result.code !== 0) return { exitCode: result.code ?? 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
         // --dry-run validates only: no card writes, no band swap, no auto-sync.
         if (dryRun) return { exitCode: 0, stdout: result.stdout };
-        if (cliCard) updateCard(cliCard.id, { stage, status: stage === "audit" ? "completed" : "in-progress", activity: "running", last_error: null });
+        if (cliCard) updateCard(cliCard.id, { stage, status: "in-progress", activity: "running", last_error: null });
         // Band-preset swap: if the band of the stage just advanced to defines a
         // preset different from the one this worker was spawned with, respawn the
         // worker with that band preset on the same state dir. Deferred (setTimeout)
@@ -4551,6 +4654,110 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           skillsDir: PLUGIN_SKILLS_DIR, strategySkill, exploreSkill, researchIndexPath, exploreArtifactPath,
         }, existsSync);
         return { exitCode: 0, stdout: renderPlaybook(entries) };
+      }
+      if (argv[0] === "split") {
+        // No content args by design (lib/split-proposal): the host executes
+        // the recorded, human-approved proposal from `ask --tag split`. A
+        // worker-supplied slice list would be self-dealing — creation is a
+        // host act behind a human gate, so the only input is which card.
+        const args = argv.slice(1);
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          return { exitCode: 2, stderr: "Usage: bb stelow split [--card <card_id>]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
+        if (card.kind !== "build") return { exitCode: 1, stderr: "Only build cards split. Research and explore cards are single-stage by design." };
+        const stage = await cardStageSlug(card);
+        if (stage !== "triage" && stage !== "select") {
+          return { exitCode: 1, stderr: `Refused: this workflow is at \`${stage ?? "an unknown stage"}\`, past the split point. Splits happen at triage — past setup the card stays whole and scopes carry the breakdown.` };
+        }
+        const proposal = db.prepare("SELECT slices, selected, asked_at, consumed_at, created FROM split_proposals WHERE card_id = ?").get(cardId) as
+          { slices: string; selected: string | null; asked_at: number; consumed_at: number | null; created: string } | undefined;
+        if (!proposal) return { exitCode: 1, stderr: "No split proposal on this card. Open one first at triage: `bb stelow ask --tag split --multiple --question <text> --option <card> --desc <slice>...` plus exactly one `--option \"Keep as one card\"`." };
+        if (proposal.consumed_at) return { exitCode: 1, stderr: "This card already split — see its comments for the children. Splitting twice would duplicate them." };
+        const existingChildren = db.prepare("SELECT id FROM cards WHERE split_from = ?").all(cardId) as Array<{ id: string }>;
+        if (existingChildren.length > 0) return { exitCode: 1, stderr: `This card already split into ${existingChildren.length} ${existingChildren.length === 1 ? "card" : "cards"} — see its comments. Splitting twice would duplicate them.` };
+        if (!proposal.selected) return { exitCode: 1, stderr: "The split proposal is not answered yet. Wait for the card answer, then run split again." };
+        if (Date.now() - proposal.asked_at > SPLIT_PROPOSAL_TTL_MS) return { exitCode: 1, stderr: "The split approval is older than 24h — re-ask at the current stage instead of executing a stale one." };
+        const slices = JSON.parse(proposal.slices) as Array<{ title: string; desc: string }>;
+        const selected = JSON.parse(proposal.selected) as string[];
+        const outcome = splitOutcome(slices, selected);
+        if (outcome.action === "keep") return { exitCode: 1, stderr: "The user chose to keep one card — no split. Continue this workflow normally past triage." };
+        if (outcome.action === "refuse") return { exitCode: 1, stderr: outcome.reason };
+        // Retry after a partial failure skips slices already created (recorded
+        // below before reporting), so a retry never duplicates a child.
+        const createdSoFar = JSON.parse(proposal.created || "[]") as Array<{ slice: string; cardId: string }>;
+        const createdKeys = new Set(createdSoFar.map((entry) => entry.slice.trim().toLowerCase()));
+        const todo = outcome.approved.filter((slice) => !createdKeys.has(text(slice.title).trim().toLowerCase()));
+        const created: Array<{ slice: string; cardId: string }> = [...createdSoFar];
+        let failure: string | null = null;
+        // Children inherit the parent's project and appetite — the user chose
+        // them for this work. Exploratory parents fan out into isolated
+        // workspaces exactly like research fan-out (same rule, same reason).
+        const targetProjectId = card.workspace_kind === "exploratory" ? "proj_personal" : card.project_id;
+        const parentStateDir = card.dir_hash
+          ? await cardWorkspace(card).then((workspace) => workspace?.path ? workflowStateDir(bb, workspace.path, card.id, card.dir_hash!) : null).catch(() => null)
+          : null;
+        const parentStateAbs = parentStateDir ? join(parentStateDir, "state.md") : null;
+        let parentAppetite = "Lean";
+        let parentReviewMode = "Auto";
+        if (parentStateAbs) {
+          const blob = await bb.sdk.files.read({ path: parentStateAbs }).then((file) => file.content).catch(() => null);
+          if (blob) {
+            const appetite = text(blob.match(/appetite:\s*(\S+)/m)?.[1]);
+            const review = blob.match(/review_mode:\s*(?:"([^"]+)"|(\S+))/m);
+            const reviewMode = text(review?.[1] ?? review?.[2]);
+            if (appetite) parentAppetite = appetite;
+            if (reviewMode) parentReviewMode = reviewMode;
+          }
+        }
+        for (const slice of todo) {
+          const title = text(slice.title);
+          const desc = text(slice.desc);
+          try {
+            const spawned = await createCardInternal({
+              projectId: targetProjectId,
+              prompt: `${title}\n\nSplit from "${card.display_name ?? card.name}" (triage proposed ${slices.length}, approved ${outcome.approved.length}). This card owns ONLY this slice — ignore everything else from the parent request:\n${desc}\n\nParent triage context: ${parentStateAbs ?? "unavailable"} — read its triage notes, nothing else. Classify intent first, then work it through the normal build workflow.`,
+              attachments: cardAttachments(card.attachments).map((attachment) => ({ type: attachment.type, path: attachment.path })),
+              intent: "unknown",
+              appetite: parentAppetite,
+              reviewMode: parentReviewMode,
+              kind: "build",
+            });
+            db.prepare("UPDATE cards SET split_from = ? WHERE id = ?").run(cardId, spawned.cardId);
+            logCardComment(spawned.cardId, "card", spawned.cardId, "agent", `Split from "${card.display_name ?? card.name}" (${cardId}): this card owns "${title}".`);
+            created.push({ slice: title, cardId: spawned.cardId });
+          } catch (error) {
+            failure = error instanceof Error ? error.message : "Could not spawn a build card.";
+            break;
+          }
+        }
+        // Persist exactly the successfully spawned children before reporting
+        // a partial failure, so retrying skips them instead of duplicating.
+        db.prepare("UPDATE split_proposals SET created = ? WHERE card_id = ?").run(JSON.stringify(created), cardId);
+        if (created.length > 0) {
+          logCardComment(cardId, "card", cardId, "agent", `Split into ${created.length} ${created.length === 1 ? "build card" : "build cards"}: ${created.map((entry) => entry.slice).join("; ")}.`);
+        }
+        bb.realtime.publish("card-state", { cardId });
+        bb.realtime.publish("board-changed", { cardId });
+        if (failure) {
+          const prefix = created.length > 0 ? `Created ${created.length} ${created.length === 1 ? "build card" : "build cards"} before the remaining slices could not be created. ` : "";
+          return { exitCode: 1, stdout: `${prefix}Run split again to retry the rest.`, stderr: `${prefix}${failure}` };
+        }
+        // Full approval consumes the proposal; a remainder keeps the parent
+        // alive narrowed to it, otherwise the parent's whole content moved
+        // and it archives with the trail above.
+        db.prepare("UPDATE split_proposals SET consumed_at = ? WHERE card_id = ?").run(Date.now(), cardId);
+        const { remaining, archiveParent } = splitRemainder(slices, outcome.approved);
+        if (archiveParent) {
+          updateCard(cardId, { status: "archived", activity: "idle" });
+          return { exitCode: 0, stdout: `Split into ${created.length} build ${created.length === 1 ? "card" : "cards"}: ${created.map((entry) => entry.slice).join("; ")}. The parent card is archived — stop: your workflow ends here.` };
+        }
+        return { exitCode: 0, stdout: `Split into ${created.length} build ${created.length === 1 ? "card" : "cards"}: ${created.map((entry) => entry.slice).join("; ")}. The parent keeps the remainder (${remaining.map((slice) => text(slice.title)).join("; ")}) — continue it narrowed to that.` };
       }
       if (argv[0] === "doctor") {
         const args = argv.slice(1);
@@ -4788,7 +4995,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|done|playbook|doctor|sync-scopes|lock|config|schema|fan-out|verify|preset" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|done|playbook|split|doctor|sync-scopes|lock|config|schema|fan-out|verify|preset" };
     },
   });
 

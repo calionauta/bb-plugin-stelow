@@ -85,7 +85,7 @@ for (const [site, { anchor, end }] of Object.entries(doneSites)) {
 // preset mutation refuses card workers with the Manage redirect.
 assert.match(serverSource, /if \(argv\[0\] === "done"\) \{/, "the done handler exists");
 assert.match(serverSource, /if \(argv\[0\] === "playbook"\) \{/, "the playbook handler exists");
-assert.match(serverSource, /status\|ask\|seed\|advance\|done\|playbook\|doctor/, "the CLI usage lists done and playbook");
+assert.match(serverSource, /status\|ask\|seed\|advance\|done\|playbook\|split\|doctor/, "the CLI usage lists done, playbook, and split");
 assert.match(serverSource, /doneEligibility\(\{ kind: "build", stage: currentStage/, "build completion is gated in code, not prose");
 assert.match(serverSource, /researchVerifyReport\(cardId, strategyRounds\(card\)\.length/, "research completion requires a passing verify");
 assert.match(serverSource, /exploreVerifyReport\(cardId, card\.explore_stage, artifact\.ready\)/, "explore completion requires a passing verify");
@@ -100,4 +100,41 @@ const nudgeDefs = serverSource.match(/const AUDIT_DONE_NUDGE = "/g) ?? [];
 assert.equal(nudgeDefs.length, 1, "AUDIT_DONE_NUDGE is defined once, not pasted per branch");
 assert.match(serverSource, /shouldDoneNudge\(\{/, "the audit branch resumes through the done-nudge budget");
 
-console.log("prompt contracts test ok: single-source clauses, all build spawn paths covered, no seed invitation, done/playbook verbs, preset fence, no audit inference");
+// Explicit split rides the same rails: one const, the three build spawn
+// paths (research/explore are single-stage — no triage, no split clause),
+// no pasted copies. The host executes the recorded approval; the worker
+// never takes card content as a split argument.
+const splitDefs = serverSource.match(/const SPLIT_PROTOCOL = "/g) ?? [];
+assert.equal(splitDefs.length, 1, "SPLIT_PROTOCOL is defined once, not pasted per prompt");
+assert.equal((serverSource.match(/run `bb stelow split` \(no args/g) ?? []).length, 1, "the split invocation prose lives in the const only");
+const splitSites = {
+  spawn: "Step 1 — classify intent first",
+  restart: "The host re-seeded your per-workflow state, transitions.md, and stelow.json",
+  reseed: "researchReseed ?? exploreReseed ??",
+};
+const splitEnds = {
+  spawn: "const ts = now();",
+  restart: "only now retire the old one",
+  reseed: "recordWorkerThread(db, cardId, newThread.id, preset.id, \"reseed\")",
+};
+for (const [site, anchor] of Object.entries(splitSites)) {
+  const at = serverSource.indexOf(anchor);
+  assert.ok(at >= 0, `the ${site} prompt exists`);
+  const stop = serverSource.indexOf(splitEnds[site], at);
+  assert.ok(stop > at, `the ${site} prompt has its end marker`);
+  const window = serverSource.slice(at, stop);
+  assert.ok(window.includes("${SPLIT_PROTOCOL}"), `the ${site} prompt references SPLIT_PROTOCOL`);
+}
+
+// Worker verbs: split is registered, card-resolved, content-free, and listed;
+// ask carries the closed --tag set; the worker CLI advance never completes
+// (completion is explicit through `done` — the audit+idle inference and the
+// worker advance shortcut are both gone; the panel's manual override keeps
+// its human-explicit move).
+assert.match(serverSource, /if \(argv\[0\] === "split"\) \{/, "the split handler exists");
+assert.match(serverSource, /No content args by design/, "split takes no content args");
+assert.match(serverSource, /CREATE TABLE IF NOT EXISTS split_proposals/, "split proposals persist host-side");
+assert.match(serverSource, /split_from/, "children link their parent");
+assert.ok(!serverSource.includes('updateCard(cliCard.id, { stage, status: stage === "audit" ? "completed"'), "the worker advance never completes — done does");
+
+console.log("prompt contracts test ok: single-source clauses, all build spawn paths covered, no seed invitation, done/playbook/split verbs, preset fence, no audit inference, explicit split");

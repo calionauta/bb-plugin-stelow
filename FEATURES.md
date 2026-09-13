@@ -297,6 +297,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   ordered reading list for its current stage as exact paths — workers
   read what they are given instead of discovering skills through shell
   pipelines. Missing files fail loud, never silently dropped.
+- **Card split** (`bb stelow ask --tag split`, `bb stelow split`,
+  `lib/split-proposal.mjs`). One card is one workflow, so a triage
+  worker that finds 2+ independent items proposes the split through a
+  structured ask (each option a child card, plus "Keep as one card").
+  The host creates children only from the recorded, human-approved
+  proposal — full approval archives the parent, partial approval keeps
+  it narrowed to the remainder. Never unilateral, never by worker claim.
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and
