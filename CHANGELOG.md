@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.7.2] - 2026-09-13
+
+### Fixed
+
+- **Terminal timeline.** Finished cards kept the last stage lit and
+  pulsing as if work were still there. All reached stages read passed,
+  nothing is current, the hint says the workflow is complete.
+- **Select stage label.** "Pick intent" → "Choose work": the stage picks
+  which triage item becomes the workflow, never the intent category.
+
 ## [0.7.1] - 2026-09-13
 
 ### Fixed
