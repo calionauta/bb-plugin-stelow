@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.4.9] - 2026-09-13
+
+### Fixed
+
+- **A card worker can no longer seed an orphan workflow.** `bb stelow seed`
+  from inside a card thread minted a name-derived owner at the project root
+  that no card resolves back. The seed CLI now refuses card workers with
+  the card's own state dir as the redirect (`lib/card-seed-guard.mjs`),
+  and the spawn/reseed prompts state the workflow is pre-seeded.
+- **A chatty worker no longer idles after every stage.** The provider ends a
+  turn on any final text, so a progress report parked the card until a human
+  Resume. The host now resumes the worker in place while the finished turn
+  left fresh output or stage progress (`lib/auto-continue.mjs`, budget of 10
+  consecutive resumes per stage, never past a pending question or `audit`).
+  Silent stops and exhausted budgets still surface as paused with exactly
+  one inbox event per idle period; manual Retry/Restart reset the budget.
+  Spawn/reseed prompts teach the turn discipline that prevents the stop.
+
 ## [0.4.8] - 2026-09-13
 
 ### Fixed
