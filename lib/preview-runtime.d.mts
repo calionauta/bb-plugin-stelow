@@ -30,12 +30,18 @@ export interface PreviewEffects {
   runConnect(args: string[]): Promise<Record<string, unknown> | null>;
   now?(): number;
   baseEnv?: Record<string, string>;
+  /** Bound on `starting` before the session fails with its log (default 60s). */
+  startTimeoutMs?: number;
 }
+
+export declare const PREVIEW_START_TIMEOUT_MS: number;
 
 export interface PreviewRuntime {
   start(target: PreviewTarget): Promise<PreviewResult>;
   stop(target: PreviewTarget): Promise<PreviewResult>;
   view(target: PreviewTarget, appOrigin?: string | null): Promise<PreviewView>;
+  /** Retry the Connect share for a live preview (the "Share this port" button). */
+  share(target: PreviewTarget): Promise<PreviewResult>;
   /** Kill every preview this runtime started. Safe to call more than once. */
   dispose(): void;
 }

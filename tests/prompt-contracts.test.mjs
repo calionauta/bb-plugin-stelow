@@ -91,4 +91,13 @@ assert.match(serverSource, /researchVerifyReport\(cardId, strategyRounds\(card\)
 assert.match(serverSource, /exploreVerifyReport\(cardId, card\.explore_stage, artifact\.ready\)/, "explore completion requires a passing verify");
 assert.match(serverSource, /presets are managed from the card's Agent preset section/, "preset mutation refuses worker threads");
 
-console.log("prompt contracts test ok: single-source clauses, all build spawn paths covered, no seed invitation, done/playbook verbs, preset fence");
+// Explicit completion is enforced, not inferred: the old audit+idle ⇒
+// completed one-liner is gone (research/explore keep their own artifact
+// gates; build completes only through `done`), and the audit resume carries
+// one shared nudge.
+assert.ok(!serverSource.includes('updateCard(cardId, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: now(), last_error: null, stage: currentStage })'), "no audit-idle branch marks completed");
+const nudgeDefs = serverSource.match(/const AUDIT_DONE_NUDGE = "/g) ?? [];
+assert.equal(nudgeDefs.length, 1, "AUDIT_DONE_NUDGE is defined once, not pasted per branch");
+assert.match(serverSource, /shouldDoneNudge\(\{/, "the audit branch resumes through the done-nudge budget");
+
+console.log("prompt contracts test ok: single-source clauses, all build spawn paths covered, no seed invitation, done/playbook verbs, preset fence, no audit inference");

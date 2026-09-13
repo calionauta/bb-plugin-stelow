@@ -37,7 +37,7 @@ import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript }
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
-import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "./lib/auto-continue.mjs";
+import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
@@ -516,7 +516,7 @@ export const rpcContract = defineRpcContract({
       frame: z.enum(["frame", "open", "copy"]).nullable(),
       frameReason: z.string().nullable(),
       paired: z.boolean(),
-      hints: z.array(z.object({ tone: z.enum(["info", "warn"]), text: z.string(), action: z.string().nullable() })),
+      hints: z.array(z.object({ tone: z.enum(["info", "warn"]), text: z.string(), action: z.string().nullable(), href: z.string().nullable() })),
       log: z.string(),
       startedAt: z.number().nullable(),
     }),
@@ -526,6 +526,10 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   previewStop: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  previewShare: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
@@ -1917,6 +1921,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return await preview.stop(target);
   }
 
+  async function previewShare(cardId: string) {
+    const target = await previewTargetFor(cardId);
+    if (!target) return { ok: false, error: NO_PREVIEW_WORKSPACE };
+    return await preview.share(target);
+  }
+
   // Resolve a host binary: server-wide install at ~/.local/bin first
   // (non-interactive PATH lacks it), PATH fallback otherwise.
   const homeDir = typeof process.env.HOME === "string" ? process.env.HOME : "";
@@ -2540,12 +2550,40 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // on the card resumes the thread.
           updateCard(cardId, questionWaitUpdates(lastOutput));
         } else if (currentStage === "audit") {
-          // `audit` is the workflow's terminal stage. Reaching it is not a
-          // request for a human review: in Lean + Auto (and after any explicit
-          // gates in other modes) the worker finishes its audit and idles.
-          // Leaving the card in-progress would place it in Review and then
-          // falsely raise "Paused — resume it" after the idle grace period.
-          updateCard(cardId, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: now(), last_error: null, stage: currentStage });
+          // `audit` is the terminal stage, but reaching it is not completing:
+          // completion is an explicit worker commit (`bb stelow done`),
+          // verified in code. The old inference (audit + idle ⇒ completed)
+          // is gone on purpose — it made a worker that narrated completion
+          // and stopped indistinguishable from one that actually finished,
+          // and left completed cards showing a lit "audit" with no next
+          // step. Resume the worker with the done instruction instead
+          // (lib/auto-continue budget); an exhausted budget pauses with the
+          // instruction on the card, for the human.
+          const doneDecision = shouldDoneNudge({
+            status, questionPending: questionIds.length > 0, transitioningIntoIdle,
+            autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
+          });
+          if (doneDecision.proceed) {
+            const doneSent = await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: AUDIT_DONE_NUDGE, mentions: [] }] }).then(() => true).catch(() => false);
+            if (doneSent) {
+              const autoNext = nextAutoContinue({ stage: currentStage, autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null });
+              const doneFields: Parameters<typeof updateCard>[1] = { activity: "running", last_idle_at: null, last_error: null, auto_continue_count: autoNext.count, auto_continue_stage: autoNext.stage };
+              if (lastOutput != null) doneFields.last_assistant_text = lastOutput;
+              updateCard(cardId, doneFields);
+              return;
+            }
+          }
+          if (transitioningIntoIdle) {
+            // Once per idle period (transition edge only): the card says what
+            // is actually missing — the done commit — instead of a generic
+            // "paused". A human Resume hands the worker the same instruction.
+            logCardComment(cardId, "card", cardId, "agent", "The workflow reached the audit stage, but the card completes only when the worker runs `bb stelow done` (verified in code — build at audit, never past a pending question). Resume continues the worker with that instruction; nothing is done until done runs.");
+          }
+          updateCard(cardId, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: card.last_idle_at ?? now(), stage: currentStage });
+          const auditCurrent = getCard(cardId);
+          if (auditCurrent && auditCurrent.status !== "archived" && auditCurrent.status !== "completed" && auditCurrent.last_idle_at && now() - auditCurrent.last_idle_at >= IDLE_ATTENTION_MS) {
+            recordInboxEvent(auditCurrent, "paused", "At audit, waiting for the worker to run `bb stelow done` — resume continues it with that instruction.", `paused:${cardId}:${auditCurrent.last_idle_at}`, auditCurrent.last_idle_at);
+          }
         } else {
           // Auto-continue (lib/auto-continue): the provider ends a turn on
           // any final text, so a worker that narrates progress idles after
@@ -2696,6 +2734,62 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   bb.background.schedule("stelow-skills-sync", SKILLS_SYNC_CRON, () => void runUpstreamSync());
   void runUpstreamSync();
 
+  // One-pass pw- → sw- standardization (v0.6.0, lib/dir-prefix-migration).
+  // Stored state identity moved prefixes in both generators (owner-derived
+  // here, random upstream); directories already on disk follow now. Runs at
+  // every boot because it is idempotent — a migrated install finds no pw-
+  // hashes and moves nothing — so a card seeded between deploy and helper
+  // sync still converges. Fail-soft per card: one stuck workflow never
+  // blocks the rest, and metadata is only rewritten after its dirs move.
+  async function migrateDirPrefixToSw(): Promise<void> {
+    try {
+      const { planDirRename, applyDirRename, migrateTrackingHashes } = await import("./lib/dir-prefix-migration.mjs");
+      const rows = db.prepare("SELECT id, dir_hash FROM cards WHERE dir_hash LIKE 'pw-%'").all() as Array<{ id: string; dir_hash: string }>;
+      if (rows.length === 0) return;
+      let moved = 0;
+      for (const row of rows) {
+        try {
+          const card = getCard(row.id);
+          const rootPath = card ? (await cardWorkspace(card))?.path : null;
+          if (!card || !rootPath) continue;
+          const trackingPath = join(rootPath, "stelow.json");
+          let tracking: LooseRecord;
+          try {
+            tracking = JSON.parse(readFileSync(trackingPath, "utf8")) as LooseRecord;
+          } catch {
+            bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (stelow.json unreadable)`);
+            continue;
+          }
+          const entry = workflowEntryForOwner(array(tracking.workflows), card.id, row.dir_hash);
+          const plan = planDirRename(entry);
+          if (!plan) {
+            bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (no resolvable state dir for ${row.dir_hash})`);
+            continue;
+          }
+          const applied = applyDirRename(rootPath, plan);
+          if (applied.state === "collision") {
+            bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (${plan.toStateRel} already exists)`);
+            continue;
+          }
+          const migrated = migrateTrackingHashes(tracking.workflows, [{ fromHash: plan.fromHash, toHash: plan.toHash }]);
+          if (migrated.changed > 0) {
+            tracking.workflows = migrated.workflows;
+            writeFileSync(trackingPath, `${JSON.stringify(tracking, null, 2)}\n`, "utf8");
+          }
+          db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(plan.toHash, now(), card.id);
+          moved += 1;
+          bb.log.info(`stelow: renamed ${plan.fromHash} → ${plan.toHash} (${applied.moved.map((m) => m.to).join(", ") || "metadata only"})`);
+        } catch (error) {
+          bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (${error instanceof Error ? error.message : String(error)})`);
+        }
+      }
+      if (moved > 0) bb.log.info(`stelow: dir prefix migration moved ${moved} workflow${moved === 1 ? "" : "s"} pw- → sw-`);
+    } catch (error) {
+      bb.log.warn(`stelow: dir prefix migration failed (fail-soft): ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  void migrateDirPrefixToSw();
+
   // NOTE: a previous revision stopped every live worker thread here. Removed:
   // dispose fires on every hot-reload (dev + build:reload), so it massacred
   // in-flight work with a "Stopped manually" on each update. Workers now
@@ -2705,6 +2799,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // Shared continue copy: the manual Retry action and the auto-continue
   // watchdog send the same nudge, so a worker cannot tell (or behave
   // differently for) a human resume from an automatic one.
+  // The audit-stage variant: reaching audit is not completing. The worker
+  // commits with `bb stelow done`; the host verifies in code. Narrating
+  // completion ("Workflow concluído") without running done leaves the card
+  // waiting — this nudge is the only thing an audit-idle resume says.
+  const AUDIT_DONE_NUDGE = "The workflow is at the audit stage. If audit work remains, finish it first. Then commit completion with `bb stelow done` — it verifies in code and refuses with the fix when something is missing. Never just announce completion and stop: only done completes the card.";
   function buildContinueNudge(): string {
     return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. If a question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the current stage genuinely needs NEW input from the user that was never asked, ask it now via bb stelow ask; silence is not progress. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable here, do not park in chat waiting. Auto approves and advances itself; gated modes use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
   }
@@ -4161,6 +4260,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async previewStop({ cardId }) {
       return await previewStop(cardId);
     },
+
+    async previewShare({ cardId }) {
+      return await previewShare(cardId);
+    },
   });
 
   bb.cli.register({
@@ -4220,7 +4323,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // with the fix (this is almost always a provider session id passed
         // where the bb worker thread id belongs) instead of blaming storage.
         const cardRow = db.prepare("SELECT id, status FROM cards WHERE worker_thread_id = ?").get(threadId) as { id: string; status: string } | undefined;
-        if (!cardRow) return { exitCode: 2, stderr: `No card owns thread "${threadId}". Pass your bb worker thread id ($BB_THREAD_ID, a thr_* id — confirm with: echo $BB_THREAD_ID), never a provider session id nor a workflow dirHash (pw-*).` };
+        if (!cardRow) return { exitCode: 2, stderr: `No card owns thread "${threadId}". Pass your bb worker thread id ($BB_THREAD_ID, a thr_* id — confirm with: echo $BB_THREAD_ID), never a provider session id nor a workflow dirHash (sw-*).` };
         if (cardRow.status === "archived") return { exitCode: 2, stderr: "This card is archived." };
         updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;

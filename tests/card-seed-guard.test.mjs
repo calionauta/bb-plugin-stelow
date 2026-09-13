@@ -10,9 +10,9 @@ import { cardWorkerSeedRefusal } from "../lib/card-seed-guard.mjs";
 // now refuses card workers; the refusal must name the card's own state dir
 // as the valid redirect (a refusal without an exit is a deadlock).
 
-const refusal = cardWorkerSeedRefusal({ cardName: "jogo-da-velha", stateDirText: "/w/.stelow/2026-09-13/pw-card_1" });
+const refusal = cardWorkerSeedRefusal({ cardName: "jogo-da-velha", stateDirText: "/w/.stelow/2026-09-13/sw-card_1" });
 assert.match(refusal, /never run `bb stelow seed`/, "the refusal names the forbidden command");
-assert.match(refusal, /\/w\/\.stelow\/2026-09-13\/pw-card_1/, "the refusal redirects to the card's own state dir");
+assert.match(refusal, /\/w\/\.stelow\/2026-09-13\/sw-card_1/, "the refusal redirects to the card's own state dir");
 assert.match(refusal, /jogo-da-velha/, "the refusal names the card it protects");
 assert.match(refusal, /ownerless|orphan/i, "the refusal explains why seeding would strand work");
 

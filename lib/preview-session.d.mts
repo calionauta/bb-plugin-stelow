@@ -17,6 +17,8 @@ export interface PreviewHint {
   tone: "info" | "warn";
   text: string;
   action: string | null;
+  /** Navigation target for the action button; null means the action runs in-plugin (port share retry). */
+  href: string | null;
 }
 export declare function previewHints(options?: {
   paired?: boolean;

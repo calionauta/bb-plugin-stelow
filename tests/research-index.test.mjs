@@ -65,8 +65,8 @@ Second paragraph, still summary.
 ## Outputs
 | Strategy | Round | Output | Artifact | Notes |
 | --- | --- | --- | --- | --- |
-| Evolutionary strategy | 1 | Evolutionary diagnosis, stepping-stones, forces | .stelow/2026-09-09/pw-abc/rounds/evolutionary-r1-20260909-0035.md | Web-first research |
-| Jobs to be done | 2 | Job map steps | .stelow/2026-09-09/pw-abc/rounds/jtbd-r2-20260909-0100.md | second round |
+| Evolutionary strategy | 1 | Evolutionary diagnosis, stepping-stones, forces | .stelow/2026-09-09/sw-abc/rounds/evolutionary-r1-20260909-0035.md | Web-first research |
+| Jobs to be done | 2 | Job map steps | .stelow/2026-09-09/sw-abc/rounds/jtbd-r2-20260909-0100.md | second round |
 
 ## Opportunities
 ### Evolutionary strategy — 2026-09-09
@@ -85,7 +85,7 @@ assert.deepEqual(sections.outputs[0], {
   strategy: "Evolutionary strategy",
   round: "1",
   output: "Evolutionary diagnosis, stepping-stones, forces",
-  path: ".stelow/2026-09-09/pw-abc/rounds/evolutionary-r1-20260909-0035.md",
+  path: ".stelow/2026-09-09/sw-abc/rounds/evolutionary-r1-20260909-0035.md",
   notes: "Web-first research",
 }, "row one maps columns by header");
 assert.equal(sections.outputs[1].round, "2", "second row keeps its own cells");
