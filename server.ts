@@ -98,15 +98,20 @@ const BUILD_INFO = (() => {
       }
     } catch { /* try next */ }
   }
-  let stelowVersion: string | null = null;
+  return { version, builtAt };
+})();
+
+/** Read the upstream version live: the scheduled sync can update this file
+ * after the plugin module has loaded, between About-tab visits. */
+function readSyncedStelowVersion(): string | null {
   for (const candidate of [nodeJoin(pluginDir, "data", "stelow-package.json"), nodeJoin(pluginDir, "..", "data", "stelow-package.json")]) {
     try {
       const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown };
-      if (typeof parsed.version === "string") { stelowVersion = parsed.version; break; }
+      if (typeof parsed.version === "string") return parsed.version;
     } catch { /* try next */ }
   }
-  return { version, builtAt, stelowVersion };
-})();
+  return null;
+}
 
 // Memoized About logo data URI (loaded on first About visit).
 let aboutLogoCache: string | null | undefined;
@@ -4040,7 +4045,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           .map((e) => e.name)
           .sort();
       } catch { /* panel shows an empty list */ }
-      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: BUILD_INFO.stelowVersion, skillsSyncedAt: readLastSyncAt(SYNC_STATE_FILE), skills };
+      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: readSyncedStelowVersion(), skillsSyncedAt: readLastSyncAt(SYNC_STATE_FILE), skills };
     },
 
     // About identity mark. Served as a data URI (never a static file URL —
