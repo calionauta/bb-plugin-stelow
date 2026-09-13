@@ -38,6 +38,8 @@ import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "./lib/auto-continue.mjs";
+import { doneEligibility } from "./lib/completion.mjs";
+import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
@@ -946,7 +948,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Seed is a cardless/human operation: card workflows are pre-seeded at
   // spawn and the seed CLI refuses card workers, so the copy must never
   // invite a card worker to seed (that orphaned a project-root workflow).
-  const CLI_EQUIVALENTS = "Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers.";
+  const CLI_EQUIVALENTS = "Run `bb stelow playbook` first: it prints your state.md, transitions.md, and stage playbook paths — never discover them with `bb skill list | awk` pipelines. Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers.";
   // Prompt clauses that every build spawn path must carry. They are consts
   // (not pasted prose) so a new spawn site cannot silently drop one — the
   // prompt-contract test fails when a site stops referencing them. This is
@@ -954,6 +956,10 @@ export default async function plugin(bb: BbPluginApi) {
   // turn discipline while the band-swap restart prompt carried neither.
   const NEVER_SEED = "Your workflow is already seeded in your state dir above — never run `bb stelow seed` (it is refused for card workers; seeding again orphans a second workflow outside your card).";
   const TURN_DISCIPLINE = "Turn discipline: never end a turn with a bare progress report while current_stage is not `audit` and no question is pending — narrating progress is not finishing it. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured `bb stelow ask`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run `bb stelow status` and take the next stage action instead.";
+  // Explicit completion: done-ness was inferred from `audit` + idle, so a
+  // narrate-and-stop at audit looked identical to stuck-at-audit. The
+  // worker commits with `bb stelow done`; the host verifies in code.
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
   const db = bb.storage.database();
   // Sync state lives beside data.db (stable across managed-install cache
   // rotations), never in the plugin root: a fresh cache dir would otherwise
@@ -1372,6 +1378,8 @@ Batch independent questions into ONE ask call by repeating --question groups (ea
 
 On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question. There are no stages and no gates here: NEVER run \`bb stelow advance\`. When the index is complete with ranked opportunities, STOP and end your turn — the user reviews the index, marks the card Done, and fans opportunities out into build cards. If the user instead confirms specific opportunities in-thread, fan them out yourself ONLY after that structured confirmation: \`bb stelow fan-out --opportunity <id> [--opportunity ...]\` (ids from the index, never prose — the command refuses unknown ids). Stop early when the user archives the card.
 
+${DONE_PROTOCOL}
+
 ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
@@ -1411,6 +1419,8 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
       --option "<label 1>" --option "<label 2>" [--multiple]
 
 On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never re-ask the same question. When the stage deliverable is complete, STOP and end your turn — the user reviews the artifact and marks the card Done. Stop early when the user archives the card.
+
+${DONE_PROTOCOL}
 
 ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
@@ -1546,6 +1556,8 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
 Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+
+${DONE_PROTOCOL}
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}` }, ...workerAttachments],
@@ -1732,6 +1744,8 @@ ANY time you need user input, you MUST call the structured form:
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
 Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. Never re-ask the same question. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+
+${DONE_PROTOCOL}
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`,
       });
@@ -3472,6 +3486,8 @@ Batch independent questions into ONE ask call by repeating --question groups (ea
 
 Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting. In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
+${DONE_PROTOCOL}
+
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}` }, ...cardAttachments(card.attachments)],
       });
@@ -4151,6 +4167,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "preview", summary: "Run and inspect a card workspace's dev server", usage: "bb stelow preview [status|start|stop] [--card <card_id>] [--json]" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
+      { name: "done", summary: "Commit workflow completion (verified in code)", usage: "bb stelow done [--card <card_id>]" },
+      { name: "playbook", summary: "Print this card's exact state and playbook paths", usage: "bb stelow playbook [--card <card_id>]" },
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
       { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
       { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
@@ -4363,6 +4381,121 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 0, stdout: result.stdout };
       }
+      if (argv[0] === "done") {
+        // Explicit completion commit. Done-ness was inferred from `audit` +
+        // idle, so narrate-and-stop looked identical to stuck. The worker
+        // declares done; the host verifies in code (lib/completion): build
+        // only at `audit`, research/explore only with a passing `verify`
+        // and no pending question. Every refusal names the fix.
+        const args = argv.slice(1);
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          return { exitCode: 2, stderr: "Usage: bb stelow done [--card <card_id>]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
+        const pending = await fetchPendingQuestions(card.worker_thread_id).catch(() => []);
+        if (card.kind === "build") {
+          const workspace = await cardWorkspace(card);
+          const projectPath = workspace?.path ?? null;
+          let currentStage = card.stage;
+          if (projectPath && card.dir_hash) {
+            const doneStateDir = await workflowStateDir(bb, projectPath, card.id, card.dir_hash);
+            const blob = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, "state.md") }).then((f) => f.content).catch(() => null) : null;
+            if (!blob) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
+            currentStage = text(blob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+          }
+          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0 });
+          if (refusal) return { exitCode: 1, stderr: refusal };
+          const reset = resetAutoContinue();
+          updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+          return { exitCode: 0, stdout: `Done. Workflow "${card.name}" completed at audit.` };
+        }
+        if (card.kind === "research") {
+          const refusal = doneEligibility({ kind: "research", stage: null, questionPending: pending.length > 0 });
+          if (refusal) return { exitCode: 1, stderr: refusal };
+          const readiness = await researchReadiness(card).catch(() => null);
+          if (!readiness) return { exitCode: 1, stderr: "Unable to read card state — retry done." };
+          const report = researchVerifyReport(cardId, strategyRounds(card).length, readiness.ready || readiness.invalid.length > 0, readiness.invalid);
+          if (!report.pass) {
+            const textOut = researchVerifyText(report);
+            return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the rounds above, then run done again." };
+          }
+          const reset = resetAutoContinue();
+          updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+          const doneCurrent = getCard(cardId);
+          if (doneCurrent) recordInboxEvent(doneCurrent, "completed", "Research complete — results ready to review in Done.", `completed:${cardId}:index:${readiness.fingerprint ?? "ready"}`, now());
+          return { exitCode: 0, stdout: `Done. Research "${card.name}" completed.` };
+        }
+        if (card.kind === "explore") {
+          const refusal = doneEligibility({ kind: "explore", stage: null, questionPending: pending.length > 0 });
+          if (refusal) return { exitCode: 1, stderr: refusal };
+          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
+          const report = exploreVerifyReport(cardId, card.explore_stage, artifact.ready);
+          if (!report.pass) {
+            const textOut = exploreVerifyText(report);
+            return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the artifact above, then run done again." };
+          }
+          const reset = resetAutoContinue();
+          updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+          const doneCurrent = getCard(cardId);
+          if (doneCurrent) recordInboxEvent(doneCurrent, "completed", "Exploration complete — result ready to review in Done.", `explore-completed:${cardId}:${artifact.fingerprint ?? "ready"}`, now());
+          return { exitCode: 0, stdout: `Done. Exploration "${card.name}" completed.` };
+        }
+        return { exitCode: 1, stderr: `Unknown card kind "${card.kind}". Archive this card and start a new one.` };
+      }
+      if (argv[0] === "playbook") {
+        // Host-served reading list (lib/playbook): the exact state file,
+        // transitions, and stage playbook paths for this card. Workers read
+        // what they are given instead of discovering skills through shell
+        // pipelines over content-hashed ids.
+        const args = argv.slice(1);
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          return { exitCode: 2, stderr: "Usage: bb stelow playbook [--card <card_id>]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
+        const workspace = await cardWorkspace(card);
+        const rootPath = workspace?.path ?? null;
+        if (!rootPath) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
+        let stateDir: string | null = null;
+        if (card.dir_hash) {
+          stateDir = await workflowStateDir(bb, rootPath, card.id, card.dir_hash);
+          if (!stateDir) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
+        }
+        const statePath = stateDir ? join(stateDir, "state.md") : join(rootPath, "state.md");
+        let stage: string | null = card.stage;
+        if (card.kind === "build") {
+          const blob = await bb.sdk.files.read({ path: statePath }).then((f) => f.content).catch(() => null);
+          if (blob) stage = text(blob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+        }
+        let strategySkill: string | null = null;
+        let researchIndexPath: string | null = null;
+        if (card.kind === "research") {
+          strategySkill = researchStrategyById(card.research_strategy ?? "")?.skill ?? null;
+          if (stateDir) researchIndexPath = join(stateDir, "research-index.md");
+        }
+        let exploreSkill: string | null = null;
+        let exploreArtifactPath: string | null = null;
+        if (card.kind === "explore") {
+          const technique = techniqueById(card.explore_stage ?? "");
+          exploreSkill = technique?.skill ?? null;
+          if (stateDir && technique) exploreArtifactPath = join(stateDir, exploreArtifactFile(technique.id));
+        }
+        const entries = playbookEntries({
+          kind: card.kind, stage,
+          statePath, transitionsPath: join(rootPath, "skills/stelow-workflow-orchestrator/references/transitions.md"),
+          skillsDir: PLUGIN_SKILLS_DIR, strategySkill, exploreSkill, researchIndexPath, exploreArtifactPath,
+        }, existsSync);
+        return { exitCode: 0, stdout: renderPlaybook(entries) };
+      }
       if (argv[0] === "doctor") {
         const args = argv.slice(1);
         const json = args.includes("--json");
@@ -4552,6 +4685,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       if (argv[0] === "preset") {
         const sub = argv[1];
+        // Preset mutation is a host/UI concern (card Agent preset section,
+        // Presets screen). A worker thread rewriting the shared preset pool
+        // mid-flight would change the brains of every other card — refuse
+        // with the redirect. Listing stays open (workers read their assignment).
+        if ((sub === "add" || sub === "remove" || sub === "assign") && ctx.threadId && getCardByWorkerThread(ctx.threadId)) {
+          return { exitCode: 1, stderr: "Refused: presets are managed from the card's Agent preset section (or the Presets screen), never by a worker thread. If you need a different brain for this phase, ask for it via `bb stelow ask` instead of reassigning presets yourself." };
+        }
         const flag = (name: string, list: string[]) => { const index = list.indexOf(name); return index >= 0 ? list[index + 1] : undefined; };
         const rows = (db.prepare("SELECT * FROM presets WHERE id NOT LIKE 'card-override-%' ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[]);
         if (!sub || sub === "list") {
@@ -4592,7 +4732,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|doctor|sync-scopes|lock|config|schema|fan-out|verify|preset" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|done|playbook|doctor|sync-scopes|lock|config|schema|fan-out|verify|preset" };
     },
   });
 

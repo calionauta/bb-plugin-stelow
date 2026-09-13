@@ -275,6 +275,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   explore, machine-readable JSON on request. Prompts require it; the
   sync stays the backstop — prompt, CLI, and gate share one definition
   of PASS (`lib/research-artifacts.mjs`).
+- **Explicit completion** (`bb stelow done [--card]`, `lib/completion.mjs`).
+  Done-ness was inferred from `audit` + idle, so narrate-and-stop looked
+  identical to stuck. The worker commits; the host verifies in code —
+  build only at `audit`, research/explore only with a passing `verify`
+  and no pending question. Every refusal names the fix.
+- **Host-served playbook** (`bb stelow playbook [--card]`,
+  `lib/playbook.mjs`). The card's state file, transitions, and the
+  ordered reading list for its current stage as exact paths — workers
+  read what they are given instead of discovering skills through shell
+  pipelines. Missing files fail loud, never silently dropped.
+- **Preset fence.** `preset add/remove/assign` refuse card workers (presets
+  are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and
   `@` workspace files in any composer, including the board's.
 - **Realtime.** `card-state`, `board-changed`, `inbox-changed` keep
