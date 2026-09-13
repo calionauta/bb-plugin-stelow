@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.6.2] - 2026-09-13
+
+### Fixed
+
+- **Shared-seed reunion.** Two cards seeded from one hash migrate as one
+  directory: the first renames it, the second adopts the already-migrated
+  hash with a metadata-only update instead of stalling on a gone source.
+
 ## [0.6.1] - 2026-09-13
 
 ### Fixed
