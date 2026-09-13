@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { MAX_AUTO_CONTINUES, ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "../lib/auto-continue.mjs";
+import { MAX_AUTO_CONTINUES, MAX_DONE_NUDGES, ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "../lib/auto-continue.mjs";
 
 // Regression: a build worker narrated progress ("Stage done, moving on")
 // and idled after every stage — the provider ends a turn on any final
@@ -30,6 +30,20 @@ assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 2, autoStage: "sh
 assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 9, autoStage: "context" }), { count: 1, stage: "shape" }, "a new stage restarts the count");
 assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 0, autoStage: null }), { count: 1, stage: "shape" }, "the first nudge counts one");
 assert.deepEqual(resetAutoContinue(), { count: 0, stage: null }, "manual resume/restart wipes the budget");
+
+// Done-nudge: reaching audit is not completing (the old audit+idle ⇒
+// completed inference is gone — it made narrate-and-stop indistinguishable
+// from done). The host resumes the worker with the done instruction, at
+// most MAX_DONE_NUDGES times; past that the card pauses with the
+// instruction visible.
+const auditIdle = { status: "idle", questionPending: false, transitioningIntoIdle: true, autoCount: 0, autoStage: null };
+assert.equal(shouldDoneNudge(auditIdle).proceed, true, "an audit-idle worker is resumed with the done instruction");
+assert.equal(shouldDoneNudge({ ...auditIdle, status: "active" }).proceed, false, "a running thread is never done-nudged");
+assert.equal(shouldDoneNudge({ ...auditIdle, questionPending: true }).proceed, false, "a pending question blocks the done-nudge");
+assert.equal(shouldDoneNudge({ ...auditIdle, transitioningIntoIdle: false }).proceed, false, "only a fresh idle edge nudges");
+assert.equal(shouldDoneNudge({ ...auditIdle, autoCount: MAX_DONE_NUDGES, autoStage: "audit" }).proceed, false, "an exhausted done budget pauses instead");
+assert.equal(shouldDoneNudge({ ...auditIdle, autoCount: MAX_DONE_NUDGES, autoStage: "shape" }).proceed, true, "leaving audit resets the done budget");
+assert.equal(MAX_DONE_NUDGES >= 1, true, "the done budget is a positive cap");
 
 // Migration: an existing cards table without the columns gains them safely
 // and reruns are no-ops.

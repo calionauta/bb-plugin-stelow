@@ -4,9 +4,9 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ownsWorkflowState, stateWorkflowId, upsertWorkflowEntry, workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir } from "../lib/workflow-state-identity.mjs";
 
-const oldSameName = { name: "jogo-da-velha", dirHash: "pw-old", created: "2026-09-04T17:14:57.065Z" };
-const firstCard = { workflowId: "card_first", name: "jogo-da-velha", dirHash: "pw-first", created: "2026-09-12T20:00:00.000Z" };
-const secondCard = { workflowId: "card_second", name: "jogo-da-velha", dirHash: "pw-second", created: "2026-09-12T20:01:00.000Z" };
+const oldSameName = { name: "jogo-da-velha", dirHash: "sw-old", created: "2026-09-04T17:14:57.065Z" };
+const firstCard = { workflowId: "card_first", name: "jogo-da-velha", dirHash: "sw-first", created: "2026-09-12T20:00:00.000Z" };
+const secondCard = { workflowId: "card_second", name: "jogo-da-velha", dirHash: "sw-second", created: "2026-09-12T20:01:00.000Z" };
 
 // A row with a name but no owner is intentionally unclaimable: guessing is how cards
 // used to inherit each other's state.
@@ -15,12 +15,12 @@ assert.equal(workflowEntryForOwner([oldSameName], "card_first"), null);
 const afterFirst = upsertWorkflowEntry([oldSameName], firstCard);
 const afterSecond = upsertWorkflowEntry(afterFirst, secondCard);
 assert.equal(afterSecond.length, 3, "same-name cards coexist instead of replacing each other");
-assert.equal(workflowEntryForOwner(afterSecond, "card_first", "pw-first"), firstCard);
-assert.equal(workflowEntryForOwner(afterSecond, "card_second", "pw-second"), secondCard);
-assert.equal(workflowEntryForOwner(afterSecond, "card_second", "pw-first"), null, "dir hashes cannot cross owners");
-assert.equal(workflowStateRelativeDir(firstCard), ".stelow/2026-09-12/pw-first");
-assert.equal(workflowDirHash("card_first", false, 1), "pw-card_first");
-assert.equal(workflowDirHash("card_first", true, 36), "pw-card_first-10");
+assert.equal(workflowEntryForOwner(afterSecond, "card_first", "sw-first"), firstCard);
+assert.equal(workflowEntryForOwner(afterSecond, "card_second", "sw-second"), secondCard);
+assert.equal(workflowEntryForOwner(afterSecond, "card_second", "sw-first"), null, "dir hashes cannot cross owners");
+assert.equal(workflowStateRelativeDir(firstCard), ".stelow/2026-09-12/sw-first");
+assert.equal(workflowDirHash("card_first", false, 1), "sw-card_first");
+assert.equal(workflowDirHash("card_first", true, 36), "sw-card_first-10");
 assert.notEqual(workflowDirHash("card_first"), workflowDirHash("card_second"), "different cards have different state directories");
 
 const firstState = "---\nworkflow_id: card_first\nname: jogo-da-velha\ncurrent_stage: triage\n---\n";
@@ -28,10 +28,10 @@ assert.equal(stateWorkflowId(firstState), "card_first");
 assert.equal(ownsWorkflowState(firstState, "card_first"), true);
 assert.equal(ownsWorkflowState(firstState, "card_second"), false, "a state file never belongs to a same-name card");
 
-const updatedFirst = { ...firstCard, dirHash: "pw-reseed" };
+const updatedFirst = { ...firstCard, dirHash: "sw-reseed" };
 const afterReseed = upsertWorkflowEntry(afterSecond, updatedFirst);
 assert.equal(afterReseed.length, 3, "reseed replaces only the same owner");
-assert.equal(workflowEntryForOwner(afterReseed, "card_first", "pw-reseed")?.dirHash, "pw-reseed");
+assert.equal(workflowEntryForOwner(afterReseed, "card_first", "sw-reseed")?.dirHash, "sw-reseed");
 
 // Seeding by name is idempotent: the same name yields the same owner, so a
 // second seed reuses one entry and one directory instead of adding a twin.
@@ -43,10 +43,10 @@ assert.ok(!workflowIdForName("auth").startsWith("card_"), "a seeded owner can ne
 
 // A re-seed keeps the workflow's first `created`: the state path
 // (.stelow/<created>/<dirHash>) must never move, or it strands the old dir.
-const reseededLater = upsertWorkflowEntry(afterSecond, { ...firstCard, dirHash: "pw-second-gen", created: "2026-10-01T00:00:00.000Z" });
+const reseededLater = upsertWorkflowEntry(afterSecond, { ...firstCard, dirHash: "sw-second-gen", created: "2026-10-01T00:00:00.000Z" });
 const keptEntry = workflowEntryForOwner(reseededLater, "card_first");
 assert.equal(keptEntry?.created, firstCard.created, "a re-seed keeps the first created date");
-assert.equal(workflowStateRelativeDir(keptEntry), ".stelow/2026-09-12/pw-second-gen", "the state dir stays under the original date");
+assert.equal(workflowStateRelativeDir(keptEntry), ".stelow/2026-09-12/sw-second-gen", "the state dir stays under the original date");
 
 // Server contract: a third same-name card reads no scopes — the same rule that
 // keeps state.md apart applies to the board's scope progress.

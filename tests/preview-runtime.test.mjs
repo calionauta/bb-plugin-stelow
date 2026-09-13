@@ -41,7 +41,7 @@ class FakeChild extends EventEmitter {
   }
 }
 
-function harness({ files = {}, dirs = {}, paired = true } = {}) {
+function harness({ files = {}, dirs = {}, paired = true, startTimeoutMs } = {}) {
   const spawns = [];
   const connects = [];
   const runtime = createPreviewRuntime({
@@ -65,6 +65,7 @@ function harness({ files = {}, dirs = {}, paired = true } = {}) {
     },
     now: () => 1_000,
     baseEnv: { PATH: "/usr/bin" },
+    ...(startTimeoutMs === undefined ? {} : { startTimeoutMs }),
   });
   runtime.reads = 0;
   return { runtime, spawns, connects };
@@ -127,7 +128,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
   const view = await runtime.view({ checkout: "/app", hostId: null });
   assert.equal(view.state, "running", "an unpaired server still runs");
   assert.equal(view.url, "http://localhost:5173", "it falls back to loopback");
-  assert.equal(view.hints[0].action, "Pair bb connect", "and says how to become reachable");
+  assert.equal(view.hints[0].action, "Pair the server", "and says how to become reachable");
 }
 
 // --- A failure is reported, with the line that caused it. -------------------
@@ -286,4 +287,43 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
   assert.equal(runtime.reads > 0, true, "the workspace was actually probed");
 }
 
-console.log("preview runtime test ok: start/cwd/loopback, ready+share, exposure is a bonus, failures, stop-vs-crash, shared checkout, moved checkout, subdirectory app, ceiling, dispose, at-rest view");
+// --- Starting is bounded: silence becomes a failed session with its log. ----
+// A dev server that never announces an address used to sit in "Starting…"
+// forever with no way to debug it. Past the timeout it fails loudly and the
+// log viewer becomes the diagnosis.
+{
+  const { runtime, spawns } = harness({ files: { "/app/package.json": VITE }, startTimeoutMs: 30 });
+  await runtime.start({ checkout: "/app", hostId: "host_a" });
+  spawns[0].say("some build output with no address in it\n");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const failed = await runtime.view({ checkout: "/app", hostId: "host_a" });
+  assert.equal(failed.state, "failed");
+  assert.match(failed.error, /did not announce an address/, "the error names the missing announcement, not a crash");
+  assert.match(failed.log, /some build output/, "the silent output is still there to read");
+}
+
+// --- A server that announces in time never meets the watchdog. ---------------
+{
+  const { runtime, spawns } = harness({ files: { "/app/package.json": VITE }, startTimeoutMs: 30 });
+  await runtime.start({ checkout: "/app", hostId: "host_a" });
+  spawns[0].say("  ➜  Local:   http://localhost:5173/\n");
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const running = await runtime.view({ checkout: "/app", hostId: "host_a" });
+  assert.equal(running.state, "running", "a prompt announcement clears the timer");
+}
+
+// --- Share this port retries the expose for a live preview. -----------------
+{
+  const { runtime, spawns, connects } = harness({ files: { "/app/package.json": VITE } });
+  await runtime.start({ checkout: "/app", hostId: "host_a" });
+  spawns[0].say("  ➜  Local:   http://localhost:5173/\n");
+  await settle();
+  const shared = await runtime.share({ checkout: "/app", hostId: "host_a", slug: "app" });
+  assert.deepEqual(shared, { ok: true, error: null });
+  assert.deepEqual(connects.filter((args) => args[0] === "expose"), [["expose", "5173"], ["expose", "5173"]], "the retry re-exposes the same port");
+  const refused = await runtime.share({ checkout: "/nowhere", hostId: "host_a", slug: "app" });
+  assert.equal(refused.ok, false, "sharing with no live preview refuses instead of inventing one");
+}
+
+console.log("preview runtime test ok: start/cwd/loopback, ready+share, exposure is a bonus, failures, stop-vs-crash, shared checkout, moved checkout, subdirectory app, ceiling, dispose, at-rest view, starting watchdog, share retry");

@@ -163,6 +163,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   not: exposure is never a gate, and the panel says which one it is. One
   server per checkout, so two cards on one source share it, capped at 3
   running previews; a workspace with nothing to serve shows no button.
+  A start that never announces an address fails loudly after 60s with its
+  log attached instead of sitting in "Starting…" forever; the log opens
+  itself while starting or failed, with a live elapsed clock. Pairing and
+  sharing hints are real buttons (pairing dashboard, port-share retry),
+  never highlighted dead text.
 - **Optional tools** (`toolStatus`, `installTool`, About section). Live presence probe
   for the host binaries the workflow can use (sem, cymbal, ripwire,
   ast-grep) with per-tool purpose and install command —
@@ -279,7 +284,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Done-ness was inferred from `audit` + idle, so narrate-and-stop looked
   identical to stuck. The worker commits; the host verifies in code —
   build only at `audit`, research/explore only with a passing `verify`
-  and no pending question. Every refusal names the fix.
+  and no pending question. Every refusal names the fix. The old
+  audit-idle auto-complete is gone: an audit-idle worker is resumed with
+  the done instruction (budgeted), then pauses with the instruction on
+  the card — completed cards read "Done — ready to review", never a lit
+  audit with no next step.
+- **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
+  workflow ids, and both generators (owner-derived here, random upstream)
+  share one prefix; a boot migration renames existing `pw-` dirs and both
+  indexes exactly once.
 - **Host-served playbook** (`bb stelow playbook [--card]`,
   `lib/playbook.mjs`). The card's state file, transitions, and the
   ordered reading list for its current stage as exact paths — workers

@@ -32,8 +32,9 @@ assert.equal(pickPort(5173, [5173]), pickPort(5173, [5173]), "the choice is stab
 assert.equal(previewHints({ paired: true, reach: { provider: "share" } }).length, 0, "a paired server reachable by share needs no instruction");
 const unpaired = previewHints({ paired: false, reach: { provider: "local" } });
 assert.equal(unpaired.length, 1);
-assert.equal(unpaired[0].action, "Pair bb connect");
-assert.match(unpaired[0].text, /localhost works here/i, "the unpaired hint says what still works");
+assert.equal(unpaired[0].action, "Pair the server");
+assert.equal(unpaired[0].href, "https://getbb.app", "the pair action navigates somewhere real");
+assert.match(unpaired[0].text, /only this device opens/i, "the unpaired hint says what works and what is missing");
 const localPaired = previewHints({ paired: true, reach: { provider: "local" } });
 assert.equal(localPaired[0].action, "Share this port");
 const declared = previewHints({ paired: true, reach: { provider: "declared" } });
@@ -60,7 +61,7 @@ const text = previewText({
   evidence: "vite in dependencies, npm run dev", command: "npm run dev --port 5174",
   port: 5174, url: "https://srv--5174.getbb.app", provider: "share",
   reason: "bb connect share URL — reachable from any signed-in device",
-  hints: [{ tone: "info", text: "Pair bb connect", action: "Pair bb connect" }],
+  hints: [{ tone: "info", text: "Only this device opens", action: "Pair the server", href: "https://getbb.app" }],
 });
 assert.match(text, /Vite — running/);
 assert.match(text, /workspace {2}\/srv\/app/);
@@ -92,7 +93,7 @@ assert.equal(stopped.command, "npm run dev --port 5173", "the command is shown b
 assert.equal(stopped.url, "http://localhost:5173");
 assert.equal(stopped.provider, "local");
 assert.equal(stopped.frame, "frame");
-assert.equal(stopped.hints[0].action, "Pair bb connect");
+assert.equal(stopped.hints[0].action, "Pair the server");
 
 // Paired and shared: the address is the share, and the hint disappears.
 const shared = previewShape({ detection: vite, session: { port: 5174, command: "npm run dev --port 5174", state: "running", startedAt: 42 }, paired: true, share: { url: "https://srv--5174.getbb.app", port: 5174 }, checkout: "/srv/app" });

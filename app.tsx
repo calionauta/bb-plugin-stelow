@@ -315,6 +315,22 @@ function ActivityPill({ activity }: { activity: CardItem["activity"] }) {
   );
 }
 
+// Closed build cards name the stage instead of a bare "Working": the card
+// border already pulses while running, so the pill reuses the open card
+// timeline's current-stage tone (bg-primary/15 text-primary) plus the same
+// breathe pulse — one color, one motion, both surfaces.
+function StagePill({ stage, active }: { stage: string; active: boolean }) {
+  return (
+    <span
+      title={active ? `Worker is at ${stageLabel(stage)}` : `Workflow stage: ${stageLabel(stage)} — open the card for details`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${active ? "bg-primary/15 text-primary stelow-stage-pulse" : "bg-muted text-muted-foreground"}`}
+    >
+      <span aria-hidden>●</span>
+      {stageLabel(stage)}
+    </span>
+  );
+}
+
 const DEBOUNCE_MS = 250;
 
 const APPETITE_OPTIONS = [
@@ -2337,7 +2353,8 @@ function BoardCard({ card }: { card: CardItem }) {
         <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
         <span className="inline-flex shrink-0 items-center gap-1.5">
           {stuck ? <CardRetryButton cardId={card.id} /> : null}
-          <ActivityPill activity={card.activity} />
+          {card.status !== "completed" && card.status !== "archived" ? <StagePill stage={card.stage} active={running} /> : null}
+          {card.activity !== "running" ? <ActivityPill activity={card.activity} /> : null}
         </span>
       </div>
       {(card.scopeSummary.scopesTotal > 0 || card.intent !== "unknown") ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -2522,7 +2539,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
                       onClick={() => onPick(stage)}
                       className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
-                        ? "bg-primary/15 text-primary ring-2 ring-primary/60"
+                        ? "bg-primary/15 text-primary ring-2 ring-primary/60 stelow-stage-pulse"
                         : passed
                         ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
                         : skipReason ?? isOffRoute
@@ -3694,10 +3711,12 @@ function PreviewAddress({ url }: { url: string }) {
     }
   }
   return (
-    <div className="flex max-w-full items-center gap-1">
-      <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-background/60 px-2 py-1 font-mono text-xs" title={url}>{url}</code>
-      <button type="button" onClick={() => void copy()} aria-label="Copy preview address" className={`min-h-11 shrink-0 rounded-md border border-border px-2 text-xs ${CONTROL_HOVER_TRANSITION} hover:bg-muted`}>
-        {copied ? "Copied" : "Copy"}
+    <div className="relative max-w-full">
+      <code className="block w-full truncate rounded-md border border-border bg-background/60 py-1 pl-2 pr-10 font-mono text-xs" title={url}>{url}</code>
+      {/* Copy lives inside the address it copies, height-matched and always
+          pointer-shaped: a sibling button never quite aligns with its input. */}
+      <button type="button" onClick={() => void copy()} aria-label="Copy preview address" title={copied ? "Copied" : "Copy preview address"} className={`absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-xs text-muted-foreground ${CONTROL_HOVER_TRANSITION} hover:bg-muted hover:text-foreground`}>
+        {copied ? "✓" : "⧉"}
       </button>
     </div>
   );
@@ -3717,6 +3736,8 @@ function PreviewSection({ cardId }: { cardId: string }) {
   const [busy, setBusy] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [frameHidden, setFrameHidden] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const logAutoOpened = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -3733,20 +3754,7 @@ function PreviewSection({ cardId }: { cardId: string }) {
   // because of it.
   useEffect(() => { void load(); }, [load]);
 
-  // A server that is still starting is the ONE thing worth waiting for, and the
-  // wait is bounded: once it is running or failed, the loop ends.
-  const starting = info?.state === "starting";
-  useEffect(() => {
-    if (!starting) return;
-    let tries = 0;
-    const timer = setInterval(() => {
-      tries += 1;
-      void load().then((next) => { if (!next || next.state !== "starting" || tries >= 30) clearInterval(timer); });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [starting, load]);
-
-  async function act(action: "previewStart" | "previewStop") {
+  async function act(action: "previewStart" | "previewStop" | "previewShare") {
     setBusy(true);
     try {
       const result = await rpc.call(action, { cardId });
@@ -3760,6 +3768,33 @@ function PreviewSection({ cardId }: { cardId: string }) {
     }
   }
 
+  // A server that is still starting is the ONE thing worth waiting for, and
+  // the wait is bounded: once it is running or failed, the loop ends. The
+  // same tick drives the elapsed clock, and the log opens itself while
+  // starting or failed: that is exactly when the read-only terminal is
+  // needed, not after hunting for the toggle. The ref keeps a manual hide
+  // from being re-opened by the next poll.
+  const starting = info?.state === "starting";
+  useEffect(() => {
+    if (!starting) return;
+    let tries = 0;
+    setNowTick(Date.now());
+    const timer = setInterval(() => {
+      tries += 1;
+      setNowTick(Date.now());
+      void load().then((next) => { if (!next || next.state !== "starting" || tries >= 30) clearInterval(timer); });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [starting, load]);
+  useEffect(() => {
+    const state = info?.state ?? null;
+    if ((state === "starting" || state === "failed") && info?.log && logAutoOpened.current !== state) {
+      logAutoOpened.current = state;
+      setShowLog(true);
+    }
+    if (state !== "starting" && state !== "failed") logAutoOpened.current = null;
+  }, [info?.state, info?.log]);
+
   if (info === null) return null;
   // No web app here: stay out of the way. A missing workspace is worth saying,
   // because the user expected a card they can look at.
@@ -3772,7 +3807,8 @@ function PreviewSection({ cardId }: { cardId: string }) {
   const framed = framedUrl !== null;
   // The same narrowing for the open-in-a-tab affordance.
   const openUrl = running && info.url ? info.url : null;
-  const stateLabel = info.state === "starting" ? "Starting…" : info.state === "running" ? "Running" : info.state === "failed" ? "Failed" : "Not running";
+  const elapsedSecs = starting && info.startedAt ? Math.max(0, Math.round((nowTick - info.startedAt) / 1000)) : null;
+  const stateLabel = info.state === "starting" ? `Starting…${elapsedSecs != null ? ` ${elapsedSecs}s` : ""}` : info.state === "running" ? "Running" : info.state === "failed" ? "Failed" : "Not running";
 
   return (
     <CardDisclosure
@@ -3787,11 +3823,12 @@ function PreviewSection({ cardId }: { cardId: string }) {
               true here (the early return above), passed explicitly so the
               call states its real input instead of a magic literal. */}
           {previewAction(info.state, info.available) === "stop" ? (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("previewStop")}>{busy ? "Stopping…" : "Stop"}</Button>
+            <Button size="sm" variant="outline" className="cursor-pointer" disabled={busy} onClick={() => void act("previewStop")}>{busy ? "Stopping…" : "Stop"}</Button>
           ) : (
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("previewStart")}>{busy ? "Starting…" : "Start"}</Button>
+            <Button size="sm" variant="outline" className="cursor-pointer" disabled={busy} onClick={() => void act("previewStart")}>{busy ? "Starting…" : "Start"}</Button>
           )}
-          <button type="button" onClick={() => void load()} aria-label="Refresh preview state" className={`min-h-11 rounded-md border border-border px-2 text-xs ${CONTROL_HOVER_TRANSITION} hover:bg-muted`}>Refresh</button>
+          {/* Same Button pattern and height as Start/Stop: one row, one shape. */}
+          <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => void load()} aria-label="Refresh preview state">Refresh</Button>
         </span>
       }
     >
@@ -3828,9 +3865,19 @@ function PreviewSection({ cardId }: { cardId: string }) {
       ) : null}
 
       {info.hints.length > 0 ? (
-        <ul className="space-y-0.5">
+        <ul className="space-y-1">
           {info.hints.map((hint) => (
-            <li key={hint.text} className="text-[11px] text-muted-foreground">{hint.text}{hint.action ? <span className="font-medium text-foreground"> {hint.action}</span> : null}</li>
+            <li key={hint.text} className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[11px] text-muted-foreground">
+              <span>{hint.text}</span>
+              {/* A highlighted action that opens nothing is a lie — every
+                  hint action here does something real: an href navigates
+                  (pairing dashboard), otherwise it retries the port share. */}
+              {hint.action ? hint.href ? (
+                <Button size="sm" variant="outline" className="h-7 cursor-pointer px-2 text-[11px]" onClick={() => navigate.openUrl(hint.href!)}>{hint.action}</Button>
+              ) : (
+                <Button size="sm" variant="outline" className="h-7 cursor-pointer px-2 text-[11px]" disabled={busy} onClick={() => void act("previewShare")}>{busy ? "Sharing…" : hint.action}</Button>
+              ) : null}
+            </li>
           ))}
         </ul>
       ) : null}
@@ -3900,6 +3947,16 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       kind: "working",
       title: `Working — ${stageLabel(card.stage)}`,
       sub: "The agent advances on its own. Nothing needs you right now.",
+    };
+  }
+  // A completed card is done being worked — say so plainly. "At Audit" on a
+  // finished card read as "the agent is auditing" or "waiting for me", when
+  // neither is true: the outcome below is ready to review.
+  if (card.status === "completed") {
+    return {
+      kind: "calm",
+      title: "Done — ready to review",
+      sub: `The workflow finished${card.stage ? ` at ${stageLabel(card.stage)}` : ""}. The result is below.`,
     };
   }
   // A completed research index is represented by the Done column, not a
@@ -5155,6 +5212,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
             <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
 
+            {/* Preview sits above progress: once the card is ready, seeing the
+                result matters more than following the stages. */}
+            <PreviewSection cardId={card.id} />
+
             {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
             <CardDisclosure
               title={archivedPresentation?.workflow.title ?? "What is happening"}
@@ -5203,8 +5264,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </div>
               ) : null}
             </CardDisclosure>
-
-            <PreviewSection cardId={card.id} />
 
             <div ref={artifactsRef}>
             <CardDisclosure
@@ -5430,6 +5489,11 @@ function PillsyStyles() {
     ".dark .stelow-activity-waiting { border-color: hsl(38 92% 55% / 0.65); color: hsl(40 80% 75%); }",
     ".dark .stelow-activity-error { border-color: hsl(0 84% 60% / 0.65); color: hsl(0 80% 80%); }",
     ".dark .stelow-activity-working { border-color: hsl(220 90% 65% / 0.6); color: hsl(220 70% 80%); }",
+    // The open card's current stage breathes with the same effect as the
+    // board card's working chip (stelow-breathe) — one pulse language for
+    // "this is where work is happening", reused, never reinvented.
+    ".stelow-stage-pulse { animation: stelow-breathe 1.8s ease-in-out infinite; }",
+    "@media (prefers-reduced-motion: reduce) { .stelow-stage-pulse { animation: none; } }",
   ].join("\n");
   document.head.appendChild(style);
   return null;
