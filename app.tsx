@@ -2493,9 +2493,12 @@ function openAskArtifact(
   });
 }
 
-function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts, skips, offRouteReason }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null }) {
+function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts, skips, offRouteReason, terminal }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null; terminal?: boolean }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
-  const current = curIdx >= 0 ? curIdx : 0;
+  // A finished card has no current stage: park the cursor past the end so
+  // every reached stage reads as passed and nothing stays lit (or pulsing)
+  // as if work were still there. Click-to-revisit is unchanged.
+  const current = terminal ? STAGE_SEQUENCE.length : curIdx >= 0 ? curIdx : 0;
   const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
   const offRoute = new Set(skips.offRoute);
   const skipReasonByStage = new Map(skips.skipped.map((entry) => [entry.stage, entry.reason]));
@@ -2521,7 +2524,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
             <div className="flex gap-1 overflow-x-auto pb-0.5 md:flex-wrap md:overflow-visible">
               {stages.map((stage) => {
                 const idx = STAGE_SEQUENCE.indexOf(stage);
-                const isCurrent = stage === currentStage;
+                const isCurrent = !terminal && stage === currentStage;
                 const isOffRoute = !isCurrent && offRoute.has(stage);
                 const skipReason = !isCurrent ? skipReasonByStage.get(stage) ?? null : null;
                 const passed = idx >= 0 && idx < current && !isOffRoute && !skipReason;
@@ -5244,10 +5247,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex items-center gap-2">
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{archivedPresentation?.workflow.progressTitle ?? "Progress"}</h4>
-                    <span className="text-xs text-muted-foreground">{archivedPresentation?.workflow.progressHint ?? "Agent advances alone · click a lit stage to override"}</span>
+                    <span className="text-xs text-muted-foreground">{archivedPresentation?.workflow.progressHint ?? ((card?.status === "completed" || card?.status === "archived") ? "Workflow complete — click a stage to revisit it" : "Agent advances alone · click a lit stage to override")}</span>
                   </div>
                   <StageTimeline
                     currentStage={card.stage}
+                    terminal={card?.status === "completed" || card?.status === "archived"}
                     nextStages={detail.nextStages}
                     artifacts={detail.artifacts}
                     onPick={(stage) => setPendingAdvance(stage)}
