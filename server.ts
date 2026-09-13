@@ -37,7 +37,7 @@ import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript }
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
-import { ensureAutoContinueColumns, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "./lib/auto-continue.mjs";
+import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "./lib/auto-continue.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
@@ -2518,24 +2518,40 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         } else {
           // Auto-continue (lib/auto-continue): the provider ends a turn on
           // any final text, so a worker that narrates progress idles after
-          // every stage with work remaining. While the finished turn left
-          // fresh output behind, no question is pending, and the per-stage
-          // budget remains, resume the worker in place instead of waiting
-          // for a human Resume. Recording last_assistant_text here consumes
-          // the progress signal, so a still-idle thread cannot trigger a
-          // second nudge on the next poll; an exhausted budget falls through
-          // to the paused path below.
+          // every stage with work remaining. Progress is fresh chat output
+          // or a stage advance in the finished turn (tool-only turns move
+          // the machine without narrating — detected via the turn's events,
+          // scoped to the last turn so older advances and user-stopped
+          // threads earn nothing). While progress exists, no question is
+          // pending, and the per-stage budget remains, resume the worker in
+          // place instead of waiting for a human Resume. Recording
+          // last_assistant_text here consumes the text signal, and recording
+          // the stage consumes the advance signal, so a still-idle thread
+          // cannot trigger a second nudge on the next poll; an exhausted
+          // budget falls through to the paused path below.
           const autoProgressed = lastOutput != null && lastOutput !== card.last_assistant_text;
+          let autoAdvanced = false;
+          if (!autoProgressed) {
+            try {
+              const recent = await bb.sdk.threads.events.list({ threadId: card.worker_thread_id, order: "desc", limit: "40" });
+              autoAdvanced = lastTurnAdvancedStages(recent);
+            } catch { autoAdvanced = false; }
+          }
           const autoDecision = shouldAutoContinue({
             status, stage: currentStage, questionPending: questionIds.length > 0,
-            transitioningIntoIdle, progressed: autoProgressed,
+            transitioningIntoIdle, progressed: autoProgressed || autoAdvanced,
             autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
           });
           if (autoDecision.proceed) {
             const autoSent = await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: buildContinueNudge(), mentions: [] }] }).then(() => true).catch(() => false);
             if (autoSent) {
               const autoNext = nextAutoContinue({ stage: currentStage, autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null });
-              updateCard(cardId, { activity: "running", last_assistant_text: lastOutput, last_idle_at: null, last_error: null, auto_continue_count: autoNext.count, auto_continue_stage: autoNext.stage });
+              const autoFields: Parameters<typeof updateCard>[1] = { activity: "running", last_idle_at: null, last_error: null, auto_continue_count: autoNext.count, auto_continue_stage: autoNext.stage };
+              // A null read is "unknown", not progress: never blank the
+              // card's last text on it, or the trail and the stall detector
+              // below lose their reference point.
+              if (lastOutput != null) autoFields.last_assistant_text = lastOutput;
+              updateCard(cardId, autoFields);
               return;
             }
           }

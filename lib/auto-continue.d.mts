@@ -12,3 +12,4 @@ export declare function shouldAutoContinue(options: {
 }): { proceed: boolean; reason: string };
 export declare function nextAutoContinue(options: { stage: string; autoCount?: number | null; autoStage?: string | null }): { count: number; stage: string };
 export declare function resetAutoContinue(): { count: number; stage: null };
+export declare function lastTurnAdvancedStages(events: unknown): boolean;
