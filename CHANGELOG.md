@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.5.0] - 2026-09-13
+
+### Added
+
+- **Explicit completion (`bb stelow done`).** Done-ness was inferred from
+  `audit` + idle. The worker commits; the host verifies in code (build
+  only at `audit`, research/explore only with a passing `verify` and no
+  pending question). Every refusal names the fix.
+- **Host-served playbook (`bb stelow playbook`).** Exact state,
+  transitions, and stage-playbook paths per card — no more
+  `skill list | awk` discovery pipelines. Missing files fail loud.
+
+### Fixed
+
+- **Preset fence.** `preset add/remove/assign` refuse card workers;
+  `preset list` stays open.
+- **Prompt completion clause.** `DONE_PROTOCOL` is a single-source const
+  referenced by all five card spawn paths, pinned by the prompt-contract
+  test.
+
 ## [0.4.11] - 2026-09-13
 
 ### Fixed
