@@ -2743,7 +2743,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // blocks the rest, and metadata is only rewritten after its dirs move.
   async function migrateDirPrefixToSw(): Promise<void> {
     try {
-      const { planDirRename, applyDirRename, migrateTrackingHashes, legacyEntryForHash } = await import("./lib/dir-prefix-migration.mjs");
+      const { planDirRename, applyDirRename, migrateTrackingHashes, legacyEntryForHash, migratedCounterpartForHash, swDirHash } = await import("./lib/dir-prefix-migration.mjs");
       const rows = db.prepare("SELECT id, dir_hash FROM cards WHERE dir_hash LIKE 'pw-%'").all() as Array<{ id: string; dir_hash: string }>;
       if (rows.length === 0) return;
       let moved = 0;
@@ -2764,6 +2764,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             ?? legacyEntryForHash(array(tracking.workflows), row.dir_hash);
           const plan = planDirRename(entry ? { ...(entry as Record<string, unknown>), workflowId: card.id } : null);
           if (!plan) {
+            // Shared-hash reunion (clone/reseed twins): the directory already
+            // migrated under the twin card, so this card adopts the hash with
+            // a metadata-only update — no second move, nothing rewritten.
+            const twin = migratedCounterpartForHash(array(tracking.workflows), row.dir_hash);
+            if (twin) {
+              db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(swDirHash(row.dir_hash), now(), card.id);
+              moved += 1;
+              bb.log.info(`stelow: card ${card.id} adopted already-migrated ${swDirHash(row.dir_hash)} (shared seed)`);
+              continue;
+            }
             bb.log.warn(`stelow: dir prefix migration skipped ${row.id} (no resolvable state dir for ${row.dir_hash})`);
             continue;
           }

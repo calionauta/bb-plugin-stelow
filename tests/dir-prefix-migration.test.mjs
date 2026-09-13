@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyDirRename, legacyEntryForHash, migrateTrackingHashes, needsPrefixMigration, planDirRename, swDirHash } from "../lib/dir-prefix-migration.mjs";
+import { applyDirRename, legacyEntryForHash, migrateTrackingHashes, migratedCounterpartForHash, needsPrefixMigration, planDirRename, swDirHash } from "../lib/dir-prefix-migration.mjs";
 
 // Regression: the pw- → sw- standardization (v0.6.0) must move every stored
 // identity exactly once — state dir, approvals dir, and both indexes (cards
@@ -68,4 +68,12 @@ assert.deepEqual(
   "a legacy entry plans the same move off its own created date",
 );
 
-console.log("dir prefix migration test ok: plan, real renames, idempotent rerun, index rewrite, legacy fallback");
+// Shared-hash reunion: the twin already renamed the directory, so the second
+// card adopts the migrated hash with no second move.
+const shared = [{ workflowId: "card_a", dirHash: "sw-shared1", created: "2026-09-04T10:00:00.000Z" }];
+assert.deepEqual(migratedCounterpartForHash(shared, "pw-shared1")?.dirHash, "sw-shared1", "the migrated twin is found by the old hash");
+assert.equal(migratedCounterpartForHash(shared, "sw-shared1"), null, "an already-migrated hash needs no reunion");
+assert.equal(migratedCounterpartForHash(shared, "pw-missing"), null, "an unknown hash reunites with nothing");
+assert.equal(migratedCounterpartForHash([], "pw-shared1"), null, "an empty index reunites with nothing");
+
+console.log("dir prefix migration test ok: plan, real renames, idempotent rerun, index rewrite, legacy fallback, shared reunion");

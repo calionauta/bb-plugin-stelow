@@ -1,6 +1,7 @@
 export declare function swDirHash(dirHash: unknown): string;
 export declare function needsPrefixMigration(dirHash: unknown): boolean;
 export declare function legacyEntryForHash(workflows: unknown, dirHash: unknown): Record<string, unknown> | null;
+export declare function migratedCounterpartForHash(workflows: unknown, dirHash: unknown): Record<string, unknown> | null;
 export declare type DirRenamePlan = {
   workflowId: string;
   fromHash: string;
