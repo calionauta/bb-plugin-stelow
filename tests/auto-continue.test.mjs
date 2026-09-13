@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { MAX_AUTO_CONTINUES, ensureAutoContinueColumns, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "../lib/auto-continue.mjs";
+import { MAX_AUTO_CONTINUES, ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue } from "../lib/auto-continue.mjs";
 
 // Regression: a build worker narrated progress ("Stage done, moving on")
 // and idled after every stage — the provider ends a turn on any final
@@ -44,6 +44,59 @@ db.prepare("INSERT INTO cards VALUES (?, ?, 0, NULL)").run("card_1", "shape");
 assert.equal(db.prepare("SELECT auto_continue_count FROM cards WHERE id = ?").get("card_1").auto_continue_count, 0, "old rows default to zero budget used");
 db.close();
 
+// A tool-only turn still moves the machine: a completed `bb stelow
+// advance` inside the finished turn counts as progress even when the chat
+// text is unchanged. The window is the last turn only — an older advance,
+// a failed/pending one, a `--dry-run` validation, or a user-stopped thread
+// whose final partial turn advanced nothing earns no resume.
+const advanceItem = (command, status = "completed") => ({ type: "item/completed", data: { item: { type: "commandExecution", command, status } } });
+const lastTurn = [
+  { type: "thread/tokenUsage/updated", data: {} },
+  { type: "turn/completed", data: { status: "completed" } },
+];
+assert.equal(lastTurnAdvancedStages([
+  ...lastTurn,
+  advanceItem("bb stelow status; bb stelow advance shape"),
+  { type: "turn/started", data: {} },
+  advanceItem("bb stelow advance triage"),
+  { type: "turn/completed", data: { status: "completed" } },
+]), true, "an advance in the finished turn resumes a silent worker");
+assert.equal(lastTurnAdvancedStages([
+  ...lastTurn,
+  { type: "item/completed", data: { item: { type: "agentMessage", text: "hi" } } },
+  { type: "turn/started", data: {} },
+  advanceItem("bb stelow advance triage"),
+  { type: "turn/completed", data: { status: "completed" } },
+]), false, "an advance two turns back earns nothing");
+assert.equal(lastTurnAdvancedStages([
+  ...lastTurn,
+  advanceItem("bb stelow advance shape", "failed"),
+  { type: "turn/started", data: {} },
+]), false, "a failed advance is not progress");
+assert.equal(lastTurnAdvancedStages([
+  ...lastTurn,
+  advanceItem("bb stelow advance shape --dry-run"),
+  { type: "turn/started", data: {} },
+]), false, "a dry-run validation advances nothing");
+assert.equal(lastTurnAdvancedStages([
+  ...lastTurn,
+  advanceItem("bb stelow advance --help"),
+  { type: "turn/started", data: {} },
+]), false, "a help probe advances nothing");
+assert.equal(lastTurnAdvancedStages([
+  ...lastTurn,
+  advanceItem("bb stelow advance --stage shape"),
+  { type: "turn/started", data: {} },
+]), true, "the --stage form counts as an advance");
+assert.equal(lastTurnAdvancedStages([
+  ...lastTurn,
+  { type: "item/completed", data: JSON.stringify({ item: { type: "commandExecution", command: "bb stelow advance shape", status: "completed" } }) },
+  { type: "turn/started", data: {} },
+]), true, "string-encoded event data is tolerated");
+assert.equal(lastTurnAdvancedStages("nope"), false, "non-array history reads as no advance");
+assert.equal(lastTurnAdvancedStages([{ type: "turn/completed", data: {} }, null, { nope: 1 }]), false, "odd shapes never throw, they just miss");
+assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing");
+
 // Server contract: the idle branch consults the guard and resumes through
 // the shared continue copy; manual recovery paths reset the budget.
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
@@ -55,5 +108,7 @@ const resets = serverSource.match(/resetAutoContinue\(\)/g) ?? [];
 assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(serverSource, /ensureAutoContinueColumns\(db\)/, "the migration ensures the budget columns");
+assert.match(serverSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
+assert.match(serverSource, /threads\.events\.list\(\{ threadId: card\.worker_thread_id, order: "desc", limit: "40" \}\)/, "the scan reads recent turn events");
 
-console.log("auto-continue test ok: decision matrix, budget, migration, shared nudge, prompt discipline");
+console.log("auto-continue test ok: decision matrix, budget, migration, advance scan, shared nudge, prompt discipline");
