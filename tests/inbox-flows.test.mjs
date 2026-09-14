@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge, COMPLETED_BADGE_DAYS } from "../lib/inbox-events.mjs";
+import { inboxFilterEntries } from "../lib/inbox-event-presentation.mjs";
 
 const db = new Database(":memory:");
 db.exec(`
@@ -89,6 +90,20 @@ assert.equal(countsForInboxBadge({ ...freshDone, readAt: NOW }, NOW), false, "se
 assert.equal(countsForInboxBadge({ ...freshDone, occurredAt: NOW - (COMPLETED_BADGE_DAYS + 1) * DAY }, NOW), false, "stale completion never inflates the badge");
 assert.equal(countsForInboxBadge({ ...freshDone, archivedAt: NOW }, NOW), false, "archived completion stops counting");
 assert.equal(countsForInboxBadge({ ...freshDone, occurredAt: NOW + DAY }, NOW), false, "future-dated completion does not count");
+
+// Inbox filters distinguish attention work from durable history. A resolved
+// question may have followed a human answer, so the filter is lifecycle-based,
+// not proof that automation answered it.
+const filteredEvents = [
+  { kind: "question", archivedAt: null, resolvedAt: null, readAt: null },
+  { kind: "error", archivedAt: null, resolvedAt: 1, readAt: 1 },
+  { kind: "completed", archivedAt: null, resolvedAt: null, readAt: null },
+  { kind: "paused", archivedAt: 1, resolvedAt: null, readAt: null },
+];
+assert.equal(inboxFilterEntries(filteredEvents, "unread").length, 1, "Unread contains only unresolved, unread action work");
+assert.equal(inboxFilterEntries(filteredEvents, "resolved").length, 1, "Resolved history contains no-longer-actionable work");
+assert.equal(inboxFilterEntries(filteredEvents, "archived").length, 1, "Archived filter retains archived events");
+assert.equal(inboxFilterEntries(filteredEvents, "all").length, 3, "All contains every non-archived update including completions");
 
 db.close();
 

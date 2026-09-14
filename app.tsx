@@ -19,7 +19,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
-import { INBOX_EVENT_LABELS, inboxEventPresentation, isOpenInboxAction } from "./lib/inbox-event-presentation.mjs";
+import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxFilterEntries, isOpenInboxAction } from "./lib/inbox-event-presentation.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
@@ -523,7 +523,7 @@ function InboxPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
-  const [showArchived, setShowArchived] = useState(false);
+  const [filter, setFilter] = useState<"unread" | "resolved" | "archived" | "all">("unread");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Background refreshes must never flash loading UI (see BoardPanel).
@@ -531,18 +531,16 @@ function InboxPanel() {
   const load = useCallback(async () => {
     if (firstLoadRef.current) setLoading(true);
     try {
-      setNotifications((await rpc.call("listNotifications", { includeArchived: showArchived })).notifications);
+      setNotifications((await rpc.call("listNotifications", { includeArchived: true })).notifications);
       setLoadError(null);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Unable to load Stelow Inbox.");
     }
     finally { setLoading(false); firstLoadRef.current = false; }
-  }, [rpc, showArchived]);
+  }, [rpc]);
   useEffect(() => { void load(); }, [load]);
   useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
-  const action = notifications.filter((entry) => entry.archivedAt === null && entry.resolvedAt === null && ["question", "error", "paused"].includes(entry.kind));
-  const updates = notifications.filter((entry) => entry.archivedAt === null && entry.kind === "completed");
-  const resolved = notifications.filter((entry) => entry.archivedAt === null && entry.resolvedAt !== null && ["question", "error", "paused"].includes(entry.kind));
+  const entries = inboxFilterEntries(notifications, filter);
   async function open(entry: InboxNotification) {
     if (!entry.readAt) {
       try { await rpc.call("markNotificationRead", { notificationId: entry.id }); }
@@ -570,12 +568,18 @@ function InboxPanel() {
       </div>
     </section>
   );
-  const archived = notifications.filter((entry) => entry.archivedAt !== null);
+  const filters: Array<{ id: typeof filter; label: string; description: string }> = [
+    { id: "unread", label: "Unread", description: "Work that needs your attention." },
+    { id: "resolved", label: "Resolved automatically", description: "No longer needs attention. History is kept here." },
+    { id: "archived", label: "Archived", description: "Archived updates. Restore an item to return it to history." },
+    { id: "all", label: "All", description: "All active Inbox updates, newest first." },
+  ];
+  const selected = filters.find((entry) => entry.id === filter)!;
   // No blank on reload: first mount skeletons, later polls keep stale
   // content with a quiet updating hint instead of flashing.
   const firstLoad = loading && notifications.length === 0;
   const fatalError = loadError && notifications.length === 0;
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header className="flex items-start justify-between gap-3"><div><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">Work that needs you, plus recent completions. Batched questions answer in one sitting.{loading && !firstLoad ? " Updating…" : ""}</p></div><button onClick={() => setShowArchived((value) => !value)} className="cursor-pointer min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><Icon name="Archive" className="mr-1 inline h-4 w-4" aria-hidden />{showArchived ? "Back to Inbox" : "View archived"}</button></header>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : showArchived ? <><Section title="Archived" entries={archived} />{!archived.length ? <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No archived notifications.</p> : null}</> : <><Section title={`Needs you${action.length ? ` (${action.length})` : ""}`} entries={action} /><Section title="Recent updates" entries={updates} />{!action.length && !updates.length ? <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">All clear</h2><p className="mt-1 text-sm text-muted-foreground">Stelow will surface work when it needs you.</p></section> : null}{resolved.length ? <details className="rounded-md border"><summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Resolved ({resolved.length}) — answered or cleared automatically</summary><div className="px-3 pb-3"><Section title="Resolved" entries={resolved} /></div></details> : null}</>}</div></div>;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} className={`cursor-pointer min-h-11 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{entry.label}</button>)}</div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{filter === "unread" ? "All clear" : `No ${selected.label.toLowerCase()} updates`}</h2><p className="mt-1 text-sm text-muted-foreground">{filter === "unread" ? "Stelow will surface work only when it needs you." : selected.description}</p></section>}</div></div>;
 }
 
 function BoardPanel({ active }: { active: boolean }) {

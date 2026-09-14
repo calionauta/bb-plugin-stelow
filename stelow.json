@@ -1,0 +1,30 @@
+{
+  "workflows": [
+    {
+      "workflowId": "card_cpa76qyv",
+      "name": "melhorar-o-inbox-ter-uma-forma-de-filtrar-unread-r",
+      "description": "",
+      "status": "in-progress",
+      "cwd": "/home/deploy/repos/bb-plugin-stelow",
+      "dirHash": "sw-card_cpa76qyv",
+      "created": "2026-09-13T19:04:46.329Z",
+      "updated": "2026-09-13T19:04:46.340Z",
+      "stage": {
+        "current_stage": "triage",
+        "previous_stage": null,
+        "transitioned_at": "2026-09-13T19:04:46.340Z",
+        "history": [
+          {
+            "stage": "triage",
+            "entered_at": "2026-09-13T19:04:46.340Z"
+          }
+        ]
+      },
+      "phases": [],
+      "config": {
+        "appetite": "Lean",
+        "review_mode": "Auto"
+      }
+    }
+  ]
+}
