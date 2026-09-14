@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.13.0] - 2026-09-14
+
+### Added
+
+- **Card keyboard shortcut.** W on a focused card opens its worker thread;
+  Enter/Space still opens the card detail. Bound to the card surface only,
+  so typing in nested controls never navigates.
+- **Complete CLI reference.** The README now documents all 16 `bb stelow`
+  subcommands, including `done`, `verify`, `doctor`, `split`, `preview`,
+  `playbook`, `fan-out`, and `seed`.
+
+### Fixed
+
+- **README accuracy.** Removed stale claims (first-run tours, `@workflow-name`
+  mentions, a second-database denial that contradicted the board store),
+  corrected Explore to pick a technique rather than a workflow stage, fixed
+  the Analyze spelling, refreshed install pins, and pointed details at
+  FEATURES.md.
+
 ## [0.12.0] - 2026-09-14
 
 ### Added
