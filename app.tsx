@@ -2334,7 +2334,10 @@ function BoardCard({ card }: { card: CardItem }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
   const running = card.activity === "running";
-  const stuck = Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
+  // Retry is for active workers only: a Done card never offers it, even if a
+  // stale error survived underneath.
+  const terminal = card.status === "completed" || card.status === "archived" || card.status === "blocked";
+  const stuck = !terminal && Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
   const borderClass = running
     ? "stelow-border-running"
     : attention
@@ -2384,7 +2387,10 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
   const running = card.activity === "running";
-  const stuck = Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
+  // Retry is for active workers only: a Done card never offers it, even if a
+  // stale error survived underneath.
+  const terminal = card.status === "completed" || card.status === "archived" || card.status === "blocked";
+  const stuck = !terminal && Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
   const borderClass = running
     ? "stelow-border-running"
     : attention
@@ -5131,7 +5137,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       } else if (action === "push") {
         const result = await rpc.call("publicationPushTerminal", { cardId });
         if (!result.ok) toast.error(result.message);
-        else toast.success("Push terminal opened — watch git push run in BB.");
+        else toast.success(result.message);
       } else {
         const result = await rpc.call("publicationPullRequestAction", { cardId, operation: action, ...(action === "merge" ? { method: mergeMethod } : {}) });
         if (!result.ok) toast.error(result.message);
@@ -5516,7 +5522,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                           <details className="mt-2 rounded-md border border-emerald-500/20 p-2">
                             <summary className="cursor-pointer font-medium text-emerald-950 dark:text-emerald-100">What remains to publish it</summary>
                             <ol className="mt-1 list-decimal space-y-1.5 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
-                              <li>Push the branch in a terminal you can watch — BB opens it in this card’s worker checkout and runs <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> live. <Button size="sm" variant="outline" onClick={() => setPublicationAction("push")}>Push in terminal…</Button> <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
+                              <li>Push the branch in a terminal you can watch — BB opens it in this card’s worker checkout with <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> typed and ready; press Enter there to run it. <Button size="sm" variant="outline" onClick={() => setPublicationAction("push")}>Push in terminal…</Button> <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
                               <li>Then open a pull request through your Git provider or BB’s native flow — this panel’s PR actions (ready, merge) work on the existing PR.</li>
                             </ol>
                           </details>
@@ -5668,7 +5674,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               {publicationAction === "commit" && publishesToDefaultBranch ? <p>BB will create a local commit on <code>{publicationDefaultBranch}</code> in the card’s selected checkout. It will not fetch remote updates, merge incoming changes, push, or create a pull request. This bypasses a pull request, so continue only when the checkout is current and direct commits are intended.</p> : null}
               {publicationAction === "commit" && !publishesToDefaultBranch ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}
               {publicationAction === "squash" ? <p>BB will combine this branch’s committed changes into one local commit on its base branch. It will not fetch remote updates, push, or create a pull request. It bypasses pull-request review, so use it only when direct local integration is intended.</p> : null}
-              {publicationAction === "push" ? <p>BB will open a terminal in this card’s worker checkout and run <code>git push</code> where you can watch it live. Nothing pushes silently — the terminal shows success, rejection, or auth errors as they happen.</p> : null}
+              {publicationAction === "push" ? <p>BB will open a terminal in this card’s worker checkout with <code>git push</code> typed and ready — review it and press Enter to run. Nothing pushes until you do; rejections and auth errors appear in that shell, not hidden here.</p> : null}
+              {publicationAction === "push" && (publication?.mergeBase?.behind ?? 0) > 0 ? <p>This branch is {publication?.mergeBase?.behind} behind — a push will be rejected until you pull first. Do that in the same shell before running the typed command.</p> : null}
               {publicationAction === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}
               {publicationAction === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}
               {publicationAction === "merge" ? <p>BB will re-check the PR and request a {mergeMethod} merge. Repository rules, approvals, checks, and merge queues remain authoritative.</p> : null}

@@ -92,7 +92,7 @@ assert.match(server, /stripArchivedResuscitation\(previous\?\.status, fields/, "
 assert.match(server, /stripArchivedResuscitation\(latest\?\.status, write\)/, "mid-flight archives cannot resuscitate at write time");
 // The sync entry skips archived cards before any thread read, and the ask
 // CLI names archived threads instead of misreporting ownership.
-assert.match(server, /if \(!card\?\.worker_thread_id \|\| isArchivedCard\(card\)\) return;/, "sync polls never touch archived cards");
+assert.match(server, /if \(!card\?\.worker_thread_id \|\| isArchivedCard\(card\) \|\| card\.status === "completed" \|\| card\.status === "blocked"\) return;/, "sync polls never touch archived cards");
 assert.match(server, /if \(cardRow\.status === "archived"\) return \{ exitCode: 2, stderr: "This card is archived\." \}/, "ask on an archived thread names the state");
 
 // List-view groups collapse with archived collapsed by default and stored
@@ -149,5 +149,22 @@ assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the
 assert.match(app, /stelowReturnFocusCardId = cardId/, "opening a card remembers it for focus return");
 assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build board cards restore focus on return");
 assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
+
+// Done is terminal for attention, not just for archive: background sync
+// never re-errors a completed card, a stale last_error never flags
+// attention on one, and Retry is never offered there.
+assert.match(server, /if \(!card\?\.worker_thread_id \|\| isArchivedCard\(card\) \|\| card\.status === "completed" \|\| card\.status === "blocked"\) return;/, "sync polls never touch completed/blocked cards");
+const researchSync = server.slice(server.indexOf("async function syncResearchThreadState"), server.indexOf("async function syncExploreThreadState"));
+assert.match(researchSync, /card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked"/, "research sync never writes terminal cards");
+const exploreSync = server.slice(server.indexOf("async function syncExploreThreadState"), server.indexOf("async function exploreArtifact"));
+assert.match(exploreSync, /card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked"/, "explore sync never writes terminal cards");
+const failedWriter = server.slice(server.indexOf("async function applyWorkerFailed"), server.indexOf("async function markThreadRunning"));
+assert.match(failedWriter, /current\.status === "completed" \|\| current\.status === "archived" \|\| current\.status === "blocked"/, "a dead thread after Done never stains the card");
+assert.match(server, /const errorPending = !termStatus && \(Boolean\(row\.last_error\) \|\| activity === "error"\);/, "board attention ignores stale errors on terminal cards");
+assert.match(server, /: !termStatus && \(Boolean\(card\.last_error\) \|\| effectiveActivity === "error"\) \? "error"/, "detail attention ignores stale errors on terminal cards");
+const retry = rpcMethod("retryWorker", "restartWorker");
+assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked"/, "completed cards refuse Retry instead of nudging a finished worker");
+assert.match(boardCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "build board cards never offer Retry on terminal cards");
+assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "research/explore cards never offer Retry on terminal cards");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

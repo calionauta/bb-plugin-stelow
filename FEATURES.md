@@ -39,17 +39,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   non-Git folders, unavailable hosts, failing checks, and missing approvals
   fail closed with the next actionable explanation.
 - **Push in a visible terminal** (`publicationPushTerminal`). BB has no push
-  action, so the panel never pushes silently: it opens a terminal in the
-  card's own environment running `git push`, where the user watches success,
-  rejection, or auth errors live. Recorded in publication history like any
+  action, so the panel never pushes silently: it opens a shell in the
+  card's own environment with `git push` typed and ready — the user
+  reviews it and presses Enter, so success, rejection, or auth errors
+  happen in the open. Recorded in publication history like any
   other write.
 - **Local commit outcome and review** (`publicationCommitDiff`). Once BB saves
   a local commit, Done cards replace the disabled save control with a clear
   success state, current-HEAD indication, copyable SHA, and a read-only
   native-BB commit diff. Files render as collapsed accordions with
   expand/collapse all. The success state also discloses what remains —
-  push (copyable command; the panel cannot push) and pull request via
-  the provider or BB's native flow.
+  push in a terminal you watch (BB opens it with the command typed) and
+  pull request via the provider or BB's native flow.
   The viewer is restricted to commits recorded in that
   card’s publication history, so it never becomes an arbitrary Git browser.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
@@ -248,7 +249,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When the worker stalls or fails, I want one obvious fix.*
 
 - **Retry** (`retryWorker`). Nudges the same worker in place; nothing
-  resets. Refused on archived cards.
+  resets. Refused on archived cards — and on completed/blocked ones, where
+  reopening happens through a card comment or a fresh restart.
+- **Done is terminal for attention.** Background sync never writes a
+  completed card (no re-error after finishing), and a stale error
+  underneath Done never flags needs-attention or Retry. The board and the
+  detail agree because both read the same rule.
 - **Auto-continue** (`syncThreadState`, `lib/auto-continue.mjs`). A worker
   that narrates progress and stops idles after every stage (the provider
   ends a turn on any final text). While the finished turn left fresh

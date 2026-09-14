@@ -2339,7 +2339,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // once and stores it, so the Failed pill, the detail hero, and the inbox
   // event all name the cause instead of going blank.
   async function applyWorkerFailed(cardId: string, threadId: string, eventError: string | null) {
-    const recorded = getCard(cardId)?.last_error;
+    // A dead thread after Done is history, not a failure: never stain a
+    // terminal card with an error.
+    const current = getCard(cardId);
+    if (current && (current.status === "completed" || current.status === "archived" || current.status === "blocked")) return;
+    const recorded = current?.last_error;
     const specific = typeof eventError === "string" && eventError.trim() ? eventError.trim()
       : typeof recorded === "string" && recorded.trim() ? recorded.trim()
       : await workerFailureCause(threadId);
@@ -2376,6 +2380,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // (in-progress) on its first active poll. A completed index moves directly
   // to Done; a later user comment reopens the card through addCardComment.
   async function syncResearchThreadState(card: CardRow): Promise<void> {
+    // Terminal cards stay untouched: no failure, idle, or completion write
+    // may land after Done.
+    if (card.status === "completed" || card.status === "archived" || card.status === "blocked") return;
     try {
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id! });
       const status = thread.status as string;
@@ -2441,6 +2448,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // produced its artifact (explore-<stage>.md with real content). Mirrors the
   // research sync minus the index contract.
   async function syncExploreThreadState(card: CardRow): Promise<void> {
+    // Terminal cards stay untouched: no failure, idle, or completion write
+    // may land after Done.
+    if (card.status === "completed" || card.status === "archived" || card.status === "blocked") return;
     try {
       const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id! });
       const status = thread.status as string;
@@ -2700,7 +2710,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   async function syncThreadState(cardId: string): Promise<void> {
     const card = getCard(cardId);
-    if (!card?.worker_thread_id || isArchivedCard(card)) return;
+    // Done is terminal for background sync too: a completed/blocked card must
+    // never be re-errored (e.g. a cleaned-up state dir) after it finished.
+    if (!card?.worker_thread_id || isArchivedCard(card) || card.status === "completed" || card.status === "blocked") return;
     if (card.kind === "research") {
       await syncResearchThreadState(card);
       return;
@@ -3321,7 +3333,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           && now() - idleAt >= IDLE_ATTENTION_MS;
         const idleStuck = idleCandidate;
         const questionPending = activity === "awaiting-answer";
-        const errorPending = Boolean(row.last_error) || activity === "error";
+        // A stale last_error on a terminal card is residue, not a request:
+        // Done never asks for attention because of it.
+        const errorPending = !termStatus && (Boolean(row.last_error) || activity === "error");
         const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
         const needsAttention = attentionKind !== null;
         const preset = getPresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
@@ -3522,7 +3536,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const idleStuck = idleCandidate;
       const attentionKind = (idleStuck ? "idle"
         : effectiveActivity === "awaiting-answer" ? "question"
-        : Boolean(card.last_error) || effectiveActivity === "error" ? "error"
+        : !termStatus && (Boolean(card.last_error) || effectiveActivity === "error") ? "error"
         : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       // Worker ledger, newest first. The open row (endedAt null) is the live
@@ -3651,6 +3665,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card?.worker_thread_id) return { ok: false, error: "This card has no worker thread." };
       if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
+      // Done is terminal for Retry too: reopening happens through a card
+      // comment (statusForNewCardWork) or a fresh restart, never by nudging
+      // the finished worker back to running behind Done's back.
+      if (card.status === "completed" || card.status === "blocked") return { ok: false, error: "This card is completed — comment on it to reopen, or restart fresh." };
       // Research workers never advance stages: a build-flavored nudge
       // would instruct them to run a machine that does not exist here.
       const nudge = card.kind === "research"
@@ -4214,18 +4232,26 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const branch = prepared.snapshot.branch?.current;
       if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
       try {
-        // A visible terminal in the card's own environment: correct host and
-        // checkout by construction, user watches git push run live. The plugin
-        // never pushes silently — this is guidance executed in the open.
+        // An interactive shell, not a fire-and-forget command: command-mode
+        // terminals exit in ~1s (invisible, no scrollback after exit), while a
+        // shell persists in BB's terminal panel under its title. git push is
+        // typed but NOT run — the user reviews it and presses Enter, so
+        // rejections (stale branch, auth) happen in the open, never silently.
         const terminal = await bb.sdk.terminals.create({
           cols: 120,
           rows: 30,
           scope: { kind: "environment", environmentId: prepared.environmentId },
-          start: { mode: "command", command: "git push" },
+          start: { mode: "shell" },
           title: `Stelow push — ${branch}`,
         });
-        recordPublication(cardId, "push_terminal", `Opened a terminal running git push on ${branch}.`, null);
-        return { ok: true, message: "Push terminal opened — watch git push run in BB.", terminalId: terminal.id };
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const live = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
+          if (live?.status === "running") break;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git push").toString("base64") }).catch(() => null);
+        recordPublication(cardId, "push_terminal", `Opened a push shell on ${branch} with git push typed and ready.`, null);
+        return { ok: true, message: "Push shell opened — find it in BB's terminal panel and press Enter to run git push.", terminalId: terminal.id };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "BB could not open a push terminal.", terminalId: null as string | null };
       }

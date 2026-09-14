@@ -24,6 +24,8 @@ assert.match(server, /commit_sha = \?/, "commit review is limited to card-record
 assert.match(server, /bb\.sdk\.environments\.diffFiles/, "commit review uses BB's native environment diff API");
 assert.match(server, /bb\.sdk\.environments\.diffPatch/, "missing file patches are fetched from BB instead of given up on");
 assert.match(server, /bb\.sdk\.terminals\.create/, "push opens a visible BB terminal instead of pushing silently");
+assert.match(server, /start: \{ mode: "shell" \}/, "the push shell stays open for review instead of exiting like a one-shot command");
+assert.match(server, /terminals\.input/, "git push arrives typed, never executed without the user pressing Enter");
 assert.match(server, /scope: \{ kind: "environment", environmentId/, "the push terminal runs in the card's own environment, never an assumed host");
 assert.match(server, /push_terminal/, "terminal pushes enter publication history");
 assert.match(app, /Push in terminal…/, "pushing is an explicit confirmed action with live output");
