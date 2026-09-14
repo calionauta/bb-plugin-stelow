@@ -173,7 +173,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
   **Keep as one card** is visually separated and mutually exclusive. The
   outcome is stated once per choice, and the host rejects a contradictory
-  answer even if it did not come from the panel.
+  answer even if it did not come from the panel. The split summary states
+  that selecting every delivery archives the parent after creating children;
+  partial selections leave its remainder in place. Timed-out multi-choice
+  answers keep every selected value and record split approval just like live
+  forms, so recovery never changes the decision.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

@@ -26,6 +26,9 @@ import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs"
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
+import { isSplitQuestion, splitOptionDescription, splitQuestionText } from "./lib/split-question-presentation.mjs";
+import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
+import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
@@ -3075,14 +3078,6 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
 type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
 
-// Split consequences are supplied by the host so every client is safe, but
-// older still-open forms can carry the former, verbose suffix. The panel
-// already gives the consequence once in its split affordance, so preserve the
-// author-written scope and remove only those generated historical suffixes.
-function splitOptionDescription(description: string): string {
-  return description.replace(/\n\n(?:Selecting this creates one independent card for this delivery; unselected deliveries remain in this card\.|Keep the complete request in this card\. No new cards will be created\.|Creates one independent card for this delivery\.|Keep every delivery in this card\. No new cards will be created\.)\s*$/, "");
-}
-
 // Per-option evidence: the inline glance (preview) and the openable source
 // of truth (artifact) share the upstream Option names from
 // orchestrator stages/ask-patterns.md. Preview expands in place everywhere;
@@ -3131,8 +3126,9 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   if (questions.length === 0) return null;
   const current = questions[Math.min(index, questions.length - 1)]!;
-  const splitKeepLabel = "Keep as one card";
-  const isSplitProposal = current.multiple && current.options.some((option) => option.label === splitKeepLabel);
+  const splitKeepLabel = SPLIT_KEEP_LABEL;
+  const isSplitProposal = isSplitQuestion(current);
+  const prompt = isSplitProposal ? splitQuestionText(current.prompt) : current.prompt;
   const merged = (id: string): string[] => {
     if (skipped.has(id)) return [];
     const out = [...(selected[id] ?? [])];
@@ -3202,7 +3198,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
             </div>
           ) : null}
           <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div>
-          {current.prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{current.prompt}</p> : null}
+          {prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{prompt}</p> : null}
           {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">Select one or more deliveries to split, or choose <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> instead. These are mutually exclusive choices.</p> : null}
           <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
             {current.options.map((option) => {
@@ -3268,11 +3264,10 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
         const result = await rpc.call("answerQuestions", { cardId, answers: questions.map((q, i) => ({ questionId: q.id, answers: all[i] ?? [] })) });
         if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
       } else {
-        // Timed-out questions take one answer each; untouched ones stay open.
-        const payload = questions.flatMap((q, i) => {
-          const first = (all[i] ?? [])[0];
-          return first ? [{ questionId: q.id, answer: first }] : [];
-        });
+        // Timed-out questions retain every selected option; untouched ones
+        // stay open. This matters for split proposals, where partial approval
+        // is a deliberate multi-choice decision.
+        const payload = expiredAnswerPayload(questions, all);
         if (payload.length === 0) return;
         const result = await rpc.call("answerExpiredQuestions", { cardId, answers: payload });
         if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }

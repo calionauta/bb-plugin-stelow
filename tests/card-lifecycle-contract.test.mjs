@@ -189,11 +189,14 @@ assert.match(app, /function DisclosureSection\(/, "Settings and card content sha
 assert.match(app, /function DisclosureChevron/, "every collapsible shares one open/close affordance");
 assert.match(app, /group-open:rotate-90/, "the chevron mirrors open state instead of decorating");
 assert.doesNotMatch(app, /function WorkflowChoiceSelect</, "the cramped select is gone, not duplicated");
-assert.match(app, /const isSplitProposal = current\.multiple/, "split questions get their own safe, explicit guidance");
+assert.match(app, /const isSplitProposal = isSplitQuestion\(current\)/, "split questions get their own safe, explicit guidance");
 assert.match(app, /These are mutually exclusive choices/, "split UI makes Keep as one card an explicit alternative");
 assert.match(app, /splitOptionDescription\(/, "a still-open legacy split form does not repeat generated consequences");
+assert.match(app, /splitQuestionText\(current\.prompt\)/, "a still-open legacy split prompt upgrades without changing its stored answer identity");
 assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "question choices use visible, high-contrast selection controls");
-assert.match(server, /Work you leave unselected stays in this card/, "the split question is host-enriched before it reaches the user");
+assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split question is host-enriched before it reaches the user");
+assert.match(answerExpired, /answers: item\.answers/, "timed-out multi-choice answers retain every selected value");
+assert.match(answerExpired, /UPDATE split_proposals SET selected/, "a timed-out split answer records the same host-owned selection as a live answer");
 assert.match(app, /These needed you once, then cleared on their own/, "the Resolved filter explains why it exists");
 assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how it cleared");
 

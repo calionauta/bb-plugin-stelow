@@ -41,6 +41,7 @@ import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
+import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
@@ -461,7 +462,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), threadId: z.string().nullable(), error: z.string().nullable() }),
   },
   answerExpiredQuestions: {
-    input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answer: z.string().min(1).max(10_000) })).min(1).max(12) }).strict(),
+    input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().min(1).max(10_000)).min(1).max(20) })).min(1).max(12) }).strict(),
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
   },
   postGithubCompletion: {
@@ -4496,31 +4497,44 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const card = getCard(cardId);
       if (!card) return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
       if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
-      const rows = new Map<string, { thread_id: string; question: string }>();
+      const rows = new Map<string, { thread_id: string; question: string; answers: string[] }>();
       for (const item of answers) {
         const row = db.prepare("SELECT * FROM expired_questions WHERE id = ? AND card_id = ? AND answered = 0").get(item.questionId, cardId) as { thread_id: string; question: string } | undefined;
-        if (row && !rows.has(item.questionId)) rows.set(item.questionId, { thread_id: row.thread_id, question: row.question });
+        if (row && !rows.has(item.questionId)) rows.set(item.questionId, { thread_id: row.thread_id, question: row.question, answers: item.answers });
       }
       if (rows.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };
-      const decisions: Array<{ question: string; answer: string }> = [];
+      const decisions: Array<{ question: string; answers: string[] }> = [];
       // Resume the CURRENT worker: the row's thread may be stale (restart /
       // reseed archives the thread but keeps its expired questions).
       const threadId = card.worker_thread_id ?? rows.values().next().value?.thread_id ?? null;
       db.transaction(() => {
         for (const [questionId, row] of rows) {
-          const answer = answers.find((item) => item.questionId === questionId)?.answer ?? "";
-          logCardComment(cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${row.question}\nA: ${answer}`);
+          logCardComment(cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${row.question}\nA: ${row.answers.join(", ")}`);
           db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
-          decisions.push({ question: row.question, answer });
+          decisions.push({ question: row.question, answers: row.answers });
         }
       })();
+      // Timed-out split asks must record the same host-owned selection as
+      // live asks; otherwise a valid response would resume the worker but
+      // make `bb stelow split` refuse as unanswered.
+      {
+        const proposal = db.prepare("SELECT question FROM split_proposals WHERE card_id = ? AND selected IS NULL").get(cardId) as { question: string } | undefined;
+        const wanted = (proposal?.question ?? "").trim();
+        const selected = wanted
+          ? decisions.filter((decision) => decision.question.trim() === wanted).flatMap((decision) => decision.answers)
+          : [];
+        if (selected.length > 0) {
+          db.prepare("UPDATE split_proposals SET selected = ?, answered_at = ? WHERE card_id = ? AND selected IS NULL")
+            .run(JSON.stringify(selected), Date.now(), cardId);
+        }
+      }
       markQuestionsAnswered(db, { cardId, interactionIds: [...rows.keys()].map((questionId) => `expired:${questionId}`), occurredAt: now() });
       const openQuestionIds = await syncOpenQuestionInbox(card);
       updateCard(cardId, { activity: hasOpenQuestions(cardId, openQuestionIds) ? "awaiting-answer" : "running", status: "in-progress" });
       bb.realtime.publish("card-state", { cardId });
       if (threadId) {
         try {
-          await bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text: `Answers to ${decisions.length === 1 ? "the question that timed out" : `all ${decisions.length} questions that timed out`} — continue the workflow now.\n\n${decisions.map((d) => `Q: ${d.question}\nA: ${d.answer}`).join("\n\n")}`, mentions: [] }] });
+          await bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text: `Answers to ${decisions.length === 1 ? "the question that timed out" : `all ${decisions.length} questions that timed out`} — continue the workflow now.\n\n${decisions.map((d) => `Q: ${d.question}\nA: ${d.answers.join(", ")}`).join("\n\n")}`, mentions: [] }] });
         } catch {
           // Thread may be stopped; the comments still record the answers.
         }
@@ -4942,14 +4956,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // irreversible semantics. State each consequence once: candidates
           // are a multi-select, while the keep option is an exclusive
           // alternative handled by the renderer and the split executor.
-          groups[0]!.question = `${groups[0]!.question.trim()}\n\nSelect any deliveries to move into separate cards. Work you leave unselected stays in this card.`;
-          groups[0]!.options = splitOptions.map((option) => {
-            const isKeep = option.label.trim().toLowerCase() === SPLIT_KEEP_LABEL.toLowerCase();
-            const consequence = isKeep
-              ? "Keep every delivery in this card. No new cards will be created."
-              : "Creates one independent card for this delivery.";
-            return { ...option, description: option.description ? `${option.description}\n\n${consequence}` : consequence };
-          });
+          groups[0]!.question = splitQuestionText(groups[0]!.question);
           db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, question, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, ?, NULL, ?, NULL, NULL, '[]')")
             .run(cardRow.id, groups[0]!.question, JSON.stringify(slices), Date.now());
         }
