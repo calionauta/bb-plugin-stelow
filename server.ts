@@ -4138,10 +4138,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             });
             if (demanded.outcome === "available") {
               for (const patch of demanded.patches) patches.set(patch.path, patch);
+            } else {
+              const reason = demanded.outcome === "not_applicable" ? demanded.message : demanded.failure.message;
+              bb.log.warn(`stelow commit diff: diffPatch unavailable for ${commitSha} (${missingPaths.length} files): ${reason}`);
             }
             patchesTruncated = missingPaths.length > MAX_MISSING_PATCHES;
-          } catch {
+          } catch (error) {
             // Keep the initial patches; the UI states per-file availability.
+            bb.log.warn(`stelow commit diff: diffPatch failed for ${commitSha}: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
         return {

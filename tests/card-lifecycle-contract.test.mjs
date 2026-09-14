@@ -142,5 +142,7 @@ assert.match(boardCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens t
 assert.match(boardCard, /navigate\.toThread\(card\.workerThreadId\)/, "W navigates to the card's own worker thread");
 const lightweightCard = appFunction("LightweightTrackCard", "function ResearchCard(");
 assert.match(lightweightCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused research/explore card");
+const listRow = appFunction("TrackListRow", "function BoardColumn(");
+assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from list-view rows too");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

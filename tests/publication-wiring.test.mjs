@@ -23,6 +23,7 @@ assert.match(server, /publication_events/, "publication writes are separately au
 assert.match(server, /commit_sha = \?/, "commit review is limited to card-recorded publication history");
 assert.match(server, /bb\.sdk\.environments\.diffFiles/, "commit review uses BB's native environment diff API");
 assert.match(server, /bb\.sdk\.environments\.diffPatch/, "missing file patches are fetched from BB instead of given up on");
+assert.match(server, /stelow commit diff: diffPatch (unavailable|failed)/, "patch fetch failures are logged for diagnosis instead of swallowed");
 assert.match(server, /initialPatches is empty even/, "commit targets fetch every missing patch, not just on-demand ones");
 assert.match(app, /file\.loadMode === "too_large"/, "the commit viewer distinguishes too-large files from missing patches");
 assert.match(server, /if \(result\.merged\) recordPublication/, "only completed local merges enter publication history");

@@ -2226,7 +2226,8 @@ function TrackListRow({ card, meta, onOpen }: {
   meta: string | null;
   onOpen: () => void;
 }) {
-  return <button onClick={onOpen} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>;
+  const navigate = useBbNavigate();
+  return <button onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -5648,7 +5649,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   {file.truncated ? <p className="text-xs text-muted-foreground">This file’s patch is truncated.</p> : null}
                 </div>
               ))}
-              {publicationCommitDiff.truncated ? <p className="text-xs text-muted-foreground">The commit diff is truncated by BB’s safety limit.</p> : null}
+              {publicationCommitDiff.truncated ? <p className="text-xs text-muted-foreground">The commit diff is truncated — some files may be missing.</p> : null}
             </div>
           ) : null}
         </DialogContent>
