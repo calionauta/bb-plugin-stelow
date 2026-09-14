@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.9.1] - 2026-09-14
+
+### Fixed
+
+- **Publication action safety.** Done-card pull-request controls now respect
+  the same checked-out feature-branch policy as commits and local merges, and
+  only offer the state transition that applies to the current PR. A local
+  squash attempt is recorded in publication history only after BB confirms it
+  merged. Confirmation dialogs also lock while BB handles a request, avoiding
+  accidental duplicate writes.
+
 ## [0.9.0] - 2026-09-13
 
 ### Added
