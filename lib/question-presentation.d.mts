@@ -1,6 +1,4 @@
-export type QuestionLocale = "en" | "pt-BR";
-export declare function questionLocale(rawLocale: unknown, legacyQuestion?: string | null | undefined, options?: Array<{ label?: string }> | null | undefined): QuestionLocale;
-export declare function questionCopy(locale: QuestionLocale): {
+export declare function questionCopy(): {
   answerNeeded: string;
   answersNeeded: (count: number) => string;
   questionOf: (current: number, total: number) => string;
@@ -20,5 +18,4 @@ export declare function questionCopy(locale: QuestionLocale): {
   batchProgress: (done: number, total: number, canSkip: boolean) => string;
   pickOneOrMore: string;
   recoveryHeading: string;
-  recoveryBody: string;
 };
