@@ -8,6 +8,14 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.7] - 2026-09-14
+
+### Fixed
+
+- **Upgrade migration compatibility.** The explicit question-kind column is
+  now added as a new migration instead of altering an already-recorded table
+  migration, so managed installations can activate the recovery UI update.
+
 ## [0.18.6] - 2026-09-14
 
 ### Fixed
