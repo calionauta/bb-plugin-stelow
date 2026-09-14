@@ -8,6 +8,16 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.2] - 2026-09-14
+
+### Fixed
+
+- **Lost questions cannot strand a card.** An agent now treats only a visible
+  structured card form (or its durable timeout recovery) as pending. Stale
+  split-proposal metadata and earlier chat messages no longer cause an agent
+  to claim it is waiting for an invisible question; the host separately
+  prevents duplicate real forms.
+
 ## [0.18.1] - 2026-09-14
 
 ### Changed
