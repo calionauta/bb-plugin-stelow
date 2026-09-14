@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.15.1] - 2026-09-14
+
+### Fixed
+
+- **Generic post-commit steps.** The "what remains" guidance no longer
+  assumes the card's project is this plugin itself: push, then pull
+  request via the provider or BB's native flow.
+
 ## [0.15.0] - 2026-09-14
 
 ### Added
