@@ -2323,6 +2323,7 @@ function BoardCard({ card }: { card: CardItem }) {
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
+  const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
   return (
     <div
       role="button"
@@ -2330,8 +2331,12 @@ function BoardCard({ card }: { card: CardItem }) {
       draggable
       onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
-      title="Click to inspect"
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
+        else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
+      }}
+      title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open card ${card.displayName}.`}
     >
@@ -2366,6 +2371,7 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
+  const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
   return (
     <div
       role="button"
@@ -2373,8 +2379,12 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
       draggable
       onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } }}
-      title="Click to inspect"
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
+        else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
+      }}
+      title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open ${ariaNoun} ${card.displayName}.`}
     >

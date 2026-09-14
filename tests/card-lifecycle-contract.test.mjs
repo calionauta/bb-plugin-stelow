@@ -134,4 +134,13 @@ assert.match(app, /Open thread then opens that project worker; the earlier threa
 assert.match(app, /function TrackListRow\(\{ card, meta, onOpen \}/, "all three list views share one row");
 assert.match(app, /<TrackListRow key=\{card\.id\} card=\{card\} meta=\{metaFor\(card\)\}/, "lightweight lists render the shared row");
 
+// Focused-card keyboard: Enter/Space opens the card, W opens its worker
+// thread. Guarded to the card surface so typing elsewhere never navigates.
+const boardCard = appFunction("BoardCard", "function LightweightTrackCard(");
+assert.match(boardCard, /event\.target !== event\.currentTarget/, "card keys ignore events from nested controls");
+assert.match(boardCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused build card");
+assert.match(boardCard, /navigate\.toThread\(card\.workerThreadId\)/, "W navigates to the card's own worker thread");
+const lightweightCard = appFunction("LightweightTrackCard", "function ResearchCard(");
+assert.match(lightweightCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused research/explore card");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

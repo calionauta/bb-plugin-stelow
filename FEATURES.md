@@ -65,7 +65,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   track, and the lightweight lifecycle (To-Do / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
-  (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their
+  (Analyze/Plan/Execute/Review) + Done/Archived; cards sit in their
   stage's phase. The complete Build topology (phases, terminal outcomes,
   entry checkpoints, labels, and stage-to-column projection) is derived from
   one workflow catalog; Research/Explore own their intentionally separate
@@ -76,6 +76,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preference, not a CTA). Groups collapse per track (persisted; Archived
   starts collapsed). One shared row across tracks (Build geometry
   standard; strategy/technique rides the meta line).
+- **Card keyboard.** Enter/Space on a focused card opens its detail;
+  W opens its worker thread. The handler is bound to the card surface
+  only, so typing in nested controls never navigates.
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
   needs-attention + reset; the Filters chip badges the active-filter count.
   The attention count in each Build/Research header is a shortcut that turns

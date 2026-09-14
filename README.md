@@ -8,20 +8,22 @@ One board, one quiet inbox.
 
 ## What it adds
 
-- **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyse, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself; first-run tours teach each board once.
-- **Explore runs:** pick one workflow stage (Shape Up, interface alternatives, critiques, tech planning…), supply the input, get one artifact — no triage, no pipeline, no gates.
+- **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyze, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself.
+- **Explore runs:** pick one technique (Shape Up, interface alternatives, critiques, tech planning…), supply the input, get one artifact — no triage, no pipeline, no gates.
 - **Deterministic artifacts:** research round files and explore artifacts are pre-created by the plugin and validated in code; `bb stelow verify` lets the worker self-check before finishing.
 - **About tab:** what Stelow is vs what the plugin adds, with each repo link and each version side by side.
 - **Workflow actions:** start a Stelow agent thread, open generated artifacts, approve gates, advance stages, repair a stuck workflow, or archive a card.
 - **Native approval receipts:** approvals are written to `.stelow/approvals/{dirHash}/` using Stelow's canonical filenames.
-- **PRD and plan review:** `.md` artifacts can open with the Stelow reviewer; select text and append a contextual review comment.
+- **Artifact comments:** quote a passage in any rendered artifact and send it to the agent as a contextual comment.
 - **Blocking questions:** single-choice and multi-choice forms replace the composer through `bb ui.requestInput` and the `bb stelow ask` CLI. The card stays in its column and signals it is waiting for an answer while a question is open.
 - **Agent presets:** assign a provider/model reasoning/permission profile to any card (schema mirrors the bb Tasks plugin). The worker thread is started with the preset's execution options.
 - **Sidebar badge:** the Stelow menu row shows a live count of unresolved inbox action items plus unseen recent completions.
-- **Agent integration:** `@workflow-name` mentions resolve fresh Stelow state into agent context.
 - **CLI:** inspect workflows, request structured input, advance stages, verify artifacts, fan out research, and manage presets.
 
-The plugin does **not** maintain a second workflow database. `stelow.json` and `.stelow/` remain the source of truth.
+The plugin keeps its own board store (cards, questions, presets, publication
+history). `stelow.json` and `.stelow/` remain the source of truth for the
+workflow itself — the board reads them, never replaces them. Details live in
+[FEATURES.md](./FEATURES.md).
 
 ## Requirements
 
@@ -44,13 +46,13 @@ The singleton bb personal project has no workspace source, so the board asks you
 > Pending marketplace approval — install a tracking release from this repository for now (update checks then keep working):
 
 ```bash
-bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@semver:^0.3.15" --yes
+bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@semver:^0.13.0" --yes
 bb plugin list   # stelow should show as running
 ```
 
 Or in bb: Extensions → Plugins → Add plugin, paste
 `git:https://github.com/calionauta/bb-plugin-stelow.git`, Install.
-Pin a release with `@vX.Y.Z` (e.g. `@v0.1.57`); update with
+Pin a release with `@vX.Y.Z` (e.g. `@v0.13.0`); update with
 `bb plugin update stelow`.
 
 Research cards also need the product playbooks from the agent skills hub:
@@ -95,29 +97,20 @@ Open **Stelow** in bb's left navigation (the row shows a live badge of items nee
 
 1. Choose the workflow's **Appetite** and **Review mode** above the composer
    (defaults: **Lean** and **Auto**). Then enter a product request in the
-   **composer** (bb's full new-thread editor): type `@` to mention, or use the
-   `+` menu to attach files/skills before starting. Those choices are written
+   **composer** (bb's full new-thread editor). Those choices are written
    to the new workflow's `state.md` and `stelow.json`, so the worker does not
    ask for them again. After a successful creation, they also become the
    board's defaults for your next card. The card is created in **Triage** and
    the agent begins there.
-   The compact **Worker policy** line shows the configured preset for each
-   workflow phase and opens **Configure presets** when you need to change it.
-   A new card always starts with the shared Analysis preset, then adopts each
-   later phase's preset automatically; absent assignments use the built-in
-   default.
-2. The agent runs the triage → select → … pipeline and, the moment it needs a
+2. The agent runs the pipeline and, the moment it needs a
    decision, opens a structured question. While a question is pending the card
    stays in its column, marked as waiting for your answer. Reply in the form, in the thread, or from the card
-   detail's "Answer in thread" action.
-3. If nobody answers before the ask timeout, the question stays on the card as
-   answerable — the agent stops and waits instead of guessing, and any late answer is delivered to the worker thread
-   for its next turn.
-4. Open product specs, interface proposals, and technical plans from the board.
-5. Select text in a document and add a review comment.
-6. Approve the matching gate only after review; the plugin creates the portable
-   receipt.
-7. Track planned scopes and execution tasks in the board.
+   detail's "Answer in thread" action. Unanswered questions stay answerable
+   on the card — the agent waits instead of guessing.
+3. Open product specs, interface proposals, and technical plans from the board;
+   quote a passage to comment on it.
+4. Approve the matching gate only after review; the plugin creates the portable
+   receipt. Track planned scopes and execution tasks in the board.
 
 ### Cards and keyboard
 
@@ -134,8 +127,8 @@ environment, base branch, machine, and instructions) profile. Cards remember
 their preset; the worker thread is spawned with that profile.
 
 When the provider is **Pi**, the preset picker intentionally shows only the
-configured Bifrost routes: Harness Coding, GPT-5.6 Sol, Terra, and Luna. It
-does not expose Pi's unrelated OpenCode/OpenRouter route catalog.
+configured Bifrost routes. It does not expose Pi's unrelated
+OpenCode/OpenRouter route catalog.
 
 ```bash
 bb stelow preset list
@@ -182,6 +175,14 @@ bb stelow ask \
 bb stelow preset list|add|remove|assign
 
 bb stelow advance --dry-run <stage>   # validate a transition without mutating
+bb stelow done [--card <card_id>]     # verify in code and record completion
+bb stelow verify [--card <card_id>]   # worker self-check: artifacts are valid
+bb stelow doctor [--project <id>]     # detect workflow drift
+bb stelow split [--card <card_id>]    # execute an approved card-split proposal
+bb stelow preview [status|start|stop] [--card <card_id>]  # card workspace dev server
+bb stelow playbook [--card <card_id>] # exact state and playbook paths
+bb stelow fan-out --opportunity <id> [--card <card_id>]   # index opportunities into build cards
+bb stelow seed --project <proj_id> --name <name> --intent <type>  # seed state files
 bb stelow schema [command]            # machine-readable subcommand contracts
 bb stelow sync-scopes [--json]        # parse spec-tech scopes (auto-runs on advance to execution)
 bb stelow lock acquire|release|check --scope <id> [--file ...] [--ttl N] [--json]
