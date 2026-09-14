@@ -42,7 +42,7 @@ import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, 
 import { doneEligibility } from "./lib/completion.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
-import { canCommitPublication, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
+import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -2038,12 +2038,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const squashMerge = canSquashMerge(status);
     const pr = pullRequest.outcome === "available" && "pullRequest" in pullRequest ? pullRequest.pullRequest : null;
     const capability = ({ ok, reason }: { ok: boolean; reason: string | null }) => ({ available: ok, reason });
-    const merge = capability(canMergePullRequest(pullRequest));
-    const pullRequestError = "message" in pullRequest && typeof pullRequest.message === "string" ? pullRequest.message : "Pull-request status is unavailable.";
-    const prExists = pr !== null;
-    const prAction = prExists
-      ? { available: pr.state === "open", reason: pr.state === "open" ? null : `This pull request is ${pr.state}.` }
-      : { available: false, reason: pullRequest.outcome === "absent" ? "Create a pull request in BB or your Git provider first." : pullRequestError };
+    const markReady = capability(canMarkPullRequestReady(status, pullRequest));
+    const markDraft = capability(canMarkPullRequestDraft(status, pullRequest));
+    const merge = capability(canMergePullRequest(status, pullRequest));
     return {
       available: blocker === null,
       message: blocker,
@@ -2058,8 +2055,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       capabilities: {
         commit: capability(commit),
         squashMerge: capability(squashMerge),
-        markReady: prAction,
-        markDraft: prAction,
+        markReady,
+        markDraft,
         mergePullRequest: merge,
       },
       events,
@@ -4074,7 +4071,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!base) return { ok: false, message: "BB could not determine the merge-base branch.", commitSha: null };
       try {
         const result = await bb.sdk.environments.squashMerge({ environmentId: prepared.environmentId, mergeBaseBranch: base });
-        recordPublication(cardId, "squash_merge", result.message, result.commitSha);
+        if (result.merged) recordPublication(cardId, "squash_merge", result.message, result.commitSha);
         return { ok: result.merged, message: result.message, commitSha: result.commitSha };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "BB could not squash merge this workspace.", commitSha: null };

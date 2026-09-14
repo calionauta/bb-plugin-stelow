@@ -4922,6 +4922,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [publication, setPublication] = useState<PublicationStatus | null>(null);
   const [publicationLoading, setPublicationLoading] = useState(false);
   const [publicationAction, setPublicationAction] = useState<"commit" | "squash" | "ready" | "draft" | "merge" | null>(null);
+  const [publicationSubmitting, setPublicationSubmitting] = useState(false);
   const [mergeMethod, setMergeMethod] = useState<"merge" | "rebase" | "squash">("squash");
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
@@ -5094,7 +5095,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
   async function doPublicationAction() {
     const action = publicationAction;
-    if (!action) return;
+    if (!action || publicationSubmitting) return;
+    setPublicationSubmitting(true);
     try {
       if (action === "commit") {
         const result = await rpc.call("publicationCommit", { cardId });
@@ -5110,6 +5112,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         else toast.success(result.message);
       }
     } finally {
+      setPublicationSubmitting(false);
       setPublicationAction(null);
       await loadPublication();
       await load();
@@ -5537,7 +5540,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         confirmTone="destructive"
         onConfirm={doDelete}
       />
-      <Dialog open={publicationAction !== null} onOpenChange={(open) => { if (!open) setPublicationAction(null); }}>
+      <Dialog open={publicationAction !== null} onOpenChange={(open) => { if (!open && !publicationSubmitting) setPublicationAction(null); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{publicationAction === "commit" ? "Commit this workspace?" : publicationAction === "squash" ? "Squash merge into the local base branch?" : publicationAction === "ready" ? "Mark this pull request ready?" : publicationAction === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle>
@@ -5550,8 +5553,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-            <Button onClick={() => void doPublicationAction()}>{publicationAction === "commit" ? "Commit workspace" : publicationAction === "squash" ? "Squash merge" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
+            <DialogClose asChild><Button variant="outline" disabled={publicationSubmitting}>Cancel</Button></DialogClose>
+            <Button disabled={publicationSubmitting} onClick={() => void doPublicationAction()}>{publicationSubmitting ? "Submitting…" : publicationAction === "commit" ? "Commit workspace" : publicationAction === "squash" ? "Squash merge" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { canCommitPublication, canMergePullRequest, canSquashMerge, publicationBlocker } from "../lib/vcs-publication.mjs";
+import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker } from "../lib/vcs-publication.mjs";
 
 const available = (overrides = {}) => ({
   outcome: "available",
@@ -21,8 +21,13 @@ assert.deepEqual(canSquashMerge(available({ workingTree: { hasUncommittedChanges
 assert.deepEqual(canSquashMerge(available({ workingTree: { hasUncommittedChanges: true } })), { ok: false, reason: "Commit or discard working-tree changes before a local squash merge." });
 
 const readyPr = { outcome: "available", pullRequest: { state: "open", review: { state: "approved" }, checks: { state: "passing" }, mergeability: { state: "mergeable" } } };
-assert.deepEqual(canMergePullRequest(readyPr), { ok: true, reason: null });
-assert.match(canMergePullRequest({ ...readyPr, pullRequest: { ...readyPr.pullRequest, checks: { state: "pending" } } }).reason, /not passing/);
-assert.match(canMergePullRequest({ outcome: "absent" }).reason, /no pull request/);
+assert.deepEqual(canMarkPullRequestReady(available(), { ...readyPr, pullRequest: { ...readyPr.pullRequest, state: "draft" } }), { ok: true, reason: null });
+assert.match(canMarkPullRequestReady(available(), readyPr).reason, /already ready/);
+assert.deepEqual(canMarkPullRequestDraft(available(), readyPr), { ok: true, reason: null });
+assert.match(canMarkPullRequestDraft(available(), { ...readyPr, pullRequest: { ...readyPr.pullRequest, state: "draft" } }).reason, /already a draft/);
+assert.deepEqual(canMergePullRequest(available(), readyPr), { ok: true, reason: null });
+assert.match(canMergePullRequest(available(), { ...readyPr, pullRequest: { ...readyPr.pullRequest, checks: { state: "pending" } } }).reason, /not passing/);
+assert.match(canMergePullRequest(available(), { outcome: "absent" }).reason, /no pull request/);
+assert.match(canMarkPullRequestDraft(available({ branch: { currentBranch: "main", defaultBranch: "main" }, checkout: { kind: "branch", branchName: "main" } }), readyPr).reason, /blocked/);
 
 console.log("vcs publication policy ok");
