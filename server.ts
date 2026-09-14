@@ -2129,6 +2129,45 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { card, environmentId: snapshot.environmentId, snapshot };
   }
 
+  type PushShellSession = { id: string; title: string; status: string; exitCode: number | null; createdAt: number };
+
+  async function pushShellSessions(environmentId: string): Promise<PushShellSession[]> {
+    const listed = await bb.sdk.terminals.list({ scope: { kind: "environment", environmentId } }).catch(() => null);
+    const sessions = (listed as { sessions?: PushShellSession[] } | null)?.sessions ?? [];
+    return sessions
+      .filter((session) => session.title.startsWith("Stelow push"))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 5);
+  }
+
+  async function readPushShell(session: PushShellSession): Promise<{ text: string | null; unavailable: boolean; pushState: "waiting" | "running" | "succeeded" | "failed"; pushExit: number | null }> {
+    try {
+      const out = await bb.sdk.terminals.output({ terminalId: session.id, tailBytes: 8000 });
+      const text = (out.chunks ?? [])
+        .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
+        .join("")
+        // Strip ANSI escapes so the panel shows readable output.
+        // eslint-disable-next-line no-control-regex
+        .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
+        // eslint-disable-next-line no-control-regex
+        .replace(/\u001b\][^\u0007]*\u0007/g, "")
+        .slice(-4000);
+      // The exit marker names the outcome. Legacy shells (typed but
+      // never submitted) carry no marker and end with the bare command.
+      const marker = text.match(/STELOW_PUSH_EXIT:(\d+)/);
+      const parsed = marker ? Number.parseInt(marker[1] ?? "", 10) : null;
+      const pushExit = parsed !== null && Number.isNaN(parsed) ? null : parsed;
+      const pushState = marker
+        ? (pushExit === 0 ? "succeeded" as const : "failed" as const)
+        : /git push\s*$/.test(text) ? "waiting" as const : "running" as const;
+      return { text: text || null, unavailable: false, pushState, pushExit };
+    } catch {
+      // output() 409s once the shell exits: an ended shell is never
+      // "running" — the panel renders it as Ended via outputUnavailable.
+      return { text: null, unavailable: true, pushState: "failed" as const, pushExit: null };
+    }
+  }
+
   /**
    * The target for a card, or the one message that explains why there is none.
    * Resolving where the code lives is host work (a worker's environment, or the
@@ -4244,6 +4283,27 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // below via publicationPushTerminals. The exit marker makes
         // completion explicit: no marker yet means still running or waiting
         // on interactive auth (finish it in BB's terminal panel).
+        // Single-active strategy: one push shell per card at a time. A push
+        // already in flight blocks a duplicate; retired predecessors are
+        // closed so runs never accumulate into an unreadable list.
+        const previous = await pushShellSessions(prepared.environmentId);
+        for (const session of previous) {
+          const read = await readPushShell(session);
+          if (!read.unavailable && read.pushState === "running") {
+            return { ok: false, message: `A push is already running in shell ${session.id} — Check result instead of starting another.`, terminalId: session.id };
+          }
+        }
+        for (const session of previous) {
+          await bb.sdk.terminals.close({ terminalId: session.id, mode: "if-clean" }).catch(() => null);
+        }
+        for (const session of previous) {
+          const read = await readPushShell(session);
+          // Force only shells that finished (marker), never ran (waiting),
+          // or already ended — never a live run (blocked above).
+          if (read.unavailable || read.pushState !== "running") {
+            await bb.sdk.terminals.close({ terminalId: session.id, mode: "force" }).catch(() => null);
+          }
+        }
         const terminal = await bb.sdk.terminals.create({
           cols: 120,
           rows: 30,
@@ -4276,35 +4336,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const prepared = await publicationEnvironment(cardId);
       if ("error" in prepared) return { ok: false, error: prepared.error, terminals: [] };
       try {
-        const listed = await bb.sdk.terminals.list({ scope: { kind: "environment", environmentId: prepared.environmentId } }).catch(() => null);
-        const sessions = (listed as { sessions?: Array<{ id: string; title: string; status: string; exitCode: number | null; createdAt: number }> } | null)?.sessions ?? [];
-        const pushSessions = sessions
-          .filter((session) => session.title.startsWith("Stelow push"))
-          .sort((a, b) => b.createdAt - a.createdAt)
-          .slice(0, 5);
+        const pushSessions = await pushShellSessions(prepared.environmentId);
         const terminals = await Promise.all(pushSessions.map(async (session) => {
-          try {
-            const out = await bb.sdk.terminals.output({ terminalId: session.id, tailBytes: 8000 });
-            const text = (out.chunks ?? [])
-              .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
-              .join("")
-              // Strip ANSI escapes so the panel shows readable output.
-              // eslint-disable-next-line no-control-regex
-              .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
-              // eslint-disable-next-line no-control-regex
-              .replace(/\u001b\][^\u0007]*\u0007/g, "")
-              .slice(-4000);
-            // The exit marker names the outcome. Legacy shells (typed but
-            // never submitted) carry no marker and end with the bare command.
-            const marker = text.match(/STELOW_PUSH_EXIT:(\d+)/);
-            const pushExit = marker ? Number.parseInt(marker[1] ?? "", 10) : null;
-            const pushState = marker
-              ? (pushExit === 0 ? "succeeded" as const : "failed" as const)
-              : /git push\s*$/.test(text) ? "waiting" as const : "running" as const;
-            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState, pushExit: Number.isNaN(pushExit) ? null : pushExit, outputTail: text || null, outputUnavailable: false };
-          } catch {
-            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState: "running" as const, pushExit: null, outputTail: null, outputUnavailable: true };
-          }
+          const read = await readPushShell(session);
+          return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState: read.pushState, pushExit: read.pushExit, outputTail: read.text, outputUnavailable: read.unavailable };
         }));
         return { ok: true, error: null, terminals };
       } catch (error) {

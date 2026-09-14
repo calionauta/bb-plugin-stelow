@@ -5027,6 +5027,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   }, [card?.status, cardId, rpc]);
 
   useEffect(() => { void loadPushTerminals(); }, [loadPushTerminals]);
+  // Follow-up result checks after a push run: cleared on unmount so a
+  // closed card never refreshes into thin air.
+  const pushRefreshTimers = useRef<number[]>([]);
+  useEffect(() => () => { for (const timer of pushRefreshTimers.current) window.clearTimeout(timer); pushRefreshTimers.current = []; }, []);
 
   async function submitComment() {
     if (!comment.trim()) return;
@@ -5158,8 +5162,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         await loadPushTerminals();
         // The push runs async in its shell: re-check so the result lands
         // without the user having to press Check result.
-        window.setTimeout(() => void loadPushTerminals(), 8000);
-        window.setTimeout(() => void loadPushTerminals(), 20000);
+        pushRefreshTimers.current.push(window.setTimeout(() => void loadPushTerminals(), 8000));
+        pushRefreshTimers.current.push(window.setTimeout(() => void loadPushTerminals(), 20000));
       } else {
         const result = await rpc.call("publicationPullRequestAction", { cardId, operation: action, ...(action === "merge" ? { method: mergeMethod } : {}) });
         if (!result.ok) toast.error(result.message);
@@ -5549,20 +5553,24 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                             </ol>
                           </details>
                           <div className="mt-2 rounded-md border border-emerald-500/20 p-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="font-medium text-emerald-950 dark:text-emerald-100">Push shells</p>
-                              <Button size="sm" variant="ghost" disabled={pushTerminalsLoading} onClick={() => void loadPushTerminals()}>{pushTerminalsLoading ? "Checking…" : "Check result"}</Button>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-100/70">Push shells</p>
+                              <Button size="sm" variant="outline" disabled={pushTerminalsLoading} onClick={() => void loadPushTerminals()}>{pushTerminalsLoading ? "Checking…" : "Check result"}</Button>
                             </div>
                             {pushTerminalsLoading ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">Checking push shells…</p> : null}
                             {!pushTerminalsLoading && pushTerminals && !pushTerminals.ok ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">{pushTerminals.error ?? "Unable to list push shells."}</p> : null}
-                            {!pushTerminalsLoading && pushTerminals?.ok && pushTerminals.terminals.length === 0 ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">No push shell opened yet — use Push in terminal above.</p> : null}
+                            {!pushTerminalsLoading && pushTerminals?.ok && pushTerminals.terminals.length === 0 ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">No push shell opened yet — use Push now above.</p> : null}
                             {!pushTerminalsLoading && pushTerminals?.ok ? pushTerminals.terminals.map((terminal) => (
                               <div key={terminal.id} className="mt-2 rounded border border-emerald-500/20 bg-background/60 p-2 text-foreground">
-                                <p className="text-xs"><span className="font-medium">{terminal.title}</span> · <code className="font-mono">{terminal.id}</code> · {terminal.pushState === "succeeded" ? "✓ Pushed" : terminal.pushState === "failed" ? `✗ Push failed${terminal.pushExit !== null ? ` (exit ${terminal.pushExit})` : ""}` : terminal.pushState === "waiting" ? "○ Waiting — git push typed but NOT sent" : "… Running"} · {new Date(terminal.createdAt).toLocaleString()}</p>
-                                {terminal.pushState === "waiting" ? <p className="mt-1 text-xs text-muted-foreground">An older shell from before pushes ran themselves. Press Enter in BB’s sidebar terminal {terminal.id} to send it, or click Push now above for a fresh tracked run.</p> : null}
-                                {terminal.pushState === "running" ? <p className="mt-1 text-xs text-muted-foreground">Push sent — waiting for the remote. If it asks for auth, finish it in BB’s sidebar terminal {terminal.id}, then Check result.</p> : null}
-                                {terminal.pushState === "failed" ? <p className="mt-1 text-xs text-muted-foreground">The remote rejected it (often: behind — pull first in BB’s sidebar terminal {terminal.id}, then Push now again).</p> : null}
-                                {terminal.outputTail ? <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-muted/60 p-2 font-mono text-[11px]">{terminal.outputTail}</pre> : null}
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-xs"><span className="font-medium">{terminal.title}</span> · {terminal.outputUnavailable ? "○ Ended — output unavailable" : terminal.pushState === "succeeded" ? "✓ Pushed" : terminal.pushState === "failed" ? `✗ Push failed${terminal.pushExit !== null ? ` (exit ${terminal.pushExit})` : ""}` : terminal.pushState === "waiting" ? "○ Waiting — git push typed but NOT sent" : "… Running"} · {new Date(terminal.createdAt).toLocaleString()}</p>
+                                  <Button size="sm" variant="ghost" title="Copy the terminal ID to find this shell in BB's sidebar terminal panel" onClick={() => void copyText(terminal.id, "Terminal ID")}>Copy terminal ID</Button>
+                                </div>
+                                <p className="mt-1 font-mono text-[11px] text-muted-foreground">{terminal.id}</p>
+                                {terminal.pushState === "waiting" && !terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">An older shell from before pushes ran themselves. Press Enter in BB’s sidebar terminal {terminal.id} to send it, or click Push now above for a fresh tracked run.</p> : null}
+                                {terminal.pushState === "running" && !terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">Push sent — waiting for the remote. If it asks for auth, finish it in BB’s sidebar terminal {terminal.id}, then Check result.</p> : null}
+                                {terminal.pushState === "failed" && !terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">The remote rejected it (often: behind — pull first in BB’s sidebar terminal {terminal.id}, then Push now again).</p> : null}
+                                {terminal.outputTail ? <><p className="mt-1 text-[11px] text-muted-foreground">Snapshot — refresh with Check result; this view is not interactive.</p><pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-muted/60 p-2 font-mono text-[11px]">{terminal.outputTail}</pre></> : null}
                                 {terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">Output unavailable — the shell already exited. Its result is in the Git history / remote instead.</p> : null}
                               </div>
                             )) : null}

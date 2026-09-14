@@ -35,6 +35,13 @@ assert.match(server, /terminals\.list/, "consulting push shells lists the card e
 assert.match(server, /terminals\.output/, "consulting push shells reads live terminal output");
 assert.match(server, /outputTail/, "terminal output survives as a readable tail in the panel");
 assert.match(app, /Push shells/, "the panel tracks push shells with live output instead of sending the user to hunt the sidebar");
+assert.match(app, /Copy terminal ID/, "each push shell names its real BB terminal for sidebar lookup");
+assert.match(app, /Snapshot — refresh with Check result/, "the embedded output admits it is a snapshot, not an interactive terminal");
+assert.match(app, /○ Ended — output unavailable/, "an exited shell with no scrollback never reports Running");
+assert.match(app, /use Push now above/, "empty push state points at the current action name");
+assert.match(server, /already running in shell/, "a second push while one is in flight is refused instead of duplicating shells");
+assert.match(server, /pushShellSessions/, "one push shell per card: predecessors are found before creating");
+assert.match(server, /mode: "force"/, "retired finished/waiting shells are closed so runs never accumulate");
 assert.match(app, /Check result/, "push results are re-checkable after execution");
 assert.match(app, /Push now…/, "pushing is an explicit confirmed action that runs in the card's checkout");
 assert.match(app, /Push branch/, "the push confirmation names the action it takes");

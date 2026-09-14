@@ -42,10 +42,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `publicationPushTerminals`). BB has no push action and never auto-reveals
   new shells, so the confirmed action runs `git push` in the card's own
   environment and streams the result into Push shells: ✓ Pushed, ✗ Push
-  failed (exit), … Running, ○ Waiting (legacy typed-only shells). A result
-  refresh follows the run automatically; Check result re-checks any time.
-  A swallowed send failure reports an error instead of a false success.
-  Recorded in publication history like any other write.
+  failed (exit), … Running, ○ Waiting (legacy typed-only shells),
+  ○ Ended (shell exited, scrollback gone). One active shell per card — a
+  push in flight blocks duplicates, retired shells are closed. Header
+  separates title from action; each shell carries Copy terminal ID for
+  sidebar lookup. A result refresh follows the run automatically; Check
+  result re-checks any time. A swallowed send failure reports an error
+  instead of a false success. Recorded in publication history like any
+  other write.
 - **Local commit outcome and review** (`publicationCommitDiff`). Once BB saves
   a local commit, Done cards replace the disabled save control with a clear
   success state, current-HEAD indication, copyable SHA, and a read-only
