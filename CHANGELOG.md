@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.10.1] - 2026-09-14
+
+### Fixed
+
+- **Single board topology.** Build phases, terminal columns, column labels,
+  manual phase-entry checkpoints, and the stage-to-board projection now share
+  one vocabulary. The move RPC, board UI, and tests consume it rather than
+  carrying parallel literal lists.
+- **Reopened completion state.** A new card comment or direct worker-thread
+  turn on a completed card immediately returns it to In progress while
+  preserving the state-file-owned checkpoint until the worker advances it.
+  This removes the stale “Saved locally” publication presentation as soon as
+  new work begins.
+- **Timeline consistency.** The current checkpoint is disabled for every
+  active workflow stage, not only a completed card's retained Audit record.
+
 ## [0.10.0] - 2026-09-14
 
 ### Added
