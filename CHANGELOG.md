@@ -8,6 +8,16 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.4] - 2026-09-14
+
+### Fixed
+
+- **Timed-out split decisions now recover completely.** The card upgrades
+  legacy question copy when it renders, retains every multiple-choice value,
+  and records the approved slices before resuming the worker. Selecting all
+  deliveries now explicitly explains that the parent archives after the child
+  cards are created.
+
 ## [0.18.3] - 2026-09-14
 
 ### Fixed
