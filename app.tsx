@@ -2493,11 +2493,12 @@ function openAskArtifact(
   });
 }
 
-function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts, skips, offRouteReason, terminal }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null; terminal?: boolean }) {
+function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts, skips, offRouteReason, terminal }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null; terminal?: "completed" | "archived" }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   // A finished card has no current stage: park the cursor past the end so
   // every reached stage reads as passed and nothing stays lit (or pulsing)
-  // as if work were still there. Click-to-revisit is unchanged.
+  // as if work were still there. Earlier completed stages remain revisit-able;
+  // the terminal checkpoint and every archived stage are intentionally inert.
   const current = terminal ? STAGE_SEQUENCE.length : curIdx >= 0 ? curIdx : 0;
   const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
   const offRoute = new Set(skips.offRoute);
@@ -2525,11 +2526,14 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
               {stages.map((stage) => {
                 const idx = STAGE_SEQUENCE.indexOf(stage);
                 const isCurrent = !terminal && stage === currentStage;
+                // A completed card retains its final stage as a completion
+                // record. It is not an earlier stage to reopen from the UI.
+                const isTerminalCheckpoint = terminal === "completed" && stage === currentStage;
                 const isOffRoute = !isCurrent && offRoute.has(stage);
                 const skipReason = !isCurrent ? skipReasonByStage.get(stage) ?? null : null;
                 const passed = idx >= 0 && idx < current && !isOffRoute && !skipReason;
                 const canAdvance = idx === current + 1 && legal.has(stage);
-                const canRegress = passed && !isCurrent;
+                const canRegress = terminal !== "archived" && passed && !isCurrent && !isTerminalCheckpoint;
                 const clickable = canAdvance || canRegress;
                 const produced = artifacts.filter((artifact) => artifact.stage === stage);
                 const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : STAGE_PRODUCES[stage]);
@@ -4913,6 +4917,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [publicationLoading, setPublicationLoading] = useState(false);
   const [publicationAction, setPublicationAction] = useState<"commit" | "squash" | "ready" | "draft" | "merge" | null>(null);
   const [publicationSubmitting, setPublicationSubmitting] = useState(false);
+  type PublicationCommitDiff = Awaited<ReturnType<typeof rpc.call<"publicationCommitDiff">>>;
+  const [publicationCommitSha, setPublicationCommitSha] = useState<string | null>(null);
+  const [publicationCommitDiff, setPublicationCommitDiff] = useState<PublicationCommitDiff | null>(null);
+  const [publicationCommitDiffLoading, setPublicationCommitDiffLoading] = useState(false);
   const [mergeMethod, setMergeMethod] = useState<"merge" | "rebase" | "squash">("squash");
   const publicationDefaultBranch = publication?.branch?.default ?? null;
   const publishesToDefaultBranch = Boolean(publicationDefaultBranch && publication?.branch?.current === publicationDefaultBranch);
@@ -5111,6 +5119,28 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
   }
 
+  async function openPublicationCommit(commitSha: string) {
+    setPublicationCommitSha(commitSha);
+    setPublicationCommitDiff(null);
+    setPublicationCommitDiffLoading(true);
+    try {
+      setPublicationCommitDiff(await rpc.call("publicationCommitDiff", { cardId, commitSha }));
+    } catch (err) {
+      setPublicationCommitDiff({ found: false, commitSha: null, shortstat: null, files: [], truncated: false, error: err instanceof Error ? err.message : "Unable to load this commit." });
+    } finally {
+      setPublicationCommitDiffLoading(false);
+    }
+  }
+
+  async function copyCommitSha(commitSha: string) {
+    try {
+      await navigator.clipboard.writeText(commitSha);
+      toast.success("Commit SHA copied.");
+    } catch {
+      toast.error("Copy failed — select the SHA and copy it by hand.");
+    }
+  }
+
   async function advance(stage: string) {
     setAdvancing(stage);
     try {
@@ -5288,11 +5318,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 <div className="space-y-2 border-t pt-3">
                   <div className="flex items-center gap-2">
                     <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{archivedPresentation?.workflow.progressTitle ?? "Progress"}</h4>
-                    <span className="text-xs text-muted-foreground">{archivedPresentation?.workflow.progressHint ?? ((card?.status === "completed" || card?.status === "archived") ? "Workflow complete — click a stage to revisit it" : "Agent advances alone · click a lit stage to override")}</span>
+                    <span className="text-xs text-muted-foreground">{archivedPresentation?.workflow.progressHint ?? (card?.status === "completed" ? "Workflow complete — choose an earlier stage to reopen it" : card?.status === "archived" ? "Archived workflow — progress is read-only" : "Agent advances alone · click a lit stage to override")}</span>
                   </div>
                   <StageTimeline
                     currentStage={card.stage}
-                    terminal={card?.status === "completed" || card?.status === "archived"}
+                    terminal={card?.status === "completed" ? "completed" : card?.status === "archived" ? "archived" : undefined}
                     nextStages={detail.nextStages}
                     artifacts={detail.artifacts}
                     onPick={(stage) => setPendingAdvance(stage)}
@@ -5300,6 +5330,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
                     offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
+                  <details className="pt-1 text-xs text-muted-foreground">
+                    <summary className="cursor-pointer font-medium text-foreground">Workflow map</summary>
+                    <p className="mt-1">Analyze, Plan, Execute, and Review are workflow phases. Review contains Diff gate and Audit. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase.</p>
+                  </details>
                 </div>
               ) : null}
               {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
@@ -5412,9 +5446,25 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       </div>
                     ) : null}
 
-                    <div className="flex flex-wrap gap-2">
-                      <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>{publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}…` : "Commit workspace…"}</Button>
-                    </div>
+                    {(() => {
+                      const savedCommit = publication.events.find((event) => event.action === "commit" && event.commitSha);
+                      const savedSha = savedCommit?.commitSha ?? null;
+                      const isCurrentHead = Boolean(savedSha && publication.branch?.headSha === savedSha);
+                      return savedSha && !publication.workingTree?.hasUncommittedChanges ? (
+                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-950 dark:text-emerald-100">
+                          <p className="font-medium">✓ Saved locally on <code>{publication.branch?.current ?? "this branch"}</code></p>
+                          <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80"><code>{savedSha.slice(0, 7)}</code> · working tree clean{isCurrentHead ? " · current local HEAD" : " · followed by a newer local commit"}. This commit has not been pushed or merged remotely.</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" onClick={() => void openPublicationCommit(savedSha)}>View commit</Button>
+                            <Button size="sm" variant="outline" onClick={() => void copyCommitSha(savedSha)}>Copy SHA</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>{publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}…` : "Commit workspace…"}</Button>
+                        </div>
+                      );
+                    })()}
                     {publishesToDefaultBranch ? (
                       <p className="text-muted-foreground">This is the default checkout selected in BB. BB creates a local commit on <code>{publicationDefaultBranch}</code> only: it cannot fetch remote updates, merge incoming changes, push, or create a pull request from this panel. Before saving, confirm that this checkout is current and exclusively yours. Choose a feature branch or managed worktree in BB’s composer for a pull-request workflow.</p>
                     ) : (
@@ -5454,7 +5504,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       <div className="border-t pt-3">
                         <p className="mb-1 font-medium text-foreground">Publication history</p>
                         <ul className="space-y-1 text-muted-foreground">
-                          {publication.events.map((event) => <li key={event.id}>{event.action.replaceAll("_", " ")} · {event.message}{event.pullRequestUrl ? <> · <UrlLink href={event.pullRequestUrl} className="text-primary underline-offset-2 hover:underline">Open PR</UrlLink></> : null}</li>)}
+                          {publication.events.map((event) => <li key={event.id}>{event.action.replaceAll("_", " ")} · {event.commitSha ? event.message.replace(event.commitSha, event.commitSha.slice(0, 7)) : event.message}{event.commitSha ? <> · <button type="button" className="cursor-pointer text-primary underline-offset-2 hover:underline" onClick={() => void openPublicationCommit(event.commitSha!)} title={`View ${event.commitSha.slice(0, 7)} in BB`}>View commit</button></> : null}{event.pullRequestUrl ? <> · <UrlLink href={event.pullRequestUrl} className="text-primary underline-offset-2 hover:underline">Open PR</UrlLink></> : null}</li>)}
                         </ul>
                       </div>
                     ) : null}
@@ -5565,6 +5615,29 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             <DialogClose asChild><Button variant="outline" disabled={publicationSubmitting}>Cancel</Button></DialogClose>
             <Button disabled={publicationSubmitting} onClick={() => void doPublicationAction()}>{publicationSubmitting ? "Submitting…" : publicationAction === "commit" ? publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}` : "Commit workspace" : publicationAction === "squash" ? "Squash branch locally" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={publicationCommitSha !== null} onOpenChange={(open) => { if (!open) { setPublicationCommitSha(null); setPublicationCommitDiff(null); } }}>
+        <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Commit {publicationCommitSha?.slice(0, 7)}</DialogTitle>
+            <DialogDescription>This is the diff BB recorded for this card’s local commit. Viewing it never changes the workspace or remote repository.</DialogDescription>
+          </DialogHeader>
+          {publicationCommitDiffLoading ? <p className="text-xs text-muted-foreground">Loading commit diff from BB…</p> : null}
+          {publicationCommitDiff?.error ? <p className="text-xs text-destructive">{publicationCommitDiff.error}</p> : null}
+          {publicationCommitDiff?.found ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">{publicationCommitDiff.shortstat || `${publicationCommitDiff.files.length} changed files`}</p>
+              {publicationCommitDiff.files.map((file) => (
+                <div key={file.path} className="space-y-1">
+                  <p className="text-[11px] font-semibold text-muted-foreground">{file.path} · {file.changeKind} · +{file.additions}/-{file.deletions}</p>
+                  {file.binary ? <p className="text-xs text-muted-foreground">Binary file — BB does not render its patch.</p> : file.patch ? DiffView ? <DiffView patch={file.patch} path={file.path} view="unified" /> : <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre> : <p className="text-xs text-muted-foreground">Patch is unavailable or too large to render.</p>}
+                  {file.truncated ? <p className="text-xs text-muted-foreground">This file’s patch is truncated.</p> : null}
+                </div>
+              ))}
+              {publicationCommitDiff.truncated ? <p className="text-xs text-muted-foreground">The commit diff is truncated by BB’s safety limit.</p> : null}
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
       <Dialog open={githubPostOpen} onOpenChange={setGithubPostOpen}>

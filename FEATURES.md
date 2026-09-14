@@ -38,6 +38,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card-local publication history. Detached HEADs,
   non-Git folders, unavailable hosts, failing checks, and missing approvals
   fail closed with the next actionable explanation.
+- **Local commit outcome and review** (`publicationCommitDiff`). Once BB saves
+  a local commit, Done cards replace the disabled save control with a clear
+  success state, current-HEAD indication, copyable SHA, and a read-only
+  native-BB commit diff. The viewer is restricted to commits recorded in that
+  card’s publication history, so it never becomes an arbitrary Git browser.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project
@@ -149,7 +154,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (what the target stage produces). The timeline never paints everything
   passed: off-route stages render struck-through (not in this intent's
   route) and mode-skipped stages show ⊘ with the reason — green means
-  executed, nothing else does. Attachments, mentioned files,
+  executed, nothing else does. A completed card keeps Audit as its historical
+  verification record, cannot reopen that terminal checkpoint, and exposes a
+  compact Workflow map explaining phases, Done, and attention. Attachments, mentioned files,
   timed-out questions inline.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment

@@ -7,7 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 
-for (const method of ["publicationStatus", "publicationCommit", "publicationSquashMerge", "publicationPullRequestAction"]) {
+for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPullRequestAction"]) {
   assert.match(server, new RegExp(`async ${method}\\(`), `${method} RPC exists`);
 }
 assert.match(server, /bb\.sdk\.environments\.status/, "publication status is owned by BB");
@@ -20,6 +20,8 @@ assert.match(server, /publicationSnapshot\(card\)/, "each mutating action runs a
 assert.match(server, /canMarkPullRequestReady\(status, pullRequest\)/, "ready transition shares the workspace safety policy");
 assert.match(server, /canMarkPullRequestDraft\(status, pullRequest\)/, "draft transition shares the workspace safety policy");
 assert.match(server, /publication_events/, "publication writes are separately auditable");
+assert.match(server, /commit_sha = \?/, "commit review is limited to card-recorded publication history");
+assert.match(server, /bb\.sdk\.environments\.diffFiles/, "commit review uses BB's native environment diff API");
 assert.match(server, /if \(result\.merged\) recordPublication/, "only completed local merges enter publication history");
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
@@ -39,5 +41,8 @@ assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(app, /publicationSubmitting/, "publication confirmations prevent duplicate write requests");
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
 assert.match(app, /Publication history/, "the user can audit prior publication actions");
+assert.match(app, /Saved locally on/, "a successful local save has an explicit outcome state");
+assert.match(app, /View commit/, "recorded local commits can be inspected from Done");
+assert.match(app, /This commit has not been pushed or merged remotely/, "local save does not imply remote publication");
 
 console.log("publication wiring test ok: BB owns writes, Done stays separate, actions are explicit and auditable");

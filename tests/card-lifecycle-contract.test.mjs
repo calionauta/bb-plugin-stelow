@@ -107,6 +107,9 @@ assert.match(app, /Completed · \{completedWorkerPreset\}/, "completed cards sho
 assert.match(app, /Preset recorded for the completed worker\./, "completed cards do not claim a preset applies to another worker");
 assert.match(app, /card\.status === "completed" \? "Completed" : stageLabel\(card\.stage\)/, "completed list rows do not present Audit as active work");
 assert.match(app, /passed its final audit verification/, "completed hero explains Audit as completed verification, not the current phase");
+assert.match(app, /isTerminalCheckpoint/, "the terminal Audit checkpoint cannot be selected as a reopen target");
+assert.match(app, /Workflow complete — choose an earlier stage to reopen it/, "completed workflow guidance excludes the current terminal checkpoint");
+assert.match(app, /Done is the completed outcome after Audit, not a stage/, "the workflow map distinguishes stages from the Done outcome");
 assert.match(server, /cardStatus: card\.status/, "the audit watchdog refuses an already-completed card");
 
 // Track headers describe the agent outcome, not internal filenames.

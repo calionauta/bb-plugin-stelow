@@ -250,6 +250,14 @@ const publicationSnapshotSchema = z.object({
   capabilities: z.object({ commit: publicationCapabilitySchema, squashMerge: publicationCapabilitySchema, markReady: publicationCapabilitySchema, markDraft: publicationCapabilitySchema, mergePullRequest: publicationCapabilitySchema }),
   events: z.array(z.object({ id: z.string(), action: z.string(), message: z.string(), commitSha: z.string().nullable(), pullRequestUrl: z.string().nullable(), createdAt: z.number() })),
 });
+const publicationCommitDiffSchema = z.object({
+  found: z.boolean(),
+  commitSha: z.string().nullable(),
+  shortstat: z.string().nullable(),
+  files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), binary: z.boolean(), changeKind: z.string(), additions: z.number(), deletions: z.number(), truncated: z.boolean() })),
+  truncated: z.boolean(),
+  error: z.string().nullable(),
+});
 
 export const rpcContract = defineRpcContract({
   board: {
@@ -411,6 +419,10 @@ export const rpcContract = defineRpcContract({
   publicationStatus: {
     input: z.object({ cardId: z.string() }).strict(),
     output: publicationSnapshotSchema,
+  },
+  publicationCommitDiff: {
+    input: z.object({ cardId: z.string(), commitSha: z.string().regex(/^[0-9a-f]{7,64}$/i) }).strict(),
+    output: publicationCommitDiffSchema,
   },
   publicationCommit: {
     input: z.object({ cardId: z.string() }).strict(),
@@ -4089,6 +4101,48 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async publicationStatus({ cardId }) {
       const card = getCard(cardId);
       return card ? await publicationSnapshot(card) : unavailablePublication(ERR_CARD_NOT_FOUND);
+    },
+
+    // Publication history is an audit trail, not an arbitrary Git browser:
+    // a caller can inspect only commits Stelow itself recorded for this card.
+    // BB supplies the diff from the selected environment, so this remains
+    // useful for local-only commits and never shells out to Git on the plugin.
+    async publicationCommitDiff({ cardId, commitSha }) {
+      const empty = { found: false, commitSha: null, shortstat: null, files: [], truncated: false, error: null as string | null };
+      const recorded = db.prepare("SELECT 1 FROM publication_events WHERE card_id = ? AND commit_sha = ? LIMIT 1").get(cardId, commitSha);
+      if (!recorded) return { ...empty, error: "This commit is not recorded in this card's publication history." };
+      const prepared = await publicationEnvironment(cardId);
+      if ("error" in prepared) return { ...empty, error: prepared.error };
+      try {
+        const result = await bb.sdk.environments.diffFiles({ environmentId: prepared.environmentId, target: "commit", sha: commitSha });
+        if (result.outcome !== "available") {
+          const error = result.outcome === "not_applicable" ? result.message : result.failure.message;
+          return { ...empty, error };
+        }
+        const patches = new Map(result.initialPatches.map((patch) => [patch.path, patch]));
+        return {
+          found: true,
+          commitSha,
+          shortstat: result.shortstat,
+          files: result.files.map((file) => {
+            const patch = patches.get(file.path);
+            return {
+              path: file.path,
+              display: file.path.split("/").pop() || file.path,
+              patch: patch?.patch ?? null,
+              binary: file.binary,
+              changeKind: file.changeKind,
+              additions: file.additions,
+              deletions: file.deletions,
+              truncated: patch?.truncated ?? file.loadMode !== "auto",
+            };
+          }),
+          truncated: result.truncated,
+          error: null,
+        };
+      } catch (error) {
+        return { ...empty, error: error instanceof Error ? error.message : "BB could not load this commit diff." };
+      }
     },
 
     async publicationCommit({ cardId }) {
