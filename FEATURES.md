@@ -168,6 +168,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   structured ask or the durable timeout-recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
   once when no form is visible, while the host rejects actual duplicates.
+  A specific question also supersedes a generic paused notice for that card,
+  so one action is counted once and the Inbox says what needs answering.
+- **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
+  **Keep as one card** is visually separated and mutually exclusive. The
+  outcome is stated once per choice, and the host rejects a contradictory
+  answer even if it did not come from the panel.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

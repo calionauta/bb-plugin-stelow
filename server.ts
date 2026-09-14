@@ -1059,7 +1059,7 @@ export default async function plugin(bb: BbPluginApi) {
   // high bar, not a "two bullets means two cards" rule: the default is one
   // focused card with scopes. The host creates cards only from a recorded,
   // human-approved proposal (`bb stelow split` takes no content args).
-  const SPLIT_PROTOCOL = "Split is exceptional, not a checklist decomposition: DEFAULT to one focused card with scoped work. Propose ONE split only at triage — or, if it becomes clear only there, at Choose work (`select`) before committing its choice — when there are 2+ substantial, end-to-end deliverables that each have a distinct user outcome, acceptance criterion, and independently auditable workflow. Do NOT split merely because the request has bullets, files, UI/API pieces, sequential steps, or small fixes; keep shared implementation, one outcome, or tightly coupled changes together. Each proposed child must be worth its own normal workflow; if that is doubtful, keep one card. When the high bar is met, open `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its outcome and done criterion>...` plus exactly one `--option \"Keep as one card\"` (exact label). Each option carries its slice in --desc (+ --artifact when the slice references files). Then STOP and wait for the answer. A split-proposal record or an earlier chat message is NOT a pending question: only a visible structured form on the card is. If the ask failed before that form appeared, correct the command and submit the same ask once; never wait for an invisible question. Never split unilaterally, never invent cards, and do not advance from the current split point until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived parent means stop.";
+  const SPLIT_PROTOCOL = "Split is exceptional, not a checklist decomposition: DEFAULT to one focused card with scoped work. Propose ONE split only at triage — or, if it becomes clear only there, at Choose work (`select`) before committing its choice — when there are 2+ substantial, end-to-end deliverables that each have a distinct user outcome, acceptance criterion, and independently auditable workflow. Do NOT split merely because the request has bullets, files, UI/API pieces, sequential steps, or small fixes; keep shared implementation, one outcome, or tightly coupled changes together. Each proposed child must be worth its own normal workflow; if that is doubtful, keep one card. When the high bar is met, open `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its outcome and done criterion>...` plus exactly one `--option \"Keep as one card\"` (exact label). Each option carries its slice in --desc (+ --artifact when the slice references files). Select one or more deliveries OR the Keep as one card option — never both. Then STOP and wait for the answer. A split-proposal record or an earlier chat message is NOT a pending question: only a visible structured form on the card is. If the ask failed before that form appeared, correct the command and submit the same ask once; never wait for an invisible question. Never split unilaterally, never invent cards, and do not advance from the current split point until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived parent means stop.";
   const db = bb.storage.database();
   // Sync state lives beside data.db (stable across managed-install cache
   // rotations), never in the plugin root: a fresh cache dir would otherwise
@@ -2713,7 +2713,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       createId: () => randomId("evt"),
       summary: "The agent is waiting for your answer to continue.",
     });
-    if (result.inserted > 0 || result.resolved > 0 || result.reopened > 0) bb.realtime.publish("inbox-changed", { cardId: card.id });
+    if (result.inserted > 0 || result.resolved > 0 || result.reopened > 0 || result.pausedSuperseded > 0) bb.realtime.publish("inbox-changed", { cardId: card.id });
   }
 
   function openExpiredQuestionIds(cardId: string): string[] {
@@ -4939,15 +4939,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const invalid = validateSplitSlices(slices);
           if (invalid) return { exitCode: 2, stderr: invalid };
           // The worker supplies the candidate slices, but the host owns the
-          // irreversible semantics. Put those semantics in the question the
-          // user actually sees: selected slices become child cards, omitted
-          // slices remain on the parent, and the veto keeps everything whole.
-          groups[0]!.question = `${groups[0]!.question.trim()}\n\nSelect the deliveries that should become new independent cards. Anything you do not select stays in this card; nothing is discarded. Choose "${SPLIT_KEEP_LABEL}" to keep the entire request together.`;
+          // irreversible semantics. State each consequence once: candidates
+          // are a multi-select, while the keep option is an exclusive
+          // alternative handled by the renderer and the split executor.
+          groups[0]!.question = `${groups[0]!.question.trim()}\n\nSelect any deliveries to move into separate cards. Work you leave unselected stays in this card.`;
           groups[0]!.options = splitOptions.map((option) => {
             const isKeep = option.label.trim().toLowerCase() === SPLIT_KEEP_LABEL.toLowerCase();
             const consequence = isKeep
-              ? "Keep the complete request in this card. No new cards will be created."
-              : "Selecting this creates one independent card for this delivery; unselected deliveries remain in this card.";
+              ? "Keep every delivery in this card. No new cards will be created."
+              : "Creates one independent card for this delivery.";
             return { ...option, description: option.description ? `${option.description}\n\n${consequence}` : consequence };
           });
           db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, question, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, ?, NULL, ?, NULL, NULL, '[]')")

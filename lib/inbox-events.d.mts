@@ -26,15 +26,7 @@ export function syncQuestionInboxEvents(db: { prepare(query: string): { run(...v
   occurredAt: number;
   createId: () => string;
   summary: string;
-}): { inserted: number; resolved: number; reopened: number };
+}): { inserted: number; resolved: number; reopened: number; pausedSuperseded: number };
 export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, kinds?: Array<"question" | "error" | "paused">, reason?: InboxResolutionReason | null): number;
-export function syncQuestionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, input: {
-  cardId: string;
-  interactionIds: string[];
-  occurredAt: number;
-  createId: () => string;
-  summary: string;
-}): { inserted: number; resolved: number; reopened: number };
-export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, kinds?: Array<"question" | "error" | "paused">): number;
 export function listInboxEvents(db: { prepare(query: string): { all(): unknown[] } }, includeArchived: boolean): unknown[];
 export declare function countsForInboxBadge(entry: { kind: string; archivedAt: number | null; readAt?: number | null; resolvedAt?: number | null; occurredAt: number }, nowMs?: number): boolean;

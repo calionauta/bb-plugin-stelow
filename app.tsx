@@ -3075,6 +3075,14 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
 type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
 
+// Split consequences are supplied by the host so every client is safe, but
+// older still-open forms can carry the former, verbose suffix. The panel
+// already gives the consequence once in its split affordance, so preserve the
+// author-written scope and remove only those generated historical suffixes.
+function splitOptionDescription(description: string): string {
+  return description.replace(/\n\n(?:Selecting this creates one independent card for this delivery; unselected deliveries remain in this card\.|Keep the complete request in this card\. No new cards will be created\.|Creates one independent card for this delivery\.|Keep every delivery in this card\. No new cards will be created\.)\s*$/, "");
+}
+
 // Per-option evidence: the inline glance (preview) and the openable source
 // of truth (artifact) share the upstream Option names from
 // orchestrator stages/ask-patterns.md. Preview expands in place everywhere;
@@ -3123,7 +3131,8 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   if (questions.length === 0) return null;
   const current = questions[Math.min(index, questions.length - 1)]!;
-  const isSplitProposal = current.multiple && current.options.some((option) => option.label === "Keep as one card");
+  const splitKeepLabel = "Keep as one card";
+  const isSplitProposal = current.multiple && current.options.some((option) => option.label === splitKeepLabel);
   const merged = (id: string): string[] => {
     if (skipped.has(id)) return [];
     const out = [...(selected[id] ?? [])];
@@ -3137,6 +3146,15 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
     setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
     setSelected((prev) => {
       const has = (prev[question.id] ?? []).includes(label);
+      if (question === current && isSplitProposal) {
+        // Delivery cards form a multi-select. The explicit keep choice is an
+        // alternative, not a fourth delivery: choosing either side clears
+        // the other so a card answer can never encode two contradictory
+        // outcomes.
+        if (label === splitKeepLabel) return { ...prev, [question.id]: has ? [] : [splitKeepLabel] };
+        const withoutKeep = (prev[question.id] ?? []).filter((item) => item !== splitKeepLabel);
+        return { ...prev, [question.id]: has ? withoutKeep.filter((item) => item !== label) : [...withoutKeep, label] };
+      }
       if (question.multiple) return { ...prev, [question.id]: has ? prev[question.id]!.filter((item) => item !== label) : [...(prev[question.id] ?? []), label] };
       // Single-select: an option and a custom text are mutually exclusive.
       if (!has) setCustom((c) => ({ ...c, [question.id]: "" }));
@@ -3185,20 +3203,22 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
           ) : null}
           <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div>
           {current.prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{current.prompt}</p> : null}
-          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80"><strong className="text-amber-900 dark:text-amber-100">What this choice does:</strong> selected deliveries become new cards; unselected deliveries remain on this card. “Keep as one card” creates nothing new.</p> : null}
+          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">Select one or more deliveries to split, or choose <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> instead. These are mutually exclusive choices.</p> : null}
           <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
             {current.options.map((option) => {
               const active = (selected[current.id] ?? []).includes(option.label);
+              const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
+              const description = isSplitProposal ? splitOptionDescription(option.description) : option.description;
               return (
-                <div key={option.label} className="space-y-1">
+                <div key={option.label} className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
                   <button
                     role={current.multiple ? "checkbox" : "radio"}
                     aria-checked={active}
                     onClick={() => pick(current, option.label)}
                     className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-md border p-3 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground hover:border-primary/50"}`}
                   >
-                    <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
-                    <span className="min-w-0"><span className="block font-medium">{option.label}</span>{option.description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{option.description}</span> : null}</span>
+                    <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple && !isKeepOption ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
+                    <span className="min-w-0"><span className="block font-medium">{option.label}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
                   </button>
                   <OptionDetail option={option} onOpenArtifact={onOpenArtifact} />
                 </div>
@@ -3223,7 +3243,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
           {questions.length > 1 ? (
             <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{doneCount} of {questions.length} answered{allowSkip ? " (skipped counts as answered)" : ""}. {allowSkip ? "One submit sends everything at once." : "Only answered questions are sent; the rest stay open."}</p>
           ) : current.multiple ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{isSplitProposal ? "Select one or more deliveries to split, or choose Keep as one card." : "Pick one or more, then submit."}</p>
+            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{isSplitProposal ? "Choose delivery cards, or Keep as one card — not both." : "Pick one or more, then submit."}</p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {questions.length > 1 ? <Button size="sm" variant="outline" disabled={index === 0 || busy} onClick={() => setIndex((i) => Math.max(0, i - 1))}>Back</Button> : null}

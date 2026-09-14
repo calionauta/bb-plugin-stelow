@@ -66,7 +66,10 @@ assert.equal(resolveActionInboxEvents(db, "card_2b", 3, ["paused"], "bogus-reaso
 // reported running between two reads of the same pending question.
 db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_3", "Stable question", "stable-question", "project_1", "build");
 const questionSummary = "The agent is waiting for your answer to continue.";
+insertInboxEvent(db, { id: "evt_paused_for_question", cardId: "card_3", kind: "paused", summary: "Resume.", dedupeKey: "paused:card_3:699", occurredAt: 699 });
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_1"], occurredAt: 700, createId: () => "evt_ask_1", summary: questionSummary });
+const supersededPause = db.prepare("SELECT resolved_at, resolved_reason FROM inbox_events WHERE id = ?").get("evt_paused_for_question");
+assert.deepEqual(supersededPause, { resolved_at: 700, resolved_reason: "superseded" }, "a visible question replaces an ambiguous pause instead of creating a second attention count");
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_1"], occurredAt: 735, createId: () => "evt_ask_1_retry", summary: questionSummary });
 let card3Questions = db.prepare("SELECT * FROM inbox_events WHERE card_id = ? AND kind = 'question'").all("card_3");
 assert.equal(card3Questions.length, 1, "the same pending interaction creates one durable notification");
