@@ -5138,6 +5138,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const hero = card ? heroFor(card, detail) : null;
   const heroStyle = hero ? HERO_STYLE[hero.kind] : null;
   const archivedPresentation = card ? archivedCardDetailPresentation(card, stageLabel) : null;
+  const completedWorkerPreset = card?.status === "completed"
+    ? detail?.workerHistory.find((worker) => worker.threadId === card.workerThreadId)?.presetName ?? detail?.card.presetName ?? "Default"
+    : null;
   // Provider/model are fixed at spawn: a preset change only lands when a new
   // worker starts. Retry continues the SAME thread, so while the running
   // worker predates the override the hero must offer Restart, not Resume.
@@ -5252,9 +5255,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               restarting={restarting}
               onRestartWorker={() => setRestartWorkerOpen(true)}
               onPreset={() => setPresetDialogOpen(true)}
-              presetPill={<>{card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ` : ""}{detail?.card.presetName ?? "default"}</>}
-              presetNote={<>{card.stage ? <strong>{stageLabel(card.stage)}</strong> : "current"} phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"} · applies to the next worker</>}
-              pillTitle={card.stage ? `Preset for the ${stageLabel(card.stage)} phase` : "Preset for the next worker"}
+              presetPill={card.status === "completed" ? <>Completed · {completedWorkerPreset}</> : <>{card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ` : ""}{detail?.card.presetName ?? "default"}</>}
+              presetNote={card.status === "completed" ? <>Preset recorded for the completed worker.</> : <>{card.stage ? <strong>{stageLabel(card.stage)}</strong> : "current"} phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"} · applies to the next worker</>}
+              pillTitle={card.status === "completed" ? "Preset used by the completed worker" : card.stage ? `Preset for the ${stageLabel(card.stage)} phase` : "Preset for the next worker"}
               githubLink={detail?.githubLink ? (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>Imported from <UrlLink href={detail.githubLink.url} className="font-medium text-primary underline-offset-4 hover:underline">{detail.githubLink.repo}#{detail.githubLink.number}</UrlLink></span>

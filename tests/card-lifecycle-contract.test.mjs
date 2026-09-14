@@ -101,6 +101,8 @@ assert.match(app, /aria-expanded=\{!isCollapsed\}/, "list group toggles expose e
 assert.match(app, /card\?\.status === "completed" \? "Completed without scoped execution\."/, "completed cards never claim shaping is in progress");
 assert.match(app, /card\?\.status === "completed" \? undefined : stageLabel\(card\.stage\)/, "completed cards carry no stale stage hint");
 assert.match(app, /if \(column === status \|\| card\.status === "completed"\)/, "completed build cards show one pill, not Done + Completed");
+assert.match(app, /Completed · \{completedWorkerPreset\}/, "completed cards show the recorded worker preset instead of a future phase");
+assert.match(app, /Preset recorded for the completed worker\./, "completed cards do not claim a preset applies to another worker");
 
 // Track headers describe the agent outcome, not internal filenames.
 assert.match(app, /applies specialized research strategy to surface prioritized opportunities/, "research header names the strategy outcome");
