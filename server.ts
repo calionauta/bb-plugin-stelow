@@ -4120,26 +4120,26 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { ...empty, error };
         }
         const patches = new Map(result.initialPatches.map((patch) => [patch.path, patch]));
-        // BB ships small patches inline and marks the rest on_demand: the patch
-        // exists but needs an explicit diffPatch fetch. Only too_large is
-        // genuinely unrenderable. Fetch on_demand patches bounded and fail-soft
-        // so one bad file never breaks the whole commit view.
-        const onDemandPaths = result.files
-          .filter((file) => !file.binary && file.loadMode === "on_demand" && !patches.has(file.path))
+        // Commit targets carry no inline patches (initialPatches is empty even
+        // with loadMode auto): every file patch needs an explicit diffPatch
+        // fetch. Only too_large is genuinely unrenderable. Fetch bounded and
+        // fail-soft so one bad file never breaks the whole commit view.
+        const missingPaths = result.files
+          .filter((file) => !file.binary && file.loadMode !== "too_large" && !patches.has(file.path))
           .map((file) => file.path);
-        const MAX_ON_DEMAND_PATCHES = 25;
-        let onDemandTruncated = false;
-        if (onDemandPaths.length > 0) {
+        const MAX_MISSING_PATCHES = 25;
+        let patchesTruncated = false;
+        if (missingPaths.length > 0) {
           try {
             const demanded = await bb.sdk.environments.diffPatch({
               environmentId: prepared.environmentId,
-              paths: onDemandPaths.slice(0, MAX_ON_DEMAND_PATCHES),
+              paths: missingPaths.slice(0, MAX_MISSING_PATCHES),
               target: { type: "commit", sha: commitSha },
             });
             if (demanded.outcome === "available") {
               for (const patch of demanded.patches) patches.set(patch.path, patch);
             }
-            onDemandTruncated = onDemandPaths.length > MAX_ON_DEMAND_PATCHES;
+            patchesTruncated = missingPaths.length > MAX_MISSING_PATCHES;
           } catch {
             // Keep the initial patches; the UI states per-file availability.
           }
@@ -4162,7 +4162,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               loadMode: file.loadMode,
             };
           }),
-          truncated: result.truncated || onDemandTruncated,
+          truncated: result.truncated || patchesTruncated,
           error: null,
         };
       } catch (error) {
