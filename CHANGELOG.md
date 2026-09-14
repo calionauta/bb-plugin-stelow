@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.13.1] - 2026-09-14
+
+### Fixed
+
+- **Commit viewer actually shows patches.** Commit targets carry no inline
+  patches from BB even with `loadMode: auto`, so the viewer fetched nothing
+  and every file read as unavailable. It now fetches every missing file
+  patch via `environments.diffPatch` (bounded, fail-soft) and renders them
+  in BB's native diff viewer.
+
 ## [0.13.0] - 2026-09-14
 
 ### Added
