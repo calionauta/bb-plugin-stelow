@@ -437,6 +437,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
   },
+  publicationPushTerminals: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
+  },
   publicationPullRequestAction: {
     input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), pullRequestUrl: z.string().nullable() }),
@@ -4237,6 +4241,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // shell persists in BB's terminal panel under its title. git push is
         // typed but NOT run — the user reviews it and presses Enter, so
         // rejections (stale branch, auth) happen in the open, never silently.
+        // BB does NOT auto-reveal the new shell: the panel lists it under
+        // Push shells (publicationPushTerminals) with live output, so the
+        // user never has to hunt the sidebar scope filter blind.
         const terminal = await bb.sdk.terminals.create({
           cols: 120,
           rows: 30,
@@ -4249,11 +4256,51 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (live?.status === "running") break;
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-        await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git push").toString("base64") }).catch(() => null);
-        recordPublication(cardId, "push_terminal", `Opened a push shell on ${branch} with git push typed and ready.`, null);
-        return { ok: true, message: "Push shell opened — find it in BB's terminal panel and press Enter to run git push.", terminalId: terminal.id };
+        // A swallowed input failure used to report success with an empty
+        // shell (the exact "toast said opened but nothing typed" report).
+        // Fail loudly instead: no history entry, no success toast.
+        try {
+          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git push").toString("base64") });
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? `Push shell opened (${terminal.id}) but git push could not be typed: ${error.message}` : `Push shell opened (${terminal.id}) but git push could not be typed.`, terminalId: terminal.id };
+        }
+        recordPublication(cardId, "push_terminal", `Opened push shell ${terminal.id} on ${branch} with git push typed and ready.`, null);
+        return { ok: true, message: `Push shell opened (${terminal.id}) — see Push shells below for live output, then press Enter in that shell to run git push.`, terminalId: terminal.id };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "BB could not open a push terminal.", terminalId: null as string | null };
+      }
+    },
+
+    async publicationPushTerminals({ cardId }) {
+      const prepared = await publicationEnvironment(cardId);
+      if ("error" in prepared) return { ok: false, error: prepared.error, terminals: [] };
+      try {
+        const listed = await bb.sdk.terminals.list({ scope: { kind: "environment", environmentId: prepared.environmentId } }).catch(() => null);
+        const sessions = (listed as { sessions?: Array<{ id: string; title: string; status: string; exitCode: number | null; createdAt: number }> } | null)?.sessions ?? [];
+        const pushSessions = sessions
+          .filter((session) => session.title.startsWith("Stelow push"))
+          .sort((a, b) => b.createdAt - a.createdAt)
+          .slice(0, 5);
+        const terminals = await Promise.all(pushSessions.map(async (session) => {
+          try {
+            const out = await bb.sdk.terminals.output({ terminalId: session.id, tailBytes: 8000 });
+            const text = (out.chunks ?? [])
+              .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
+              .join("")
+              // Strip ANSI escapes so the panel shows readable output.
+              // eslint-disable-next-line no-control-regex
+              .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
+              // eslint-disable-next-line no-control-regex
+              .replace(/\u001b\][^\u0007]*\u0007/g, "")
+              .slice(-4000);
+            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, outputTail: text || null, outputUnavailable: false };
+          } catch {
+            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, outputTail: null, outputUnavailable: true };
+          }
+        }));
+        return { ok: true, error: null, terminals };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "BB could not list push shells.", terminals: [] };
       }
     },
 

@@ -7,7 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 
-for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPullRequestAction"]) {
+for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullRequestAction"]) {
   assert.match(server, new RegExp(`async ${method}\\(`), `${method} RPC exists`);
 }
 assert.match(server, /bb\.sdk\.environments\.status/, "publication status is owned by BB");
@@ -28,6 +28,13 @@ assert.match(server, /start: \{ mode: "shell" \}/, "the push shell stays open fo
 assert.match(server, /terminals\.input/, "git push arrives typed, never executed without the user pressing Enter");
 assert.match(server, /scope: \{ kind: "environment", environmentId/, "the push terminal runs in the card's own environment, never an assumed host");
 assert.match(server, /push_terminal/, "terminal pushes enter publication history");
+assert.match(server, /could not be typed/, "a swallowed terminal-input failure never reports success with an empty shell");
+assert.match(server, /publicationPushTerminals/, "push shells stay consultable after creation, never toast-only");
+assert.match(server, /terminals\.list/, "consulting push shells lists the card environment's terminals");
+assert.match(server, /terminals\.output/, "consulting push shells reads live terminal output");
+assert.match(server, /outputTail/, "terminal output survives as a readable tail in the panel");
+assert.match(app, /Push shells/, "the panel tracks push shells with live output instead of sending the user to hunt the sidebar");
+assert.match(app, /Check result/, "push results are re-checkable after execution");
 assert.match(app, /Push in terminal…/, "pushing is an explicit confirmed action with live output");
 assert.match(server, /stelow commit diff: diffPatch (unavailable|failed)/, "patch fetch failures are logged for diagnosis instead of swallowed");
 assert.match(server, /initialPatches is empty even/, "commit targets fetch every missing patch, not just on-demand ones");

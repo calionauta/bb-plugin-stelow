@@ -4950,6 +4950,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [commitFilesExpanded, setCommitFilesExpanded] = useState(false);
   const [commitFilesEpoch, setCommitFilesEpoch] = useState(0);
   const [mergeMethod, setMergeMethod] = useState<"merge" | "rebase" | "squash">("squash");
+  type PushTerminals = Awaited<ReturnType<typeof rpc.call<"publicationPushTerminals">>>;
+  const [pushTerminals, setPushTerminals] = useState<PushTerminals | null>(null);
+  const [pushTerminalsLoading, setPushTerminalsLoading] = useState(false);
   const publicationDefaultBranch = publication?.branch?.default ?? null;
   const publishesToDefaultBranch = Boolean(publicationDefaultBranch && publication?.branch?.current === publicationDefaultBranch);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -5010,6 +5013,20 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   }, [card?.status, cardId, rpc]);
 
   useEffect(() => { void loadPublication(); }, [loadPublication]);
+
+  const loadPushTerminals = useCallback(async () => {
+    if (card?.status !== "completed") { setPushTerminals(null); return; }
+    setPushTerminalsLoading(true);
+    try {
+      setPushTerminals(await rpc.call("publicationPushTerminals", { cardId }));
+    } catch (err) {
+      setPushTerminals({ ok: false, error: err instanceof Error ? err.message : "Unable to list push shells.", terminals: [] });
+    } finally {
+      setPushTerminalsLoading(false);
+    }
+  }, [card?.status, cardId, rpc]);
+
+  useEffect(() => { void loadPushTerminals(); }, [loadPushTerminals]);
 
   async function submitComment() {
     if (!comment.trim()) return;
@@ -5138,6 +5155,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         const result = await rpc.call("publicationPushTerminal", { cardId });
         if (!result.ok) toast.error(result.message);
         else toast.success(result.message);
+        await loadPushTerminals();
       } else {
         const result = await rpc.call("publicationPullRequestAction", { cardId, operation: action, ...(action === "merge" ? { method: mergeMethod } : {}) });
         if (!result.ok) toast.error(result.message);
@@ -5522,10 +5540,26 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                           <details className="mt-2 rounded-md border border-emerald-500/20 p-2">
                             <summary className="cursor-pointer font-medium text-emerald-950 dark:text-emerald-100">What remains to publish it</summary>
                             <ol className="mt-1 list-decimal space-y-1.5 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
-                              <li>Push the branch in a terminal you can watch — BB opens it in this card’s worker checkout with <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> typed and ready; press Enter there to run it. <Button size="sm" variant="outline" onClick={() => setPublicationAction("push")}>Push in terminal…</Button> <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
+                              <li>Push the branch in a shell this panel tracks — BB opens it in this card’s worker checkout with <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> typed and ready; press Enter there to run it. BB does not auto-reveal the shell, so watch it in Push shells below instead of hunting the sidebar. <Button size="sm" variant="outline" onClick={() => setPublicationAction("push")}>Push in terminal…</Button> <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
                               <li>Then open a pull request through your Git provider or BB’s native flow — this panel’s PR actions (ready, merge) work on the existing PR.</li>
                             </ol>
                           </details>
+                          <div className="mt-2 rounded-md border border-emerald-500/20 p-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium text-emerald-950 dark:text-emerald-100">Push shells</p>
+                              <Button size="sm" variant="ghost" disabled={pushTerminalsLoading} onClick={() => void loadPushTerminals()}>{pushTerminalsLoading ? "Checking…" : "Check result"}</Button>
+                            </div>
+                            {pushTerminalsLoading ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">Checking push shells…</p> : null}
+                            {!pushTerminalsLoading && pushTerminals && !pushTerminals.ok ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">{pushTerminals.error ?? "Unable to list push shells."}</p> : null}
+                            {!pushTerminalsLoading && pushTerminals?.ok && pushTerminals.terminals.length === 0 ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">No push shell opened yet — use Push in terminal above.</p> : null}
+                            {!pushTerminalsLoading && pushTerminals?.ok ? pushTerminals.terminals.map((terminal) => (
+                              <div key={terminal.id} className="mt-2 rounded border border-emerald-500/20 bg-background/60 p-2 text-foreground">
+                                <p className="text-xs"><span className="font-medium">{terminal.title}</span> · <code className="font-mono">{terminal.id}</code> · {terminal.status}{terminal.exitCode !== null && terminal.exitCode !== undefined ? ` · exit ${terminal.exitCode}` : ""} · {new Date(terminal.createdAt).toLocaleString()}</p>
+                                {terminal.outputTail ? <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-muted/60 p-2 font-mono text-[11px]">{terminal.outputTail}</pre> : null}
+                                {terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">Output unavailable — the shell already exited. Its result is in the Git history / remote instead.</p> : null}
+                              </div>
+                            )) : null}
+                          </div>
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-2">
@@ -5674,7 +5708,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               {publicationAction === "commit" && publishesToDefaultBranch ? <p>BB will create a local commit on <code>{publicationDefaultBranch}</code> in the card’s selected checkout. It will not fetch remote updates, merge incoming changes, push, or create a pull request. This bypasses a pull request, so continue only when the checkout is current and direct commits are intended.</p> : null}
               {publicationAction === "commit" && !publishesToDefaultBranch ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}
               {publicationAction === "squash" ? <p>BB will combine this branch’s committed changes into one local commit on its base branch. It will not fetch remote updates, push, or create a pull request. It bypasses pull-request review, so use it only when direct local integration is intended.</p> : null}
-              {publicationAction === "push" ? <p>BB will open a terminal in this card’s worker checkout with <code>git push</code> typed and ready — review it and press Enter to run. Nothing pushes until you do; rejections and auth errors appear in that shell, not hidden here.</p> : null}
+              {publicationAction === "push" ? <p>BB will open a shell in this card’s worker checkout with <code>git push</code> typed and ready — review it and press Enter to run. Nothing pushes until you do. BB does not auto-reveal the shell: this panel tracks it under Push shells with live output, so you never hunt the sidebar blind.</p> : null}
               {publicationAction === "push" && (publication?.mergeBase?.behind ?? 0) > 0 ? <p>This branch is {publication?.mergeBase?.behind} behind — a push will be rejected until you pull first. Do that in the same shell before running the typed command.</p> : null}
               {publicationAction === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}
               {publicationAction === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}
