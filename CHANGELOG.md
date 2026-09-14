@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-09-14
+
 ### Changed
 
 - **Cards and questions stay readable.** Board and list cards now give long
@@ -21,6 +23,10 @@ and this project adheres to a single-version-per-release tag format
   and visually contains its vertical workflow preferences. `bb stelow ask`
   accepts `--multiple` before its first `--question`, including after
   `--tag split`.
+- **Inbox labels and counts agree.** The primary list is now **Needs
+  attention**, and it shows the exact unresolved actions counted by the
+  sidebar badge even after one has been opened. Completed work remains in
+  history and never creates a misleading action count.
 
 ## [0.18.0] - 2026-09-14
 
