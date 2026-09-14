@@ -255,7 +255,7 @@ const publicationCommitDiffSchema = z.object({
   found: z.boolean(),
   commitSha: z.string().nullable(),
   shortstat: z.string().nullable(),
-  files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), binary: z.boolean(), changeKind: z.string(), additions: z.number(), deletions: z.number(), truncated: z.boolean() })),
+  files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), binary: z.boolean(), changeKind: z.string(), additions: z.number(), deletions: z.number(), truncated: z.boolean(), loadMode: z.string() })),
   truncated: z.boolean(),
   error: z.string().nullable(),
 });
@@ -4120,6 +4120,30 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { ...empty, error };
         }
         const patches = new Map(result.initialPatches.map((patch) => [patch.path, patch]));
+        // BB ships small patches inline and marks the rest on_demand: the patch
+        // exists but needs an explicit diffPatch fetch. Only too_large is
+        // genuinely unrenderable. Fetch on_demand patches bounded and fail-soft
+        // so one bad file never breaks the whole commit view.
+        const onDemandPaths = result.files
+          .filter((file) => !file.binary && file.loadMode === "on_demand" && !patches.has(file.path))
+          .map((file) => file.path);
+        const MAX_ON_DEMAND_PATCHES = 25;
+        let onDemandTruncated = false;
+        if (onDemandPaths.length > 0) {
+          try {
+            const demanded = await bb.sdk.environments.diffPatch({
+              environmentId: prepared.environmentId,
+              paths: onDemandPaths.slice(0, MAX_ON_DEMAND_PATCHES),
+              target: { type: "commit", sha: commitSha },
+            });
+            if (demanded.outcome === "available") {
+              for (const patch of demanded.patches) patches.set(patch.path, patch);
+            }
+            onDemandTruncated = onDemandPaths.length > MAX_ON_DEMAND_PATCHES;
+          } catch {
+            // Keep the initial patches; the UI states per-file availability.
+          }
+        }
         return {
           found: true,
           commitSha,
@@ -4135,9 +4159,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               additions: file.additions,
               deletions: file.deletions,
               truncated: patch?.truncated ?? file.loadMode !== "auto",
+              loadMode: file.loadMode,
             };
           }),
-          truncated: result.truncated,
+          truncated: result.truncated || onDemandTruncated,
           error: null,
         };
       } catch (error) {

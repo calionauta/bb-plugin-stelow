@@ -1,11 +1,13 @@
 export type WorkflowPhase = "analysis" | "planning" | "execution" | "review";
 export declare const WORKFLOW_PHASES: Array<{ id: WorkflowPhase; label: string }>;
 export declare const STELOW_UPSTREAM_BASE: string;
-export declare const WORKFLOW_STAGES: Array<{ id: string; label: string; phase: WorkflowPhase; skill: string; produces: string }>;
+export declare const STELOW_UPSTREAM_BLOB: string;
+export declare const WORKFLOW_STAGES: Array<{ id: string; label: string; phase: WorkflowPhase; skill: string; doc: string | null; produces: string }>;
 export declare const STAGE_SEQUENCE: string[];
 export declare const STAGE_LABELS: Record<string, string>;
 export declare const STAGE_PRODUCES: Record<string, string>;
 export declare const STAGE_SKILL: Record<string, string>;
+export declare const STAGE_DOC: Record<string, string | null>;
 export declare const PHASE_LABELS: Record<string, string>;
 export declare const BUILD_BOARD_TERMINALS: string[];
 export declare const BUILD_BOARD_COLUMNS: string[];
@@ -17,3 +19,4 @@ export declare function buildBoardColumnFor(card: { status: string; stage: strin
 export declare function stageLabel(stage: string): string;
 export declare function stageSkill(stage: string): string | null;
 export declare function stageSkillUrl(stage: string): string | null;
+export declare function stageInfoUrl(stage: string): string | null;

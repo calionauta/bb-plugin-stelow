@@ -24,7 +24,7 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, buildBoardColumnFor, stageLabel, stageSkillUrl } from "./lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
@@ -2522,11 +2522,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
                 const canRegress = terminal !== "archived" && passed && !isCurrent && !isTerminalCheckpoint;
                 const clickable = canAdvance || canRegress;
                 const produced = artifacts.filter((artifact) => artifact.stage === stage);
-                const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : STAGE_PRODUCES[stage]);
-                // Transparency affordance: a sibling ⓘ link per pill, never nested
-                // inside the pill button (which keeps its rerun/advance meaning).
-                const skillUrl = stageSkillUrl(stage);
-                const skillName = STAGE_SKILL[stage] ?? null;
+                const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : [STAGE_PRODUCES[stage], STAGE_SKILL[stage] ? `Defined by ${STAGE_SKILL[stage]} — see the Workflow map below for the link.` : null].filter(Boolean).join(" "));
                 return (
                   <span key={stage} className={`inline-flex shrink-0 items-center gap-1 ${isOffRoute ? "opacity-60" : ""}`}>
                     <button
@@ -2550,17 +2546,6 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
                         <span className={isOffRoute ? "line-through" : ""}>{stageLabel(stage)}</span>
                         {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
                     </button>
-                    {skillUrl && skillName ? (
-                      <UrlLink
-                        href={skillUrl}
-                        onClick={(event) => event.stopPropagation()}
-                        title={`What ${stageLabel(stage)} does — upstream skill ${skillName} (opens GitHub)`}
-                        aria-label={`About ${stageLabel(stage)} stage — opens upstream skill ${skillName} on GitHub`}
-                        className="inline-flex min-h-8 min-w-8 cursor-pointer items-center justify-center rounded-full px-1 text-[11px] text-muted-foreground/70 hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                      >
-                        <span aria-hidden>ⓘ</span>
-                      </UrlLink>
-                    ) : null}
                     {produced.length > 0 ? (
                       <button
                         type="button"
@@ -5332,18 +5317,18 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
                   <details className="pt-1 text-xs text-muted-foreground">
-                    <summary className="cursor-pointer font-medium text-foreground">Workflow map</summary>
-                    <p className="mt-1">Analyze, Plan, Execute, and Review are workflow phases. Review contains Diff gate and Audit. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill that defines it.</p>
+                    <summary className="cursor-pointer font-medium text-foreground">Workflow map · what each stage does</summary>
+                    <p className="mt-1">Analyze, Plan, Execute, and Review are workflow phases. Review holds automated workflow checks (Diff gate, Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior doc that defines it.</p>
                     <ul className="mt-2 space-y-1">
                       {STAGE_SEQUENCE.map((stage) => {
-                        const url = stageSkillUrl(stage);
+                        const url = stageInfoUrl(stage);
                         const skill = STAGE_SKILL[stage] ?? null;
                         return (
                           <li key={stage} className="flex flex-wrap items-baseline gap-x-1.5">
                             <span className="font-medium text-foreground">{stageLabel(stage)}</span>
                             <span>· {STAGE_PRODUCES[stage]}</span>
                             {url && skill ? (
-                              <UrlLink href={url} title={`Upstream skill ${skill} on GitHub`} aria-label={`${stageLabel(stage)} stage skill ${skill} on GitHub`} className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                              <UrlLink href={url} title={`How ${stageLabel(stage)} works — ${skill} on GitHub`} aria-label={`${stageLabel(stage)} stage definition in ${skill} on GitHub`} className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                                 {skill}
                               </UrlLink>
                             ) : null}
@@ -5649,7 +5634,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               {publicationCommitDiff.files.map((file) => (
                 <div key={file.path} className="space-y-1">
                   <p className="text-[11px] font-semibold text-muted-foreground">{file.path} · {file.changeKind} · +{file.additions}/-{file.deletions}</p>
-                  {file.binary ? <p className="text-xs text-muted-foreground">Binary file — BB does not render its patch.</p> : file.patch ? DiffView ? <DiffView patch={file.patch} path={file.path} view="unified" /> : <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre> : <p className="text-xs text-muted-foreground">Patch is unavailable or too large to render.</p>}
+                  {file.binary ? <p className="text-xs text-muted-foreground">Binary file — BB does not render its patch.</p> : file.patch ? DiffView ? <DiffView patch={file.patch} path={file.path} view="unified" /> : <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre> : file.loadMode === "too_large" ? <p className="text-xs text-muted-foreground">This file is too large for BB to render its patch.</p> : <p className="text-xs text-muted-foreground">BB did not return a patch for this file.</p>}
                   {file.truncated ? <p className="text-xs text-muted-foreground">This file’s patch is truncated.</p> : null}
                 </div>
               ))}

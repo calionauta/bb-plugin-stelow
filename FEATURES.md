@@ -162,10 +162,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   verification record, cannot reopen that terminal checkpoint. More generally,
   the current checkpoint is always inert; only a legal next checkpoint or a
    prior checkpoint can be selected. It exposes a
-   compact Workflow map explaining phases, Done, and attention, with every
-   stage linked to its owning upstream Stelow skill on GitHub. Each timeline
-   pill carries a sibling ⓘ link to that skill — the pill click keeps its
-   rerun/advance meaning and never navigates away. Attachments, mentioned files,
+   compact Workflow map explaining phases, Done, and attention. The map lists
+   every stage with what it produces and a link to the upstream skill or
+   behavior doc that defines it; pill tooltips name the owning skill and
+   point at the map. Pill clicks keep their rerun/advance meaning and never
+   navigate away. Attachments, mentioned files,
    timed-out questions inline.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment

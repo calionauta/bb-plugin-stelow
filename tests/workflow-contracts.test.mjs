@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_TEMPLATE, templateStages } from "../lib/state-template.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, STELOW_UPSTREAM_BASE, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageLabel, stageSkill, stageSkillUrl } from "../lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_DOC, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, STELOW_UPSTREAM_BASE, STELOW_UPSTREAM_BLOB, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageInfoUrl, stageLabel, stageSkill, stageSkillUrl } from "../lib/workflow-vocabulary.mjs";
 
 // Workflow contracts: one vocabulary powers template, board, and server.
 // Catches stage additions without template cover or a phase/label mapping.
@@ -60,8 +60,16 @@ for (const stage of WORKFLOW_STAGES) {
   assert.equal(STAGE_SKILL[stage.id], stage.skill, `${stage.id} skill has one map`);
   assert.equal(stageSkill(stage.id), stage.skill, `${stage.id} skill accessor agrees`);
   assert.equal(stageSkillUrl(stage.id), `${STELOW_UPSTREAM_BASE}/${stage.skill}`, `${stage.id} URL derives from base + skill`);
+  assert.equal(STAGE_DOC[stage.id], stage.doc, `${stage.id} doc has one map`);
+  if (stage.doc) {
+    assert.ok(existsSync(join(root, "skills", stage.skill, stage.doc)), `${stage.id} doc ${stage.skill}/${stage.doc} is vendored`);
+    assert.equal(stageInfoUrl(stage.id), `${STELOW_UPSTREAM_BLOB}/${stage.skill}/${stage.doc}`, `${stage.id} info URL points at its behavior doc`);
+  } else {
+    assert.equal(stageInfoUrl(stage.id), stageSkillUrl(stage.id), `${stage.id} info URL falls back to the skill root`);
+  }
 }
 assert.equal(stageSkill("nope"), null, "unknown stage has no skill");
 assert.equal(stageSkillUrl("nope"), null, "unknown stage has no skill URL");
+assert.equal(stageInfoUrl("nope"), null, "unknown stage has no info URL");
 
 console.log("workflow contracts test ok: one vocabulary, template, board topology, bands, skill links, and transitions agree on 17 stages");

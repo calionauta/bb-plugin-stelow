@@ -22,6 +22,9 @@ assert.match(server, /canMarkPullRequestDraft\(status, pullRequest\)/, "draft tr
 assert.match(server, /publication_events/, "publication writes are separately auditable");
 assert.match(server, /commit_sha = \?/, "commit review is limited to card-recorded publication history");
 assert.match(server, /bb\.sdk\.environments\.diffFiles/, "commit review uses BB's native environment diff API");
+assert.match(server, /bb\.sdk\.environments\.diffPatch/, "on-demand file patches are fetched from BB instead of given up on");
+assert.match(server, /loadMode === "on_demand"/, "only on-demand files trigger a patch fetch; too_large stays honestly unrenderable");
+assert.match(app, /file\.loadMode === "too_large"/, "the commit viewer distinguishes too-large files from missing patches");
 assert.match(server, /if \(result\.merged\) recordPublication/, "only completed local merges enter publication history");
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
