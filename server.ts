@@ -35,13 +35,14 @@ import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
-import { PREVIEW_STATES, previewShape, previewSourceLabel, previewText } from "./lib/preview-session.mjs";
+import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
+import { canCommitPublication, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -234,6 +235,22 @@ const inboxEventSnapshotSchema = z.object({
   archivedAt: z.number().nullable(),
 });
 
+const publicationCapabilitySchema = z.object({ available: z.boolean(), reason: z.string().nullable() });
+const publicationSnapshotSchema = z.object({
+  available: z.boolean(),
+  message: z.string().nullable(),
+  source: z.string().nullable(),
+  environmentId: z.string().nullable(),
+  isWorktree: z.boolean(),
+  branch: z.object({ current: z.string().nullable(), default: z.string().nullable(), headSha: z.string().nullable() }).nullable(),
+  workingTree: z.object({ state: z.string(), hasUncommittedChanges: z.boolean(), files: z.number() }).nullable(),
+  mergeBase: z.object({ branch: z.string(), ahead: z.number(), behind: z.number(), hasCommittedUnmergedChanges: z.boolean() }).nullable(),
+  pullRequest: z.object({ number: z.number(), title: z.string(), url: z.string(), state: z.string(), attention: z.string(), review: z.string(), checks: z.string(), mergeability: z.string() }).nullable(),
+  pullRequestMessage: z.string().nullable(),
+  capabilities: z.object({ commit: publicationCapabilitySchema, squashMerge: publicationCapabilitySchema, markReady: publicationCapabilitySchema, markDraft: publicationCapabilitySchema, mergePullRequest: publicationCapabilitySchema }),
+  events: z.array(z.object({ id: z.string(), action: z.string(), message: z.string(), commitSha: z.string().nullable(), pullRequestUrl: z.string().nullable(), createdAt: z.number() })),
+});
+
 export const rpcContract = defineRpcContract({
   board: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
@@ -390,6 +407,22 @@ export const rpcContract = defineRpcContract({
   cardDiff: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), entitySummary: z.object({ total: z.number(), fileCount: z.number(), added: z.number(), modified: z.number(), deleted: z.number(), renamed: z.number(), moved: z.number(), cosmeticOnly: z.boolean() }).nullable(), changedSymbols: z.array(z.object({ symbol: z.string(), files: z.array(z.string()), callers: z.number(), testCallers: z.number() })).nullable(), error: z.string().nullable() }),
+  },
+  publicationStatus: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: publicationSnapshotSchema,
+  },
+  publicationCommit: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
+  },
+  publicationSquashMerge: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
+  },
+  publicationPullRequestAction: {
+    input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
+    output: z.object({ ok: z.boolean(), message: z.string(), pullRequestUrl: z.string().nullable() }),
   },
   runResearchStrategy: {
     input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
@@ -1191,6 +1224,20 @@ export default async function plugin(bb: BbPluginApi) {
   const githubImportColumns = db.prepare("PRAGMA table_info(github_imports)").all() as Array<{ name: string }>;
   if (!githubImportColumns.some((column) => column.name === "commented_at")) db.exec("ALTER TABLE github_imports ADD COLUMN commented_at INTEGER");
 
+  // Publication is intentionally separate from a card's Done state. A card is
+  // workflow-complete before its owner decides whether and how to publish it.
+  db.exec(`CREATE TABLE IF NOT EXISTS publication_events (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    message TEXT NOT NULL,
+    commit_sha TEXT,
+    pull_request_url TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_publication_events_card ON publication_events(card_id, created_at DESC);`);
+
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
     db.exec("ALTER TABLE presets ADD COLUMN environment_kind TEXT NOT NULL DEFAULT 'project-default'");
@@ -1880,7 +1927,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // back: the processes are ours, so shutting them down is ours too.
   bb.onDispose(() => preview.dispose());
 
-  type PreviewEnvironment = { path?: string | null; hostId?: string | null; isWorktree?: boolean; workspaceProvisionType?: string | null; branchName?: string | null } | null;
+  type PreviewEnvironment = { id?: string | null; path?: string | null; hostId?: string | null; isWorktree?: boolean; workspaceProvisionType?: string | null; branchName?: string | null } | null;
 
   /** The environment backing the card's worker thread, while it still exists. */
   async function workerEnvironmentOf(card: CardRow): Promise<PreviewEnvironment> {
@@ -1894,6 +1941,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch {
       return null;
     }
+  }
+
+  type CardCheckout = { path: string; hostId: string | null; environmentId: string | null; environment: PreviewEnvironment; source: string };
+
+  /**
+   * The exact checkout a worker changed. This is deliberately shared by
+   * preview, diff, and publication so a managed worktree never falls back to
+   * the project's source checkout by accident.
+   */
+  async function cardCheckout(card: CardRow): Promise<CardCheckout | null> {
+    const environment = await workerEnvironmentOf(card);
+    if (environment?.path) {
+      return {
+        path: environment.path,
+        hostId: environment.hostId ?? null,
+        environmentId: environment.id ?? null,
+        environment,
+        source: publicationSource(environment),
+      };
+    }
+    const workspace = await cardWorkspace(card);
+    return workspace?.path
+      ? { path: workspace.path, hostId: workspace.hostId, environmentId: null, environment: null, source: "Project source" }
+      : null;
   }
 
   /**
@@ -1924,14 +1995,83 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
    * target so the panel always names the codebase the user is looking at.
    */
   async function previewTarget(card: CardRow) {
-    const environment = await workerEnvironmentOf(card);
-    if (environment?.path) {
-      return { checkout: environment.path, hostId: environment.hostId ?? null, slug: card.name, source: previewSourceLabel(environment) };
-    }
-    const workspace = await cardWorkspace(card);
-    return workspace?.path
-      ? { checkout: workspace.path, hostId: workspace.hostId, slug: card.name, source: previewSourceLabel(null) }
+    const checkout = await cardCheckout(card);
+    return checkout
+      ? { checkout: checkout.path, hostId: checkout.hostId, slug: card.name, source: checkout.source }
       : null;
+  }
+
+  type PublicationSnapshot = z.infer<typeof publicationSnapshotSchema>;
+  type PublicationAction = "commit" | "squash_merge" | "pull_request_ready" | "pull_request_draft" | "pull_request_merge";
+
+  function unavailablePublication(message: string, events: PublicationSnapshot["events"] = []): PublicationSnapshot {
+    const blocked = { available: false, reason: message };
+    return {
+      available: false, message, source: null, environmentId: null, isWorktree: false,
+      branch: null, workingTree: null, mergeBase: null, pullRequest: null, pullRequestMessage: null,
+      capabilities: { commit: blocked, squashMerge: blocked, markReady: blocked, markDraft: blocked, mergePullRequest: blocked }, events,
+    };
+  }
+
+  function publicationEvents(cardId: string): PublicationSnapshot["events"] {
+    return (db.prepare("SELECT id, action, message, commit_sha, pull_request_url, created_at FROM publication_events WHERE card_id = ? ORDER BY created_at DESC LIMIT 12").all(cardId) as Array<{ id: string; action: string; message: string; commit_sha: string | null; pull_request_url: string | null; created_at: number }>).map((event) => ({
+      id: event.id, action: event.action, message: event.message, commitSha: event.commit_sha, pullRequestUrl: event.pull_request_url, createdAt: event.created_at,
+    }));
+  }
+
+  function recordPublication(cardId: string, action: PublicationAction, message: string, commitSha: string | null = null, pullRequestUrl: string | null = null): void {
+    db.prepare("INSERT INTO publication_events (id, card_id, action, message, commit_sha, pull_request_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("pub"), cardId, action, message, commitSha, pullRequestUrl, now());
+  }
+
+  async function publicationSnapshot(card: CardRow): Promise<PublicationSnapshot> {
+    const events = publicationEvents(card.id);
+    if (normalizeStatus(card.status) !== "completed") return unavailablePublication("Only completed cards can publish changes.", events);
+    const checkout = await cardCheckout(card).catch(() => null);
+    if (!checkout?.environmentId || !checkout.environment) return unavailablePublication("Publishing is available only while this card has a live BB workspace environment.", events);
+    const [status, pullRequest] = await Promise.all([
+      bb.sdk.environments.status({ environmentId: checkout.environmentId }).catch(() => null),
+      bb.sdk.environments.pullRequest({ environmentId: checkout.environmentId }).catch(() => ({ outcome: "unavailable", message: "BB could not read pull-request status." })),
+    ]);
+    if (!status || status.outcome !== "available") return unavailablePublication(status?.outcome === "not_applicable" ? status.message : status?.failure?.message ?? "BB could not inspect this workspace.", events);
+    const blocker = publicationBlocker(status);
+    const commit = canCommitPublication(status);
+    const squashMerge = canSquashMerge(status);
+    const pr = pullRequest.outcome === "available" && "pullRequest" in pullRequest ? pullRequest.pullRequest : null;
+    const capability = ({ ok, reason }: { ok: boolean; reason: string | null }) => ({ available: ok, reason });
+    const merge = capability(canMergePullRequest(pullRequest));
+    const pullRequestError = "message" in pullRequest && typeof pullRequest.message === "string" ? pullRequest.message : "Pull-request status is unavailable.";
+    const prExists = pr !== null;
+    const prAction = prExists
+      ? { available: pr.state === "open", reason: pr.state === "open" ? null : `This pull request is ${pr.state}.` }
+      : { available: false, reason: pullRequest.outcome === "absent" ? "Create a pull request in BB or your Git provider first." : pullRequestError };
+    return {
+      available: blocker === null,
+      message: blocker,
+      source: checkout.source,
+      environmentId: checkout.environmentId,
+      isWorktree: Boolean(checkout.environment.isWorktree),
+      branch: { current: status.workspace.branch.currentBranch, default: status.workspace.branch.defaultBranch, headSha: status.workspace.checkout.kind === "branch" || status.workspace.checkout.kind === "detached" ? status.workspace.checkout.headSha : null },
+      workingTree: { state: status.workspace.workingTree.state, hasUncommittedChanges: status.workspace.workingTree.hasUncommittedChanges, files: status.workspace.workingTree.files.length },
+      mergeBase: status.workspace.mergeBase ? { branch: status.workspace.mergeBase.mergeBaseBranch, ahead: status.workspace.mergeBase.aheadCount, behind: status.workspace.mergeBase.behindCount, hasCommittedUnmergedChanges: status.workspace.mergeBase.hasCommittedUnmergedChanges } : null,
+      pullRequest: pr ? { number: pr.number, title: pr.title, url: pr.url, state: pr.state, attention: pr.attention, review: pr.review.state, checks: pr.checks.state, mergeability: pr.mergeability.state } : null,
+      pullRequestMessage: pullRequest.outcome === "unavailable" && "message" in pullRequest ? pullRequest.message : null,
+      capabilities: {
+        commit: capability(commit),
+        squashMerge: capability(squashMerge),
+        markReady: prAction,
+        markDraft: prAction,
+        mergePullRequest: merge,
+      },
+      events,
+    };
+  }
+
+  async function publicationEnvironment(cardId: string): Promise<{ card: CardRow; environmentId: string; snapshot: PublicationSnapshot } | { error: string }> {
+    const card = getCard(cardId);
+    if (!card) return { error: ERR_CARD_NOT_FOUND };
+    const snapshot = await publicationSnapshot(card);
+    if (!snapshot.environmentId) return { error: snapshot.message ?? "Publishing is unavailable." };
+    return { card, environmentId: snapshot.environmentId, snapshot };
   }
 
   /**
@@ -3822,7 +3962,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const empty = { found: false, isRepo: false, files: [], truncated: false, entitySummary: null as ReturnType<typeof summarizeSemDiff>, changedSymbols: null as ReturnType<typeof summarizeCymbalChanged>, error: null as string | null };
       const card = getCard(cardId);
       if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
-      const workspace = await cardWorkspace(card).catch(() => null);
+      const workspace = await cardCheckout(card).catch(() => null);
       if (!workspace?.path) return { ...empty, error: ERR_WORKSPACE_UNAVAILABLE };
       const runGit = (args: string[], cwd?: string): Promise<{ ok: boolean; stdout: string }> =>
         new Promise((resolve) => {
@@ -3904,6 +4044,70 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
       } catch { changedSymbols = null; }
       return { found: true, isRepo: true, files, truncated, entitySummary, changedSymbols, error: null };
+    },
+
+    async publicationStatus({ cardId }) {
+      const card = getCard(cardId);
+      return card ? await publicationSnapshot(card) : unavailablePublication(ERR_CARD_NOT_FOUND);
+    },
+
+    async publicationCommit({ cardId }) {
+      const prepared = await publicationEnvironment(cardId);
+      if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
+      if (!prepared.snapshot.capabilities.commit.available) return { ok: false, message: prepared.snapshot.capabilities.commit.reason ?? "Commit is unavailable.", commitSha: null };
+      try {
+        // BB executes this on the environment host and owns staging, identity,
+        // hooks, and commit formatting. Do not substitute a local shell call.
+        const result = await bb.sdk.environments.commit({ environmentId: prepared.environmentId });
+        recordPublication(cardId, "commit", result.message, result.commitSha);
+        return { ok: true, message: result.message, commitSha: result.commitSha };
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "BB could not commit this workspace.", commitSha: null };
+      }
+    },
+
+    async publicationSquashMerge({ cardId }) {
+      const prepared = await publicationEnvironment(cardId);
+      if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
+      if (!prepared.snapshot.capabilities.squashMerge.available) return { ok: false, message: prepared.snapshot.capabilities.squashMerge.reason ?? "Local squash merge is unavailable.", commitSha: null };
+      const base = prepared.snapshot.mergeBase?.branch;
+      if (!base) return { ok: false, message: "BB could not determine the merge-base branch.", commitSha: null };
+      try {
+        const result = await bb.sdk.environments.squashMerge({ environmentId: prepared.environmentId, mergeBaseBranch: base });
+        recordPublication(cardId, "squash_merge", result.message, result.commitSha);
+        return { ok: result.merged, message: result.message, commitSha: result.commitSha };
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "BB could not squash merge this workspace.", commitSha: null };
+      }
+    },
+
+    async publicationPullRequestAction({ cardId, operation, method }) {
+      const prepared = await publicationEnvironment(cardId);
+      if ("error" in prepared) return { ok: false, message: prepared.error, pullRequestUrl: null };
+      const url = prepared.snapshot.pullRequest?.url ?? null;
+      const capability = operation === "merge"
+        ? prepared.snapshot.capabilities.mergePullRequest
+        : operation === "ready"
+          ? prepared.snapshot.capabilities.markReady
+          : prepared.snapshot.capabilities.markDraft;
+      if (!capability.available) return { ok: false, message: capability.reason ?? "This pull-request action is unavailable.", pullRequestUrl: url };
+      try {
+        if (operation === "ready") {
+          const result = await bb.sdk.environments.markPullRequestReady({ environmentId: prepared.environmentId });
+          recordPublication(cardId, "pull_request_ready", result.message, null, url);
+          return { ok: true, message: result.message, pullRequestUrl: url };
+        }
+        if (operation === "draft") {
+          const result = await bb.sdk.environments.markPullRequestDraft({ environmentId: prepared.environmentId });
+          recordPublication(cardId, "pull_request_draft", result.message, null, url);
+          return { ok: true, message: result.message, pullRequestUrl: url };
+        }
+        const result = await bb.sdk.environments.mergePullRequest({ environmentId: prepared.environmentId, method: method ?? "squash" });
+        recordPublication(cardId, "pull_request_merge", result.message, null, url);
+        return { ok: true, message: result.message, pullRequestUrl: url };
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "BB could not apply this pull-request action.", pullRequestUrl: url };
+      }
     },
 
     async runResearchStrategy({ cardId, strategy }) {
