@@ -9,10 +9,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
   attachments, intent, planning depth, your review gates, agent preset from
-  the analysis band. Settings opens by default with every option visible as
-  radio cards (real inputs, min-h-11 targets) — no hidden select. "Pause
-  for my review" names the human explicitly so it never reads as the
-  board's automatic Review column. BB's own Project, Environment, and
+  the analysis band. Settings stays collapsed until requested, then its
+  shared disclosure and bordered settings sections visibly contain the
+  controls. Workflow choices are stacked, visible radio cards (real inputs,
+  min-h-11 targets) — no hidden select. BB's own Project, Environment, and
   branch controls are authoritative: Stelow forwards the chosen checkout
   unchanged and keeps later workers in it. Spawns a hidden worker thread
   starting at triage.
@@ -167,11 +167,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with
   question counter (N of M), Prev/Next plus direct jump steps, radio for
-  single-choice and checkbox for multi-choice, a free-text Other on every
-  question, and explicit Skip (AI uses its recommendation). One atomic
+  single-choice and high-contrast checkbox for multi-choice, a free-text
+  Other on ordinary questions, and explicit Skip (AI uses its
+  recommendation). One atomic
   submit answers everything — one worker resume, one inbox resolution.
   Workers batch independent questions into one `bb stelow ask` call
-  (repeat `--question` groups); dependent questions stay sequential.
+  (repeat `--question` groups; `--multiple` also accepts the unambiguous
+  mode-first form used after a tag); dependent questions stay sequential.
   Timed-out asks stay answerable on the card, batched the same way.
   Options carry descriptions plus optional detail: `preview` (inline
   glance, expandable) and `artifact` (workspace-relative path opening in
@@ -343,10 +345,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   takes effect on (re)start, with a stale-worker warning until then.
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
   your review gates remembered across cards.
-- **One disclosure affordance** (`DisclosureChevron`). Every collapsible
-  shares one chevron (right when closed, rotates down when open); native
-  details/summary keeps the accessible state, the chevron mirrors it
-  visually.
+- **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).
+  Every collapsible shares one bordered disclosure (right chevron when
+  closed, rotates down when open); native details/summary keeps the
+  accessible state, the chevron mirrors it visually. `SettingsSection`
+  visibly groups any revealed configuration controls with their heading.
 
 ## 7. Command and embed
 *When I am an agent, CLI, or another surface, I want the same power.*
@@ -387,7 +390,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   split only for 2+ substantial, independently auditable deliverables with
   distinct outcomes and acceptance criteria — never for bullets, files,
   UI/API slices, steps, or small fixes. The structured multi-select ask
-  offers each child and "Keep as one card". The host creates children only
+  explicitly states its consequence: selected deliveries become child cards,
+  unselected deliveries remain on the parent, and “Keep as one card” vetoes
+  the split. It accepts only those recorded option values, so a free-text
+  answer cannot accidentally create work. The host creates children only
   from the recorded, human-approved proposal — full approval archives the
   parent, partial approval keeps it narrowed to the remainder. Never
   unilateral, never by worker claim.

@@ -4924,6 +4924,18 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             .map((o) => ({ title: o.label, desc: o.description }));
           const invalid = validateSplitSlices(slices);
           if (invalid) return { exitCode: 2, stderr: invalid };
+          // The worker supplies the candidate slices, but the host owns the
+          // irreversible semantics. Put those semantics in the question the
+          // user actually sees: selected slices become child cards, omitted
+          // slices remain on the parent, and the veto keeps everything whole.
+          groups[0]!.question = `${groups[0]!.question.trim()}\n\nSelect the deliveries that should become new independent cards. Anything you do not select stays in this card; nothing is discarded. Choose "${SPLIT_KEEP_LABEL}" to keep the entire request together.`;
+          groups[0]!.options = splitOptions.map((option) => {
+            const isKeep = option.label.trim().toLowerCase() === SPLIT_KEEP_LABEL.toLowerCase();
+            const consequence = isKeep
+              ? "Keep the complete request in this card. No new cards will be created."
+              : "Selecting this creates one independent card for this delivery; unselected deliveries remain in this card.";
+            return { ...option, description: option.description ? `${option.description}\n\n${consequence}` : consequence };
+          });
           db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, question, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, ?, NULL, ?, NULL, NULL, '[]')")
             .run(cardRow.id, groups[0]!.question, JSON.stringify(slices), Date.now());
         }

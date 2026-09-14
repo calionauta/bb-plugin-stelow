@@ -25,9 +25,10 @@ import {
   assert.deepEqual(multi.groups[1].options.map((o) => o.label), ["C", "D"]);
 }
 {
-  // --multiple before any --question is a usage error, not a silent attach.
-  const bad = parseAskGroups(["--multiple", "--question", "Q?", "--option", "A", "--option", "B"]);
-  assert.match(bad.error, /must follow a --question/);
+  // Accept the unambiguous mode-first form emitted after `--tag split`.
+  const modeFirst = parseAskGroups(["--multiple", "--question", "Q?", "--option", "A", "--option", "B"]);
+  assert.equal(modeFirst.error, undefined);
+  assert.equal(modeFirst.groups[0].multiple, true);
 }
 {
   const short = parseAskGroups(["--question", "Q?", "--option", "Only"]);

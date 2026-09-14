@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [Unreleased]
+
+### Changed
+
+- **Cards and questions stay readable.** Board and list cards now put long
+  titles ahead of a wrapping row of status pills and actions, so tags cannot
+  clip at the edge. Split proposals explain their consequence before answer:
+  selected deliveries become child cards, unselected work stays on the
+  parent, and “Keep as one card” vetoes the split. Their choice controls use
+  high-contrast boxes.
+- **Settings and asks are more resilient.** New-card Settings starts closed
+  and visually contains its vertical workflow preferences. `bb stelow ask`
+  accepts `--multiple` before its first `--question`, including after
+  `--tag split`.
+
 ## [0.18.0] - 2026-09-14
 
 ### Added

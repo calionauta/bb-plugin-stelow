@@ -296,7 +296,7 @@ function ActivityPill({ activity }: { activity: CardItem["activity"] }) {
   const cls = ACTIVITY_PILL_CLASS[activity];
   if (!cls) return null; // idle (repose) renders nothing
   return (
-    <span className={`stelow-activity-pill ${cls}`} title={ACTIVITY_TITLE[activity]}>
+    <span className={`stelow-activity-pill max-w-full truncate ${cls}`} title={ACTIVITY_TITLE[activity]}>
       <span aria-hidden>{ACTIVITY_GLYPH[activity]}</span>
       {activityLabel(activity)}
     </span>
@@ -311,7 +311,7 @@ function StagePill({ stage, active }: { stage: string; active: boolean }) {
   return (
     <span
       title={active ? `Worker is at ${stageLabel(stage)}` : `Workflow stage: ${stageLabel(stage)} — open the card for details`}
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${active ? "bg-primary/15 text-primary stelow-stage-pulse" : "bg-muted text-muted-foreground"}`}
+      className={`inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px] font-medium ${active ? "bg-primary/15 text-primary stelow-stage-pulse" : "bg-muted text-muted-foreground"}`}
     >
       <span aria-hidden>●</span>
       {stageLabel(stage)}
@@ -609,7 +609,10 @@ function BoardPanel({ active }: { active: boolean }) {
   // it; refreshes update state silently.
   const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
-  const [createOptionsOpen, setCreateOptionsOpen] = useState(true);
+  // Keep the composer immediately usable. Settings are available on demand
+  // in their own visual container instead of pushing the rest of the modal
+  // below the fold on every new issue.
+  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
   const [appetite, setAppetite] = useState<Appetite>("Lean");
@@ -810,15 +813,7 @@ function BoardPanel({ active }: { active: boolean }) {
             onOpenPresets={() => setBoardPresetsOpen(true)}
             active={active}
             secondTitle="Defaults for new cards"
-            secondBody={(
-              <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
-                <p>Planning depth and your review gates are chosen per card and remembered as the board defaults. Set them once here.</p>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <ChoiceCards label="Planning depth" hint="How much the agent plans before building." value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} groupName="board-default-appetite" />
-                  <ChoiceCards label="Pause for my review" hint="The agent stops and waits for you at each gate you pick. (The board's Review column is the agent's own automatic check — not you.)" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} groupName="board-default-review" />
-                </div>
-              </div>
-            )}
+            secondBody={<WorkflowSettings appetite={appetite} reviewMode={reviewMode} onAppetiteChange={setAppetite} onReviewModeChange={setReviewMode} groupNamePrefix="board-default" />}
           />
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
@@ -845,22 +840,18 @@ function BoardPanel({ active }: { active: boolean }) {
                 draftKey="stelow-board-create"
                 onSubmit={(request) => start(request)}
               />
-              <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="group border-t pt-3">
-                <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:justify-between">
-                  <span className="flex items-center gap-1.5"><DisclosureChevron />Settings</span>
-                  <span className="text-xs font-normal text-muted-foreground">Planning depth, pausing for your review, and agent configuration · Configure</span>
-                </summary>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <ChoiceCards label="Planning depth" hint="How much the agent plans before building." value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} groupName="create-appetite" />
-                  <ChoiceCards label="Pause for my review" hint="The agent stops and waits for you at each gate you pick. (The board's Review column is the agent's own automatic check — not you.)" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} groupName="create-review" />
-                  <div className="sm:col-span-2">
-                    <AgentConfigBox
-                      lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
-                      onConfigure={() => setBoardPresetsOpen(true)}
-                    />
-                  </div>
-                </div>
-              </details>
+              <DisclosureSection
+                title="Settings"
+                hint="Workflow preferences and agent configuration"
+                open={createOptionsOpen}
+                onToggle={setCreateOptionsOpen}
+              >
+                <AgentConfigBox
+                  lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
+                  onConfigure={() => setBoardPresetsOpen(true)}
+                />
+                <WorkflowSettings appetite={appetite} reviewMode={reviewMode} onAppetiteChange={setAppetite} onReviewModeChange={setReviewMode} groupNamePrefix="create" />
+              </DisclosureSection>
             </DialogContent>
           </Dialog>
 
@@ -1940,6 +1931,36 @@ function ChoiceCards<T extends string>({ label, hint, value, options, onChange, 
   );
 }
 
+// A named visual boundary for configuration controls. It can wrap any
+// settings content, so disclosures do not leave their revealed controls
+// looking detached from the heading that opened them.
+function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section aria-label={title} className="rounded-md border bg-muted/20 p-3">
+      <div className="mb-3">
+        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <div className="grid gap-4">{children}</div>
+    </section>
+  );
+}
+
+function WorkflowSettings({ appetite, reviewMode, onAppetiteChange, onReviewModeChange, groupNamePrefix }: {
+  appetite: Appetite;
+  reviewMode: ReviewMode;
+  onAppetiteChange: (value: Appetite) => void;
+  onReviewModeChange: (value: ReviewMode) => void;
+  groupNamePrefix: string;
+}) {
+  return (
+    <SettingsSection title="Workflow preferences" description="Choose how much planning happens before building and where the agent pauses for your decision.">
+      <ChoiceCards label="Planning depth" hint="How much the agent plans before building." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
+      <ChoiceCards label="Pause for my review" hint="Choose checkpoints where the agent pauses for your decision." value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={onReviewModeChange} groupName={`${groupNamePrefix}-review`} />
+    </SettingsSection>
+  );
+}
+
 // Visual strategy picker shared by the creation modal and the follow-up
 // round dialog: search field over emoji radio-cards, single select, no
 // preselected default. RunIds (follow-up) only badge already-run rows.
@@ -2248,7 +2269,7 @@ function TrackListRow({ card, meta, onOpen }: {
 }) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
-  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>;
+  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300">{attentionLabel(card)}</span> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -2349,6 +2370,18 @@ function CardMetaRows({ card }: { card: CardItem }) {
   );
 }
 
+// All board tiles share this header geometry: title first, then a wrapping
+// status/action row. Nothing competes with the title in a narrow column, so
+// long names and attention tags cannot clip behind the card boundary.
+function CardHeading({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-2">
+      <div className="break-words text-sm font-medium leading-5 text-foreground">{title}</div>
+      <div className="flex flex-wrap items-center gap-1.5">{children}</div>
+    </div>
+  );
+}
+
 function BoardCard({ card }: { card: CardItem }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
@@ -2382,17 +2415,14 @@ function BoardCard({ card }: { card: CardItem }) {
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open card ${card.displayName}.`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
-        <span className="inline-flex shrink-0 items-center gap-1.5">
-          {stuck ? <CardRetryButton cardId={card.id} /> : null}
-          {card.status !== "completed" && card.status !== "archived" ? <StagePill stage={card.stage} active={running} /> : null}
-          {card.activity !== "running" ? <ActivityPill activity={card.activity} /> : null}
-        </span>
-      </div>
+      <CardHeading title={card.displayName}>
+        {stuck ? <CardRetryButton cardId={card.id} /> : null}
+        {card.status !== "completed" && card.status !== "archived" ? <StagePill stage={card.stage} active={running} /> : null}
+        {card.activity !== "running" ? <ActivityPill activity={card.activity} /> : null}
+      </CardHeading>
       {(card.scopeSummary.scopesTotal > 0 || card.intent !== "unknown") ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
-        {card.intent !== "unknown" ? <Pill className="ml-auto whitespace-nowrap" title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
+        {card.intent !== "unknown" ? <Pill className="max-w-full" title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
       </div> : null}
       <CardMetaRows card={card} />
     </div>
@@ -2435,15 +2465,12 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open ${ariaNoun} ${card.displayName}.`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-foreground">{card.displayName}</div>
-        <span className="inline-flex shrink-0 items-center gap-1.5">
-          {stuck ? <CardRetryButton cardId={card.id} /> : null}
-          <ActivityPill activity={card.activity} />
-        </span>
-      </div>
+      <CardHeading title={card.displayName}>
+        {stuck ? <CardRetryButton cardId={card.id} /> : null}
+        <ActivityPill activity={card.activity} />
+      </CardHeading>
       {tagLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <Pill className="ml-auto whitespace-nowrap" title={tagTitle}>{tagLabel}</Pill>
+        <Pill className="max-w-full" title={tagTitle}>{tagLabel}</Pill>
       </div> : null}
       <CardMetaRows card={card} />
     </div>
@@ -3092,6 +3119,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   if (questions.length === 0) return null;
   const current = questions[Math.min(index, questions.length - 1)]!;
+  const isSplitProposal = current.multiple && current.options.some((option) => option.label === "Keep as one card");
   const merged = (id: string): string[] => {
     if (skipped.has(id)) return [];
     const out = [...(selected[id] ?? [])];
@@ -3153,6 +3181,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
           ) : null}
           <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div>
           {current.prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{current.prompt}</p> : null}
+          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80"><strong className="text-amber-900 dark:text-amber-100">What this choice does:</strong> selected deliveries become new cards; unselected deliveries remain on this card. “Keep as one card” creates nothing new.</p> : null}
           <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
             {current.options.map((option) => {
               const active = (selected[current.id] ?? []).includes(option.label);
@@ -3162,17 +3191,17 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
                     role={current.multiple ? "checkbox" : "radio"}
                     aria-checked={active}
                     onClick={() => pick(current, option.label)}
-                    className={`min-h-11 w-full cursor-pointer rounded-md border p-2 text-left text-sm ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground"}`}
+                    className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-md border p-3 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground hover:border-primary/50"}`}
                   >
-                    <div className="font-medium">{current.multiple ? (active ? "☑ " : "☐ ") : (active ? "◉ " : "○ ")}{option.label}</div>
-                    {option.description ? <div className="text-xs text-muted-foreground">{option.description}</div> : null}
+                    <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
+                    <span className="min-w-0"><span className="block font-medium">{option.label}</span>{option.description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{option.description}</span> : null}</span>
                   </button>
                   <OptionDetail option={option} onOpenArtifact={onOpenArtifact} />
                 </div>
               );
             })}
           </div>
-          <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
+          {!isSplitProposal ? <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
             <span>Other — write your own answer</span>
             <input
               value={custom[current.id] ?? ""}
@@ -3180,8 +3209,8 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
               placeholder="Type a custom answer…"
               className="mt-1 min-h-11 w-full cursor-text rounded-md border border-border bg-background/60 px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground"
             />
-          </label>
-          {allowSkip ? (
+          </label> : null}
+          {allowSkip && !isSplitProposal ? (
             skipped.has(current.id)
               ? <button onClick={() => unskip(current)} className="min-h-11 cursor-pointer text-xs font-medium text-primary hover:underline">Skipped — answer it after all</button>
               : <button onClick={() => skip(current)} className="min-h-11 cursor-pointer text-xs text-amber-900/70 hover:underline dark:text-amber-200/70">Skip — let the AI use its recommendation</button>
@@ -3190,7 +3219,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
           {questions.length > 1 ? (
             <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{doneCount} of {questions.length} answered{allowSkip ? " (skipped counts as answered)" : ""}. {allowSkip ? "One submit sends everything at once." : "Only answered questions are sent; the rest stay open."}</p>
           ) : current.multiple ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">Pick one or more, then submit.</p>
+            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{isSplitProposal ? "Select one or more deliveries to split, or choose Keep as one card." : "Pick one or more, then submit."}</p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {questions.length > 1 ? <Button size="sm" variant="outline" disabled={index === 0 || busy} onClick={() => setIndex((i) => Math.max(0, i - 1))}>Back</Button> : null}
@@ -3695,7 +3724,7 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
 }
 
 // Open-card building blocks: one contextual hero (heroFor) + one disclosure
-// pattern (CardDisclosure) for secondary content. Previously every zone —
+// pattern (DisclosureSection) for secondary content. Previously every zone —
 // banners, meta grid, timeline, preset, comments — used its own ad-hoc
 // spacing and heading style.
 // One open/close affordance for every collapsible in the panel: a chevron
@@ -3707,7 +3736,7 @@ function DisclosureChevron({ className = "" }: { className?: string }) {
   return <span aria-hidden className={`inline-block shrink-0 text-[10px] text-muted-foreground transition-transform group-open:rotate-90 ${className}`}>▶</span>;
 }
 
-function CardDisclosure({ title, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
+function DisclosureSection({ title, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
   return (
     <details
@@ -3725,6 +3754,10 @@ function CardDisclosure({ title, hint, action, children, defaultOpen = false, op
     </details>
   );
 }
+
+// Legacy name retained while card-specific call sites migrate; the component
+// itself is deliberately generic and now also owns configuration disclosures.
+const CardDisclosure = DisclosureSection;
 
 // --- Preview: run the card's web app and look at it. ------------------------
 //
@@ -5918,12 +5951,11 @@ function PillsyStyles() {
   const style = document.createElement("style");
   style.id = "stelow-style";
   style.textContent = [
-    "@keyframes stelow-card-alive { 0%, 100% { border-color: hsl(220 90% 60% / 0.5); box-shadow: 0 0 0 0 hsl(220 90% 60% / 0), 0 0 12px hsl(220 90% 60% / 0.08); } 35% { border-color: hsl(280 80% 60% / 0.82); box-shadow: 0 0 0 2px hsl(280 80% 60% / 0.10), 0 0 18px hsl(280 80% 60% / 0.14); } 70% { border-color: hsl(160 75% 48% / 0.72); box-shadow: 0 0 0 1px hsl(160 75% 48% / 0.10), 0 0 15px hsl(160 75% 48% / 0.12); } }",
+    "@keyframes stelow-card-alive { 0%, 100% { border-color: hsl(220 90% 60% / 0.45); box-shadow: 0 0 0 0 hsl(220 90% 60% / 0); } 50% { border-color: hsl(220 90% 60% / 0.75); box-shadow: 0 0 0 2px hsl(220 90% 60% / 0.08); } }",
     ".stelow-board-card.stelow-border-running, details.stelow-border-running { border-color: hsl(220 90% 60% / 0.5) !important; animation: stelow-card-alive 3.2s ease-in-out infinite; }",
     "@media (prefers-reduced-motion: reduce) { .stelow-board-card.stelow-border-running, details.stelow-border-running { animation: none; border-color: hsl(220 90% 60% / 0.7) !important; } }", 
     ".stelow-board-card.stelow-border-attention { border-color: hsl(38 92% 50% / 0.85) !important; box-shadow: 0 0 0 3px hsl(38 92% 50% / 0.12); }",
-    "@keyframes stelow-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }",
-    ".stelow-pill-working { background: linear-gradient(90deg, hsl(220 90% 60% / 0.18), hsl(280 80% 60% / 0.45), hsl(220 90% 60% / 0.18)); background-size: 200% 100%; animation: stelow-shimmer 1.6s linear infinite; color: hsl(220 90% 40%); }",
+    ".stelow-pill-working { background: hsl(220 90% 60% / 0.12); animation: stelow-breathe 1.8s ease-in-out infinite; color: hsl(220 90% 40%); }",
     "@keyframes stelow-breathe { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }",
     ".stelow-activity-pill { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 9999px; padding: 0.125rem 0.5rem; font-size: 11px; line-height: 18px; font-weight: 500; border-width: 1px; border-style: dashed; }",
     ".stelow-activity-onhold { border-color: hsl(240 5% 55% / 0.55); color: hsl(240 3% 45%); background: transparent; }",

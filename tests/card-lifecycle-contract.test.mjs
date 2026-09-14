@@ -149,6 +149,12 @@ assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the
 assert.match(app, /stelowReturnFocusCardId = cardId/, "opening a card remembers it for focus return");
 assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build board cards restore focus on return");
 assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
+assert.match(app, /function CardHeading\(/, "board tiles share a title-first, wrapping header");
+assert.match(boardCard, /<CardHeading title=\{card\.displayName\}>/, "build card status/actions sit below the readable title");
+assert.match(lightweightCard, /<CardHeading title=\{card\.displayName\}>/, "research/explore cards use the same non-clipping header");
+assert.doesNotMatch(boardCard, /flex-1 truncate text-sm/, "build card titles are no longer truncated beside pills");
+assert.match(listRow, /break-words text-sm leading-5/, "list cards keep long requested outcomes readable");
+assert.doesNotMatch(app, /hsl\(280 80% 60%/, "running cards no longer cycle through distracting rainbow colors");
 
 // Done is terminal for attention, not just for archive: background sync
 // never re-errors a completed card, a stale last_error never flags
@@ -167,15 +173,23 @@ assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked
 assert.match(boardCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "build board cards never offer Retry on terminal cards");
 assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "research/explore cards never offer Retry on terminal cards");
 
-// Creation settings are visible by default and human-readable: radio cards
-// (not a cramped select), human review named as human, one shared chevron.
-assert.match(app, /const \[createOptionsOpen, setCreateOptionsOpen\] = useState\(true\)/, "new-card Settings opens by default");
+// Creation settings stay out of the primary compose flow until requested;
+// one shared disclosure and visual settings boundary keep revealed controls
+// clearly attached to Settings. Radio cards stay accessible and vertical.
+assert.match(app, /const \[createOptionsOpen, setCreateOptionsOpen\] = useState\(false\)/, "new-card Settings starts collapsed so it does not push the composer below the fold");
 assert.match(app, /function ChoiceCards</, "planning and review options render as visible radio cards");
 assert.match(app, /label="Pause for my review"/, "human review gates never read as the automatic Review column");
-assert.match(app, /agent's own automatic check/, "the review picker disambiguates itself from the board's Review column");
+assert.doesNotMatch(app, /agent's own automatic check/, "the review picker no longer carries the distracting board-column explanation");
+assert.match(app, /function SettingsSection\(/, "settings controls use a reusable visual container");
+assert.match(app, /function WorkflowSettings\(/, "workflow preferences are reused between creation and board defaults");
+assert.match(app, /function DisclosureSection\(/, "Settings and card content share one generic disclosure pattern");
 assert.match(app, /function DisclosureChevron/, "every collapsible shares one open/close affordance");
 assert.match(app, /group-open:rotate-90/, "the chevron mirrors open state instead of decorating");
 assert.doesNotMatch(app, /function WorkflowChoiceSelect</, "the cramped select is gone, not duplicated");
+assert.match(app, /const isSplitProposal = current\.multiple/, "split questions get their own safe, explicit guidance");
+assert.match(app, /selected deliveries become new cards; unselected deliveries remain/, "split UI explains that no work is silently discarded");
+assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "question choices use visible, high-contrast selection controls");
+assert.match(server, /Anything you do not select stays in this card; nothing is discarded/, "the split question is host-enriched before it reaches the user");
 assert.match(app, /These needed you once, then cleared on their own/, "the Resolved filter explains why it exists");
 assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how it cleared");
 
