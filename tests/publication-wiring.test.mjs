@@ -46,6 +46,7 @@ assert.match(server, /publicationPushTerminals/, "push shells stay consultable a
 assert.match(server, /terminals\.list/, "consulting push shells lists the card environment's terminals");
 assert.match(server, /terminals\.output/, "consulting push shells reads live terminal output");
 assert.match(server, /outputTail/, "terminal output survives as a readable tail in the panel");
+assert.match(server, /rewrites one line via/, "progress spam collapses the way a real terminal renders it, keeping errors");
 assert.match(app, /Push shells/, "the panel tracks push shells with live output instead of sending the user to hunt the sidebar");
 assert.match(app, /Copy terminal ID/, "each push shell names its real BB terminal for sidebar lookup");
 assert.match(app, /Snapshot — refresh with Check result/, "the embedded output admits it is a snapshot, not an interactive terminal");

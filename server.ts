@@ -2171,15 +2171,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   async function readPushShell(session: PushShellSession): Promise<{ text: string | null; unavailable: boolean; pushState: "waiting" | "running" | "succeeded" | "failed"; pushExit: number | null }> {
     try {
       const out = await bb.sdk.terminals.output({ terminalId: session.id, tailBytes: 8000 });
-      const text = (out.chunks ?? [])
-        .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
-        .join("")
-        // Strip ANSI escapes so the panel shows readable output.
-        // eslint-disable-next-line no-control-regex
-        .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
-        // eslint-disable-next-line no-control-regex
-        .replace(/\u001b\][^\u0007]*\u0007/g, "")
-        .slice(-4000);
+        const text = (out.chunks ?? [])
+          .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
+          .join("")
+          // Collapse carriage-return progress the way a real terminal renders
+          // it: git rewrites one line via \r, so only the final segment is
+          // visible. Drops hundreds of intermediate percentages, keeps errors.
+          // eslint-disable-next-line no-control-regex
+          .replace(/[^\n]*\r(?!\n)/g, "")
+          // Strip ANSI escapes so the panel shows readable output.
+          // eslint-disable-next-line no-control-regex
+          .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
+          // eslint-disable-next-line no-control-regex
+          .replace(/\u001b\][^\u0007]*\u0007/g, "")
+          .slice(-4000);
       // The exit marker names the outcome. Legacy shells (typed but
       // never submitted) carry no marker and end with the bare command.
       const marker = text.match(/STELOW_PUSH_EXIT:(\d+)/);
