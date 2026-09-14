@@ -74,6 +74,8 @@ const move = rpcMethod("moveCard", "promoteCard");
 assert.match(move, /if \(isArchivedCard\(card\)\) return \{ ok: false, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse board moves");
 const advance = rpcMethod("advanceCard", "advance");
 assert.match(advance, /if \(isArchivedCard\(card\)\) return \{ ok: false, stdout: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse stage advances");
+assert.match(advance, /Only `bb stelow done` may/, "manually advancing to Audit cannot mark a Build card done");
+assert.doesNotMatch(advance, /stage === "audit" \? "completed"/, "Audit is not an implicit completion path");
 const answer = rpcMethod("answerQuestions", "startWorkflow");
 assert.match(answer, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse batch answers");
 const answerExpired = rpcMethod("answerExpiredQuestions", "advanceCard");
@@ -103,6 +105,9 @@ assert.match(app, /card\?\.status === "completed" \? undefined : stageLabel\(car
 assert.match(app, /if \(column === status \|\| card\.status === "completed"\)/, "completed build cards show one pill, not Done + Completed");
 assert.match(app, /Completed · \{completedWorkerPreset\}/, "completed cards show the recorded worker preset instead of a future phase");
 assert.match(app, /Preset recorded for the completed worker\./, "completed cards do not claim a preset applies to another worker");
+assert.match(app, /card\.status === "completed" \? "Completed" : stageLabel\(card\.stage\)/, "completed list rows do not present Audit as active work");
+assert.match(app, /passed its final audit verification/, "completed hero explains Audit as completed verification, not the current phase");
+assert.match(server, /cardStatus: card\.status/, "the audit watchdog refuses an already-completed card");
 
 // Track headers describe the agent outcome, not internal filenames.
 assert.match(app, /applies specialized research strategy to surface prioritized opportunities/, "research header names the strategy outcome");

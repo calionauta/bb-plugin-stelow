@@ -197,7 +197,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (blast radius at a glance) under the same fail-soft rule.
 - **Worker section** (`WorkerSection`, always visible right under the
   hero in both tracks): preset pill + provider/model + inline note
-  (applies to the next worker — Resume keeps the current one), real
+  (applies to the next worker — Resume keeps the current one); completed
+  cards instead show the preset recorded for their completed worker, real
   "Change preset…" outline button, stale-preset warning with restart
   action, then a divider with recovery/danger actions — restart fresh,
   archive, delete archived cards behind confirms — all real outline

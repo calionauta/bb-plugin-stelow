@@ -2227,7 +2227,7 @@ function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<s
     if (!cards.length) return null;
     const isCollapsed = collapsed[column] === true;
     const label = COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={`${stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -3938,7 +3938,7 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
     return {
       kind: "calm",
       title: "Done — ready to review",
-      sub: `The workflow finished${card.stage ? ` at ${stageLabel(card.stage)}` : ""}. The result is below.`,
+      sub: "The workflow passed its final audit verification. The result is below.",
     };
   }
   // Prominent paused state only when the idle is known-stuck (past the grace
@@ -3962,16 +3962,6 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
       kind: "working",
       title: `Working — ${stageLabel(card.stage)}`,
       sub: "The agent advances on its own. Nothing needs you right now.",
-    };
-  }
-  // A completed card is done being worked — say so plainly. "At Audit" on a
-  // finished card read as "the agent is auditing" or "waiting for me", when
-  // neither is true: the outcome below is ready to review.
-  if (card.status === "completed") {
-    return {
-      kind: "calm",
-      title: "Done — ready to review",
-      sub: `The workflow finished${card.stage ? ` at ${stageLabel(card.stage)}` : ""}. The result is below.`,
     };
   }
   // A completed research index is represented by the Done column, not a

@@ -14,6 +14,7 @@ export declare function shouldAutoContinue(options: {
 export declare function nextAutoContinue(options: { stage: string; autoCount?: number | null; autoStage?: string | null }): { count: number; stage: string };
 export declare function shouldDoneNudge(options: {
   status: string;
+  cardStatus?: string | null;
   questionPending: boolean;
   transitioningIntoIdle: boolean;
   autoCount?: number | null;

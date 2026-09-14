@@ -15,9 +15,11 @@ for (const kind of ["research", "explore"]) {
   }
 }
 
-// Build track: phases enter, terminals set, lightweight columns refuse.
+// Build track: phases enter, Archive is terminal, and Done is committed only
+// through the verified `bb stelow done` path rather than a board move.
 assert.deepEqual(resolveCardMove("build", "analysis"), { ok: true, move: { type: "phase", phase: "analysis" } }, "phase entry");
-assert.deepEqual(resolveCardMove("build", "completed"), { ok: true, move: { type: "status", status: "completed" } }, "terminal sets status");
+assert.match(resolveCardMove("build", "completed").error, /bb stelow done/, "Done cannot bypass explicit completion verification");
+assert.deepEqual(resolveCardMove("build", "archived"), { ok: true, move: { type: "status", status: "archived" } }, "Archive remains a terminal move");
 for (const column of ["todo", "doing", "done"]) {
   const refused = resolveCardMove("build", column);
   assert.equal(refused.ok, false, `build refuses ${column}`);

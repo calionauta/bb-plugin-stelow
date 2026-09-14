@@ -2780,7 +2780,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // (lib/auto-continue budget); an exhausted budget pauses with the
           // instruction on the card, for the human.
           const doneDecision = shouldDoneNudge({
-            status, questionPending: questionIds.length > 0, transitioningIntoIdle,
+            status, cardStatus: card.status, questionPending: questionIds.length > 0, transitioningIntoIdle,
             autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
           });
           if (doneDecision.proceed) {
@@ -2795,7 +2795,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
               return;
             }
           }
-          if (transitioningIntoIdle) {
+          if (card.status !== "completed" && transitioningIntoIdle) {
             // Once per idle period (transition edge only): the card says what
             // is actually missing — the done commit — instead of a generic
             // "paused". A human Resume hands the worker the same instruction.
@@ -4244,10 +4244,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (band && bandPreset && bandPreset.id !== currentPresetId) {
         await respawnWorkerForBand(card.id, bandPreset.id);
       }
-      // Sync status so the board column follows the new stage: past triage a
-      // card becomes in-progress (leaves the Triage/draft column); a resumed
-      // gate card returns to in-progress too.
-      const nextStatus = stage === "triage" ? "draft" : stage === "audit" ? "completed" : "in-progress";
+      // Reaching audit is still unfinished work. Only `bb stelow done` may
+      // record completion after the host verifies its terminal conditions.
+      // A manual advance is therefore never a way to bypass that invariant.
+      const nextStatus = stage === "triage" ? "draft" : "in-progress";
       updateCard(cardId, { stage, status: nextStatus, activity: "running" });
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, stdout: result.stdout, error: null };
