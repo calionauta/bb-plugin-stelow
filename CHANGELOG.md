@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.9.6] - 2026-09-14
+
+### Fixed
+
+- **Release regression test.** The auto-continuation contract now also asserts
+  that host-generated nudges remain agent-only, preventing a future change
+  from putting workflow mechanics back into a card conversation.
+
 ## [0.9.5] - 2026-09-14
 
 ### Fixed
