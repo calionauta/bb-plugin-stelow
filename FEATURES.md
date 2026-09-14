@@ -27,13 +27,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   English summary (scopes/tasks, prompt) as an issue comment via the
   github plugin's own RPCs, optionally closing the issue behind the same
   confirm. Never automatic — Done in Stelow is not merged/deployed.
-- **Manual publication from Done** (`publicationStatus`, `CardDetailBody`). A
+- **Manual Git changes from Done** (`publicationStatus`, `CardDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
-  checkout and commit through BB. The checkout selected in BB stays
-  authoritative: a default-branch commit is available only through a
-  prominently named, separately confirmed action; feature branches retain the
-  PR-ready/draft/merge and local-squash controls. Every write is rechecked on
-  BB's host and kept in a card-local publication history. Detached HEADs,
+  checkout and make a host-local commit through BB. The checkout selected in
+  BB stays authoritative: a default-branch action is prominently labelled as
+  a local save and explicitly says that BB cannot fetch, merge incoming remote
+  changes, push, or create a PR from this panel. Feature branches retain
+  PR-ready/draft/merge controls; local squash is advanced-only and unavailable
+  on the default branch. Every write is rechecked on BB's host and kept in a
+  card-local publication history. Detached HEADs,
   non-Git folders, unavailable hosts, failing checks, and missing approvals
   fail closed with the next actionable explanation.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"

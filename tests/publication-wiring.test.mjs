@@ -25,12 +25,16 @@ assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
 assert.match(server, /selectedCardEnvironment\(environment, workerEnvironment/, "a card forwards the BB composer environment instead of replacing it with a preset");
 assert.match(server, /continuingWorkerEnvironment\(row/, "later workers reuse the card's selected BB environment");
+assert.match(server, /text: AUDIT_DONE_NUDGE, mentions: \[\], visibility: "agent-only"/, "automatic audit recovery stays out of the user conversation");
+assert.match(server, /text: buildContinueNudge\(\), mentions: \[\], visibility: "agent-only"/, "automatic continuations stay out of the user conversation");
 
-assert.match(app, /title="Publish changes"/, "Done cards have a dedicated publication panel");
+assert.match(app, /title="Git changes"/, "Done cards have a dedicated Git changes panel");
 assert.match(app, /Commit workspace…/, "commit requires an explicit user action");
-assert.match(app, /Commit directly to/, "a BB-selected default checkout requires an explicit direct-commit confirmation");
+assert.match(app, /Save local commit to/, "a BB-selected default checkout is described as a local commit");
 assert.match(app, /default checkout selected in BB/, "the publication panel explains that BB's checkout choice is respected");
-assert.match(app, /configured push policy remain authoritative/, "the publication panel does not promise a push the BB commit API does not expose");
+assert.match(app, /cannot fetch remote updates, merge incoming changes, push, or create a pull request/, "the publication panel does not promise remote synchronization the BB API does not expose");
+assert.match(app, /Advanced Git operations/, "local squash integration is progressively disclosed");
+assert.match(app, /Squash branch locally/, "local squash integration uses plain-language copy");
 assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(app, /publicationSubmitting/, "publication confirmations prevent duplicate write requests");
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");

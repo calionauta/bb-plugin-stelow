@@ -2784,7 +2784,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
           });
           if (doneDecision.proceed) {
-            const doneSent = await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: AUDIT_DONE_NUDGE, mentions: [] }] }).then(() => true).catch(() => false);
+            // This is a host recovery instruction, not a card comment. Keep
+            // workflow mechanics out of the user's Conversation timeline.
+            const doneSent = await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: AUDIT_DONE_NUDGE, mentions: [], visibility: "agent-only" }] }).then(() => true).catch(() => false);
             if (doneSent) {
               const autoNext = nextAutoContinue({ stage: currentStage, autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null });
               const doneFields: Parameters<typeof updateCard>[1] = { activity: "running", last_idle_at: null, last_error: null, auto_continue_count: autoNext.count, auto_continue_stage: autoNext.stage };
@@ -2835,7 +2837,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
           });
           if (autoDecision.proceed) {
-            const autoSent = await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: buildContinueNudge(), mentions: [] }] }).then(() => true).catch(() => false);
+            // Automatic continuations are private orchestration, unlike a
+            // user-selected Retry or a card comment that deliberately resumes
+            // the worker.
+            const autoSent = await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: buildContinueNudge(), mentions: [], visibility: "agent-only" }] }).then(() => true).catch(() => false);
             if (autoSent) {
               const autoNext = nextAutoContinue({ stage: currentStage, autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null });
               const autoFields: Parameters<typeof updateCard>[1] = { activity: "running", last_idle_at: null, last_error: null, auto_continue_count: autoNext.count, auto_continue_stage: autoNext.stage };

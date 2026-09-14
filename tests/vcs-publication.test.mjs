@@ -18,6 +18,7 @@ const defaultBranch = available({ branch: { currentBranch: "main", defaultBranch
 assert.equal(publicationBlocker(defaultBranch), null, "a BB-selected default checkout is publishable after explicit confirmation");
 assert.equal(isDefaultBranchCheckout(defaultBranch), true);
 assert.deepEqual(canCommitPublication(defaultBranch), { ok: true, reason: null });
+assert.deepEqual(canSquashMerge(defaultBranch), { ok: false, reason: "This checkout is already on the default branch. Save its local commit instead." });
 assert.match(publicationBlocker(available({ checkout: { kind: "detached" } })), /checked-out branch/);
 assert.deepEqual(canCommitPublication(available({ workingTree: { hasUncommittedChanges: false } })), { ok: false, reason: "The working tree is clean — there is nothing to commit." });
 assert.deepEqual(canSquashMerge(available({ workingTree: { hasUncommittedChanges: false } })), { ok: true, reason: null });
