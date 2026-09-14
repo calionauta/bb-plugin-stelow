@@ -8,6 +8,18 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.9] - 2026-09-14
+
+### Fixed
+
+- **Structured card questions are English-only.** Question text, choices,
+  recovery state, split guidance, and actions now use one product language.
+  The worker cannot select a per-question locale, and the UI never guesses or
+  translates arbitrary content.
+- **Recovered questions are concise.** A pending recovered decision is now
+  marked simply as “Waiting for you”; redundant timeout explanation and the
+  duplicate answer-needed heading are removed.
+
 ## [0.18.8] - 2026-09-14
 
 ### Changed
