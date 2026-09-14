@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.13.2] - 2026-09-14
+
+### Fixed
+
+- **Gap audit of 0.13.0/0.13.1.** The W shortcut now also works from
+  list-view rows, not only board cards. Commit-diff patch failures are
+  logged server-side for diagnosis instead of swallowed. The truncation
+  notice no longer blames BB's safety limit when the plugin's own fetch
+  cap applies.
+
 ## [0.13.1] - 2026-09-14
 
 ### Fixed
