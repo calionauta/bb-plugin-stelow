@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.8] - 2026-09-14
+
+### Changed
+
+- **Question language is now an explicit agent decision.** English is the
+  default for every new structured ask. A worker deliberately opts into
+  Portuguese with `--locale pt-BR` only when matching a Portuguese user
+  request; the card controls, recovery explanation, and split consequences
+  read that stored locale instead of guessing from visible text. Existing
+  questions without metadata retain a compatibility fallback.
+
 ## [0.18.7] - 2026-09-14
 
 ### Fixed
