@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.16.2] - 2026-09-14
+
+### Fixed
+
+- **Push shells stay visible.** BB never auto-reveals a new shell, so the
+  toast alone left users hunting the sidebar scope filter — and a swallowed
+  typing failure reported success with an empty shell. The panel now tracks
+  push shells with live output and a Check result refresh
+  (`publicationPushTerminals`), names the shell id in the toast, and fails
+  loudly when `git push` cannot be typed.
+
 ## [0.16.1] - 2026-09-14
 
 ### Fixed
