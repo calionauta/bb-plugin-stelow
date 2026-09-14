@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.10.0] - 2026-09-14
+
+### Added
+
+- **Native local-commit review.** Done cards now expose an explicit saved
+  state, copyable SHA, and read-only commit-diff viewer powered by BB's
+  environment API. It works before a push and permits only commits recorded
+  in that card's publication history.
+- **Workflow map.** The progress disclosure now explains the relationship
+  between phases, stages, the Done outcome, and the cross-cutting Needs
+  attention signal.
+
+### Fixed
+
+- **Terminal timeline semantics.** A completed card retains Audit as its
+  verification record but cannot reopen it by clicking the current checkpoint;
+  archived cards render a read-only timeline.
+- **Local-save feedback.** A clean workspace after a local commit no longer
+  leaves a misleading disabled primary action. It clearly states the branch,
+  whether the saved commit is current local HEAD, and that no remote push or
+  merge occurred.
+
 ## [0.9.7] - 2026-09-14
 
 ### Fixed
