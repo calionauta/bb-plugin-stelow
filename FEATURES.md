@@ -164,6 +164,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   where observed; legacy rows keep the generic kind label).
   The badge counts the same unresolved actions shown by **Needs attention**;
   completions remain available in All without presenting themselves as work.
+- **Question recovery.** A worker may wait only for a real card form: a live
+  structured ask or the durable timeout-recovery form. A stale chat message
+  or split proposal cannot hide progress; it is safe to submit the same ask
+  once when no form is visible, while the host rejects actual duplicates.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

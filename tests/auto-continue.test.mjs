@@ -120,6 +120,8 @@ assert.match(serverSource, /cardStatus: card\.status/, "the audit watchdog recei
 assert.match(serverSource, /bb\.sdk\.threads\.send\(\{ threadId: card\.worker_thread_id, mode: "auto", input: \[\{ type: "text", text: buildContinueNudge\(\), mentions: \[\], visibility: "agent-only" \}\] \}\)/, "auto-continue sends the shared continue nudge privately in place");
 assert.match(serverSource, /auto_continue_count: autoNext\.count, auto_continue_stage: autoNext\.stage/, "a resume records its budget use");
 assert.match(serverSource, /function buildContinueNudge\(\): string/, "manual Retry and auto-continue share one nudge");
+assert.match(serverSource, /Only a visible structured form on the card counts as a pending question/, "the recovery nudge cannot wait on an invisible question");
+assert.match(serverSource, /questionOpenGuard\(\{\s*liveInteractions: liveAsks\.length,\s*expiredQuestions: openExpiredQuestionIds\(cardRow\.id\)\.length,\s*\}\)/, "asks only deduplicate actual live or recoverable card forms");
 const resets = serverSource.match(/resetAutoContinue\(\)/g) ?? [];
 assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
