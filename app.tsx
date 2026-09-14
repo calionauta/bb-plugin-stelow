@@ -24,7 +24,7 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
-import { PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_TO_BAND, stageLabel } from "./lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_TO_BAND, buildBoardColumnFor, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
@@ -120,26 +120,12 @@ function statusLabel(status: string) {
 // Explore calls its independent, one-off choices techniques instead.
 const STAGE_BAND = STAGE_TO_BAND;
 const BAND_LABEL: Record<string, string> = { ...PHASE_LABELS, research: "Research", explore: "Explore" };
-// Board columns ARE the workflow phases + terminals. Active cards sit in the
-// column of their current phase (STAGE_BAND[stage]); a card is a board column,
-// not a status. Terminals: completed / archived. Blocked was removed because
-// stelow never records a card-level blocked status (only scope/task-level
-// dependencies).
-const BOARD_COLUMNS = ["analysis", "planning", "execution", "review", "completed", "archived"] as const;
-const COLUMNS = BOARD_COLUMNS;
-const COLUMN_LABELS: Record<string, string> = {
-  analysis: BAND_LABEL.analysis,
-  planning: BAND_LABEL.planning,
-  execution: BAND_LABEL.execution,
-  review: BAND_LABEL.review,
-  completed: "Done",
-  archived: "Archived",
-};
-// Which board column a card belongs to: terminal for archived/completed,
-// otherwise its stage's phase.
+// Build board topology is centralized with the workflow vocabulary. The
+// aliases keep component call sites readable; they do not define columns.
+const COLUMNS = BUILD_BOARD_COLUMNS;
+const COLUMN_LABELS: Record<string, string> = BUILD_BOARD_COLUMN_LABELS;
 function boardColumnOf(card: Pick<CardItem, "status" | "stage">): string {
-  if (card.status === "archived" || card.status === "completed") return card.status;
-  return STAGE_BAND[card.stage] ?? "analysis";
+  return buildBoardColumnFor(card);
 }
 
 // Lightweight-track columns (Research + Explore share them): a deliberately

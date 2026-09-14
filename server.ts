@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
-import { STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
+import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
@@ -26,7 +26,7 @@ import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStat
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
-import { CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
+import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
@@ -40,6 +40,7 @@ import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
+import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
@@ -385,7 +386,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   moveCard: {
-    input: z.object({ cardId: z.string(), status: z.enum(["analysis", "planning", "execution", "review", "completed", "archived", "todo", "doing", "done"]) }).strict(),
+    input: z.object({ cardId: z.string(), status: z.enum(BOARD_MOVE_COLUMNS as [string, ...string[]]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   researchStrategies: {
@@ -2764,8 +2765,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // workflow is still at the triage stage, even though the thread is
           // already active. Only move to Running (in-progress) once the agent
           // has advanced past triage (current_stage != triage).
-          const stillTriaging = currentStage === "triage" && card.status === "draft";
-          const nextStatus = stillTriaging ? "draft" : card.status === "draft" ? "in-progress" : card.status;
+          const nextStatus = statusForNewCardWork({ kind: card.kind, status: card.status, stage: currentStage }).status;
           const updates: Record<string, unknown> = { activity: "running" as const, last_assistant_text: lastOutput, status: nextStatus };
           if (currentStage !== card.stage) updates.stage = currentStage;
           updateCard(cardId, updates);
@@ -3597,7 +3597,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (target === "card" && card.worker_thread_id) {
         try {
           await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `User comment on card "${card.name}":\n\n${body}`, mentions: [] }] });
-          updateCard(cardId, { activity: "running", ...((card.kind === "research" || card.kind === "explore") && card.status === "completed" ? { status: "in-progress" as const } : {}) });
+          const resume = statusForNewCardWork({ kind: card.kind, status: card.status, stage: card.stage });
+          updateCard(cardId, { activity: "running", status: resume.status as CardRow["status"] });
         } catch (error) {
           return { commentId, error: error instanceof Error ? error.message : "Failed to route comment to worker thread." };
         }
@@ -3835,8 +3836,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       // A phase move sets the card's stage to that phase's entry stage
       // (stage drives the column). Terminals already returned above.
-      const BAND_ENTRY_STAGE: Record<string, string> = { analysis: "triage", planning: "critique", execution: "execution", review: "diff-gate" };
-      const entry = BAND_ENTRY_STAGE[decision.move.phase];
+      const entry = PHASE_ENTRY_STAGES[decision.move.phase as keyof typeof PHASE_ENTRY_STAGES];
       if (!entry) return { ok: false, error: "Unknown phase." };
       updateCard(cardId, { stage: entry, status: entry === "triage" ? "draft" : "in-progress" });
       return { ok: true, error: null };

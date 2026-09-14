@@ -66,7 +66,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   plus worker bands come from the same module, never scattered ternaries.
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
   (Analyse/Plan/Execute/Review) + Done/Archived; cards sit in their
-  stage's phase. Columns collapse (persisted); cards move via drag-drop.
+  stage's phase. The complete Build topology (phases, terminal outcomes,
+  entry checkpoints, labels, and stage-to-column projection) is derived from
+  one workflow catalog; Research/Explore own their intentionally separate
+  To-Do/Doing/Done lifecycle. Columns collapse (persisted); cards move via
+  drag-drop.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
   preference, not a CTA). Groups collapse per track (persisted; Archived
@@ -155,7 +159,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   passed: off-route stages render struck-through (not in this intent's
   route) and mode-skipped stages show ⊘ with the reason — green means
   executed, nothing else does. A completed card keeps Audit as its historical
-  verification record, cannot reopen that terminal checkpoint, and exposes a
+  verification record, cannot reopen that terminal checkpoint. More generally,
+  the current checkpoint is always inert; only a legal next checkpoint or a
+  prior checkpoint can be selected. It exposes a
   compact Workflow map explaining phases, Done, and attention. Attachments, mentioned files,
   timed-out questions inline.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_TEMPLATE, templateStages } from "../lib/state-template.mjs";
-import { PHASE_LABELS, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND, WORKFLOW_STAGES, stageLabel } from "../lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageLabel } from "../lib/workflow-vocabulary.mjs";
 
 // Workflow contracts: one vocabulary powers template, board, and server.
 // Catches stage additions without template cover or a phase/label mapping.
@@ -37,4 +37,16 @@ for (const stage of STAGE_SEQUENCE) {
   assert.ok(banded.includes(stage), `banded stage ${stage} exists in STAGE_BANDS`);
 }
 
-console.log("workflow contracts test ok: one vocabulary, template, board, bands, and transitions agree on 17 stages");
+// Board topology is derived from the same phase catalog as the stage map;
+// terminal outcomes and manual phase entry checkpoints live beside it.
+assert.deepEqual(BUILD_BOARD_COLUMNS, [...WORKFLOW_PHASES.map(({ id }) => id), ...BUILD_BOARD_TERMINALS], "Build board derives phase columns and appends only terminal outcomes");
+assert.deepEqual(BUILD_BOARD_TERMINALS, ["completed", "archived"], "Build terminal outcomes have one catalog");
+for (const phase of WORKFLOW_PHASES) {
+  assert.equal(BUILD_BOARD_COLUMN_LABELS[phase.id], phase.label, `${phase.id} board label is its phase label`);
+  assert.equal(STAGE_TO_BAND[PHASE_ENTRY_STAGES[phase.id]], phase.id, `${phase.id} manual entry remains inside that phase`);
+}
+assert.equal(buildBoardColumnFor({ status: "in-progress", stage: "audit" }), "review", "active Audit belongs to Review");
+assert.equal(buildBoardColumnFor({ status: "completed", stage: "audit" }), "completed", "Done is a terminal outcome, not Audit's board phase");
+assert.equal(buildBoardColumnFor({ status: "archived", stage: "execution" }), "archived", "Archived overrides the retained checkpoint");
+
+console.log("workflow contracts test ok: one vocabulary, template, board topology, bands, and transitions agree on 17 stages");

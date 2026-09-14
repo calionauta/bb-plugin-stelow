@@ -82,6 +82,8 @@ const answerExpired = rpcMethod("answerExpiredQuestions", "advanceCard");
 assert.match(answerExpired, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse expired answers");
 const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(comment, /if \(isArchivedCard\(card\)\) return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse new comments");
+assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: card\.stage \}\)/, "a card comment reopens completed work through the shared lifecycle helper");
+assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: currentStage \}\)/, "a direct thread message reopens completed work through the same helper");
 
 // The single updateCard choke point strips resuscitations twice: against the
 // read-time snapshot and, for async callers whose write lands after Archive,
@@ -108,6 +110,7 @@ assert.match(app, /Preset recorded for the completed worker\./, "completed cards
 assert.match(app, /card\.status === "completed" \? "Completed" : stageLabel\(card\.stage\)/, "completed list rows do not present Audit as active work");
 assert.match(app, /passed its final audit verification/, "completed hero explains Audit as completed verification, not the current phase");
 assert.match(app, /isTerminalCheckpoint/, "the terminal Audit checkpoint cannot be selected as a reopen target");
+assert.match(app, /disabled=\{!clickable \|\| isCurrent\}/, "every current workflow checkpoint is inert, not Audit alone");
 assert.match(app, /Workflow complete — choose an earlier stage to reopen it/, "completed workflow guidance excludes the current terminal checkpoint");
 assert.match(app, /Done is the completed outcome after Audit, not a stage/, "the workflow map distinguishes stages from the Done outcome");
 assert.match(server, /cardStatus: card\.status/, "the audit watchdog refuses an already-completed card");

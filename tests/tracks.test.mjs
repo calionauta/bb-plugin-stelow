@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import {
   CARD_KINDS,
+  BOARD_MOVE_COLUMNS,
   LIGHTWEIGHT_KINDS,
   LIGHTWEIGHT_COLUMNS,
   LIGHTWEIGHT_COLUMN_LABELS,
+  LIGHTWEIGHT_STATUS_BY_COLUMN,
   bandForKind,
   isLightweightKind,
   isValidKind,
@@ -15,6 +17,8 @@ assert.deepEqual(CARD_KINDS, ["build", "research", "explore"], "card kinds");
 assert.deepEqual(LIGHTWEIGHT_KINDS, ["research", "explore"], "lightweight kinds");
 assert.deepEqual(LIGHTWEIGHT_COLUMNS, ["todo", "doing", "done", "archived"], "lightweight columns");
 assert.equal(LIGHTWEIGHT_COLUMN_LABELS.done, "Done", "column labels");
+assert.deepEqual(LIGHTWEIGHT_STATUS_BY_COLUMN, { todo: "pending", doing: "in-progress", done: "completed", archived: "archived" }, "lightweight move mapping");
+assert.deepEqual(BOARD_MOVE_COLUMNS, ["analysis", "planning", "execution", "review", "completed", "archived", "todo", "doing", "done"], "all manual targets derive from both board catalogs without duplicate Archive");
 
 // Membership predicates agree with the catalogs.
 assert.equal(isValidKind("build"), true, "build is valid");
