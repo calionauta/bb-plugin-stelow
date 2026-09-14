@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker } from "../lib/vcs-publication.mjs";
+import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, isDefaultBranchCheckout, publicationBlocker } from "../lib/vcs-publication.mjs";
 
 const available = (overrides = {}) => ({
   outcome: "available",
@@ -14,7 +14,10 @@ const available = (overrides = {}) => ({
 
 assert.equal(publicationBlocker(available()), null);
 assert.deepEqual(canCommitPublication(available()), { ok: true, reason: null });
-assert.match(publicationBlocker(available({ branch: { currentBranch: "main", defaultBranch: "main" }, checkout: { kind: "branch", branchName: "main" } })), /blocked/);
+const defaultBranch = available({ branch: { currentBranch: "main", defaultBranch: "main" }, checkout: { kind: "branch", branchName: "main" } });
+assert.equal(publicationBlocker(defaultBranch), null, "a BB-selected default checkout is publishable after explicit confirmation");
+assert.equal(isDefaultBranchCheckout(defaultBranch), true);
+assert.deepEqual(canCommitPublication(defaultBranch), { ok: true, reason: null });
 assert.match(publicationBlocker(available({ checkout: { kind: "detached" } })), /checked-out branch/);
 assert.deepEqual(canCommitPublication(available({ workingTree: { hasUncommittedChanges: false } })), { ok: false, reason: "The working tree is clean — there is nothing to commit." });
 assert.deepEqual(canSquashMerge(available({ workingTree: { hasUncommittedChanges: false } })), { ok: true, reason: null });
@@ -28,6 +31,6 @@ assert.match(canMarkPullRequestDraft(available(), { ...readyPr, pullRequest: { .
 assert.deepEqual(canMergePullRequest(available(), readyPr), { ok: true, reason: null });
 assert.match(canMergePullRequest(available(), { ...readyPr, pullRequest: { ...readyPr.pullRequest, checks: { state: "pending" } } }).reason, /not passing/);
 assert.match(canMergePullRequest(available(), { outcome: "absent" }).reason, /no pull request/);
-assert.match(canMarkPullRequestDraft(available({ branch: { currentBranch: "main", defaultBranch: "main" }, checkout: { kind: "branch", branchName: "main" } }), readyPr).reason, /blocked/);
+assert.match(canMarkPullRequestDraft(defaultBranch, readyPr).reason, /feature branch/);
 
 console.log("vcs publication policy ok");

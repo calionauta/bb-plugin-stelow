@@ -722,6 +722,30 @@ function workerEnvironment(source: { path: string; hostId: string }, params: { e
   return { type: "project-default" as const };
 }
 
+type ThreadEnvironment = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]["environment"];
+
+/**
+ * The BB composer owns the person's environment and branch selection. A
+ * preset is only a fallback for older callers that do not provide one; it may
+ * never silently replace an explicit BB choice.
+ */
+function selectedCardEnvironment(requested: unknown, fallback: ThreadEnvironment): ThreadEnvironment {
+  if (!requested || typeof requested !== "object" || Array.isArray(requested)) return fallback;
+  const value = requested as Record<string, unknown>;
+  if (value.type === "project-default") return value as ThreadEnvironment;
+  if (value.type === "reuse" && typeof value.environmentId === "string") return value as ThreadEnvironment;
+  if (value.type !== "host" || !value.workspace || typeof value.workspace !== "object" || Array.isArray(value.workspace)) return fallback;
+  const workspace = value.workspace as Record<string, unknown>;
+  if (workspace.type === "unmanaged" || workspace.type === "managed-worktree" || workspace.type === "personal") return value as ThreadEnvironment;
+  return fallback;
+}
+
+function isManagedWorktreeEnvironment(value: ThreadEnvironment): boolean {
+  if (!value || typeof value !== "object" || !("type" in value) || value.type !== "host" || !("workspace" in value)) return false;
+  const workspace = value.workspace;
+  return Boolean(workspace && typeof workspace === "object" && "type" in workspace && workspace.type === "managed-worktree");
+}
+
 function cardAttachments(raw: string | null): Array<z.infer<typeof attachmentSchema>> {
   try { return z.array(attachmentSchema).parse(JSON.parse(raw ?? "[]")); } catch { return []; }
 }
@@ -1566,6 +1590,10 @@ ${prompt}`;
     // BB requires Personal-project threads to retain a `personal` workspace.
     // Exploratory work therefore uses one Stelow-owned project with a local source.
     const workerProjectId = workspaceProjectId;
+    const selectedEnvironment = isExploratory
+      ? workerEnvironment(workspaceSource, params, true)
+      : selectedCardEnvironment(environment, workerEnvironment(workspaceSource, params));
+    const selectedManagedWorktree = isManagedWorktreeEnvironment(selectedEnvironment);
     const creationStamp = roundTimestamp();
     const creationAt = new Date().toISOString();
     const creationRoundFile = isResearch && researchStrategy && seed.stateDir
@@ -1606,7 +1634,7 @@ ${prompt}`;
     }) : null;
     const thread = await bb.sdk.threads.spawn({
       projectId: workerProjectId,
-      environment: workerEnvironment(workspaceSource, params, isExploratory),
+      environment: selectedEnvironment,
       visibility: "hidden",
       title: `Stelow: ${displayName}`,
       providerId: params.providerId,
@@ -1615,6 +1643,8 @@ ${prompt}`;
       permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
       executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
       input: [{ type: "text", mentions: [], text: researchPrompt ?? explorePrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES}
+
+${selectedManagedWorktree ? "BB provisioned the managed worktree selected by the user. Treat your current working directory as the code root; never redirect code changes to the project source path used for Stelow's workflow metadata." : ""}
 
 Step 1 — classify intent first: this card starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
 
@@ -1796,9 +1826,10 @@ ${prompt}` }, ...workerAttachments],
       previousThreadId: row.worker_thread_id,
     }) : null;
     try {
+      const nextEnvironment = await continuingWorkerEnvironment(row, source ? workerEnvironment(source, params, row.workspace_kind === "exploratory") : { type: "project-default" });
       const newThread = await bb.sdk.threads.spawn({
         projectId: row.project_id,
-        environment: source ? workerEnvironment(source, params, row.workspace_kind === "exploratory") : { type: "project-default" },
+        environment: nextEnvironment,
         visibility: "hidden",
         title: `Stelow: ${row.display_name ?? row.name}`,
         providerId: params.providerId,
@@ -1941,6 +1972,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch {
       return null;
     }
+  }
+
+  /** Later stage workers stay in the checkout the card originally used. */
+  async function continuingWorkerEnvironment(card: CardRow, fallback: ThreadEnvironment): Promise<ThreadEnvironment> {
+    const environment = await workerEnvironmentOf(card);
+    return environment?.id ? { type: "reuse", environmentId: environment.id } : fallback;
   }
 
   type CardCheckout = { path: string; hostId: string | null; environmentId: string | null; environment: PreviewEnvironment; source: string };
@@ -3712,9 +3749,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         flavor: "reseed",
         previousThreadId,
       }) : null;
+      const nextEnvironment = await continuingWorkerEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
       const newThread = await bb.sdk.threads.spawn({
         projectId: card.project_id,
-        environment: workerEnvironment(source, params, card.workspace_kind === "exploratory"),
+        environment: nextEnvironment,
         visibility: "hidden",
         title: `Stelow: ${card.display_name ?? card.name}`,
         providerId: params.providerId,

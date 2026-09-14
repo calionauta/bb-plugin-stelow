@@ -4924,6 +4924,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [publicationAction, setPublicationAction] = useState<"commit" | "squash" | "ready" | "draft" | "merge" | null>(null);
   const [publicationSubmitting, setPublicationSubmitting] = useState(false);
   const [mergeMethod, setMergeMethod] = useState<"merge" | "rebase" | "squash">("squash");
+  const publicationDefaultBranch = publication?.branch?.default ?? null;
+  const publishesToDefaultBranch = Boolean(publicationDefaultBranch && publication?.branch?.current === publicationDefaultBranch);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [inboxEvent, setInboxEvent] = useState<InboxEventSnapshot | null>(null);
@@ -5421,10 +5423,14 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     ) : null}
 
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>Commit workspace…</Button>
+                      <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>{publishesToDefaultBranch ? `Commit to ${publicationDefaultBranch}…` : "Commit workspace…"}</Button>
                       <Button size="sm" variant="outline" disabled={!publication.capabilities.squashMerge.available} title={publication.capabilities.squashMerge.reason ?? "Squash merge committed branch changes into the local base branch"} onClick={() => setPublicationAction("squash")}>Local squash merge…</Button>
                     </div>
-                    <p className="text-muted-foreground">BB owns commit execution on the workspace host. Stelow never stages or runs Git commands locally.</p>
+                    {publishesToDefaultBranch ? (
+                      <p className="text-muted-foreground">This card is using the default checkout selected in BB. Committing publishes directly to <code>{publicationDefaultBranch}</code>; repository hooks and branch protection remain authoritative. Choose a feature branch or managed worktree in BB’s composer when you want a pull-request workflow.</p>
+                    ) : (
+                      <p className="text-muted-foreground">BB owns commit execution on the workspace host. Stelow never stages or runs Git commands locally.</p>
+                    )}
 
                     {publication.pullRequest ? (
                       <div className="space-y-2 border-t pt-3">
@@ -5546,9 +5552,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       <Dialog open={publicationAction !== null} onOpenChange={(open) => { if (!open && !publicationSubmitting) setPublicationAction(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{publicationAction === "commit" ? "Commit this workspace?" : publicationAction === "squash" ? "Squash merge into the local base branch?" : publicationAction === "ready" ? "Mark this pull request ready?" : publicationAction === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle>
+            <DialogTitle>{publicationAction === "commit" ? publishesToDefaultBranch ? `Commit directly to ${publicationDefaultBranch}?` : "Commit this workspace?" : publicationAction === "squash" ? "Squash merge into the local base branch?" : publicationAction === "ready" ? "Mark this pull request ready?" : publicationAction === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle>
             <DialogDescription className="space-y-2">
-              {publicationAction === "commit" ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}
+              {publicationAction === "commit" && publishesToDefaultBranch ? <p>BB will commit the current changes directly to <code>{publicationDefaultBranch}</code> on the card’s selected checkout. This bypasses a pull request; continue only when direct commits are intended for this repository.</p> : null}
+              {publicationAction === "commit" && !publishesToDefaultBranch ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}
               {publicationAction === "squash" ? <p>This directly creates one local commit on the base branch from this worktree’s committed changes. It bypasses pull-request review and is intended only for repositories where direct local integration is allowed.</p> : null}
               {publicationAction === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}
               {publicationAction === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}
@@ -5557,7 +5564,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" disabled={publicationSubmitting}>Cancel</Button></DialogClose>
-            <Button disabled={publicationSubmitting} onClick={() => void doPublicationAction()}>{publicationSubmitting ? "Submitting…" : publicationAction === "commit" ? "Commit workspace" : publicationAction === "squash" ? "Squash merge" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
+            <Button disabled={publicationSubmitting} onClick={() => void doPublicationAction()}>{publicationSubmitting ? "Submitting…" : publicationAction === "commit" ? publishesToDefaultBranch ? `Commit to ${publicationDefaultBranch}` : "Commit workspace" : publicationAction === "squash" ? "Squash merge" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

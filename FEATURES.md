@@ -9,7 +9,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
   attachments, intent, planning depth, review checkpoints, agent preset from
-  the analysis band. Spawns a hidden worker thread starting at triage.
+  the analysis band. BB's own Project, Environment, and branch controls are
+  authoritative: Stelow forwards the chosen checkout unchanged and keeps later
+  workers in it. Spawns a hidden worker thread starting at triage.
   The creation modal stays a real modal on phones (full-viewport with an
   explicit close, `fullscreenOnMobile`) instead of collapsing into a
   bottom sheet.
@@ -27,12 +29,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   confirm. Never automatic — Done in Stelow is not merged/deployed.
 - **Manual publication from Done** (`publicationStatus`, `CardDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
-  checkout, commit through BB, inspect the linked PR, switch that PR between
-  draft and ready, request a guarded provider merge, or explicitly squash
-  merge locally. Every write is confirmed, rechecked on BB's host, and kept
-  in a card-local publication history. Default-branch checkouts, detached
-  HEADs, non-Git folders, unavailable hosts, failing checks, and missing
-  approvals fail closed with the next actionable explanation.
+  checkout and commit through BB. The checkout selected in BB stays
+  authoritative: a default-branch commit is available only through a
+  prominently named, separately confirmed action; feature branches retain the
+  PR-ready/draft/merge and local-squash controls. Every write is rechecked on
+  BB's host and kept in a card-local publication history. Detached HEADs,
+  non-Git folders, unavailable hosts, failing checks, and missing approvals
+  fail closed with the next actionable explanation.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project

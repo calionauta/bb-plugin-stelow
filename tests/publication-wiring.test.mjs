@@ -23,9 +23,13 @@ assert.match(server, /publication_events/, "publication writes are separately au
 assert.match(server, /if \(result\.merged\) recordPublication/, "only completed local merges enter publication history");
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
+assert.match(server, /selectedCardEnvironment\(environment, workerEnvironment/, "a card forwards the BB composer environment instead of replacing it with a preset");
+assert.match(server, /continuingWorkerEnvironment\(row/, "later workers reuse the card's selected BB environment");
 
 assert.match(app, /title="Publish changes"/, "Done cards have a dedicated publication panel");
 assert.match(app, /Commit workspace…/, "commit requires an explicit user action");
+assert.match(app, /Commit directly to/, "a BB-selected default checkout requires an explicit direct-commit confirmation");
+assert.match(app, /default checkout selected in BB/, "the publication panel explains that BB's checkout choice is respected");
 assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(app, /publicationSubmitting/, "publication confirmations prevent duplicate write requests");
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
