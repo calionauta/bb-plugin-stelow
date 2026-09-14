@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.17.0] - 2026-09-14
+
+### Added
+
+- **On GitHub links.** After a push, the card links View branch and Open
+  pull request (compare), built from git's own `To <url>` line via
+  `lib/remote-url` — the SDK exposes no remote URL. GitHub-only by design.
+
+### Fixed
+
+- **Git Changes decluttered.** Saved → Publish → On GitHub sections with
+  one-line statuses and dedicated button rows; no call-to-action hides
+  inside prose anymore, and the outcome line states the remote truth.
+
 ## [0.16.5] - 2026-09-14
 
 ### Added
