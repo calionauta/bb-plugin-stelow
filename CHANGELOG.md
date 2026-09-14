@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.9.0] - 2026-09-13
+
+### Added
+
+- **Done-card publication controls.** Completed cards now inspect the exact
+  BB worker checkout before offering manual publication actions. The panel
+  can commit through BB, show and transition an existing pull request, request
+  a guarded PR merge, or explicitly squash merge locally. Default branches,
+  detached checkouts, non-Git folders, unavailable hosts, missing approvals,
+  failing checks, and non-mergeable PRs fail closed with actionable guidance.
+  Publication history is recorded independently from the workflow's Done
+  status.
+
 ## [0.8.1] - 2026-09-13
 
 ### Fixed
