@@ -433,6 +433,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
   },
+  publicationPushTerminal: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
+  },
   publicationPullRequestAction: {
     input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), pullRequestUrl: z.string().nullable() }),
@@ -2052,7 +2056,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
 
   type PublicationSnapshot = z.infer<typeof publicationSnapshotSchema>;
-  type PublicationAction = "commit" | "squash_merge" | "pull_request_ready" | "pull_request_draft" | "pull_request_merge";
+  type PublicationAction = "commit" | "squash_merge" | "push_terminal" | "pull_request_ready" | "pull_request_draft" | "pull_request_merge";
 
   function unavailablePublication(message: string, events: PublicationSnapshot["events"] = []): PublicationSnapshot {
     const blocked = { available: false, reason: message };
@@ -4204,8 +4208,30 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
     },
 
-    async publicationPullRequestAction({ cardId, operation, method }) {
+    async publicationPushTerminal({ cardId }) {
       const prepared = await publicationEnvironment(cardId);
+      if ("error" in prepared) return { ok: false, message: prepared.error, terminalId: null as string | null };
+      const branch = prepared.snapshot.branch?.current;
+      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
+      try {
+        // A visible terminal in the card's own environment: correct host and
+        // checkout by construction, user watches git push run live. The plugin
+        // never pushes silently — this is guidance executed in the open.
+        const terminal = await bb.sdk.terminals.create({
+          cols: 120,
+          rows: 30,
+          scope: { kind: "environment", environmentId: prepared.environmentId },
+          start: { mode: "command", command: "git push" },
+          title: `Stelow push — ${branch}`,
+        });
+        recordPublication(cardId, "push_terminal", `Opened a terminal running git push on ${branch}.`, null);
+        return { ok: true, message: "Push terminal opened — watch git push run in BB.", terminalId: terminal.id };
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "BB could not open a push terminal.", terminalId: null as string | null };
+      }
+    },
+
+    async publicationPullRequestAction({ cardId, operation, method }) {      const prepared = await publicationEnvironment(cardId);
       if ("error" in prepared) return { ok: false, message: prepared.error, pullRequestUrl: null };
       const url = prepared.snapshot.pullRequest?.url ?? null;
       const capability = operation === "merge"

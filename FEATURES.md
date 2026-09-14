@@ -38,6 +38,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card-local publication history. Detached HEADs,
   non-Git folders, unavailable hosts, failing checks, and missing approvals
   fail closed with the next actionable explanation.
+- **Push in a visible terminal** (`publicationPushTerminal`). BB has no push
+  action, so the panel never pushes silently: it opens a terminal in the
+  card's own environment running `git push`, where the user watches success,
+  rejection, or auth errors live. Recorded in publication history like any
+  other write.
 - **Local commit outcome and review** (`publicationCommitDiff`). Once BB saves
   a local commit, Done cards replace the disabled save control with a clear
   success state, current-HEAD indication, copyable SHA, and a read-only
