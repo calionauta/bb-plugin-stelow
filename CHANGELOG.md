@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.11.0] - 2026-09-14
+
+### Added
+
+- **Upstream skill transparency.** Every workflow stage now names its owning
+  Stelow skill in the single stage catalog, with one URL builder pointing at
+  the upstream repository. Each timeline pill carries a sibling ⓘ link to
+  that skill, and the Workflow map lists every stage with its definition
+  link. Pill clicks keep their rerun/advance meaning and never navigate
+  away.
+
 ## [0.10.1] - 2026-09-14
 
 ### Fixed
