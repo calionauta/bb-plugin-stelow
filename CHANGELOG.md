@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.16.1] - 2026-09-14
+
+### Fixed
+
+- **Push shell stays open.** Command-mode terminals exited in ~1s —
+  invisible, with no scrollback. The panel now opens an interactive shell
+  in the card's own environment with `git push` typed and ready: the user
+  reviews it and presses Enter, and a behind-branch warns before opening.
+- **Done never asks for attention.** Background sync could re-error a
+  completed card after it finished (e.g. a cleaned-up state dir), so the
+  board showed needs-attention + Retry while the detail calmly showed
+  Done. Sync now never writes terminal cards, stale errors never flag
+  attention on them, and Retry is refused there — reopen via comment or
+  restart fresh instead.
+
 ## [0.16.0] - 2026-09-14
 
 ### Added
