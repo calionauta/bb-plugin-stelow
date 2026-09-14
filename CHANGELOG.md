@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.18.0] - 2026-09-14
+
+### Added
+
+- **Resolved says how.** Inbox resolutions record their reason
+  (`resolved_reason`: answered, superseded, resumed, completed, archived)
+  and each Resolved row names it ("Answered by you", "Recovered on its
+  own"…); the filter explains why the tab exists. Legacy rows keep the
+  generic kind label.
+- **Settings open by default, as radio cards.** Planning depth and "Pause
+  for my review" (renamed — the board's Review column is the agent's own
+  automatic check) render every option visibly with real radio inputs and
+  min-h-11 targets. One shared chevron affordance across all eight
+  collapsibles.
+
 ## [0.17.1] - 2026-09-14
 
 ### Fixed
