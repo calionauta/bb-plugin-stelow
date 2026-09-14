@@ -15,9 +15,11 @@ assert.match(splitSelectionNotice(original, choices, ["A", "B", "C"]).text, /arc
 assert.match(splitSelectionNotice(original, choices, ["A"]).text, /stays active with the remaining work/, "partial selection confirms the parent remains");
 assert.match(splitSelectionNotice(original, choices, ["Keep as one card"]).text, /no child cards/, "the exclusive keep alternative explains its result contextually");
 const portuguese = "A solicitação abrange três entregáveis. Quais devem permanecer neste card?";
-assert.match(splitQuestionText(portuguese, choices), /Quais devem virar cards independentes\?/, "legacy Portuguese wording no longer contradicts the selected action");
-assert.match(splitQuestionText(portuguese, choices), /Selecione um ou mais entregáveis/, "host guidance follows the question language");
-assert.equal(questionLocale(portuguese, choices), "pt-BR", "Portuguese question gets Portuguese controls and recovery copy");
+assert.match(splitQuestionText(portuguese, choices, "pt-BR"), /Quais devem virar cards independentes\?/, "legacy Portuguese wording no longer contradicts the selected action");
+assert.match(splitQuestionText(portuguese, choices, "pt-BR"), /Selecione um ou mais entregáveis/, "an explicit worker locale selects Portuguese host guidance");
+assert.equal(questionLocale("en", portuguese, choices), "en", "English remains the default even when option text is Portuguese");
+assert.equal(questionLocale("pt-BR", original, choices), "pt-BR", "the worker can deliberately match a Portuguese user request");
+assert.equal(questionLocale(null, portuguese, choices), "pt-BR", "only legacy payloads without a stored locale use a compatibility fallback");
 assert.match(questionCopy("pt-BR").recoveryBody, /Não há prazo/, "recovery copy makes clear that there is no deadline");
 
 console.log("split-question presentation test ok: legacy copy upgrades without losing answer identity");

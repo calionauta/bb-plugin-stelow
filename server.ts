@@ -42,6 +42,7 @@ import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
+import { questionLocale as presentationQuestionLocale } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
@@ -352,8 +353,8 @@ export const rpcContract = defineRpcContract({
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
-      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiresAt: z.number().nullable() })),
-      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiredAt: z.number() })),
+      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), locale: z.enum(["en", "pt-BR"]), options: z.array(askOptionSchema), expiresAt: z.number().nullable() })),
+      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), locale: z.enum(["en", "pt-BR"]), options: z.array(askOptionSchema), expiredAt: z.number() })),
       stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable() })),
@@ -484,6 +485,7 @@ export const rpcContract = defineRpcContract({
       question: z.string().min(1).max(2_000),
       multiple: z.boolean(),
       kind: z.enum(["standard", "split"]).default("standard"),
+      locale: z.enum(["en", "pt-BR"]).default("en"),
       options: z.array(questionOptionSchema).min(2).max(6),
     }).strict(),
     output: z.object({ outcome: z.enum(["submitted", "cancelled"]), answers: z.array(z.string()) }),
@@ -1052,7 +1054,7 @@ export default async function plugin(bb: BbPluginApi) {
   // what burned us before: spawn and reseed taught the seed ban and the
   // turn discipline while the band-swap restart prompt carried neither.
   const NEVER_SEED = "Your workflow is already seeded in your state dir above — never run `bb stelow seed` (it is refused for card workers; seeding again orphans a second workflow outside your card).";
-  const TURN_DISCIPLINE = "Turn discipline: never end a turn with a bare progress report while current_stage is not `audit` and no question is pending — narrating progress is not finishing it. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured `bb stelow ask`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run `bb stelow status` and take the next stage action instead.";
+  const TURN_DISCIPLINE = "Turn discipline: never end a turn with a bare progress report while current_stage is not `audit` and no question is pending — narrating progress is not finishing it. Progress narration belongs in <state-dir>/session.log, not as your final message. A turn ends only in a tool call, a structured `bb stelow ask`, or workflow completion. If you catch yourself writing a status summary with nothing left to run, run `bb stelow status` and take the next stage action instead. Question language: write asks in English by default. Only when the user made their request in another language and you deliberately decide to match it, add `--locale pt-BR` to that ask; the locale controls the complete card form, so never rely on the UI to infer it from your prose.";
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
@@ -1183,6 +1185,9 @@ export default async function plugin(bb: BbPluginApi) {
   const expiredQuestionColumns = db.prepare("PRAGMA table_info(expired_questions)").all() as Array<{ name: string }>;
   if (!expiredQuestionColumns.some((column) => column.name === "kind")) {
     db.exec("ALTER TABLE expired_questions ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard'");
+  }
+  if (!expiredQuestionColumns.some((column) => column.name === "locale")) {
+    db.exec("ALTER TABLE expired_questions ADD COLUMN locale TEXT");
   }
   // Auto-continue budget for chatty workers (lib/auto-continue): consecutive
   // resumes without a stage advance, reset whenever the stage moves.
@@ -2789,6 +2794,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             question: question.question,
             multiple: question.multiple,
             kind: question.kind,
+            locale: presentationQuestionLocale(question.locale, question.question, question.options),
             options,
             expiresAt: typeof entry.expiresAt === "number" ? entry.expiresAt : null,
           });
@@ -3150,8 +3156,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { approved: true, receiptPath, error: null };
     },
 
-    async ask({ threadId, title, question, multiple, kind, options }) {
-      const result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title, payload: { question, multiple, kind, options } });
+    async ask({ threadId, title, question, multiple, kind, locale, options }) {
+      const result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title, payload: { question, multiple, kind, locale, options } });
       if (result.outcome === "cancelled") return { outcome: "cancelled" as const, answers: [] };
       const value = record(result.value);
       return { outcome: "submitted" as const, answers: array(value.answers).filter((answer): answer is string => typeof answer === "string") };
@@ -3551,7 +3557,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card) throw new Error(ERR_CARD_NOT_FOUND);
       const comments = db.prepare("SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as CommentRow[];
       const pending = await fetchPendingQuestions(card.worker_thread_id);
-      const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; kind: string; options: string; expired_at: number }>;
+      const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; kind: string; locale: string | null; options: string; expired_at: number }>;
       const expiredQuestions: Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["expiredQuestions"] = [];
       for (const row of expiredRows) {
         let parsed: unknown = null;
@@ -3560,7 +3566,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         for (const option of cleanOptions(parsed)) {
           options.push({ ...option, artifact: option.artifact ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : null });
         }
-        expiredQuestions.push({ id: row.id, question: row.question, multiple: Boolean(row.multiple), kind: row.kind === "split" ? "split" : "standard", options, expiredAt: row.expired_at });
+        expiredQuestions.push({ id: row.id, question: row.question, multiple: Boolean(row.multiple), kind: row.kind === "split" ? "split" : "standard", locale: presentationQuestionLocale(row.locale, row.question, options), options, expiredAt: row.expired_at });
       }
       let projectName = card.project_id;
       const workspace = await cardWorkspace(card);
@@ -4856,7 +4862,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     summary: "Inspect and interact with Stelow workflows",
     commands: [
       { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
-      { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]... (repeat --question groups to ask several at once)" },
+      { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> [--locale en|pt-BR] --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]... (repeat --question groups to ask several at once; English is the default)" },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
       { name: "preview", summary: "Run and inspect a card workspace's dev server", usage: "bb stelow preview [status|start|stop] [--card <card_id>] [--json]" },
       { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
@@ -4896,25 +4902,30 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (argv[0] === "ask") {
         const flag = (name: string) => { const index = argv.indexOf(name); return index >= 0 ? argv[index + 1] : undefined; };
         const threadId = flag("--thread") ?? ctx.threadId;
-        // --tag marks a machine-readable ask kind. Tags are a closed set:
-        // today only `split` (card-split proposals at triage, lib/split-proposal).
-        // parseAskGroups ignores unknown flags, so strip the tag pair before
-        // parsing instead of letting it ride along silently.
+        // --tag marks a machine-readable ask kind. --locale is selected by
+        // the worker: English is the default; it opts into the user's other
+        // language only when it deliberately writes the ask that way.
+        // Strip both metadata flags before parsing question groups.
         const tagValues: string[] = [];
+        const localeValues: string[] = [];
         const askArgv: string[] = [];
         for (let i = 1; i < argv.length; i++) {
           if (argv[i] === "--tag") { tagValues.push(argv[i + 1] ?? ""); i++; continue; }
+          if (argv[i] === "--locale") { localeValues.push(argv[i + 1] ?? ""); i++; continue; }
           askArgv.push(argv[i]!);
         }
         const tag = tagValues.length > 0 ? tagValues[tagValues.length - 1]! : null;
+        const locale = localeValues.length > 0 ? localeValues[localeValues.length - 1]! : "en";
         if (tag !== null && tag !== "split") return { exitCode: 2, stderr: "Unknown --tag. The only worker ask tag is --tag split (card-split proposals at triage)." };
+        if (locale !== "en" && locale !== "pt-BR") return { exitCode: 2, stderr: "Unknown --locale. Use en (default) or pt-BR when deliberately matching the user's Portuguese request." };
+        const askLocale = locale as "en" | "pt-BR";
         // Repeated --question groups ask several questions in ONE blocking
         // call: the human answers them together instead of being pinged N
         // times. Options/--multiple attach to the most recent --question.
         const parsed = parseAskGroups(askArgv);
         if (!threadId) return { exitCode: 2, stderr: "Missing --thread <thr_id>." };
         if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]..." };
-        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, kind: tag === "split" ? "split" as const : "standard" as const, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
+        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, kind: tag === "split" ? "split" as const : "standard" as const, locale: askLocale, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
         const batched = groups.length > 1;
         // The thread must own a card: otherwise the question would surface
         // nowhere and the persist below would silently skip. Refuse fast
@@ -4962,7 +4973,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // irreversible semantics. State each consequence once: candidates
           // are a multi-select, while the keep option is an exclusive
           // alternative handled by the renderer and the split executor.
-          groups[0]!.question = splitQuestionText(groups[0]!.question, groups[0]!.options);
+          groups[0]!.question = splitQuestionText(groups[0]!.question, groups[0]!.options, groups[0]!.locale);
           db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, question, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, ?, NULL, ?, NULL, NULL, '[]')")
             .run(cardRow.id, groups[0]!.question, JSON.stringify(slices), Date.now());
         }
@@ -4982,7 +4993,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try {
           result = batched
             ? await bb.ui.requestInput({ ...askInput, payload: { questions: groups } }, { signal: ctx.signal })
-            : await bb.ui.requestInput({ ...askInput, payload: { question: first.question, multiple: first.multiple, kind: first.kind, options: first.options } }, { signal: ctx.signal });
+            : await bb.ui.requestInput({ ...askInput, payload: { question: first.question, multiple: first.multiple, kind: first.kind, locale: first.locale, options: first.options } }, { signal: ctx.signal });
         } catch {
           // The request itself blew up mid-flight (e.g. dispose tore down the
           // call): same bucket as a transient cancel — never lose the question.
@@ -5021,10 +5032,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               // A timed-out batch persists as one expired row per sub-question
               // so the card can answer them individually or all at once.
               const expiredAt = askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
-              const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, kind, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+              const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, kind, locale, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
               db.transaction(() => {
                 for (const group of groups) {
-                  insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, group.kind, JSON.stringify(group.options), expiredAt, 0);
+                  insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, group.kind, group.locale, JSON.stringify(group.options), expiredAt, 0);
                 }
               })();
               updateCard(cardRow.id, { activity: "awaiting-answer" });

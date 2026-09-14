@@ -186,9 +186,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Question presentation is semantic and language-consistent.** Every
   question carries a `standard` or `split` kind from the host interaction
   through durable recovery (with a safe legacy fallback). Shared presentation
-  copy follows the question's Portuguese or English language across controls,
-  recovery explanation, and split consequences; old stored split copy is
-  upgraded on display without changing its answer identities.
+  copy follows an explicit locale selected by the worker: English is always
+  the default, and the worker uses `--locale pt-BR` only when it deliberately
+  matches a Portuguese user request. Legacy stored questions use a one-time
+  compatibility fallback. Controls, recovery explanation, and split
+  consequences therefore never guess from new question text; old stored split
+  copy is upgraded on display without changing its answer identities.
 - **Unread is a view, not a work state.** Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view
   without changing the attention badge or hiding a read-but-unresolved action.

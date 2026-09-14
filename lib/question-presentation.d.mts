@@ -1,5 +1,5 @@
 export type QuestionLocale = "en" | "pt-BR";
-export declare function questionLocale(question: string | null | undefined, options?: Array<{ label?: string }> | null | undefined): QuestionLocale;
+export declare function questionLocale(rawLocale: unknown, legacyQuestion?: string | null | undefined, options?: Array<{ label?: string }> | null | undefined): QuestionLocale;
 export declare function questionCopy(locale: QuestionLocale): {
   answerNeeded: string;
   answersNeeded: (count: number) => string;

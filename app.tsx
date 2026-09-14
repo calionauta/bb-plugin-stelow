@@ -3080,7 +3080,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
 }
 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
-type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
+type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; locale?: "en" | "pt-BR" | null; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
 
 // Per-option evidence: the inline glance (preview) and the openable source
 // of truth (artifact) share the upstream Option names from
@@ -3130,11 +3130,12 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   if (questions.length === 0) return null;
   const current = questions[Math.min(index, questions.length - 1)]!;
-  const copy = questionCopy(questionLocale(current.prompt, current.options));
+  const locale = questionLocale(current.locale, current.prompt, current.options);
+  const copy = questionCopy(locale);
   const splitKeepLabel = SPLIT_KEEP_LABEL;
   const isSplitProposal = isSplitQuestion(current);
-  const prompt = isSplitProposal ? splitQuestionText(current.prompt, current.options) : current.prompt;
-  const splitNotice = isSplitProposal ? splitSelectionNotice(current.prompt, current.options, selected[current.id] ?? []) : null;
+  const prompt = isSplitProposal ? splitQuestionText(current.prompt, current.options, locale) : current.prompt;
+  const splitNotice = isSplitProposal ? splitSelectionNotice(current.prompt, current.options, selected[current.id] ?? [], locale) : null;
   const merged = (id: string): string[] => {
     if (skipped.has(id)) return [];
     const out = [...(selected[id] ?? [])];
@@ -3205,12 +3206,12 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
           ) : null}
           {current.title ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div> : null}
           {prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{prompt}</p> : null}
-          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">{questionLocale(current.prompt, current.options) === "pt-BR" ? <>Escolha entregáveis ou <strong className="text-amber-900 dark:text-amber-100">Manter em um card</strong> — não os dois.</> : <>Choose deliveries or <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> — not both.</>}</p> : null}
+          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">{locale === "pt-BR" ? <>Escolha entregáveis ou <strong className="text-amber-900 dark:text-amber-100">Manter em um card</strong> — não os dois.</> : <>Choose deliveries or <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> — not both.</>}</p> : null}
           <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
             {current.options.map((option) => {
               const active = (selected[current.id] ?? []).includes(option.label);
               const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
-              const optionLabel = isKeepOption && questionLocale(current.prompt, current.options) === "pt-BR" ? "Manter em um card" : option.label;
+              const optionLabel = isKeepOption && locale === "pt-BR" ? "Manter em um card" : option.label;
               const description = isSplitProposal ? splitOptionDescription(option.description) : option.description;
               return (
                 <div key={option.label} className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
@@ -3265,7 +3266,7 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (questions.length === 0) return null;
-  const copy = questionCopy(questionLocale(questions[0]!.prompt, questions[0]!.options));
+  const copy = questionCopy(questionLocale(questions[0]!.locale, questions[0]!.prompt, questions[0]!.options));
   async function submit(all: string[][]) {
     setBusy(true); setError(null);
     try {
@@ -3301,7 +3302,7 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
 
 function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact) => void }) {
   if (questions.length === 0) return null;
-  const copy = questionCopy(questionLocale(questions[0]!.question, questions[0]!.options));
+  const copy = questionCopy(questionLocale(questions[0]!.locale, questions[0]!.question, questions[0]!.options));
   return (
     <section className="space-y-2">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">{copy.recoveryHeading}</h3>
@@ -3309,7 +3310,7 @@ function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact
         <QuestionBatch
           cardId={cardId}
           mode="expired"
-          questions={questions.map((q) => ({ id: q.id, title: "", prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options }))}
+          questions={questions.map((q) => ({ id: q.id, title: "", prompt: q.question, multiple: q.multiple, kind: q.kind, locale: q.locale, options: q.options }))}
           onAnswered={onAnswered}
           onOpenArtifact={onOpenArtifact}
         />
@@ -4697,7 +4698,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, locale: q.locale, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} />
                   </div>
                 ) : null}
                 {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => { onChanged(); void loadIndex(); }} /></div> : null}
@@ -4938,7 +4939,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => onChanged()} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, locale: q.locale, options: q.options })) ?? []} onAnswered={() => onChanged()} />
                   </div>
                 ) : null}
                 {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => onChanged()} /></div> : null}
@@ -5443,7 +5444,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => void load()} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, locale: q.locale, options: q.options })) ?? []} onAnswered={() => void load()} />
                   </div>
                 ) : null}
                 {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => void load()} /></div> : null}
@@ -6006,7 +6007,7 @@ function PillsyStyles() {
 }
 
 function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionProps) {
-  const payload = interaction.payload as { question?: string; multiple?: boolean; kind?: "standard" | "split"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; questions?: Array<{ question?: string; multiple?: boolean; kind?: "standard" | "split"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> }> };
+  const payload = interaction.payload as { question?: string; multiple?: boolean; kind?: "standard" | "split"; locale?: "en" | "pt-BR"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; questions?: Array<{ question?: string; multiple?: boolean; kind?: "standard" | "split"; locale?: "en" | "pt-BR"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> }> };
   // Thread payloads carry raw artifact paths (no viewer here to resolve
   // against); normalize to the shared shape so display never renders
   // undefined. Open affordances stay card-only by design.
@@ -6022,11 +6023,11 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
   // answer together; single-question payloads keep their exact shape.
   const genericTitle = /^stelow questions?(?: \(\d+\))?$/i.test(interaction.title ?? "") ? "" : interaction.title;
   const items: BatchItem[] = Array.isArray(payload.questions) && payload.questions.length > 0
-    ? payload.questions.map((q, i) => ({ id: `q${i}`, title: genericTitle, prompt: typeof q?.question === "string" ? q.question : "", multiple: q?.multiple === true, kind: q?.kind, options: clean(q?.options) })).filter((q) => q.options.length > 0)
-    : [{ id: "q0", title: genericTitle, prompt: payload.question ?? interaction.title, multiple: payload.multiple === true, kind: payload.kind, options: clean(payload.options) }];
+    ? payload.questions.map((q, i) => ({ id: `q${i}`, title: genericTitle, prompt: typeof q?.question === "string" ? q.question : "", multiple: q?.multiple === true, kind: q?.kind, locale: q?.locale, options: clean(q?.options) })).filter((q) => q.options.length > 0)
+    : [{ id: "q0", title: genericTitle, prompt: payload.question ?? interaction.title, multiple: payload.multiple === true, kind: payload.kind, locale: payload.locale, options: clean(payload.options) }];
   if (items.length === 0) return null;
   const batched = items.length > 1;
-  const copy = questionCopy(questionLocale(items[0]!.prompt, items[0]!.options));
+  const copy = questionCopy(questionLocale(items[0]!.locale, items[0]!.prompt, items[0]!.options));
   return (
     <div className="space-y-3">
       <BatchStepper

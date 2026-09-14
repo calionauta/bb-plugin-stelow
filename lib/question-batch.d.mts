@@ -1,6 +1,8 @@
 export declare const QUESTION_ID_SEP: string;
 export declare const QUESTION_KINDS: string[];
+export declare const QUESTION_LOCALES: string[];
 export declare function questionKind(raw: unknown): "standard" | "split";
+export declare function questionLocale(raw: unknown): "en" | "pt-BR";
 export declare const MAX_DESC_CHARS: number;
 export declare const MAX_PREVIEW_CHARS: number;
 export declare const MAX_ARTIFACT_CHARS: number;
@@ -14,7 +16,7 @@ export declare function parseAskGroups(argv: string[]): { groups: Array<{ questi
 export declare function cleanOptions(raw: unknown): AskOption[];
 export declare function normalizeAskArtifactPath(raw: unknown): { path: string; display: string } | null;
 export declare function isBatchPayload(data: unknown): boolean;
-export declare function expandInteractionQuestions(interaction: { id: string; title?: string; payload?: unknown }): Array<{ questionId: string; interactionId: string; index: number; title: string; question: string; multiple: boolean; kind: "standard" | "split"; options: AskOption[] }>;
+export declare function expandInteractionQuestions(interaction: { id: string; title?: string; payload?: unknown }): Array<{ questionId: string; interactionId: string; index: number; title: string; question: string; multiple: boolean; kind: "standard" | "split"; locale: string | null; options: AskOption[] }>;
 export declare function splitQuestionId(questionId: string): { interactionId: string; index: number };
 export declare function groupBatchAnswers(items: Array<{ questionId: string; answers: string[] }>): Map<string, { kind: "single"; answers: string[] } | { kind: "batch"; answers: string[][] }>;
 export declare function formatBatchContinuation(decisions: Array<{ question: string; answers: string[] }>): string;

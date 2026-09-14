@@ -192,12 +192,13 @@ assert.doesNotMatch(app, /function WorkflowChoiceSelect</, "the cramped select i
 assert.match(app, /const isSplitProposal = isSplitQuestion\(current\)/, "split questions get their own safe, explicit guidance");
 assert.match(app, /Escolha entregáveis ou/, "split UI makes Keep as one card an explicit alternative without repeating the split instructions");
 assert.match(app, /splitOptionDescription\(/, "a still-open legacy split form does not repeat generated consequences");
-assert.match(app, /splitQuestionText\(current\.prompt, current\.options\)/, "a still-open legacy split prompt upgrades without changing its stored answer identity");
-assert.match(app, /splitSelectionNotice\(current\.prompt, current\.options, selected\[current\.id\] \?\? \[\]\)/, "split feedback reacts to the current selection before submission");
+assert.match(app, /splitQuestionText\(current\.prompt, current\.options, locale\)/, "a still-open legacy split prompt upgrades without changing its stored answer identity");
+assert.match(app, /splitSelectionNotice\(current\.prompt, current\.options, selected\[current\.id\] \?\? \[\], locale\)/, "split feedback reacts to the current selection before submission");
+assert.match(server, /--locale en\|pt-BR/, "the worker explicitly owns language selection and English remains the CLI default");
 assert.match(app, /All updates/, "Inbox exposes read state without replacing its lifecycle tabs");
 assert.match(app, /Unread only/, "Inbox can narrow every selected tab to unread entries");
 assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "question choices use visible, high-contrast selection controls");
-assert.match(server, /splitQuestionText\(groups\[0\]!\.question, groups\[0\]!\.options\)/, "the split question is host-enriched before it reaches the user");
+assert.match(server, /splitQuestionText\(groups\[0\]!\.question, groups\[0\]!\.options, groups\[0\]!\.locale\)/, "the split question is host-enriched in the worker-selected language before it reaches the user");
 assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");
 assert.match(app, /recoveryHeading/, "recovered questions explain the state without leaking timeout jargon");
 assert.match(answerExpired, /answers: item\.answers/, "timed-out multi-choice answers retain every selected value");
