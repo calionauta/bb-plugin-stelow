@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.16.3] - 2026-09-14
+
+### Fixed
+
+- **Push now runs itself.** "Open push terminal" promised a reveal BB never
+  performs, and typed-but-unsent output read as executed. The confirmed
+  action now runs `git push` in the card's checkout (exit marker
+  `STELOW_PUSH_EXIT`) and streams the named outcome into Push shells —
+  ✓ Pushed, ✗ Push failed, … Running, ○ Waiting for legacy typed-only
+  shells — with an automatic result refresh after each run.
+
 ## [0.16.2] - 2026-09-14
 
 ### Fixed
