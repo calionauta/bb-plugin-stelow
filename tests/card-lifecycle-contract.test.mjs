@@ -149,9 +149,12 @@ assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the
 assert.match(app, /stelowReturnFocusCardId = cardId/, "opening a card remembers it for focus return");
 assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build board cards restore focus on return");
 assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
-assert.match(app, /function CardHeading\(/, "board tiles share a title-first, wrapping header");
-assert.match(boardCard, /<CardHeading title=\{card\.displayName\}>/, "build card status/actions sit below the readable title");
-assert.match(lightweightCard, /<CardHeading title=\{card\.displayName\}>/, "research/explore cards use the same non-clipping header");
+assert.match(app, /function CardHeading\(/, "board tiles share a title-first card header");
+assert.match(app, /<h3 className="min-w-0 break-all text-sm font-semibold/, "card titles always use the whole available width and break rather than truncate");
+assert.match(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "status chips have a visible label instead of looking like card actions");
+assert.match(boardCard, /action=\{stuck \? <CardRetryButton/, "build card recovery is a distinct action row");
+assert.match(lightweightCard, /action=\{stuck \? <CardRetryButton/, "research/explore cards use the same distinct recovery row");
+assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
 assert.doesNotMatch(boardCard, /flex-1 truncate text-sm/, "build card titles are no longer truncated beside pills");
 assert.match(listRow, /break-words text-sm leading-5/, "list cards keep long requested outcomes readable");
 assert.doesNotMatch(app, /hsl\(280 80% 60%/, "running cards no longer cycle through distracting rainbow colors");

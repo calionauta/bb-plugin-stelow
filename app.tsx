@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Children, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Markdown,
   experimental_SourceCode as SourceCode,
@@ -2308,7 +2308,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labe
 // Shared card leaves. BoardCard and ResearchCard render identical worker
 // chrome (inline retry, attention/error/idle rows) — one definition serves
 // both tracks instead of drifting copies.
-function CardRetryButton({ cardId }: { cardId: string }) {
+function CardRetryButton({ cardId, label }: { cardId: string; label: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const [retrying, setRetrying] = useState(false);
   async function retry(event: React.MouseEvent) {
@@ -2324,8 +2324,8 @@ function CardRetryButton({ cardId }: { cardId: string }) {
     }
   }
   return (
-    <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="disabled:cursor-not-allowed cursor-pointer rounded-full border border-primary/40 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
-      {retrying ? "…" : "↻ Retry"}
+    <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md border border-primary/40 px-3 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
+      {retrying ? "Resuming…" : `↻ ${label}`}
     </button>
   );
 }
@@ -2370,15 +2370,18 @@ function CardMetaRows({ card }: { card: CardItem }) {
   );
 }
 
-// All board tiles share this header geometry: title first, then a wrapping
-// status/action row. Nothing competes with the title in a narrow column, so
-// long names and attention tags cannot clip behind the card boundary.
-function CardHeading({ title, children }: { title: string; children: React.ReactNode }) {
+// All board tiles share this header geometry. Identity, state and recovery
+// actions are deliberately distinct rows: a narrow board column must never
+// make a title look like a tiny label among controls, or make state look like
+// an action. The status label also gives otherwise-button-shaped pills context.
+function CardHeading({ title, status, action }: { title: string; status: React.ReactNode; action?: React.ReactNode }) {
+  const statusItems = Children.toArray(status);
   return (
-    <div className="grid gap-2">
-      <div className="break-words text-sm font-medium leading-5 text-foreground">{title}</div>
-      <div className="flex flex-wrap items-center gap-1.5">{children}</div>
-    </div>
+    <header className="min-w-0 space-y-2.5">
+      <h3 className="min-w-0 break-all text-sm font-semibold leading-5 text-foreground">{title}</h3>
+      {statusItems.length ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"><span className="font-medium text-muted-foreground/80">Status</span>{statusItems}</div> : null}
+      {action ? <div className="border-t border-border/70 pt-2">{action}</div> : null}
+    </header>
   );
 }
 
@@ -2415,11 +2418,13 @@ function BoardCard({ card }: { card: CardItem }) {
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open card ${card.displayName}.`}
     >
-      <CardHeading title={card.displayName}>
-        {stuck ? <CardRetryButton cardId={card.id} /> : null}
+      <CardHeading title={card.displayName}
+        action={stuck ? <CardRetryButton cardId={card.id} label={card.activity === "error" ? "Retry worker" : "Resume work"} /> : null}
+        status={<>
         {card.status !== "completed" && card.status !== "archived" ? <StagePill stage={card.stage} active={running} /> : null}
         {card.activity !== "running" ? <ActivityPill activity={card.activity} /> : null}
-      </CardHeading>
+        </>}
+      />
       {(card.scopeSummary.scopesTotal > 0 || card.intent !== "unknown") ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
         {card.intent !== "unknown" ? <Pill className="max-w-full" title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
@@ -2465,10 +2470,10 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
       className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open ${ariaNoun} ${card.displayName}.`}
     >
-      <CardHeading title={card.displayName}>
-        {stuck ? <CardRetryButton cardId={card.id} /> : null}
-        <ActivityPill activity={card.activity} />
-      </CardHeading>
+      <CardHeading title={card.displayName}
+        action={stuck ? <CardRetryButton cardId={card.id} label={card.activity === "error" ? "Retry worker" : "Resume work"} /> : null}
+        status={<ActivityPill activity={card.activity} />}
+      />
       {tagLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <Pill className="max-w-full" title={tagTitle}>{tagLabel}</Pill>
       </div> : null}

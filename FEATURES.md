@@ -193,6 +193,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 4. Follow one card
 *When I open a card, I want the full picture without reading the thread.*
 
+- **Board cards** (`CardHeading`, `CardRetryButton`). A card’s requested
+  outcome is a full-width, wrapping heading; its labelled status lives below
+  it; recovery is a separate full-size Resume/Retry action. The same compact
+  hierarchy is reused in Build, Research, and Explore, so narrow columns do
+  not turn a title or a workflow state into an ambiguous, clipped chip.
 - **Hero** (`heroFor`: decision/error/paused/working/calm). One sentence
   + one primary action per state; secondary actions as real buttons.
 - **What is happening** (`ScopesList`, `StageTimeline`). Scopes in

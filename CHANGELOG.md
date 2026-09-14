@@ -10,9 +10,10 @@ and this project adheres to a single-version-per-release tag format
 
 ### Changed
 
-- **Cards and questions stay readable.** Board and list cards now put long
-  titles ahead of a wrapping row of status pills and actions, so tags cannot
-  clip at the edge. Split proposals explain their consequence before answer:
+- **Cards and questions stay readable.** Board and list cards now give long
+  titles their own wrapping row, label the status below, and place Resume or
+  Retry in a separate touch-sized action row — no title, status, or recovery
+  control competes for horizontal space. Split proposals explain their consequence before answer:
   selected deliveries become child cards, unselected work stays on the
   parent, and “Keep as one card” vetoes the split. Their choice controls use
   high-contrast boxes.
