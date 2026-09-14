@@ -4939,7 +4939,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   type PublicationStatus = Awaited<ReturnType<typeof rpc.call<"publicationStatus">>>;
   const [publication, setPublication] = useState<PublicationStatus | null>(null);
   const [publicationLoading, setPublicationLoading] = useState(false);
-  const [publicationAction, setPublicationAction] = useState<"commit" | "squash" | "push" | "ready" | "draft" | "merge" | null>(null);
+  const [publicationAction, setPublicationAction] = useState<"commit" | "squash" | "push" | "sync" | "ready" | "draft" | "merge" | null>(null);
   const [publicationSubmitting, setPublicationSubmitting] = useState(false);
   type PublicationCommitDiff = Awaited<ReturnType<typeof rpc.call<"publicationCommitDiff">>>;
   const [publicationCommitSha, setPublicationCommitSha] = useState<string | null>(null);
@@ -5164,6 +5164,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         // without the user having to press Check result.
         pushRefreshTimers.current.push(window.setTimeout(() => void loadPushTerminals(), 8000));
         pushRefreshTimers.current.push(window.setTimeout(() => void loadPushTerminals(), 20000));
+      } else if (action === "sync") {
+        const result = await rpc.call("publicationPullPush", { cardId });
+        if (!result.ok) toast.error(result.message);
+        else toast.success(result.message);
+        await loadPushTerminals();
+        pushRefreshTimers.current.push(window.setTimeout(() => void loadPushTerminals(), 10000));
+        pushRefreshTimers.current.push(window.setTimeout(() => void loadPushTerminals(), 25000));
       } else {
         const result = await rpc.call("publicationPullRequestAction", { cardId, operation: action, ...(action === "merge" ? { method: mergeMethod } : {}) });
         if (!result.ok) toast.error(result.message);
@@ -5197,12 +5204,30 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   }
 
   async function copyText(text: string, label: string) {
+    // The Clipboard API is unavailable in some panel contexts (permissions,
+    // insecure frame): fall back to a hidden textarea + execCommand before
+    // giving up. The final error carries the value so it stays copyable.
     try {
       await navigator.clipboard.writeText(text);
       toast.success(`${label} copied.`);
-    } catch {
-      toast.error("Copy failed — select the text and copy it by hand.");
-    }
+      return;
+    } catch { /* fall through to the legacy path */ }
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      if (ok) {
+        toast.success(`${label} copied.`);
+        return;
+      }
+    } catch { /* fall through to the manual path */ }
+    toast.error(`Copy failed — select and copy by hand: ${text}`);
   }
 
   async function advance(stage: string) {
@@ -5548,7 +5573,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                           <details className="mt-2 rounded-md border border-emerald-500/20 p-2">
                             <summary className="cursor-pointer font-medium text-emerald-950 dark:text-emerald-100">What remains to publish it</summary>
                             <ol className="mt-1 list-decimal space-y-1.5 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
-                              <li>Push the branch — this panel runs <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> in this card’s worker checkout and streams the result into Push shells below. <Button size="sm" variant="outline" onClick={() => setPublicationAction("push")}>Push now…</Button> <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
+                              <li>Push the branch — this panel runs <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> in this card’s worker checkout and streams the result into Push shells below. {(publication?.mergeBase?.behind ?? 0) > 0 ? <><Button size="sm" variant="outline" onClick={() => setPublicationAction("sync")}>Sync &amp; push…</Button> <span>pulls with rebase, then pushes — one click.</span></> : <Button size="sm" variant="outline" onClick={() => setPublicationAction("push")}>Push now…</Button>} <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
                               <li>Then open a pull request through your Git provider or BB’s native flow — this panel’s PR actions (ready, merge) work on the existing PR.</li>
                             </ol>
                           </details>
@@ -5564,12 +5589,17 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                               <div key={terminal.id} className="mt-2 rounded border border-emerald-500/20 bg-background/60 p-2 text-foreground">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <p className="text-xs"><span className="font-medium">{terminal.title}</span> · {terminal.outputUnavailable ? "○ Ended — output unavailable" : terminal.pushState === "succeeded" ? "✓ Pushed" : terminal.pushState === "failed" ? `✗ Push failed${terminal.pushExit !== null ? ` (exit ${terminal.pushExit})` : ""}` : terminal.pushState === "waiting" ? "○ Waiting — git push typed but NOT sent" : "… Running"} · {new Date(terminal.createdAt).toLocaleString()}</p>
-                                  <Button size="sm" variant="ghost" title="Copy the terminal ID to find this shell in BB's sidebar terminal panel" onClick={() => void copyText(terminal.id, "Terminal ID")}>Copy terminal ID</Button>
+                                  <Button size="sm" variant="ghost" title="Copy this shell's ID — paste it in BB's sidebar terminal panel to jump to the exact shell that ran this" onClick={() => void copyText(terminal.id, "Terminal ID")}>Copy terminal ID</Button>
                                 </div>
                                 <p className="mt-1 font-mono text-[11px] text-muted-foreground">{terminal.id}</p>
                                 {terminal.pushState === "waiting" && !terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">An older shell from before pushes ran themselves. Press Enter in BB’s sidebar terminal {terminal.id} to send it, or click Push now above for a fresh tracked run.</p> : null}
                                 {terminal.pushState === "running" && !terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">Push sent — waiting for the remote. If it asks for auth, finish it in BB’s sidebar terminal {terminal.id}, then Check result.</p> : null}
-                                {terminal.pushState === "failed" && !terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">The remote rejected it (often: behind — pull first in BB’s sidebar terminal {terminal.id}, then Push now again).</p> : null}
+                                {terminal.pushState === "failed" && !terminal.outputUnavailable ? (() => {
+                                  const tail = terminal.outputTail ?? "";
+                                  if (/STELOW_SYNC_ABORTED:1/.test(tail)) return <p className="mt-1 text-xs text-muted-foreground">Pull conflicted — the rebase aborted itself, so your checkout is unchanged. Resolve the conflict where you edit code, then come back and Push now.</p>;
+                                  if (/STELOW_SYNC_EXIT:([1-9][0-9]*)/.test(tail)) return <p className="mt-1 text-xs text-muted-foreground">Pull itself failed (network or auth?) — details above. <Button size="sm" variant="outline" onClick={() => setPublicationAction("sync")}>Sync &amp; push again…</Button></p>;
+                                  return <p className="mt-1 text-xs text-muted-foreground">The remote rejected the push (usually: your branch is behind). <Button size="sm" variant="outline" onClick={() => setPublicationAction("sync")}>Sync &amp; push again…</Button> pulls with rebase, then pushes — one click, no sidebar needed.</p>;
+                                })() : null}
                                 {terminal.outputTail ? <><p className="mt-1 text-[11px] text-muted-foreground">Snapshot — refresh with Check result; this view is not interactive.</p><pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded bg-muted/60 p-2 font-mono text-[11px]">{terminal.outputTail}</pre></> : null}
                                 {terminal.outputUnavailable ? <p className="mt-1 text-xs text-muted-foreground">Output unavailable — the shell already exited. Its result is in the Git history / remote instead.</p> : null}
                               </div>
@@ -5718,12 +5748,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       <Dialog open={publicationAction !== null} onOpenChange={(open) => { if (!open && !publicationSubmitting) setPublicationAction(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{publicationAction === "commit" ? publishesToDefaultBranch ? `Save a local commit to ${publicationDefaultBranch}?` : "Commit this workspace?" : publicationAction === "squash" ? "Squash this branch into its local base?" : publicationAction === "push" ? "Push this branch now?" : publicationAction === "ready" ? "Mark this pull request ready?" : publicationAction === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle>
+            <DialogTitle>{publicationAction === "commit" ? publishesToDefaultBranch ? `Save a local commit to ${publicationDefaultBranch}?` : "Commit this workspace?" : publicationAction === "squash" ? "Squash this branch into its local base?" : publicationAction === "push" ? "Push this branch now?" : publicationAction === "sync" ? "Sync & push now?" : publicationAction === "ready" ? "Mark this pull request ready?" : publicationAction === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle>
             <DialogDescription className="space-y-2">
               {publicationAction === "commit" && publishesToDefaultBranch ? <p>BB will create a local commit on <code>{publicationDefaultBranch}</code> in the card’s selected checkout. It will not fetch remote updates, merge incoming changes, push, or create a pull request. This bypasses a pull request, so continue only when the checkout is current and direct commits are intended.</p> : null}
               {publicationAction === "commit" && !publishesToDefaultBranch ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}
               {publicationAction === "squash" ? <p>BB will combine this branch’s committed changes into one local commit on its base branch. It will not fetch remote updates, push, or create a pull request. It bypasses pull-request review, so use it only when direct local integration is intended.</p> : null}
               {publicationAction === "push" ? <p>This panel will run <code>git push</code> in this card’s worker checkout and stream the output into Push shells below — nothing hides in a sidebar you have to hunt. Rejections and auth prompts appear there; an auth prompt is finished in BB’s sidebar terminal.</p> : null}
+              {publicationAction === "sync" ? <p>This panel will run <code>git pull --rebase</code> followed by <code>git push</code> in this card’s worker checkout — one click, linear history, no merge commits. If the pull conflicts, the rebase aborts itself and nothing changes; resolve the conflict where you edit code and push again. The output streams into Push shells below.</p> : null}
               {publicationAction === "push" && (publication?.mergeBase?.behind ?? 0) > 0 ? <p>This branch is {publication?.mergeBase?.behind} behind — a push will be rejected until you pull first. Do that in the same shell before running the typed command.</p> : null}
               {publicationAction === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}
               {publicationAction === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}
@@ -5732,7 +5763,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           </DialogHeader>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline" disabled={publicationSubmitting}>Cancel</Button></DialogClose>
-            <Button disabled={publicationSubmitting} onClick={() => void doPublicationAction()}>{publicationSubmitting ? "Submitting…" : publicationAction === "commit" ? publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}` : "Commit workspace" : publicationAction === "squash" ? "Squash branch locally" : publicationAction === "push" ? "Push branch" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
+            <Button disabled={publicationSubmitting} onClick={() => void doPublicationAction()}>{publicationSubmitting ? "Submitting…" : publicationAction === "commit" ? publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}` : "Commit workspace" : publicationAction === "squash" ? "Squash branch locally" : publicationAction === "push" ? "Push branch" : publicationAction === "sync" ? "Sync & push" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -7,7 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 
-for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullRequestAction"]) {
+for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullPush", "publicationPullRequestAction"]) {
   assert.match(server, new RegExp(`async ${method}\\(`), `${method} RPC exists`);
 }
 assert.match(server, /bb\.sdk\.environments\.status/, "publication status is owned by BB");
@@ -29,6 +29,18 @@ assert.match(server, /terminals\.input/, "git push is sent to the card's own she
 assert.match(server, /STELOW_PUSH_EXIT/, "the shell reports the push exit so the panel can name the outcome");
 assert.match(server, /scope: \{ kind: "environment", environmentId/, "the push terminal runs in the card's own environment, never an assumed host");
 assert.match(server, /push_terminal/, "terminal pushes enter publication history");
+assert.match(server, /Ran pull --rebase \+ push in shell/, "sync runs enter history under the same auditable action");
+assert.match(server, /publicationPullPush/, "rejected pushes have a one-click pull-rebase-plus-push remediation");
+assert.match(server, /pull --rebase/, "the decided workflow is rebase (linear history, no merge commits for lay users)");
+assert.match(server, /STELOW_SYNC_EXIT/, "the pull step reports its own exit separately from the push");
+assert.match(server, /STELOW_SYNC_ABORTED/, "a conflicted pull aborts itself instead of stranding the checkout mid-rebase");
+assert.match(server, /REBASE_HEAD/, "conflict detection reads rebase state, not output text");
+assert.match(app, /Sync & push/, "a rejected push offers remediation where the failure is shown");
+assert.match(app, /Sync &amp; push again/, "failed shells carry their own retry that syncs first");
+assert.match(app, /STELOW_SYNC_ABORTED:1/, "an aborted sync names the manual exit instead of a dead end");
+assert.doesNotMatch(app, /pull first in BB’s sidebar terminal/, "push remediation never sends the user to hunt the sidebar");
+assert.match(app, /execCommand\("copy"\)/, "copy falls back to the legacy path when the Clipboard API is unavailable");
+assert.match(app, /select and copy by hand:/, "an uncopyable value still reaches the user inside the error");
 assert.match(server, /could not be sent/, "a swallowed terminal-input failure never reports success with an empty shell");
 assert.match(server, /publicationPushTerminals/, "push shells stay consultable after creation, never toast-only");
 assert.match(server, /terminals\.list/, "consulting push shells lists the card environment's terminals");

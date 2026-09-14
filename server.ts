@@ -437,6 +437,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
   },
+  publicationPullPush: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
+  },
   publicationPushTerminals: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), pushState: z.enum(["waiting", "running", "succeeded", "failed"]), pushExit: z.number().nullable(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
@@ -2138,6 +2142,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       .filter((session) => session.title.startsWith("Stelow push"))
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 5);
+  }
+
+  async function livePushShell(environmentId: string): Promise<PushShellSession | null> {
+    const previous = await pushShellSessions(environmentId);
+    for (const session of previous) {
+      const read = await readPushShell(session);
+      if (!read.unavailable && read.pushState === "running") return session;
+    }
+    return null;
+  }
+
+  async function retirePushShells(environmentId: string): Promise<void> {
+    const previous = await pushShellSessions(environmentId);
+    for (const session of previous) {
+      await bb.sdk.terminals.close({ terminalId: session.id, mode: "if-clean" }).catch(() => null);
+    }
+    for (const session of previous) {
+      const read = await readPushShell(session);
+      // Force only shells that finished (marker), never ran (waiting),
+      // or already ended — never a live run (blocked before this point).
+      if (read.unavailable || read.pushState !== "running") {
+        await bb.sdk.terminals.close({ terminalId: session.id, mode: "force" }).catch(() => null);
+      }
+    }
   }
 
   async function readPushShell(session: PushShellSession): Promise<{ text: string | null; unavailable: boolean; pushState: "waiting" | "running" | "succeeded" | "failed"; pushExit: number | null }> {
@@ -4286,24 +4314,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // Single-active strategy: one push shell per card at a time. A push
         // already in flight blocks a duplicate; retired predecessors are
         // closed so runs never accumulate into an unreadable list.
-        const previous = await pushShellSessions(prepared.environmentId);
-        for (const session of previous) {
-          const read = await readPushShell(session);
-          if (!read.unavailable && read.pushState === "running") {
-            return { ok: false, message: `A push is already running in shell ${session.id} — Check result instead of starting another.`, terminalId: session.id };
-          }
+        const live = await livePushShell(prepared.environmentId);
+        if (live) {
+          return { ok: false, message: `A push is already running in shell ${live.id} — Check result instead of starting another.`, terminalId: live.id };
         }
-        for (const session of previous) {
-          await bb.sdk.terminals.close({ terminalId: session.id, mode: "if-clean" }).catch(() => null);
-        }
-        for (const session of previous) {
-          const read = await readPushShell(session);
-          // Force only shells that finished (marker), never ran (waiting),
-          // or already ended — never a live run (blocked above).
-          if (read.unavailable || read.pushState !== "running") {
-            await bb.sdk.terminals.close({ terminalId: session.id, mode: "force" }).catch(() => null);
-          }
-        }
+        await retirePushShells(prepared.environmentId);
         const terminal = await bb.sdk.terminals.create({
           cols: 120,
           rows: 30,
@@ -4329,6 +4344,48 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { ok: true, message: `Push running in shell ${terminal.id} — watch Push shells below for the result.`, terminalId: terminal.id };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "BB could not open a push terminal.", terminalId: null as string | null };
+      }
+    },
+
+    async publicationPullPush({ cardId }) {
+      const prepared = await publicationEnvironment(cardId);
+      if ("error" in prepared) return { ok: false, message: prepared.error, terminalId: null as string | null };
+      const branch = prepared.snapshot.branch?.current;
+      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
+      try {
+        // The decided Git workflow for rejected pushes: pull with rebase
+        // (linear history, no merge commits for lay users), then push — one
+        // confirmed click. A conflicted pull aborts itself (REBASE_HEAD
+        // present): the checkout returns to its pre-pull state, nothing is
+        // lost, and the panel names the manual exit. BB exposes no pull
+        // action, so this runs shell-mediated like push, with sentinels for
+        // each step.
+        const live = await livePushShell(prepared.environmentId);
+        if (live) {
+          return { ok: false, message: `A push is already running in shell ${live.id} — Check result instead of starting another.`, terminalId: live.id };
+        }
+        await retirePushShells(prepared.environmentId);
+        const terminal = await bb.sdk.terminals.create({
+          cols: 120,
+          rows: 30,
+          scope: { kind: "environment", environmentId: prepared.environmentId },
+          start: { mode: "shell" },
+          title: `Stelow push — ${branch}`,
+        });
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const liveTerminal = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
+          if (liveTerminal?.status === "running") break;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        try {
+          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git pull --rebase; echo \"STELOW_SYNC_EXIT:$?\"; if git rev-parse --verify REBASE_HEAD >/dev/null 2>&1; then git rebase --abort; echo \"STELOW_SYNC_ABORTED:1\"; fi; git push; echo \"STELOW_PUSH_EXIT:$?\"\r").toString("base64") });
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? `Sync shell opened (${terminal.id}) but the command could not be sent: ${error.message}` : `Sync shell opened (${terminal.id}) but the command could not be sent.`, terminalId: terminal.id };
+        }
+        recordPublication(cardId, "push_terminal", `Ran pull --rebase + push in shell ${terminal.id} on ${branch}.`, null);
+        return { ok: true, message: `Sync & push running in shell ${terminal.id} — watch Push shells below for the result.`, terminalId: terminal.id };
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "BB could not open a sync shell.", terminalId: null as string | null };
       }
     },
 

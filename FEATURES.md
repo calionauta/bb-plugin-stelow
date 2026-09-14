@@ -50,6 +50,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   result re-checks any time. A swallowed send failure reports an error
   instead of a false success. Recorded in publication history like any
   other write.
+- **Sync & push** (`publicationPullPush`). Rejected pushes (usually: behind)
+  are the common lay-user case, so the failure carries its own one-click
+  remediation: `pull --rebase` then `push` in the card's checkout — linear
+  history, no merge commits. A conflicted pull aborts itself
+  (`STELOW_SYNC_ABORTED`), leaving the checkout unchanged, and the panel
+  names the manual exit. Offered on failed shells and whenever the branch
+  is behind.
 - **Local commit outcome and review** (`publicationCommitDiff`). Once BB saves
   a local commit, Done cards replace the disabled save control with a clear
   success state, current-HEAD indication, copyable SHA, and a read-only
