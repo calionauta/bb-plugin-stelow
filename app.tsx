@@ -5427,7 +5427,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       <Button size="sm" variant="outline" disabled={!publication.capabilities.squashMerge.available} title={publication.capabilities.squashMerge.reason ?? "Squash merge committed branch changes into the local base branch"} onClick={() => setPublicationAction("squash")}>Local squash merge…</Button>
                     </div>
                     {publishesToDefaultBranch ? (
-                      <p className="text-muted-foreground">This card is using the default checkout selected in BB. Committing publishes directly to <code>{publicationDefaultBranch}</code>; repository hooks and branch protection remain authoritative. Choose a feature branch or managed worktree in BB’s composer when you want a pull-request workflow.</p>
+                      <p className="text-muted-foreground">This card is using the default checkout selected in BB. Committing writes directly to <code>{publicationDefaultBranch}</code>; repository hooks, branch protection, and any configured push policy remain authoritative. Choose a feature branch or managed worktree in BB’s composer when you want a pull-request workflow.</p>
                     ) : (
                       <p className="text-muted-foreground">BB owns commit execution on the workspace host. Stelow never stages or runs Git commands locally.</p>
                     )}

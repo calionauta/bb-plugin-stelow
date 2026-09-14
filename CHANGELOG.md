@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.9.4] - 2026-09-14
+
+### Fixed
+
+- **Accurate default-branch wording.** Done-card confirmation now describes
+  exactly what BB's API guarantees: a host-side commit. It does not imply a
+  push where the repository's configured Git policy has not done one.
+
 ## [0.9.3] - 2026-09-14
 
 ### Fixed

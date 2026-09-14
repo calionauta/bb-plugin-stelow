@@ -30,6 +30,7 @@ assert.match(app, /title="Publish changes"/, "Done cards have a dedicated public
 assert.match(app, /Commit workspace…/, "commit requires an explicit user action");
 assert.match(app, /Commit directly to/, "a BB-selected default checkout requires an explicit direct-commit confirmation");
 assert.match(app, /default checkout selected in BB/, "the publication panel explains that BB's checkout choice is respected");
+assert.match(app, /configured push policy remain authoritative/, "the publication panel does not promise a push the BB commit API does not expose");
 assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(app, /publicationSubmitting/, "publication confirmations prevent duplicate write requests");
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
