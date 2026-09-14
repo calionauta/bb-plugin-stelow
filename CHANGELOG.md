@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.9.7] - 2026-09-14
+
+### Fixed
+
+- **Completion/watchdog consistency.** A completed Build card is now an
+  explicit watchdog stop condition. Its stored `audit` stage remains the
+  completion record, while Done-card copy and list rows describe it as
+  completed verification rather than active audit work.
+- **Verified Done invariant.** Dragging a Build card to Done and manually
+  advancing it to Audit can no longer bypass `bb stelow done`; only the
+  verified completion command records a Build card as complete.
+
 ## [0.9.6] - 2026-09-14
 
 ### Fixed
