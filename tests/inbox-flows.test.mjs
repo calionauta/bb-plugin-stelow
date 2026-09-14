@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge, COMPLETED_BADGE_DAYS } from "../lib/inbox-events.mjs";
+import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge } from "../lib/inbox-events.mjs";
 import { inboxFilterEntries } from "../lib/inbox-event-presentation.mjs";
 
 const db = new Database(":memory:");
@@ -98,31 +98,27 @@ db.prepare("DELETE FROM cards WHERE id = ?").run("card_3");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_1");
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events").get().count, 0, "deleting a card cascades to its Inbox history");
 
-// Badge rule: unresolved actions always count; completions count only
-// while unseen and fresh; archived never counts; seen is not resolved.
+// Badge rule: unresolved actions count whether or not the user has already
+// read them; completion is history and never inflates the action badge.
 const NOW = 1_000_000_000;
-const DAY = 86_400_000;
-const action = { kind: "question", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: NOW - 30 * DAY };
+const action = { kind: "question", archivedAt: null, resolvedAt: null, readAt: NOW, occurredAt: NOW - 30 * 86_400_000 };
 assert.equal(countsForInboxBadge(action, NOW), true, "unresolved action counts even when read and old");
 assert.equal(countsForInboxBadge({ ...action, resolvedAt: NOW }, NOW), false, "resolved action stops counting");
 assert.equal(countsForInboxBadge({ ...action, archivedAt: NOW }, NOW), false, "archived action stops counting");
-const freshDone = { kind: "completed", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: NOW - DAY };
-assert.equal(countsForInboxBadge(freshDone, NOW), true, "unseen recent completion counts");
-assert.equal(countsForInboxBadge({ ...freshDone, readAt: NOW }, NOW), false, "seen completion stops counting but stays listed");
-assert.equal(countsForInboxBadge({ ...freshDone, occurredAt: NOW - (COMPLETED_BADGE_DAYS + 1) * DAY }, NOW), false, "stale completion never inflates the badge");
-assert.equal(countsForInboxBadge({ ...freshDone, archivedAt: NOW }, NOW), false, "archived completion stops counting");
-assert.equal(countsForInboxBadge({ ...freshDone, occurredAt: NOW + DAY }, NOW), false, "future-dated completion does not count");
+const completedBadgeEvent = { kind: "completed", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: NOW };
+assert.equal(countsForInboxBadge(completedBadgeEvent, NOW), false, "a completion stays in history instead of inflating the action badge");
 
 // Inbox filters distinguish attention work from durable history. A resolved
 // question may have followed a human answer, so the filter is lifecycle-based,
 // not proof that automation answered it.
 const filteredEvents = [
-  { kind: "question", archivedAt: null, resolvedAt: null, readAt: null },
+  { kind: "question", archivedAt: null, resolvedAt: null, readAt: 1 },
   { kind: "error", archivedAt: null, resolvedAt: 1, readAt: 1 },
   { kind: "completed", archivedAt: null, resolvedAt: null, readAt: null },
   { kind: "paused", archivedAt: 1, resolvedAt: null, readAt: null },
 ];
-assert.equal(inboxFilterEntries(filteredEvents, "unread").length, 1, "Unread contains only unresolved, unread action work");
+assert.equal(inboxFilterEntries(filteredEvents, "attention").length, 1, "Needs attention contains unresolved work even after it has been read");
+assert.equal(inboxFilterEntries(filteredEvents, "attention").length, filteredEvents.filter((event) => countsForInboxBadge(event)).length, "the primary Inbox list and sidebar badge use the same action set");
 assert.equal(inboxFilterEntries(filteredEvents, "resolved").length, 1, "Resolved history contains no-longer-actionable work");
 assert.equal(inboxFilterEntries(filteredEvents, "archived").length, 1, "Archived filter retains archived events");
 assert.equal(inboxFilterEntries(filteredEvents, "all").length, 3, "All contains every non-archived update including completions");

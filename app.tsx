@@ -393,9 +393,8 @@ function useInboxAccessory(): SidebarAccessoryHandle {
   const reload = useCallback(async () => {
     try {
       const result = await rpc.call("listNotifications", { includeArchived: false });
-      // Badge = new things for you: unresolved actions plus unseen recent
-      // completions. Seen completions stay in Recent updates; resolved and
-      // archived items never count.
+      // Badge = live action needed. It deliberately matches the first Inbox
+      // filter, so a visible count never opens to an empty state.
       setCount(result.notifications.filter((entry) => countsForInboxBadge(entry)).length);
     } catch {
       /* host will show stale silently */
@@ -524,7 +523,7 @@ function InboxPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
-  const [filter, setFilter] = useState<"unread" | "resolved" | "archived" | "all">("unread");
+  const [filter, setFilter] = useState<"attention" | "resolved" | "archived" | "all">("attention");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Background refreshes must never flash loading UI (see BoardPanel).
@@ -570,7 +569,7 @@ function InboxPanel() {
     </section>
   );
   const filters: Array<{ id: typeof filter; label: string; description: string }> = [
-    { id: "unread", label: "Unread", description: "Work that needs your attention." },
+    { id: "attention", label: "Needs attention", description: "Work that needs your decision or recovery." },
     { id: "resolved", label: "Resolved automatically", description: "These needed you once, then cleared on their own — each says how (answered, resumed, completed…). History is kept here." },
     { id: "archived", label: "Archived", description: "Archived updates. Restore an item to return it to history." },
     { id: "all", label: "All", description: "All active Inbox updates, newest first." },
@@ -580,7 +579,7 @@ function InboxPanel() {
   // content with a quiet updating hint instead of flashing.
   const firstLoad = loading && notifications.length === 0;
   const fatalError = loadError && notifications.length === 0;
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} className={`cursor-pointer min-h-11 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{entry.label}</button>)}</div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{filter === "unread" ? "All clear" : `No ${selected.label.toLowerCase()} updates`}</h2><p className="mt-1 text-sm text-muted-foreground">{filter === "unread" ? "Stelow will surface work only when it needs you." : selected.description}</p></section>}</div></div>;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} className={`cursor-pointer min-h-11 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{entry.label}</button>)}</div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{filter === "attention" ? "All clear" : `No ${selected.label.toLowerCase()} updates`}</h2><p className="mt-1 text-sm text-muted-foreground">{filter === "attention" ? "Stelow will surface work only when it needs you." : selected.description}</p></section>}</div></div>;
 }
 
 function BoardPanel({ active }: { active: boolean }) {

@@ -137,8 +137,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
-- **Sidebar badge.** Unresolved actions plus unseen recent completions
-  (7-day window); per-tab active counts (About carries no count). All realtime.
+- **Sidebar badge.** Unresolved actions only; it always agrees with the
+  Inbox's primary **Needs attention** list. Per-tab active counts (About
+  carries no count). All realtime.
 - **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
   plugin — each with its own paragraph, repo link, and version side by
   side (`buildInfo` carries both; the upstream version syncs with the
@@ -154,15 +155,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 ## 3. Decide and unblock
 *When the agent needs me, I want to answer or approve fast.*
 
-- **Inbox** (`InboxPanel`, `listNotifications`). Needs-you
-  (question/error/paused), recent completions, an All-clear empty state,
+- **Inbox** (`InboxPanel`, `listNotifications`). **Needs attention**
+  (question/error/paused, whether already read), recent completions, an All-clear empty state,
   resolved history last, archived; per-item read/archive/restore;
   deep-links into card+event. The Resolved filter explains itself
   (needed-you-once, cleared on its own) and each row names HOW it cleared
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
   where observed; legacy rows keep the generic kind label).
-  The badge counts unresolved actions plus unseen recent completions
-  (7-day window); opening a completed card marks it seen, never resolved.
+  The badge counts the same unresolved actions shown by **Needs attention**;
+  completions remain available in All without presenting themselves as work.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

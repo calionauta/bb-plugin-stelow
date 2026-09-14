@@ -17,4 +17,4 @@ export function inboxEventPresentation(event: InboxEventPresentationInput): {
   stateLabel: "Resolved" | "Archived" | null;
 };
 export function isOpenInboxAction(event: InboxEventPresentationInput | null): boolean;
-export function inboxFilterEntries<T extends InboxFilterInput>(entries: T[], filter: "unread" | "resolved" | "archived" | "all"): T[];
+export function inboxFilterEntries<T extends InboxFilterInput>(entries: T[], filter: "attention" | "resolved" | "archived" | "all"): T[];
