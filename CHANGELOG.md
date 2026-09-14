@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.16.0] - 2026-09-14
+
+### Added
+
+- **Push in a visible terminal.** BB exposes no push action, so instead of
+  pushing silently the panel opens a terminal in the card's own worker
+  environment running `git push`, with the output watched live. The action
+  is confirmed first and recorded in publication history.
+
 ## [0.15.1] - 2026-09-14
 
 ### Fixed
