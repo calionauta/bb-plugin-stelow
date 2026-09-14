@@ -4918,6 +4918,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [publicationCommitSha, setPublicationCommitSha] = useState<string | null>(null);
   const [publicationCommitDiff, setPublicationCommitDiff] = useState<PublicationCommitDiff | null>(null);
   const [publicationCommitDiffLoading, setPublicationCommitDiffLoading] = useState(false);
+  // Commit file accordions start collapsed (remount per Expand/Collapse all
+  // via epoch so individual toggles keep working uncontrolled afterwards).
+  const [commitFilesExpanded, setCommitFilesExpanded] = useState(false);
+  const [commitFilesEpoch, setCommitFilesEpoch] = useState(0);
   const [mergeMethod, setMergeMethod] = useState<"merge" | "rebase" | "squash">("squash");
   const publicationDefaultBranch = publication?.branch?.default ?? null;
   const publishesToDefaultBranch = Boolean(publicationDefaultBranch && publication?.branch?.current === publicationDefaultBranch);
@@ -5120,6 +5124,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     setPublicationCommitSha(commitSha);
     setPublicationCommitDiff(null);
     setPublicationCommitDiffLoading(true);
+    setCommitFilesExpanded(false);
+    setCommitFilesEpoch((epoch) => epoch + 1);
     try {
       setPublicationCommitDiff(await rpc.call("publicationCommitDiff", { cardId, commitSha }));
     } catch (err) {
@@ -5130,11 +5136,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   }
 
   async function copyCommitSha(commitSha: string) {
+    await copyText(commitSha, "Commit SHA");
+  }
+
+  async function copyText(text: string, label: string) {
     try {
-      await navigator.clipboard.writeText(commitSha);
-      toast.success("Commit SHA copied.");
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied.`);
     } catch {
-      toast.error("Copy failed — select the SHA and copy it by hand.");
+      toast.error("Copy failed — select the text and copy it by hand.");
     }
   }
 
@@ -5389,7 +5399,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             </CardDisclosure>
             </div>
 
-            {card && (card.stage === "diff-gate" || card.stage === "audit") ? (
+            {/* Diff is the pre-completion review instrument (uncommitted work at
+                the gates). Once completed, Git changes owns history via the
+                commit viewer — showing both doubles the same story. */}
+            {card && card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit") ? (
             <CardDisclosure
               title="Diff"
               hint={diffData ? (diffData.isRepo ? `${diffData.files.length} files` : "not a git repository") : "working tree vs HEAD"}
@@ -5472,6 +5485,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                             <Button size="sm" variant="outline" onClick={() => void openPublicationCommit(savedSha)}>View commit</Button>
                             <Button size="sm" variant="outline" onClick={() => void copyCommitSha(savedSha)}>Copy SHA</Button>
                           </div>
+                          <details className="mt-2 rounded-md border border-emerald-500/20 p-2">
+                            <summary className="cursor-pointer font-medium text-emerald-950 dark:text-emerald-100">What remains to publish it</summary>
+                            <ol className="mt-1 list-decimal space-y-1 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
+                              <li>Push the branch from its checkout — Stelow cannot push from this panel (BB exposes no push action): <code>git push</code> <Button size="sm" variant="outline" onClick={() => void copyText("git push", "Push command")}>Copy</Button></li>
+                              <li>The running plugin follows release tags, not branches — pushing alone changes nothing there. Tag a release, then <code>bb plugin update stelow</code> and reload. <Button size="sm" variant="outline" onClick={() => void copyText("bb plugin update stelow", "Update command")}>Copy</Button></li>
+                            </ol>
+                          </details>
                         </div>
                       ) : (
                         <div className="flex flex-wrap gap-2">
@@ -5641,13 +5661,25 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           {publicationCommitDiff?.error ? <p className="text-xs text-destructive">{publicationCommitDiff.error}</p> : null}
           {publicationCommitDiff?.found ? (
             <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">{publicationCommitDiff.shortstat || `${publicationCommitDiff.files.length} changed files`}</p>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">{publicationCommitDiff.shortstat || `${publicationCommitDiff.files.length} changed files`}</p>
+                {publicationCommitDiff.files.length > 1 ? (
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => { setCommitFilesExpanded(true); setCommitFilesEpoch((epoch) => epoch + 1); }}>Expand all</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setCommitFilesExpanded(false); setCommitFilesEpoch((epoch) => epoch + 1); }}>Collapse all</Button>
+                  </div>
+                ) : null}
+              </div>
               {publicationCommitDiff.files.map((file) => (
-                <div key={file.path} className="space-y-1">
-                  <p className="text-[11px] font-semibold text-muted-foreground">{file.path} · {file.changeKind} · +{file.additions}/-{file.deletions}</p>
-                  {file.binary ? <p className="text-xs text-muted-foreground">Binary file — BB does not render its patch.</p> : file.patch ? DiffView ? <DiffView patch={file.patch} path={file.path} view="unified" /> : <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre> : file.loadMode === "too_large" ? <p className="text-xs text-muted-foreground">This file is too large for BB to render its patch.</p> : <p className="text-xs text-muted-foreground">BB did not return a patch for this file.</p>}
-                  {file.truncated ? <p className="text-xs text-muted-foreground">This file’s patch is truncated.</p> : null}
-                </div>
+                <details key={`${publicationCommitSha}-${commitFilesEpoch}-${file.path}`} open={commitFilesExpanded} className="rounded-md border">
+                  <summary className="cursor-pointer px-2 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                    {file.path} · {file.changeKind} · +{file.additions}/-{file.deletions}{file.binary ? " · binary" : file.patch ? "" : file.loadMode === "too_large" ? " · too large" : " · no patch"}
+                  </summary>
+                  <div className="space-y-1 border-t p-2">
+                    {file.binary ? <p className="text-xs text-muted-foreground">Binary file — BB does not render its patch.</p> : file.patch ? DiffView ? <DiffView patch={file.patch} path={file.path} view="unified" /> : <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre> : file.loadMode === "too_large" ? <p className="text-xs text-muted-foreground">This file is too large for BB to render its patch.</p> : <p className="text-xs text-muted-foreground">BB did not return a patch for this file.</p>}
+                    {file.truncated ? <p className="text-xs text-muted-foreground">This file’s patch is truncated.</p> : null}
+                  </div>
+                </details>
               ))}
               {publicationCommitDiff.truncated ? <p className="text-xs text-muted-foreground">The commit diff is truncated — some files may be missing.</p> : null}
             </div>

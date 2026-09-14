@@ -41,7 +41,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Local commit outcome and review** (`publicationCommitDiff`). Once BB saves
   a local commit, Done cards replace the disabled save control with a clear
   success state, current-HEAD indication, copyable SHA, and a read-only
-  native-BB commit diff. The viewer is restricted to commits recorded in that
+  native-BB commit diff. Files render as collapsed accordions with
+  expand/collapse all. The success state also discloses what remains —
+  push (with a copyable command; the panel cannot push), then tag plus
+  plugin update, since the running plugin follows tags, not branches.
+  The viewer is restricted to commits recorded in that
   card’s publication history, so it never becomes an arbitrary Git browser.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
@@ -180,8 +184,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   shape. Timeline badges deep-link into the producing stage's group with
   a highlight ring.
 - **Diff review** (`cardDiff`, host `experimental_Diff`). The working
-  tree vs HEAD, per file, inside the card — shown at the diff-gate and
-  audit stages only. Untracked files open in the viewer; non-repos and
+  tree vs HEAD, per file, inside the card — on active cards at the
+  diff-gate and audit stages only. Once completed, the panel yields to
+  Git changes (the commit viewer owns history) instead of doubling it.
+  Untracked files open in the viewer; non-repos and
   clean trees state so explicitly. Read-only: never stages, never
   mutates the index.
 - **Preview** (`PreviewSection`, `previewState`/`previewStart`/`previewStop`,
