@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.16.4] - 2026-09-14
+
+### Fixed
+
+- **One active push shell.** Each Push now created a shell, stacking into
+  an unreadable list. A push in flight now blocks duplicates ("already
+  running — Check result"); retired finished/waiting shells are closed on
+  the next run.
+- **Honest push header.** "Push shells" + ghost "Check result" read as one
+  phrase with an invisible button. Title and action are separated, Check
+  result is outlined, each shell carries Copy terminal ID, and the output
+  is labeled a snapshot (the embedded view is not interactive — the SDK
+  exposes no terminal reveal or embed).
+- **Ended shells stop lying.** Exited shells with gone scrollback reported
+  "Running"; they report Ended now.
+
 ## [0.16.3] - 2026-09-14
 
 ### Fixed
