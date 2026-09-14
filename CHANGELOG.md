@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.17.1] - 2026-09-14
+
+### Fixed
+
+- **No 404 links.** On GitHub shows only for branches proven to exist
+  remotely (finished push or existing PR) — a failed first push no longer
+  links nowhere. Ended shells admit "outcome unknown" instead of claiming
+  unpushed.
+
 ## [0.17.0] - 2026-09-14
 
 ### Added
