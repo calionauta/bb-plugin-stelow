@@ -439,7 +439,7 @@ export const rpcContract = defineRpcContract({
   },
   publicationPushTerminals: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), pushState: z.enum(["waiting", "running", "succeeded", "failed"]), pushExit: z.number().nullable(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
   },
   publicationPullRequestAction: {
     input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
@@ -4236,14 +4236,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const branch = prepared.snapshot.branch?.current;
       if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
       try {
-        // An interactive shell, not a fire-and-forget command: command-mode
-        // terminals exit in ~1s (invisible, no scrollback after exit), while a
-        // shell persists in BB's terminal panel under its title. git push is
-        // typed but NOT run — the user reviews it and presses Enter, so
-        // rejections (stale branch, auth) happen in the open, never silently.
-        // BB does NOT auto-reveal the new shell: the panel lists it under
-        // Push shells (publicationPushTerminals) with live output, so the
-        // user never has to hunt the sidebar scope filter blind.
+        // BB never auto-reveals a new shell, so "open a terminal" was a
+        // promise the panel could not keep — and typed-but-unsent input left
+        // users unsure whether anything ran. Instead the confirmed action
+        // RUNS git push in the card's own environment (correct host and
+        // checkout by construction) and streams the result into Push shells
+        // below via publicationPushTerminals. The exit marker makes
+        // completion explicit: no marker yet means still running or waiting
+        // on interactive auth (finish it in BB's terminal panel).
         const terminal = await bb.sdk.terminals.create({
           cols: 120,
           rows: 30,
@@ -4257,15 +4257,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
         // A swallowed input failure used to report success with an empty
-        // shell (the exact "toast said opened but nothing typed" report).
-        // Fail loudly instead: no history entry, no success toast.
+        // shell. Fail loudly instead: no history entry, no success toast.
+        // \r submits the line (verified against the terminal daemon); the
+        // marker reports the push exit so the panel can name the outcome.
         try {
-          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git push").toString("base64") });
+          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git push; echo \"STELOW_PUSH_EXIT:$?\"\r").toString("base64") });
         } catch (error) {
-          return { ok: false, message: error instanceof Error ? `Push shell opened (${terminal.id}) but git push could not be typed: ${error.message}` : `Push shell opened (${terminal.id}) but git push could not be typed.`, terminalId: terminal.id };
+          return { ok: false, message: error instanceof Error ? `Push shell opened (${terminal.id}) but git push could not be sent: ${error.message}` : `Push shell opened (${terminal.id}) but git push could not be sent.`, terminalId: terminal.id };
         }
-        recordPublication(cardId, "push_terminal", `Opened push shell ${terminal.id} on ${branch} with git push typed and ready.`, null);
-        return { ok: true, message: `Push shell opened (${terminal.id}) — see Push shells below for live output, then press Enter in that shell to run git push.`, terminalId: terminal.id };
+        recordPublication(cardId, "push_terminal", `Ran git push in shell ${terminal.id} on ${branch}.`, null);
+        return { ok: true, message: `Push running in shell ${terminal.id} — watch Push shells below for the result.`, terminalId: terminal.id };
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "BB could not open a push terminal.", terminalId: null as string | null };
       }
@@ -4293,9 +4294,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               // eslint-disable-next-line no-control-regex
               .replace(/\u001b\][^\u0007]*\u0007/g, "")
               .slice(-4000);
-            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, outputTail: text || null, outputUnavailable: false };
+            // The exit marker names the outcome. Legacy shells (typed but
+            // never submitted) carry no marker and end with the bare command.
+            const marker = text.match(/STELOW_PUSH_EXIT:(\d+)/);
+            const pushExit = marker ? Number.parseInt(marker[1] ?? "", 10) : null;
+            const pushState = marker
+              ? (pushExit === 0 ? "succeeded" as const : "failed" as const)
+              : /git push\s*$/.test(text) ? "waiting" as const : "running" as const;
+            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState, pushExit: Number.isNaN(pushExit) ? null : pushExit, outputTail: text || null, outputUnavailable: false };
           } catch {
-            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, outputTail: null, outputUnavailable: true };
+            return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState: "running" as const, pushExit: null, outputTail: null, outputUnavailable: true };
           }
         }));
         return { ok: true, error: null, terminals };
