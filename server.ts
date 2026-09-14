@@ -32,6 +32,7 @@ import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
+import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
@@ -443,7 +444,7 @@ export const rpcContract = defineRpcContract({
   },
   publicationPushTerminals: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), pushState: z.enum(["waiting", "running", "succeeded", "failed"]), pushExit: z.number().nullable(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), remote: z.object({ owner: z.string(), repo: z.string(), webUrl: z.string() }).nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), pushState: z.enum(["waiting", "running", "succeeded", "failed"]), pushExit: z.number().nullable(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
   },
   publicationPullRequestAction: {
     input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
@@ -4396,16 +4397,23 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async publicationPushTerminals({ cardId }) {
       const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, error: prepared.error, terminals: [] };
+      if ("error" in prepared) return { ok: false, error: prepared.error, remote: null, terminals: [] };
       try {
         const pushSessions = await pushShellSessions(prepared.environmentId);
         const terminals = await Promise.all(pushSessions.map(async (session) => {
           const read = await readPushShell(session);
           return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState: read.pushState, pushExit: read.pushExit, outputTail: read.text, outputUnavailable: read.unavailable };
         }));
-        return { ok: true, error: null, terminals };
+        // The remote lives in git's own `To <url>` line: newest shell first,
+        // first parseable wins. Absent until a push actually ran — links wait.
+        let remote: { owner: string; repo: string; webUrl: string } | null = null;
+        for (const terminal of terminals) {
+          remote = parsePushRemoteUrl(terminal.outputTail);
+          if (remote) break;
+        }
+        return { ok: true, error: null, remote, terminals };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : "BB could not list push shells.", terminals: [] };
+        return { ok: false, error: error instanceof Error ? error.message : "BB could not list push shells.", remote: null, terminals: [] };
       }
     },
 

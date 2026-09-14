@@ -51,7 +51,7 @@ assert.match(app, /Push shells/, "the panel tracks push shells with live output 
 assert.match(app, /Copy terminal ID/, "each push shell names its real BB terminal for sidebar lookup");
 assert.match(app, /Snapshot — refresh with Check result/, "the embedded output admits it is a snapshot, not an interactive terminal");
 assert.match(app, /○ Ended — output unavailable/, "an exited shell with no scrollback never reports Running");
-assert.match(app, /use Push now above/, "empty push state points at the current action name");
+assert.match(app, /No push shell opened yet\./, "empty push state stays quiet when the action sits right above it");
 assert.match(server, /already running in shell/, "a second push while one is in flight is refused instead of duplicating shells");
 assert.match(server, /pushShellSessions/, "one push shell per card: predecessors are found before creating");
 assert.match(server, /mode: "force"/, "retired finished/waiting shells are closed so runs never accumulate");
@@ -83,12 +83,20 @@ assert.match(app, /publicationSubmitting/, "publication confirmations prevent du
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
 assert.match(app, /Publication history/, "the user can audit prior publication actions");
 assert.match(app, /commitFilesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
-assert.match(app, /What remains to publish it/, "a saved commit names its pending push/tag/update steps instead of implying arrival");
+assert.match(app, /Next: publish the branch\./, "a saved commit names its pending step as structure, not buried prose");
+assert.doesNotMatch(app, /What remains to publish it/, "publish steps live as sections with action rows, never as buttons inside prose");
+assert.doesNotMatch(app, /Push the branch — this panel runs/, "no call-to-action hides inside a paragraph anymore");
 assert.match(app, /card\.status !== "completed" && \(card\.stage === "diff-gate"/, "the Diff review panel yields to Git changes once the card is completed");
 assert.match(app, /card\.status === "completed" && publication\?\.workingTree\?\.hasUncommittedChanges/, "pending changes on a Done card stay reviewable in Diff while the commit action lives in Git changes");
 assert.match(app, /Copy command/, "post-commit commands name what they copy instead of a bare Copy");
 assert.match(app, /Saved locally on/, "a successful local save has an explicit outcome state");
 assert.match(app, /View commit/, "recorded local commits can be inspected from Done");
-assert.match(app, /This commit has not been pushed or merged remotely/, "local save does not imply remote publication");
+assert.match(server, /parsePushRemoteUrl/, "the remote comes from git's own To line, never an assumed host");
+assert.match(app, /branchWebLinks/, "branch links are built from the parsed remote, not hardcoded");
+assert.match(app, /On GitHub/, "a pushed branch links out to the remote it landed on");
+assert.match(app, /View branch ↗/, "the branch is one click away after pushing");
+assert.match(app, /Open pull request ↗/, "the next step after pushing is a link, not a paragraph");
+assert.match(app, /not pushed yet\./, "a saved commit states its remote truth instead of implying arrival");
+assert.match(app, /pushed to origin\./, "a finished push reads as published in the outcome line");
 
 console.log("publication wiring test ok: BB owns writes, Done stays separate, actions are explicit and auditable");

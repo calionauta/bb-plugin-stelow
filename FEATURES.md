@@ -50,6 +50,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   result re-checks any time. A swallowed send failure reports an error
   instead of a false success. Recorded in publication history like any
   other write.
+- **Git changes layout.** Saved → Publish → On GitHub sections: one-line
+  status each, buttons in their own rows (never inside prose). The outcome
+  line states the remote truth ("not pushed yet" / "pushed to origin").
+- **On GitHub links** (`lib/remote-url`). The remote is parsed from git's
+  own `To <url>` push line (the SDK exposes none): View branch always,
+  Open pull request (compare) when the base differs. GitHub-only; other
+  hosts show no links rather than wrong ones.
 - **Sync & push** (`publicationPullPush`). Rejected pushes (usually: behind)
   are the common lay-user case, so the failure carries its own one-click
   remediation: `pull --rebase` then `push` in the card's checkout — linear

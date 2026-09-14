@@ -28,6 +28,7 @@ import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRO
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
+import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
@@ -5024,7 +5025,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     try {
       setPushTerminals(await rpc.call("publicationPushTerminals", { cardId }));
     } catch (err) {
-      setPushTerminals({ ok: false, error: err instanceof Error ? err.message : "Unable to list push shells.", terminals: [] });
+      setPushTerminals({ ok: false, error: err instanceof Error ? err.message : "Unable to list push shells.", remote: null, terminals: [] });
     } finally {
       setPushTerminalsLoading(false);
     }
@@ -5566,21 +5567,42 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       const savedCommit = publication.events.find((event) => event.action === "commit" && event.commitSha);
                       const savedSha = savedCommit?.commitSha ?? null;
                       const isCurrentHead = Boolean(savedSha && publication.branch?.headSha === savedSha);
-                      return savedSha && !publication.workingTree?.hasUncommittedChanges ? (
-                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-950 dark:text-emerald-100">
-                          <p className="font-medium">✓ Saved locally on <code>{publication.branch?.current ?? "this branch"}</code></p>
-                          <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80"><code>{savedSha.slice(0, 7)}</code> · working tree clean{isCurrentHead ? " · current local HEAD" : " · followed by a newer local commit"}. This commit has not been pushed or merged remotely.</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            <Button size="sm" variant="outline" onClick={() => void openPublicationCommit(savedSha)}>View commit</Button>
-                            <Button size="sm" variant="outline" onClick={() => void copyCommitSha(savedSha)}>Copy SHA</Button>
+                      if (!savedSha || publication.workingTree?.hasUncommittedChanges) {
+                        const files = publication.workingTree?.files ?? 0;
+                        return (
+                          <div>
+                            <p className="text-emerald-900/80 dark:text-emerald-100/80">{!savedSha && !publication.workingTree?.hasUncommittedChanges ? "Nothing saved yet." : !savedSha ? `${files} uncommitted changes on ${publication.branch?.current ?? "this branch"} — save them first.` : `${files} new changes since ${savedSha.slice(0, 7)}.`}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>{publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}…` : "Commit workspace…"}</Button>
+                            </div>
                           </div>
-                          <details className="mt-2 rounded-md border border-emerald-500/20 p-2">
-                            <summary className="cursor-pointer font-medium text-emerald-950 dark:text-emerald-100">What remains to publish it</summary>
-                            <ol className="mt-1 list-decimal space-y-1.5 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
-                              <li>Push the branch — this panel runs <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> in this card’s worker checkout and streams the result into Push shells below. {(publication?.mergeBase?.behind ?? 0) > 0 ? <><Button size="sm" variant="outline" onClick={() => setPublicationAction("sync")}>Sync &amp; push…</Button> <span>pulls with rebase, then pushes — one click.</span></> : <Button size="sm" variant="outline" onClick={() => setPublicationAction("push")}>Push now…</Button>} <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
-                              <li>Then open a pull request through your Git provider or BB’s native flow — this panel’s PR actions (ready, merge) work on the existing PR.</li>
-                            </ol>
-                          </details>
+                        );
+                      }
+                      const latestPush = pushTerminals?.terminals[0] ?? null;
+                      const pushed = latestPush?.pushState === "succeeded" && !latestPush.outputUnavailable;
+                      const behind = publication.mergeBase?.behind ?? 0;
+                      const branch = publication.branch?.current ?? "this branch";
+                      const links = branchWebLinks(pushTerminals?.remote ?? null, publication.branch?.current ?? null, publication.mergeBase?.branch ?? publication.branch?.default ?? null);
+                      return (
+                        <div className="space-y-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-950 dark:text-emerald-100">
+                          <div>
+                            <p className="font-medium">✓ Saved locally on <code>{branch}</code></p>
+                            <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80"><code>{savedSha.slice(0, 7)}</code> · working tree clean{isCurrentHead ? " · current local HEAD" : " · followed by a newer local commit"} · {pushed ? "pushed to origin." : "not pushed yet."}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Button size="sm" variant="outline" onClick={() => void openPublicationCommit(savedSha)}>View commit</Button>
+                              <Button size="sm" variant="outline" onClick={() => void copyCommitSha(savedSha)}>Copy SHA</Button>
+                            </div>
+                          </div>
+                          <div className="border-t border-emerald-500/20 pt-3">
+                            <p className="font-medium">{pushed ? "✓ Published" : behind > 0 ? `Behind by ${behind} — sync first.` : "Next: publish the branch."}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {behind > 0 ? (
+                                <Button size="sm" variant="outline" title="Pull with rebase, then push — one click" onClick={() => setPublicationAction("sync")}>Sync &amp; push…</Button>
+                              ) : pushed ? null : (
+                                <Button size="sm" variant="outline" title="Run git push in this card's checkout" onClick={() => setPublicationAction("push")}>Push now…</Button>
+                              )}
+                              <Button size="sm" variant="ghost" title="Copy the push command to run it yourself" onClick={() => void copyText("git push", "Push command")}>Copy command</Button>
+                            </div>
                           <div className="mt-2 rounded-md border border-emerald-500/20 p-2">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <p className="text-xs font-semibold uppercase tracking-wider text-emerald-900/70 dark:text-emerald-100/70">Push shells</p>
@@ -5588,7 +5610,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                             </div>
                             {pushTerminalsLoading ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">Checking push shells…</p> : null}
                             {!pushTerminalsLoading && pushTerminals && !pushTerminals.ok ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">{pushTerminals.error ?? "Unable to list push shells."}</p> : null}
-                            {!pushTerminalsLoading && pushTerminals?.ok && pushTerminals.terminals.length === 0 ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">No push shell opened yet — use Push now above.</p> : null}
+                            {!pushTerminalsLoading && pushTerminals?.ok && pushTerminals.terminals.length === 0 ? <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">No push shell opened yet.</p> : null}
                             {!pushTerminalsLoading && pushTerminals?.ok ? pushTerminals.terminals.map((terminal) => (
                               <div key={terminal.id} className="mt-2 rounded border border-emerald-500/20 bg-background/60 p-2 text-foreground">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -5609,11 +5631,17 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                               </div>
                             )) : null}
                           </div>
+                          {links ? (
+                            <div className="border-t border-emerald-500/20 pt-3">
+                              <p className="font-medium">On GitHub</p>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Button size="sm" variant="outline" asChild><a href={links.treeUrl} target="_blank" rel="noreferrer" title={`Open ${branch} on GitHub`}>View branch ↗</a></Button>
+                                {links.compareUrl ? <Button size="sm" variant="outline" asChild><a href={links.compareUrl} target="_blank" rel="noreferrer" title="Open a pull request for this branch on GitHub">Open pull request ↗</a></Button> : null}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>{publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}…` : "Commit workspace…"}</Button>
-                        </div>
+                      </div>
                       );
                     })()}
                     {publishesToDefaultBranch ? (
@@ -5759,7 +5787,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               {publicationAction === "squash" ? <p>BB will combine this branch’s committed changes into one local commit on its base branch. It will not fetch remote updates, push, or create a pull request. It bypasses pull-request review, so use it only when direct local integration is intended.</p> : null}
               {publicationAction === "push" ? <p>This panel will run <code>git push</code> in this card’s worker checkout and stream the output into Push shells below — nothing hides in a sidebar you have to hunt. Rejections and auth prompts appear there; an auth prompt is finished in BB’s sidebar terminal.</p> : null}
               {publicationAction === "sync" ? <p>This panel will run <code>git pull --rebase</code> followed by <code>git push</code> in this card’s worker checkout — one click, linear history, no merge commits. If the pull conflicts, the rebase aborts itself and nothing changes; resolve the conflict where you edit code and push again. The output streams into Push shells below.</p> : null}
-              {publicationAction === "push" && (publication?.mergeBase?.behind ?? 0) > 0 ? <p>This branch is {publication?.mergeBase?.behind} behind — a push will be rejected until you pull first. Do that in the same shell before running the typed command.</p> : null}
+              {publicationAction === "push" && (publication?.mergeBase?.behind ?? 0) > 0 ? <p>This branch is {publication?.mergeBase?.behind} behind — a push will be rejected. Cancel and use Sync &amp; push instead: it pulls with rebase, then pushes.</p> : null}
               {publicationAction === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}
               {publicationAction === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}
               {publicationAction === "merge" ? <p>BB will re-check the PR and request a {mergeMethod} merge. Repository rules, approvals, checks, and merge queues remain authoritative.</p> : null}
