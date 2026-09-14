@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.5] - 2026-09-14
+
+### Changed
+
+- **Split consequences now respond to the selection.** The card tells you
+  before submission whether it will retain the remainder or archive after all
+  deliveries become child cards.
+- **Inbox adds a secondary Unread only view.** It works within each lifecycle
+  tab while the primary attention badge continues to count unresolved work,
+  whether read or not.
+
 ## [0.18.4] - 2026-09-14
 
 ### Fixed
