@@ -8,6 +8,27 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.6] - 2026-09-14
+
+### Fixed
+
+- **Recovered questions are now clear, calm, and language-consistent.** The
+  card no longer leaks the technical “Timed-out question” label or repeats it.
+  It explains that the original interactive prompt was interrupted, that there
+  is no response deadline, and that answering resumes work. Question controls,
+  recovery copy, and split outcomes follow the language of the question.
+- **Split prompts no longer contradict or repeat themselves.** Legacy
+  Portuguese wording is repaired on display, the separate “keep” choice is
+  translated without changing its stored answer identity, and the outcome is
+  stated once beside the choices.
+
+### Changed
+
+- **Question kinds are explicit.** `standard` and `split` now travel through
+  live interactions and durable recovery instead of inferring split behavior
+  from the visible “Keep as one card” label. Existing recovered questions keep
+  the safe legacy fallback.
+
 ## [0.18.5] - 2026-09-14
 
 ### Changed
