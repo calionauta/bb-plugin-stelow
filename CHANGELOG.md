@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-09-14
+
+### Fixed
+
+- **One attention need, one Inbox count.** A visible structured question now
+  supersedes generic paused notices on the same card. The Inbox and its badge
+  show the actionable question rather than duplicate signals for one task.
+- **Split question choices no longer contradict each other.** “Keep as one
+  card” is a visually separated, exclusive alternative to selecting delivery
+  cards; consequence copy is concise and not repeated for every option.
+
 ## [0.18.2] - 2026-09-14
 
 ### Fixed
