@@ -8,10 +8,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I have an idea, problem, or issue, I want it tracked as a card.*
 
 - **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
-  attachments, intent, planning depth, review checkpoints, agent preset from
-  the analysis band. BB's own Project, Environment, and branch controls are
-  authoritative: Stelow forwards the chosen checkout unchanged and keeps later
-  workers in it. Spawns a hidden worker thread starting at triage.
+  attachments, intent, planning depth, your review gates, agent preset from
+  the analysis band. Settings opens by default with every option visible as
+  radio cards (real inputs, min-h-11 targets) — no hidden select. "Pause
+  for my review" names the human explicitly so it never reads as the
+  board's automatic Review column. BB's own Project, Environment, and
+  branch controls are authoritative: Stelow forwards the chosen checkout
+  unchanged and keeps later workers in it. Spawns a hidden worker thread
+  starting at triage.
   The creation modal stays a real modal on phones (full-viewport with an
   explicit close, `fullscreenOnMobile`) instead of collapsing into a
   bottom sheet.
@@ -119,14 +123,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **First-visit setup, not tours.** No stepper onboarding: Build, Research,
   and Explore each open a setup dialog once (localStorage) about agent
   presets — what they decide, band defaults, per-card pins. Build adds a
-  second step for Planning depth + Review checkpoints as board defaults.
+  second step for Planning depth + your review gates as board defaults.
   Preset setup counts across tracks: configuring on one tab silences the
   others (Build still opens into its defaults step). Opening Agent
   Presets never dismisses the setup dialog underneath.
   Each track owns its preset band (build phases, research, explore),
   so changing one default never leaks into another. Manage agent
   presets groups bands by track (Research, Explore, Build) instead of a
-  flat phase list. Planning depth + Review checkpoints stay where they
+  flat phase list. Planning depth + your review gates stay where they
   belong (per card in New issue → Settings, mirrored in the Build setup
   step). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
@@ -153,7 +157,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Inbox** (`InboxPanel`, `listNotifications`). Needs-you
   (question/error/paused), recent completions, an All-clear empty state,
   resolved history last, archived; per-item read/archive/restore;
-  deep-links into card+event.
+  deep-links into card+event. The Resolved filter explains itself
+  (needed-you-once, cleared on its own) and each row names HOW it cleared
+  (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
+  where observed; legacy rows keep the generic kind label).
   The badge counts unresolved actions plus unseen recent completions
   (7-day window); opening a completed card marks it seen, never resolved.
 - **Structured questions** (`ask`, `answerQuestions`,
@@ -335,7 +342,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Per-card override** (`assignPreset`). Pinned preset for one card;
   takes effect on (re)start, with a stale-worker warning until then.
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
-  review checkpoints remembered across cards.
+  your review gates remembered across cards.
+- **One disclosure affordance** (`DisclosureChevron`). Every collapsible
+  shares one chevron (right when closed, rotates down when open); native
+  details/summary keeps the accessible state, the chevron mirrors it
+  visually.
 
 ## 7. Command and embed
 *When I am an agent, CLI, or another surface, I want the same power.*

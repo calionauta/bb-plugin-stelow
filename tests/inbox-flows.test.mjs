@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge, COMPLETED_BADGE_DAYS } from "../lib/inbox-events.mjs";
+import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge, COMPLETED_BADGE_DAYS } from "../lib/inbox-events.mjs";
 import { inboxFilterEntries } from "../lib/inbox-event-presentation.mjs";
 
 const db = new Database(":memory:");
@@ -14,6 +14,7 @@ db.exec(`
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );
 `);
+ensureInboxResolvedReasonColumn(db);
 db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_1", "Launch Inbox", "launch-inbox", "project_1", "build");
 
 const paused = { id: "evt_paused", cardId: "card_1", kind: "paused", summary: "Paused.", dedupeKey: "paused:card_1:100", occurredAt: 100 };
@@ -24,6 +25,7 @@ assert.equal(listInboxEvents(db, false).length, 1, "unresolved action is visible
 assert.equal(resolveActionInboxEvents(db, "card_1", 200), 1, "resuming work resolves the pending action");
 assert.equal(listInboxEvents(db, false).length, 1, "resolved action stays queryable for the Resolved history");
 assert.equal(listInboxEvents(db, false)[0].resolved_at, 200, "resolution timestamp is durable");
+assert.equal(listInboxEvents(db, false)[0].resolved_reason, null, "a reason-less resolution stays reason-less for legacy rows");
 
 const completed = { id: "evt_completed", cardId: "card_1", kind: "completed", summary: "Completed.", dedupeKey: "completed:card_1:300", occurredAt: 300 };
 assert.equal(insertInboxEvent(db, completed), true);
@@ -49,6 +51,15 @@ assert.equal(card2rows.find((row) => row.id === "evt_q").resolved_at, null, "que
 assert.equal(resolveActionInboxEvents(db, "card_2", 601, ["question"]), 1, "answering resolves the question");
 assert.equal(resolveActionInboxEvents(db, "card_2", 602, ["bogus"]), 0, "unknown kinds resolve nothing");
 assert.equal(resolveActionInboxEvents(db, "card_2", 603, []), 0, "empty kind list resolves nothing");
+// Resolution reasons travel with the timestamp: resume names resumed,
+// completion names completed, archive names archived.
+assert.equal(resolveActionInboxEvents(db, "card_2", 604, ["error", "paused"], "resumed"), 0, "already-resolved rows are untouched by a second pass");
+db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_2b", "Reasons", "reasons", "project_1", "build");
+insertInboxEvent(db, { id: "evt_r", cardId: "card_2b", kind: "paused", summary: "P.", dedupeKey: "paused:card_2b:1", occurredAt: 1 });
+assert.equal(resolveActionInboxEvents(db, "card_2b", 2, ["paused"], "resumed"), 1, "resume records its reason");
+assert.equal(db.prepare("SELECT resolved_reason FROM inbox_events WHERE id = ?").get("evt_r").resolved_reason, "resumed", "the Resolved filter can name how it cleared");
+assert.equal(resolveActionInboxEvents(db, "card_2b", 3, ["paused"], "completed"), 0, "a later reason never overwrites the first");
+assert.equal(resolveActionInboxEvents(db, "card_2b", 3, ["paused"], "bogus-reason"), 0, "unknown reasons resolve nothing new and overwrite nothing");
 
 // A question's interaction id is stable across polls. Timestamp-derived keys
 // would have created a duplicate notification every time a worker briefly
@@ -70,8 +81,19 @@ syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_2"], occur
 assert.equal(db.prepare("SELECT resolved_at FROM inbox_events WHERE id = ?").get("evt_ask_2").resolved_at, null, "a still-pending interaction reopens its resolved notification");
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: [], occurredAt: 900, createId: () => "unused", summary: questionSummary });
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_at IS NULL").get("card_3").count, 0, "no pending interaction resolves all question notifications");
+// An answered question keeps its reason even though disappearance alone
+// would have called it superseded: mark first, sync second.
+db.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_4", "Answered", "answered", "project_1", "build");
+syncQuestionInboxEvents(db, { cardId: "card_4", interactionIds: ["ask_9"], occurredAt: 1000, createId: () => "evt_ask_9", summary: questionSummary });
+assert.equal(markQuestionsAnswered(db, { cardId: "card_4", interactionIds: ["ask_9"], occurredAt: 1010 }), 1, "answering marks the open question");
+syncQuestionInboxEvents(db, { cardId: "card_4", interactionIds: [], occurredAt: 1020, createId: () => "unused", summary: questionSummary });
+assert.equal(db.prepare("SELECT resolved_reason FROM inbox_events WHERE id = ?").get("evt_ask_9").resolved_reason, "answered", "the sync never relabels an answer as superseded");
+assert.equal(db.prepare("SELECT resolved_reason FROM inbox_events WHERE id = ?").get("evt_ask_1").resolved_reason, "superseded", "a withdrawn question reads as superseded");
+assert.equal(markQuestionsAnswered(db, { cardId: "card_4", interactionIds: [], occurredAt: 1030 }), 0, "empty answer batch marks nothing");
+db.prepare("DELETE FROM cards WHERE id = ?").run("card_4");
 
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_2");
+db.prepare("DELETE FROM cards WHERE id = ?").run("card_2b");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_3");
 db.prepare("DELETE FROM cards WHERE id = ?").run("card_1");
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events").get().count, 0, "deleting a card cascades to its Inbox history");
@@ -112,5 +134,9 @@ olderDb.exec("CREATE TABLE inbox_events (id TEXT PRIMARY KEY, card_id TEXT NOT N
 const olderColumns = olderDb.prepare("PRAGMA table_info(inbox_events)").all();
 if (!olderColumns.some((column) => column.name === "resolved_at")) olderDb.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
 assert.ok(olderDb.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "resolved_at"), "an Inbox database without the column gains it safely");
+ensureInboxResolvedReasonColumn(olderDb);
+assert.ok(olderDb.prepare("PRAGMA table_info(inbox_events)").all().some((column) => column.name === "resolved_reason"), "a pre-reason database gains the reason column without losing rows");
+ensureInboxResolvedReasonColumn(olderDb);
+assert.ok(olderDb.prepare("PRAGMA table_info(inbox_events)").all().filter((column) => column.name === "resolved_reason").length === 1, "the migration is idempotent");
 olderDb.close();
 console.log("inbox flows test ok: dedupe, resolve, completion, archive, and history visibility");

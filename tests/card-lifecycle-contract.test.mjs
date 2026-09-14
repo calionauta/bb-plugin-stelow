@@ -167,4 +167,16 @@ assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked
 assert.match(boardCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "build board cards never offer Retry on terminal cards");
 assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "research/explore cards never offer Retry on terminal cards");
 
+// Creation settings are visible by default and human-readable: radio cards
+// (not a cramped select), human review named as human, one shared chevron.
+assert.match(app, /const \[createOptionsOpen, setCreateOptionsOpen\] = useState\(true\)/, "new-card Settings opens by default");
+assert.match(app, /function ChoiceCards</, "planning and review options render as visible radio cards");
+assert.match(app, /label="Pause for my review"/, "human review gates never read as the automatic Review column");
+assert.match(app, /agent's own automatic check/, "the review picker disambiguates itself from the board's Review column");
+assert.match(app, /function DisclosureChevron/, "every collapsible shares one open/close affordance");
+assert.match(app, /group-open:rotate-90/, "the chevron mirrors open state instead of decorating");
+assert.doesNotMatch(app, /function WorkflowChoiceSelect</, "the cramped select is gone, not duplicated");
+assert.match(app, /These needed you once, then cleared on their own/, "the Resolved filter explains why it exists");
+assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how it cleared");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

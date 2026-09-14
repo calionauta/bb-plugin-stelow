@@ -2,6 +2,7 @@ export type InboxEventPresentationInput = {
   kind: "question" | "error" | "paused" | "completed";
   occurredAt: number;
   resolvedAt: number | null;
+  resolvedReason?: "answered" | "superseded" | "resumed" | "completed" | "archived" | null;
   archivedAt: number | null;
 };
 

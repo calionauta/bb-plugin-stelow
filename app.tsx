@@ -561,7 +561,7 @@ function InboxPanel() {
           return <div key={entry.id} className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
             <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
               <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${presentation.tone ?? copy.tone}`}>{copy.icon}</span>
-              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(inboxEventPresentation(entry).stateAt).toLocaleString()}>{entry.projectName} · {inboxEventTime(entry)}</span></span>
+              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{presentation.stateLabel ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{presentation.label}</span> : null}{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(inboxEventPresentation(entry).stateAt).toLocaleString()}>{entry.projectName} · {inboxEventTime(entry)}</span></span>
             </button>
             <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
           </div>;
@@ -571,7 +571,7 @@ function InboxPanel() {
   );
   const filters: Array<{ id: typeof filter; label: string; description: string }> = [
     { id: "unread", label: "Unread", description: "Work that needs your attention." },
-    { id: "resolved", label: "Resolved automatically", description: "No longer needs attention. History is kept here." },
+    { id: "resolved", label: "Resolved automatically", description: "These needed you once, then cleared on their own — each says how (answered, resumed, completed…). History is kept here." },
     { id: "archived", label: "Archived", description: "Archived updates. Restore an item to return it to history." },
     { id: "all", label: "All", description: "All active Inbox updates, newest first." },
   ];
@@ -609,7 +609,7 @@ function BoardPanel({ active }: { active: boolean }) {
   // it; refreshes update state silently.
   const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
-  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
+  const [createOptionsOpen, setCreateOptionsOpen] = useState(true);
   const [prompt, setPrompt] = useState("");
   const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
   const [appetite, setAppetite] = useState<Appetite>("Lean");
@@ -806,16 +806,16 @@ function BoardPanel({ active }: { active: boolean }) {
           <PresetOnboardingDialog
             storageKey={STORAGE_KEYS.onboardBuild}
             title="Choose your agent presets"
-            intro="Set the preset each phase runs with. Planning depth and review checkpoints are a separate choice — picked per card in New issue → Settings."
+            intro="Set the preset each phase runs with. Planning depth and your review gates are a separate choice — picked per card in New issue → Settings."
             onOpenPresets={() => setBoardPresetsOpen(true)}
             active={active}
             secondTitle="Defaults for new cards"
             secondBody={(
               <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
-                <p>Planning depth and review checkpoints are chosen per card and remembered as the board defaults. Set them once here.</p>
+                <p>Planning depth and your review gates are chosen per card and remembered as the board defaults. Set them once here.</p>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
-                  <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+                  <ChoiceCards label="Planning depth" hint="How much the agent plans before building." value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} groupName="board-default-appetite" />
+                  <ChoiceCards label="Pause for my review" hint="The agent stops and waits for you at each gate you pick. (The board's Review column is the agent's own automatic check — not you.)" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} groupName="board-default-review" />
                 </div>
               </div>
             )}
@@ -845,14 +845,14 @@ function BoardPanel({ active }: { active: boolean }) {
                 draftKey="stelow-board-create"
                 onSubmit={(request) => start(request)}
               />
-              <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="border-t pt-3">
+              <details open={createOptionsOpen} onToggle={(event) => setCreateOptionsOpen((event.currentTarget as HTMLDetailsElement).open)} className="group border-t pt-3">
                 <summary className="flex min-h-11 cursor-pointer flex-col justify-center gap-0.5 rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:justify-between">
-                  <span>Settings</span>
-                  <span className="text-xs font-normal text-muted-foreground">Planning depth, review checkpoints, and agent configuration · Configure</span>
+                  <span className="flex items-center gap-1.5"><DisclosureChevron />Settings</span>
+                  <span className="text-xs font-normal text-muted-foreground">Planning depth, pausing for your review, and agent configuration · Configure</span>
                 </summary>
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <WorkflowChoiceSelect label="Planning depth" value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} />
-                  <WorkflowChoiceSelect label="Review checkpoints" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} />
+                  <ChoiceCards label="Planning depth" hint="How much the agent plans before building." value={appetite} options={APPETITE_OPTIONS} onChange={setAppetite} groupName="create-appetite" />
+                  <ChoiceCards label="Pause for my review" hint="The agent stops and waits for you at each gate you pick. (The board's Review column is the agent's own automatic check — not you.)" value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={setReviewMode} groupName="create-review" />
                   <div className="sm:col-span-2">
                     <AgentConfigBox
                       lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
@@ -1678,8 +1678,8 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
               {error ? (
                 <div className="mt-1.5 space-y-1">
                   <p className="text-[11px] text-destructive">Install failed: {error.split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 220) ?? "unknown error"}</p>
-                  <details>
-                    <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">Install log</summary>
+                  <details className="group">
+                    <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground"><DisclosureChevron />Install log</summary>
                     <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{error}</pre>
                   </details>
                 </div>
@@ -1913,16 +1913,30 @@ function StelowPanel({ subPath }: { subPath: string }) {
   );
 }
 
-function WorkflowChoiceSelect<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void }) {
-  const selected = options.find((option) => option.value === value);
+// Choice cards for planning depth + human review gates: every option visible
+// with its description, real radio inputs (keyboard + screen-reader native),
+// min-h-11 touch targets. Replaces a cramped native select whose gray micro
+// copy failed lay users and low vision — same option values, new surface.
+function ChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string }) {
   return (
-    <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value as T)} className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm text-foreground" aria-label={label}>
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-      <span>{selected?.description}</span>
-    </label>
+    <fieldset className="flex min-w-0 flex-col gap-1.5">
+      <legend className="text-sm font-medium text-foreground">{label}</legend>
+      {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
+      <div className="grid gap-2">
+        {options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <label key={option.value} className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition focus-within:outline focus-within:outline-2 focus-within:outline-primary ${selected ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}>
+              <input type="radio" name={groupName} value={option.value} checked={selected} onChange={() => onChange(option.value)} className="mt-0.5 size-4 shrink-0 accent-primary" />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium leading-5 text-foreground">{option.label}</span>
+                <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{option.description}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -2980,9 +2994,10 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
         const tasksSorted = [...scope.tasks].sort((a, b) => statusRank(a.status) - statusRank(b.status));
         const tasksDone = scope.tasks.filter((task) => statusRank(task.status) === 4).length;
         return (
-          <details key={scope.id} open={isOpen} onToggle={(event) => { const next = new Set(openIds); if ((event.currentTarget as HTMLDetailsElement).open) next.add(scope.id); else next.delete(scope.id); setOpenIds(next); }} className={`rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
+          <details key={scope.id} open={isOpen} onToggle={(event) => { const next = new Set(openIds); if ((event.currentTarget as HTMLDetailsElement).open) next.add(scope.id); else next.delete(scope.id); setOpenIds(next); }} className={`group rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
             <summary className="cursor-pointer list-none space-y-1">
               <div className="flex flex-wrap items-center gap-1">
+                <DisclosureChevron />
                 <span className="font-mono text-xs text-muted-foreground">{scope.id}</span>
                 <span className="font-medium">{scope.name}</span>
                 {scope.type ? <Pill>{scope.type}</Pill> : null}
@@ -3041,8 +3056,8 @@ function OptionDetail({ option, onOpenArtifact }: { option: BatchItem["options"]
   return (
     <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
       {option.preview ? (
-        <details>
-          <summary className="inline-flex min-h-11 cursor-pointer items-center text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Preview</summary>
+        <details className="group">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Preview</summary>
           <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{option.preview}</pre>
         </details>
       ) : null}
@@ -3683,6 +3698,15 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
 // pattern (CardDisclosure) for secondary content. Previously every zone —
 // banners, meta grid, timeline, preset, comments — used its own ad-hoc
 // spacing and heading style.
+// One open/close affordance for every collapsible in the panel: a chevron
+// that points right when closed and rotates down when open (via the
+// `group-open:` variant, so each <details> must carry the `group` class).
+// Native <details>/<summary> already expose expanded state to assistive
+// tech; this mirrors it visually for sighted, low-vision, and lay users.
+function DisclosureChevron({ className = "" }: { className?: string }) {
+  return <span aria-hidden className={`inline-block shrink-0 text-[10px] text-muted-foreground transition-transform group-open:rotate-90 ${className}`}>▶</span>;
+}
+
 function CardDisclosure({ title, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
   return (
@@ -3692,7 +3716,7 @@ function CardDisclosure({ title, hint, action, children, defaultOpen = false, op
       className="group rounded-lg border bg-muted/20"
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
-        <span aria-hidden className="mr-1.5 inline-block text-[10px] text-muted-foreground transition-transform group-open:rotate-90">▶</span>
+        <DisclosureChevron className="mr-1.5" />
         <span>{title}</span>
         {hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null}
         {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
@@ -4338,8 +4362,8 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
   const navigate = useBbNavigate();
   if (history.length === 0) return null;
   return (
-    <details className={separated ? "mt-3 border-t pt-2" : ""}>
-      <summary className="min-h-11 cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Worker history ({history.length}) — archived threads stay readable</summary>
+    <details className={`group${separated ? " mt-3 border-t pt-2" : ""}`}>
+      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable</summary>
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (
           <div key={entry.threadId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
@@ -5424,8 +5448,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
                     offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
-                  <details className="pt-1 text-xs text-muted-foreground">
-                    <summary className="cursor-pointer font-medium text-foreground">Workflow map · what each stage does</summary>
+                  <details className="group pt-1 text-xs text-muted-foreground">
+                    <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-foreground"><DisclosureChevron />Workflow map · what each stage does</summary>
                     <p className="mt-1">Analyze, Plan, Execute, and Review are workflow phases. Review holds automated workflow checks (Diff gate, Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior doc that defines it.</p>
                     <ul className="mt-2 space-y-1">
                       {STAGE_SEQUENCE.map((stage) => {
@@ -5656,8 +5680,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     )}
 
                     {!publishesToDefaultBranch ? (
-                      <details className="border-t pt-3">
-                        <summary className="cursor-pointer font-medium text-foreground">Advanced Git operations</summary>
+                      <details className="group border-t pt-3">
+                        <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-foreground"><DisclosureChevron />Advanced Git operations</summary>
                         <div className="mt-2 space-y-2 text-muted-foreground">
                           <p>Squash branch locally combines this branch’s already committed changes into one commit on its local base branch. It does not fetch remote updates, push, or create a pull request. Use it only when you own local integration.</p>
                           <Button size="sm" variant="outline" disabled={!publication.capabilities.squashMerge.available} title={publication.capabilities.squashMerge.reason ?? "Squash committed branch changes into the local base branch"} onClick={() => setPublicationAction("squash")}>Squash branch locally…</Button>
@@ -5824,8 +5848,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 ) : null}
               </div>
               {publicationCommitDiff.files.map((file) => (
-                <details key={`${publicationCommitSha}-${commitFilesEpoch}-${file.path}`} open={commitFilesExpanded} className="rounded-md border">
-                  <summary className="cursor-pointer px-2 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                <details key={`${publicationCommitSha}-${commitFilesEpoch}-${file.path}`} open={commitFilesExpanded} className="group rounded-md border">
+                  <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                    <DisclosureChevron />
                     {file.path} · {file.changeKind} · +{file.additions}/-{file.deletions}{file.binary ? " · binary" : file.patch ? "" : file.loadMode === "too_large" ? " · too large" : " · no patch"}
                   </summary>
                   <div className="space-y-1 border-t p-2">

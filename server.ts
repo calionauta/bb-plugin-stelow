@@ -11,7 +11,7 @@ import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
-import { insertInboxEvent, listInboxEvents, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
+import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
@@ -234,6 +234,7 @@ const inboxEventSnapshotSchema = z.object({
   summary: z.string(),
   occurredAt: z.number(),
   resolvedAt: z.number().nullable(),
+  resolvedReason: z.enum(["answered", "superseded", "resumed", "completed", "archived"]).nullable(),
   archivedAt: z.number().nullable(),
 });
 
@@ -1179,6 +1180,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Auto-continue budget for chatty workers (lib/auto-continue): consecutive
   // resumes without a stage advance, reset whenever the stage moves.
   ensureAutoContinueColumns(db);
+  ensureInboxResolvedReasonColumn(db);
   // Card-split proposals (lib/split-proposal): one recorded, human-approved
   // proposal per card. The host executes it on `bb stelow split` — workers
   // never create cards, so there is no worker verb that takes card content.
@@ -1230,6 +1232,7 @@ export default async function plugin(bb: BbPluginApi) {
     read_at INTEGER,
     archived_at INTEGER,
     resolved_at INTEGER,
+    resolved_reason TEXT,
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_inbox_events_visible ON inbox_events(archived_at, occurred_at DESC);`);
@@ -1723,7 +1726,7 @@ ${prompt}` }, ...workerAttachments],
 
   type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
-  type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null };
+  type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null; resolved_reason: string | null };
   type PresetRow = {
     id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
     permission_mode: string; environment_kind: string; base_branch: string | null; machine_id: string | null;
@@ -2484,7 +2487,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (readiness.ready) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
-            resolveInboxEvents(card.id, now(), ["paused"]);
+            resolveInboxEvents(card.id, now(), ["paused"], "completed");
             const readyCurrent = getCard(card.id);
             if (readyCurrent) {
               recordInboxEvent(readyCurrent, "completed", "Research complete — results ready to review in Done.", `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
@@ -2549,7 +2552,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (completing) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
-            resolveInboxEvents(card.id, now(), ["paused"]);
+            resolveInboxEvents(card.id, now(), ["paused"], "completed");
             const readyCurrent = getCard(card.id);
             if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Exploration complete — result ready to review in Done.", `explore-completed:${card.id}:${artifact.fingerprint ?? "ready"}`, now());
           } else if (!artifact.ready) {
@@ -2665,8 +2668,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     db.prepare(`UPDATE cards SET ${Object.keys(finalWrite).map((k) => `${k} = @${k}`).join(", ")} WHERE id = @id`).run({ id: cardId, ...finalWrite });
     const current = getCard(cardId);
     if (previous && current) {
-      if (current.status === "archived" || current.status === "completed") resolveInboxEvents(cardId, current.updated_at);
-      else if (current.activity === "running") resolveInboxEvents(cardId, current.updated_at, ["error", "paused"]);
+      if (current.status === "archived" || current.status === "completed") resolveInboxEvents(cardId, current.updated_at, ["question", "error", "paused"], current.status === "archived" ? "archived" : "completed");
+      else if (current.activity === "running") resolveInboxEvents(cardId, current.updated_at, ["error", "paused"], "resumed");
       // Research and Explore cards emit their own completion events and a
       // manual board move needs no "Completed" ping — the human just did it.
       // Only agent-driven build completions notify.
@@ -2693,8 +2696,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   // Resolution is per-kind, never blanket: a worker moving again clears
   // failure/pause signals, but a question stays until it is answered.
-  function resolveInboxEvents(cardId: string, resolvedAt: number, kinds: Array<"question" | "error" | "paused"> = ["question", "error", "paused"]): void {
-    if (resolveActionInboxEvents(db, cardId, resolvedAt, kinds) > 0) bb.realtime.publish("inbox-changed", { cardId });
+  // The reason travels with the timestamp so the Resolved filter can name
+  // HOW each item cleared (answered, superseded, resumed, completed,
+  // archived) instead of a bare date.
+  type InboxResolutionReason = "answered" | "superseded" | "resumed" | "completed" | "archived";
+  function resolveInboxEvents(cardId: string, resolvedAt: number, kinds: Array<"question" | "error" | "paused"> = ["question", "error", "paused"], reason: InboxResolutionReason | null = null): void {
+    if (resolveActionInboxEvents(db, cardId, resolvedAt, kinds, reason) > 0) bb.realtime.publish("inbox-changed", { cardId });
   }
 
   function syncPendingQuestionInbox(card: CardRow, interactionIds: string[], occurredAt = now()): void {
@@ -3196,6 +3203,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
         const unansweredIds = [...pendingById.keys()].filter((id) => !answeredInteractionIds.has(id));
         const openQuestionIds = [...unansweredIds, ...openExpiredQuestionIds(cardId)];
+        // Name the answered ones BEFORE the sync: disappearance alone would
+        // mislabel them superseded.
+        markQuestionsAnswered(db, { cardId, interactionIds: [...answeredInteractionIds], occurredAt: now() });
         syncPendingQuestionInbox(card, openQuestionIds);
         updateCard(cardId, { activity: openQuestionIds.length > 0 ? "awaiting-answer" : "running", status: "in-progress" });
         return { ok: true as const, answered: decisions.length, error: null };
@@ -3452,7 +3462,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const projects = await bb.sdk.projects.list();
       const projectNames = new Map(projects.map((project) => [project.id, project.name]));
       return {
-        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, cardKind: normalizeKind(row.card_kind), kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, resolvedAt: row.resolved_at ?? null, archivedAt: row.archived_at })),
+        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, cardKind: normalizeKind(row.card_kind), kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, resolvedAt: row.resolved_at ?? null, resolvedReason: (["answered", "superseded", "resumed", "completed", "archived"] as const).includes(row.resolved_reason as never) ? row.resolved_reason as "answered" | "superseded" | "resumed" | "completed" | "archived" : null, archivedAt: row.archived_at })),
       };
     },
 
@@ -3493,8 +3503,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async getNotification({ notificationId, cardId }) {
-      const row = db.prepare("SELECT id, kind, summary, occurred_at, resolved_at, archived_at FROM inbox_events WHERE id = ? AND card_id = ?").get(notificationId, cardId) as Pick<InboxEventRow, "id" | "kind" | "summary" | "occurred_at" | "resolved_at" | "archived_at"> | undefined;
-      return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, resolvedAt: row.resolved_at, archivedAt: row.archived_at } : null };
+      const row = db.prepare("SELECT id, kind, summary, occurred_at, resolved_at, resolved_reason, archived_at FROM inbox_events WHERE id = ? AND card_id = ?").get(notificationId, cardId) as Pick<InboxEventRow, "id" | "kind" | "summary" | "occurred_at" | "resolved_at" | "resolved_reason" | "archived_at"> | undefined;
+      return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, resolvedAt: row.resolved_at, resolvedReason: (["answered", "superseded", "resumed", "completed", "archived"] as const).includes(row.resolved_reason as never) ? row.resolved_reason as "answered" | "superseded" | "resumed" | "completed" | "archived" : null, archivedAt: row.archived_at } : null };
     },
 
     async readCardFile({ cardId, path }) {
@@ -4503,6 +4513,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           decisions.push({ question: row.question, answer });
         }
       })();
+      markQuestionsAnswered(db, { cardId, interactionIds: [...rows.keys()].map((questionId) => `expired:${questionId}`), occurredAt: now() });
       const openQuestionIds = await syncOpenQuestionInbox(card);
       updateCard(cardId, { activity: hasOpenQuestions(cardId, openQuestionIds) ? "awaiting-answer" : "running", status: "in-progress" });
       bb.realtime.publish("card-state", { cardId });
