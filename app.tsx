@@ -5580,14 +5580,19 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       }
                       const latestPush = pushTerminals?.terminals[0] ?? null;
                       const pushed = latestPush?.pushState === "succeeded" && !latestPush.outputUnavailable;
+                      const pushUnknown = !pushed && (latestPush?.outputUnavailable ?? false);
                       const behind = publication.mergeBase?.behind ?? 0;
                       const branch = publication.branch?.current ?? "this branch";
-                      const links = branchWebLinks(pushTerminals?.remote ?? null, publication.branch?.current ?? null, publication.mergeBase?.branch ?? publication.branch?.default ?? null);
+                      // Links need a branch that exists remotely: a finished
+                      // push proves it, an existing PR implies it. A failed
+                      // first push of a new branch would 404 either link.
+                      const remoteKnown = pushTerminals?.remote ?? null;
+                      const links = pushed || publication.pullRequest ? branchWebLinks(remoteKnown, publication.branch?.current ?? null, publication.mergeBase?.branch ?? publication.branch?.default ?? null) : null;
                       return (
                         <div className="space-y-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-2 text-emerald-950 dark:text-emerald-100">
                           <div>
                             <p className="font-medium">✓ Saved locally on <code>{branch}</code></p>
-                            <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80"><code>{savedSha.slice(0, 7)}</code> · working tree clean{isCurrentHead ? " · current local HEAD" : " · followed by a newer local commit"} · {pushed ? "pushed to origin." : "not pushed yet."}</p>
+                            <p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80"><code>{savedSha.slice(0, 7)}</code> · working tree clean{isCurrentHead ? " · current local HEAD" : " · followed by a newer local commit"} · {pushed ? "pushed to origin." : pushUnknown ? "last push outcome unknown — the shell ended." : "not pushed yet."}</p>
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Button size="sm" variant="outline" onClick={() => void openPublicationCommit(savedSha)}>View commit</Button>
                               <Button size="sm" variant="outline" onClick={() => void copyCommitSha(savedSha)}>Copy SHA</Button>

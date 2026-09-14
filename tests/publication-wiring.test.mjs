@@ -93,6 +93,8 @@ assert.match(app, /Saved locally on/, "a successful local save has an explicit o
 assert.match(app, /View commit/, "recorded local commits can be inspected from Done");
 assert.match(server, /parsePushRemoteUrl/, "the remote comes from git's own To line, never an assumed host");
 assert.match(app, /branchWebLinks/, "branch links are built from the parsed remote, not hardcoded");
+assert.match(app, /pushed \|\| publication\.pullRequest \? branchWebLinks/, "remote links need a branch proven to exist remotely, never a failed first push");
+assert.match(app, /last push outcome unknown/, "an ended shell admits ignorance instead of claiming unpushed");
 assert.match(app, /On GitHub/, "a pushed branch links out to the remote it landed on");
 assert.match(app, /View branch ↗/, "the branch is one click away after pushing");
 assert.match(app, /Open pull request ↗/, "the next step after pushing is a link, not a paragraph");
