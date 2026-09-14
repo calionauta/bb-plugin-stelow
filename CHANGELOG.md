@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.16.5] - 2026-09-14
+
+### Added
+
+- **Sync & push.** Rejected pushes get a one-click remediation where the
+  failure is shown: `pull --rebase` then `push`, with per-step sentinels.
+  Conflicts abort automatically with the checkout unchanged. Offered on
+  failed shells and whenever the branch is behind — no sidebar trip.
+
+### Fixed
+
+- **Copy that actually copies.** The Clipboard API alone fails in some
+  panel contexts; copy now falls back to the legacy path, and the final
+  error carries the value so it stays copyable. Copy terminal ID names
+  where the ID is used (BB's sidebar terminal panel).
+
 ## [0.16.4] - 2026-09-14
 
 ### Fixed
