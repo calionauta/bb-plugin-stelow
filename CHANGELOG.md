@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.15.0] - 2026-09-14
+
+### Added
+
+- **Focus return.** Esc (or Back) leaves the card detail with that card
+  focused on the board, so keyboard users never lose their place.
+- **Command chips.** Post-commit commands render as code chips with
+  "Copy command" buttons that name what they copy.
+
+### Fixed
+
+- **Done-but-dirty review.** Completed cards with fresh uncommitted changes
+  show the Diff panel again for evaluation, while the commit action stays
+  in Git changes: evaluate in Diff, act in Git changes.
+
 ## [0.14.0] - 2026-09-14
 
 ### Added
