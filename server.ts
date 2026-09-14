@@ -352,8 +352,8 @@ export const rpcContract = defineRpcContract({
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
-      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(askOptionSchema), expiresAt: z.number().nullable() })),
-      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), options: z.array(askOptionSchema), expiredAt: z.number() })),
+      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiresAt: z.number().nullable() })),
+      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiredAt: z.number() })),
       stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable() })),
@@ -483,6 +483,7 @@ export const rpcContract = defineRpcContract({
       title: z.string().min(1).max(100),
       question: z.string().min(1).max(2_000),
       multiple: z.boolean(),
+      kind: z.enum(["standard", "split"]).default("standard"),
       options: z.array(questionOptionSchema).min(2).max(6),
     }).strict(),
     output: z.object({ outcome: z.enum(["submitted", "cancelled"]), answers: z.array(z.string()) }),
@@ -1132,6 +1133,7 @@ export default async function plugin(bb: BbPluginApi) {
       thread_id TEXT NOT NULL,
       question TEXT NOT NULL,
       multiple INTEGER NOT NULL DEFAULT 0,
+      kind TEXT NOT NULL DEFAULT 'standard',
       options TEXT NOT NULL,
       expired_at INTEGER NOT NULL,
       answered INTEGER NOT NULL DEFAULT 0,
@@ -1178,6 +1180,10 @@ export default async function plugin(bb: BbPluginApi) {
   }
   if (!cardColumns.some((column) => column.name === "explore_stage")) {
     db.exec("ALTER TABLE cards ADD COLUMN explore_stage TEXT");
+  }
+  const expiredQuestionColumns = db.prepare("PRAGMA table_info(expired_questions)").all() as Array<{ name: string }>;
+  if (!expiredQuestionColumns.some((column) => column.name === "kind")) {
+    db.exec("ALTER TABLE expired_questions ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard'");
   }
   // Auto-continue budget for chatty workers (lib/auto-continue): consecutive
   // resumes without a stage advance, reset whenever the stage moves.
@@ -2783,6 +2789,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             title: question.title,
             question: question.question,
             multiple: question.multiple,
+            kind: question.kind,
             options,
             expiresAt: typeof entry.expiresAt === "number" ? entry.expiresAt : null,
           });
@@ -3144,8 +3151,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { approved: true, receiptPath, error: null };
     },
 
-    async ask({ threadId, title, question, multiple, options }) {
-      const result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title, payload: { question, multiple, options } });
+    async ask({ threadId, title, question, multiple, kind, options }) {
+      const result = await bb.ui.requestInput({ threadId, rendererId: "stelow-question", title, payload: { question, multiple, kind, options } });
       if (result.outcome === "cancelled") return { outcome: "cancelled" as const, answers: [] };
       const value = record(result.value);
       return { outcome: "submitted" as const, answers: array(value.answers).filter((answer): answer is string => typeof answer === "string") };
@@ -3545,8 +3552,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card) throw new Error(ERR_CARD_NOT_FOUND);
       const comments = db.prepare("SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as CommentRow[];
       const pending = await fetchPendingQuestions(card.worker_thread_id);
-      const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; options: string; expired_at: number }>;
-      const expiredQuestions = [];
+      const expiredRows = db.prepare("SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC").all(cardId) as Array<{ id: string; question: string; multiple: number; kind: string; options: string; expired_at: number }>;
+      const expiredQuestions: Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["expiredQuestions"] = [];
       for (const row of expiredRows) {
         let parsed: unknown = null;
         try { parsed = JSON.parse(row.options); } catch { parsed = null; }
@@ -3554,7 +3561,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         for (const option of cleanOptions(parsed)) {
           options.push({ ...option, artifact: option.artifact ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : null });
         }
-        expiredQuestions.push({ id: row.id, question: row.question, multiple: Boolean(row.multiple), options, expiredAt: row.expired_at });
+        expiredQuestions.push({ id: row.id, question: row.question, multiple: Boolean(row.multiple), kind: row.kind === "split" ? "split" : "standard", options, expiredAt: row.expired_at });
       }
       let projectName = card.project_id;
       const workspace = await cardWorkspace(card);
@@ -4908,7 +4915,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const parsed = parseAskGroups(askArgv);
         if (!threadId) return { exitCode: 2, stderr: "Missing --thread <thr_id>." };
         if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]..." };
-        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
+        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, kind: tag === "split" ? "split" as const : "standard" as const, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
         const batched = groups.length > 1;
         // The thread must own a card: otherwise the question would surface
         // nowhere and the persist below would silently skip. Refuse fast
@@ -4956,7 +4963,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // irreversible semantics. State each consequence once: candidates
           // are a multi-select, while the keep option is an exclusive
           // alternative handled by the renderer and the split executor.
-          groups[0]!.question = splitQuestionText(groups[0]!.question);
+          groups[0]!.question = splitQuestionText(groups[0]!.question, groups[0]!.options);
           db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, question, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, ?, NULL, ?, NULL, NULL, '[]')")
             .run(cardRow.id, groups[0]!.question, JSON.stringify(slices), Date.now());
         }
@@ -4976,7 +4983,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try {
           result = batched
             ? await bb.ui.requestInput({ ...askInput, payload: { questions: groups } }, { signal: ctx.signal })
-            : await bb.ui.requestInput({ ...askInput, payload: { question: first.question, multiple: first.multiple, options: first.options } }, { signal: ctx.signal });
+            : await bb.ui.requestInput({ ...askInput, payload: { question: first.question, multiple: first.multiple, kind: first.kind, options: first.options } }, { signal: ctx.signal });
         } catch {
           // The request itself blew up mid-flight (e.g. dispose tore down the
           // call): same bucket as a transient cancel — never lose the question.
@@ -5015,10 +5022,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               // A timed-out batch persists as one expired row per sub-question
               // so the card can answer them individually or all at once.
               const expiredAt = askedAt + Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000);
-              const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+              const insert = db.prepare("INSERT OR REPLACE INTO expired_questions (id, card_id, thread_id, question, multiple, kind, options, expired_at, answered) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
               db.transaction(() => {
                 for (const group of groups) {
-                  insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, JSON.stringify(group.options), expiredAt, 0);
+                  insert.run(randomId("qexp"), cardRow.id, threadId, group.question, group.multiple ? 1 : 0, group.kind, JSON.stringify(group.options), expiredAt, 0);
                 }
               })();
               updateCard(cardRow.id, { activity: "awaiting-answer" });

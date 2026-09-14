@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { SPLIT_QUESTION_GUIDANCE, isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "../lib/split-question-presentation.mjs";
+import { questionCopy, questionLocale } from "../lib/question-presentation.mjs";
 
 const original = "Which deliveries should split?";
 const old = `${original}\n\nSelect the deliveries that should become new independent cards. Anything you do not select stays in this card; nothing is discarded. Choose \"Keep as one card\" to keep the entire request together.`;
@@ -8,9 +9,15 @@ assert.equal(splitOptionDescription("Own the frontend.\n\nSelecting this creates
 assert.equal(splitOptionDescription("Two\n\nAuthor paragraphs stay."), "Two\n\nAuthor paragraphs stay.", "author-written scope is preserved");
 assert.equal(isSplitQuestion({ multiple: true, options: [{ label: "A" }, { label: "Keep as one card" }] }), true, "the keep option tags split presentation");
 assert.equal(isSplitQuestion({ multiple: false, options: [{ label: "Keep as one card" }] }), false, "ordinary single questions are not restyled as a split");
+assert.equal(isSplitQuestion({ kind: "split", multiple: false, options: [] }), true, "new payloads carry an explicit semantic kind");
 const choices = [{ label: "A" }, { label: "B" }, { label: "C" }, { label: "Keep as one card" }];
-assert.match(splitSelectionNotice(choices, ["A", "B", "C"]).text, /archive this card/, "selecting every delivery warns that the parent will archive before submit");
-assert.match(splitSelectionNotice(choices, ["A"]).text, /stays active with the remaining work/, "partial selection confirms the parent remains");
-assert.match(splitSelectionNotice(choices, ["Keep as one card"]).text, /no child cards/, "the exclusive keep alternative explains its result contextually");
+assert.match(splitSelectionNotice(original, choices, ["A", "B", "C"]).text, /archive this card/, "selecting every delivery warns that the parent will archive before submit");
+assert.match(splitSelectionNotice(original, choices, ["A"]).text, /stays active with the remaining work/, "partial selection confirms the parent remains");
+assert.match(splitSelectionNotice(original, choices, ["Keep as one card"]).text, /no child cards/, "the exclusive keep alternative explains its result contextually");
+const portuguese = "A solicitação abrange três entregáveis. Quais devem permanecer neste card?";
+assert.match(splitQuestionText(portuguese, choices), /Quais devem virar cards independentes\?/, "legacy Portuguese wording no longer contradicts the selected action");
+assert.match(splitQuestionText(portuguese, choices), /Selecione um ou mais entregáveis/, "host guidance follows the question language");
+assert.equal(questionLocale(portuguese, choices), "pt-BR", "Portuguese question gets Portuguese controls and recovery copy");
+assert.match(questionCopy("pt-BR").recoveryBody, /Não há prazo/, "recovery copy makes clear that there is no deadline");
 
 console.log("split-question presentation test ok: legacy copy upgrades without losing answer identity");

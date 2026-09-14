@@ -47,6 +47,7 @@ assert.equal(isBatchPayload({ question: "x", options: [] }), false);
   assert.equal(single.length, 1);
   assert.equal(single[0].questionId, "i1", "a single question keeps the interaction id");
   assert.equal(single[0].index, 0);
+  assert.equal(single[0].kind, "standard", "missing metadata safely defaults to a standard question");
 }
 {
   const batch = expandInteractionQuestions({
@@ -56,6 +57,10 @@ assert.equal(isBatchPayload({ question: "x", options: [] }), false);
   assert.equal(batch[0].questionId, "i9#0");
   assert.equal(batch[1].questionId, "i9#1");
   assert.equal(batch[1].multiple, true);
+}
+{
+  const typed = expandInteractionQuestions({ id: "i10", payload: { question: "Split?", multiple: true, kind: "split", options: [{ label: "A", description: "" }] } });
+  assert.equal(typed[0].kind, "split", "semantic question kind survives host interaction expansion");
 }
 {
   // Malformed sub-questions drop out; one bad apple never kills the batch.

@@ -27,6 +27,7 @@ import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-gr
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
+import { questionCopy, questionLocale } from "./lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
 import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
@@ -3079,7 +3080,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
 }
 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
-type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
+type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
 
 // Per-option evidence: the inline glance (preview) and the openable source
 // of truth (artifact) share the upstream Option names from
@@ -3129,10 +3130,11 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   if (questions.length === 0) return null;
   const current = questions[Math.min(index, questions.length - 1)]!;
+  const copy = questionCopy(questionLocale(current.prompt, current.options));
   const splitKeepLabel = SPLIT_KEEP_LABEL;
   const isSplitProposal = isSplitQuestion(current);
-  const prompt = isSplitProposal ? splitQuestionText(current.prompt) : current.prompt;
-  const splitNotice = isSplitProposal ? splitSelectionNotice(current.options, selected[current.id] ?? []) : null;
+  const prompt = isSplitProposal ? splitQuestionText(current.prompt, current.options) : current.prompt;
+  const splitNotice = isSplitProposal ? splitSelectionNotice(current.prompt, current.options, selected[current.id] ?? []) : null;
   const merged = (id: string): string[] => {
     if (skipped.has(id)) return [];
     const out = [...(selected[id] ?? [])];
@@ -3179,19 +3181,19 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              {questions.length > 1 ? `${questions.length} questions need your answer` : "Your answer is needed"}
+              {questions.length > 1 ? copy.answersNeeded(questions.length) : copy.answerNeeded}
             </div>
-            {questions.length > 1 ? <div className="text-xs text-amber-900/70 dark:text-amber-200/70">Question {index + 1} of {questions.length}</div> : null}
+            {questions.length > 1 ? <div className="text-xs text-amber-900/70 dark:text-amber-200/70">{copy.questionOf(index + 1, questions.length)}</div> : null}
           </div>
           {questions.length > 1 ? (
-            <div className="flex flex-wrap gap-1" role="group" aria-label="Questions">
+            <div className="flex flex-wrap gap-1" role="group" aria-label={copy.questions}>
               {questions.map((q, i) => {
                 const done = skipped.has(q.id) || merged(q.id).length > 0;
                 return (
                   <button
                     key={q.id}
                     aria-current={i === index ? "step" : undefined}
-                    aria-label={`Question ${i + 1}${done ? " (answered)" : ""}`}
+                    aria-label={`${copy.questionOf(i + 1, questions.length)}${done ? ` (${copy.answered})` : ""}`}
                     onClick={() => setIndex(i)}
                     className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-xs font-medium ${i === index ? "border-primary bg-primary/15 text-foreground" : done ? "border-emerald-500/50 bg-emerald-500/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}
                   >
@@ -3201,13 +3203,14 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
               })}
             </div>
           ) : null}
-          <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div>
+          {current.title ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div> : null}
           {prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{prompt}</p> : null}
-          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">Select one or more deliveries to split, or choose <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> instead. These are mutually exclusive choices.</p> : null}
+          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">{questionLocale(current.prompt, current.options) === "pt-BR" ? <>Escolha entregáveis ou <strong className="text-amber-900 dark:text-amber-100">Manter em um card</strong> — não os dois.</> : <>Choose deliveries or <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> — not both.</>}</p> : null}
           <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
             {current.options.map((option) => {
               const active = (selected[current.id] ?? []).includes(option.label);
               const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
+              const optionLabel = isKeepOption && questionLocale(current.prompt, current.options) === "pt-BR" ? "Manter em um card" : option.label;
               const description = isSplitProposal ? splitOptionDescription(option.description) : option.description;
               return (
                 <div key={option.label} className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
@@ -3218,7 +3221,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
                     className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-md border p-3 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground hover:border-primary/50"}`}
                   >
                     <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple && !isKeepOption ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
-                    <span className="min-w-0"><span className="block font-medium">{option.label}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
+                    <span className="min-w-0"><span className="block font-medium">{optionLabel}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
                   </button>
                   <OptionDetail option={option} onOpenArtifact={onOpenArtifact} />
                 </div>
@@ -3227,29 +3230,29 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
           </div>
           {splitNotice ? <p role="status" className={`rounded-md border p-2 text-xs leading-5 ${splitNotice.kind === "archive" ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-primary/30 bg-primary/5 text-foreground"}`}>{splitNotice.text}</p> : null}
           {!isSplitProposal ? <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
-            <span>Other — write your own answer</span>
+            <span>{copy.other}</span>
             <input
               value={custom[current.id] ?? ""}
               onChange={(event) => typeCustom(current, event.target.value)}
-              placeholder="Type a custom answer…"
+              placeholder={copy.customPlaceholder}
               className="mt-1 min-h-11 w-full cursor-text rounded-md border border-border bg-background/60 px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground"
             />
           </label> : null}
           {allowSkip && !isSplitProposal ? (
             skipped.has(current.id)
-              ? <button onClick={() => unskip(current)} className="min-h-11 cursor-pointer text-xs font-medium text-primary hover:underline">Skipped — answer it after all</button>
-              : <button onClick={() => skip(current)} className="min-h-11 cursor-pointer text-xs text-amber-900/70 hover:underline dark:text-amber-200/70">Skip — let the AI use its recommendation</button>
+              ? <button onClick={() => unskip(current)} className="min-h-11 cursor-pointer text-xs font-medium text-primary hover:underline">{copy.skipped}</button>
+              : <button onClick={() => skip(current)} className="min-h-11 cursor-pointer text-xs text-amber-900/70 hover:underline dark:text-amber-200/70">{copy.skip}</button>
           ) : null}
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
           {questions.length > 1 ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{doneCount} of {questions.length} answered{allowSkip ? " (skipped counts as answered)" : ""}. {allowSkip ? "One submit sends everything at once." : "Only answered questions are sent; the rest stay open."}</p>
-          ) : current.multiple ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{isSplitProposal ? "Choose delivery cards, or Keep as one card — not both." : "Pick one or more, then submit."}</p>
+            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{copy.batchProgress(doneCount, questions.length, allowSkip)}</p>
+          ) : current.multiple && !isSplitProposal ? (
+            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{copy.pickOneOrMore}</p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
-            {questions.length > 1 ? <Button size="sm" variant="outline" disabled={index === 0 || busy} onClick={() => setIndex((i) => Math.max(0, i - 1))}>Back</Button> : null}
-            {questions.length > 1 && index < questions.length - 1 ? <Button size="sm" variant="outline" disabled={busy} onClick={() => setIndex((i) => Math.min(questions.length - 1, i + 1))}>Next</Button> : null}
-            <Button size="sm" disabled={!complete || busy} onClick={() => onSubmit(questions.map((q) => merged(q.id)))}>{busy ? "Sending…" : submitLabel}</Button>
+            {questions.length > 1 ? <Button size="sm" variant="outline" disabled={index === 0 || busy} onClick={() => setIndex((i) => Math.max(0, i - 1))}>{copy.back}</Button> : null}
+            {questions.length > 1 && index < questions.length - 1 ? <Button size="sm" variant="outline" disabled={busy} onClick={() => setIndex((i) => Math.min(questions.length - 1, i + 1))}>{copy.next}</Button> : null}
+            <Button size="sm" disabled={!complete || busy} onClick={() => onSubmit(questions.map((q) => merged(q.id)))}>{busy ? copy.sending : submitLabel}</Button>
           </div>
         </div>
       </div>
@@ -3262,6 +3265,7 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (questions.length === 0) return null;
+  const copy = questionCopy(questionLocale(questions[0]!.prompt, questions[0]!.options));
   async function submit(all: string[][]) {
     setBusy(true); setError(null);
     try {
@@ -3288,7 +3292,7 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
         allowSkip={mode === "live"}
         busy={busy}
         error={error}
-        submitLabel={questions.length > 1 ? (mode === "live" ? `Submit ${questions.length} answers` : "Submit answers") : "Submit answer"}
+        submitLabel={questions.length > 1 ? copy.submitAnswers : copy.submitAnswer}
         onSubmit={(all) => void submit(all)}
         onOpenArtifact={onOpenArtifact}
       />
@@ -3297,14 +3301,15 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
 
 function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact) => void }) {
   if (questions.length === 0) return null;
+  const copy = questionCopy(questionLocale(questions[0]!.question, questions[0]!.options));
   return (
     <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">Timed-out questions waiting for your answer</h3>
-      <p className="text-xs text-amber-900/70 dark:text-amber-200/70">The ask timed out, but the agent is waiting. Answering here resumes the workflow.</p>
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">{copy.recoveryHeading}</h3>
+      <p className="text-xs text-amber-900/70 dark:text-amber-200/70">{copy.recoveryBody}</p>
         <QuestionBatch
           cardId={cardId}
           mode="expired"
-          questions={questions.map((q) => ({ id: q.id, title: "Timed-out question", prompt: q.question, multiple: q.multiple, options: q.options }))}
+          questions={questions.map((q) => ({ id: q.id, title: "", prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options }))}
           onAnswered={onAnswered}
           onOpenArtifact={onOpenArtifact}
         />
@@ -5438,7 +5443,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, options: q.options })) ?? []} onAnswered={() => void load()} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => void load()} />
                   </div>
                 ) : null}
                 {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => void load()} /></div> : null}
@@ -6001,7 +6006,7 @@ function PillsyStyles() {
 }
 
 function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionProps) {
-  const payload = interaction.payload as { question?: string; multiple?: boolean; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; questions?: Array<{ question?: string; multiple?: boolean; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> }> };
+  const payload = interaction.payload as { question?: string; multiple?: boolean; kind?: "standard" | "split"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; questions?: Array<{ question?: string; multiple?: boolean; kind?: "standard" | "split"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> }> };
   // Thread payloads carry raw artifact paths (no viewer here to resolve
   // against); normalize to the shared shape so display never renders
   // undefined. Open affordances stay card-only by design.
@@ -6015,11 +6020,13 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
     : [];
   // Batch payloads (one `bb stelow ask` call with repeated --question groups)
   // answer together; single-question payloads keep their exact shape.
+  const genericTitle = /^stelow questions?(?: \(\d+\))?$/i.test(interaction.title ?? "") ? "" : interaction.title;
   const items: BatchItem[] = Array.isArray(payload.questions) && payload.questions.length > 0
-    ? payload.questions.map((q, i) => ({ id: `q${i}`, title: interaction.title, prompt: typeof q?.question === "string" ? q.question : "", multiple: q?.multiple === true, options: clean(q?.options) })).filter((q) => q.options.length > 0)
-    : [{ id: "q0", title: interaction.title, prompt: payload.question ?? interaction.title, multiple: payload.multiple === true, options: clean(payload.options) }];
+    ? payload.questions.map((q, i) => ({ id: `q${i}`, title: genericTitle, prompt: typeof q?.question === "string" ? q.question : "", multiple: q?.multiple === true, kind: q?.kind, options: clean(q?.options) })).filter((q) => q.options.length > 0)
+    : [{ id: "q0", title: genericTitle, prompt: payload.question ?? interaction.title, multiple: payload.multiple === true, kind: payload.kind, options: clean(payload.options) }];
   if (items.length === 0) return null;
   const batched = items.length > 1;
+  const copy = questionCopy(questionLocale(items[0]!.prompt, items[0]!.options));
   return (
     <div className="space-y-3">
       <BatchStepper
@@ -6027,7 +6034,7 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
         allowSkip
         busy={false}
         error={null}
-        submitLabel={batched ? `Continue with ${items.length} answers` : "Continue"}
+        submitLabel={batched ? copy.continueWithAnswers(items.length) : copy.continue}
         onSubmit={(all) => void submit(batched ? { answers: all } : { answers: all[0] ?? [] })}
       />
       <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => void cancel()}>Cancel</Button></div>

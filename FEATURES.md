@@ -165,11 +165,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   The badge counts the same unresolved actions shown by **Needs attention**;
   completions remain available in All without presenting themselves as work.
 - **Question recovery.** A worker may wait only for a real card form: a live
-  structured ask or the durable timeout-recovery form. A stale chat message
+  structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
   once when no form is visible, while the host rejects actual duplicates.
   A specific question also supersedes a generic paused notice for that card,
   so one action is counted once and the Inbox says what needs answering.
+  Recovery says plainly that the initial interactive request was interrupted,
+  that there is no deadline, and that the saved answer resumes work — it never
+  exposes the internal `timed-out` state as a second, redundant title.
 - **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
   **Keep as one card** is visually separated and mutually exclusive. The
   outcome is stated once per choice, and the host rejects a contradictory
@@ -180,6 +183,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   forms, so recovery never changes the decision. As choices change, a live
   outcome notice names whether the parent stays, or whether selecting every
   delivery will archive it after creating the child cards.
+- **Question presentation is semantic and language-consistent.** Every
+  question carries a `standard` or `split` kind from the host interaction
+  through durable recovery (with a safe legacy fallback). Shared presentation
+  copy follows the question's Portuguese or English language across controls,
+  recovery explanation, and split consequences; old stored split copy is
+  upgraded on display without changing its answer identities.
 - **Unread is a view, not a work state.** Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view
   without changing the attention badge or hiding a read-but-unresolved action.

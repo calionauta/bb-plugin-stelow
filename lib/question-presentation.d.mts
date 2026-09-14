@@ -1,0 +1,24 @@
+export type QuestionLocale = "en" | "pt-BR";
+export declare function questionLocale(question: string | null | undefined, options?: Array<{ label?: string }> | null | undefined): QuestionLocale;
+export declare function questionCopy(locale: QuestionLocale): {
+  answerNeeded: string;
+  answersNeeded: (count: number) => string;
+  questionOf: (current: number, total: number) => string;
+  questions: string;
+  answered: string;
+  other: string;
+  customPlaceholder: string;
+  skipped: string;
+  skip: string;
+  submitAnswer: string;
+  submitAnswers: string;
+  sending: string;
+  back: string;
+  next: string;
+  continue: string;
+  continueWithAnswers: (count: number) => string;
+  batchProgress: (done: number, total: number, canSkip: boolean) => string;
+  pickOneOrMore: string;
+  recoveryHeading: string;
+  recoveryBody: string;
+};
