@@ -5512,8 +5512,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                           <details className="mt-2 rounded-md border border-emerald-500/20 p-2">
                             <summary className="cursor-pointer font-medium text-emerald-950 dark:text-emerald-100">What remains to publish it</summary>
                             <ol className="mt-1 list-decimal space-y-1.5 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
-                              <li>Push the branch from its checkout — Stelow cannot push from this panel (BB exposes no push action). Run in that checkout: <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> <Button size="sm" variant="outline" title="Copy the push command" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
-                              <li>The running plugin follows release tags, not branches — pushing alone changes nothing there. Tag a release, then run <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">bb plugin update stelow</code> and reload. <Button size="sm" variant="outline" title="Copy the plugin update command" onClick={() => void copyText("bb plugin update stelow", "Update command")}>Copy command</Button></li>
+                              <li>Push the branch — this panel cannot push (BB exposes no push action). Run in that checkout, or ask the worker in its thread: <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> <Button size="sm" variant="outline" title="Copy the push command" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
+                              <li>Then open a pull request through your Git provider or BB’s native flow — this panel’s PR actions (ready, merge) work on the existing PR.</li>
                             </ol>
                           </details>
                         </div>

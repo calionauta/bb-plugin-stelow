@@ -43,8 +43,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   success state, current-HEAD indication, copyable SHA, and a read-only
   native-BB commit diff. Files render as collapsed accordions with
   expand/collapse all. The success state also discloses what remains —
-  push (with a copyable command; the panel cannot push), then tag plus
-  plugin update, since the running plugin follows tags, not branches.
+  push (copyable command; the panel cannot push) and pull request via
+  the provider or BB's native flow.
   The viewer is restricted to commits recorded in that
   card’s publication history, so it never becomes an arbitrary Git browser.
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
