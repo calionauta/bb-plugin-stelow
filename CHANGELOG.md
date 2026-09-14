@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.9.2] - 2026-09-14
+
+### Fixed
+
+- **Completed worker preset copy.** Done cards now show the preset recorded
+  for their completed worker, rather than describing the terminal audit stage
+  as a future worker configuration.
+
 ## [0.9.1] - 2026-09-14
 
 ### Fixed
