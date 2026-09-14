@@ -1133,7 +1133,6 @@ export default async function plugin(bb: BbPluginApi) {
       thread_id TEXT NOT NULL,
       question TEXT NOT NULL,
       multiple INTEGER NOT NULL DEFAULT 0,
-      kind TEXT NOT NULL DEFAULT 'standard',
       options TEXT NOT NULL,
       expired_at INTEGER NOT NULL,
       answered INTEGER NOT NULL DEFAULT 0,
