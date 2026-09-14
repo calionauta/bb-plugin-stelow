@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.14.0] - 2026-09-14
+
+### Added
+
+- **Commit file accordions.** Each file in the commit viewer renders
+  collapsed with its change stats, plus expand/collapse all.
+- **Post-commit next steps.** The saved-commit state discloses what remains
+  (push, tag, plugin update) with copyable commands, since the panel
+  cannot push and the running plugin follows tags, not branches.
+
+### Fixed
+
+- **Diff vs Git changes paranoia.** The Diff review panel now shows only on
+  active diff-gate/audit cards; completed cards keep Git changes alone.
+
 ## [0.13.2] - 2026-09-14
 
 ### Fixed
