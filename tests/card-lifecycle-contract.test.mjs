@@ -193,6 +193,9 @@ assert.match(app, /const isSplitProposal = isSplitQuestion\(current\)/, "split q
 assert.match(app, /These are mutually exclusive choices/, "split UI makes Keep as one card an explicit alternative");
 assert.match(app, /splitOptionDescription\(/, "a still-open legacy split form does not repeat generated consequences");
 assert.match(app, /splitQuestionText\(current\.prompt\)/, "a still-open legacy split prompt upgrades without changing its stored answer identity");
+assert.match(app, /splitSelectionNotice\(current\.options, selected\[current\.id\] \?\? \[\]\)/, "split feedback reacts to the current selection before submission");
+assert.match(app, /All updates/, "Inbox exposes read state without replacing its lifecycle tabs");
+assert.match(app, /Unread only/, "Inbox can narrow every selected tab to unread entries");
 assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "question choices use visible, high-contrast selection controls");
 assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split question is host-enriched before it reaches the user");
 assert.match(answerExpired, /answers: item\.answers/, "timed-out multi-choice answers retain every selected value");

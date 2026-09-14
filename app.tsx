@@ -19,14 +19,14 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
-import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxFilterEntries, isOpenInboxAction } from "./lib/inbox-event-presentation.mjs";
+import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxFilterEntries, isOpenInboxAction, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
-import { isSplitQuestion, splitOptionDescription, splitQuestionText } from "./lib/split-question-presentation.mjs";
+import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
 import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
@@ -527,6 +527,7 @@ function InboxPanel() {
   const navigate = useBbNavigate();
   const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [filter, setFilter] = useState<"attention" | "resolved" | "archived" | "all">("attention");
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Background refreshes must never flash loading UI (see BoardPanel).
@@ -543,7 +544,7 @@ function InboxPanel() {
   }, [rpc]);
   useEffect(() => { void load(); }, [load]);
   useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
-  const entries = inboxFilterEntries(notifications, filter);
+  const entries = unreadInboxEntries(inboxFilterEntries(notifications, filter), unreadOnly);
   async function open(entry: InboxNotification) {
     if (!entry.readAt) {
       try { await rpc.call("markNotificationRead", { notificationId: entry.id }); }
@@ -582,7 +583,9 @@ function InboxPanel() {
   // content with a quiet updating hint instead of flashing.
   const firstLoad = loading && notifications.length === 0;
   const fatalError = loadError && notifications.length === 0;
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} className={`cursor-pointer min-h-11 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{entry.label}</button>)}</div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{filter === "attention" ? "All clear" : `No ${selected.label.toLowerCase()} updates`}</h2><p className="mt-1 text-sm text-muted-foreground">{filter === "attention" ? "Stelow will surface work only when it needs you." : selected.description}</p></section>}</div></div>;
+  const emptyTitle = unreadOnly ? "No unread updates" : filter === "attention" ? "All clear" : `No ${selected.label.toLowerCase()} updates`;
+  const emptyDescription = unreadOnly ? "Everything in this view has been read." : filter === "attention" ? "Stelow will surface work only when it needs you." : selected.description;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} className={`cursor-pointer min-h-11 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{entry.label}</button>)}</div><div className="flex min-h-11 items-center gap-2" aria-label="Read state"><span className="text-xs font-medium text-muted-foreground">Show</span><button onClick={() => setUnreadOnly(false)} aria-pressed={!unreadOnly} className={`cursor-pointer min-h-11 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${!unreadOnly ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}>All updates</button><button onClick={() => setUnreadOnly(true)} aria-pressed={unreadOnly} className={`cursor-pointer min-h-11 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${unreadOnly ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}>Unread only</button></div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{emptyTitle}</h2><p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p></section>}</div></div>;
 }
 
 function BoardPanel({ active }: { active: boolean }) {
@@ -3129,6 +3132,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
   const splitKeepLabel = SPLIT_KEEP_LABEL;
   const isSplitProposal = isSplitQuestion(current);
   const prompt = isSplitProposal ? splitQuestionText(current.prompt) : current.prompt;
+  const splitNotice = isSplitProposal ? splitSelectionNotice(current.options, selected[current.id] ?? []) : null;
   const merged = (id: string): string[] => {
     if (skipped.has(id)) return [];
     const out = [...(selected[id] ?? [])];
@@ -3221,6 +3225,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, onSubmit
               );
             })}
           </div>
+          {splitNotice ? <p role="status" className={`rounded-md border p-2 text-xs leading-5 ${splitNotice.kind === "archive" ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-primary/30 bg-primary/5 text-foreground"}`}>{splitNotice.text}</p> : null}
           {!isSplitProposal ? <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
             <span>Other — write your own answer</span>
             <input

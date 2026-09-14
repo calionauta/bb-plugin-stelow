@@ -177,7 +177,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   that selecting every delivery archives the parent after creating children;
   partial selections leave its remainder in place. Timed-out multi-choice
   answers keep every selected value and record split approval just like live
-  forms, so recovery never changes the decision.
+  forms, so recovery never changes the decision. As choices change, a live
+  outcome notice names whether the parent stays, or whether selecting every
+  delivery will archive it after creating the child cards.
+- **Unread is a view, not a work state.** Every Inbox tab has an `All updates`
+  / `Unread only` secondary filter. It narrows the selected lifecycle view
+  without changing the attention badge or hiding a read-but-unresolved action.
 - **Structured questions** (`ask`, `answerQuestions`,
   `answerExpiredQuestions`, `BatchStepper`, `QuestionForm`).
   Blocking single/multi-choice asks answered in one sitting: a stepper with

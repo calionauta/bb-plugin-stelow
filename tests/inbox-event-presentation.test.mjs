@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { inboxEventPresentation, isOpenInboxAction } from "../lib/inbox-event-presentation.mjs";
+import { inboxEventPresentation, isOpenInboxAction, unreadInboxEntries } from "../lib/inbox-event-presentation.mjs";
 
 const openQuestion = { kind: "question", occurredAt: 10, resolvedAt: null, archivedAt: null };
 assert.deepEqual(inboxEventPresentation(openQuestion), { label: "Needs a decision", tone: null, stateAt: 10, stateLabel: null });
@@ -14,6 +14,8 @@ assert.deepEqual(inboxEventPresentation(archivedError), { label: "Archived Inbox
 assert.equal(isOpenInboxAction(archivedError), false);
 
 assert.equal(isOpenInboxAction({ kind: "completed", occurredAt: 10, resolvedAt: null, archivedAt: null }), false);
+assert.deepEqual(unreadInboxEntries([{ id: "read", readAt: 1 }, { id: "unread", readAt: null }], true).map((entry) => entry.id), ["unread"], "Unread only is a secondary view filter");
+assert.equal(unreadInboxEntries([{ id: "read", readAt: 1 }], false).length, 1, "All updates keeps read history in the selected tab");
 
 // Resolved reasons name HOW each item cleared; legacy rows without a reason
 // keep the generic kind label instead of an invented cause.
