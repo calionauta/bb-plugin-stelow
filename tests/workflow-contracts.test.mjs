@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_TEMPLATE, templateStages } from "../lib/state-template.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageLabel } from "../lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, STELOW_UPSTREAM_BASE, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageLabel, stageSkill, stageSkillUrl } from "../lib/workflow-vocabulary.mjs";
 
 // Workflow contracts: one vocabulary powers template, board, and server.
 // Catches stage additions without template cover or a phase/label mapping.
@@ -49,4 +49,19 @@ assert.equal(buildBoardColumnFor({ status: "in-progress", stage: "audit" }), "re
 assert.equal(buildBoardColumnFor({ status: "completed", stage: "audit" }), "completed", "Done is a terminal outcome, not Audit's board phase");
 assert.equal(buildBoardColumnFor({ status: "archived", stage: "execution" }), "archived", "Archived overrides the retained checkpoint");
 
-console.log("workflow contracts test ok: one vocabulary, template, board topology, bands, and transitions agree on 17 stages");
+// Upstream transparency: one skill per stage, one URL builder, no drift.
+// Skill-root URLs only — stage docs move, skill dirs are the stable address.
+assert.equal(STELOW_UPSTREAM_BASE, "https://github.com/calionauta/stelow/tree/main/skills", "upstream base has one catalog");
+const KNOWN_SKILLS = new Set(["stelow-workflow-orchestrator", "stelow-workflow-shape-up", "stelow-workflow-plan-critique", "stelow-workflow-interface-alternatives", "stelow-workflow-tech-planning", "stelow-workflow-scope-executor", "stelow-workflow-testing-execution", "stelow-workflow-execution-critique"]);
+for (const stage of WORKFLOW_STAGES) {
+  assert.ok(stage.skill, `${stage.id} names its owning upstream skill`);
+  assert.ok(KNOWN_SKILLS.has(stage.skill), `${stage.id} skill ${stage.skill} is a vendored upstream skill`);
+  assert.ok(existsSync(join(root, "skills", stage.skill, "SKILL.md")), `${stage.id} skill ${stage.skill} is vendored with SKILL.md`);
+  assert.equal(STAGE_SKILL[stage.id], stage.skill, `${stage.id} skill has one map`);
+  assert.equal(stageSkill(stage.id), stage.skill, `${stage.id} skill accessor agrees`);
+  assert.equal(stageSkillUrl(stage.id), `${STELOW_UPSTREAM_BASE}/${stage.skill}`, `${stage.id} URL derives from base + skill`);
+}
+assert.equal(stageSkill("nope"), null, "unknown stage has no skill");
+assert.equal(stageSkillUrl("nope"), null, "unknown stage has no skill URL");
+
+console.log("workflow contracts test ok: one vocabulary, template, board topology, bands, skill links, and transitions agree on 17 stages");

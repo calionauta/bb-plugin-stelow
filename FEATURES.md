@@ -161,9 +161,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   executed, nothing else does. A completed card keeps Audit as its historical
   verification record, cannot reopen that terminal checkpoint. More generally,
   the current checkpoint is always inert; only a legal next checkpoint or a
-  prior checkpoint can be selected. It exposes a
-  compact Workflow map explaining phases, Done, and attention. Attachments, mentioned files,
-  timed-out questions inline.
+   prior checkpoint can be selected. It exposes a
+   compact Workflow map explaining phases, Done, and attention, with every
+   stage linked to its owning upstream Stelow skill on GitHub. Each timeline
+   pill carries a sibling ⓘ link to that skill — the pill click keeps its
+   rerun/advance meaning and never navigates away. Attachments, mentioned files,
+   timed-out questions inline.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
   to the agent, gate question answerable inline.
