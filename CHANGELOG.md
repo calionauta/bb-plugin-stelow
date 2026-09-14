@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.12.0] - 2026-09-14
+
+### Added
+
+- **Precise stage definition links.** Stages owned by the orchestrator now
+  link directly at their behavior doc (`stages/*.md`); dedicated skills
+  link at the skill root. The contract test verifies every linked doc is
+  vendored, so an upstream rename breaks CI instead of silently rotting.
+
+### Fixed
+
+- **Timeline spacing.** Per-pill info icons are removed; pills keep their
+  original spacing and their rerun/advance meaning. Skill ownership moved
+  into pill tooltips and a richer Workflow map disclosure that works on
+  desktop and mobile.
+- **Commit viewer patches.** Files BB marks `on_demand` are now fetched via
+  `environments.diffPatch` and rendered in BB's diff viewer instead of
+  showing as unavailable. Only genuinely `too_large` files keep an honest
+  unrenderable message.
+
 ## [0.11.0] - 2026-09-14
 
 ### Added
