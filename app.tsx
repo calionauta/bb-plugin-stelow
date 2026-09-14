@@ -4918,6 +4918,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [githubPostOpen, setGithubPostOpen] = useState(false);
   const [githubCloseIssue, setGithubCloseIssue] = useState(false);
   const [githubPosting, setGithubPosting] = useState(false);
+  type PublicationStatus = Awaited<ReturnType<typeof rpc.call<"publicationStatus">>>;
+  const [publication, setPublication] = useState<PublicationStatus | null>(null);
+  const [publicationLoading, setPublicationLoading] = useState(false);
+  const [publicationAction, setPublicationAction] = useState<"commit" | "squash" | "ready" | "draft" | "merge" | null>(null);
+  const [mergeMethod, setMergeMethod] = useState<"merge" | "rebase" | "squash">("squash");
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [inboxEvent, setInboxEvent] = useState<InboxEventSnapshot | null>(null);
@@ -4962,6 +4967,20 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
   }, [cardId, card?.status, rpc]);
   useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
+
+  const loadPublication = useCallback(async () => {
+    if (card?.status !== "completed") { setPublication(null); return; }
+    setPublicationLoading(true);
+    try {
+      setPublication(await rpc.call("publicationStatus", { cardId }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unable to inspect publication status.");
+    } finally {
+      setPublicationLoading(false);
+    }
+  }, [card?.status, cardId, rpc]);
+
+  useEffect(() => { void loadPublication(); }, [loadPublication]);
 
   async function submitComment() {
     if (!comment.trim()) return;
@@ -5070,6 +5089,30 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       await load();
     } finally {
       setGithubPosting(false);
+    }
+  }
+
+  async function doPublicationAction() {
+    const action = publicationAction;
+    if (!action) return;
+    try {
+      if (action === "commit") {
+        const result = await rpc.call("publicationCommit", { cardId });
+        if (!result.ok) toast.error(result.message);
+        else toast.success(result.commitSha ? `Committed ${result.commitSha.slice(0, 7)}.` : result.message);
+      } else if (action === "squash") {
+        const result = await rpc.call("publicationSquashMerge", { cardId });
+        if (!result.ok) toast.error(result.message);
+        else toast.success(result.commitSha ? `Squash merged as ${result.commitSha.slice(0, 7)}.` : result.message);
+      } else {
+        const result = await rpc.call("publicationPullRequestAction", { cardId, operation: action, ...(action === "merge" ? { method: mergeMethod } : {}) });
+        if (!result.ok) toast.error(result.message);
+        else toast.success(result.message);
+      }
+    } finally {
+      setPublicationAction(null);
+      await loadPublication();
+      await load();
     }
   }
 
@@ -5350,6 +5393,65 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             </CardDisclosure>
             ) : null}
 
+            {card.status === "completed" ? (
+              <CardDisclosure
+                title="Publish changes"
+                hint={publicationLoading ? "Checking BB workspace…" : publication?.source ?? "No live BB workspace"}
+                defaultOpen
+                action={<Button size="sm" variant="outline" disabled={publicationLoading} onClick={() => void loadPublication()} title="Re-check the workspace and pull-request state in BB">Refresh</Button>}
+              >
+                {!publication && !publicationLoading ? <p className="text-xs text-muted-foreground">Publication status is unavailable.</p> : null}
+                {publication ? (
+                  <div className="space-y-3 text-xs">
+                    {publication.message ? <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-amber-900 dark:text-amber-200">{publication.message}</p> : null}
+                    {publication.branch ? (
+                      <div className="rounded-md bg-muted/60 p-2 text-muted-foreground">
+                        <span className="font-medium text-foreground">{publication.isWorktree ? "Worker worktree" : "Worker checkout"}</span>
+                        {publication.branch.current ? <> · branch <code>{publication.branch.current}</code></> : null}
+                        {publication.branch.default ? <> · base <code>{publication.branch.default}</code></> : null}
+                        {publication.workingTree ? <> · {publication.workingTree.hasUncommittedChanges ? `${publication.workingTree.files} changed files` : "working tree clean"}</> : null}
+                        {publication.mergeBase ? <> · {publication.mergeBase.ahead} ahead / {publication.mergeBase.behind} behind</> : null}
+                      </div>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>Commit workspace…</Button>
+                      <Button size="sm" variant="outline" disabled={!publication.capabilities.squashMerge.available} title={publication.capabilities.squashMerge.reason ?? "Squash merge committed branch changes into the local base branch"} onClick={() => setPublicationAction("squash")}>Local squash merge…</Button>
+                    </div>
+                    <p className="text-muted-foreground">BB owns commit execution on the workspace host. Stelow never stages or runs Git commands locally.</p>
+
+                    {publication.pullRequest ? (
+                      <div className="space-y-2 border-t pt-3">
+                        <p className="text-muted-foreground">Pull request <UrlLink href={publication.pullRequest.url} className="font-medium text-primary underline-offset-4 hover:underline">#{publication.pullRequest.number} · {publication.pullRequest.title}</UrlLink> · {publication.pullRequest.attention.replaceAll("_", " ")}</p>
+                        <p className="text-muted-foreground">Review: {publication.pullRequest.review.replaceAll("_", " ")} · checks: {publication.pullRequest.checks.replaceAll("_", " ")} · mergeability: {publication.pullRequest.mergeability}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline" disabled={!publication.capabilities.markReady.available} title={publication.capabilities.markReady.reason ?? "Mark this pull request ready for review"} onClick={() => setPublicationAction("ready")}>Mark ready…</Button>
+                          <Button size="sm" variant="outline" disabled={!publication.capabilities.markDraft.available} title={publication.capabilities.markDraft.reason ?? "Convert this pull request to draft"} onClick={() => setPublicationAction("draft")}>Mark draft…</Button>
+                          <select value={mergeMethod} onChange={(event) => setMergeMethod(event.target.value as "merge" | "rebase" | "squash")} className="min-h-9 cursor-pointer rounded-md border bg-background px-2 text-xs" aria-label="Merge method">
+                            <option value="squash">Squash merge</option>
+                            <option value="merge">Merge commit</option>
+                            <option value="rebase">Rebase merge</option>
+                          </select>
+                          <Button size="sm" disabled={!publication.capabilities.mergePullRequest.available} title={publication.capabilities.mergePullRequest.reason ?? "Merge this pull request through BB"} onClick={() => setPublicationAction("merge")}>Merge PR…</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="border-t pt-3 text-muted-foreground">{publication.pullRequestMessage ?? "No pull request is linked to this branch. BB can manage an existing pull request; create and push it through your Git provider or BB's native PR flow."}</p>
+                    )}
+
+                    {publication.events.length > 0 ? (
+                      <div className="border-t pt-3">
+                        <p className="mb-1 font-medium text-foreground">Publication history</p>
+                        <ul className="space-y-1 text-muted-foreground">
+                          {publication.events.map((event) => <li key={event.id}>{event.action.replaceAll("_", " ")} · {event.message}{event.pullRequestUrl ? <> · <UrlLink href={event.pullRequestUrl} className="text-primary underline-offset-2 hover:underline">Open PR</UrlLink></> : null}</li>)}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </CardDisclosure>
+            ) : null}
+
             {/* Conversation (history + composer) */}
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
 
@@ -5435,6 +5537,24 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         confirmTone="destructive"
         onConfirm={doDelete}
       />
+      <Dialog open={publicationAction !== null} onOpenChange={(open) => { if (!open) setPublicationAction(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{publicationAction === "commit" ? "Commit this workspace?" : publicationAction === "squash" ? "Squash merge into the local base branch?" : publicationAction === "ready" ? "Mark this pull request ready?" : publicationAction === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle>
+            <DialogDescription className="space-y-2">
+              {publicationAction === "commit" ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}
+              {publicationAction === "squash" ? <p>This directly creates one local commit on the base branch from this worktree’s committed changes. It bypasses pull-request review and is intended only for repositories where direct local integration is allowed.</p> : null}
+              {publicationAction === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}
+              {publicationAction === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}
+              {publicationAction === "merge" ? <p>BB will re-check the PR and request a {mergeMethod} merge. Repository rules, approvals, checks, and merge queues remain authoritative.</p> : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <Button onClick={() => void doPublicationAction()}>{publicationAction === "commit" ? "Commit workspace" : publicationAction === "squash" ? "Squash merge" : publicationAction === "ready" ? "Mark ready" : publicationAction === "draft" ? "Mark draft" : "Merge PR"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={githubPostOpen} onOpenChange={setGithubPostOpen}>
         <DialogContent>
           <DialogHeader>

@@ -45,16 +45,19 @@ for (const leaked of ["previewSessions", "killPreview", "connectUnexpose", "abso
 // A `new-worktree` preset runs the agent in a bb-managed worktree, while
 // cardWorkspace() reports the project source. Reading files from the source
 // would preview the wrong code, and the user would be looking at mainline.
-const target = slice("async function previewTarget(", "async function previewTargetFor(");
+const checkout = slice("async function cardCheckout(", "async function previewTarget(");
 // Both markers are required to exist first: a missing one makes indexOf -1,
 // and -1 < n would pass the comparison below with the call deleted entirely.
-const workerFirst = target.indexOf("workerEnvironmentOf(card)");
-const sourceFallback = target.indexOf("cardWorkspace(card)");
-assert.notEqual(workerFirst, -1, "previewTarget must consult the worker's environment");
-assert.notEqual(sourceFallback, -1, "previewTarget must fall back to the project source");
+const workerFirst = checkout.indexOf("workerEnvironmentOf(card)");
+const sourceFallback = checkout.indexOf("cardWorkspace(card)");
+assert.notEqual(workerFirst, -1, "cardCheckout must consult the worker's environment");
+assert.notEqual(sourceFallback, -1, "cardCheckout must fall back to the project source");
 assert.ok(workerFirst < sourceFallback, "the worker's environment must be tried before the project source");
-assert.match(target, /environment\?\.path/, "a worker environment without a path must fall through, not win empty");
-assert.match(target, /source: previewSourceLabel/, "the target must carry the label the panel shows");
+assert.match(checkout, /environment\?\.path/, "a worker environment without a path must fall through, not win empty");
+assert.match(checkout, /environmentId: environment\.id/, "the exact BB environment must travel with the checkout");
+const target = slice("async function previewTarget(", "async function previewTargetFor(");
+assert.match(target, /cardCheckout\(card\)/, "preview must use the shared checkout resolver");
+assert.match(target, /source: checkout\.source/, "the target must carry the shared source label the panel shows");
 assert.match(target, /slug: card\.name/, "the card's own name is the convention that picks between app directories");
 const workerEnv = slice("async function workerEnvironmentOf(", "async function previewTarget(");
 assert.match(workerEnv, /status === "ready"/, "a retired or destroyed environment is not a checkout to preview");
