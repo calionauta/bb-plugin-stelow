@@ -48,6 +48,8 @@ assert.match(app, /Publication history/, "the user can audit prior publication a
 assert.match(app, /commitFilesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
 assert.match(app, /What remains to publish it/, "a saved commit names its pending push/tag/update steps instead of implying arrival");
 assert.match(app, /card\.status !== "completed" && \(card\.stage === "diff-gate"/, "the Diff review panel yields to Git changes once the card is completed");
+assert.match(app, /card\.status === "completed" && publication\?\.workingTree\?\.hasUncommittedChanges/, "pending changes on a Done card stay reviewable in Diff while the commit action lives in Git changes");
+assert.match(app, /Copy command/, "post-commit commands name what they copy instead of a bare Copy");
 assert.match(app, /Saved locally on/, "a successful local save has an explicit outcome state");
 assert.match(app, /View commit/, "recorded local commits can be inspected from Done");
 assert.match(app, /This commit has not been pushed or merged remotely/, "local save does not imply remote publication");

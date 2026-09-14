@@ -178,6 +178,7 @@ function goToTrack(navigate: BbNavigate, track: StelowTrack): void {
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: trackRootSubPath(track) });
 }
 function goToCard(navigate: BbNavigate, card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): void {
+  stelowReturnFocusCardId = cardId;
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: cardSubPath(card, cardId, eventId) });
 }
 function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): void {
@@ -2227,7 +2228,8 @@ function TrackListRow({ card, meta, onOpen }: {
   onOpen: () => void;
 }) {
   const navigate = useBbNavigate();
-  return <button onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>;
+  const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
+  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full items-center gap-3 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span className={`size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{card.displayName}</strong><span className="block truncate text-xs text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span><span className="shrink-0 text-xs text-muted-foreground">{new Date(card.updatedAt).toLocaleString()}</span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -2288,6 +2290,21 @@ function CardRetryButton({ cardId }: { cardId: string }) {
   );
 }
 
+// Return focus: opening a card remembers it; the board restores focus to
+// that card when the user comes back (Esc / Back button), so keyboard users
+// never lose their place. One module slot — a board shows one track at a time.
+let stelowReturnFocusCardId: string | null = null;
+
+function useReturnFocus<T extends HTMLElement>(cardId: string) {
+  const ref = useRef<T | null>(null);
+  useEffect(() => {
+    if (stelowReturnFocusCardId === cardId && ref.current) {
+      stelowReturnFocusCardId = null;
+      ref.current.focus();
+    }
+  }, [cardId]);
+  return ref;
+}
 // Every "open the worker thread" affordance: one definition with the
 // inspect-title everywhere (it is always an inspection). Renders nothing
 // without a thread instead of a dead button that swallows clicks.
@@ -2324,11 +2341,13 @@ function BoardCard({ card }: { card: CardItem }) {
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
+  const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
   const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
   return (
     <div
       role="button"
       tabIndex={0}
+      ref={returnFocusRef}
       draggable
       onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
@@ -2372,11 +2391,13 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
     ? "stelow-border-attention"
     : "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
+  const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
   const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
   return (
     <div
       role="button"
       tabIndex={0}
+      ref={returnFocusRef}
       draggable
       onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
       onClick={open}
@@ -5401,8 +5422,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
             {/* Diff is the pre-completion review instrument (uncommitted work at
                 the gates). Once completed, Git changes owns history via the
-                commit viewer — showing both doubles the same story. */}
-            {card && card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit") ? (
+                commit viewer — except when the tree went dirty again without
+                reopening: then pending changes are reviewable here while the
+                commit action lives in Git changes. Evaluate in Diff, act in
+                Git changes. */}
+            {card && ((card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit")) || (card.status === "completed" && publication?.workingTree?.hasUncommittedChanges)) ? (
             <CardDisclosure
               title="Diff"
               hint={diffData ? (diffData.isRepo ? `${diffData.files.length} files` : "not a git repository") : "working tree vs HEAD"}
@@ -5487,9 +5511,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                           </div>
                           <details className="mt-2 rounded-md border border-emerald-500/20 p-2">
                             <summary className="cursor-pointer font-medium text-emerald-950 dark:text-emerald-100">What remains to publish it</summary>
-                            <ol className="mt-1 list-decimal space-y-1 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
-                              <li>Push the branch from its checkout — Stelow cannot push from this panel (BB exposes no push action): <code>git push</code> <Button size="sm" variant="outline" onClick={() => void copyText("git push", "Push command")}>Copy</Button></li>
-                              <li>The running plugin follows release tags, not branches — pushing alone changes nothing there. Tag a release, then <code>bb plugin update stelow</code> and reload. <Button size="sm" variant="outline" onClick={() => void copyText("bb plugin update stelow", "Update command")}>Copy</Button></li>
+                            <ol className="mt-1 list-decimal space-y-1.5 pl-4 text-emerald-900/80 dark:text-emerald-100/80">
+                              <li>Push the branch from its checkout — Stelow cannot push from this panel (BB exposes no push action). Run in that checkout: <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">git push</code> <Button size="sm" variant="outline" title="Copy the push command" onClick={() => void copyText("git push", "Push command")}>Copy command</Button></li>
+                              <li>The running plugin follows release tags, not branches — pushing alone changes nothing there. Tag a release, then run <code className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[11px]">bb plugin update stelow</code> and reload. <Button size="sm" variant="outline" title="Copy the plugin update command" onClick={() => void copyText("bb plugin update stelow", "Update command")}>Copy command</Button></li>
                             </ol>
                           </details>
                         </div>

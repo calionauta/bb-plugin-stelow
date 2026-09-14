@@ -116,6 +116,8 @@ Open **Stelow** in bb's left navigation (the row shows a live badge of items nee
 
 - **Enter** / **Space** on a card opens its detail.
 - **W** on a card opens the worker thread without a double-click.
+- **Esc** (or the Back button) leaves the detail and returns focus to
+  that card on the board.
 - The card detail explains **Repair** and **Archive** with confirmation dialogs.
   Repair reseeds `state.md` and `stelow.json` and restarts the worker from
   triage; Archive converts the card to the Archived column and stops the worker.

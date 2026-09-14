@@ -82,7 +82,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   standard; strategy/technique rides the meta line).
 - **Card keyboard.** Enter/Space on a focused card opens its detail;
   W opens its worker thread. The handler is bound to the card surface
-  only, so typing in nested controls never navigates.
+  only, so typing in nested controls never navigates. Esc (or Back)
+  returns to the board with that card focused.
 - **Filters** (`FiltersBar`). Project, stage, intent, status, activity,
   needs-attention + reset; the Filters chip badges the active-filter count.
   The attention count in each Build/Research header is a shortcut that turns
@@ -185,9 +186,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a highlight ring.
 - **Diff review** (`cardDiff`, host `experimental_Diff`). The working
   tree vs HEAD, per file, inside the card — on active cards at the
-  diff-gate and audit stages only. Once completed, the panel yields to
-  Git changes (the commit viewer owns history) instead of doubling it.
-  Untracked files open in the viewer; non-repos and
+  diff-gate and audit stages, plus completed cards whose tree went dirty
+  again (pending changes stay reviewable while the commit action lives
+  in Git changes). Otherwise Git changes alone owns Done. Untracked
+  files open in the viewer; non-repos and
   clean trees state so explicitly. Read-only: never stages, never
   mutates the index.
 - **Preview** (`PreviewSection`, `previewState`/`previewStart`/`previewStop`,

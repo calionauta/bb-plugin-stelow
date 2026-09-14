@@ -144,5 +144,10 @@ const lightweightCard = appFunction("LightweightTrackCard", "function ResearchCa
 assert.match(lightweightCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused research/explore card");
 const listRow = appFunction("TrackListRow", "function BoardColumn(");
 assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from list-view rows too");
+// Esc/Back returns to the board with the card focused: opening remembers the
+// card, each card surface restores focus to it on return.
+assert.match(app, /stelowReturnFocusCardId = cardId/, "opening a card remembers it for focus return");
+assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build board cards restore focus on return");
+assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");
