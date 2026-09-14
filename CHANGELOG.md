@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.9.5] - 2026-09-14
+
+### Fixed
+
+- **Honest Git-change controls.** Done cards now call a default-branch action
+  “Save local commit” and state that BB cannot fetch, merge incoming remote
+  changes, push, or create a pull request from that panel. Squash integration
+  is hidden behind an explained Advanced Git operations disclosure and is not
+  offered for a checkout already on the default branch.
+- **Private workflow recovery.** Automatic audit and continuation instructions
+  are now agent-only. They continue to recover a worker that stopped before
+  `bb stelow done`, without appearing as an unexplained message in the card
+  conversation.
+
 ## [0.9.4] - 2026-09-14
 
 ### Fixed
