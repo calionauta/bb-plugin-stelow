@@ -53,6 +53,7 @@ import { contextAskGate } from "./lib/context-ask-gate.mjs";
 import { gateEvidenceGate } from "./lib/gate-ask-evidence.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
+import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths } from "./lib/workspace-recovery.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -492,6 +493,14 @@ export const rpcContract = defineRpcContract({
   promoteCard: {
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
     output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), threadId: z.string().nullable(), error: z.string().nullable() }),
+  },
+  workspaceRecovery: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ kind: z.enum(["attached", "promote", "external-project", "ambiguous", "documents-only"]), message: z.string(), workspace: z.object({ path: z.string().nullable(), isGit: z.boolean(), hasSource: z.boolean() }), candidates: z.array(z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), branch: z.string().nullable(), headSha: z.string().nullable(), changedFiles: z.number(), evidence: z.string() })), recovery: z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), attachedAt: z.number() }).nullable(), error: z.string().nullable() }),
+  },
+  attachRecoveryCheckout: {
+    input: z.object({ cardId: z.string(), projectId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   answerExpiredQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().min(1).max(10_000)).min(1).max(20) })).min(1).max(12) }).strict(),
@@ -1077,7 +1086,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (exact commands and results), and Git evidence (branch/commit or explicit non-Git reason). `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (exact commands and results), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
   // focused card with scopes. The host creates cards only from a recorded,
@@ -1228,6 +1237,22 @@ export default async function plugin(bb: BbPluginApi) {
     answered_at INTEGER,
     consumed_at INTEGER,
     created TEXT NOT NULL DEFAULT '[]'
+  )`);
+  // Preserve a legacy card's original workspace claim separately from a
+  // user-confirmed checkout. Recovery never silently rewrites history.
+  db.exec(`CREATE TABLE IF NOT EXISTS workspace_recoveries (
+    card_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    original_workspace_path TEXT,
+    evidence TEXT NOT NULL,
+    git_root TEXT,
+    branch TEXT,
+    head_sha TEXT,
+    changed_files INTEGER NOT NULL DEFAULT 0,
+    attached_at INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
   if (!cardColumns.some((column) => column.name === "split_from")) {
     db.exec("ALTER TABLE cards ADD COLUMN split_from TEXT");
@@ -2017,6 +2042,54 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
   }
 
+  type RecoveryGitEvidence = { isGit: boolean; gitRoot: string | null; branch: string | null; headSha: string | null; changedFiles: number };
+  async function recoveryGitEvidence(path: string): Promise<RecoveryGitEvidence> {
+    const runGit = (args: string[]) => new Promise<{ ok: boolean; stdout: string }>((done) => {
+      execFile("git", args, { cwd: path, timeout: 15_000, maxBuffer: 1024 * 1024 }, (error, stdout) => done({ ok: !error, stdout: typeof stdout === "string" ? stdout : "" }));
+    });
+    const root = await runGit(["rev-parse", "--show-toplevel"]);
+    if (!root.ok || !root.stdout.trim()) return { isGit: false, gitRoot: null, branch: null, headSha: null, changedFiles: 0 };
+    const [branch, head, status] = await Promise.all([runGit(["branch", "--show-current"]), runGit(["rev-parse", "HEAD"]), runGit(["status", "--porcelain=v1", "--untracked-files=all"])]);
+    return { isGit: true, gitRoot: root.stdout.trim(), branch: branch.ok ? branch.stdout.trim() || null : null, headSha: head.ok ? head.stdout.trim() || null : null, changedFiles: status.ok ? status.stdout.split("\n").filter(Boolean).length : 0 };
+  }
+
+  // Stelow seeds every workspace with `skills/`, `data/`, `.stelow/`, and
+  // `stelow.json`. Treating that scaffolding as source made every exploratory
+  // card look promotable, which hid the worker-reported-checkout path. The
+  // rule (and its test) lives in lib/workspace-recovery.
+  function exploratoryHasSource(path: string | null): boolean {
+    if (!path) return false;
+    try {
+      return hasWorkspaceSource(readdirSync(path, { withFileTypes: true }).map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() })));
+    } catch { return false; }
+  }
+
+  type RecoveryCandidate = { projectId: string; projectName: string; path: string; branch: string | null; headSha: string | null; changedFiles: number; evidence: string; gitRoot: string | null };
+  async function recoverySnapshot(card: CardRow) {
+    const attached = db.prepare("SELECT project_id, project_name, source_path, attached_at FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { project_id: string; project_name: string; source_path: string; attached_at: number } | undefined;
+    const workspacePath = card.workspace_path;
+    const workspace = workspacePath ? await recoveryGitEvidence(workspacePath) : { isGit: false, gitRoot: null, branch: null, headSha: null, changedFiles: 0 };
+    // `last_assistant_text` may be blank on older cards after an idle sync.
+    // The thread output is the durable fallback, read only for this explicit
+    // recovery check (never searched across unrelated threads).
+    const threadOutput = card.worker_thread_id
+      ? await bb.sdk.threads.output({ threadId: card.worker_thread_id }).then((result) => result.output ?? "").catch(() => "")
+      : "";
+    const paths = reportedCheckoutPaths(card.last_assistant_text ?? "", threadOutput);
+    const projects = await bb.sdk.projects.list().catch(() => []);
+    const candidates: RecoveryCandidate[] = [];
+    for (const project of projects) for (const source of project.sources ?? []) {
+      if (!source.path || !paths.includes(source.path)) continue;
+      if (card.workspace_host_id && source.hostId && source.hostId !== card.workspace_host_id) continue;
+      const evidence = await recoveryGitEvidence(source.path);
+      if (!evidence.isGit || evidence.changedFiles === 0) continue;
+      candidates.push({ projectId: project.id, projectName: project.name, path: source.path, branch: evidence.branch, headSha: evidence.headSha, changedFiles: evidence.changedFiles, evidence: "Worker explicitly reported this registered checkout.", gitRoot: evidence.gitRoot });
+    }
+    const hasSource = exploratoryHasSource(workspacePath);
+    const kind = recoveryDisposition({ workspaceIsGit: workspace.isGit, hasWorkspaceSource: hasSource, candidates, attached: Boolean(attached) });
+    return { kind, message: recoveryMessage(kind), workspace: { path: workspacePath, isGit: workspace.isGit, hasSource }, candidates, recovery: attached ? { projectId: attached.project_id, projectName: attached.project_name, path: attached.source_path, attachedAt: attached.attached_at } : null };
+  }
+
   // --- Preview: one dev server per checkout. --------------------------------
   //
   // The lifecycle — which checkout owns a server, when it is ready, what to
@@ -2102,6 +2175,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
    * the project's source checkout by accident.
    */
   async function cardCheckout(card: CardRow): Promise<CardCheckout | null> {
+    // A legacy exploratory card may have a user-confirmed, evidence-backed
+    // external checkout. Prefer that audited target for read-only diff and
+    // preview surfaces; publication still requires a live BB environment.
+    if (card.workspace_kind === "exploratory") {
+      const recovery = db.prepare("SELECT source_path FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { source_path: string } | undefined;
+      if (recovery?.source_path) return { path: recovery.source_path, hostId: card.workspace_host_id, environmentId: null, environment: null, source: "Recovered project checkout" };
+    }
     const environment = await workerEnvironmentOf(card);
     if (environment?.path) {
       return {
@@ -4139,6 +4219,17 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const workspace = await cardWorkspace(card);
       if (!workspace?.path) return { ok: false, projectId: null, projectName: null, threadId: null, error: ERR_WORKSPACE_UNAVAILABLE };
       if (!workspace.hostId) return { ok: false, projectId: null, projectName: null, threadId: null, error: "Workspace host is unavailable." };
+      const recovery = await recoverySnapshot(card);
+      if (recovery.kind !== "promote") {
+        // Every refusal names the exit, so a refusal is never a deadlock.
+        const refusal: Record<typeof recovery.kind, string> = {
+          attached: "This card already has a reviewed checkout attached. Use that checkout to review, test, and commit.",
+          "external-project": "This card has an evidenced external project checkout. Review and attach that checkout instead of promoting the empty exploratory folder.",
+          ambiguous: "Several registered checkouts match the worker's report. Review them in Workspace recovery and attach the right one.",
+          "documents-only": "This exploratory workspace holds workflow documents only — there is no source material to turn into a project.",
+        };
+        return { ok: false, projectId: null, projectName: null, threadId: null, error: refusal[recovery.kind] };
+      }
       const projectName = normalizePromoteName(name, card.display_name ?? card.name);
       const projects = await bb.sdk.projects.list().catch(() => []);
       const decision = findAdoptableProject(projects, projectName, workspace.path);
@@ -4172,6 +4263,28 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, projectId, projectName, threadId: handoff.threadId, error: null };
+    },
+
+    async workspaceRecovery({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) return { kind: "documents-only" as const, message: "Card not found.", workspace: { path: null, isGit: false, hasSource: false }, candidates: [], recovery: null, error: ERR_CARD_NOT_FOUND };
+      if (card.workspace_kind !== "exploratory") return { kind: "attached" as const, message: "This card already belongs to a project workspace.", workspace: { path: null, isGit: true, hasSource: true }, candidates: [], recovery: null, error: null };
+      return { ...(await recoverySnapshot(card)), error: null };
+    },
+
+    async attachRecoveryCheckout({ cardId, projectId }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
+      if (card.workspace_kind !== "exploratory") return { ok: false, error: "This card already belongs to a project workspace." };
+      if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
+      const snapshot = await recoverySnapshot(card);
+      const candidate = snapshot.candidates.find((entry) => entry.projectId === projectId);
+      if (!candidate) return { ok: false, error: "That checkout no longer has the exact reported, registered Git evidence. Refresh and review again." };
+      db.prepare("INSERT OR REPLACE INTO workspace_recoveries (card_id, project_id, project_name, source_path, original_workspace_path, evidence, git_root, branch, head_sha, changed_files, attached_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, candidate.projectId, candidate.projectName, candidate.path, card.workspace_path, candidate.evidence, candidate.gitRoot, candidate.branch, candidate.headSha, candidate.changedFiles, now());
+      logCardComment(cardId, "card", cardId, "agent", `Recovery attached after user review: registered project "${candidate.projectName}" at ${candidate.path}; ${candidate.changedFiles} uncommitted files, branch ${candidate.branch ?? "detached"}, HEAD ${candidate.headSha?.slice(0, 12) ?? "unknown"}. Original exploratory workspace remains preserved.`);
+      bb.realtime.publish("card-state", { cardId });
+      bb.realtime.publish("board-changed", { cardId });
+      return { ok: true, error: null };
     },
 
     async researchStrategies() {
@@ -5388,7 +5501,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0 });
           if (refusal) return { exitCode: 1, stderr: refusal };
           const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;
-          const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : []);
+          const checkout = await cardCheckout(card);
+          const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : [], checkout?.path ?? null);
           if (!receipt.ready) return { exitCode: 1, stderr: receipt.error };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });

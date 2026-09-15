@@ -89,7 +89,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   "Stelow exploratory work".
 - **Turn into project** (`promoteCard`). Exploratory-only action that
   creates a real BB project from the card's workspace. Files stay in
-  place; the worker continues from the current stage.
+  place; the worker continues from the current stage. Offered only when
+  the workspace actually holds source material; every other case is
+  refused with the exit that fits it.
+- **Workspace recovery** (`workspaceRecovery`, `attachRecoveryCheckout`,
+  `lib/workspace-recovery.mjs`). An exploratory card whose work happened
+  elsewhere offers exactly one evidenced next step instead of a guess:
+  promote the workspace (real source is here), review a worker-reported
+  registered checkout (the agent said where it wrote), choose between
+  reported checkouts (more than one matches), or state plainly that only
+  documents remain. Only registered projects on the same host that the
+  worker named explicitly become candidates, and each must still show
+  uncommitted Git evidence when checked. Attaching records the reviewed
+  project, branch, HEAD, and changed-file count in the card's audit trail
+  and keeps the original exploratory path — it never moves files, stages
+  changes, commits, or pushes. Stelow's own seeded scaffolding (`skills/`,
+  `data/`, `.stelow/`, `stelow.json`) is never mistaken for source, so an
+  empty exploratory folder can no longer masquerade as promotable.
 
 ## 2. Orient myself
 *When I open Stelow, I want to see everything and find my card.*

@@ -3867,6 +3867,35 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
   );
 }
 
+type WorkspaceRecoveryData = {
+  kind: "attached" | "promote" | "external-project" | "ambiguous" | "documents-only";
+  message: string;
+  candidates: Array<{ projectId: string; projectName: string; path: string; branch: string | null; headSha: string | null; changedFiles: number; evidence: string }>;
+  recovery: { projectId: string; projectName: string; path: string; attachedAt: number } | null;
+};
+
+function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAttach }: { recovery: WorkspaceRecoveryData | null; loading: boolean; onRefresh: () => void; onPromote: () => void; onAttach: (projectId: string) => void }) {
+  return <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-950 dark:text-amber-100">
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">Workspace recovery</p><Button size="sm" variant="outline" disabled={loading} onClick={onRefresh}>{loading ? "Checking…" : "Re-check evidence"}</Button></div>
+    {!recovery && !loading ? <p>Checking whether this exploratory card has source material or a worker-reported registered checkout…</p> : null}
+    {recovery ? <>
+      <p>{recovery.message}</p>
+      {recovery.kind === "documents-only" ? <p className="text-amber-900/80 dark:text-amber-100/80">Artifacts remain readable, but there is no verified code checkout to recover. New Build cards now require a project workspace.</p> : null}
+      {recovery.kind === "promote" ? <Button size="sm" variant="outline" onClick={onPromote}>Turn this source workspace into a project…</Button> : null}
+      {recovery.candidates.length > 0 ? <div className="space-y-2 border-t border-amber-500/20 pt-2">
+        <p className="text-amber-900/80 dark:text-amber-100/80">{recovery.kind === "promote" ? "This workspace also has a checkout the worker reported writing to. If the real work lives there instead, review and attach it below." : "Only registered BB projects on the same host, explicitly named by the worker, are offered."} Attaching records provenance; it never moves files, stages changes, commits, or pushes.</p>
+        {recovery.candidates.map((candidate) => <div key={`${candidate.projectId}-${candidate.path}`} className="rounded border border-amber-500/20 bg-background/60 p-2 text-foreground">
+          <p className="font-medium">{candidate.projectName} · <code>{candidate.branch ?? "detached"}</code></p>
+          <p className="mt-1 break-all text-muted-foreground"><code>{candidate.path}</code> · {candidate.changedFiles} changed files · HEAD {candidate.headSha?.slice(0, 12) ?? "unknown"}</p>
+          <p className="mt-1 text-muted-foreground">{candidate.evidence}</p>
+          <Button className="mt-2" size="sm" variant="outline" onClick={() => onAttach(candidate.projectId)} title="Records this reviewed checkout on the card. It does not change the checkout or Git.">Attach for audit trail…</Button>
+        </div>)}
+      </div> : null}
+      {recovery.kind === "attached" && recovery.recovery ? <div className="rounded border border-emerald-500/30 bg-emerald-500/10 p-2"><p className="font-medium">Attached: {recovery.recovery.projectName}</p><p className="mt-1 break-all text-emerald-900/80 dark:text-emerald-100/80"><code>{recovery.recovery.path}</code> · attached {new Date(recovery.recovery.attachedAt).toLocaleString()}</p><p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">Use the project’s BB workspace to review, test, and commit. This card keeps the original exploratory path in its audit trail.</p></div> : null}
+    </> : null}
+  </div>;
+}
+
 // Open-card building blocks: one contextual hero (heroFor) + one disclosure
 // pattern (DisclosureSection) for secondary content. Previously every zone —
 // banners, meta grid, timeline, preset, comments — used its own ad-hoc
@@ -5256,6 +5285,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffData, setDiffData] = useState<CardDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
+  type WorkspaceRecovery = Awaited<ReturnType<typeof rpc.call<"workspaceRecovery">>>;
+  const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecovery | null>(null);
+  const [workspaceRecoveryLoading, setWorkspaceRecoveryLoading] = useState(false);
+  const [recoveryAttachProjectId, setRecoveryAttachProjectId] = useState<string | null>(null);
   const artifactsRef = useRef<HTMLDivElement | null>(null);
   // Count badges on the timeline deep-link here: open the section, remember
   // which stage was asked about (its group rings + scrolls into view), then
@@ -5280,7 +5313,16 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
   }, [cardId, inboxEventId, rpc]);
 
+  const loadWorkspaceRecovery = useCallback(async () => {
+    if (card?.workspaceKind !== "exploratory") { setWorkspaceRecovery(null); return; }
+    setWorkspaceRecoveryLoading(true);
+    try { setWorkspaceRecovery(await rpc.call("workspaceRecovery", { cardId })); }
+    catch { setWorkspaceRecovery(null); }
+    finally { setWorkspaceRecoveryLoading(false); }
+  }, [card?.workspaceKind, cardId, rpc]);
+
   useEffect(() => { void load(); }, [load, detailRefresh]);
+  useEffect(() => { void loadWorkspaceRecovery(); }, [loadWorkspaceRecovery]);
   useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
   // Viewing a completed card marks its completion seen (read, never
   // resolved): the badge drops, Recent updates keeps the entry. Fires on
@@ -5375,6 +5417,18 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     } finally {
       setPromoting(false);
     }
+  }
+
+  async function doAttachRecoveryCheckout() {
+    if (!recoveryAttachProjectId) return;
+    const result = await rpc.call("attachRecoveryCheckout", { cardId, projectId: recoveryAttachProjectId });
+    if (!result.ok) {
+      toast.error(result.error ?? "Could not attach the checkout.");
+      return;
+    }
+    setRecoveryAttachProjectId(null);
+    toast.success("Checkout attached for review. No files, branch, or Git history were changed.");
+    await Promise.all([loadWorkspaceRecovery(), load()]);
   }
 
   async function doRepair(intent?: string): Promise<boolean> {
@@ -5610,7 +5664,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
-                    {card.workspaceKind === "exploratory" ? <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" title={card.workspacePath ?? undefined}><span>Exploratory work · stored locally</span><Button size="sm" variant="outline" onClick={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} title="Create a BB project from this workspace so the work lives as a real project. Files stay in place.">Turn into project…</Button></p> : null}
+                    {card.workspaceKind === "exploratory" ? <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" title={card.workspacePath ?? undefined}><span>Exploratory work · stored locally</span>{workspaceRecovery?.kind === "promote" ? <Button size="sm" variant="outline" onClick={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} title="This workspace contains source material. Create a BB project without moving files.">Turn into project…</Button> : null}{workspaceRecovery && workspaceRecovery.kind !== "attached" && workspaceRecovery.candidates.length > 0 ? <span className="font-medium text-amber-800 dark:text-amber-200">Reported code checkout needs review below.</span> : null}</p> : null}
                     {/* One primary action per state; secondary actions are real
                         buttons (outline/ghost) so affordances never read as
                         body text. */}
@@ -5795,7 +5849,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 reopening: then pending changes are reviewable here while the
                 commit action lives in Git changes. Evaluate in Diff, act in
                 Git changes. */}
-            {card && ((card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit")) || (card.status === "completed" && publication?.workingTree?.hasUncommittedChanges)) ? (
+            {card && ((card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit")) || (card.status === "completed" && publication?.workingTree?.hasUncommittedChanges) || (card.status === "completed" && workspaceRecovery?.kind === "attached")) ? (
             <CardDisclosure
               title="Diff"
               hint={diffData ? (diffData.isRepo ? `${diffData.files.length} files` : "not a git repository") : "working tree vs HEAD"}
@@ -5854,7 +5908,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               >
                 {!publication && !publicationLoading ? <p className="text-xs text-muted-foreground">Publication status is unavailable.</p> : null}
                 {card.workspaceKind === "exploratory" ? (
-                  <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200">This Build card ran in an exploratory, non-Git workspace. Its state artifacts are preserved, but no code changes, branch, commit, or test result can be verified here. Start the replacement in the intended BB project; new Build cards now require one.</p>
+                  <WorkspaceRecoveryPanel recovery={workspaceRecovery} loading={workspaceRecoveryLoading} onRefresh={() => void loadWorkspaceRecovery()} onPromote={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} onAttach={setRecoveryAttachProjectId} />
                 ) : null}
                 {publication ? (
                   <div className="space-y-3 text-xs">
@@ -6088,6 +6142,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         confirmLabel="Delete"
         confirmTone="destructive"
         onConfirm={doDelete}
+      />
+      <ConfirmActionDialog
+        open={recoveryAttachProjectId !== null}
+        onOpenChange={(open) => { if (!open) setRecoveryAttachProjectId(null); }}
+        title="Attach this reported checkout to the audit trail?"
+        description="Stelow will record the reviewed project path, current branch, HEAD, changed-file count, and the worker report. It will not move files, alter the Git index, commit, push, or claim that acceptance tests have passed."
+        confirmLabel="Attach reviewed checkout"
+        confirmTone="default"
+        onConfirm={doAttachRecoveryCheckout}
       />
       <Dialog open={publicationAction !== null} onOpenChange={(open) => { if (!open && !publicationSubmitting) setPublicationAction(null); }}>
         <DialogContent>
