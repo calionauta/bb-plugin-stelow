@@ -230,8 +230,10 @@ const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.ind
 assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
 assert.match(app, /card\.status === "completed" \|\| card\.status === "draft" \|\| \(card\.status === "in-progress" && card\.activity === "running"\)/, "completed, draft and live-working cards show one pill — other activities keep status plus activity");
-assert.match(app, /setMapOpen\(event\.currentTarget\.open\)/, "the workflow map tracks its own open state");
-assert.match(app, /\{mapOpen \? "▾" : "▸"\}<\/span>Workflow map/, "the workflow map chevron is state-explicit, not a CSS-variant hope");
+assert.match(app, /<WorkflowMap open=\{mapOpen\} onToggle=\{setMapOpen\} \/>/, "the workflow map tracks its own open state");
+assert.match(app, /function WorkflowMap\([\s\S]*?<DisclosureChevron open=\{open\} className="text-base text-foreground" \/>/, "the workflow map uses the shared, state-explicit chevron at the readable standard size");
+assert.match(app, /WORKFLOW_PHASES\.map\(\(phase\) =>/, "the workflow map groups stages into their four readable workflow phases");
+assert.match(app, /inline-flex size-5 shrink-0 items-center justify-center text-sm/, "all shared disclosure chevrons reserve one readable minimum size");
 assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

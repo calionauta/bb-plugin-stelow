@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.31] - 2026-09-15
+
+### Changed
+
+- **Every disclosure uses the same readable chevron.** The control reserves
+  a 20px target and rotates between closed/right and open/down, including
+  board columns, preference rows, and preset forms.
+- **Workflow map is a legible reference, not a dense line list.** It now has
+  a proper two-line heading, relaxed copy, four phase sections, numbered
+  stage cards, and direct links to the corresponding upstream behavior.
+
 ## [0.18.30] - 2026-09-15
 
 ### Fixed

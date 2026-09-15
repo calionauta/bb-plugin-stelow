@@ -26,7 +26,7 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
 import { questionCopy } from "./lib/question-presentation.mjs";
@@ -2001,7 +2001,7 @@ function CollapsibleChoiceCards<T extends string>({ label, hint, value, options,
         aria-label={`${label}: ${selected ? selected.label : "not set"}. ${open ? "Collapse" : "Change"}`}
         className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
       >
-        <DisclosureChevron />
+        <DisclosureChevron open={open} />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium leading-5 text-foreground">{label}</span>
           {selected ? <span className="block truncate text-xs leading-5 text-muted-foreground" title={selected.description}>{selected.label} — {selected.description}</span> : null}
@@ -2337,7 +2337,7 @@ function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<s
     if (!cards.length) return null;
     const isCollapsed = collapsed[column] === true;
     const label = COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -2364,17 +2364,16 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labe
           <>
             <span className="rounded-md bg-foreground/10 px-1.5 text-foreground">{cards.length}</span>
             <span style={{ writingMode: "vertical-rl" }} className="text-[10px] tracking-widest text-foreground/80">{labels[column]}</span>
-            <span aria-hidden className="text-foreground/60">▸</span>
+            <DisclosureChevron open={false} className="text-foreground/60" />
           </>
         ) : (
           <>
             <span className="flex items-center gap-1.5">
-              <span aria-hidden className="text-foreground/60">▾</span>
+              <DisclosureChevron open />
               <span>{labels[column]}</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="rounded-md bg-foreground/10 px-2 text-foreground">{cards.length}</span>
-              <span aria-hidden className="text-foreground/60">▸</span>
             </span>
           </>
         )}
@@ -2601,7 +2600,7 @@ function LightweightTrackList({ groups, navigate, metaFor, collapsed, onToggle }
     if (cards.length === 0) return null;
     const isCollapsed = collapsed[column] === true;
     const label = RESEARCH_COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><span aria-hidden className="text-foreground/60">{isCollapsed ? "▸" : "▾"}</span>{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={metaFor(card)} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={metaFor(card)} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -3715,7 +3714,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
             <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
             <div className="flex shrink-0 gap-1">
               {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
-              <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}>{formOpen ? "▾ Hide" : "▸ Show"}</Button>
+              <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}><DisclosureChevron open={formOpen} />{formOpen ? "Hide" : "Show"}</Button>
             </div>
           </div>
           {formOpen ? (
@@ -3873,12 +3872,13 @@ function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLa
 // banners, meta grid, timeline, preset, comments — used its own ad-hoc
 // spacing and heading style.
 // One open/close affordance for every collapsible in the panel: a chevron
-// that points right when closed and rotates down when open (via the
-// `group-open:` variant, so each <details> must carry the `group` class).
-// Native <details>/<summary> already expose expanded state to assistive
+// that points right when closed and rotates down when open. Native
+// <details>/<summary> use the `group-open:` variant; controlled buttons pass
+// `open` directly. Native controls already expose expanded state to assistive
 // tech; this mirrors it visually for sighted, low-vision, and lay users.
-function DisclosureChevron({ className = "" }: { className?: string }) {
-  return <span aria-hidden className={`inline-block shrink-0 text-[10px] text-muted-foreground transition-transform group-open:rotate-90 ${className}`}>▶</span>;
+function DisclosureChevron({ className = "", open }: { className?: string; open?: boolean }) {
+  const rotation = open === undefined ? "group-open:rotate-90" : open ? "rotate-90" : "rotate-0";
+  return <span aria-hidden className={`inline-flex size-5 shrink-0 items-center justify-center text-sm leading-none text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${rotation} ${className}`}>▶</span>;
 }
 
 function DisclosureSection({ title, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
@@ -3903,6 +3903,63 @@ function DisclosureSection({ title, hint, action, children, defaultOpen = false,
 // Legacy name retained while card-specific call sites migrate; the component
 // itself is deliberately generic and now also owns configuration disclosures.
 const CardDisclosure = DisclosureSection;
+
+// The workflow reference is intentionally separate from the very large card
+// body: it is a stable explainer, not card-state orchestration. Keeping it
+// here makes its visual density and accessibility contract independently
+// reviewable while the parent owns only whether it is expanded.
+function WorkflowMap({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
+  return (
+    <details className="group mt-3 overflow-hidden rounded-lg border bg-background/60" onToggle={(event) => onToggle(event.currentTarget.open)}>
+      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-3 py-2.5 marker:hidden hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+        <DisclosureChevron open={open} className="text-base text-foreground" />
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold leading-5 text-foreground">Workflow map</span>
+          <span className="block text-xs leading-5 text-muted-foreground">What each stage does</span>
+        </span>
+      </summary>
+      <div className="space-y-4 border-t px-3 py-3 sm:px-4 sm:py-4">
+        <p className="max-w-4xl text-sm leading-6 text-muted-foreground">Analysis, Planning, Execution, and Review are workflow phases. Review contains automated checks (Diff gate and Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior document that defines it.</p>
+        <div className="space-y-4">
+          {WORKFLOW_PHASES.map((phase) => {
+            const stages = STAGE_SEQUENCE.filter((stage) => STAGE_BAND[stage] === phase.id);
+            return (
+              <section key={phase.id} aria-labelledby={`workflow-map-${phase.id}`} className="space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <h5 id={`workflow-map-${phase.id}`} className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{phase.label}</h5>
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-xs text-muted-foreground">{stages.length} {stages.length === 1 ? "stage" : "stages"}</span>
+                </div>
+                <ul className="grid gap-2.5 lg:grid-cols-2">
+                  {stages.map((stage) => {
+                    const url = stageInfoUrl(stage);
+                    const skill = STAGE_SKILL[stage] ?? null;
+                    return (
+                      <li key={stage} className="flex min-w-0 gap-2.5 rounded-md border bg-muted/30 px-3 py-2.5">
+                        <span aria-hidden className="flex size-6 shrink-0 items-center justify-center rounded-full bg-background text-[11px] font-semibold text-muted-foreground ring-1 ring-border">{STAGE_SEQUENCE.indexOf(stage) + 1}</span>
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <span className="font-medium leading-5 text-foreground">{stageLabel(stage)}</span>
+                            {url && skill ? (
+                              <UrlLink href={url} title={`How ${stageLabel(stage)} works — ${skill} on GitHub`} aria-label={`${stageLabel(stage)} stage definition in ${skill} on GitHub`} className="text-xs leading-5 text-primary underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                                {skill}
+                              </UrlLink>
+                            ) : null}
+                          </div>
+                          <p className="text-xs leading-5 text-muted-foreground">{STAGE_PRODUCES[stage]}</p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </details>
+  );
+}
 
 // --- Preview: run the card's web app and look at it. ------------------------
 //
@@ -5690,27 +5747,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
                     offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
-                  <details className="pt-1 text-xs text-muted-foreground" onToggle={(event) => setMapOpen(event.currentTarget.open)}>
-                    <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-foreground marker:hidden [&::-webkit-details-marker]:hidden"><span aria-hidden className="inline-block shrink-0 text-[10px] text-muted-foreground">{mapOpen ? "▾" : "▸"}</span>Workflow map · what each stage does</summary>
-                    <p className="mt-1">Analysis, Planning, Execution, and Review are workflow phases. Review holds automated workflow checks (Diff gate, Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior doc that defines it.</p>
-                    <ul className="mt-2 space-y-1">
-                      {STAGE_SEQUENCE.map((stage) => {
-                        const url = stageInfoUrl(stage);
-                        const skill = STAGE_SKILL[stage] ?? null;
-                        return (
-                          <li key={stage} className="flex flex-wrap items-baseline gap-x-1.5">
-                            <span className="font-medium text-foreground">{stageLabel(stage)}</span>
-                            <span>· {STAGE_PRODUCES[stage]}</span>
-                            {url && skill ? (
-                              <UrlLink href={url} title={`How ${stageLabel(stage)} works — ${skill} on GitHub`} aria-label={`${stageLabel(stage)} stage definition in ${skill} on GitHub`} className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-                                {skill}
-                              </UrlLink>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </details>
+                  <WorkflowMap open={mapOpen} onToggle={setMapOpen} />
                 </div>
               ) : null}
               {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
