@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.28] - 2026-09-15
+
 ### Fixed
 
 - **Review gates require evidence.** A gate question with nothing to read
