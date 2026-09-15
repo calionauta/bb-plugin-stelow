@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.12] - 2026-09-15
+
+### Changed
+
+- **Start new issue shows its workflow preferences openly.** Planning
+  depth and review checkpoints render expanded under the composer instead
+  of behind a collapsed Settings toggle, with consequence-first copy
+  (what deeper planning costs, what a pause guarantees) and the board
+  defaults framed as keep-or-adjust. The dialog keeps a fixed max height
+  with inner scroll, so the frame never resizes.
+
 ## [0.18.11] - 2026-09-15
 
 ### Fixed
