@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.27] - 2026-09-15
+
 ### Fixed
 
 - **Refactor/bugfix skip strategy questions deterministically.** The
