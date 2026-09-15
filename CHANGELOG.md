@@ -8,6 +8,21 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.33] - 2026-09-15
+
+### Fixed
+
+- **The artifact trail can no longer hide a produced document.** The card
+  listed only what the agent registered in state.md, so a file the workflow
+  wrote but never declared was invisible. Every other document in the card's
+  state directory is now listed too, under "Produced but not registered"; the
+  workflow's own state, its backups, logs, and JSON bookkeeping stay out.
+- **"Mentioned files" never guesses.** It listed files the request never
+  named — a split card's prompt names the parent card's path, and a basename
+  search matched its own state file. It now shows only paths the request
+  spells out that exist, and is labelled "Files named in your request", so
+  the card states where the file came from.
+
 ## [0.18.32] - 2026-09-15
 
 ### Added
