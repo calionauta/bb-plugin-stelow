@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.29] - 2026-09-15
+
 ### Fixed
 
 - **Per-option evidence opens in the row.** The document button moved
