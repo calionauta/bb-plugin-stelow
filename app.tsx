@@ -268,15 +268,13 @@ function BuildStatusPills({ card }: { card: CardItem }) {
   // Completed reads as one state: the column ("Done") already says it, so a
   // second "Completed" pill only duplicates. (Archived already collapses to
   // one via the equality below.)
-  // Draft is the lifecycle state for "fresh, still in triage": set at
-  // creation, cleared on the first move/advance out of triage. It always
-  // pairs with the triage checkpoint, so its tooltip says what it means
-  // instead of repeating the generic status help.
-  const statusTitle = card.status === "draft"
-    ? "Fresh card — still in triage, not yet admitted to the workflow."
-    : "Workflow status — the card's specific execution state.";
-  if (column === status || card.status === "completed") {
-    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={card.status === "draft" ? statusTitle : "Board status — this card's current state."}><span className="mr-1">{statusGlyph(card.status)}</span>{column}</Pill>;
+  // Draft is "fresh, still in triage" and always pairs with the triage
+  // checkpoint, so a second "Draft" pill next to it duplicates what the
+  // column already says: one pill, same treatment as completed. The stored
+  // status is untouched (creation, reseed and the API still use it).
+  const statusTitle = "Workflow status — the card's specific execution state.";
+  if (column === status || card.status === "completed" || card.status === "draft") {
+    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board status — this card's current state."><span className="mr-1">{statusGlyph(card.status)}</span>{column}</Pill>;
   }
   return (<>
     <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the build flow.">{column}</Pill>

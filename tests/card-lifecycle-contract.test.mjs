@@ -104,7 +104,7 @@ assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over
 assert.match(app, /aria-expanded=\{!isCollapsed\}/, "list group toggles expose expansion state");
 assert.match(app, /card\?\.status === "completed" \? "Completed without scoped execution\."/, "completed cards never claim shaping is in progress");
 assert.match(app, /card\?\.status === "completed" \? undefined : stageLabel\(card\.stage\)/, "completed cards carry no stale stage hint");
-assert.match(app, /if \(column === status \|\| card\.status === "completed"\)/, "completed build cards show one pill, not Done + Completed");
+assert.match(app, /if \(column === status \|\| card\.status === "completed" \|\| card\.status === "draft"\)/, "completed and draft build cards show one pill, not a duplicated status");
 assert.match(app, /Completed · \{completedWorkerPreset\}/, "completed cards show the recorded worker preset instead of a future phase");
 assert.match(app, /Preset recorded for the completed worker\./, "completed cards do not claim a preset applies to another worker");
 assert.match(app, /card\.status === "completed" \? "Completed" : stageLabel\(card\.stage\)/, "completed list rows do not present Audit as active work");
@@ -227,6 +227,7 @@ assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how 
 const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
 assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
-assert.match(app, /Fresh card — still in triage, not yet admitted to the workflow\./, "the Draft pill explains the lifecycle state instead of showing jargon");
+assert.match(app, /card\.status === "completed" \|\| card\.status === "draft"/, "draft collapses to the single column pill like completed — the triage column already says it");
+assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");
