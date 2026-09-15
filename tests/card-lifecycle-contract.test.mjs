@@ -160,6 +160,7 @@ assert.match(app, /<span className="font-semibold">Failed:<\/span> \{card\.lastE
 assert.match(app, /aria-label=\{retrying \? "Retrying the worker" : `Retry the worker on \$\{label\}`\}/, "the compact retry keeps a full accessible name at icon density");
 assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
 assert.match(app, /Answering below resumes the worker\./, "the concurrent-error note points at the open question as the recovery path");
+assert.match(app, /Retry the failed worker in place instead of answering/, "the open card offers retry beside the question when both are live");
 assert.doesNotMatch(boardCard, /flex-1 truncate text-sm/, "build card titles are no longer truncated beside pills");
 assert.match(listRow, /break-words text-sm leading-5/, "list cards keep long requested outcomes readable");
 assert.doesNotMatch(app, /hsl\(280 80% 60%/, "running cards no longer cycle through distracting rainbow colors");

@@ -4734,6 +4734,9 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
+                      {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
+                        <Button size="sm" variant="outline" disabled={retrying} onClick={() => void doRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{retrying ? "Retrying…" : "Retry worker"}</Button>
+                      ) : null}
                       {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
                       {hero.kind === "error" && card.workerThreadId ? (
                         <>
@@ -4977,6 +4980,9 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
+                      {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
+                        <Button size="sm" variant="outline" disabled={retrying} onClick={() => void doRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{retrying ? "Retrying…" : "Retry worker"}</Button>
+                      ) : null}
                       {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
                       {hero.kind === "error" && card.workerThreadId ? (
                         <>
@@ -5479,6 +5485,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
+                      {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
+                        <Button size="sm" variant="outline" disabled={retrying} onClick={() => void doRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{retrying ? "Retrying…" : "Retry worker"}</Button>
+                      ) : null}
                       {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
                       {hero.kind === "decision" && reviewArtifact ? (
                         <span className="w-full">

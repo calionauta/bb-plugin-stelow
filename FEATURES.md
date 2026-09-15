@@ -239,7 +239,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   + one primary action per state; secondary actions as real buttons. The
   decision state always offers Open thread, and names a concurrent worker
   error inside itself (answering resumes the worker) instead of hiding the
-  reason behind the Failed chip. Answering any question clears the
+  reason behind the Failed chip — with a Retry worker alternative beside
+  the question for the failure itself. Answering any question clears the
   interrupted turn's failure; an error arriving while a question is open is
   superseded at birth, so one card counts once.
 - **What is happening** (`ScopesList`, `StageTimeline`). Scopes in
