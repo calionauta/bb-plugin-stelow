@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } fr
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { parseArtifactManifest, resolveArtifactPath } from "./lib/artifact-manifest.mjs";
+import { parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths } from "./lib/artifact-manifest.mjs";
 import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
@@ -829,21 +829,15 @@ async function detectMentionedFiles(bb: BbPluginApi, rootPath: string | null, te
     if (token.length >= 3 && token.length <= 120) candidates.add(token);
   }
   const found: Array<{ path: string; display: string; absolutePath: string }> = [];
+  // Exact paths only. A basename "search" used to run when nothing matched,
+  // which surfaced files the request never named (a split card's prompt names
+  // the PARENT card's state.md, and the search matched its own). An unfaithful
+  // suggestion is worse than none, so a miss simply lists nothing.
   for (const candidate of candidates) {
     try {
       await bb.sdk.files.read({ path: join(rootPath, candidate) });
       found.push({ path: candidate, display: candidate, absolutePath: join(rootPath, candidate) });
-    } catch { /* not found in workspace root */ }
-  }
-  if (found.length === 0) {
-    // Fall back: check the raw basename anywhere under the workspace.
-    for (const candidate of candidates) {
-      const basename = candidate.split("/").pop()!;
-      if (!basename) continue;
-      const listed = await bb.sdk.files.list({ path: rootPath, query: basename }).catch(() => null);
-      const hit = (listed?.files ?? []).find((entry) => entry.path.endsWith(basename));
-      if (hit) found.push({ path: hit.path, display: hit.path, absolutePath: hit.path });
-    }
+    } catch { /* not found at that exact path — never guess */ }
   }
   return found.slice(0, 6);
 }
@@ -3802,9 +3796,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // producer attribution rendered beside the workflow timeline.
       const artifacts = await (async () => {
         if (!sourcePath) return [];
+        let stateDir: string | null = null;
         const stateBlob = await (async () => {
           if (card.dir_hash) {
-            const stateDir = await workflowStateDir(bb, sourcePath, card.id, card.dir_hash);
+            stateDir = await workflowStateDir(bb, sourcePath, card.id, card.dir_hash);
             if (stateDir) return await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
             return null;
           }
@@ -3812,6 +3807,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         })();
         if (!stateBlob) return [];
         const list: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }> = [];
+        const seen = new Set<string>();
         for (const fields of parseArtifactManifest(stateBlob)) {
           const stage = fields.stage;
           const relPath = fields.path;
@@ -3822,6 +3818,29 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (!full) continue;
           const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
           if (artifact && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId });
+          if (full) seen.add(full);
+        }
+        // The audit trail must not depend on an agent remembering to declare
+        // its own output. Every other document the workflow wrote is listed
+        // too, in its own group, so a produced artifact can never be invisible
+        // just because it was never registered. Precedent for `.md` is
+        // findArtifacts (the board); the workflow's own state is not an
+        // artifact and stays out.
+        const stateRoot = stateDir;
+        if (stateRoot && sourceHostId) {
+          const listing = await bb.sdk.files.listPaths({ path: stateRoot, includeFiles: true, includeDirectories: false }).catch(() => null);
+          const absolutePaths = array(record(listing).paths)
+            .map((entry) => (typeof entry === "string" ? entry : text(record(entry).path)))
+            .filter(Boolean)
+            .map((raw) => (isAbsolute(raw) ? raw : join(stateRoot, raw)));
+          for (const absolute of unregisteredArtifactPaths(absolutePaths, [...seen])) {
+            const relPath = workspaceRelative(sourcePath, absolute);
+            if (!relPath) continue;
+            const artifact = await bb.sdk.files.read({ path: absolute }).catch(() => null);
+            if (!artifact) continue;
+            list.push({ stage: "unregistered", kind: "unregistered", path: relPath, display: basename(absolute), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: absolute, hostId: sourceHostId });
+            seen.add(absolute);
+          }
         }
         return list;
       })();

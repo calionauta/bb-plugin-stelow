@@ -276,8 +276,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
    every stage with what it produces and a link to the upstream skill or
    behavior doc that defines it; pill tooltips name the owning skill and
    point at the map. Pill clicks keep their rerun/advance meaning and never
-   navigate away. Attachments, mentioned files,
+   navigate away. Attachments, files named in the request,
    timed-out questions inline.
+- **Files named in your request.** The card lists only the paths the
+  request spells out that actually exist in the workspace (never a basename
+  guess, which used to surface an unrelated file): six at most, and nothing
+  at all when the request names none.
 - **Artifact viewer** (`ArtifactViewerDialog`, `readCardFile`). Read-only
   Markdown/source render, quote-a-passage excerpt drafts, batch comment
   to the agent, gate question answerable inline.
@@ -285,7 +289,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   artifact together, grouped by producing stage in canonical order. The
   timeline keeps count-only badges — files and navigation never share a
   shape. Timeline badges deep-link into the producing stage's group with
-  a highlight ring.
+  a highlight ring. The trail never depends on the agent registering its own
+  output (`unregisteredArtifactPaths`): any other document the workflow wrote
+  in its state dir is listed under **Produced but not registered**, so a
+  produced artifact cannot be invisible. The workflow's own `state.md`, its
+  backups, logs, and JSON bookkeeping are never artifacts.
 - **Diff review** (`cardDiff`, host `experimental_Diff`). The working
   tree vs HEAD, per file, inside the card — on active cards at the
   diff-gate and audit stages, plus completed cards whose tree went dirty

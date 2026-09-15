@@ -8,3 +8,5 @@ export interface ArtifactManifestEntry {
 export function parseArtifactManifest(stateBlob: string): ArtifactManifestEntry[];
 
 export function resolveArtifactPath(projectRoot: string, artifactPath: string): string | null;
+
+export function unregisteredArtifactPaths(allPaths: string[], registeredPaths: string[]): string[];

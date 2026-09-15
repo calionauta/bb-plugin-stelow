@@ -2760,6 +2760,12 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
 type ArtifactInventoryFile = { kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note?: string | null };
 type ArtifactInventoryGroup = { id: string; title: string; items: ArtifactInventoryFile[] };
 
+// A document the workflow wrote but never registered still belongs on the
+// audit trail — it just says so instead of claiming a stage it cannot prove.
+function artifactGroupTitle(stage: string): string {
+  return stage === "unregistered" ? "Produced but not registered" : stageLabel(stage);
+}
+
 function artifactFilename(path: string): string {
   const clean = path.replace(/\\/g, "/").replace(/\/+$/, "");
   return clean.split("/").pop() || path;
@@ -5806,7 +5812,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               ) : null}
               {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
                 <div className="space-y-1 border-t pt-3">
-                  <span className="text-xs font-medium text-muted-foreground">Mentioned files ({detail.mentionedFiles.length}):</span>
+                  <span className="text-xs font-medium text-muted-foreground">Files named in your request ({detail.mentionedFiles.length}):</span>
+                  <p className="text-[11px] text-muted-foreground">Paths your request spells out that exist in this workspace. Nothing is inferred from a file name.</p>
                   <div className="flex flex-wrap gap-1">
                     {detail.mentionedFiles.map((file) => (
                       <button
@@ -5827,7 +5834,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             <div ref={artifactsRef}>
             <CardDisclosure
               title="Artifacts"
-              hint={detail ? `${detail.artifacts.length} files · audit trail` : "produced files"}
+              hint={detail ? `${detail.artifacts.length} files · audit trail${detail.artifacts.some((artifact) => artifact.stage === "unregistered") ? " · some unregistered" : ""}` : "produced files"}
               open={artifactsOpen}
               onToggle={setArtifactsOpen}
             >
@@ -5838,6 +5845,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   fileEnvironmentId={detail.fileEnvironmentId}
                   onView={(file) => setViewerFile(file)}
                   highlightStage={artifactStage}
+                  groupTitleForStage={artifactGroupTitle}
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
