@@ -8,6 +8,27 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.34] - 2026-09-15
+
+### Changed
+
+- **Card detail has one progress row, one home for files, and one reference.**
+  "What is happening" is now **Workflow progress** (`where this card is`),
+  paired with the **Workflow map** (`what each stage does`) as a sibling
+  section instead of nesting a reference inside card state. The section's
+  redundant `PROGRESS` heading is gone, and the override coaching moved below
+  the stage row, where it now appears only when an override is available.
+- **No fact is printed twice.** Each stage's document buttons are replaced by
+  a count-only suffix (`2 files`), so a pill stays one click target and files
+  keep one shape; the card's file count rides the section summary as the single
+  route into Artifacts.
+
+### Removed
+
+- The now-unreachable stage-artifact highlight and group-ring plumbing, and
+  the archived progress heading/hint that the disclosure summary already
+  covered.
+
 ## [0.18.33] - 2026-09-15
 
 ### Fixed
