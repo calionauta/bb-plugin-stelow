@@ -2685,7 +2685,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // manual board move needs no "Completed" ping — the human just did it.
       // Only agent-driven build completions notify.
       if (previous.status !== "completed" && current.status === "completed" && current.kind === "build" && !opts?.suppressCompletionEvent) recordInboxEvent(current, "completed", "Completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
-      if (previous.activity !== "error" && current.activity === "error") recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
+      if (previous.activity !== "error" && current.activity === "error") {
+        recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
+        // A fresh failure that lands while a specific question is already
+        // open is context, not a second action: supersede it at birth so
+        // one card never counts twice. The row survives in Resolved
+        // history, and the open card shows the error text beside the
+        // question it must answer.
+        const openQuestion = db.prepare("SELECT 1 FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_at IS NULL AND archived_at IS NULL LIMIT 1").get(cardId);
+        if (openQuestion) resolveInboxEvents(cardId, current.updated_at, ["error"], "superseded");
+      }
     }
     bb.realtime.publish("card-state", { cardId });
   }
@@ -3219,7 +3228,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // mislabel them superseded.
         markQuestionsAnswered(db, { cardId, interactionIds: [...answeredInteractionIds], occurredAt: now() });
         syncPendingQuestionInbox(card, openQuestionIds);
-        updateCard(cardId, { activity: openQuestionIds.length > 0 ? "awaiting-answer" : "running", status: "in-progress" });
+        // A fresh human answer resumes the worker: a stale provider error
+        // from the interrupted turn must not linger as "Failed" beside the
+        // recovery path. Failure history stays in the event log.
+        updateCard(cardId, { activity: openQuestionIds.length > 0 ? "awaiting-answer" : "running", status: "in-progress", last_error: null });
         return { ok: true as const, answered: decisions.length, error: null };
       } catch (error) {
         return { ok: false as const, answered: 0, error: error instanceof Error ? error.message : "Unable to answer the questions." };
@@ -4540,7 +4552,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       markQuestionsAnswered(db, { cardId, interactionIds: [...rows.keys()].map((questionId) => `expired:${questionId}`), occurredAt: now() });
       const openQuestionIds = await syncOpenQuestionInbox(card);
-      updateCard(cardId, { activity: hasOpenQuestions(cardId, openQuestionIds) ? "awaiting-answer" : "running", status: "in-progress" });
+      // Same stale-error rule as live answers: answering clears the
+      // interrupted turn's failure so the recovered card reads coherent.
+      updateCard(cardId, { activity: hasOpenQuestions(cardId, openQuestionIds) ? "awaiting-answer" : "running", status: "in-progress", last_error: null });
       bb.realtime.publish("card-state", { cardId });
       if (threadId) {
         try {

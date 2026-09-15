@@ -2346,7 +2346,7 @@ function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labe
 // Shared card leaves. BoardCard and ResearchCard render identical worker
 // chrome (inline retry, attention/error/idle rows) — one definition serves
 // both tracks instead of drifting copies.
-function CardRetryButton({ cardId, label }: { cardId: string; label: string }) {
+function CardRetryButton({ cardId, label, compact = false }: { cardId: string; label: string; compact?: boolean }) {
   const rpc = useRpc<typeof rpcContract>();
   const [retrying, setRetrying] = useState(false);
   async function retry(event: React.MouseEvent) {
@@ -2360,6 +2360,22 @@ function CardRetryButton({ cardId, label }: { cardId: string; label: string }) {
     } finally {
       setRetrying(false);
     }
+  }
+  // Compact density tucks the affordance at the extreme right of the error
+  // row it belongs to: an icon-sized target with a full accessible name,
+  // instead of a wide labeled button competing with the card title.
+  if (compact) {
+    return (
+      <button
+        onClick={(event) => void retry(event)}
+        disabled={retrying}
+        title={retrying ? "Retrying the worker…" : "Retry the worker in place — nothing is reset"}
+        aria-label={retrying ? "Retrying the worker" : `Retry the worker on ${label}`}
+        className="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-md border border-primary/40 text-lg text-primary hover:bg-primary/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span aria-hidden className={retrying ? "animate-spin" : ""}>↻</span>
+      </button>
+    );
   }
   return (
     <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md border border-primary/40 px-3 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
@@ -2392,6 +2408,27 @@ function OpenThreadButton({ threadId }: { threadId: string | null | undefined })
   return <Button size="sm" variant="outline" onClick={() => navigate.toThread(threadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button>;
 }
 
+// A decision hero wins over the error hero by design — the open question is
+// the recovery path — so a concurrent failure must be named inside it.
+// Otherwise the Failed chip reads as unexplained next to an actionable
+// question. Shared by all three track detail bodies.
+function HeroErrorNote({ card }: { card: Pick<CardItem, "activity" | "lastError"> }) {
+  if (card.activity !== "error" || !card.lastError) return null;
+  return (
+    <p className="w-full rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs leading-5 text-destructive" title={card.lastError}>
+      <span className="font-semibold">Last worker error:</span> {card.lastError} Answering below resumes the worker.
+    </p>
+  );
+}
+
+// A retry is offered only when it can act: a live worker thread on a
+// non-terminal card. Terminal cards (done/archived/blocked) and thread-less
+// cards never get one — a button that always refuses is worse than none.
+function canRetryCard(card: CardItem): boolean {
+  if (!card.workerThreadId) return false;
+  return card.status !== "completed" && card.status !== "archived" && card.status !== "blocked";
+}
+
 function CardMetaRows({ card }: { card: CardItem }) {
   const attention = card.needsAttention;
   return (
@@ -2402,7 +2439,14 @@ function CardMetaRows({ card }: { card: CardItem }) {
           <span>{attentionLabel(card)}</span>
         </div>
       ) : null}
-      {card.activity === "error" && card.lastError ? <p className="mt-2 line-clamp-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1 text-[11px] text-destructive" title={card.lastError}>{card.lastError}</p> : null}
+      {card.activity === "error" && card.lastError ? (
+        <div className="mt-2 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2">
+          <p className="min-w-0 flex-1 text-[11px] leading-5 text-destructive" title={card.lastError}>
+            <span className="font-semibold">Failed:</span> {card.lastError}
+          </p>
+          {canRetryCard(card) ? <CardRetryButton cardId={card.id} label={card.displayName} compact /> : null}
+        </div>
+      ) : null}
       {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
     </>
   );
@@ -2457,7 +2501,7 @@ function BoardCard({ card }: { card: CardItem }) {
       aria-label={`Open card ${card.displayName}.`}
     >
       <CardHeading title={card.displayName}
-        action={stuck ? <CardRetryButton cardId={card.id} label={card.activity === "error" ? "Retry worker" : "Resume work"} /> : null}
+        action={stuck && (card.activity !== "error" || !card.lastError) ? <CardRetryButton cardId={card.id} label={card.activity === "error" ? "Retry worker" : "Resume work"} /> : null}
         status={<>
         {card.status !== "completed" && card.status !== "archived" ? <StagePill stage={card.stage} active={running} /> : null}
         {card.activity !== "running" ? <ActivityPill activity={card.activity} /> : null}
@@ -2509,7 +2553,7 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
       aria-label={`Open ${ariaNoun} ${card.displayName}.`}
     >
       <CardHeading title={card.displayName}
-        action={stuck ? <CardRetryButton cardId={card.id} label={card.activity === "error" ? "Retry worker" : "Resume work"} /> : null}
+        action={stuck && (card.activity !== "error" || !card.lastError) ? <CardRetryButton cardId={card.id} label={card.activity === "error" ? "Retry worker" : "Resume work"} /> : null}
         status={<ActivityPill activity={card.activity} />}
       />
       {tagLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -4689,6 +4733,8 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
+                      {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
+                      {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
                       {hero.kind === "error" && card.workerThreadId ? (
                         <>
                           {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
@@ -4930,6 +4976,8 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
+                      {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
+                      {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
                       {hero.kind === "error" && card.workerThreadId ? (
                         <>
                           {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
@@ -5430,6 +5478,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                         body text. */}
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
+                      {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
+                      {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
                       {hero.kind === "decision" && reviewArtifact ? (
                         <span className="w-full">
                           <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewArtifact.display, path: reviewArtifact.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewArtifact.path, reviewArtifact.hostId, reviewArtifact.absolutePath) })} title={`Read ${reviewArtifact.display} before deciding`}>Review artifact ↗</Button>

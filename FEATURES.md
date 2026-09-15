@@ -229,11 +229,19 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **Board cards** (`CardHeading`, `CardRetryButton`). A card’s requested
   outcome is a full-width, wrapping heading; its labelled status lives below
-  it; recovery is a separate full-size Resume/Retry action. The same compact
-  hierarchy is reused in Build, Research, and Explore, so narrow columns do
-  not turn a title or a workflow state into an ambiguous, clipped chip.
+  it; idle recovery is a separate Resume action. A live failure renders as
+  a Failed error row carrying its own message with a compact icon-sized
+  retry tucked at its right edge — the retry appears only when a live
+  thread on a non-terminal card can act. The same compact hierarchy is
+  reused in Build, Research, and Explore, so narrow columns do not turn a
+  title or a workflow state into an ambiguous, clipped chip.
 - **Hero** (`heroFor`: decision/error/paused/working/calm). One sentence
-  + one primary action per state; secondary actions as real buttons.
+  + one primary action per state; secondary actions as real buttons. The
+  decision state always offers Open thread, and names a concurrent worker
+  error inside itself (answering resumes the worker) instead of hiding the
+  reason behind the Failed chip. Answering any question clears the
+  interrupted turn's failure; an error arriving while a question is open is
+  superseded at birth, so one card counts once.
 - **What is happening** (`ScopesList`, `StageTimeline`). Scopes in
   dependency order with task counts, blockers, 17-stage timeline with
   position/next stages, manual advance/return behind a preview dialog

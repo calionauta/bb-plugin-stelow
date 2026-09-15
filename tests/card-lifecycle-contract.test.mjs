@@ -152,9 +152,14 @@ assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-vie
 assert.match(app, /function CardHeading\(/, "board tiles share a title-first card header");
 assert.match(app, /<h3 className="min-w-0 break-all text-sm font-semibold/, "card titles always use the whole available width and break rather than truncate");
 assert.match(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "status chips have a visible label instead of looking like card actions");
-assert.match(boardCard, /action=\{stuck \? <CardRetryButton/, "build card recovery is a distinct action row");
-assert.match(lightweightCard, /action=\{stuck \? <CardRetryButton/, "research/explore cards use the same distinct recovery row");
+assert.match(boardCard, /action=\{stuck && \(card\.activity !== "error" \|\| !card\.lastError\) \? <CardRetryButton/, "build card error recovery lives in the error row, not the heading");
+assert.match(lightweightCard, /action=\{stuck && \(card\.activity !== "error" \|\| !card\.lastError\) \? <CardRetryButton/, "research/explore cards use the same error-row recovery");
 assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
+assert.match(app, /function canRetryCard\(/, "retry is offered only when a live thread on a non-terminal card can act");
+assert.match(app, /<span className="font-semibold">Failed:<\/span> \{card\.lastError\}/, "the tile names the failure text beside the Failed chip");
+assert.match(app, /aria-label=\{retrying \? "Retrying the worker" : `Retry the worker on \$\{label\}`\}/, "the compact retry keeps a full accessible name at icon density");
+assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
+assert.match(app, /Answering below resumes the worker\./, "the concurrent-error note points at the open question as the recovery path");
 assert.doesNotMatch(boardCard, /flex-1 truncate text-sm/, "build card titles are no longer truncated beside pills");
 assert.match(listRow, /break-words text-sm leading-5/, "list cards keep long requested outcomes readable");
 assert.doesNotMatch(app, /hsl\(280 80% 60%/, "running cards no longer cycle through distracting rainbow colors");
@@ -173,6 +178,8 @@ assert.match(server, /const errorPending = !termStatus && \(Boolean\(row\.last_e
 assert.match(server, /: !termStatus && \(Boolean\(card\.last_error\) \|\| effectiveActivity === "error"\) \? "error"/, "detail attention ignores stale errors on terminal cards");
 const retry = rpcMethod("retryWorker", "restartWorker");
 assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked"/, "completed cards refuse Retry instead of nudging a finished worker");
+assert.match(server, /status: "in-progress", last_error: null \}\);/, "answering a question clears the interrupted turn's failure");
+assert.match(server, /supersede it at birth/, "an error arriving with an open question counts once, in history");
 assert.match(boardCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "build board cards never offer Retry on terminal cards");
 assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "research/explore cards never offer Retry on terminal cards");
 
