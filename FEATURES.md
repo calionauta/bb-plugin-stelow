@@ -168,8 +168,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
   once when no form is visible, while the host rejects actual duplicates.
-  A specific question also supersedes a generic paused notice for that card,
-  so one action is counted once and the Inbox says what needs answering.
+  A specific question also supersedes a generic paused notice — or a raw
+  error report — for that card, so one action is counted once and the
+  Inbox says what needs answering.
   Recovery says plainly that the initial interactive request was interrupted,
   that there is no deadline, and that the saved answer resumes work — it never
   exposes the internal `timed-out` state as a second, redundant title.

@@ -70,6 +70,10 @@ insertInboxEvent(db, { id: "evt_paused_for_question", cardId: "card_3", kind: "p
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_1"], occurredAt: 700, createId: () => "evt_ask_1", summary: questionSummary });
 const supersededPause = db.prepare("SELECT resolved_at, resolved_reason FROM inbox_events WHERE id = ?").get("evt_paused_for_question");
 assert.deepEqual(supersededPause, { resolved_at: 700, resolved_reason: "superseded" }, "a visible question replaces an ambiguous pause instead of creating a second attention count");
+insertInboxEvent(db, { id: "evt_error_for_question", cardId: "card_3", kind: "error", summary: "Provider error 400.", dedupeKey: "error:card_3:740", occurredAt: 740 });
+syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_1"], occurredAt: 745, createId: () => "evt_ask_1_dup", summary: questionSummary });
+const supersededError = db.prepare("SELECT resolved_at, resolved_reason FROM inbox_events WHERE id = ?").get("evt_error_for_question");
+assert.deepEqual(supersededError, { resolved_at: 745, resolved_reason: "superseded" }, "a visible question also absorbs a concurrent error instead of double-counting one card");
 syncQuestionInboxEvents(db, { cardId: "card_3", interactionIds: ["ask_1"], occurredAt: 735, createId: () => "evt_ask_1_retry", summary: questionSummary });
 let card3Questions = db.prepare("SELECT * FROM inbox_events WHERE card_id = ? AND kind = 'question'").all("card_3");
 assert.equal(card3Questions.length, 1, "the same pending interaction creates one durable notification");
