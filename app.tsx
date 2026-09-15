@@ -1909,10 +1909,12 @@ function StelowPanel({ subPath }: { subPath: string }) {
 // with its description, real radio inputs (keyboard + screen-reader native),
 // min-h-11 touch targets. Replaces a cramped native select whose gray micro
 // copy failed lay users and low vision — same option values, new surface.
-function ChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string }) {
+// labelHidden lets a collapsible wrapper own the visible heading so the
+// legend is never announced twice.
+function ChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName, labelHidden = false }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string; labelHidden?: boolean }) {
   return (
     <fieldset className="flex min-w-0 flex-col gap-1.5">
-      <legend className="text-sm font-medium text-foreground">{label}</legend>
+      {labelHidden ? null : <legend className="text-sm font-medium text-foreground">{label}</legend>}
       {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
       <div className="grid gap-2">
         {options.map((option) => {
@@ -1947,6 +1949,41 @@ function SettingsSection({ title, description, children }: { title: string; desc
   );
 }
 
+// One preference category as a compact summary row: the title and the
+// current value are always visible (so the setting is discoverable without
+// scrolling), and one tap reveals the full ChoiceCards. Showing all nine
+// radio cards at once pushed Pause for my review below the fold and read
+// as a wall of text; a native select would hide the options again. This
+// keeps both virtues: compact like a select, explicit like radio cards,
+// reusing the same ChoiceCards instead of a second option renderer.
+function CollapsibleChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string }) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+  return (
+    <div className="group rounded-md border bg-background/60">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-label={`${label}: ${selected ? selected.label : "not set"}. ${open ? "Collapse" : "Change"}`}
+        className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      >
+        <DisclosureChevron />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium leading-5 text-foreground">{label}</span>
+          {selected ? <span className="block truncate text-xs leading-5 text-muted-foreground" title={selected.description}>{selected.label} — {selected.description}</span> : null}
+        </span>
+        <span className="shrink-0 text-xs font-medium text-primary">{open ? "Less" : "Change"}</span>
+      </button>
+      {open ? (
+        <div className="border-t px-3 pb-3 pt-2">
+          <ChoiceCards label={label} labelHidden hint={hint} value={value} options={options} onChange={onChange} groupName={groupName} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function WorkflowSettings({ appetite, reviewMode, onAppetiteChange, onReviewModeChange, groupNamePrefix }: {
   appetite: Appetite;
   reviewMode: ReviewMode;
@@ -1956,8 +1993,8 @@ function WorkflowSettings({ appetite, reviewMode, onAppetiteChange, onReviewMode
 }) {
   return (
     <SettingsSection title="Workflow preferences" description="Planning depth sets how much the agent plans before building; review checkpoints are where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
-      <ChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
-      <ChoiceCards label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer." value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={onReviewModeChange} groupName={`${groupNamePrefix}-review`} />
+      <CollapsibleChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
+      <CollapsibleChoiceCards label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer." value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={onReviewModeChange} groupName={`${groupNamePrefix}-review`} />
     </SettingsSection>
   );
 }

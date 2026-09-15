@@ -182,6 +182,9 @@ assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\
 // keeps the controls attached. Radio cards stay accessible and vertical.
 assert.doesNotMatch(app, /createOptionsOpen/, "new-card Settings is never collapsed, so planning depth and review gates are always discoverable");
 assert.match(app, /start from the board defaults — keep them or adjust, then submit/, "the creation dialog frames preferences as defaults, not hidden settings");
+assert.match(app, /function CollapsibleChoiceCards</, "each preference category is a compact row, so Pause for my review is never pushed below the fold");
+assert.match(app, /<ChoiceCards label=\{label\} labelHidden/, "expanded rows reuse the same radio cards instead of a second option renderer");
+assert.match(app, /aria-expanded=\{open\}/, "preference rows expose their expand state to assistive tech");
 assert.match(app, /function ChoiceCards</, "planning and review options render as visible radio cards");
 assert.match(app, /label="Pause for my review"/, "human review gates never read as the automatic Review column");
 assert.doesNotMatch(app, /agent's own automatic check/, "the review picker no longer carries the distracting board-column explanation");
