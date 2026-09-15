@@ -8,6 +8,19 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.10] - 2026-09-15
+
+### Fixed
+
+- **Split completion is calm and legible.** Selecting every delivery now
+  shows an accessible informational state instead of destructive-red text on
+  an amber question surface.
+- **Recovered answers no longer carry timeout jargon.** They reuse the normal
+  answer continuation and say only that the user answered a pending question.
+- **Question choice identity is protected.** The host rejects Portuguese
+  structured question content before it can create a card form whose labels
+  disagree with the split proposal.
+
 ## [0.18.9] - 2026-09-14
 
 ### Fixed
