@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.21] - 2026-09-15
+
 ### Fixed
 
 - **One pill for one fact on the open card.** In progress collapses while
