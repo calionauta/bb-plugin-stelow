@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { DEFAULT_APPETITE, DEFAULT_REVIEW_MODE, parseWorkflowConfig } from "../lib/workflow-config.mjs";
+import { STATE_TEMPLATE } from "../lib/state-template.mjs";
 
 // Regression: config lives indented under `config:` (see
 // lib/state-template.mjs). An anchored `^appetite:` reader missed it
@@ -33,5 +34,19 @@ assert.deepEqual(
 );
 assert.deepEqual(parseWorkflowConfig(null), { appetite: "Lean", reviewMode: "Auto" }, "a missing blob fails open, never throws");
 assert.deepEqual(parseWorkflowConfig(""), { appetite: "Lean", reviewMode: "Auto" }, "an empty blob fails open, never throws");
+
+// Schema guarantee: what seeding writes, the reader reads back whole.
+// Mirrors ensureWorkflow's template substitution exactly, so the write
+// boundary (strict zod enums at the RPC) and the read boundary can never
+// disagree again.
+const seeded = STATE_TEMPLATE.replace("appetite: Core", "appetite: Complete").replace(
+  "review_mode: Auto",
+  "review_mode: Product Spec + Interface + Tech Review",
+);
+assert.deepEqual(
+  parseWorkflowConfig(seeded),
+  { appetite: "Complete", reviewMode: "Product Spec + Interface + Tech Review" },
+  "seeded values round-trip complete through template and parser",
+);
 
 console.log("workflow config test ok: indented block, quotes, fallbacks, no truncation");

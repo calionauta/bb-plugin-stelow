@@ -464,7 +464,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   split decision. Children inherit the parent's appetite and review mode
   (parsed whole from the indented state.md config block — never
   truncated). An archived card's thread keeps its way back: the thread
-  header still links to its card.
+  header still links to its card. Refactor/bugfix cards skip
+  product-strategy questions at the context stage by host refusal
+  (`lib/context-ask-gate.mjs`, `--force` to override) — intent plus stage
+  decide, never worker judgment. Config values are schema-bound at the
+  write boundary (strict enums) and parse whole at the read boundary
+  (seed→read round-trip pinned by test).
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and

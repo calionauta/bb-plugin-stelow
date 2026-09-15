@@ -48,6 +48,7 @@ import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
+import { contextAskGate } from "./lib/context-ask-gate.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 
@@ -5029,6 +5030,22 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           expiredQuestions: openExpiredQuestionIds(cardRow.id).length,
         });
         if (!questionGuard.canOpen) return { exitCode: 1, stderr: questionGuard.reason! };
+        // Deterministic intent gate (lib/context-ask-gate): refactor/bugfix
+        // cards skip product-strategy questions at the context stage.
+        // Host-enforced on slug truth — never LLM-judged. `--force` opts
+        // back in explicitly; nothing is persisted before this line, so a
+        // refusal never pings the human.
+        {
+          const gateCard = getCard(cardRow.id);
+          const contextGate = contextAskGate({
+            kind: gateCard?.kind,
+            intent: gateCard?.intent,
+            stage: gateCard ? await cardStageSlug(gateCard) : null,
+            tag,
+            forced: argv.includes("--force"),
+          });
+          if (!contextGate.allowed) return { exitCode: 2, stderr: contextGate.error! };
+        }
         // A split proposal ask (lib/split-proposal): options are proposed
         // child cards, recorded by the host and executed by `bb stelow
         // split` after approval. Validated and stored BEFORE the blocking

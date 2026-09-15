@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Refactor/bugfix skip strategy questions deterministically.** The
+  intent pre-check was advisory text the worker had to remember to apply.
+  The host now refuses standard asks at the `context` stage for those
+  intents (`lib/context-ask-gate.mjs`, slug truth, `--force` to override)
+  — nothing persists, the human is never pinged.
+- **Config schema guaranteed end to end.** Write boundary was already a
+  strict enum; the read boundary now parses whole and a seed→read
+  round-trip test pins template and parser agreement.
+
 ## [0.18.26] - 2026-09-15
 
 ### Fixed
