@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.15] - 2026-09-15
+
+### Fixed
+
+- **The open card offers Retry beside a live question on failure.** The
+  decision hero already named the concurrent error and offered Open
+  thread; it now also offers Retry worker as an alternative to answering,
+  in all three track detail bodies.
+
 ## [0.18.14] - 2026-09-15
 
 ### Fixed
