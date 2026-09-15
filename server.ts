@@ -49,6 +49,7 @@ import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execu
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
 import { contextAskGate } from "./lib/context-ask-gate.mjs";
+import { gateEvidenceGate } from "./lib/gate-ask-evidence.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 
@@ -5045,6 +5046,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             forced: argv.includes("--force"),
           });
           if (!contextGate.allowed) return { exitCode: 2, stderr: contextGate.error! };
+        }
+        // Evidence gate (lib/gate-ask-evidence): a review gate with nothing
+        // to review is refused — "approve the plan" must carry the plan via
+        // --artifact (or --preview), or --force. Label-only options keep
+        // working at every non-gate stage.
+        {
+          const gateCard = getCard(cardRow.id);
+          const evidenceGate = gateEvidenceGate({
+            kind: gateCard?.kind,
+            stage: gateCard ? await cardStageSlug(gateCard) : null,
+            tag,
+            forced: argv.includes("--force"),
+            groups,
+          });
+          if (!evidenceGate.allowed) return { exitCode: 2, stderr: evidenceGate.error! };
         }
         // A split proposal ask (lib/split-proposal): options are proposed
         // child cards, recorded by the host and executed by `bb stelow

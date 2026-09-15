@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Review gates require evidence.** A gate question with nothing to read
+  ("approve the plan", no plan attached) is now refused by the host
+  (`lib/gate-ask-evidence.mjs` — `--artifact`/`--preview` on any option,
+  `--force` to override). The card hero also falls back to
+  question-attached evidence when the manifest lists nothing. Label-only
+  options work unchanged at every non-gate stage.
+
 ## [0.18.27] - 2026-09-15
 
 ### Fixed

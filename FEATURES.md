@@ -468,8 +468,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   product-strategy questions at the context stage by host refusal
   (`lib/context-ask-gate.mjs`, `--force` to override) — intent plus stage
   decide, never worker judgment. Config values are schema-bound at the
-  write boundary (strict enums) and parse whole at the read boundary
-  (seed→read round-trip pinned by test).
+  write   boundary (strict enums) and parse whole at the read boundary
+  (seed→read round-trip pinned by test). Review gates require evidence:
+  a standard ask at a gate stage (`gate`, `int-gate`, `selection`,
+  `plan-gate`) with no `--artifact`/`--preview` on any option is refused
+  by the host (`lib/gate-ask-evidence.mjs`, `--force` to override), and
+  the card hero falls back to question-attached evidence when the
+  manifest lists nothing. Label-only options work unchanged everywhere
+  else.
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and

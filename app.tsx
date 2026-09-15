@@ -5434,8 +5434,14 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // reviews the shaped spec, int-gate/selection the interface proposals,
   // plan-gate the tech plan. Falls back to the newest artifact, if any.
   const GATE_ARTIFACT_STAGE: Record<string, string> = { gate: "shape", "int-gate": "interface", selection: "interface", "plan-gate": "planning" };
+  // Fallback: evidence attached to a pending or recoverable question — the
+  // plan under decision even when the manifest doesn't list it yet. Same
+  // viewer, same shape: option artifacts carry display/path/absolute/host.
+  const pendingQuestionArtifact = detail
+    ? [...detail.pendingQuestions, ...detail.expiredQuestions].flatMap((q) => q.options ?? []).find((o) => o?.artifact)?.artifact ?? null
+    : null;
   const reviewArtifact = detail && card && (hero?.kind === "decision" || detail.pendingQuestions.length > 0)
-    ? detail.artifacts.find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts[detail.artifacts.length - 1] ?? null
+    ? detail.artifacts.find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts[detail.artifacts.length - 1] ?? pendingQuestionArtifact ?? null
     : null;
 
   return (
