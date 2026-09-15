@@ -8,6 +8,36 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.36] - 2026-09-15
+
+### Changed
+
+- **The first board column is the Inbox on every track.** Research and
+  Explore's "To-Do" becomes Inbox (the same word the creation dialogs and
+  parked cards already used), and Build's board gains one too, ahead of
+  Analysis. One column means *captured, nothing running yet*: a card sits
+  there while it has no worker, and leaving it is what starts the card.
+
+### Added
+
+- **Deferred start for Build.** "Start new issue" now offers Start
+  immediately (checked), matching research and explore. Unchecked parks the
+  card in the Inbox with no worker; the card offers Start, and dragging it
+  into a phase starts it through the same shared spawn as preset restarts.
+  Dragging a card that already has a worker into the Inbox is refused by the
+  move policy with a named exit, so a running worker is never orphaned.
+
+### Fixed
+
+- **Build state now reads identically on the board and in the open card.**
+  Both surfaces share the same ordered pills: board location, lifecycle
+  state, worker state, and workflow type. The Kanban no longer substitutes a
+  stage for status or prefixes the pills with a redundant “Status” label.
+- **Audit and recovery evidence fail closed.** Build completion now records
+  the host-verified Git root and exact HEAD in `audit.md`; copied or stale
+  receipts are refused. A recovered diff is also refused if its path no
+  longer resolves to the Git root the person attached.
+
 ## [0.18.35] - 2026-09-15
 
 ### Fixed
