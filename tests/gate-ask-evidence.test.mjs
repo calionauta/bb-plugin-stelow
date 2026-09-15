@@ -46,10 +46,14 @@ assert.equal(gateEvidenceGate({ ...bareAtPlanGate, groups: [] }).allowed, false,
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
 assert.match(serverSource, /gateEvidenceGate\(\{/, "the ask handler decides through the shared gate");
 assert.match(serverSource, /stage: gateCard \? await cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
+assert.match(serverSource, /async function fallbackGateAskArtifact/, "older gate asks recover their manifest evidence for per-option review");
+assert.match(serverSource, /question\.options\.every\(\(option\) => !option\.artifact\)/, "only all-legacy label-only asks receive the fallback");
 
 // Hero fallback: with no manifest artifact, the card offers the first
 // evidence attached to a pending or recoverable question instead.
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
 assert.match(appSource, /pendingQuestionArtifact/, "the hero falls back to question-attached evidence");
+assert.match(appSource, /artifactViewerModeForOption/, "approval and change options select their appropriate viewer mode");
+assert.match(appSource, /mode === "comment"/, "the review-only viewer hides comment and editor controls");
 
 console.log("gate ask evidence test ok: gates require evidence, everything else untouched");

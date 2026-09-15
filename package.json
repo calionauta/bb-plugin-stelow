@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-stelow",
-  "version": "0.18.29",
+  "version": "0.18.30",
   "type": "module",
   "engines": {
     "bb": ">=0.38",
@@ -68,7 +68,7 @@
     "test:skills-sync": "node tests/workflow-skills-sync.test.mjs",
     "test:skills-verify": "node tests/skills-sync-verify.test.mjs",
     "test:skills-tables": "node tests/skills-tables.test.mjs",
-    "test:contracts": "node tests/workflow-contracts.test.mjs && node tests/card-insert-contract.test.mjs && node tests/card-seed-guard.test.mjs && node tests/auto-continue.test.mjs && node tests/prompt-contracts.test.mjs && node tests/completion.test.mjs && node tests/playbook.test.mjs && node tests/split-proposal.test.mjs && node tests/split-eligibility.test.mjs && node tests/workflow-config.test.mjs && node tests/context-ask-gate.test.mjs && node tests/gate-ask-evidence.test.mjs && node tests/card-start.test.mjs && node tests/suite-wiring.test.mjs",
+    "test:contracts": "node tests/workflow-contracts.test.mjs && node tests/card-insert-contract.test.mjs && node tests/card-seed-guard.test.mjs && node tests/auto-continue.test.mjs && node tests/prompt-contracts.test.mjs && node tests/completion.test.mjs && node tests/audit-receipt.test.mjs && node tests/playbook.test.mjs && node tests/split-proposal.test.mjs && node tests/split-eligibility.test.mjs && node tests/workflow-config.test.mjs && node tests/context-ask-gate.test.mjs && node tests/gate-ask-evidence.test.mjs && node tests/card-start.test.mjs && node tests/suite-wiring.test.mjs",
     "test:bands": "node test_bands.mjs",
     "test:composer-execution": "node tests/composer-execution.test.mjs",
     "test:preset-ui": "node tests/preset-ui.test.mjs",

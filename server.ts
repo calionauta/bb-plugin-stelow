@@ -44,6 +44,7 @@ import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSpli
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
+import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
@@ -1076,7 +1077,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (exact commands and results), and Git evidence (branch/commit or explicit non-Git reason). `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
   // focused card with scopes. The host creates cards only from a recorded,
@@ -1597,6 +1598,9 @@ ${prompt}`;
     // project”. Some SDK project reads omit its `kind`, so accept its stable
     // id as well as the documented kind marker.
     const isExploratory = projectId === "proj_personal" || project?.kind === "personal";
+    if (isExploratory && (kind ?? "build") === "build") {
+      throw new Error("Build cards require a project workspace with a Git source. Choose the code project in BB before starting; use Research or Explore for personal, document-only work.");
+    }
     const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
     if (!isExploratory && !source?.path) throw new Error("Project workspace path is unavailable.");
     const cardId = randomId("card");
@@ -2879,6 +2883,24 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ...normalized, absolutePath: full, hostId: workspace?.hostId ?? null };
   }
 
+  // Version 0.18.29 started refusing gate asks that had no document or
+  // preview. Existing cards can still hold older, label-only interactions.
+  // Recover their evidence from the card's own manifest so Approve plan and
+  // Request changes receive the same per-option document affordance without
+  // mutating the historical interaction payload.
+  const GATE_ARTIFACT_STAGE: Record<string, string> = { gate: "shape", "int-gate": "interface", selection: "interface", "plan-gate": "planning" };
+  async function fallbackGateAskArtifact(card: CardRow): Promise<{ path: string; display: string; absolutePath: string | null; hostId: string | null } | null> {
+    const stage = await cardStageSlug(card);
+    const artifactStage = stage ? GATE_ARTIFACT_STAGE[stage] : null;
+    if (!artifactStage || !card.dir_hash) return null;
+    const workspace = await cardWorkspace(card).catch(() => null);
+    if (!workspace?.path) return null;
+    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
+    const stateBlob = stateDir ? await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((file) => file.content).catch(() => null) : null;
+    const manifestEntry = stateBlob ? parseArtifactManifest(stateBlob).find((entry) => entry.stage === artifactStage && entry.path) : null;
+    return manifestEntry ? resolveAskArtifact(card, manifestEntry.path) : null;
+  }
+
   async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {
     if (!threadId) return [];
     const asks = await fetchPendingAsks(threadId);
@@ -2889,9 +2911,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       for (const entry of asks) {
         const expanded = expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload });
         for (const question of expanded) {
+          const fallbackArtifact = card && question.options.every((option) => !option.artifact)
+            ? await fallbackGateAskArtifact(card).catch(() => null)
+            : null;
           const options = [];
           for (const option of question.options) {
-            const artifact = option.artifact && card ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : null;
+            const artifact = option.artifact && card
+              ? await resolveAskArtifact(card, option.artifact.path).catch(() => null)
+              : fallbackArtifact;
             options.push({ ...option, artifact });
           }
           out.push({
@@ -3651,9 +3678,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       for (const row of expiredRows) {
         let parsed: unknown = null;
         try { parsed = JSON.parse(row.options); } catch { parsed = null; }
+        const storedOptions = cleanOptions(parsed);
+        const fallbackArtifact = storedOptions.every((option) => !option.artifact)
+          ? await fallbackGateAskArtifact(card).catch(() => null)
+          : null;
         const options = [];
-        for (const option of cleanOptions(parsed)) {
-          options.push({ ...option, artifact: option.artifact ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : null });
+        for (const option of storedOptions) {
+          options.push({ ...option, artifact: option.artifact ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : fallbackArtifact });
         }
         expiredQuestions.push({ id: row.id, question: row.question, multiple: Boolean(row.multiple), kind: row.kind === "split" ? "split" : "standard", options, expiredAt: row.expired_at });
       }
@@ -5340,17 +5371,25 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
         const pending = await fetchPendingQuestions(card.worker_thread_id).catch(() => []);
         if (card.kind === "build") {
+          if (card.workspace_kind === "exploratory") {
+            return { exitCode: 1, stderr: "Build completion is blocked: this card runs in an exploratory workspace with no code project or Git history. Restart the work in the intended BB project; this card's state artifacts remain readable for reference." };
+          }
           const workspace = await cardWorkspace(card);
           const projectPath = workspace?.path ?? null;
           let currentStage = card.stage;
+          let stateBlob: string | null = null;
+          let doneStateDir: string | null = null;
           if (projectPath && card.dir_hash) {
-            const doneStateDir = await workflowStateDir(bb, projectPath, card.id, card.dir_hash);
-            const blob = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, "state.md") }).then((f) => f.content).catch(() => null) : null;
-            if (!blob) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
-            currentStage = text(blob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+            doneStateDir = await workflowStateDir(bb, projectPath, card.id, card.dir_hash);
+            stateBlob = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, "state.md") }).then((f) => f.content).catch(() => null) : null;
+            if (!stateBlob) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
+            currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
           }
           const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0 });
           if (refusal) return { exitCode: 1, stderr: refusal };
+          const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;
+          const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : []);
+          if (!receipt.ready) return { exitCode: 1, stderr: receipt.error };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           return { exitCode: 0, stdout: `Done. Workflow "${card.name}" completed at audit.` };
@@ -5475,10 +5514,17 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const todo = outcome.approved.filter((slice) => !createdKeys.has(text(slice.title).trim().toLowerCase()));
         const created: Array<{ slice: string; cardId: string }> = [...createdSoFar];
         let failure: string | null = null;
+        // A Build split needs the same codebase as its parent. An exploratory
+        // workspace contains only Stelow state, so fanning out there creates
+        // cards that can claim a refactor without ever seeing the repository.
+        // Refuse before creating even one child; Research/Explore are the
+        // deliberate tracks for personal, document-only work.
+        if (card.workspace_kind === "exploratory") {
+          return { exitCode: 1, stderr: "Cannot split a Build workflow from an exploratory workspace: it has no code project or Git history. Turn the work into a BB project (or restart it in the intended project), then propose the split again." };
+        }
         // Children inherit the parent's project and appetite — the user chose
-        // them for this work. Exploratory parents fan out into isolated
-        // workspaces exactly like research fan-out (same rule, same reason).
-        const targetProjectId = card.workspace_kind === "exploratory" ? "proj_personal" : card.project_id;
+        // them for this work and they must share its source workspace.
+        const targetProjectId = card.project_id;
         const parentStateDir = card.dir_hash
           ? await cardWorkspace(card).then((workspace) => workspace?.path ? workflowStateDir(bb, workspace.path, card.id, card.dir_hash!) : null).catch(() => null)
           : null;

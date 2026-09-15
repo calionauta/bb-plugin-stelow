@@ -2656,13 +2656,15 @@ function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, rel
 function openAskArtifact(
   card: Pick<CardItem, "workspaceKind">,
   fileEnvironmentId: string | null,
-  setViewerFile: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null) => void,
+  setViewerFile: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null) => void,
   artifact: AskArtifact,
+  mode: ArtifactViewerMode,
 ): void {
   setViewerFile({
     display: artifact.display,
     path: artifact.absolutePath ?? artifact.path,
     target: fileLinkTarget(card.workspaceKind === "exploratory", fileEnvironmentId, artifact.path, artifact.hostId ?? "", artifact.absolutePath ?? artifact.path),
+    mode,
   });
 }
 
@@ -3172,7 +3174,15 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
 }
 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
+type ArtifactViewerMode = "review" | "comment";
 type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
+
+function artifactViewerModeForOption(label: string): ArtifactViewerMode {
+  // An approval is a decision after reading, not a request to alter the
+  // document. All other choices — especially Request/Review changes — keep
+  // the full quote-and-comment path to communicate precise feedback.
+  return /\b(approve|accept|proceed)\b/i.test(label) ? "review" : "comment";
+}
 
 // Per-option evidence: the document opens from inside the option row
 // (right side), the inline glance expands below. The artifact opens in the
@@ -3202,7 +3212,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
   submitLabel: string;
   showHeading?: boolean;
   onSubmit: (answers: string[][]) => void;
-  onOpenArtifact?: (artifact: AskArtifact) => void;
+  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
 }) {
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<Record<string, string[]>>({});
@@ -3295,12 +3305,12 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
               const artifact = option.artifact;
               return (
                 <div key={option.label} className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
-                  <div className="flex items-stretch gap-1">
+                  <div className={`flex min-h-11 items-stretch overflow-hidden rounded-md border ${active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"}`}>
                     <button
                       role={current.multiple ? "checkbox" : "radio"}
                       aria-checked={active}
                       onClick={() => pick(current, option.label)}
-                      className={`flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-md border p-3 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground hover:border-primary/50"}`}
+                      className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 p-3 text-left text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                     >
                       <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple && !isKeepOption ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
                       <span className="min-w-0"><span className="block font-medium">{optionLabel}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
@@ -3308,10 +3318,10 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
                     {artifact ? (
                       onOpenArtifact ? (
                         <button
-                          onClick={() => onOpenArtifact(artifact)}
+                          onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label))}
                           title={`Open document: ${artifact.display}`}
                           aria-label={`Open document ${artifact.display}`}
-                          className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 self-center whitespace-nowrap rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 text-xs font-medium hover:bg-emerald-500/20"
+                          className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 self-stretch whitespace-nowrap border-l border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-foreground hover:bg-emerald-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                         >Open document<span aria-hidden>↗</span></button>
                       ) : (
                         <span className="inline-flex shrink-0 items-center self-center px-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.display}</span>
@@ -3355,7 +3365,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
   );
 }
 
-function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact) => void }) {
+function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3395,7 +3405,7 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
   );
 }
 
-function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact) => void }) {
+function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
   if (questions.length === 0) return null;
   const copy = questionCopy();
   return (
@@ -3731,10 +3741,11 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
 // source renderer for code, plus a comment box that posts to the card
 // (card comments route to the worker). The bb editor stays one click away
 // for edits, but review never needs it.
-function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, onCommented }: {
+function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, mode = "comment", onCommented }: {
   open: boolean; onOpenChange: (next: boolean) => void; cardId: string;
   file: { display: string; path: string } | null;
   editorTarget: WorkspaceFileTarget | HostFileTarget | null;
+  mode?: ArtifactViewerMode;
   onCommented: () => void;
 }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -3786,46 +3797,51 @@ function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, 
     }
   }
   const isMarkdown = file ? /\.mdx?$/i.test(file.display) || /\.mdx?$/i.test(file.path) : false;
+  const canComment = mode === "comment";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-4xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="truncate">{file?.display ?? "Artifact"}</DialogTitle>
-          <DialogDescription>Read-only preview. Discuss below — notes go to the agent.</DialogDescription>
+          <DialogDescription>{canComment ? "Read-only preview. Discuss below — notes go to the agent." : "Read the document before deciding. This review does not modify it."}</DialogDescription>
         </DialogHeader>
-        <div className="max-h-[70vh] overflow-auto rounded-md border bg-muted/20 p-3">
-          {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
-          {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
-          {!loading && !loadError && content !== null ? (
-            isMarkdown ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div> : <SourceCode content={content} path={file?.display ?? "file.txt"} />
-          ) : null}
-          {truncated ? <p className="mt-2 text-xs text-muted-foreground">Truncated preview — open in the editor for the full file.</p> : null}
-        </div>
-        <div className="space-y-2">
-          <span className="flex min-h-11 items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
-            <span>Discuss excerpts with the agent{drafts.length ? ` (${drafts.length})` : ""}</span>
-            <button onClick={quoteSelection} className="cursor-pointer rounded-md border px-2 py-1 text-xs hover:bg-muted" title="Quote the passage currently selected in the preview above as a new draft">Quote selection</button>
-          </span>
-          {drafts.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Select passages above and quote each one, then send them together.</p>
-          ) : null}
-          {drafts.map((draft, index) => (
-            <div key={draft.id} className="space-y-1 rounded-md border bg-muted/20 p-2">
-              <div className="flex items-start gap-2">
-                <span className="text-xs font-semibold text-muted-foreground">#{index + 1}</span>
-                <blockquote className="min-w-0 flex-1 border-l-2 border-primary/50 pl-2 text-xs text-muted-foreground">{draft.quote.length > 300 ? `${draft.quote.slice(0, 300)}…` : draft.quote}</blockquote>
-                <button onClick={() => removeDraft(draft.id)} aria-label={`Remove excerpt ${index + 1}`} className="cursor-pointer rounded px-1 text-muted-foreground hover:text-foreground">×</button>
-              </div>
-              <textarea value={draft.comment} onChange={(event) => setDrafts((current) => current.map((entry) => entry.id === draft.id ? { ...entry, comment: event.target.value } : entry))} rows={2} className="min-h-16 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder={`Comment on excerpt ${index + 1}… (Cmd/Ctrl+Enter sends all)`} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && drafts.length > 0) void sendAll(); }} />
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <div className="max-h-[46dvh] overflow-auto rounded-md border bg-muted/20 p-3">
+            {loading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
+            {loadError ? <p className="text-sm text-destructive">{loadError}</p> : null}
+            {!loading && !loadError && content !== null ? (
+              isMarkdown ? <div className="text-sm leading-relaxed"><Markdown content={content} /></div> : <SourceCode content={content} path={file?.display ?? "file.txt"} />
+            ) : null}
+            {truncated ? <p className="mt-2 text-xs text-muted-foreground">Truncated preview — open in the editor for the full file.</p> : null}
+          </div>
+          {canComment ? (
+            <div className="space-y-2 pb-1">
+              <span className="flex min-h-11 items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
+                <span>Discuss excerpts with the agent{drafts.length ? ` (${drafts.length})` : ""}</span>
+                <button onClick={quoteSelection} className="cursor-pointer rounded-md border px-2 py-1 text-xs hover:bg-muted" title="Quote the passage currently selected in the preview above as a new draft">Quote selection</button>
+              </span>
+              {drafts.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Select passages above and quote each one, then send them together.</p>
+              ) : null}
+              {drafts.map((draft, index) => (
+                <div key={draft.id} className="space-y-1 rounded-md border bg-muted/20 p-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs font-semibold text-muted-foreground">#{index + 1}</span>
+                    <blockquote className="min-w-0 flex-1 border-l-2 border-primary/50 pl-2 text-xs text-muted-foreground">{draft.quote.length > 300 ? `${draft.quote.slice(0, 300)}…` : draft.quote}</blockquote>
+                    <button onClick={() => removeDraft(draft.id)} aria-label={`Remove excerpt ${index + 1}`} className="cursor-pointer rounded px-1 text-muted-foreground hover:text-foreground">×</button>
+                  </div>
+                  <textarea value={draft.comment} onChange={(event) => setDrafts((current) => current.map((entry) => entry.id === draft.id ? { ...entry, comment: event.target.value } : entry))} rows={2} className="min-h-16 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder={`Comment on excerpt ${index + 1}… (Cmd/Ctrl+Enter sends all)`} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && drafts.length > 0) void sendAll(); }} />
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
         </div>
         <DialogFooter>
-          {editorTarget ? (
+          {canComment && editorTarget ? (
             <FileLink target={editorTarget} location={null} className="mr-auto inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 text-xs font-medium text-primary hover:underline">Open in bb editor ↗</FileLink>
           ) : null}
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-          <Button disabled={drafts.length === 0 || sending} onClick={() => void sendAll()}>{sending ? "Sending…" : drafts.length > 1 ? `Send ${drafts.length} to agent` : "Send to agent"}</Button>
+          {canComment ? <Button disabled={drafts.length === 0 || sending} onClick={() => void sendAll()}>{sending ? "Sending…" : drafts.length > 1 ? `Send ${drafts.length} to agent` : "Send to agent"}</Button> : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -4629,7 +4645,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const [retrying, setRetrying] = useState(false);
   const [starting, setStarting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
+  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
   const [fanOutOpen, setFanOutOpen] = useState(false);
   const [strategyRunOpen, setStrategyRunOpen] = useState(false);
   const inboxEventRef = useRef<HTMLElement | null>(null);
@@ -4792,10 +4808,10 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a)} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
                   </div>
                 ) : null}
-                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => { onChanged(); void loadIndex(); }} /></div> : null}
+                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => { onChanged(); void loadIndex(); }} /></div> : null}
               </section>
             ) : null}
 
@@ -4883,6 +4899,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
         cardId={cardId}
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
+        mode={viewerFile?.mode}
         onCommented={() => onChanged()}
       />
       <FanOutDialog
@@ -4916,7 +4933,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
   const [retrying, setRetrying] = useState(false);
   const [starting, setStarting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
+  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -5060,7 +5077,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                     <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => onChanged()} />
                   </div>
                 ) : null}
-                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => onChanged()} /></div> : null}
+                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => onChanged()} /></div> : null}
               </section>
             ) : null}
 
@@ -5119,6 +5136,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
         cardId={cardId}
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
+        mode={viewerFile?.mode}
         onCommented={onChanged}
       />
     </div>
@@ -5168,7 +5186,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const publicationDefaultBranch = publication?.branch?.default ?? null;
   const publishesToDefaultBranch = Boolean(publicationDefaultBranch && publication?.branch?.current === publicationDefaultBranch);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
+  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
   const [inboxEvent, setInboxEvent] = useState<InboxEventSnapshot | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
@@ -5548,7 +5566,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
                       {hero.kind === "decision" && reviewArtifact ? (
                         <span className="w-full">
-                          <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewArtifact.display, path: reviewArtifact.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewArtifact.path, reviewArtifact.hostId, reviewArtifact.absolutePath) })} title={`Read ${reviewArtifact.display} before deciding`}>Review artifact ↗</Button>
+                          <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewArtifact.display, path: reviewArtifact.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewArtifact.path, reviewArtifact.hostId, reviewArtifact.absolutePath), mode: "review" })} title={`Read ${reviewArtifact.display} before deciding`}>Review artifact ↗</Button>
                         </span>
                       ) : null}
                       {hero.kind === "error" && card.workerThreadId ? (
@@ -5592,7 +5610,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => void load()} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => void load()} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
                   </div>
                 ) : null}
                 {detail?.splitAction?.show ? (
@@ -5608,7 +5626,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     {splitError ? <span className="w-full text-xs text-destructive">{splitError}</span> : null}
                   </div>
                 ) : null}
-                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => void load()} /></div> : null}
+                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => void load()} /></div> : null}
               </section>
             ) : null}
 
@@ -5798,6 +5816,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 action={<Button size="sm" variant="outline" disabled={publicationLoading} onClick={() => void loadPublication()} title="Re-check the workspace and pull-request state in BB">Refresh</Button>}
               >
                 {!publication && !publicationLoading ? <p className="text-xs text-muted-foreground">Publication status is unavailable.</p> : null}
+                {card.workspaceKind === "exploratory" ? (
+                  <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200">This Build card ran in an exploratory, non-Git workspace. Its state artifacts are preserved, but no code changes, branch, commit, or test result can be verified here. Start the replacement in the intended BB project; new Build cards now require one.</p>
+                ) : null}
                 {publication ? (
                   <div className="space-y-3 text-xs">
                     {publication.message ? <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-amber-900 dark:text-amber-200">{publication.message}</p> : null}
@@ -5982,6 +6003,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         cardId={cardId}
         file={viewerFile}
         editorTarget={viewerFile?.target ?? null}
+        mode={viewerFile?.mode}
         onCommented={() => void load()}
       />
       {/* Advance preview: never jump stages blindly — show where you are, where

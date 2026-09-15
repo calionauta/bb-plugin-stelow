@@ -8,6 +8,27 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.30] - 2026-09-15
+
+### Fixed
+
+- **Gate documents are visible where the decision is made.** Older pending
+  gate asks recover their manifest artifact; every option now carries its
+  contextual Open document control. Approval opens a read-only review;
+  change requests retain quoting, notes, and agent delivery.
+- **Artifact review remains usable with many quotes.** The viewer has a
+  bounded, scrollable content area and a persistent action footer, so quoted
+  excerpts, their inputs, and Close/Send never fall below the dialog frame.
+- **Build cannot silently run without a codebase.** New Build cards and
+  Build splits require a project workspace instead of an exploratory folder.
+  Existing affected cards explain why Git evidence is unavailable.
+
+### Added
+
+- **Audit receipt for completed Build cards.** `audit.md`, registered as an
+  Audit artifact, records acceptance criteria, verification, exact test
+  results, and Git evidence. The host refuses `done` until it is present.
+
 ## [0.18.29] - 2026-09-15
 
 ### Fixed

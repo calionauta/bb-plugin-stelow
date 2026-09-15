@@ -36,4 +36,10 @@ assert.match(app, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediatel
 assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 2, "research and explore cards both offer Start");
 assert.match(app, /Not started — parked in To-Do/, "a parked card says plainly that nothing runs");
 
+// A Build workflow is code work: a Personal/exploratory folder only holds
+// Stelow state and cannot truthfully produce a diff, branch, or commit.
+assert.match(server, /Build cards require a project workspace with a Git source/, "new Build cards refuse an exploratory workspace");
+assert.match(server, /Cannot split a Build workflow from an exploratory workspace/, "split cannot recreate an unverifiable Build child");
+assert.match(server, /auditReceiptReadiness\(receiptContent/, "Build done checks the durable audit receipt before becoming Done");
+
 console.log("card start test ok: deferred start, shared spawn, split always starts");
