@@ -8,6 +8,13 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **One pill for one fact on the open card.** In progress collapses while
+  the worker is live (the Working activity pill already says it); other
+  activities keep both pills. The Workflow map disclosure carries a
+  state-explicit chevron instead of relying on a CSS group-open variant.
+
 ## [0.18.20] - 2026-09-15
 
 ### Fixed

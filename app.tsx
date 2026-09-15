@@ -274,8 +274,13 @@ function BuildStatusPills({ card }: { card: CardItem }) {
   // checkpoint, so a second "Draft" pill next to it duplicates what the
   // column already says: one pill, same treatment as completed. The stored
   // status is untouched (creation, reseed and the API still use it).
+  // "In progress" collapses the same way while the worker is live: the
+  // activity pill already says "Working", so the pair would read
+  // "Execution · In progress · Working" for one fact. Other activities keep
+  // both pills — "Waiting for you" or "Failed" next to the lifecycle state
+  // is two facts, not one.
   const statusTitle = "Workflow status — the card's specific execution state.";
-  if (column === status || card.status === "completed" || card.status === "draft") {
+  if (column === status || card.status === "completed" || card.status === "draft" || (card.status === "in-progress" && card.activity === "running")) {
     return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board status — this card's current state."><span className="mr-1">{statusGlyph(card.status)}</span>{column}</Pill>;
   }
   return (<>
@@ -5106,6 +5111,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [artifactStage, setArtifactStage] = useState<string | null>(null);
+  // Workflow map open state drives its own chevron explicitly: no reliance
+  // on CSS group-open variants, and the native marker stays hidden so the
+  // affordance is exactly one arrow.
+  const [mapOpen, setMapOpen] = useState(false);
   type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean; entitySummary: { total: number; fileCount: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null; changedSymbols: Array<{ symbol: string; files: string[]; callers: number; testCallers: number }> | null };
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffData, setDiffData] = useState<CardDiff | null>(null);
@@ -5569,8 +5578,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
                     offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
-                  <details className="group pt-1 text-xs text-muted-foreground">
-                    <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-foreground"><DisclosureChevron />Workflow map · what each stage does</summary>
+                  <details className="pt-1 text-xs text-muted-foreground" onToggle={(event) => setMapOpen(event.currentTarget.open)}>
+                    <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-foreground marker:hidden [&::-webkit-details-marker]:hidden"><span aria-hidden className="inline-block shrink-0 text-[10px] text-muted-foreground">{mapOpen ? "▾" : "▸"}</span>Workflow map · what each stage does</summary>
                     <p className="mt-1">Analyze, Plan, Execute, and Review are workflow phases. Review holds automated workflow checks (Diff gate, Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior doc that defines it.</p>
                     <ul className="mt-2 space-y-1">
                       {STAGE_SEQUENCE.map((stage) => {

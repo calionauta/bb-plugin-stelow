@@ -255,7 +255,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   verification record, cannot reopen that terminal checkpoint. More generally,
   the current checkpoint is always inert; only a legal next checkpoint or a
    prior checkpoint can be selected. It exposes a
-   compact Workflow map explaining phases, Done, and attention. The map lists
+   compact Workflow map explaining phases, Done, and attention. The map is a
+   real disclosure with a state-explicit chevron (no CSS-variant hope). The map lists
    every stage with what it produces and a link to the upstream skill or
    behavior doc that defines it; pill tooltips name the owning skill and
    point at the map. Pill clicks keep their rerun/advance meaning and never
