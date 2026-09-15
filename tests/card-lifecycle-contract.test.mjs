@@ -152,12 +152,13 @@ assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-vie
 assert.match(app, /function CardHeading\(/, "board tiles share a title-first card header");
 assert.match(app, /<h3 className="min-w-0 break-all text-sm font-semibold/, "card titles always use the whole available width and break rather than truncate");
 assert.match(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "status chips have a visible label instead of looking like card actions");
-assert.match(boardCard, /action=\{stuck && \(card\.activity !== "error" \|\| !card\.lastError\) \? <CardRetryButton/, "build card error recovery lives in the error row, not the heading");
-assert.match(lightweightCard, /action=\{stuck && \(card\.activity !== "error" \|\| !card\.lastError\) \? <CardRetryButton/, "research/explore cards use the same error-row recovery");
+assert.match(boardCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "build tiles offer heading recovery for idle stalls only, never for failures");
+assert.match(lightweightCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "research/explore tiles match: heading recovery is idle-only");
+assert.doesNotMatch(boardCard, /bg-destructive\/10/, "build tiles render no failure body — the open card explains");
+assert.doesNotMatch(lightweightCard, /bg-destructive\/10/, "research/explore tiles render no failure body either");
+assert.match(boardCard, /detail=\{card\.lastError\}/, "build tiles still pass the reason to the chip hover");
 assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
-assert.match(app, /function canRetryCard\(/, "retry is offered only when a live thread on a non-terminal card can act");
-assert.match(app, /<span className="font-semibold">Failed:<\/span> \{card\.lastError\}/, "the tile names the failure text beside the Failed chip");
-assert.match(app, /aria-label=\{retrying \? "Retrying the worker" : `Retry the worker on \$\{label\}`\}/, "the compact retry keeps a full accessible name at icon density");
+assert.match(app, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
 assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
 assert.match(app, /Answering below resumes the worker\./, "the concurrent-error note points at the open question as the recovery path");
 assert.match(app, /Retry the failed worker in place instead of answering/, "the open card offers retry beside the question when both are live");

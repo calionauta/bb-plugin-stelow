@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.17] - 2026-09-15
+
+### Changed
+
+- **Tiles signal, the open card explains.** Board and list tiles no longer
+  render the failure body or a retry action: a failed tile shows the Failed
+  chip (reason one hover away) plus the usual attention border. The full
+  error text and its retry live only in the open card's hero.
+
 ## [0.18.16] - 2026-09-15
 
 ### Fixed

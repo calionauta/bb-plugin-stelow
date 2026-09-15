@@ -229,12 +229,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **Board cards** (`CardHeading`, `CardRetryButton`). A card’s requested
   outcome is a full-width, wrapping heading; its labelled status lives below
-  it; idle recovery is a separate Resume action. A live failure renders as
-  a Failed error row carrying its own message with a compact icon-sized
-  retry tucked at its right edge — the retry appears only when a live
-  thread on a non-terminal card can act. The same compact hierarchy is
-  reused in Build, Research, and Explore, so narrow columns do not turn a
-  title or a workflow state into an ambiguous, clipped chip.
+  it; idle recovery is a separate Resume action. Tiles signal failures with
+  the Failed chip only — the reason stays one hover away on the chip, while
+  the full error text and its retry live in the open card. The same compact
+  hierarchy is reused in Build, Research, and Explore, so narrow columns do
+  not turn a title or a workflow state into an ambiguous, clipped chip.
 - **Hero** (`heroFor`: decision/error/paused/working/calm). One sentence
   + one primary action per state; secondary actions as real buttons. The
   decision state always offers Open thread, and names a concurrent worker
