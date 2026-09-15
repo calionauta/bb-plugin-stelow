@@ -8,6 +8,27 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.14] - 2026-09-15
+
+### Fixed
+
+- **Failures are named where the Failed chip appears.** Tiles render the
+  worker error text in a Failed row; an open card in the decision state
+  names a concurrent error inside the hero (answering resumes the worker)
+  and always offers Open thread — no more unexplained chip.
+- **Answering clears the interrupted turn's failure.** Both live and
+  recovered answer paths reset `last_error`, and an error arriving while
+  a question is open is superseded at birth, so one card counts once in
+  the badge and Needs attention.
+
+### Changed
+
+- **Retry is a compact icon action on tiles.** The wide labeled button left
+  the heading; the error row carries an icon-sized `↻` at its right edge
+  with a full accessible name. It renders only when a live thread on a
+  non-terminal card can act — never a dead button on Done or thread-less
+  cards.
+
 ## [0.18.13] - 2026-09-15
 
 ### Changed
