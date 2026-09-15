@@ -28,6 +28,8 @@ export declare function matchSplitDecision(
   proposalQuestion: unknown,
   decisions: unknown,
 ): string[];
+export declare const STANDARD_SPLIT_DISCLOSURE: string;
+export declare function withStandardSplitDisclosure(question: unknown): string;
 export declare function recordSplitAnswer(
   db: { prepare: (sql: string) => { get: (...params: any[]) => any; run: (...params: any[]) => any } },
   cardId: string,

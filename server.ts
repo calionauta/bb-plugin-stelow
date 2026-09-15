@@ -40,7 +40,7 @@ import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
-import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSplitAnswer, splitActionState, splitEligibility, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
+import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSplitAnswer, splitActionState, splitEligibility, splitOutcome, splitRemainder, validateSplitSlices, withStandardSplitDisclosure } from "./lib/split-proposal.mjs";
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
@@ -5056,6 +5056,17 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           groups[0]!.question = splitQuestionText(groups[0]!.question);
           db.prepare("INSERT OR REPLACE INTO split_proposals (card_id, question, slices, selected, asked_at, answered_at, consumed_at, created) VALUES (?, ?, ?, NULL, ?, NULL, NULL, '[]')")
             .run(cardRow.id, groups[0]!.question, JSON.stringify(slices), Date.now());
+        }
+        // Standard questions at the split point read like split decisions
+        // but execute nothing: host-append the consequence disclosure to
+        // every group (live form and persisted expired rows carry it alike),
+        // decided through the same shared gate on slug truth.
+        if (tag !== "split") {
+          const stdCard = getCard(cardRow.id);
+          const stdStage = stdCard ? await cardStageSlug(stdCard) : null;
+          if (stdCard && splitEligibility({ kind: stdCard.kind, stage: stdStage }).ok) {
+            for (const group of groups) group.question = withStandardSplitDisclosure(group.question);
+          }
         }
         updateCard(cardRow.id, { activity: "awaiting-answer" });
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;

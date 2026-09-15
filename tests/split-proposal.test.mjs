@@ -61,11 +61,16 @@ assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the rem
 assert.match(serverSource, /splitEligibility\(\{ kind: askCard\.kind, stage: askStage \}\)/, "the reminder decides through the shared gate");
 assert.match(serverSource, /const askStage = askCard \? await cardStageSlug\(askCard\) : null/, "the reminder reads slug truth, not the DB cache");
 
-// All three gates decide through splitEligibility — no pasted stage pair
+// All four gates decide through splitEligibility — no pasted stage pair
 // or error string may reappear at any call site.
-assert.equal((serverSource.match(/splitEligibility\(/g) ?? []).length, 3, "ask validation, standard reminder, and executor share one gate");
+assert.equal((serverSource.match(/splitEligibility\(/g) ?? []).length, 4, "ask validation, standard enrichment, standard reminder, and executor share one gate");
 assert.ok(!serverSource.includes('card.stage !== "triage"'), "no call site pastes the stage pair anymore");
 assert.ok(!serverSource.includes("Only build cards split. Research and explore"), "the kind refusal lives in lib only");
+
+// Standard asks at the split point carry the host consequence disclosure
+// (live form and persisted rows alike) — a scope question never again
+// reads like a split decision.
+assert.match(serverSource, /withStandardSplitDisclosure\(group\.question\)/, "every standard group is enriched at the gate");
 
 // Both answer paths record through the shared helper — no duplicated
 // SELECT/UPDATE block may reappear.

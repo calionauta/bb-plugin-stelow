@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Standard scope questions state their consequence.** A scope-picking
+  question at triage/select read like a split decision but executed
+  nothing. The host now appends a consequence disclosure (scope-only,
+  creates no cards, Propose split stays available) to every standard ask
+  at the shared gate — live form and persisted rows alike, regardless of
+  worker wording.
+
 ## [0.18.24] - 2026-09-15
 
 ### Fixed

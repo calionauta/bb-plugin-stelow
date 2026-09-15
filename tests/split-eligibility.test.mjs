@@ -3,11 +3,13 @@ import Database from "better-sqlite3";
 import {
   SPLIT_NON_BUILD_ERROR,
   SPLIT_STAGES,
+  STANDARD_SPLIT_DISCLOSURE,
   matchSplitDecision,
   recordSplitAnswer,
   splitActionState,
   splitEligibility,
   splitStageError,
+  withStandardSplitDisclosure,
 } from "../lib/split-proposal.mjs";
 
 // Single-source split gate: every entry point (worker ask validation,
@@ -55,5 +57,15 @@ assert.equal(recordSplitAnswer(db, "card_1", decisions), 2, "the shared helper r
 assert.deepEqual(JSON.parse(db.prepare("SELECT selected FROM split_proposals WHERE card_id = ?").get("card_1").selected), ["Alpha", "Beta"], "the row holds exactly the picked labels");
 assert.equal(recordSplitAnswer(db, "card_1", decisions), 0, "a second recording matches nothing once selected is set");
 assert.equal(recordSplitAnswer(db, "card_missing", decisions), 0, "a card without proposal records nothing");
+
+// Consequence disclosure: a standard scope question at the split point
+// must state it creates no cards, whatever the worker wrote.
+assert.match(STANDARD_SPLIT_DISCLOSURE, /creates no new cards/, "the disclosure names the consequence");
+assert.match(STANDARD_SPLIT_DISCLOSURE, /Propose split/, "the disclosure names the exit");
+const disclosed = withStandardSplitDisclosure("Which files are in scope?");
+assert.match(disclosed, /Which files are in scope\?/, "the worker text is preserved verbatim");
+assert.ok(disclosed.endsWith(STANDARD_SPLIT_DISCLOSURE), "the disclosure is appended once");
+assert.equal(withStandardSplitDisclosure(disclosed), disclosed, "re-enrichment is idempotent");
+assert.equal(withStandardSplitDisclosure("  "), STANDARD_SPLIT_DISCLOSURE, "an empty question degrades to the disclosure alone");
 
 console.log("split eligibility test ok: one gate, shared recording, dumb-UI state");

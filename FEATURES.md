@@ -458,7 +458,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`lib/split-proposal.mjs`: `splitEligibility`, `splitActionState`,
   `recordSplitAnswer`) decides for the worker ask, the executor, the
   trigger, and the card flag on state.md truth — the UI reads the flag,
-  never local stage rules.
+  never local stage rules. Standard questions at the split point carry a
+  host-appended consequence disclosure (scope-only, creates no cards,
+  Propose split stays available), so a scope pick never reads like a
+  split decision.
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and
