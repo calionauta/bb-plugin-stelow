@@ -8,6 +8,33 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.32] - 2026-09-15
+
+### Added
+
+- **Exploratory cards can be recovered without losing the work.** When a
+  worker wrote somewhere other than the card's own workspace, the card now
+  offers exactly one evidence-led next step: promote the workspace, review a
+  worker-reported registered checkout, choose between several reported
+  checkouts, or state plainly that only documents remain. Attaching records
+  the reviewed project, branch, HEAD, and changed-file count on the card and
+  keeps the original exploratory path in its audit trail.
+- **The audit receipt must name the checkout it verified.** `audit.md` now
+  carries an Execution context section recording the absolute path the
+  worker actually wrote to, so a receipt can never silently attest a
+  different codebase than the one the card ran in.
+
+### Fixed
+
+- **Seeded scaffolding no longer counts as source material.** Every card
+  workspace carries `skills/`, `data/`, `.stelow/`, and `stelow.json`;
+  treating those as source made every exploratory card look promotable and
+  hid the reported-checkout review path. Only a real source file, or a
+  directory Stelow did not create, marks a workspace as promotable.
+- **Recovery refusals name their exit.** Promoting a folder that has no
+  source, or already has a reviewed checkout attached, explains what to do
+  instead of failing generically.
+
 ## [0.18.31] - 2026-09-15
 
 ### Changed
