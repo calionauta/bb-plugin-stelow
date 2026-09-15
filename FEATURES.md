@@ -106,6 +106,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   changes, commits, or pushes. Stelow's own seeded scaffolding (`skills/`,
   `data/`, `.stelow/`, `stelow.json`) is never mistaken for source, so an
   empty exploratory folder can no longer masquerade as promotable.
+- **Recovered-diff integrity.** A recovered checkout is re-validated against
+  the Git root that the person attached before Stelow renders its diff. If it
+  now resolves somewhere else, the panel refuses the view and directs the
+  person to re-check evidence rather than presenting a plausible diff from
+  the wrong repository. Build audit receipts also name the host-verified Git
+  root and exact HEAD, so a copied or stale receipt cannot mark work Done.
 
 ## 2. Orient myself
 *When I open Stelow, I want to see everything and find my card.*
@@ -127,6 +133,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   derived from one workflow catalog; Research/Explore own their separately
   derived Inbox/Doing/Done lifecycle. Columns collapse (persisted); cards
   move via drag-drop.
+- **One state language.** Build Kanban tiles and the open-card header use the
+  same ordered pills: board location, lifecycle state, worker state, then
+  workflow type. The components and tones are shared; a generic “Status”
+  label and the stage-as-status variant are not shown on the board, so a
+  card reads the same way before and after opening it.
 - **Inbox** (one word, every track). The first column means *captured,
   nothing running yet*: a card sits there while it has no worker, and
   leaving it is what starts the card. Moving a card that already has a

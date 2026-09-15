@@ -265,30 +265,18 @@ function Pill({ children, tone = "bg-muted text-muted-foreground", className = "
   return <span title={title} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
 }
 
-// Build cards show board column + workflow status — except at terminals,
-// where both resolve to the same word ("Archived Archived"). One pill then.
+// One shared state sequence for an open Build card and its Kanban tile.
+// A card is always read left-to-right as: board location, lifecycle state,
+// worker state, workflow type.  Keeping this here prevents one surface from
+// calling the current stage "status" while another calls it "planning".
 function BuildStatusPills({ card }: { card: CardItem }) {
   const column = COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status);
   const status = statusLabel(card.status);
-  // Completed reads as one state: the column ("Done") already says it, so a
-  // second "Completed" pill only duplicates. (Archived already collapses to
-  // one via the equality below.)
-  // Draft is "fresh, still in triage" and always pairs with the triage
-  // checkpoint, so a second "Draft" pill next to it duplicates what the
-  // column already says: one pill, same treatment as completed. The stored
-  // status is untouched (creation, reseed and the API still use it).
-  // "In progress" collapses the same way while the worker is live: the
-  // activity pill already says "Working", so the pair would read
-  // "Execution · In progress · Working" for one fact. Other activities keep
-  // both pills — "Waiting for you" or "Failed" next to the lifecycle state
-  // is two facts, not one.
-  const statusTitle = "Workflow status — the card's specific execution state.";
-  if (column === status || card.status === "completed" || card.status === "draft" || (card.status === "in-progress" && card.activity === "running")) {
-    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board status — this card's current state."><span className="mr-1">{statusGlyph(card.status)}</span>{column}</Pill>;
-  }
   return (<>
-    <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the build flow.">{column}</Pill>
-    <Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title={statusTitle}><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill>
+    <Pill tone={statusTone(card.status)} title="Board location — where this card sits in the build flow.">{column}</Pill>
+    {column !== status ? <Pill tone={statusTone(card.status)} title="Lifecycle state — the card's current execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill> : null}
+    <ActivityPill activity={card.activity} detail={card.lastError} />
+    {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
   </>);
 }
 
@@ -320,22 +308,6 @@ function ActivityPill({ activity, detail }: { activity: CardItem["activity"]; de
     <span className={`stelow-activity-pill max-w-full truncate ${cls}`} title={title}>
       <span aria-hidden>{ACTIVITY_GLYPH[activity]}</span>
       {activityLabel(activity)}
-    </span>
-  );
-}
-
-// Closed build cards name the stage instead of a bare "Working": the card
-// border already pulses while running, so the pill reuses the open card
-// timeline's current-stage tone (bg-primary/15 text-primary) plus the same
-// breathe pulse — one color, one motion, both surfaces.
-function StagePill({ stage, active }: { stage: string; active: boolean }) {
-  return (
-    <span
-      title={active ? `Worker is at ${stageLabel(stage)}` : `Workflow stage: ${stageLabel(stage)} — open the card for details`}
-      className={`inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px] font-medium ${active ? "bg-primary/15 text-primary stelow-stage-pulse" : "bg-muted text-muted-foreground"}`}
-    >
-      <span aria-hidden>●</span>
-      {stageLabel(stage)}
     </span>
   );
 }
@@ -2477,13 +2449,14 @@ function CardMetaRows({ card }: { card: CardItem }) {
 // All board tiles share this header geometry. Identity, state and recovery
 // actions are deliberately distinct rows: a narrow board column must never
 // make a title look like a tiny label among controls, or make state look like
-// an action. The status label also gives otherwise-button-shaped pills context.
+// an action. The pills are self-describing through their canonical order, so
+// a generic "Status" label would only add noise.
 function CardHeading({ title, status, action }: { title: string; status: React.ReactNode; action?: React.ReactNode }) {
   const statusItems = Children.toArray(status);
   return (
     <header className="min-w-0 space-y-2.5">
       <h3 className="min-w-0 break-all text-sm font-semibold leading-5 text-foreground">{title}</h3>
-      {statusItems.length ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"><span className="font-medium text-muted-foreground/80">Status</span>{statusItems}</div> : null}
+      {statusItems.length ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">{statusItems}</div> : null}
       {action ? <div className="border-t border-border/70 pt-2">{action}</div> : null}
     </header>
   );
@@ -2524,14 +2497,10 @@ function BoardCard({ card }: { card: CardItem }) {
     >
       <CardHeading title={card.displayName}
         action={stuck && card.activity !== "error" ? <CardRetryButton cardId={card.id} label="Resume work" /> : null}
-        status={<>
-        {card.status !== "completed" && card.status !== "archived" ? <StagePill stage={card.stage} active={running} /> : null}
-        {card.activity !== "running" ? <ActivityPill activity={card.activity} detail={card.lastError} /> : null}
-        </>}
+        status={<BuildStatusPills card={card} />}
       />
-      {(card.scopeSummary.scopesTotal > 0 || card.intent !== "unknown") ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+      {card.scopeSummary.scopesTotal > 0 ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
-        {card.intent !== "unknown" ? <Pill className="max-w-full" title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
       </div> : null}
       <CardMetaRows card={card} />
     </div>
@@ -3018,11 +2987,11 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, o
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <BuildStatusPills card={card} /> : null}
+        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills card={card} /></span> : null}
       </nav>
       {card ? <>
-        <ActivityPill activity={card.activity} />
-        {canEditWorkflowIntent(card) ? (
+        {card.kind !== "build" ? <ActivityPill activity={card.activity} /> : null}
+        {card.kind === "build" && canEditWorkflowIntent(card) ? (
         <select
           aria-label="Intent"
           title="Workflow type — correct it while this card is still in triage."
@@ -3042,7 +3011,6 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, o
           <option value="unknown">Unknown intent</option>
         </select>
         ) : null}
-        {card.kind === "build" && !canEditWorkflowIntent(card) ? <Pill tone="bg-muted text-muted-foreground" title={canReclassifyWorkflow(card) ? "Workflow type chosen at triage. Reclassify from Card actions to restart with a different route." : "Workflow type chosen at triage."}>{INTENT_LABEL[card.intent] ?? "Unknown intent"}</Pill> : null}
         <CardActionsMenu card={card} onRestartFresh={onRestartFresh} onArchive={onArchive} onDelete={onDelete} onReclassify={onReclassify} />
       </> : null}
       {onBack ? <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">

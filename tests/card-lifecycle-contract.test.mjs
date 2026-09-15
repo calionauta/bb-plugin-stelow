@@ -87,6 +87,9 @@ const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(comment, /if \(isArchivedCard\(card\)\) return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse new comments");
 assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: card\.stage \}\)/, "a card comment reopens completed work through the shared lifecycle helper");
 assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: currentStage \}\)/, "a direct thread message reopens completed work through the same helper");
+assert.match(server, /async function recoveredCheckoutIntegrity\(/, "recovered checkouts have a dedicated integrity check before diffing");
+assert.match(server, /const recoveryError = await recoveredCheckoutIntegrity\(card, workspace\.path\)/, "recovered diffs fail closed when their attached Git root changes");
+assert.match(server, /auditReceiptReadiness\(receiptContent, stateBlob \? parseArtifactManifest\(stateBlob\) : \[\], checkout\?\.path \?\? null, gitEvidence\)/, "Build completion passes host-sampled Git evidence into receipt validation");
 
 // The single updateCard choke point strips resuscitations twice: against the
 // read-time snapshot and, for async callers whose write lands after Archive,
@@ -153,12 +156,15 @@ assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build boa
 assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
 assert.match(app, /function CardHeading\(/, "board tiles share a title-first card header");
 assert.match(app, /<h3 className="min-w-0 break-all text-sm font-semibold/, "card titles always use the whole available width and break rather than truncate");
-assert.match(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "status chips have a visible label instead of looking like card actions");
+assert.doesNotMatch(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "a generic Status label does not duplicate the self-describing state pills");
+assert.match(app, /function BuildStatusPills\([\s\S]*Board location[\s\S]*Lifecycle state[\s\S]*ActivityPill[\s\S]*Workflow type/, "Build state has one canonical location, lifecycle, worker, and type sequence");
+assert.match(boardCard, /status=\{<BuildStatusPills card=\{card\} \/>\}/, "Kanban tiles use the shared Build state presentation");
+assert.match(header, /<BuildStatusPills card=\{card\} \/>/, "open Build cards use the same state presentation as Kanban tiles");
 assert.match(boardCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "build tiles offer heading recovery for idle stalls only, never for failures");
 assert.match(lightweightCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "research/explore tiles match: heading recovery is idle-only");
 assert.doesNotMatch(boardCard, /bg-destructive\/10/, "build tiles render no failure body — the open card explains");
 assert.doesNotMatch(lightweightCard, /bg-destructive\/10/, "research/explore tiles render no failure body either");
-assert.match(boardCard, /detail=\{card\.lastError\}/, "build tiles still pass the reason to the chip hover");
+assert.match(app, /<ActivityPill activity=\{card\.activity\} detail=\{card\.lastError\} \/>/, "the shared Build state pills still pass a failure reason to the chip hover");
 assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
 assert.match(app, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
 assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
@@ -229,7 +235,8 @@ assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how 
 const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
 assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
-assert.match(app, /card\.status === "completed" \|\| card\.status === "draft" \|\| \(card\.status === "in-progress" && card\.activity === "running"\)/, "completed, draft and live-working cards show one pill — other activities keep status plus activity");
+assert.match(app, /Board location — where this card sits in the build flow/, "the first Build pill names location consistently");
+assert.match(app, /Lifecycle state — the card's current execution state/, "the second Build pill names lifecycle consistently");
 // One progress section, one artifact home, one reference. The doc buttons that
 // duplicated Artifacts are gone, counts are counts, and the reference map is a
 // sibling of the progress section rather than nested inside card state.

@@ -2084,6 +2084,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { kind, message: recoveryMessage(kind), workspace: { path: workspacePath, isGit: workspace.isGit, hasSource }, candidates, recovery: attached ? { projectId: attached.project_id, projectName: attached.project_name, path: attached.source_path, attachedAt: attached.attached_at } : null };
   }
 
+  async function recoveredCheckoutIntegrity(card: CardRow, path: string): Promise<string | null> {
+    if (card.workspace_kind !== "exploratory") return null;
+    const recorded = db.prepare("SELECT git_root FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { git_root: string | null } | undefined;
+    if (!recorded?.git_root) return null;
+    const live = await recoveryGitEvidence(path);
+    return !live.isGit || live.gitRoot !== recorded.git_root
+      ? "The attached recovery checkout no longer resolves to the Git root you reviewed. Re-check recovery evidence before viewing or acting on this diff."
+      : null;
+  }
+
   // --- Preview: one dev server per checkout. --------------------------------
   //
   // The lifecycle — which checkout owns a server, when it is ready, what to
@@ -4467,6 +4477,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
       const workspace = await cardCheckout(card).catch(() => null);
       if (!workspace?.path) return { ...empty, error: ERR_WORKSPACE_UNAVAILABLE };
+      // A recovered checkout is a read-only audit target, never a fuzzy path
+      // alias. If its Git root changed since the human attached it, stop here
+      // rather than showing a convincing diff from a different repository.
+      const recoveryError = await recoveredCheckoutIntegrity(card, workspace.path);
+      if (recoveryError) return { ...empty, found: true, error: recoveryError };
       const runGit = (args: string[], cwd?: string): Promise<{ ok: boolean; stdout: string }> =>
         new Promise((resolve) => {
           execFile("git", args, { cwd: cwd ?? workspace.path, timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
@@ -5558,7 +5573,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (refusal) return { exitCode: 1, stderr: refusal };
           const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;
           const checkout = await cardCheckout(card);
-          const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : [], checkout?.path ?? null);
+          const gitEvidence = checkout?.path ? await recoveryGitEvidence(checkout.path) : null;
+          if (checkout?.path && (!gitEvidence?.isGit || !gitEvidence.gitRoot || !gitEvidence.headSha)) {
+            return { exitCode: 1, stderr: "Build completion is blocked: the execution checkout no longer has verifiable Git root and HEAD evidence. Restore the intended checkout, re-run audit, then run done." };
+          }
+          const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : [], checkout?.path ?? null, gitEvidence);
           if (!receipt.ready) return { exitCode: 1, stderr: receipt.error };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
