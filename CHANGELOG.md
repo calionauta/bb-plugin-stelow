@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Preset dialogs use BB's own provider/model pickers.** The New/Edit
+  preset form and the card override custom row dropped their hand-rolled
+  provider/model selects for the host pickers (live catalog with search,
+  same as the new-card composer) through one shared block. The Manage
+  agent presets modal no longer overflows the viewport: band routing hides
+  behind a disclosure and the frame scrolls.
+
 ## [0.18.19] - 2026-09-15
 
 ### Fixed

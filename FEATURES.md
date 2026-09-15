@@ -382,10 +382,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I want a different brain, cost, or permission, I want presets.*
 
 - **Preset manager** (`listPresets`, `upsertPreset`, `deletePreset`,
-  `setDefaultPreset`). Provider, model (catalog + searchable custom),
-  reasoning, permission mode, environment kind. Built-ins protected.
+  `setDefaultPreset`). Provider, model, reasoning and permission mode come
+  from BB's own pickers (live catalog with search, same as the new-card
+  composer) shared with the card override dialog; environment kind stays a
+  preset field. Built-ins protected.
   The New-preset form stays collapsed behind Show/Hide (editing
-  auto-expands); list + band routing are the frequent jobs.
+  auto-expands) and band routing behind its own disclosure; the frame
+  scrolls instead of overflowing the viewport.
 - **Per-phase presets** (`listBandPresets`, `setBandPreset`).
   Analysis/planning/execution/review bands auto-swap workers at
   boundaries; unset bands inherit the card preset. Research and Explore

@@ -7,6 +7,8 @@ import {
   experimental_Diff as DiffView,
   experimental_FileLink as FileLink,
   experimental_NewThreadComposer as NewThreadComposer,
+  experimental_PermissionModePicker as PermissionModePicker,
+  experimental_ProviderModelPicker as ProviderModelPicker,
   useBbContext,
   useBbNavigate,
   useComposer,
@@ -3470,6 +3472,43 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
   );
 }
 
+const PRESET_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max", "none", "ultra", "ultracode"] as const;
+type PresetReasoningLevel = (typeof PRESET_REASONING_LEVELS)[number];
+type PresetExecution = { providerId: string; modelId: string; reasoningLevel: string; permissionMode: "accept-edits" | "auto" | "full" };
+// Legacy rows may carry a reasoning string outside the host catalog: coerce
+// to the shared level set instead of handing the picker an unknown value.
+function asPresetReasoningLevel(value: string): PresetReasoningLevel {
+  return (PRESET_REASONING_LEVELS as readonly string[]).includes(value) ? (value as PresetReasoningLevel) : "medium";
+}
+
+// BB owns provider/model/reasoning/permission selection on every preset
+// surface: the same host pickers as the new-card composer, with the live
+// catalog and its own search. One shared block for the manager form and the
+// assign dialog's custom row — never hand-rolled provider/model selects.
+function PresetExecutionPicker({ value, onChange }: {
+  value: PresetExecution;
+  onChange: (next: PresetExecution) => void;
+}) {
+  if (!value.providerId || !value.modelId) {
+    return <p className="py-2 text-xs text-muted-foreground">Pick or create a preset to configure its provider and model.</p>;
+  }
+  return (
+    <div className="grid gap-2">
+      <ProviderModelPicker
+        value={{ providerId: value.providerId, model: value.modelId, reasoningLevel: asPresetReasoningLevel(value.reasoningLevel) }}
+        onChange={(next) => onChange({ ...value, providerId: next.providerId, modelId: next.model, reasoningLevel: next.reasoningLevel })}
+      />
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Permission mode</span>
+        <PermissionModePicker
+          providerId={value.providerId}
+          value={value.permissionMode}
+          onChange={(next) => onChange({ ...value, permissionMode: next })}
+        />
+      </label>
+    </div>
+  );
+}
+
 function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -3482,7 +3521,6 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   // routing are the frequent jobs, authoring a preset is the rare one.
   // Editing always expands (startEdit opens); closing the dialog resets.
   const [formOpen, setFormOpen] = useState(false);
-  const [options, setOptions] = useState<{ providers: { id: string; displayName: string }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
   const [bandPresets, setBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -3491,18 +3529,14 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
     if (!open) {
       setForm(EMPTY_PRESET_FORM);
       setFormOpen(false);
-      setOptions({ providers: [], models: [] });
       return;
     }
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
     setForm(defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM);
     setMessage(null);
-    void rpc.call("listProviderModels", {}).then(setOptions).catch(() => setOptions({ providers: [], models: [] }));
     void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([]));
   }, [open, rpc]);
 
-  const providerModels = options.models.filter((model) => model.providerId === form.providerId);
-  const formCatalogReady = options.providers.length > 0 && options.models.length > 0;
   const newPresetForm = () => {
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
     return defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM;
@@ -3552,7 +3586,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Manage agent presets</DialogTitle>
           <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a card starts its worker thread. Research investigations use the research phase preset.</DialogDescription>
@@ -3575,8 +3609,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
             </div>
           ))}
         </div>
-        <div className="mt-3 rounded-md border bg-muted/30 p-3">
-          <h4 className="mb-2 text-sm font-semibold">Worker preset per track</h4>
+        <DisclosureSection title="Worker preset per track" hint="phase routing" defaultOpen={false}>
           <p className="mb-2 text-xs text-muted-foreground">Each track runs on its own preset. Build phases can each override it; the worker switches automatically at phase boundaries. Unset rows fall back to the card preset (or default).</p>
           <div className="grid gap-3">
             {[
@@ -3639,52 +3672,26 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
               );
             })()}
           </div>
-        </div>
+        </DisclosureSection>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
             <div className="flex shrink-0 gap-1">
               {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
-              <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" disabled={!formCatalogReady} onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}>{formOpen ? "▾ Hide" : "▸ Show"}</Button>
+              <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}>{formOpen ? "▾ Hide" : "▸ Show"}</Button>
             </div>
           </div>
           {formOpen ? (
-            formCatalogReady ? <div id="preset-form-body">
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div id="preset-form-body">
+            <div className="grid gap-2">
               <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
-                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.providerId} onChange={(event) => { setForm({ ...form, providerId: event.target.value, modelId: options.models.find((model) => model.providerId === event.target.value)?.model ?? "" }); }}>
-                  {options.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName} ({provider.id})</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2"><span>Model</span>
-                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>
-                  {providerModels.length === 0 ? <option value={form.modelId}>{form.modelId}</option> : null}
-                  {providerModels.map((model) => <option key={model.model} value={model.model}>{model.displayName} ({model.model})</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Reasoning</span>
-                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.reasoningLevel} onChange={(event) => setForm({ ...form, reasoningLevel: event.target.value })}>
-                  {["low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Permission mode</span>
-                <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={form.permissionMode} onChange={(event) => setForm({ ...form, permissionMode: event.target.value as "accept-edits" | "auto" | "full" })}>
-                  <option value="accept-edits">accept-edits</option>
-                  <option value="auto">auto</option>
-                  <option value="full">full</option>
-                </select>
-              </label>
+              <PresetExecutionPicker value={{ providerId: form.providerId, modelId: form.modelId, reasoningLevel: form.reasoningLevel, permissionMode: form.permissionMode }} onChange={(next) => setForm({ ...form, providerId: next.providerId, modelId: next.modelId, reasoningLevel: next.reasoningLevel, permissionMode: next.permissionMode })} />
             </div>
             {message ? <p className="mt-2 text-xs text-muted-foreground">{message}</p> : null}
             <div className="mt-3 flex justify-end gap-2">
               <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
               <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
             </div>
-            </div>
-            : <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground" aria-hidden={false}>
-              <span className="size-4 animate-spin rounded-full border-2 border-muted border-t-primary" aria-hidden />
-              <span>Loading providers and models…</span>
             </div>
           ) : null}
         </div>
@@ -4165,52 +4172,14 @@ const HERO_STYLE: Record<HeroKind, { wrap: string; dot: string; alert: boolean }
   calm: { wrap: "border-border bg-card", dot: "bg-muted-foreground", alert: false },
 };
 
-function CustomModelCombobox({ models, value, onPick }: { models: Array<{ model: string; displayName: string }>; value: string; onPick: (model: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const query = value.trim().toLowerCase();
-  const matches = (query ? models.filter((model) => model.model.toLowerCase().includes(query) || model.displayName.toLowerCase().includes(query)) : models).slice(0, 30);
-  return (
-    <span className="relative block min-w-0">
-      <input
-        aria-label="Custom model id"
-        value={value}
-        onChange={(event) => { onPick(event.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); if (event.key === "Enter" && matches.length > 0 && !matches.some((model) => model.model === value.trim())) onPick(matches[0]!.model); }}
-        placeholder={models.length > 0 ? "type to filter models…" : "model id…"}
-        className="h-7 w-full min-w-0 rounded-md border bg-background px-1.5 font-mono text-xs"
-      />
-      {open && (matches.length > 0 || query) ? (
-        <span className="mt-1 block max-h-44 overflow-auto rounded-md border bg-background">
-          {matches.map((model) => (
-            <button
-              key={model.model}
-              type="button"
-              onClick={() => { onPick(model.model); setOpen(false); }}
-              className="cursor-pointer block w-full truncate px-2 py-1.5 text-left text-xs hover:bg-muted"
-              title={`${model.model}`}
-            >
-              <span className="block truncate font-medium">{model.displayName}</span>
-              <span className="block truncate font-mono text-[10px] text-muted-foreground">{model.model}</span>
-            </button>
-          ))}
-          {query && !matches.some((model) => model.model === value.trim()) ? (
-            <button type="button" onClick={() => setOpen(false)} className="cursor-pointer block w-full truncate px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted">
-              Use “{value.trim()}” anyway
-            </button>
-          ) : null}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
 function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: boolean; onOpenChange: (next: boolean) => void; cardId: string; onChanged: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; isDefault: boolean }>>([]);
   const [catalog, setCatalog] = useState<{ providers: { id: string; displayName: string; modelsAvailable: boolean }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
   const [customProvider, setCustomProvider] = useState("");
   const [customModel, setCustomModel] = useState("");
+  const [customReasoning, setCustomReasoning] = useState("");
+  const [customPermission, setCustomPermission] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4222,7 +4191,7 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
   };
   useEffect(() => {
     if (!open) return;
-    setSelected(null); setError(null); setCustomProvider(""); setCustomModel("");
+    setSelected(null); setError(null); setCustomProvider(""); setCustomModel(""); setCustomReasoning(""); setCustomPermission("");
     void rpc.call("listPresets", {}).then((result) => setPresets(result.presets)).catch(() => setPresets([]));
     void rpc.call("listProviderModels", {}).then(setCatalog).catch(() => setCatalog({ providers: [], models: [] }));
   }, [open, rpc]);
@@ -4246,13 +4215,18 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
         const [providerId, ...modelParts] = selected.slice("model:".length).split("/");
         await applyCustom(providerId ?? "", modelParts.join("/"));
       } else if (selected === "custom") {
-        await applyCustom(customProvider, customModel.trim());
+        await applyCustom(
+          customProvider || defaultPreset?.providerId || "",
+          customModel.trim() || defaultPreset?.modelId || "",
+          customReasoning || defaultPreset?.reasoningLevel || "medium",
+          (customPermission || defaultPreset?.permissionMode || "full") as "accept-edits" | "auto" | "full",
+        );
       }
     } finally {
       setBusy(false);
     }
   }
-  async function applyCustom(providerId: string, modelId: string) {
+  async function applyCustom(providerId: string, modelId: string, reasoningLevel?: string, permissionMode?: "accept-edits" | "auto" | "full") {
     if (!providerId || !modelId) { setError("Pick a provider and type a model id."); return; }
     const base = defaultPreset;
     const upserted = await rpc.call("upsertPreset", {
@@ -4260,8 +4234,8 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
       name: `Card override ${cardId}`,
       providerId,
       modelId,
-      reasoningLevel: base?.reasoningLevel ?? "medium",
-      permissionMode: (base?.permissionMode as "accept-edits" | "auto" | "full" | undefined) ?? "full",
+      reasoningLevel: reasoningLevel ?? base?.reasoningLevel ?? "medium",
+      permissionMode: permissionMode ?? (base?.permissionMode as "accept-edits" | "auto" | "full" | undefined) ?? "full",
       environmentKind: (base?.environmentKind as "project-default" | "new-worktree" | undefined) ?? "project-default",
     });
     const result = await rpc.call("assignPreset", { cardId, presetId: upserted.preset.id });
@@ -4289,14 +4263,18 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
           <div ref={listRef} onScroll={updateFade} className="max-h-64 space-y-1 overflow-auto">
           <div>
             <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Custom provider + model</p>
-            <label className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === "custom" ? "border-primary bg-primary/10" : "border-border"}`}>
-              <input type="radio" name="card-preset" checked={selected === "custom"} onChange={() => setSelected("custom")} className="accent-primary" />
-              <span className="grid min-w-0 flex-1 grid-cols-2 gap-1" onClick={(event) => event.stopPropagation()}>
-                <select aria-label="Custom provider" value={customProvider} onChange={(event) => { setCustomProvider(event.target.value); setSelected("custom"); }} className="cursor-pointer h-7 min-w-0 rounded-md border bg-background px-1.5 text-xs">
-                  <option value="">Provider…</option>
-                  {catalog.providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.displayName}</option>)}
-                </select>
-                <CustomModelCombobox models={catalog.models.filter((model) => model.providerId === customProvider)} value={customModel} onPick={(model) => { setCustomModel(model); setSelected("custom"); }} />
+            <label className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm ${selected === "custom" ? "border-primary bg-primary/10" : "border-border"}`}>
+              <input type="radio" name="card-preset" checked={selected === "custom"} onChange={() => setSelected("custom")} className="accent-primary mt-1" />
+              <span className="min-w-0 flex-1" onClick={(event) => event.stopPropagation()}>
+                <PresetExecutionPicker
+                  value={{
+                    providerId: customProvider || defaultPreset?.providerId || "",
+                    modelId: customModel || defaultPreset?.modelId || "",
+                    reasoningLevel: customReasoning || defaultPreset?.reasoningLevel || "medium",
+                    permissionMode: (customPermission || defaultPreset?.permissionMode || "full") as "accept-edits" | "auto" | "full",
+                  }}
+                  onChange={(next) => { setCustomProvider(next.providerId); setCustomModel(next.modelId); setCustomReasoning(next.reasoningLevel); setCustomPermission(next.permissionMode); setSelected("custom"); }}
+                />
               </span>
             </label>
           </div>
