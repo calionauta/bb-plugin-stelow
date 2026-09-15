@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.26] - 2026-09-15
+
 ### Fixed
 
 - **Split children inherit the full review mode.** The heir parser
