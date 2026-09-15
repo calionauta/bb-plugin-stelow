@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.19] - 2026-09-15
+
+### Fixed
+
+- **Draft no longer renders a second pill.** Draft always pairs with the
+  triage checkpoint, so the Draft pill duplicated what the column already
+  said. Draft cards now show the single column pill like completed ones;
+  the stored status is untouched.
+
 ## [0.18.18] - 2026-09-15
 
 ### Fixed
