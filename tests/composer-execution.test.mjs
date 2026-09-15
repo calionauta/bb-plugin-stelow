@@ -108,6 +108,16 @@ assert.equal((server.match(/executionInputSources: \{ providerId: "explicit", mo
 assert.match(server, /card-override-\$\{cardId\}/, "a divergent choice pins a card-override row");
 assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)/, "the override is pinned through card_presets");
 
+// Ordering: card_presets references cards, so the pin must land after the
+// card row exists — and a spawn failure must not orphan the staged row.
+const createAt = server.indexOf("async function createCardInternal");
+assert.ok(createAt >= 0, "createCardInternal exists");
+const createWindow = server.slice(createAt, server.indexOf("type CardRow"));
+const cardsInsertAt = createWindow.indexOf("INSERT INTO cards (");
+const pinAt = createWindow.indexOf("pinnedOverrideId, ts");
+assert.ok(cardsInsertAt >= 0 && pinAt >= 0 && cardsInsertAt < pinAt, "the override pin lands after the card row");
+assert.ok(createWindow.includes("DELETE FROM presets WHERE id = ?"), "a failed spawn cleans the staged override row");
+
 assert.match(app, /function composerExecutionOf\(/, "the panel extracts the composer choice through one helper");
 assert.equal((app.match(/composerExecutionOf\(request\)/g) ?? []).length, 3, "build, research and explore submits all forward the choice");
 assert.ok(!app.includes('rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode })'), "the build submit no longer drops the choice");

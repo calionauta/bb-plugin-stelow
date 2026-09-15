@@ -1654,14 +1654,19 @@ ${prompt}`;
     // A matching choice pins nothing: the card stays on the shared preset.
     const override = composerPresetOverride(basePreset, execution ?? null);
     let spawnPreset = basePreset;
+    // Pinned after the card row exists (card_presets references cards): the
+    // presets row itself is standalone and must exist before the spawn below.
+    let pinnedOverrideId: string | null = null;
     if (override && override.providerId && override.modelId && override.reasoningLevel && override.permissionMode) {
       const ts = now();
       db.prepare("INSERT OR REPLACE INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(
         `card-override-${cardId}`, `Card override ${cardId}`, override.providerId, override.modelId, override.reasoningLevel, override.permissionMode, basePreset.environment_kind, basePreset.base_branch, basePreset.machine_id, basePreset.instructions, ts, ts,
       );
-      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, `card-override-${cardId}`, ts);
       const pinned = getPresetById(`card-override-${cardId}`);
-      if (pinned) spawnPreset = pinned;
+      if (pinned) {
+        spawnPreset = pinned;
+        pinnedOverrideId = pinned.id;
+      }
     }
     const params = presetAttachmentParams(spawnPreset);
     const spawnExecution = composerSpawnInput(params, execution ?? null);
@@ -1711,7 +1716,9 @@ ${prompt}`;
       flavor: "initial",
       previousThreadId: null,
     }) : null;
-    const thread = await bb.sdk.threads.spawn({
+    let thread: Awaited<ReturnType<typeof bb.sdk.threads.spawn>>;
+    try {
+      thread = await bb.sdk.threads.spawn({
       projectId: workerProjectId,
       environment: selectedEnvironment,
       visibility: "hidden",
@@ -1754,7 +1761,13 @@ ${SPLIT_PROTOCOL}
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${prompt}` }, ...workerAttachments],
-    });
+      });
+    } catch (error) {
+      // No card row exists yet: drop the override preset staged above so a
+      // failed spawn leaves no orphan card-override row behind.
+      if (pinnedOverrideId) db.prepare("DELETE FROM presets WHERE id = ?").run(pinnedOverrideId);
+      throw error;
+    }
     const ts = now();
     const createdAt = new Date(ts).toISOString();
     // Columns are the single source of truth: placeholders derive from this
@@ -1765,9 +1778,14 @@ ${prompt}` }, ...workerAttachments],
       throw new Error(`Card insert mismatch: ${cardValues.length} values for ${CARD_COLUMNS.length} columns.`);
     }
     db.prepare(`INSERT INTO cards (${CARD_COLUMNS.join(", ")}) VALUES (${CARD_COLUMNS.map(() => "?").join(", ")})`).run(...cardValues);
-    // NOTE: no card_presets row here on purpose. An override row means "the
-    // user explicitly pinned this card", and writing the spawn default as one
-    // would mislabel every fresh card as overridden (and trip staleness).
+    // NOTE: no card_presets row here on purpose unless the composer pinned
+    // one above. An override row means "the user explicitly pinned this
+    // card", and writing the spawn default as one would mislabel every
+    // fresh card as overridden (and trip staleness). The pin lands after
+    // the card row because card_presets references cards.
+    if (pinnedOverrideId) {
+      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, pinnedOverrideId, ts);
+    }
     recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
     if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
     // Build remembers the user's planning depth / review mode for the next
