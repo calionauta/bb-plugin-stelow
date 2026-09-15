@@ -223,4 +223,9 @@ assert.match(answerExpired, /UPDATE split_proposals SET selected/, "a timed-out 
 assert.match(app, /These needed you once, then cleared on their own/, "the Resolved filter explains why it exists");
 assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how it cleared");
 
+const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
+assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
+assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
+assert.match(app, /Fresh card — still in triage, not yet admitted to the workflow\./, "the Draft pill explains the lifecycle state instead of showing jargon");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

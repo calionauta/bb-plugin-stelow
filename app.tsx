@@ -268,12 +268,19 @@ function BuildStatusPills({ card }: { card: CardItem }) {
   // Completed reads as one state: the column ("Done") already says it, so a
   // second "Completed" pill only duplicates. (Archived already collapses to
   // one via the equality below.)
+  // Draft is the lifecycle state for "fresh, still in triage": set at
+  // creation, cleared on the first move/advance out of triage. It always
+  // pairs with the triage checkpoint, so its tooltip says what it means
+  // instead of repeating the generic status help.
+  const statusTitle = card.status === "draft"
+    ? "Fresh card — still in triage, not yet admitted to the workflow."
+    : "Workflow status — the card's specific execution state.";
   if (column === status || card.status === "completed") {
-    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board status — this card's current state."><span className="mr-1">{statusGlyph(card.status)}</span>{column}</Pill>;
+    return <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={card.status === "draft" ? statusTitle : "Board status — this card's current state."}><span className="mr-1">{statusGlyph(card.status)}</span>{column}</Pill>;
   }
   return (<>
     <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title="Board column — where this card sits in the build flow.">{column}</Pill>
-    <Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title="Workflow status — the card's specific execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill>
+    <Pill className="ml-1 shrink-0" tone={statusTone(card.status)} title={statusTitle}><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill>
   </>);
 }
 
@@ -6148,7 +6155,10 @@ function OpenStelowAction({ threadId }: { threadId: string }) {
   }, [rpc, threadId]);
   // Not a card worker thread: render nothing instead of a generic shortcut.
   if (!target) return null;
-  return <button onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this card" className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border bg-card px-3 py-2 text-xs font-medium shadow-sm hover:border-primary/50">Stelow card ↗</button>;
+  // Host header chrome: the same small outline button as every in-panel
+  // "Open thread" affordance (h-8), never a taller custom button — the slot
+  // stretches its children, so a touch-target height here filled the bar.
+  return <Button size="sm" variant="outline" className="shrink-0 self-center" onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this card">Stelow card ↗</Button>;
 }
 
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {

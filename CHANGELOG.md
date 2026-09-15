@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.16] - 2026-09-15
+
+### Fixed
+
+- **The thread-header card button matches host chrome.** It renders the
+  shared small outline button (h-8, self-centered) instead of a taller
+  custom button that filled the whole header bar height.
+- **The Draft pill explains itself.** Its tooltip now reads "Fresh card —
+  still in triage, not yet admitted to the workflow" instead of the
+  generic status help.
+
 ## [0.18.15] - 2026-09-15
 
 ### Fixed
