@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.24] - 2026-09-15
+
 ### Fixed
 
 - **Split decides once, in `lib/`.** The stage pair and refusal strings
