@@ -5139,6 +5139,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           db.prepare("UPDATE split_proposals SET selected = ?, answered_at = ? WHERE card_id = ? AND selected IS NULL")
             .run(JSON.stringify(picked), Date.now(), cardRow.id);
         }
+        // Point-of-use split guard: a STANDARD ask at triage/select records
+        // an answer that executes nothing. If the worker meant to propose a
+        // split, the tag must be on the ask — remind once, while re-asking
+        // is still legal (the card hasn't advanced; the call just unblocked).
+        if (tag !== "split" && result.outcome === "submitted") {
+          const askCard = getCard(cardRow.id);
+          if (askCard && askCard.kind === "build" && (askCard.stage === "triage" || askCard.stage === "select")) {
+            return { exitCode: 0, stdout: `${JSON.stringify(result)}\nSplit check: recorded as STANDARD — its answer is text only and executes nothing. If this question proposes splitting the card, re-ask it now with --tag split --multiple plus exactly one --option "Keep as one card", then run bb stelow split after the answer (still at ${askCard.stage}, still in time).` };
+          }
+        }
         return { exitCode: result.outcome === "submitted" ? 0 : 1, stdout: JSON.stringify(result) };
       }
       if (argv[0] === "seed") {

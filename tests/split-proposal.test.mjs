@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { MAX_SPLIT_CHILDREN, MIN_SPLIT_CHILDREN, SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "../lib/split-proposal.mjs";
 
 // Regression: triage in a single-card flow cannot split — one card is one
@@ -46,5 +49,13 @@ assert.equal(partial.archiveParent, false, "a remainder keeps the parent alive")
 assert.deepEqual(partial.remaining.map((s) => s.title), ["Desktop layout", "Sound toggle"], "the remainder is exactly the unpicked");
 const total = splitRemainder(slices, slices);
 assert.equal(total.archiveParent, true, "full approval archives the parent");
+
+// Point-of-use guard: a STANDARD ask answered at triage/select executes
+// nothing, so the host reminds the worker once — while re-asking with the
+// tag is still legal — instead of letting a would-be split die silently.
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+assert.match(serverSource, /recorded as STANDARD — its answer is text only and executes nothing/, "the ask result names the standard consequence");
+assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the reminder gives the exact repair while still in time");
+assert.match(serverSource, /askCard\.stage === "triage" \|\| askCard\.stage === "select"/, "the reminder fires only where a split is still legal");
 
 console.log("split proposal test ok: validation, keep veto, unknown refusal, partial remainder");

@@ -8,6 +8,13 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Standard asks at triage/select warn when they can't split.** Answering
+  a standard question executes nothing, so a would-be split died silently.
+  The ask result now reminds the worker once — while re-asking with
+  `--tag split` is still legal — with the exact repair.
+
 ## [0.18.21] - 2026-09-15
 
 ### Fixed
