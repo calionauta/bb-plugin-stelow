@@ -118,15 +118,20 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   through `STELOW_PANEL_ID` / `goToTrack` / `goToCard` / `goToInboxCard`.
   The three card kinds (build / research / explore) are centralized in
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
-  track, and the lightweight lifecycle (To-Do / Doing / Done)
+  track, and the lightweight lifecycle (Inbox / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
+- **Board** (`BoardPanel`, `moveCard`). Columns are Inbox + workflow phases
   (Analysis/Planning/Execution/Review) + Done/Archived; cards sit in their
-  stage's phase. The complete Build topology (phases, terminal outcomes,
-  entry checkpoints, labels, and stage-to-column projection) is derived from
-  one workflow catalog; Research/Explore own their intentionally separate
-  To-Do/Doing/Done lifecycle. Columns collapse (persisted); cards move via
-  drag-drop.
+  stage's phase. The complete Build topology (inbox, phases, terminal
+  outcomes, entry checkpoints, labels, and stage-to-column projection) is
+  derived from one workflow catalog; Research/Explore own their separately
+  derived Inbox/Doing/Done lifecycle. Columns collapse (persisted); cards
+  move via drag-drop.
+- **Inbox** (one word, every track). The first column means *captured,
+  nothing running yet*: a card sits there while it has no worker, and
+  leaving it is what starts the card. Moving a card that already has a
+  worker into the Inbox is refused with a named exit (parking it would
+  orphan the worker) — archive it or move it to a phase instead.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
   preference, not a CTA). Groups collapse per track (persisted; Archived
@@ -511,13 +516,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   else. Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
   beside the amber panel); the inline glance expands below.
-- **Deferred start on lightweight tracks.** Research/explore creation
-  offers Start immediately (checked): unchecked parks the card in To-Do
-  with no worker — no run, no burn, no badge. Parked cards offer Start
-  on the card; dragging To-Do to Doing starts through the same shared
-  spawn as preset restarts. Split children and imports always start:
-  approved work never parks. Build columns read as phases
-  (Analysis/Planning/Execution/Review).
+- **Deferred start on every track.** Build, research, and explore
+  creation all offer Start immediately (checked): unchecked parks the
+  card in the Inbox with no worker — no run, no burn, no badge. Parked
+  cards offer Start on the card; dragging out of the Inbox starts through
+  the same shared spawn as preset restarts (Research/Explore to Doing,
+  Build into a phase, which is written first and reverted if the spawn
+  fails). Split children and imports always start: approved work never
+  parks.
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and
@@ -533,7 +539,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I need to understand before building, I want a lightweight
 investigation that feeds the build board.*
 
-- **Research tab** (`ResearchPanel`). To-Do / Doing / Done / Archived
+- **Research tab** (`ResearchPanel`). Inbox / Doing / Done / Archived
   columns over research cards only; shared `FiltersBar` (project +
   attention); collapsible columns; per-tab
   active counts; no stages, no gates.
@@ -616,7 +622,7 @@ investigation that feeds the build board.*
 one input, one artifact.*
 
 - **Explore tab** (`ExplorePanel`, `createExploreCard`, `stageCatalog`).
-  To-Do / Doing / Done / Archived columns over explore cards only;
+  Inbox / Doing / Done / Archived columns over explore cards only;
   shared `FiltersBar` (project + attention), collapsible columns,
   per-tab active counts; no triage, no pipeline, no gates. The New
   exploration dialog shows the effective agent preset (`explore` band

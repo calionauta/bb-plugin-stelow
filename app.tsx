@@ -131,18 +131,21 @@ const BAND_LABEL: Record<string, string> = { ...PHASE_LABELS, research: "Researc
 // aliases keep component call sites readable; they do not define columns.
 const COLUMNS = BUILD_BOARD_COLUMNS;
 const COLUMN_LABELS: Record<string, string> = BUILD_BOARD_COLUMN_LABELS;
-function boardColumnOf(card: Pick<CardItem, "status" | "stage">): string {
+// workerThreadId is part of the projection (a threadless card waits in the
+// Inbox), so it must survive this pick — dropping it silently returned every
+// parked card to the Analysis phase.
+function boardColumnOf(card: Pick<CardItem, "status" | "stage" | "workerThreadId">): string {
   return buildBoardColumnFor(card);
 }
 
 // Lightweight-track columns (Research + Explore share them): a deliberately
-// dumb To-Do / Doing / Done flow. Canonical in lib/tracks (shared with the
+// dumb Inbox / Doing / Done flow. Canonical in lib/tracks (shared with the
 // server via lib/card-move) — these aliases keep existing call sites stable.
 // Statuses reuse the shared enum (pending / in-progress / completed /
 // archived) so no migration or guard changes are needed; the mapping lives
 // in lib/card-question-state (shared with the server) so a waiting question
-// — activity, never status — can never push a Doing card back to To-Do.
-const RESEARCH_COLUMNS = LIGHTWEIGHT_COLUMNS as unknown as readonly ["todo", "doing", "done", "archived"];
+// — activity, never status — can never push a Doing card back to Inbox.
+const RESEARCH_COLUMNS = LIGHTWEIGHT_COLUMNS as unknown as readonly ["inbox", "doing", "done", "archived"];
 const RESEARCH_COLUMN_LABELS: Record<string, string> = LIGHTWEIGHT_COLUMN_LABELS;
 function researchColumnOf(card: Pick<CardItem, "status">): string {
   return researchColumnForStatus(card.status);
@@ -640,6 +643,9 @@ function BoardPanel({ active }: { active: boolean }) {
   // it; refreshes update state silently.
   const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
+  // Deferred start: unchecked parks the card in Inbox with no worker.
+  // Checked (default) preserves today's behavior — spawn on submit.
+  const [startImmediately, setStartImmediately] = useState(true);
   // Workflow preferences stay visible under the composer: a collapsed
   // Settings hides consequential choices (planning depth, review gates)
   // the user would otherwise never discover. The dialog frame keeps a
@@ -750,11 +756,11 @@ function BoardPanel({ active }: { active: boolean }) {
     const prompt = text;
     if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode, execution: composerExecutionOf(request) });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode, start: startImmediately, execution: composerExecutionOf(request) });
       setPrompt("");
       setCreateBuildOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Card started in Triage. Stelow will triage it.");
+      toast.success(startImmediately ? "Card started in Triage. Stelow will triage it." : "Card parked in Inbox. Start it from the card when ready.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start the card.");
       throw error;
@@ -763,7 +769,7 @@ function BoardPanel({ active }: { active: boolean }) {
 
   async function moveCard(cardId: string, target: string) {
     if (!(COLUMNS as readonly string[]).includes(target)) return;
-    const result = await rpc.call("moveCard", { cardId, status: target as "analysis" | "planning" | "execution" | "review" | "completed" | "archived" });
+    const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "analysis" | "planning" | "execution" | "review" | "completed" | "archived" });
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
@@ -853,7 +859,7 @@ function BoardPanel({ active }: { active: boolean }) {
             </div>
           ) : null}
 
-          <Dialog open={createBuildOpen} onOpenChange={setCreateBuildOpen}>
+          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) setStartImmediately(true); }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new issue</DialogTitle>
@@ -876,6 +882,7 @@ function BoardPanel({ active }: { active: boolean }) {
                   lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
                   onConfigure={() => setBoardPresetsOpen(true)}
                 />
+                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} />
                 <WorkflowSettings appetite={appetite} reviewMode={reviewMode} onAppetiteChange={setAppetite} onReviewModeChange={setReviewMode} groupNamePrefix="create" />
               </div>
             </DialogContent>
@@ -1021,7 +1028,7 @@ function BoardPanel({ active }: { active: boolean }) {
 
 type ResearchStrategyOption = { id: string; label: string; skill: string; blurb: string; emoji: string; keywords: string[] };
 
-// Second track beside Build: lightweight research (To-Do / Doing / Done)
+// Second track beside Build: lightweight research (Inbox / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
 // the card produces a index, and opportunities fan out into Build cards.
 function ResearchPanel({ active }: { active: boolean }) {
@@ -1055,7 +1062,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<string | null>(null);
   const [strategyAttention, setStrategyAttention] = useState(0);
-  // Deferred start: unchecked parks the card in To-Do with no worker.
+  // Deferred start: unchecked parks the card in Inbox with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
@@ -1109,7 +1116,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   const grouped = useMemo(() => {
     const groups: Record<string, CardItem[]> = Object.fromEntries(RESEARCH_COLUMNS.map((column) => [column, []]));
     for (const card of filteredCards) {
-      (groups[researchColumnOf(card)] ?? groups.todo).push(card);
+      (groups[researchColumnOf(card)] ?? groups.inbox).push(card);
     }
     for (const column of Object.keys(groups)) {
       groups[column]!.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -1139,7 +1146,7 @@ function ResearchPanel({ active }: { active: boolean }) {
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Research started. Results will appear on this card when ready." : "Research parked in To-Do. Start it from the card when ready.");
+      toast.success(startImmediately ? "Research started. Results will appear on this card when ready." : "Research parked in Inbox. Start it from the card when ready.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start research.");
       throw error;
@@ -1148,7 +1155,7 @@ function ResearchPanel({ active }: { active: boolean }) {
 
   async function moveCard(cardId: string, target: string) {
     if (!(RESEARCH_COLUMNS as readonly string[]).includes(target)) return;
-    const result = await rpc.call("moveCard", { cardId, status: target as "todo" | "doing" | "done" | "archived" });
+    const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "doing" | "done" | "archived" });
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
@@ -1292,7 +1299,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<string | null>(null);
   const [stageAttention, setStageAttention] = useState(0);
-  // Deferred start: unchecked parks the card in To-Do with no worker.
+  // Deferred start: unchecked parks the card in Inbox with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
@@ -1343,7 +1350,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   const grouped = useMemo(() => {
     const groups: Record<string, CardItem[]> = Object.fromEntries(RESEARCH_COLUMNS.map((column) => [column, []]));
     for (const card of filteredCards) {
-      (groups[researchColumnOf(card)] ?? groups.todo).push(card);
+      (groups[researchColumnOf(card)] ?? groups.inbox).push(card);
     }
     for (const column of Object.keys(groups)) {
       groups[column]!.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -1373,7 +1380,7 @@ function ExplorePanel({ active }: { active: boolean }) {
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Exploration started. The result will appear on this card when ready." : "Exploration parked in To-Do. Start it from the card when ready.");
+      toast.success(startImmediately ? "Exploration started. The result will appear on this card when ready." : "Exploration parked in Inbox. Start it from the card when ready.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start exploration.");
       throw error;
@@ -1382,7 +1389,7 @@ function ExplorePanel({ active }: { active: boolean }) {
 
   async function moveCard(cardId: string, target: string) {
     if (!(RESEARCH_COLUMNS as readonly string[]).includes(target)) return;
-    const result = await rpc.call("moveCard", { cardId, status: target as "todo" | "doing" | "done" | "archived" });
+    const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "doing" | "done" | "archived" });
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
@@ -2167,13 +2174,13 @@ function AgentConfigBox({ lines, onConfigure }: { lines: string[]; onConfigure: 
 }
 
 // Deferred start for lightweight creation dialogs: unchecked parks the
-// card in To-Do with no worker. One component, both dialogs.
+// card in Inbox with no worker. One component, every creation dialog.
 function StartImmediatelyCheck({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
   return (
     <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="size-4 cursor-pointer" />
       <span className="font-medium">Start immediately</span>
-      <span className="text-xs text-muted-foreground">— uncheck to park in To-Do and start later.</span>
+      <span className="text-xs text-muted-foreground">— uncheck to park in Inbox and start later.</span>
     </label>
   );
 }
@@ -4847,7 +4854,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in To-Do. Nothing runs until you start it.</span>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Inbox. Nothing runs until you start it.</span>
                           <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
                         </>
                       ) : null}
@@ -5113,7 +5120,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in To-Do. Nothing runs until you start it.</span>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Inbox. Nothing runs until you start it.</span>
                           <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
                         </>
                       ) : null}
@@ -5246,6 +5253,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [splitting, setSplitting] = useState(false);
   const [splitError, setSplitError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -5468,6 +5476,21 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
   }
 
+  // Leaving the Inbox is what starts a parked card: the same start path the
+  // board's drag uses, so the card never claims to be running without a
+  // worker behind it.
+  async function doStart() {
+    setStarting(true);
+    try {
+      const result = await rpc.call("startWorker", { cardId });
+      if (!result.ok) toast.error(result.error ?? "Start failed.");
+      else toast.success("Worker started — the card moved from Inbox and is triaging.");
+      await load();
+    } finally {
+      setStarting(false);
+    }
+  }
+
   async function doRequestSplit() {
     setSplitting(true); setSplitError(null);
     try {
@@ -5670,6 +5693,12 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                         buttons (outline/ghost) so affordances never read as
                         body text. */}
                     <div className="flex flex-wrap items-center gap-2 pt-3">
+                      {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
+                        <>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Inbox. Nothing runs until you start it.</span>
+                          <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
+                        </>
+                      ) : null}
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
                       {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (

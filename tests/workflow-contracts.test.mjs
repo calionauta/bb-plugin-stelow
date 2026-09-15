@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_TEMPLATE, templateStages } from "../lib/state-template.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_DOC, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, STELOW_UPSTREAM_BASE, STELOW_UPSTREAM_BLOB, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageInfoUrl, stageLabel, stageSkill, stageSkillUrl } from "../lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_INBOX, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_DOC, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, STELOW_UPSTREAM_BASE, STELOW_UPSTREAM_BLOB, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageInfoUrl, stageLabel, stageSkill, stageSkillUrl } from "../lib/workflow-vocabulary.mjs";
 
 // Workflow contracts: one vocabulary powers template, board, and server.
 // Catches stage additions without template cover or a phase/label mapping.
@@ -39,7 +39,9 @@ for (const stage of STAGE_SEQUENCE) {
 
 // Board topology is derived from the same phase catalog as the stage map;
 // terminal outcomes and manual phase entry checkpoints live beside it.
-assert.deepEqual(BUILD_BOARD_COLUMNS, [...WORKFLOW_PHASES.map(({ id }) => id), ...BUILD_BOARD_TERMINALS], "Build board derives phase columns and appends only terminal outcomes");
+assert.deepEqual(BUILD_BOARD_COLUMNS, [BUILD_BOARD_INBOX, ...WORKFLOW_PHASES.map(({ id }) => id), ...BUILD_BOARD_TERMINALS], "Build board is the Inbox, its phase columns, then the terminal outcomes");
+assert.equal(BUILD_BOARD_COLUMN_LABELS[BUILD_BOARD_INBOX], "Inbox", "the Build board's first column is the Inbox");
+assert.ok(BUILD_BOARD_COLUMNS.indexOf(BUILD_BOARD_INBOX) < BUILD_BOARD_COLUMNS.indexOf("analysis"), "the Inbox sits before the first phase");
 assert.deepEqual(BUILD_BOARD_TERMINALS, ["completed", "archived"], "Build terminal outcomes have one catalog");
 for (const phase of WORKFLOW_PHASES) {
   assert.equal(BUILD_BOARD_COLUMN_LABELS[phase.id], phase.label, `${phase.id} board label is its phase label`);
@@ -48,6 +50,13 @@ for (const phase of WORKFLOW_PHASES) {
 assert.equal(buildBoardColumnFor({ status: "in-progress", stage: "audit" }), "review", "active Audit belongs to Review");
 assert.equal(buildBoardColumnFor({ status: "completed", stage: "audit" }), "completed", "Done is a terminal outcome, not Audit's board phase");
 assert.equal(buildBoardColumnFor({ status: "archived", stage: "execution" }), "archived", "Archived overrides the retained checkpoint");
+// Captured but not started: creation can defer the worker, and a card with no
+// thread has no phase to sit in. An *absent* thread field is not evidence of
+// one — only an explicit null parks the card.
+assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage", workerThreadId: null }), "inbox", "an unstarted Build card waits in the Inbox");
+assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage", workerThreadId: "thr_x" }), "analysis", "a triaging Build card belongs to Analysis, not the Inbox");
+assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage" }), "analysis", "an unreported thread state never parks a card");
+assert.equal(buildBoardColumnFor({ status: "completed", stage: "audit", workerThreadId: null }), "completed", "terminal outcomes still win over the Inbox");
 
 // Upstream transparency: one skill per stage, one URL builder, no drift.
 // Skill-root URLs only — stage docs move, skill dirs are the stable address.

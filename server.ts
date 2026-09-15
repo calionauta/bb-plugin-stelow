@@ -359,7 +359,7 @@ export const rpcContract = defineRpcContract({
     output: boardWorkflowDefaultsSchema,
   },
   createCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional(), execution: composerExecutionSchema.optional() }).strict(),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   updateCardIntent: {
@@ -3750,8 +3750,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
     },
 
-    async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, execution }) {
-      return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, execution: execution ?? null });
+    async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, start, execution }) {
+      return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, start, execution: execution ?? null });
     },
 
     async cardDetail({ cardId }) {
@@ -4218,7 +4218,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // Track routing lives in lib/card-move (unit-tested): research moves
       // statuses, build moves phases + terminals, each side refuses the
       // other's columns with the valid exit named.
-      const decision = resolveCardMove(card.kind, status);
+      const decision = resolveCardMove(card.kind, status, { hasWorker: Boolean(card.worker_thread_id) });
       if (!decision.ok) return { ok: false, error: decision.error };
       if (decision.move.type === "status") {
         // User-initiated moves never ping the inbox with a completion: the
@@ -4236,14 +4236,27 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const started = await spawnFreshWorker(cardId, "start");
           if (!started.ok) return { ok: false, error: started.error };
         }
-        updateCard(cardId, { status: decision.move.status as "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
+        updateCard(cardId, { status: decision.move.status as "draft" | "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
         return { ok: true, error: null };
       }
       // A phase move sets the card's stage to that phase's entry stage
       // (stage drives the column). Terminals already returned above.
       const entry = PHASE_ENTRY_STAGES[decision.move.phase as keyof typeof PHASE_ENTRY_STAGES];
       if (!entry) return { ok: false, error: "Unknown phase." };
+      const previous = { stage: card.stage, status: card.status };
       updateCard(cardId, { stage: entry, status: entry === "triage" ? "draft" : "in-progress" });
+      // A parked card has no worker, so leaving the Inbox is what starts it.
+      // The phase is written first so the fresh worker continues from the
+      // right checkpoint, and reverted if the spawn fails — a card must never
+      // be left parked in a phase with nothing running behind it.
+      if (!card.worker_thread_id) {
+        const started = await spawnFreshWorker(cardId, "start");
+        if (!started.ok) {
+          updateCard(cardId, previous);
+          return { ok: false, error: started.error };
+        }
+        bb.realtime.publish("card-state", { cardId });
+      }
       return { ok: true, error: null };
     },
 

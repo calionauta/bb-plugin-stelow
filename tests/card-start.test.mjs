@@ -28,13 +28,21 @@ const splitCall = server.slice(splitAt, splitAt + 1200);
 assert.ok(!splitCall.includes("start"), "split children inherit start-by-default — approved work never parks");
 
 // The dialogs offer the choice (checked by default); threadless cards
-// offer Start in place of thread-bound actions.
-assert.match(app, /function StartImmediatelyCheck/, "one checkbox component serves both creation dialogs");
-assert.equal((app.match(/<StartImmediatelyCheck/g) ?? []).length, 2, "research and explore dialogs both offer it");
+// offer Start in place of thread-bound actions. Every track offers it —
+// Build included, so no track can only be created running.
+assert.match(app, /function StartImmediatelyCheck/, "one checkbox component serves every creation dialog");
+assert.equal((app.match(/<StartImmediatelyCheck/g) ?? []).length, 3, "build, research, and explore dialogs all offer it");
+assert.match(app, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
 assert.match(app, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
 assert.match(app, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");
-assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 2, "research and explore cards both offer Start");
-assert.match(app, /Not started — parked in To-Do/, "a parked card says plainly that nothing runs");
+assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 3, "build, research, and explore cards all offer Start");
+assert.match(app, /Not started — parked in Inbox/, "a parked card says plainly that nothing runs");
+// The Inbox is the board's first column on every track, and leaving it is
+// what starts a parked card (a build phase move spawns instead of lying).
+assert.match(server, /const decision = resolveCardMove\(card\.kind, status, \{ hasWorker: Boolean\(card\.worker_thread_id\) \}\)/, "the move policy knows whether the card already started");
+assert.match(server, /if \(!card\.worker_thread_id\) \{\s*const started = await spawnFreshWorker\(cardId, "start"\);/, "entering a build phase starts a parked card");
+assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
+assert.match(app, /function boardColumnOf\(card: Pick<CardItem, "status" \| "stage" \| "workerThreadId">\)/, "the board projection keeps thread state, so a parked card reaches the Inbox");
 
 // A Build workflow is code work: a Personal/exploratory folder only holds
 // Stelow state and cannot truthfully produce a diff, branch, or commit.

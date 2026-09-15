@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { QUESTION_ACTIVITY, questionWaitUpdates, askFinishedUpdates, researchColumnForStatus } from "../lib/card-question-state.mjs";
 
-// The reported bug: a research card in Doing fell back to To-Do while a
-// question waited. Waiting is activity, never board position.
+// The reported bug: a research card in Doing fell back to the first column
+// while a question waited. Waiting is activity, never board position.
 assert.equal(QUESTION_ACTIVITY, "awaiting-answer", "activity value");
 
 // questionWaitUpdates pins the write shape: activity only, no `status` key,
@@ -15,17 +15,17 @@ for (const lastOutput of ["working…", null]) {
 
 // Finishing an ask only marks the worker running again — the ask layer never
 // owns board position on either track (no Triage→Running jump on a first
-// question, no To-Do→Doing jump on a mere timeout).
+// question, no Inbox→Doing jump on a mere timeout).
 const finished = askFinishedUpdates();
 assert.deepEqual(finished, { activity: "running" }, "finished updates resume running");
 assert.equal("status" in finished, false, "finished updates never carry status");
 
 // Stored statuses are used as-is: no value produced anywhere needs healing,
-// so an unknown status reads as To-Do rather than crashing the board.
+// so an unknown status reads as Inbox rather than crashing the board.
 assert.equal(researchColumnForStatus("in-progress"), "doing", "in-progress -> doing");
 assert.equal(researchColumnForStatus("approved"), "doing", "approved -> doing");
-assert.equal(researchColumnForStatus("pending"), "todo", "pending -> todo");
-assert.equal(researchColumnForStatus("draft"), "todo", "unknown -> todo");
+assert.equal(researchColumnForStatus("pending"), "inbox", "pending -> inbox");
+assert.equal(researchColumnForStatus("draft"), "inbox", "unknown -> inbox");
 assert.equal(researchColumnForStatus("completed"), "done", "completed -> done");
 assert.equal(researchColumnForStatus("archived"), "archived", "archived passes through");
 
