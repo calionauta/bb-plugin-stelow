@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.18] - 2026-09-15
+
 ### Fixed
 
 - **The provider/model picked when opening a card is honored.** The
