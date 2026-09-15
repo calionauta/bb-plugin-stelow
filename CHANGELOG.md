@@ -8,6 +8,16 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.11] - 2026-09-15
+
+### Fixed
+
+- **One card, one count — even when it errors with a question open.** An
+  open question now supersedes a concurrent raw error report the same way
+  it already absorbed generic paused notices. The error row survives in
+  Resolved history; the badge and Needs attention list show the single
+  actionable decision.
+
 ## [0.18.10] - 2026-09-15
 
 ### Fixed
