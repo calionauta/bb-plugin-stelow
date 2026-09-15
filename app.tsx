@@ -598,6 +598,17 @@ function InboxPanel() {
   return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} className={`cursor-pointer min-h-11 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{entry.label}</button>)}</div><div className="flex min-h-11 items-center gap-2" aria-label="Read state"><span className="text-xs font-medium text-muted-foreground">Show</span><button onClick={() => setUnreadOnly(false)} aria-pressed={!unreadOnly} className={`cursor-pointer min-h-11 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${!unreadOnly ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}>All updates</button><button onClick={() => setUnreadOnly(true)} aria-pressed={unreadOnly} className={`cursor-pointer min-h-11 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${unreadOnly ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}>Unread only</button></div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{emptyTitle}</h2><p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p></section>}</div></div>;
 }
 
+function composerExecutionOf(request: NewThreadRequest) {
+  return {
+    providerId: request.providerId,
+    model: request.model,
+    reasoningLevel: request.reasoningLevel,
+    permissionMode: request.permissionMode,
+    ...(request.serviceTier ? { serviceTier: request.serviceTier } : {}),
+    ...(request.executionInputSources ? { executionInputSources: request.executionInputSources } : {}),
+  };
+}
+
 function BoardPanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
@@ -734,7 +745,7 @@ function BoardPanel({ active }: { active: boolean }) {
     const prompt = text;
     if (!prompt.trim()) return;
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode, execution: composerExecutionOf(request) });
       setPrompt("");
       setCreateBuildOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
@@ -1116,7 +1127,7 @@ function ResearchPanel({ active }: { active: boolean }) {
       throw new Error("Pick a strategy first.");
     }
     try {
-      const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy });
+      const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy, execution: composerExecutionOf(request) });
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
@@ -1346,7 +1357,7 @@ function ExplorePanel({ active }: { active: boolean }) {
       throw new Error("Pick a stage first.");
     }
     try {
-      const result = await rpc.call("createExploreCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, stageId: stage });
+      const result = await rpc.call("createExploreCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, stageId: stage, execution: composerExecutionOf(request) });
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });

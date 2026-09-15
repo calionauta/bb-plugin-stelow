@@ -8,6 +8,15 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **The provider/model picked when opening a card is honored.** The
+  creation dialogs dropped the composer's choice and spawned the worker on
+  the band/default preset, so a card opened with e.g. acp-opencode still
+  ran on pi. The choice is now forwarded to the spawn — a differing choice
+  is pinned as the card's preset override, so restarts and reseeds keep
+  running what was picked.
+
 ## [0.18.17] - 2026-09-15
 
 ### Changed

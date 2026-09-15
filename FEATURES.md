@@ -15,9 +15,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   cards pushing content below the fold. One tap expands a row into the
   full radio cards (real inputs, min-h-11 targets) — no hidden select.
   The fixed-height dialog with inner scroll never jumps. Bordered
-  settings sections visibly contain the controls. BB's own Project, Environment, and
-  branch controls are authoritative: Stelow forwards the chosen checkout
-  unchanged and keeps later workers in it. Spawns a hidden worker thread
+  settings sections visibly contain the controls. BB's own Project, Environment,
+  branch, and provider/model controls are authoritative: Stelow forwards the
+  chosen checkout unchanged and keeps later workers in it, and forwards the
+  chosen provider/model/reasoning/permission to the spawn — a choice
+  differing from the analysis band preset is pinned as the card's preset
+  override, so restarts keep running what was picked. Spawns a hidden worker thread
   starting at triage.
   The creation modal stays a real modal on phones (full-viewport with an
   explicit close, `fullscreenOnMobile`) instead of collapsing into a
@@ -465,7 +468,9 @@ investigation that feeds the build board.*
   active counts; no stages, no gates.
   The New research dialog shows the effective agent preset
   (`research` band default, else board default) with a Configure
-  presets entry; per-investigation pins live in the card's Manage
+  presets entry; the provider/model picked in BB's composer is forwarded to
+  the spawn and pinned as the card's preset override when it differs;
+  per-investigation pins live in the card's Manage
   section. Like the build creation dialog, it stays a full-viewport
   modal with an explicit close on phones (`fullscreenOnMobile`).
 - **Strategy picker** (`StrategyPicker`, `researchStrategies`). Visual
@@ -544,7 +549,9 @@ one input, one artifact.*
   shared `FiltersBar` (project + attention), collapsible columns,
   per-tab active counts; no triage, no pipeline, no gates. The New
   exploration dialog shows the effective agent preset (`explore` band
-  default, else board default) with a Configure presets entry.
+  default, else board default) with a Configure presets entry; the
+  provider/model picked in BB's composer is forwarded to the spawn and
+  pinned as the card's preset override when it differs.
 - **Stage catalog** (`STAGE_CATALOG`, `lib/stage-catalog.mjs`). One entry
   per single-runnable workflow stage (Shape Up, interface alternatives,
   plan critiques, tech planning, codebase/UX critiques, testing

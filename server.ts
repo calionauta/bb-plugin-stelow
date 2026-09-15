@@ -45,6 +45,7 @@ import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
+import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
@@ -194,6 +195,26 @@ const attachmentSchema = z.object({
   type: z.enum(["localFile", "localImage"]),
 }).strict();
 
+// What the user picked in the NewThreadComposer when opening a card. The
+// composer's default* props are seeds only — every field stays changeable —
+// so creation must carry the submitted choice instead of spawning the
+// band/default preset. One schema shared by createCard, createResearchCard
+// and createExploreCard; the merge rules live in lib/composer-execution.
+const composerExecutionSchema = z.object({
+  providerId: z.string().min(1).max(60).optional(),
+  model: z.string().min(1).max(120).optional(),
+  reasoningLevel: z.string().min(1).max(20).optional(),
+  permissionMode: z.enum(["accept-edits", "auto", "full"]).optional(),
+  serviceTier: z.enum(["default", "fast"]).optional(),
+  executionInputSources: z.object({
+    providerId: z.enum(["explicit", "client-preference"]).optional(),
+    model: z.enum(["explicit", "client-preference"]).optional(),
+    reasoningLevel: z.enum(["explicit", "client-preference"]).optional(),
+    permissionMode: z.enum(["explicit", "client-preference"]).optional(),
+    serviceTier: z.enum(["explicit", "client-preference"]).optional(),
+  }).strict().optional(),
+}).strict();
+
 // Ask option detail (mirrors the Option schema in
 // orchestrator stages/ask-patterns.md): preview is the inline glance,
 // artifact the openable source of truth. Both nullable so label-only
@@ -338,7 +359,7 @@ export const rpcContract = defineRpcContract({
     output: boardWorkflowDefaultsSchema,
   },
   createCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional() }).strict(),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional(), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
   updateCardIntent: {
@@ -399,11 +420,11 @@ export const rpcContract = defineRpcContract({
     output: z.object({ strategies: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), blurb: z.string(), emoji: z.string(), keywords: z.array(z.string()) })) }),
   },
   createResearchCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional() }).strict(),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional(), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
   createExploreCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), stageId: z.string().min(1).max(60), presetId: z.string().nullable().optional() }).strict(),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), stageId: z.string().min(1).max(60), presetId: z.string().nullable().optional(), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string() }),
   },
   stageCatalog: {
@@ -1568,7 +1589,7 @@ ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
 
-  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null }): Promise<{ cardId: string; threadId: string }> {
+  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string }> {
     const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
     // The composer submits the Personal project id for “Don't work in a
     // project”. Some SDK project reads omit its `kind`, so accept its stable
@@ -1624,8 +1645,26 @@ ${prompt}`;
     // band is unconfigured.
     const spawnBand = bandForKind(kind ?? "build");
     const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(spawnBand) as { preset_id: string } | undefined;
-    const spawnPreset = bandRow ? (getPresetById(bandRow.preset_id) ?? preset) : preset;
+    const basePreset = bandRow ? (getPresetById(bandRow.preset_id) ?? preset) : preset;
+    // The composer owns the provider/model pickers: when the submitted
+    // choice differs from the resolved base preset, pin it as this card's
+    // override (same card-override-* mechanism as the Agent preset dialog)
+    // so the spawn — and every later restart/reseed, which resolve through
+    // the override-aware getPresetForBand — runs what the user picked.
+    // A matching choice pins nothing: the card stays on the shared preset.
+    const override = composerPresetOverride(basePreset, execution ?? null);
+    let spawnPreset = basePreset;
+    if (override && override.providerId && override.modelId && override.reasoningLevel && override.permissionMode) {
+      const ts = now();
+      db.prepare("INSERT OR REPLACE INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(
+        `card-override-${cardId}`, `Card override ${cardId}`, override.providerId, override.modelId, override.reasoningLevel, override.permissionMode, basePreset.environment_kind, basePreset.base_branch, basePreset.machine_id, basePreset.instructions, ts, ts,
+      );
+      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, `card-override-${cardId}`, ts);
+      const pinned = getPresetById(`card-override-${cardId}`);
+      if (pinned) spawnPreset = pinned;
+    }
     const params = presetAttachmentParams(spawnPreset);
+    const spawnExecution = composerSpawnInput(params, execution ?? null);
     const workerAttachments = attachments.map((attachment) => ({ type: attachment.type, path: attachment.path }));
     // BB requires Personal-project threads to retain a `personal` workspace.
     // Exploratory work therefore uses one Stelow-owned project with a local source.
@@ -1677,11 +1716,15 @@ ${prompt}`;
       environment: selectedEnvironment,
       visibility: "hidden",
       title: `Stelow: ${displayName}`,
-      providerId: params.providerId,
-      model: params.modelId,
-      reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-      permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
-      executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+      // spawnExecution merges the composer's choice over the resolved
+      // preset; the preset fallbacks below only cover the impossible case
+      // of a preset row missing a NOT NULL column (fail closed on strings).
+      providerId: spawnExecution.providerId ?? params.providerId,
+      model: spawnExecution.model ?? params.modelId,
+      reasoningLevel: (spawnExecution.reasoningLevel ?? params.reasoningLevel) as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+      permissionMode: (spawnExecution.permissionMode ?? params.permissionMode) as "accept-edits" | "auto" | "full",
+      ...(spawnExecution.serviceTier ? { serviceTier: spawnExecution.serviceTier } : {}),
+      executionInputSources: spawnExecution.executionInputSources,
       input: [{ type: "text", mentions: [], text: researchPrompt ?? explorePrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES}
 
 ${selectedManagedWorktree ? "BB provisioned the managed worktree selected by the user. Treat your current working directory as the code root; never redirect code changes to the project source path used for Stelow's workflow metadata." : ""}
@@ -3552,8 +3595,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
     },
 
-    async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId }) {
-      return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId });
+    async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, execution }) {
+      return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, execution: execution ?? null });
     },
 
     async cardDetail({ cardId }) {
@@ -4029,20 +4072,20 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { strategies: RESEARCH_STRATEGIES };
     },
 
-    async createResearchCard({ projectId, environment, prompt, attachments, strategy, presetId }) {
+    async createResearchCard({ projectId, environment, prompt, attachments, strategy, presetId, execution }) {
       const picked = researchStrategyById(strategy);
       if (!picked) {
         throw new Error(`Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
       }
-      return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id, presetId: presetId ?? null });
+      return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id, presetId: presetId ?? null, execution: execution ?? null });
     },
 
-    async createExploreCard({ projectId, environment, prompt, attachments, stageId, presetId }) {
+    async createExploreCard({ projectId, environment, prompt, attachments, stageId, presetId, execution }) {
       const picked = techniqueById(stageId);
       if (!picked) {
         throw new Error(`Unknown explore technique "${stageId}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
       }
-      return createCardInternal({ projectId, environment, prompt, attachments, intent: "explore", appetite: "Complete", reviewMode: "Product Spec + Interface + Tech Review + Code Diff", kind: "explore", stageId: picked.id, presetId: presetId ?? null });
+      return createCardInternal({ projectId, environment, prompt, attachments, intent: "explore", appetite: "Complete", reviewMode: "Product Spec + Interface + Tech Review + Code Diff", kind: "explore", stageId: picked.id, presetId: presetId ?? null, execution: execution ?? null });
     },
 
     async stageCatalog() {
