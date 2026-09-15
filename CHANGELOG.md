@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.20] - 2026-09-15
+
 ### Fixed
 
 - **Preset dialogs use BB's own provider/model pickers.** The New/Edit
