@@ -8,6 +8,16 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.13] - 2026-09-15
+
+### Changed
+
+- **Start new issue preferences are compact rows, not a wall of cards.**
+  Planning depth and Pause for my review each render as one summary row
+  (title plus current value, always visible) that expands into the full
+  radio cards on tap. Discovery without the nine-card scroll; the expanded
+  options reuse the same accessible radio renderer.
+
 ## [0.18.12] - 2026-09-15
 
 ### Changed
