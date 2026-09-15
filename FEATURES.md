@@ -268,12 +268,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I open a card, I want the full picture without reading the thread.*
 
 - **Board cards** (`CardHeading`, `CardRetryButton`). A card’s requested
-  outcome is a full-width, wrapping heading; its labelled status lives below
-  it; idle recovery is a separate Resume action. Tiles signal failures with
-  the Failed chip only — the reason stays one hover away on the chip, while
-  the full error text and its retry live in the open card. The same compact
-  hierarchy is reused in Build, Research, and Explore, so narrow columns do
-  not turn a title or a workflow state into an ambiguous, clipped chip.
+  outcome is a full-width, wrapping heading; Build cards name their specific
+  workflow stage (`Critique`, `Audit`, etc.) and workflow type below it — never
+  the Kanban column or duplicated lifecycle labels such as `In progress` or
+  `Completed`. The same stage/type summary is reused in the open card. A blue
+  live border means a worker is executing; an amber attention border means the
+  card is waiting on the user, so neither state needs another tag. Idle
+  recovery is a separate Resume action. Tiles signal failures with the Failed
+  chip only — the reason stays one hover away on the chip, while the full error
+  text and its retry live in the open card. The same compact hierarchy is reused
+  in Build, Research, and Explore, so narrow columns do not turn a title or a
+  workflow state into an ambiguous, clipped chip.
 - **Hero** (`heroFor`: decision/error/paused/working/calm). One sentence
   + one primary action per state; secondary actions as real buttons. The
   decision state always offers Open thread, and names a concurrent worker

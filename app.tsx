@@ -265,17 +265,15 @@ function Pill({ children, tone = "bg-muted text-muted-foreground", className = "
   return <span title={title} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
 }
 
-// One shared state sequence for an open Build card and its Kanban tile.
-// A card is always read left-to-right as: board location, lifecycle state,
-// worker state, workflow type.  Keeping this here prevents one surface from
-// calling the current stage "status" while another calls it "planning".
+// One shared summary for an open Build card and its Kanban tile. The board
+// column is navigation context, not card identity: the specific workflow
+// checkpoint is what a person needs to recognize on either surface. Activity
+// deliberately stays out of this compact summary; the board's live border and
+// the detail hero communicate work/attention without competing state tags.
 function BuildStatusPills({ card }: { card: CardItem }) {
-  const column = COLUMN_LABELS[boardColumnOf(card)] ?? statusLabel(card.status);
-  const status = statusLabel(card.status);
+  const stage = card.stage ? stageLabel(card.stage) : "Not started";
   return (<>
-    <Pill tone={statusTone(card.status)} title="Board location — where this card sits in the build flow.">{column}</Pill>
-    {column !== status ? <Pill tone={statusTone(card.status)} title="Lifecycle state — the card's current execution state."><span className="mr-1">{statusGlyph(card.status)}</span>{status}</Pill> : null}
-    <ActivityPill activity={card.activity} detail={card.lastError} />
+    <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at.">{stage}</Pill>
     {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
   </>);
 }

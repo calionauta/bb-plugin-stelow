@@ -3802,10 +3802,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           hostId: sourceHostId,
         };
       });
-      // Environment backing the worker thread's worktree. Workspace-kind file
-      // links resolve against it (verified via thread-open); host-kind links
-      // cannot resolve exploratory paths, which sit outside environments.
-      const fileEnvironmentId = card.worker_thread_id
+      // Environment backing the worker thread's worktree. A recovered
+      // exploratory card is the exception: its original worker environment
+      // can be gone while its user-confirmed checkout remains readable on the
+      // host. Do not send the client to that stale environment (which yields a
+      // 404 for an otherwise listed artifact); host links are the honest
+      // read-only target until the card has a live BB workspace again.
+      const hasRecoveryCheckout = card.workspace_kind === "exploratory" && Boolean(
+        db.prepare("SELECT 1 FROM workspace_recoveries WHERE card_id = ?").get(cardId),
+      );
+      const fileEnvironmentId = !hasRecoveryCheckout && card.worker_thread_id
         ? await bb.sdk.threads.get({ threadId: card.worker_thread_id }).then((thread) => {
           const environmentId = (thread as { environmentId?: unknown }).environmentId;
           return typeof environmentId === "string" && environmentId ? environmentId : null;

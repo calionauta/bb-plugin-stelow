@@ -157,14 +157,17 @@ assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-vie
 assert.match(app, /function CardHeading\(/, "board tiles share a title-first card header");
 assert.match(app, /<h3 className="min-w-0 break-all text-sm font-semibold/, "card titles always use the whole available width and break rather than truncate");
 assert.doesNotMatch(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "a generic Status label does not duplicate the self-describing state pills");
-assert.match(app, /function BuildStatusPills\([\s\S]*Board location[\s\S]*Lifecycle state[\s\S]*ActivityPill[\s\S]*Workflow type/, "Build state has one canonical location, lifecycle, worker, and type sequence");
+const buildStatusPills = appFunction("BuildStatusPills", "const ACTIVITY_PILL_CLASS");
+assert.match(buildStatusPills, /stageLabel\(card\.stage\)[\s\S]*Workflow stage[\s\S]*Workflow type/, "Build cards identify their specific workflow stage before their workflow type");
+assert.doesNotMatch(buildStatusPills, /ActivityPill|Board location|Lifecycle state/, "Build summaries do not duplicate column, lifecycle, or worker-state tags");
 assert.match(boardCard, /status=\{<BuildStatusPills card=\{card\} \/>\}/, "Kanban tiles use the shared Build state presentation");
 assert.match(header, /<BuildStatusPills card=\{card\} \/>/, "open Build cards use the same state presentation as Kanban tiles");
 assert.match(boardCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "build tiles offer heading recovery for idle stalls only, never for failures");
 assert.match(lightweightCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "research/explore tiles match: heading recovery is idle-only");
 assert.doesNotMatch(boardCard, /bg-destructive\/10/, "build tiles render no failure body — the open card explains");
 assert.doesNotMatch(lightweightCard, /bg-destructive\/10/, "research/explore tiles render no failure body either");
-assert.match(app, /<ActivityPill activity=\{card\.activity\} detail=\{card\.lastError\} \/>/, "the shared Build state pills still pass a failure reason to the chip hover");
+assert.match(boardCard, /stelow-border-running/, "a running Build card uses its live border instead of a redundant In progress tag");
+assert.match(boardCard, /stelow-border-attention/, "a Build card needing attention uses its visual attention border instead of a redundant Waiting tag");
 assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
 assert.match(app, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
 assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
@@ -235,8 +238,8 @@ assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how 
 const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
 assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
-assert.match(app, /Board location — where this card sits in the build flow/, "the first Build pill names location consistently");
-assert.match(app, /Lifecycle state — the card's current execution state/, "the second Build pill names lifecycle consistently");
+assert.match(app, /Workflow stage — the specific checkpoint this card is at\./, "the first Build pill names the workflow checkpoint consistently");
+assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecoveryCheckout/, "recovered exploratory cards use a host file target instead of a stale worker environment");
 // One progress section, one artifact home, one reference. The doc buttons that
 // duplicated Artifacts are gone, counts are counts, and the reference map is a
 // sibling of the progress section rather than nested inside card state.

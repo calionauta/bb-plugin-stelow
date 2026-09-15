@@ -8,6 +8,20 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.37] - 2026-09-15
+
+### Fixed
+
+- **Build cards now name the actual workflow checkpoint.** The Kanban and
+  open-card header show the same specific stage (`Critique`, `Audit`, etc.)
+  plus workflow type. Kanban columns remain only navigation; redundant
+  `Planning`/`Done`, `In progress`, and `Completed` chips are gone. A blue
+  live border communicates active execution and an amber border communicates
+  that the card needs the user's attention.
+- **Recovered-card artifacts no longer target a stale worker environment.**
+  When a user-confirmed recovery checkout exists, file links use the readable
+  host target rather than a retired BB workspace that can return a 404.
+
 ## [0.18.36] - 2026-09-15
 
 ### Changed
