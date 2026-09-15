@@ -19,3 +19,4 @@ export declare function questionCopy(): {
   pickOneOrMore: string;
   recoveryHeading: string;
 };
+export declare function englishQuestionContentError(question: unknown, options?: Array<{ label?: unknown; description?: unknown }> | null): string | null;

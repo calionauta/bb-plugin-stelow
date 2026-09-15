@@ -187,7 +187,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   question carries a `standard` or `split` kind from the host interaction
   through durable recovery (with a safe legacy fallback). Shared presentation
   copy is English-only. Workers author question text, option labels, and
-  descriptions in English; controls, recovery status, and split consequences
+  descriptions in English; the host rejects Portuguese structured content
+  before it reaches a card. Controls, recovery status, and split consequences
   therefore never guess a locale or mix languages.
 - **Unread is a view, not a work state.** Every Inbox tab has an `All updates`
   / `Unread only` secondary filter. It narrows the selected lifecycle view

@@ -194,7 +194,11 @@ assert.match(app, /Choose deliveries or/, "split UI makes Keep as one card an ex
 assert.match(app, /splitOptionDescription\(/, "a still-open legacy split form does not repeat generated consequences");
 assert.match(app, /splitQuestionText\(current\.prompt\)/, "a still-open legacy split prompt upgrades without changing its stored answer identity");
 assert.match(app, /splitSelectionNotice\(current\.options, selected\[current\.id\] \?\? \[\]\)/, "split feedback reacts to the current selection before submission");
+assert.match(app, /border-primary\/40 bg-primary\/10 p-2 text-xs leading-5 text-foreground/, "a planned parent archive is informative, not a destructive red warning");
 assert.match(server, /Questions are English-only/, "the worker cannot opt a structured card question into another locale");
+assert.match(server, /englishQuestionContentError\(group\.question, group\.options\)/, "the CLI rejects Portuguese structured question content before it can create a mismatched card form");
+assert.match(answerExpired, /formatBatchContinuation\(decisions\)/, "recovered answers use the same neutral continuation as live answers");
+assert.doesNotMatch(answerExpired, /question that timed out/, "recovered answer delivery does not leak timeout jargon into the worker thread");
 assert.match(app, /All updates/, "Inbox exposes read state without replacing its lifecycle tabs");
 assert.match(app, /Unread only/, "Inbox can narrow every selected tab to unread entries");
 assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "question choices use visible, high-contrast selection controls");

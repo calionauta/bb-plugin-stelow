@@ -3229,7 +3229,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
               );
             })}
           </div>
-          {splitNotice ? <p role="status" className={`rounded-md border p-2 text-xs leading-5 ${splitNotice.kind === "archive" ? "border-destructive/40 bg-destructive/5 text-destructive" : "border-primary/30 bg-primary/5 text-foreground"}`}>{splitNotice.text}</p> : null}
+          {splitNotice ? <p role="status" className="rounded-md border border-primary/40 bg-primary/10 p-2 text-xs leading-5 text-foreground">{splitNotice.text}</p> : null}
           {!isSplitProposal ? <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
             <span>{copy.other}</span>
             <input

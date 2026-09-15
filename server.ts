@@ -42,6 +42,7 @@ import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, splitOutcome, splitRemainder, validateSplitSlices } from "./lib/split-proposal.mjs";
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
+import { englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
@@ -4518,12 +4519,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const threadId = card.worker_thread_id ?? rows.values().next().value?.thread_id ?? null;
       db.transaction(() => {
         for (const [questionId, row] of rows) {
-          logCardComment(cardId, "card", cardId, "user", `Answer to an earlier question that timed out:\n\nQ: ${row.question}\nA: ${row.answers.join(", ")}`);
+          logCardComment(cardId, "card", cardId, "user", `Answer to a pending question:\n\nQ: ${row.question}\nA: ${row.answers.join(", ")}`);
           db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
           decisions.push({ question: row.question, answers: row.answers });
         }
       })();
-      // Timed-out split asks must record the same host-owned selection as
+      // Recovered split asks must record the same host-owned selection as
       // live asks; otherwise a valid response would resume the worker but
       // make `bb stelow split` refuse as unanswered.
       {
@@ -4543,7 +4544,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       bb.realtime.publish("card-state", { cardId });
       if (threadId) {
         try {
-          await bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text: `Answers to ${decisions.length === 1 ? "the question that timed out" : `all ${decisions.length} questions that timed out`} — continue the workflow now.\n\n${decisions.map((d) => `Q: ${d.question}\nA: ${d.answers.join(", ")}`).join("\n\n")}`, mentions: [] }] });
+          await bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
         } catch {
           // Thread may be stopped; the comments still record the answers.
         }
@@ -4917,6 +4918,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (!threadId) return { exitCode: 2, stderr: "Missing --thread <thr_id>." };
         if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]..." };
         const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, kind: tag === "split" ? "split" as const : "standard" as const, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
+        for (const group of groups) {
+          const languageError = englishQuestionContentError(group.question, group.options);
+          if (languageError) return { exitCode: 2, stderr: languageError };
+        }
         const batched = groups.length > 1;
         // The thread must own a card: otherwise the question would surface
         // nowhere and the persist below would silently skip. Refuse fast
