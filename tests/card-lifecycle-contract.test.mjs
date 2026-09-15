@@ -230,6 +230,19 @@ const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.ind
 assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
 assert.match(app, /card\.status === "completed" \|\| card\.status === "draft" \|\| \(card\.status === "in-progress" && card\.activity === "running"\)/, "completed, draft and live-working cards show one pill — other activities keep status plus activity");
+// One progress section, one artifact home, one reference. The doc buttons that
+// duplicated Artifacts are gone, counts are counts, and the reference map is a
+// sibling of the progress section rather than nested inside card state.
+assert.match(app, /function DisclosureSection\(\{ title, subtitle, hint/, "a section can name its job on its own line");
+assert.match(app, /title=\{archivedPresentation\?\.workflow\.title \?\? "Workflow progress"\}/, "the live progress section is named for the workflow, matching the map's family");
+assert.match(app, /subtitle=\{archivedPresentation \? undefined : "where this card is"\}/, "the progress subtitle is the counterpart to the map's What each stage does");
+assert.doesNotMatch(app, /onShowArtifacts/, "the per-stage document buttons are gone; files and navigation never share one shape");
+assert.doesNotMatch(app, /workflow\.progressTitle/, "the progress block no longer repeats the disclosure title it sits under");
+assert.doesNotMatch(app, /Agent advances alone/, "the override coaching stops being permanent chrome");
+assert.match(app, /produced\.length > 0 \? <span className="text-muted-foreground">· \{produced\.length\} file/, "a stage that produced documents carries a count-only badge");
+assert.match(app, /\{artifactTotal\} file\{artifactTotal === 1 \? "" : "s"\} ↓/, "the summary action carries the artifact count and the one route to the files");
+const progressSection = app.slice(app.indexOf("DISCLOSURE 1"), app.indexOf("<div ref={artifactsRef}>"));
+assert.ok(progressSection.length > 0 && progressSection.indexOf("</CardDisclosure>") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of progress, never nested inside it");
 assert.match(app, /<WorkflowMap open=\{mapOpen\} onToggle=\{setMapOpen\} \/>/, "the workflow map tracks its own open state");
 assert.match(app, /function WorkflowMap\([\s\S]*?<DisclosureChevron open=\{open\} className="text-base text-foreground" \/>/, "the workflow map uses the shared, state-explicit chevron at the readable standard size");
 assert.match(app, /WORKFLOW_PHASES\.map\(\(phase\) =>/, "the workflow map groups stages into their four readable workflow phases");

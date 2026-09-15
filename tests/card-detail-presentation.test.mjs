@@ -8,8 +8,6 @@ assert.deepEqual(archived, {
     title: "Workflow history",
     hint: "Ended at Triage",
     emptyScopes: "No scopes were created before this card was archived.",
-    progressTitle: "Workflow progress",
-    progressHint: "Archived before completion",
   },
 }, "archived cards show one terminal state and retain only historical workflow context");
 assert.equal(archivedCardDetailPresentation({ status: "in-progress", stage: "triage" }, (stage) => stage), null, "live cards keep their normal presentation");

@@ -3828,11 +3828,23 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // artifact and stays out.
         const stateRoot = stateDir;
         if (stateRoot && sourceHostId) {
-          const listing = await bb.sdk.files.listPaths({ path: stateRoot, includeFiles: true, includeDirectories: false }).catch(() => null);
+          // Explicit, generous limit: the default is small and a truncated
+          // listing would hide produced documents, which is the one thing this
+          // listing exists to prevent.
+          const listing = await bb.sdk.files.listPaths({ path: stateRoot, includeFiles: true, includeDirectories: false, limit: 500 }).catch(() => null);
+          // The listing's path shape is not contractual: it may come back
+          // absolute (under the project or the state dir) or relative to the
+          // state dir, with or without a leading slash. Resolve every shape
+          // before reading, so a produced document is never dropped because of
+          // a path form we failed to recognize.
           const absolutePaths = array(record(listing).paths)
             .map((entry) => (typeof entry === "string" ? entry : text(record(entry).path)))
             .filter(Boolean)
-            .map((raw) => (isAbsolute(raw) ? raw : join(stateRoot, raw)));
+            .map((raw) => raw === stateRoot || raw.startsWith(`${stateRoot}/`)
+              ? raw
+              : raw === sourcePath || raw.startsWith(`${sourcePath}/`)
+                ? raw
+                : join(stateRoot, raw.replace(/^\/+/, "")));
           for (const absolute of unregisteredArtifactPaths(absolutePaths, [...seen])) {
             const relPath = workspaceRelative(sourcePath, absolute);
             if (!relPath) continue;

@@ -261,8 +261,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the question for the failure itself. Answering any question clears the
   interrupted turn's failure; an error arriving while a question is open is
   superseded at birth, so one card counts once.
-- **What is happening** (`ScopesList`, `StageTimeline`). Scopes in
-  dependency order with task counts, blockers, 17-stage timeline with
+- **Workflow progress** (`ScopesList`, `StageTimeline`) sits beside the
+  **Workflow map** as two sibling sections that never pretend to be each
+  other: progress is where this card is, the map is what each stage does.
+  Scopes in dependency order with task counts, blockers, 17-stage timeline with
   position/next stages, manual advance/return behind a preview dialog
   (what the target stage produces). The timeline never paints everything
   passed: off-route stages render struck-through (not in this intent's
@@ -270,13 +272,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   executed, nothing else does. A completed card keeps Audit as its historical
   verification record, cannot reopen that terminal checkpoint. More generally,
   the current checkpoint is always inert; only a legal next checkpoint or a
-   prior checkpoint can be selected. It exposes a
-   compact Workflow map explaining phases, Done, and attention. The map is a
-   real disclosure with a state-explicit chevron (no CSS-variant hope). The map lists
-   every stage with what it produces and a link to the upstream skill or
-   behavior doc that defines it; pill tooltips name the owning skill and
-   point at the map. Pill clicks keep their rerun/advance meaning and never
-   navigate away. Attachments, files named in the request,
+   prior checkpoint can be selected. A stage that produced documents carries a
+   count-only suffix (`2 files`) — never a control, so the pill stays one click
+   target and files keep one shape — and the section summary states the card's
+   file count as the single route into Artifacts. The map explains phases, Done,
+   and attention as a real disclosure with a state-explicit chevron (no
+   CSS-variant hope); it lists every stage with what it produces and a link to
+   the upstream skill or behavior doc that defines it. Pill tooltips name the
+   owning skill and point at the map. Pill clicks keep their rerun/advance
+   meaning and never navigate away. Attachments, files named in the request,
    timed-out questions inline.
 - **Files named in your request.** The card lists only the paths the
   request spells out that actually exist in the workspace (never a basename

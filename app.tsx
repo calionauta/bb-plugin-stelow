@@ -2667,7 +2667,7 @@ function openAskArtifact(
   });
 }
 
-function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArtifacts, skips, offRouteReason, terminal }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; onShowArtifacts: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null; terminal?: "completed" | "archived" }) {
+function StageTimeline({ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null; terminal?: "completed" | "archived" }) {
   const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
   // A finished card has no current stage: park the cursor past the end so
   // every reached stage reads as passed and nothing stays lit (or pulsing)
@@ -2732,20 +2732,12 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, onShowArti
                       >
                         {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : skipReason ? <span aria-hidden>⊘</span> : canAdvance ? "·" : "·"}
                         <span className={isOffRoute ? "line-through" : ""}>{stageLabel(stage)}</span>
+                        {/* Count-only, never a control: files and navigation
+                            keep one shape each, and the pill stays one
+                            click target (advance/return). */}
+                        {produced.length > 0 ? <span className="text-muted-foreground">· {produced.length} file{produced.length === 1 ? "" : "s"}</span> : null}
                         {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
                     </button>
-                    {produced.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => onShowArtifacts(stage)}
-                        title={`Show ${produced.length} artifact${produced.length === 1 ? "" : "s"} from ${stageLabel(stage)} in Artifacts below`}
-                        aria-label={`Show ${produced.length} artifact${produced.length === 1 ? "" : "s"} from ${stageLabel(stage)} in Artifacts below`}
-                        className="inline-flex min-h-8 min-w-8 cursor-pointer items-center justify-center gap-0.5 rounded-full border border-border bg-muted/40 px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                      >
-                        <span aria-hidden>📄</span>
-                        {produced.length}
-                      </button>
-                    ) : null}
                   </span>
                 );
               })}
@@ -2780,26 +2772,17 @@ function formatArtifactDate(value: string): string | null {
 // One visual inventory for every card type. Each track supplies its durable
 // grouping axis (Build stage, Research round, Explore technique); rows always mean
 // an actual file that opens in the viewer.
-function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView, highlightGroupId }: {
+function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView }: {
   groups: ArtifactInventoryGroup[];
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
-  highlightGroupId?: string | null;
 }) {
-  const highlightRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    highlightRef.current?.scrollIntoView({ block: "nearest" });
-  }, [highlightGroupId, groups.length]);
   if (groups.length === 0) return <p className="text-xs text-muted-foreground">No artifacts yet — they appear here as work completes.</p>;
   return (
     <div className="space-y-3">
       {groups.map((group) => (
-        <div
-          key={group.id}
-          ref={group.id === highlightGroupId ? highlightRef : undefined}
-          className={`space-y-1 rounded-md p-1 transition ${group.id === highlightGroupId ? "bg-primary/5 ring-2 ring-primary/50" : ""}`}
-        >
+        <div key={group.id} className="space-y-1 rounded-md p-1">
           <div className="flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <p>{group.title}</p>
             <span className="shrink-0 normal-case tracking-normal">{group.items.length} artifact{group.items.length === 1 ? "" : "s"}</span>
@@ -2830,12 +2813,11 @@ function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView, h
 
 // Build and Explore use stages as their canonical grouping axis. Keeping this
 // adapter preserves the shared inventory while avoiding a second renderer.
-function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, highlightStage, groupTitleForStage }: {
+function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, groupTitleForStage }: {
   artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>;
   workspaceKind: string;
   fileEnvironmentId: string | null;
   onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
-  highlightStage?: string | null;
   groupTitleForStage?: (stage: string) => string;
 }) {
   const groups = useMemo<ArtifactInventoryGroup[]>(() => groupArtifactsByStage(artifacts).map((group) => ({
@@ -2843,7 +2825,7 @@ function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, h
     title: groupTitleForStage?.(group.stage) ?? stageLabel(group.stage),
     items: group.items,
   })), [artifacts, groupTitleForStage]);
-  return <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} highlightGroupId={highlightStage} />;
+  return <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />;
 }
 
 function InputFiles({ card, detail, onView }: { card: CardItem; detail: CardDetailResponse | null; onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void }) {
@@ -3916,7 +3898,7 @@ function DisclosureChevron({ className = "", open }: { className?: string; open?
   return <span aria-hidden className={`inline-flex size-5 shrink-0 items-center justify-center text-sm leading-none text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${rotation} ${className}`}>▶</span>;
 }
 
-function DisclosureSection({ title, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
+function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
   return (
     <details
@@ -3924,9 +3906,16 @@ function DisclosureSection({ title, hint, action, children, defaultOpen = false,
       onToggle={(event) => onToggle?.((event.currentTarget as HTMLDetailsElement).open)}
       className="group rounded-lg border bg-muted/20"
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+      <summary className={`flex cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden ${subtitle ? "min-h-12" : "min-h-11"}`}>
         <DisclosureChevron className="mr-1.5" />
-        <span>{title}</span>
+        {/* A subtitle is how a section names its job; the Workflow map uses the
+            same two-line shape, so the pair reads as one family. */}
+        {subtitle ? (
+          <span className="min-w-0">
+            <span className="block font-semibold leading-5 text-foreground">{title}</span>
+            <span className="block text-xs font-normal leading-5 text-muted-foreground">{subtitle}</span>
+          </span>
+        ) : <span>{title}</span>}
         {hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null}
         {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
       </summary>
@@ -3945,7 +3934,9 @@ const CardDisclosure = DisclosureSection;
 // reviewable while the parent owns only whether it is expanded.
 function WorkflowMap({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
   return (
-    <details className="group mt-3 overflow-hidden rounded-lg border bg-background/60" onToggle={(event) => onToggle(event.currentTarget.open)}>
+    // No self-margin: as a sibling of the progress section it inherits the
+    // card's section rhythm instead of stacking its own offset on top.
+    <details className="group overflow-hidden rounded-lg border bg-background/60" onToggle={(event) => onToggle(event.currentTarget.open)}>
       <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-3 py-2.5 marker:hidden hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
         <DisclosureChevron open={open} className="text-base text-foreground" />
         <span className="min-w-0">
@@ -5282,7 +5273,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [inboxEvent, setInboxEvent] = useState<InboxEventSnapshot | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
-  const [artifactStage, setArtifactStage] = useState<string | null>(null);
   // Workflow map open state drives its own chevron explicitly: no reliance
   // on CSS group-open variants, and the native marker stays hidden so the
   // affordance is exactly one arrow.
@@ -5296,12 +5286,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [workspaceRecoveryLoading, setWorkspaceRecoveryLoading] = useState(false);
   const [recoveryAttachProjectId, setRecoveryAttachProjectId] = useState<string | null>(null);
   const artifactsRef = useRef<HTMLDivElement | null>(null);
-  // Count badges on the timeline deep-link here: open the section, remember
-  // which stage was asked about (its group rings + scrolls into view), then
-  // bring the section into view. Instant scroll (no smooth) to respect
-  // reduced motion by default.
-  const showArtifacts = useCallback((stage: string | null) => {
-    if (stage) setArtifactStage(stage);
+  // One way in: the progress section's file count opens Artifacts and brings
+  // it into view. Instant scroll (no smooth) to respect reduced motion.
+  const showArtifacts = useCallback(() => {
     setArtifactsOpen(true);
     requestAnimationFrame(() => artifactsRef.current?.scrollIntoView({ block: "nearest" }));
   }, []);
@@ -5625,6 +5612,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const scopeDone = detail?.scopes.filter((s) => ["done", "completed"].includes(s.status ?? "")).length ?? 0;
   const scopeTotal = detail?.scopes.length ?? 0;
   const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
+  const artifactTotal = detail?.artifacts.length ?? 0;
   // Gate review entry: the artifact the pending decision is about. Gate
   // reviews the shaped spec, int-gate/selection the interface proposals,
   // plan-gate the tech plan. Falls back to the newest artifact, if any.
@@ -5779,10 +5767,25 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 result matters more than following the stages. */}
             <PreviewSection cardId={card.id} />
 
-            {/* DISCLOSURE 1 — What is happening (progress + details on demand) */}
+            {/* DISCLOSURE 1 — Workflow progress: where this card is, and the
+                one way to the files it produced. The reference (Workflow map)
+                is its own sibling section, never nested in here. */}
             <CardDisclosure
-              title={archivedPresentation?.workflow.title ?? "What is happening"}
+              title={archivedPresentation?.workflow.title ?? "Workflow progress"}
+              subtitle={archivedPresentation ? undefined : "where this card is"}
               hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : card?.status === "completed" ? undefined : stageLabel(card.stage))}
+              // Production rides the action slot (count + the single way to the
+              // files) so no fact is printed twice once the section is open.
+              action={artifactTotal > 0 ? (
+                <button
+                  type="button"
+                  onClick={showArtifacts}
+                  title="Open this card's Artifacts section"
+                  className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-primary hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  {artifactTotal} file{artifactTotal === 1 ? "" : "s"} ↓
+                </button>
+              ) : null}
               defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
             >
               {card.stage === "select" && !archivedPresentation ? (
@@ -5793,21 +5796,21 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{archivedPresentation?.workflow.progressTitle ?? "Progress"}</h4>
-                    <span className="text-xs text-muted-foreground">{archivedPresentation?.workflow.progressHint ?? (card?.status === "completed" ? "Workflow complete — choose an earlier stage to reopen it" : card?.status === "archived" ? "Archived workflow — progress is read-only" : "Agent advances alone · click a lit stage to override")}</span>
-                  </div>
                   <StageTimeline
                     currentStage={card.stage}
                     terminal={card?.status === "completed" ? "completed" : card?.status === "archived" ? "archived" : undefined}
                     nextStages={detail.nextStages}
                     artifacts={detail.artifacts}
                     onPick={(stage) => setPendingAdvance(stage)}
-                    onShowArtifacts={(stage) => showArtifacts(stage)}
                     skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
                     offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
                   />
-                  <WorkflowMap open={mapOpen} onToggle={setMapOpen} />
+                  {/* Coaching follows the thing it explains, and only when there
+                      is something to click. Archived cards already say why
+                      they stopped in the summary. */}
+                  {card.status === "archived" ? null : (
+                    <p className="text-xs text-muted-foreground">{card.status === "completed" ? "Workflow complete — choose an earlier stage to reopen it" : "The agent advances on its own · click a lit stage to override"}</p>
+                  )}
                 </div>
               ) : null}
               {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
@@ -5831,6 +5834,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               ) : null}
             </CardDisclosure>
 
+            {/* The map is a reference, not card state: it sits beside the
+                progress section (same heading shape, same stage names) so
+                neither has to pretend to be the other. */}
+            <WorkflowMap open={mapOpen} onToggle={setMapOpen} />
+
             <div ref={artifactsRef}>
             <CardDisclosure
               title="Artifacts"
@@ -5844,7 +5852,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   workspaceKind={card.workspaceKind}
                   fileEnvironmentId={detail.fileEnvironmentId}
                   onView={(file) => setViewerFile(file)}
-                  highlightStage={artifactStage}
                   groupTitleForStage={artifactGroupTitle}
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}

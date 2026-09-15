@@ -13,7 +13,5 @@ export declare function archivedCardDetailPresentation(card: ArchivedCard, stage
     title: string;
     hint: string;
     emptyScopes: string;
-    progressTitle: string;
-    progressHint: string;
   };
 } | null;
