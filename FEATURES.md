@@ -105,7 +105,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   track, and the lightweight lifecycle (To-Do / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
 - **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
-  (Analyze/Plan/Execute/Review) + Done/Archived; cards sit in their
+  (Analysis/Planning/Execution/Review) + Done/Archived; cards sit in their
   stage's phase. The complete Build topology (phases, terminal outcomes,
   entry checkpoints, labels, and stage-to-column projection) is derived from
   one workflow catalog; Research/Explore own their intentionally separate
@@ -475,7 +475,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   by the host (`lib/gate-ask-evidence.mjs`, `--force` to override), and
   the card hero falls back to question-attached evidence when the
   manifest lists nothing. Label-only options work unchanged everywhere
-  else.
+  else. Per-option evidence opens inside the option row (Open document,
+  same viewer); the inline glance expands below.
+- **Deferred start on lightweight tracks.** Research/explore creation
+  offers Start immediately (checked): unchecked parks the card in To-Do
+  with no worker — no run, no burn, no badge. Parked cards offer Start
+  on the card; dragging To-Do to Doing starts through the same shared
+  spawn as preset restarts. Split children and imports always start:
+  approved work never parks. Build columns read as phases
+  (Analysis/Planning/Execution/Review).
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and

@@ -8,6 +8,22 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Per-option evidence opens in the row.** The document button moved
+  from below the options into each option (right side, Open document,
+  same viewer); the inline glance still expands below. Thread view keeps
+  the plain-filename degradation.
+- **Deferred start on lightweight tracks.** Creation offers Start
+  immediately (checked): unchecked parks in To-Do with no thread. Parked
+  cards offer Start; drag-to-Doing starts via the shared fresh-spawn
+  (also used by preset restarts). Split/imports always start.
+
+### Changed
+
+- **Build columns read as phases** (Analysis/Planning/Execution/Review)
+  — the place, not a command nor a claimed activity.
+
 ## [0.18.28] - 2026-09-15
 
 ### Fixed

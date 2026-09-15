@@ -1055,6 +1055,9 @@ function ResearchPanel({ active }: { active: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<string | null>(null);
   const [strategyAttention, setStrategyAttention] = useState(0);
+  // Deferred start: unchecked parks the card in To-Do with no worker.
+  // Checked (default) preserves today's behavior — spawn on submit.
+  const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
@@ -1132,11 +1135,11 @@ function ResearchPanel({ active }: { active: boolean }) {
       throw new Error("Pick a strategy first.");
     }
     try {
-      const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy, execution: composerExecutionOf(request) });
+      const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy, start: startImmediately, execution: composerExecutionOf(request) });
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Research started. Results will appear on this card when ready.");
+      toast.success(startImmediately ? "Research started. Results will appear on this card when ready." : "Research parked in To-Do. Start it from the card when ready.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start research.");
       throw error;
@@ -1176,7 +1179,7 @@ function ResearchPanel({ active }: { active: boolean }) {
             active={active}
           />
 
-          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStrategy(null); }}>
+          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStrategy(null); setStartImmediately(true); } }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new research</DialogTitle>
@@ -1191,6 +1194,7 @@ function ResearchPanel({ active }: { active: boolean }) {
                   lines={[`Research runs on ${effectiveResearchPreset?.name ?? "Default"}${researchBandPreset ? "" : " (board default)"}`]}
                   onConfigure={() => setResearchPresetsOpen(true)}
                 />
+                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} />
                 <NewThreadComposer
                   defaultProjectId={activeProjectId ?? undefined}
                   defaultProviderId={effectiveResearchPreset?.providerId}
@@ -1288,6 +1292,9 @@ function ExplorePanel({ active }: { active: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<string | null>(null);
   const [stageAttention, setStageAttention] = useState(0);
+  // Deferred start: unchecked parks the card in To-Do with no worker.
+  // Checked (default) preserves today's behavior — spawn on submit.
+  const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useState<"board" | "list">("board");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
@@ -1362,11 +1369,11 @@ function ExplorePanel({ active }: { active: boolean }) {
       throw new Error("Pick a stage first.");
     }
     try {
-      const result = await rpc.call("createExploreCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, stageId: stage, execution: composerExecutionOf(request) });
+      const result = await rpc.call("createExploreCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, stageId: stage, start: startImmediately, execution: composerExecutionOf(request) });
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success("Exploration started. The result will appear on this card when ready.");
+      toast.success(startImmediately ? "Exploration started. The result will appear on this card when ready." : "Exploration parked in To-Do. Start it from the card when ready.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start exploration.");
       throw error;
@@ -1406,7 +1413,7 @@ function ExplorePanel({ active }: { active: boolean }) {
             active={active}
           />
 
-          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) setStage(null); }}>
+          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStage(null); setStartImmediately(true); } }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new exploration</DialogTitle>
@@ -1421,6 +1428,7 @@ function ExplorePanel({ active }: { active: boolean }) {
                   lines={[`Explore runs on ${effectiveExplorePreset?.name ?? "Default"}${exploreBandPreset ? "" : " (board default)"}`]}
                   onConfigure={() => setResearchPresetsOpen(true)}
                 />
+                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} />
                 <NewThreadComposer
                   defaultProjectId={activeProjectId ?? undefined}
                   defaultProviderId={effectiveExplorePreset?.providerId}
@@ -2155,6 +2163,18 @@ function AgentConfigBox({ lines, onConfigure }: { lines: string[]; onConfigure: 
         ))}
       </ul>
     </div>
+  );
+}
+
+// Deferred start for lightweight creation dialogs: unchecked parks the
+// card in To-Do with no worker. One component, both dialogs.
+function StartImmediatelyCheck({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="size-4 cursor-pointer" />
+      <span className="font-medium">Start immediately</span>
+      <span className="text-xs text-muted-foreground">— uncheck to park in To-Do and start later.</span>
+    </label>
   );
 }
 
@@ -3154,32 +3174,19 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
 type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
 
-// Per-option evidence: the inline glance (preview) and the openable source
-// of truth (artifact) share the upstream Option names from
-// orchestrator stages/ask-patterns.md. Preview expands in place everywhere;
-// the artifact opens in the viewer where a file opener exists (card), and
-// degrades to a plain filename where it doesn't (thread) — never a dead
-// button pretending to open.
-function OptionDetail({ option, onOpenArtifact }: { option: BatchItem["options"][number]; onOpenArtifact?: (artifact: AskArtifact) => void }) {
-  const artifact = option.artifact;
-  if (!option.preview && !artifact) return null;
+// Per-option evidence: the document opens from inside the option row
+// (right side), the inline glance expands below. The artifact opens in the
+// viewer where a file opener exists (card), and degrades to a plain
+// filename where it doesn't (thread) — never a dead button pretending
+// to open, never one shared button after the options.
+function OptionPreview({ preview }: { preview: string | null }) {
+  if (!preview) return null;
   return (
     <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
-      {option.preview ? (
-        <details className="group">
-          <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Preview</summary>
-          <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{option.preview}</pre>
-        </details>
-      ) : null}
-      {artifact ? (
-        onOpenArtifact ? (
-          <button onClick={() => onOpenArtifact(artifact)} className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs font-medium hover:bg-emerald-500/20" title={artifact.path}>
-            <span aria-hidden>📎</span><span>{artifact.display}</span><span aria-hidden>↗</span>
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" title={artifact.path}><span aria-hidden>📎</span>{artifact.display}</span>
-        )
-      ) : null}
+      <details className="group">
+        <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Preview</summary>
+        <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{preview}</pre>
+      </details>
     </div>
   );
 }
@@ -3285,18 +3292,33 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
               const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
               const optionLabel = option.label;
               const description = isSplitProposal ? splitOptionDescription(option.description) : option.description;
+              const artifact = option.artifact;
               return (
                 <div key={option.label} className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
-                  <button
-                    role={current.multiple ? "checkbox" : "radio"}
-                    aria-checked={active}
-                    onClick={() => pick(current, option.label)}
-                    className={`flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-md border p-3 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground hover:border-primary/50"}`}
-                  >
-                    <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple && !isKeepOption ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
-                    <span className="min-w-0"><span className="block font-medium">{optionLabel}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
-                  </button>
-                  <OptionDetail option={option} onOpenArtifact={onOpenArtifact} />
+                  <div className="flex items-stretch gap-1">
+                    <button
+                      role={current.multiple ? "checkbox" : "radio"}
+                      aria-checked={active}
+                      onClick={() => pick(current, option.label)}
+                      className={`flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-md border p-3 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${active ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background/40 text-foreground hover:border-primary/50"}`}
+                    >
+                      <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple && !isKeepOption ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
+                      <span className="min-w-0"><span className="block font-medium">{optionLabel}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
+                    </button>
+                    {artifact ? (
+                      onOpenArtifact ? (
+                        <button
+                          onClick={() => onOpenArtifact(artifact)}
+                          title={`Open document: ${artifact.display}`}
+                          aria-label={`Open document ${artifact.display}`}
+                          className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 self-center whitespace-nowrap rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 text-xs font-medium hover:bg-emerald-500/20"
+                        >Open document<span aria-hidden>↗</span></button>
+                      ) : (
+                        <span className="inline-flex shrink-0 items-center self-center px-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.display}</span>
+                      )
+                    ) : null}
+                  </div>
+                  <OptionPreview preview={option.preview} />
                 </div>
               );
             })}
@@ -4605,6 +4627,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const [fanOutOpen, setFanOutOpen] = useState(false);
@@ -4652,6 +4675,18 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
       onChanged();
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function doStart() {
+    setStarting(true);
+    try {
+      const result = await rpc.call("startWorker", { cardId });
+      if (!result.ok) toast.error(result.error ?? "Start failed.");
+      else toast.success("Worker started — the research is now Doing.");
+      onChanged();
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -4704,6 +4739,12 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-3">
+                      {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
+                        <>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in To-Do. Nothing runs until you start it.</span>
+                          <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
+                        </>
+                      ) : null}
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
                       {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
@@ -4732,7 +4773,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                           <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
-                      {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
+                      {(hero.kind === "working" || hero.kind === "calm") && card.workerThreadId && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
                         <OpenThreadButton threadId={card.workerThreadId} />
                       ) : null}
                       {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
@@ -4873,6 +4914,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null } | null>(null);
   const inboxEventRef = useRef<HTMLElement | null>(null);
@@ -4909,6 +4951,18 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
       onChanged();
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function doStart() {
+    setStarting(true);
+    try {
+      const result = await rpc.call("startWorker", { cardId });
+      if (!result.ok) toast.error(result.error ?? "Start failed.");
+      else toast.success("Worker started — the exploration is now Doing.");
+      onChanged();
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -4950,6 +5004,12 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-3">
+                      {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
+                        <>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in To-Do. Nothing runs until you start it.</span>
+                          <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
+                        </>
+                      ) : null}
                       {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
                       {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
                       {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
@@ -4978,7 +5038,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                           <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
-                      {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
+                      {(hero.kind === "working" || hero.kind === "calm") && card.workerThreadId && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
                         <OpenThreadButton threadId={card.workerThreadId} />
                       ) : null}
                       {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
@@ -5513,7 +5573,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                           <OpenThreadButton threadId={card.workerThreadId} />
                         </>
                       ) : null}
-                      {(hero.kind === "working" || hero.kind === "calm") && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
+                      {(hero.kind === "working" || hero.kind === "calm") && card.workerThreadId && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
                         <OpenThreadButton threadId={card.workerThreadId} />
                       ) : null}
                       {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
@@ -5614,7 +5674,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   />
                   <details className="pt-1 text-xs text-muted-foreground" onToggle={(event) => setMapOpen(event.currentTarget.open)}>
                     <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-foreground marker:hidden [&::-webkit-details-marker]:hidden"><span aria-hidden className="inline-block shrink-0 text-[10px] text-muted-foreground">{mapOpen ? "▾" : "▸"}</span>Workflow map · what each stage does</summary>
-                    <p className="mt-1">Analyze, Plan, Execute, and Review are workflow phases. Review holds automated workflow checks (Diff gate, Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior doc that defines it.</p>
+                    <p className="mt-1">Analysis, Planning, Execution, and Review are workflow phases. Review holds automated workflow checks (Diff gate, Audit), not human review. Done is the completed outcome after Audit, not a stage; Needs attention can occur in any phase. Each stage links to the upstream Stelow skill or behavior doc that defines it.</p>
                     <ul className="mt-2 space-y-1">
                       {STAGE_SEQUENCE.map((stage) => {
                         const url = stageInfoUrl(stage);

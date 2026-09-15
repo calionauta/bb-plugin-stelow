@@ -358,7 +358,7 @@ export const rpcContract = defineRpcContract({
   },
   createCard: {
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional(), execution: composerExecutionSchema.optional() }).strict(),
-    output: z.object({ cardId: z.string(), threadId: z.string() }),
+    output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   updateCardIntent: {
     input: z.object({ cardId: z.string(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]) }).strict(),
@@ -412,6 +412,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  startWorker: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   requestSplitProposal: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
@@ -425,12 +429,12 @@ export const rpcContract = defineRpcContract({
     output: z.object({ strategies: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), blurb: z.string(), emoji: z.string(), keywords: z.array(z.string()) })) }),
   },
   createResearchCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional(), execution: composerExecutionSchema.optional() }).strict(),
-    output: z.object({ cardId: z.string(), threadId: z.string() }),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
+    output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   createExploreCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), stageId: z.string().min(1).max(60), presetId: z.string().nullable().optional(), execution: composerExecutionSchema.optional() }).strict(),
-    output: z.object({ cardId: z.string(), threadId: z.string() }),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), stageId: z.string().min(1).max(60), presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
+    output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   stageCatalog: {
     input: z.object({}).strict(),
@@ -1587,7 +1591,7 @@ ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
 
-  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string }> {
+  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, start = true, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; start?: boolean; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string | null }> {
     const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
     // The composer submits the Personal project id for “Don't work in a
     // project”. Some SDK project reads omit its `kind`, so accept its stable
@@ -1714,7 +1718,11 @@ ${prompt}`;
       flavor: "initial",
       previousThreadId: null,
     }) : null;
-    let thread: Awaited<ReturnType<typeof bb.sdk.threads.spawn>>;
+    // Deferred start: an unstarted card parks in To-Do with no thread and
+    // no activity. The sync poll ignores threadless cards by construction,
+    // so nothing runs, burns, or badges until the human starts it.
+    let thread: Awaited<ReturnType<typeof bb.sdk.threads.spawn>> | null = null;
+    if (start) {
     try {
       thread = await bb.sdk.threads.spawn({
       projectId: workerProjectId,
@@ -1766,12 +1774,13 @@ ${prompt}` }, ...workerAttachments],
       if (pinnedOverrideId) db.prepare("DELETE FROM presets WHERE id = ?").run(pinnedOverrideId);
       throw error;
     }
+    }
     const ts = now();
     const createdAt = new Date(ts).toISOString();
     // Columns are the single source of truth: placeholders derive from this
     // list, so adding a column cannot leave the SQL with a stray "?".
     const CARD_COLUMNS = ["id", "project_id", "name", "display_name", "prompt", "intent", "status", "stage", "activity", "worker_thread_id", "worker_preset_id", "dir_hash", "attachments", "workspace_kind", "workspace_path", "workspace_host_id", "kind", "research_strategy", "research_strategies", "explore_stage", "last_error", "last_assistant_text", "created_at", "updated_at"];
-    const cardValues = [cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch || isExplore ? "pending" : "draft", isResearch ? "research" : isExplore ? "explore" : "triage", "running", thread.id, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : isExplore ? "explore" : "build", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([{ id: researchStrategy.id, at: createdAt, file: creationRoundFile }]) : null, exploreStage?.id ?? null, null, null, ts, ts];
+    const cardValues = [cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch || isExplore ? "pending" : "draft", isResearch ? "research" : isExplore ? "explore" : "triage", start ? "running" : "idle", thread?.id ?? null, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : isExplore ? "explore" : "build", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([{ id: researchStrategy.id, at: createdAt, file: creationRoundFile }]) : null, exploreStage?.id ?? null, null, null, ts, ts];
     if (cardValues.length !== CARD_COLUMNS.length) {
       throw new Error(`Card insert mismatch: ${cardValues.length} values for ${CARD_COLUMNS.length} columns.`);
     }
@@ -1784,14 +1793,16 @@ ${prompt}` }, ...workerAttachments],
     if (pinnedOverrideId) {
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, pinnedOverrideId, ts);
     }
-    recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
-    if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
+    if (thread) {
+      recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
+      if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
+    }
     // Build remembers the user's planning depth / review mode for the next
     // card. Research and Explore carry fixed internals that must never
     // clobber those build defaults.
     if (!isResearch && !isExplore) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
     bb.realtime.publish("card-state", { cardId });
-    return { cardId, threadId: thread.id };
+    return { cardId, threadId: thread?.id ?? null };
   }
 
   type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
@@ -2765,6 +2776,34 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
 
   // Worker shutdown shared by every path that parks a card: the Archive
+  // One fresh-worker spawn for every start path (manual Start, drag to
+  // Doing, preset restart): same state dir, same trail, same budget reset.
+  // respawnWorkerForBand is null-thread safe, so first starts and restarts
+  // share this body instead of pasting it twice.
+  async function spawnFreshWorker(cardId: string, reason: "start" | "restart"): Promise<{ ok: boolean; error: string | null }> {
+    const card = getCard(cardId);
+    if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
+    if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
+    if (reason === "start" && card.worker_thread_id) return { ok: false, error: "This card already has a worker thread." };
+    const effective = getPresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
+    const previousThreadId = card.worker_thread_id;
+    const result = await respawnWorkerForBand(cardId, effective.id, reason);
+    if (!result.ok) return { ok: false, error: result.error ?? null };
+    // Trail: which preset took over and where the previous worker's
+    // history lives, so the switch is auditable from the card.
+    const presetName = getPresetById(effective.id)?.name ?? effective.id;
+    const continueText = card.kind === "research" ? "continuing the research" : card.kind === "explore" ? "continuing the explore run" : `continuing from the ${card.stage} stage`;
+    logCardComment(cardId, "card", cardId, "agent", reason === "start"
+      ? `Worker started on preset "${presetName}", ${continueText}.`
+      : previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`);
+    // A fresh worker earns a fresh auto-continue budget: the previous
+    // worker's stalls say nothing about this one.
+    const reset = resetAutoContinue();
+    updateCard(cardId, { auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+    bb.realtime.publish("card-state", { cardId });
+    return { ok: true, error: null };
+  };
+
   // button, drag-to-archived, and hard delete. Archiving a card must never
   // leave its worker running (burning tokens on a hidden board).
   async function stopWorkerThread(threadId: string | null): Promise<void> {
@@ -3852,31 +3891,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
     },
 
+    async startWorker({ cardId }) {
+      return spawnFreshWorker(cardId, "start");
+    },
+
     async restartWorker({ cardId }) {
       // Applies a pending preset change (or escapes a broken worker) by
       // spawning a FRESH worker on the same state dir that CONTINUES from the
       // current stage — unlike reseed (restarts triage) and retry (same
       // thread, same model: provider/model are fixed at spawn and can never
       // change on a live thread). Uses the override-aware effective preset.
-      const card = getCard(cardId);
-      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-      if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
-      const effective = getPresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
-      const previousThreadId = card.worker_thread_id;
-      const result = await respawnWorkerForBand(cardId, effective.id, "restart");
-      if (result.ok) {
-        // Trail: which preset took over and where the previous worker's
-        // history lives, so the switch is auditable from the card.
-        const presetName = getPresetById(effective.id)?.name ?? effective.id;
-        const continueText = card.kind === "research" ? "continuing the research" : card.kind === "explore" ? "continuing the explore run" : `continuing from the ${card.stage} stage`;
-        logCardComment(cardId, "card", cardId, "agent", previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`);
-        // A fresh worker earns a fresh auto-continue budget: the previous
-        // worker's stalls say nothing about this one.
-        const restartReset = resetAutoContinue();
-        updateCard(cardId, { auto_continue_count: restartReset.count, auto_continue_stage: restartReset.stage });
-        bb.realtime.publish("card-state", { cardId });
-      }
-      return { ok: result.ok, error: result.error ?? null };
+      return spawnFreshWorker(cardId, "restart");
     },
 
     async requestSplitProposal({ cardId }) {
@@ -4048,6 +4073,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // the worker exactly like the Archive button — parking a card must
         // never orphan a running worker.
         if (decision.move.status === "archived") await stopWorkerThread(card.worker_thread_id);
+        // Drag-to-Doing on a threadless card starts it: Doing means working,
+        // so the move spawns through the shared starter instead of parking
+        // a lie on the board. A failed start blocks the move, not silently.
+        // (Only lightweight tracks reach this status branch; build moves
+        // phases, never bare statuses.)
+        if (decision.move.status === "in-progress" && !card.worker_thread_id) {
+          const started = await spawnFreshWorker(cardId, "start");
+          if (!started.ok) return { ok: false, error: started.error };
+        }
         updateCard(cardId, { status: decision.move.status as "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
         return { ok: true, error: null };
       }
@@ -4113,20 +4147,20 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { strategies: RESEARCH_STRATEGIES };
     },
 
-    async createResearchCard({ projectId, environment, prompt, attachments, strategy, presetId, execution }) {
+    async createResearchCard({ projectId, environment, prompt, attachments, strategy, presetId, start, execution }) {
       const picked = researchStrategyById(strategy);
       if (!picked) {
         throw new Error(`Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
       }
-      return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id, presetId: presetId ?? null, execution: execution ?? null });
+      return createCardInternal({ projectId, environment, prompt, attachments, intent: "investigate", appetite: "Lean", reviewMode: "Auto", kind: "research", strategy: picked.id, presetId: presetId ?? null, start, execution: execution ?? null });
     },
 
-    async createExploreCard({ projectId, environment, prompt, attachments, stageId, presetId, execution }) {
+    async createExploreCard({ projectId, environment, prompt, attachments, stageId, presetId, start, execution }) {
       const picked = techniqueById(stageId);
       if (!picked) {
         throw new Error(`Unknown explore technique "${stageId}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
       }
-      return createCardInternal({ projectId, environment, prompt, attachments, intent: "explore", appetite: "Complete", reviewMode: "Product Spec + Interface + Tech Review + Code Diff", kind: "explore", stageId: picked.id, presetId: presetId ?? null, execution: execution ?? null });
+      return createCardInternal({ projectId, environment, prompt, attachments, intent: "explore", appetite: "Complete", reviewMode: "Product Spec + Interface + Tech Review + Code Diff", kind: "explore", stageId: picked.id, presetId: presetId ?? null, start, execution: execution ?? null });
     },
 
     async stageCatalog() {
