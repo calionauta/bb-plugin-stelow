@@ -58,4 +58,22 @@ assert.match(serverSource, /recorded as STANDARD — its answer is text only and
 assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the reminder gives the exact repair while still in time");
 assert.match(serverSource, /askCard\.stage === "triage" \|\| askCard\.stage === "select"/, "the reminder fires only where a split is still legal");
 
+// The protocol forbids hedging: a grouping is either proposed with the tag
+// or kept as one card — a validating standard question is never a middle.
+assert.match(serverSource, /Never hedge with a standard question/, "the spawn prompt names hedging as the failure mode");
+
+// Human trigger: one button drives the worker into the protocol. Guards
+// mirror the worker split path so the UI can never promise what `split`
+// would refuse; the nudge text lives once, next to SPLIT_PROTOCOL.
+assert.match(serverSource, /const SPLIT_REQUEST_NUDGE = "Split requested/, "the request nudge is a single-source const");
+assert.match(serverSource, /requestSplitProposal: \{/, "the RPC contract names the trigger");
+assert.match(serverSource, /async requestSplitProposal\(\{ cardId \}\)/, "the handler resolves the card");
+assert.match(serverSource, /card\.stage !== "triage" && card\.stage !== "select"/, "the trigger refuses past the split point like the worker path");
+assert.match(serverSource, /A split proposal is already open on this card/, "the trigger refuses while a proposal awaits an answer");
+assert.match(serverSource, /SPLIT_REQUEST_NUDGE, mentions: \[\]/, "the trigger delivers the shared nudge to the worker thread");
+
+const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
+assert.match(appSource, /Propose split…/, "the build card offers the trigger at triage/select");
+assert.match(appSource, /rpc\.call\("requestSplitProposal", \{ cardId \}\)/, "the button calls the trigger RPC");
+
 console.log("split proposal test ok: validation, keep veto, unknown refusal, partial remainder");

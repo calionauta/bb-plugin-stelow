@@ -5078,6 +5078,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [splitting, setSplitting] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
@@ -5274,6 +5276,19 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       await load();
     } finally {
       setRestarting(false);
+    }
+  }
+
+  async function doRequestSplit() {
+    setSplitting(true); setSplitError(null);
+    try {
+      const result = await rpc.call("requestSplitProposal", { cardId });
+      if (!result.ok) setSplitError(result.error ?? "Could not request a split.");
+      else { toast.success("Split requested — answer the worker's proposal on this card."); await load(); }
+    } catch (err) {
+      setSplitError(err instanceof Error ? err.message : "Could not request a split.");
+    } finally {
+      setSplitting(false);
     }
   }
 
@@ -5512,6 +5527,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
                     <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => void load()} />
+                  </div>
+                ) : null}
+                {(card.stage === "triage" || card.stage === "select") && card.status !== "archived" && card.status !== "completed" ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
+                    <Button size="sm" variant="outline" disabled={splitting} onClick={() => void doRequestSplit()} title="Ask the worker for a real split proposal now (one option per delivery plus Keep as one card). Only a --tag split proposal can create cards.">Propose split…</Button>
+                    <span className="text-xs text-muted-foreground">One option per delivery, approved by you, executed by the host.</span>
+                    {splitError ? <span className="w-full text-xs text-destructive">{splitError}</span> : null}
                   </div>
                 ) : null}
                 {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a)} onAnswered={() => void load()} /></div> : null}

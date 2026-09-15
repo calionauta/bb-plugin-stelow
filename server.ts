@@ -411,6 +411,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  requestSplitProposal: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   moveCard: {
     input: z.object({ cardId: z.string(), status: z.enum(BOARD_MOVE_COLUMNS as [string, ...string[]]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
@@ -1083,7 +1087,11 @@ export default async function plugin(bb: BbPluginApi) {
   // high bar, not a "two bullets means two cards" rule: the default is one
   // focused card with scopes. The host creates cards only from a recorded,
   // human-approved proposal (`bb stelow split` takes no content args).
-  const SPLIT_PROTOCOL = "Split is exceptional, not a checklist decomposition: DEFAULT to one focused card with scoped work. Propose ONE split only at triage — or, if it becomes clear only there, at Choose work (`select`) before committing its choice — when there are 2+ substantial, end-to-end deliverables that each have a distinct user outcome, acceptance criterion, and independently auditable workflow. Do NOT split merely because the request has bullets, files, UI/API pieces, sequential steps, or small fixes; keep shared implementation, one outcome, or tightly coupled changes together. Each proposed child must be worth its own normal workflow; if that is doubtful, keep one card. When the high bar is met, open `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its outcome and done criterion>...` plus exactly one `--option \"Keep as one card\"` (exact label). Each option carries its slice in --desc (+ --artifact when the slice references files). Select one or more deliveries OR the Keep as one card option — never both. Then STOP and wait for the answer. A split-proposal record or an earlier chat message is NOT a pending question: only a visible structured form on the card is. If the ask failed before that form appeared, correct the command and submit the same ask once; never wait for an invisible question. Never split unilaterally, never invent cards, and do not advance from the current split point until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived parent means stop.";
+  const SPLIT_PROTOCOL = "Split is exceptional, not a checklist decomposition: DEFAULT to one focused card with scoped work. Propose ONE split only at triage — or, if it becomes clear only there, at Choose work (`select`) before committing its choice — when there are 2+ substantial, end-to-end deliverables that each have a distinct user outcome, acceptance criterion, and independently auditable workflow. Do NOT split merely because the request has bullets, files, UI/API pieces, sequential steps, or small fixes; keep shared implementation, one outcome, or tightly coupled changes together. Each proposed child must be worth its own normal workflow; if that is doubtful, keep one card. When the high bar is met, open `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its outcome and done criterion>...` plus exactly one `--option \"Keep as one card\"` (exact label). Each option carries its slice in --desc (+ --artifact when the slice references files). Select one or more deliveries OR the Keep as one card option — never both. Then STOP and wait for the answer. A split-proposal record or an earlier chat message is NOT a pending question: only a visible structured form on the card is. If the ask failed before that form appeared, correct the command and submit the same ask once; never wait for an invisible question. Never split unilaterally, never invent cards, and do not advance from the current split point until answered. After the answer, run `bb stelow split` (no args — the host executes the recorded approval) and follow its stdout: an archived parent means stop. Never hedge with a standard question that merely validates a grouping (“looks good?”) — either the bar above is met (ask --tag split) or it isn't (keep one card and advance). A standard answer executes nothing and can never become a split later.";
+  // One-shot trigger for the human "Propose split" action: drives the
+  // worker straight into the --tag split protocol above. Single source
+  // next to SPLIT_PROTOCOL — the RPC handler and any future caller share it.
+  const SPLIT_REQUEST_NUDGE = "Split requested: the user explicitly asked for a split proposal. Run `bb stelow ask --tag split --multiple --question <text> --option <card title> --desc <its outcome and done criterion>...` plus exactly one `--option \"Keep as one card\"`, then STOP and wait. After the answer, execute the recorded approval with `bb stelow split`. Do not ask a standard question about splitting instead — only a --tag split proposal is executable.";
   const db = bb.storage.database();
   // Sync state lives beside data.db (stable across managed-install cache
   // rotations), never in the plugin root: a fresh cache dir would otherwise
@@ -3887,6 +3895,29 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         bb.realtime.publish("card-state", { cardId });
       }
       return { ok: result.ok, error: result.error ?? null };
+    },
+
+    async requestSplitProposal({ cardId }) {
+      // Human trigger for the split protocol: the user, not the worker,
+      // decides a proposal is wanted. Guards mirror the worker split path
+      // (build-only, triage/select, one open proposal) so the button can
+      // never promise what `bb stelow split` would refuse.
+      const card = getCard(cardId);
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
+      if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
+      if (card.kind !== "build") return { ok: false, error: "Only build cards split. Research and explore cards are single-stage by design." };
+      if (card.stage !== "triage" && card.stage !== "select") return { ok: false, error: `Refused: this workflow is at \`${card.stage}\`, past the split point. Splits happen at triage — past setup the card stays whole and scopes carry the breakdown.` };
+      const open = db.prepare("SELECT 1 FROM split_proposals WHERE card_id = ? AND selected IS NULL").get(cardId);
+      if (open) return { ok: false, error: "A split proposal is already open on this card — answer it on the card." };
+      if (!card.worker_thread_id) return { ok: false, error: "This card has no worker thread." };
+      try {
+        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: SPLIT_REQUEST_NUDGE, mentions: [] }] });
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "Could not reach the worker thread." };
+      }
+      logCardComment(cardId, "card", cardId, "agent", "Split proposal requested — the worker will ask with --tag split.");
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, error: null };
     },
 
     async reseedCard({ cardId, presetId, intent: requestedIntent }) {

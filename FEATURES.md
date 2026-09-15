@@ -450,7 +450,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   answer cannot accidentally create work. The host creates children only
   from the recorded, human-approved proposal — full approval archives the
   parent, partial approval keeps it narrowed to the remainder. Never
-  unilateral, never by worker claim.
+  unilateral, never by worker claim. A standard ask answered at the split
+  point warns that its answer executes nothing, with the exact re-ask
+  repair. The open card offers Propose split at triage/select: one click
+  drives the worker into the --tag split protocol (refused past the split
+  point or while a proposal awaits an answer).
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and

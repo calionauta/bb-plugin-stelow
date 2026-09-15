@@ -8,6 +8,14 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Split converges three ways.** The spawn prompt forbids hedging with a
+  validating standard question, a standard ask answered at triage/select
+  reminds the worker with the exact re-ask repair while still legal, and
+  the open card offers Propose split at triage/select to drive the worker
+  into the protocol on demand. No single worker decision is load-bearing.
+
 ## [0.18.22] - 2026-09-15
 
 ### Fixed
