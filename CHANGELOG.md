@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.23] - 2026-09-15
+
 ### Fixed
 
 - **Split converges three ways.** The spawn prompt forbids hedging with a
