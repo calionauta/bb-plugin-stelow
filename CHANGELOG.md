@@ -8,6 +8,27 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.35] - 2026-09-15
+
+### Fixed
+
+- **An approval option can no longer reach you with nothing to read.**
+  `--artifact` is authored per option, so a gate ask that attached it to only
+  one option (typically "Request changes") rendered a blind "Approve plan": the
+  evidence gate only required *some* option to carry evidence, and the manifest
+  fallback fired only when *no* option did. Every option now inherits the
+  document attached to its siblings within the same question, and the manifest
+  recovery still covers asks that attached nothing at all
+  (`inheritAskArtifact`, one pure rule shared by the card and the thread form).
+
+### Changed
+
+- **The document control inside an option is the shared outline button.**
+  The hand-rolled emerald slab beside the amber option rows is gone; the
+  affordance now uses the plugin's outline button (bordered, transparent,
+  hover on `state-hover`), so it belongs to the same palette as the panel it
+  sits in and keeps its `min-h-11` touch target.
+
 ## [0.18.34] - 2026-09-15
 
 ### Changed
