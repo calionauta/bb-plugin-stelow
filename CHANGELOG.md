@@ -8,12 +8,19 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.22] - 2026-09-15
+
 ### Fixed
 
 - **Standard asks at triage/select warn when they can't split.** Answering
   a standard question executes nothing, so a would-be split died silently.
   The ask result now reminds the worker once — while re-asking with
   `--tag split` is still legal — with the exact repair.
+
+### Synced
+
+- **Upstream skills (calionauta/stelow).** Intent pre-check gates the
+  strategic ask for refactor/bugfix with a verifiable baseline.
 
 ## [0.18.21] - 2026-09-15
 
