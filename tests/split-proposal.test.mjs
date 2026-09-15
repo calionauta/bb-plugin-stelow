@@ -67,6 +67,13 @@ assert.equal((serverSource.match(/splitEligibility\(/g) ?? []).length, 4, "ask v
 assert.ok(!serverSource.includes('card.stage !== "triage"'), "no call site pastes the stage pair anymore");
 assert.ok(!serverSource.includes("Only build cards split. Research and explore"), "the kind refusal lives in lib only");
 
+// Config inheritance reads through the same shared parser — no anchored
+// `^appetite:` reader (misses the indented block) and no truncating
+// `(\S+)` may reappear.
+assert.equal((serverSource.match(/parseWorkflowConfig\(/g) ?? []).length, 2, "card detail and split inheritance share one config parser");
+assert.ok(!serverSource.includes("^appetite:"), "no anchored appetite reader survives");
+assert.ok(!serverSource.includes('review_mode:\\s*'), "no truncating review_mode reader survives");
+
 // Standard asks at the split point carry the host consequence disclosure
 // (live form and persisted rows alike) — a scope question never again
 // reads like a split decision.

@@ -47,6 +47,7 @@ import { doneEligibility } from "./lib/completion.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
+import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 
@@ -3556,7 +3557,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async cardByWorkerThread({ threadId }) {
       const row = getCardByWorkerThread(threadId);
-      if (!row || row.status === "archived") return { cardId: null, kind: null };
+      if (!row) return { cardId: null, kind: null };
+      // The thread→card relation outlives archiving: a stopped thread on an
+      // archived card still answers "which card was this", so the thread
+      // header keeps its way back. Card detail renders archived cards.
       return { cardId: row.id, kind: normalizeKind(row.kind) };
     },
 
@@ -3694,8 +3698,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const githubLink = githubRow ? { repo: githubRow.repo, number: githubRow.number, url: `https://github.com/${githubRow.repo}/issues/${githubRow.number}`, postedAt: githubRow.commented_at ?? null } : null;
       // Workflow config for the skip model: review_mode/appetite live in the
       // card's own state.md (seeded at creation, same source the worker
-      // reads). Missing state or fields fail open to Lean/Auto — and unknown
-      // modes/intents yield no skips, never invented ones.
+      // reads). Parsed through the shared helper (indented `config:` block,
+      // no truncation) — missing state or fields fail open to Lean/Auto,
+      // and unknown modes/intents yield no skips, never invented ones.
       const workflowConfig = await (async () => {
         const fallback = { appetite: "Lean", reviewMode: "Auto" };
         try {
@@ -3704,11 +3709,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (!stateDir) return fallback;
           const content = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
           if (typeof content !== "string") return fallback;
-          const clean = (v: string | undefined, d: string) => (v ?? "").trim().replace(/^["']|["']$/g, "") || d;
-          return {
-            appetite: clean(content.match(/^appetite:\s*(.+)$/m)?.[1], "Lean"),
-            reviewMode: clean(content.match(/^review_mode:\s*(.+)$/m)?.[1], "Auto"),
-          };
+          return parseWorkflowConfig(content);
         } catch { return fallback; }
       })();
       const stageSkips = skippedStages({ kind: normalizeKind(card.kind), intent: card.intent, reviewMode: workflowConfig.reviewMode, sequence: STAGE_SEQUENCE });
@@ -5419,12 +5420,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         let parentReviewMode = "Auto";
         if (parentStateAbs) {
           const blob = await bb.sdk.files.read({ path: parentStateAbs }).then((file) => file.content).catch(() => null);
-          if (blob) {
-            const appetite = text(blob.match(/appetite:\s*(\S+)/m)?.[1]);
-            const review = blob.match(/review_mode:\s*(?:"([^"]+)"|(\S+))/m);
-            const reviewMode = text(review?.[1] ?? review?.[2]);
-            if (appetite) parentAppetite = appetite;
-            if (reviewMode) parentReviewMode = reviewMode;
+          // Shared parser: the indented `config:` block with whole,
+          // untruncated values (a bare `(\S+)` once degraded
+          // "Product Spec + …" to "Product" on live children).
+          if (typeof blob === "string") {
+            ({ appetite: parentAppetite, reviewMode: parentReviewMode } = parseWorkflowConfig(blob));
           }
         }
         for (const slice of todo) {

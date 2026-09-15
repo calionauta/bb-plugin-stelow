@@ -8,6 +8,17 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Split children inherit the full review mode.** The heir parser
+  truncated multi-word modes (`Product Spec + Interface + Tech Review`
+  degraded to `Product`, matching no gate) and the card-detail reader
+  missed the indented config block entirely. One shared
+  `parseWorkflowConfig` in `lib/` serves both, whole values only.
+- **Archived threads keep their card link.** The thread header's Stelow
+  card button no longer disappears when the card archives — the relation
+  outlives the board position.
+
 ## [0.18.25] - 2026-09-15
 
 ### Fixed

@@ -461,7 +461,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   never local stage rules. Standard questions at the split point carry a
   host-appended consequence disclosure (scope-only, creates no cards,
   Propose split stays available), so a scope pick never reads like a
-  split decision.
+  split decision. Children inherit the parent's appetite and review mode
+  (parsed whole from the indented state.md config block — never
+  truncated). An archived card's thread keeps its way back: the thread
+  header still links to its card.
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and

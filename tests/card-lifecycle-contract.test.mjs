@@ -27,6 +27,9 @@ const updateIntent = rpcMethod("updateCardIntent", "addCardComment");
 assert.match(updateIntent, /if \(!canEditWorkflowIntent\(card\)\)/, "only triage Build cards can edit their workflow type");
 assert.doesNotMatch(updateIntent, /threads\.send\(/, "editing type never silently redirects an existing worker");
 
+const byThread = rpcMethod("cardByWorkerThread", "getNotification");
+assert.doesNotMatch(byThread, /row\.status === "archived"/, "an archived card's thread still links back to its card");
+
 const reseed = rpcMethod("reseedCard", "moveCard");
 assert.match(reseed, /resolveReseedIntent\(card, requestedIntent\)/, "fresh restarts are the only route reclassification path");
 assert.match(reseed, /freshStatusForReseed\(card, reclassified\)/, "reclassification reopens the card at a coherent status");
