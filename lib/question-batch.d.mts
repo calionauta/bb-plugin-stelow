@@ -13,6 +13,7 @@ export declare interface AskOption {
 export declare function parseAskGroups(argv: string[]): { groups: Array<{ question: string; multiple: boolean; options: AskOption[] }>; error?: undefined } | { groups?: undefined; error: string };
 export declare function cleanOptions(raw: unknown): AskOption[];
 export declare function normalizeAskArtifactPath(raw: unknown): { path: string; display: string } | null;
+export declare function inheritAskArtifact(options: unknown): Array<{ path: string; display: string } | null>;
 export declare function isBatchPayload(data: unknown): boolean;
 export declare function expandInteractionQuestions(interaction: { id: string; title?: string; payload?: unknown }): Array<{ questionId: string; interactionId: string; index: number; title: string; question: string; multiple: boolean; kind: "standard" | "split"; options: AskOption[] }>;
 export declare function splitQuestionId(questionId: string): { interactionId: string; index: number };

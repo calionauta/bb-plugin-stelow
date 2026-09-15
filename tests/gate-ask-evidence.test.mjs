@@ -47,7 +47,14 @@ const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 
 assert.match(serverSource, /gateEvidenceGate\(\{/, "the ask handler decides through the shared gate");
 assert.match(serverSource, /stage: gateCard \? await cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
 assert.match(serverSource, /async function fallbackGateAskArtifact/, "older gate asks recover their manifest evidence for per-option review");
-assert.match(serverSource, /question\.options\.every\(\(option\) => !option\.artifact\)/, "only all-legacy label-only asks receive the fallback");
+// Every option resolves through one path, so an approval can never render
+// without the document its siblings were given. The old ".every(option =>
+// !option.artifact)" fallback only covered all-label-only asks, which is
+// exactly how the 2026-09-15 plan gate shipped an unreadable "Approve plan".
+assert.match(serverSource, /async function resolveAskOptions/, "one resolver owns per-option artifacts");
+assert.match(serverSource, /inheritAskArtifact/, "per-option artifacts inherit the ask's document");
+assert.match(serverSource, /const inherited = inheritAskArtifact\(options\)/, "the resolver inherits before resolving");
+assert.doesNotMatch(serverSource, /options\.every\(\(option\) => !option\.artifact\)/, "the all-or-nothing fallback is gone");
 
 // Hero fallback: with no manifest artifact, the card offers the first
 // evidence attached to a pending or recoverable question instead.
@@ -55,5 +62,10 @@ const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..
 assert.match(appSource, /pendingQuestionArtifact/, "the hero falls back to question-attached evidence");
 assert.match(appSource, /artifactViewerModeForOption/, "approval and change options select their appropriate viewer mode");
 assert.match(appSource, /mode === "comment"/, "the review-only viewer hides comment and editor controls");
+assert.match(appSource, /const inherited = inheritAskArtifact\(list\)/, "thread questions inherit per-option evidence too");
+// The option's document affordance is the shared outline Button, so it can
+// never drift back into a hand-rolled third color beside the amber panel.
+assert.match(appSource, /variant="outline"\s+size="sm"\s+onClick=\{\(\) => onOpenArtifact\(/, "the document control uses the shared outline treatment");
+assert.doesNotMatch(appSource, /border-emerald-500\/40 bg-emerald-500\/10 px-3/, "the emerald slab beside the amber options is gone");
 
 console.log("gate ask evidence test ok: gates require evidence, everything else untouched");

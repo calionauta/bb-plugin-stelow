@@ -27,7 +27,7 @@ import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
-import { normalizeAskArtifactPath } from "./lib/question-batch.mjs";
+import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
 import { questionCopy } from "./lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
@@ -3304,12 +3304,19 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
                     </button>
                     {artifact ? (
                       onOpenArtifact ? (
-                        <button
+                        // The option's own document, not a second decision: it
+                        // sits inside the row instead of forming a slab beside
+                        // it, and borrows the shared outline treatment so it
+                        // harmonizes with the amber panel and the primary
+                        // accents instead of introducing a third color.
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label))}
                           title={`Open document: ${artifact.display}`}
                           aria-label={`Open document ${artifact.display}`}
-                          className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1 self-stretch whitespace-nowrap border-l border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-medium text-foreground hover:bg-emerald-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                        >Open document<span aria-hidden>↗</span></button>
+                          className="mr-2 min-h-11 shrink-0 gap-1 self-center"
+                        >Open document<span aria-hidden>↗</span></Button>
                       ) : (
                         <span className="inline-flex shrink-0 items-center self-center px-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.display}</span>
                       )
@@ -6314,9 +6321,18 @@ function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionP
     const normalized = normalizeAskArtifactPath(path);
     return normalized ? { ...normalized, absolutePath: null, hostId: null } : null;
   };
-  const clean = (options: unknown): BatchItem["options"] => Array.isArray(options)
-    ? options.filter((o): o is { label: string; description: string; preview: string | null; artifact: AskArtifact | null } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "", preview: typeof o.preview === "string" ? o.preview : null, artifact: toArtifact((o as { artifact?: unknown }).artifact) }))
-    : [];
+  const clean = (options: unknown): BatchItem["options"] => {
+    const list = Array.isArray(options)
+      ? options.filter((o): o is { label: string; description: string; preview: string | null; artifact: AskArtifact | null } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "", preview: typeof o.preview === "string" ? o.preview : null, artifact: toArtifact((o as { artifact?: unknown }).artifact) }))
+      : [];
+    // Same per-option policy as the card (lib/question-batch): an approval
+    // here must name the document its siblings carry, never render blind.
+    const inherited = inheritAskArtifact(list);
+    return list.map((option, index) => ({
+      ...option,
+      artifact: option.artifact ?? (inherited[index] ? { ...inherited[index], absolutePath: null, hostId: null } : null),
+    }));
+  };
   // Batch payloads (one `bb stelow ask` call with repeated --question groups)
   // answer together; single-question payloads keep their exact shape.
   const genericTitle = /^stelow questions?(?: \(\d+\))?$/i.test(interaction.title ?? "") ? "" : interaction.title;

@@ -232,7 +232,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   glance, expandable) and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them
   per option (`--desc/--preview/--artifact`); unresolvable paths degrade
-  to no affordance and never block answering. Option shapes mirror the
+  to no affordance and never block answering. Within one question, an
+  option that carries no artifact inherits the first one attached to a
+  sibling, so the approval option is never the only one blind to the
+  document under decision (`inheritAskArtifact`, unit-tested); options
+  with their own documents — competing proposals — keep them. Option
+  shapes mirror the
   Option schema in upstream `ask-patterns.md` — one concept, two repos.
   Path validity has one pure definition (`normalizeAskArtifactPath`,
   unit-tested) shared by parser, server, and thread renderer.
@@ -503,8 +508,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   by the host (`lib/gate-ask-evidence.mjs`, `--force` to override), and
   the card hero falls back to question-attached evidence when the
   manifest lists nothing. Label-only options work unchanged everywhere
-  else. Per-option evidence opens inside the option row (Open document,
-  same viewer); the inline glance expands below.
+  else. Per-option evidence opens inside the option row as the shared
+  outline button (Open document, same viewer, never a hand-rolled color
+  beside the amber panel); the inline glance expands below.
 - **Deferred start on lightweight tracks.** Research/explore creation
   offers Start immediately (checked): unchecked parks the card in To-Do
   with no worker — no run, no burn, no badge. Parked cards offer Start

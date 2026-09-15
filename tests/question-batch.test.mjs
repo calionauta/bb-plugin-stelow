@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   parseAskGroups,
   normalizeAskArtifactPath,
+  inheritAskArtifact,
   isBatchPayload,
   expandInteractionQuestions,
   splitQuestionId,
@@ -150,4 +151,34 @@ assert.deepEqual(splitQuestionId("i9#2"), { interactionId: "i9", index: 2 });
   assert.equal(normalizeAskArtifactPath("x".repeat(501)), null, "over-cap has no affordance");
 }
 
-console.log("question batch test ok: cli groups, option details, expansion, atomic grouping, continuation");
+// Per-option evidence inheritance: the approval option must be readable too.
+// The real 2026-09-15 plan gate attached --artifact to "Request changes"
+// only, so "Approve plan" rendered with no Open document affordance at all.
+{
+  const realGateAsk = [
+    { label: "Approve plan", description: "Proceed to execution.", preview: null, artifact: null },
+    { label: "Request changes", description: "Returns to planning.", preview: null, artifact: { path: ".stelow/2026-09-15/sw-card_gcmixvq7/plans/spec-tech_v1.md" } },
+  ];
+  const plan = inheritAskArtifact(realGateAsk);
+  assert.deepEqual(plan.map((artifact) => artifact && artifact.path), [
+    ".stelow/2026-09-15/sw-card_gcmixvq7/plans/spec-tech_v1.md",
+    ".stelow/2026-09-15/sw-card_gcmixvq7/plans/spec-tech_v1.md",
+  ], "the approval inherits the document the ask attached to its siblings");
+  assert.equal(plan[0].display, "spec-tech_v1.md", "the inherited artifact is normalized for the viewer");
+}
+{
+  const competing = [
+    { label: "Option A", artifact: { path: "rounds/a-r1.md" } },
+    { label: "Option B", artifact: { path: "rounds/b-r1.md" } },
+  ];
+  assert.deepEqual(inheritAskArtifact(competing).map((artifact) => artifact && artifact.path), ["rounds/a-r1.md", "rounds/b-r1.md"], "competing proposals keep their own documents");
+}
+{
+  assert.deepEqual(inheritAskArtifact([{ label: "A" }, { label: "B" }]), [null, null], "nothing attached yields no affordance, so manifest recovery still applies");
+  assert.deepEqual(inheritAskArtifact([{ label: "A", artifact: { path: "" } }, { label: "B", artifact: { path: "./f.md" } }]).map((artifact) => artifact && artifact.path), ["f.md", "f.md"], "an unusable path is not evidence");
+  assert.deepEqual(inheritAskArtifact([]), [], "no options, no artifacts");
+  assert.deepEqual(inheritAskArtifact(undefined), [], "malformed input never throws");
+  assert.deepEqual(inheritAskArtifact([{ label: "A", artifact: { path: "x".repeat(501) } }, { label: "B", artifact: null }]), [null, null], "over-cap paths are never inherited");
+}
+
+console.log("question batch test ok: cli groups, option details, expansion, atomic grouping, continuation, per-option evidence inheritance");

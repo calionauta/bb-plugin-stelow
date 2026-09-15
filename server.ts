@@ -14,7 +14,7 @@ import { skippedStages } from "./lib/stage-skips.mjs";
 import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
-import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
+import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { questionOpenGuard } from "./lib/question-presence.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
@@ -2957,6 +2957,33 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ...normalized, absolutePath: full, hostId: workspace?.hostId ?? null };
   }
 
+  // Per-option artifacts for one rendered ask. A worker that attached
+  // `--artifact` to a single option used to leave every other option —
+  // including the approval — with nothing to open, because the evidence gate
+  // only requires one option to carry evidence and the old manifest fallback
+  // fired only when NO option had any. Every option now inherits the ask's
+  // document (lib/question-batch inheritAskArtifact), and the manifest
+  // recovery still covers asks that attached nothing at all.
+  async function resolveAskOptions(card: CardRow | null, options: Array<{ label: string; description: string; preview: string | null; artifact: { path: string } | null }>) {
+    const inherited = inheritAskArtifact(options);
+    const noOptionCarriesDocument = inherited.every((artifact) => !artifact);
+    const manifestArtifact = card && noOptionCarriesDocument ? await fallbackGateAskArtifact(card).catch(() => null) : null;
+    const resolved = new Map<string, { path: string; display: string; absolutePath: string | null; hostId: string | null } | null>();
+    const out = [];
+    for (const [index, option] of options.entries()) {
+      const source = inherited[index];
+      if (!source || !card) {
+        out.push({ ...option, artifact: manifestArtifact });
+        continue;
+      }
+      if (!resolved.has(source.path)) {
+        resolved.set(source.path, await resolveAskArtifact(card, source.path).catch(() => null));
+      }
+      out.push({ ...option, artifact: resolved.get(source.path) ?? null });
+    }
+    return out;
+  }
+
   // Version 0.18.29 started refusing gate asks that had no document or
   // preview. Existing cards can still hold older, label-only interactions.
   // Recover their evidence from the card's own manifest so Approve plan and
@@ -2985,16 +3012,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       for (const entry of asks) {
         const expanded = expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload });
         for (const question of expanded) {
-          const fallbackArtifact = card && question.options.every((option) => !option.artifact)
-            ? await fallbackGateAskArtifact(card).catch(() => null)
-            : null;
-          const options = [];
-          for (const option of question.options) {
-            const artifact = option.artifact && card
-              ? await resolveAskArtifact(card, option.artifact.path).catch(() => null)
-              : fallbackArtifact;
-            options.push({ ...option, artifact });
-          }
+          const options = await resolveAskOptions(card ?? null, question.options);
           out.push({
             id: question.questionId,
             title: question.title,
@@ -3753,13 +3771,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         let parsed: unknown = null;
         try { parsed = JSON.parse(row.options); } catch { parsed = null; }
         const storedOptions = cleanOptions(parsed);
-        const fallbackArtifact = storedOptions.every((option) => !option.artifact)
-          ? await fallbackGateAskArtifact(card).catch(() => null)
-          : null;
-        const options = [];
-        for (const option of storedOptions) {
-          options.push({ ...option, artifact: option.artifact ? await resolveAskArtifact(card, option.artifact.path).catch(() => null) : fallbackArtifact });
-        }
+        const options = await resolveAskOptions(card, storedOptions);
         expiredQuestions.push({ id: row.id, question: row.question, multiple: Boolean(row.multiple), kind: row.kind === "split" ? "split" : "standard", options, expiredAt: row.expired_at });
       }
       let projectName = card.project_id;
