@@ -9,8 +9,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **New card composer** (`BoardPanel`, `createCard`). Prompt + file/image
   attachments, intent, planning depth, your review gates, agent preset from
-  the analysis band. Settings stays collapsed until requested, then its
-  shared disclosure and bordered settings sections visibly contain the
+  the analysis band. Planning depth and review gates render expanded under
+  the composer — never collapsed, so consequential choices stay
+  discoverable — inside a fixed-height dialog with inner scroll, so the
+  frame never jumps. Bordered settings sections visibly contain the
   controls. Workflow choices are stacked, visible radio cards (real inputs,
   min-h-11 targets) — no hidden select. BB's own Project, Environment, and
   branch controls are authoritative: Stelow forwards the chosen checkout

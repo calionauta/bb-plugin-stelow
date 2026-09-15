@@ -615,10 +615,10 @@ function BoardPanel({ active }: { active: boolean }) {
   // it; refreshes update state silently.
   const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
-  // Keep the composer immediately usable. Settings are available on demand
-  // in their own visual container instead of pushing the rest of the modal
-  // below the fold on every new issue.
-  const [createOptionsOpen, setCreateOptionsOpen] = useState(false);
+  // Workflow preferences stay visible under the composer: a collapsed
+  // Settings hides consequential choices (planning depth, review gates)
+  // the user would otherwise never discover. The dialog frame keeps a
+  // fixed max height with inner scroll, so nothing jumps or resizes.
   const [prompt, setPrompt] = useState("");
   const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
   const [appetite, setAppetite] = useState<Appetite>("Lean");
@@ -805,7 +805,7 @@ function BoardPanel({ active }: { active: boolean }) {
               </button> : null}
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateBuildOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
               {githubStatus?.pluginAvailable ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}><Icon name="Github" className="h-4 w-4" aria-hidden /> Import issues</Button>
@@ -815,7 +815,7 @@ function BoardPanel({ active }: { active: boolean }) {
           <PresetOnboardingDialog
             storageKey={STORAGE_KEYS.onboardBuild}
             title="Choose your agent presets"
-            intro="Set the preset each phase runs with. Planning depth and your review gates are a separate choice — picked per card in New issue → Settings."
+            intro="Set the preset each phase runs with. Planning depth and your review gates are a separate choice — picked per card in New issue, under the description."
             onOpenPresets={() => setBoardPresetsOpen(true)}
             active={active}
             secondTitle="Defaults for new cards"
@@ -832,7 +832,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new issue</DialogTitle>
-                <DialogDescription>Describe the outcome, problem, or change. Stelow will guide it through its planning and build process.</DialogDescription>
+                <DialogDescription>Describe the outcome, problem, or change. Planning depth and review checkpoints below start from the board defaults — keep them or adjust, then submit.</DialogDescription>
               </DialogHeader>
               <NewThreadComposer
                 defaultProjectId={activeProjectId ?? undefined}
@@ -846,18 +846,13 @@ function BoardPanel({ active }: { active: boolean }) {
                 draftKey="stelow-board-create"
                 onSubmit={(request) => start(request)}
               />
-              <DisclosureSection
-                title="Settings"
-                hint="Workflow preferences and agent configuration"
-                open={createOptionsOpen}
-                onToggle={setCreateOptionsOpen}
-              >
+              <div className="grid gap-4 border-t pt-4">
                 <AgentConfigBox
                   lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
                   onConfigure={() => setBoardPresetsOpen(true)}
                 />
                 <WorkflowSettings appetite={appetite} reviewMode={reviewMode} onAppetiteChange={setAppetite} onReviewModeChange={setReviewMode} groupNamePrefix="create" />
-              </DisclosureSection>
+              </div>
             </DialogContent>
           </Dialog>
 
@@ -970,7 +965,7 @@ function BoardPanel({ active }: { active: boolean }) {
               <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Stelow is an opinionated product workflow for humans and AI agents. Start with an outcome or problem; it guides the work through framing, critique, planning, execution, and review.</p>
               <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
-                <Button onClick={() => { setCreateOptionsOpen(false); setCreateBuildOpen(true); }}>Start new issue</Button>
+                <Button onClick={() => setCreateBuildOpen(true)}>Start new issue</Button>
                 <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground">Learn about Stelow <span aria-hidden="true">↗</span></UrlLink>
               </div>
             </section>
@@ -1960,9 +1955,9 @@ function WorkflowSettings({ appetite, reviewMode, onAppetiteChange, onReviewMode
   groupNamePrefix: string;
 }) {
   return (
-    <SettingsSection title="Workflow preferences" description="Choose how much planning happens before building and where the agent pauses for your decision.">
-      <ChoiceCards label="Planning depth" hint="How much the agent plans before building." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
-      <ChoiceCards label="Pause for my review" hint="Choose checkpoints where the agent pauses for your decision." value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={onReviewModeChange} groupName={`${groupNamePrefix}-review`} />
+    <SettingsSection title="Workflow preferences" description="Planning depth sets how much the agent plans before building; review checkpoints are where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
+      <ChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
+      <ChoiceCards label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer." value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={onReviewModeChange} groupName={`${groupNamePrefix}-review`} />
     </SettingsSection>
   );
 }

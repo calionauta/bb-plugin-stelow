@@ -176,10 +176,12 @@ assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked
 assert.match(boardCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "build board cards never offer Retry on terminal cards");
 assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "research/explore cards never offer Retry on terminal cards");
 
-// Creation settings stay out of the primary compose flow until requested;
-// one shared disclosure and visual settings boundary keep revealed controls
-// clearly attached to Settings. Radio cards stay accessible and vertical.
-assert.match(app, /const \[createOptionsOpen, setCreateOptionsOpen\] = useState\(false\)/, "new-card Settings starts collapsed so it does not push the composer below the fold");
+// Creation settings stay visible under the composer: collapsing them hid
+// consequential choices users never discovered. A fixed-height dialog with
+// inner scroll keeps the frame stable, and a bordered settings boundary
+// keeps the controls attached. Radio cards stay accessible and vertical.
+assert.doesNotMatch(app, /createOptionsOpen/, "new-card Settings is never collapsed, so planning depth and review gates are always discoverable");
+assert.match(app, /start from the board defaults — keep them or adjust, then submit/, "the creation dialog frames preferences as defaults, not hidden settings");
 assert.match(app, /function ChoiceCards</, "planning and review options render as visible radio cards");
 assert.match(app, /label="Pause for my review"/, "human review gates never read as the automatic Review column");
 assert.doesNotMatch(app, /agent's own automatic check/, "the review picker no longer carries the distracting board-column explanation");
