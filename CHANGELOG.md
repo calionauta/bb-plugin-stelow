@@ -8,6 +8,20 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Fixed
+
+- **Split decides once, in `lib/`.** The stage pair and refusal strings
+  were pasted at three call sites, the trigger read the DB cache while the
+  executor read state.md truth, and live/expired answers carried duplicate
+  recording blocks. One shared gate (`splitEligibility`,
+  `splitActionState`, `recordSplitAnswer` in `lib/split-proposal.mjs`,
+  covered against a real database) now serves the worker ask, the
+  executor, the human trigger, and the card flag — the UI renders the
+  server flag instead of local stage rules, and the trigger also refuses
+  while a question pends. The trigger nudge is a pointer to
+  `SPLIT_PROTOCOL`, not a second copy. Removed the dead `ask` RPC (no
+  callers; the CLI asks through the host directly).
+
 ## [0.18.23] - 2026-09-15
 
 ### Fixed

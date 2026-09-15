@@ -454,7 +454,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   point warns that its answer executes nothing, with the exact re-ask
   repair. The open card offers Propose split at triage/select: one click
   drives the worker into the --tag split protocol (refused past the split
-  point or while a proposal awaits an answer).
+  point or while a proposal awaits an answer). One shared gate
+  (`lib/split-proposal.mjs`: `splitEligibility`, `splitActionState`,
+  `recordSplitAnswer`) decides for the worker ask, the executor, the
+  trigger, and the card flag on state.md truth — the UI reads the flag,
+  never local stage rules.
 - **Preset fence.** `preset add/remove/assign` refuse card workers (presets
   are managed from the card UI); `preset list` stays open.
 - **Mention providers.** `@` workflows/cards (with context resolve) and

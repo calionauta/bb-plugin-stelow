@@ -5529,10 +5529,16 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => void load()} />
                   </div>
                 ) : null}
-                {(card.stage === "triage" || card.stage === "select") && card.status !== "archived" && card.status !== "completed" ? (
+                {detail?.splitAction?.show ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
-                    <Button size="sm" variant="outline" disabled={splitting} onClick={() => void doRequestSplit()} title="Ask the worker for a real split proposal now (one option per delivery plus Keep as one card). Only a --tag split proposal can create cards.">Propose split…</Button>
-                    <span className="text-xs text-muted-foreground">One option per delivery, approved by you, executed by the host.</span>
+                    {detail.splitAction.ok ? (
+                      <>
+                        <Button size="sm" variant="outline" disabled={splitting} onClick={() => void doRequestSplit()} title="Ask the worker for a real split proposal now (one option per delivery plus Keep as one card). Only a --tag split proposal can create cards.">Propose split…</Button>
+                        <span className="text-xs text-muted-foreground">One option per delivery, approved by you, executed by the host.</span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{detail.splitAction.reason}</span>
+                    )}
                     {splitError ? <span className="w-full text-xs text-destructive">{splitError}</span> : null}
                   </div>
                 ) : null}

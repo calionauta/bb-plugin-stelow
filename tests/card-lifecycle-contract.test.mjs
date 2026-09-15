@@ -219,7 +219,7 @@ assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split q
 assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");
 assert.match(app, /recoveryHeading/, "recovered questions explain the state without leaking timeout jargon");
 assert.match(answerExpired, /answers: item\.answers/, "timed-out multi-choice answers retain every selected value");
-assert.match(answerExpired, /UPDATE split_proposals SET selected/, "a timed-out split answer records the same host-owned selection as a live answer");
+assert.match(answerExpired, /recordSplitAnswer\(db, cardId, decisions\)/, "a timed-out split answer records through the same shared helper as a live answer");
 assert.match(app, /These needed you once, then cleared on their own/, "the Resolved filter explains why it exists");
 assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how it cleared");
 
