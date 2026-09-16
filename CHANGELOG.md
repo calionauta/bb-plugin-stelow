@@ -8,6 +8,12 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Changed
+
+- **Native plugin updates.** Stelow now asks BB for the installed plugin's
+  compatible update status and applies an available update only after explicit
+  confirmation in About; the sidebar shows a separate update indicator.
+
 ## [0.19.1] - 2026-09-16
 
 ### Fixed

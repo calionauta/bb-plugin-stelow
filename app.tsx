@@ -360,7 +360,10 @@ function useInboxAccessory(): SidebarAccessoryHandle {
 
 function StelowInboxSidebarAccessory() {
   const { count, tone } = useInboxAccessory();
-  return <SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />;
+  const rpc = useRpc<typeof rpcContract>();
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  useEffect(() => { void rpc.call("buildInfo", {}).then((info) => setUpdateAvailable(info.pluginUpdate.outcome === "update-available")).catch(() => undefined); }, [rpc]);
+  return <span className="inline-flex items-center gap-1"><SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />{updateAvailable ? <span aria-label="Stelow plugin update available" title="Plugin update available" className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300">↑</span> : null}</span>;
 }
 
 function useBuildAccessory(): SidebarAccessoryHandle {
@@ -1682,7 +1685,7 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
 
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; stelowUpdate: { state: "checking" | "current" | "available" | "unavailable"; version: string | null; url: string | null; checkedAt: number | null } } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; pluginUpdate: { outcome: "checking" | "update-available" | "current" | "incompatible" | "pinned" | "unavailable"; installed: string | null; candidate: string | null; detail: string | null; checkedAt: number | null } } | null>(null);
   const [aboutLogo, setAboutLogo] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
@@ -1709,6 +1712,9 @@ function AboutPanel() {
   // Two-step reset: first click arms the confirm, second clears all four
   // onboarding keys so each track shows its setup dialogs again on visit.
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmPluginUpdate, setConfirmPluginUpdate] = useState(false);
+  const [updatingPlugin, setUpdatingPlugin] = useState(false);
+  const [pluginUpdateError, setPluginUpdateError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     void rpc.call("buildInfo", {}).then((result) => { if (!cancelled) setBuildInfo(result); }).catch(() => undefined);
@@ -1725,6 +1731,14 @@ function AboutPanel() {
     } catch { /* best-effort */ }
     setConfirmReset(false);
     toast.success("Onboarding reset. Visit each tab to see it again.");
+  }
+  function applyPluginUpdate() {
+    setUpdatingPlugin(true); setPluginUpdateError(null);
+    void rpc.call("applyPluginUpdate", {}).then((result) => {
+      if (!result.applied) setPluginUpdateError(result.detail ?? "BB did not apply an update.");
+      else toast.success(`Plugin updated to ${result.to ?? "the latest compatible version"}.`);
+      return rpc.call("buildInfo", {});
+    }).then(setBuildInfo).catch((error) => setPluginUpdateError(error instanceof Error ? error.message : "Plugin update failed.")).finally(() => { setUpdatingPlugin(false); setConfirmPluginUpdate(false); });
   }
   return (
     <>
@@ -1764,13 +1778,15 @@ function AboutPanel() {
                       {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
                     </button>
                   </p>
-                  {buildInfo.stelowUpdate.state === "available" ? <p className="text-amber-700 dark:text-amber-300">Stelow {buildInfo.stelowUpdate.version} is available. Update this plugin to adopt it safely.{buildInfo.stelowUpdate.url ? <> <UrlLink href={buildInfo.stelowUpdate.url} className="underline">Release notes ↗</UrlLink></> : null}</p> : null}
-                  {buildInfo.stelowUpdate.state === "current" ? <p>Checked upstream; this pinned release is current.</p> : null}
-                  {buildInfo.stelowUpdate.state === "unavailable" ? <p>Could not check upstream. The pinned release remains unchanged.</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "update-available" ? <p className="text-amber-700 dark:text-amber-300">Plugin {buildInfo.pluginUpdate.candidate} is available through BB.</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "current" ? <p>BB confirms this plugin is current.</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "pinned" || buildInfo.pluginUpdate.outcome === "incompatible" ? <p>{buildInfo.pluginUpdate.detail ?? "BB cannot apply an update for this installation."}</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "unavailable" ? <p>BB could not check for a plugin update.</p> : null}
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
+                {buildInfo?.pluginUpdate.outcome === "update-available" ? (confirmPluginUpdate ? <><Button size="sm" disabled={updatingPlugin} onClick={applyPluginUpdate}>{updatingPlugin ? "Updating…" : "Confirm update"}</Button><Button size="sm" variant="ghost" disabled={updatingPlugin} onClick={() => setConfirmPluginUpdate(false)}>Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => setConfirmPluginUpdate(true)}>Update plugin…</Button>) : null}
                 {confirmReset ? (
                   <>
                     <Button size="sm" variant="destructive" onClick={resetOnboarding} title="Clear onboarding state so every track shows its setup dialog again">Confirm reset</Button>
@@ -1780,6 +1796,7 @@ function AboutPanel() {
                   <Button size="sm" variant="outline" onClick={() => setConfirmReset(true)} title="Show the first-visit setup dialogs again">Reset onboarding</Button>
                 )}
                 </div>
+              {pluginUpdateError ? <p className="text-xs text-destructive">{pluginUpdateError}</p> : null}
               </section>
               <HostToolsSection tools={hostTools} onInstall={installHostTool} installingId={installingToolId} errors={installErrors} />
             </div>

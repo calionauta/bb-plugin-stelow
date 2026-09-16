@@ -50,9 +50,11 @@ assert.equal(manifest.files.includes("assets"), true, "plugin package carries as
 // that evidence from upstream main, and About names the pinned version.
 assert.match(syncLib, /readPinnedStelowSource/, "release sync reads a pinned source manifest");
 assert.doesNotMatch(server, /syncHelperScript|syncWorkflowSkills|background\.schedule\("stelow-skills-sync"/, "runtime never mutates vendored Stelow behavior");
-assert.match(server, /background\.schedule\("stelow-update-check"/, "runtime checks releases without mutating vendored behavior");
+assert.match(server, /bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the installed-plugin update check");
+assert.match(server, /bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the explicit update operation");
 assert.match(app, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
-assert.match(app, /Update this plugin to adopt it safely/, "About names the safe update path when upstream advances");
+assert.match(app, /Update plugin…/, "About offers an explicit, confirmed plugin update");
+assert.match(app, /Stelow plugin update available/, "sidebar exposes a separate update indicator");
 assert.match(app, /setSkillsOpen\(true\)/, "sync status opens the vendored-skills dialog");
 assert.match(app, /Vendored Stelow skills/, "dialog names the vendored skill inventory");
 assert.match(app, /Reinstall .* at its latest release/, "installed tools offer reinstall-as-update");
