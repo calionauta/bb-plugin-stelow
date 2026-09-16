@@ -9,6 +9,7 @@ type BuildCardState = {
   status: string;
   intent: string;
   activity: CardActivity;
+  workerThreadId?: string | null;
 };
 
 export function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title, icon }: { children: ReactNode; tone?: string; className?: string; title?: string; icon?: ReactNode }) {
@@ -89,14 +90,19 @@ export function ActivityPill({ activity, detail }: { activity: CardActivity; det
 // The same summary is used by a Build tile and its open-card breadcrumb:
 // workflow checkpoint, workflow type, then (only when needed) human input.
 // Column/status and "working" are deliberately excluded: they are board
-// placement and live-border signals, not the card's identity.
+// placement and live-border signals, not the card's identity. A parked Inbox
+// card names no checkpoint it never reached: without a worker it reads
+// Not started, matching the hero's parked copy.
 export function BuildStatusPills({ card, statusTone, intentLabel }: {
   card: BuildCardState;
   statusTone: (status: string) => string;
   intentLabel: (intent: string) => string | undefined;
 }) {
+  const started = card.workerThreadId !== null && card.workerThreadId !== undefined;
   return <>
-    <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at." icon={<Icon name={STAGE_ICON} className="size-3" aria-hidden />}>{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
+    {started
+      ? <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at." icon={<Icon name={STAGE_ICON} className="size-3" aria-hidden />}>{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
+      : <Pill title="Not started — parked in Inbox. Nothing runs until you start it.">Not started</Pill>}
     {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage." icon={<Icon name={INTENT_ICON[card.intent] ?? "CircleDashed"} className="size-3" aria-hidden />}>{intentLabel(card.intent) ?? card.intent}</Pill> : null}
     {card.activity === "awaiting-answer" ? <ActivityPill activity={card.activity} /> : null}
   </>;

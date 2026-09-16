@@ -4124,6 +4124,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         archived: isArchivedCard(card),
         openProposal: Boolean(splitOpen),
         openQuestions: pending.length + expiredQuestions.length,
+        hasWorker: card.worker_thread_id !== null,
       });
       // Staleness notices, computed on read: each questioned document against
       // its ask-time baseline. Advisory only — questions stay answerable.
@@ -4288,6 +4289,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         archived: false,
         openProposal: Boolean(open),
         openQuestions: live.length + openExpiredQuestionIds(cardId).length,
+        hasWorker: card.worker_thread_id !== null,
       });
       if (!action.ok) return { ok: false, error: action.reason ?? "A split cannot be proposed on this card right now." };
       try {

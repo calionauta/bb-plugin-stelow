@@ -27,7 +27,7 @@ assert.match(splitStageError(null), /unknown stage/, "an unresolvable stage refu
 
 // Trigger/UI state: visibility is data (dumb UI), executability carries
 // the reason. One function feeds both the RPC and the card flag.
-const base = { kind: "build", stage: "triage", status: "draft", archived: false, openProposal: false, openQuestions: 0 };
+const base = { kind: "build", stage: "triage", status: "draft", archived: false, openProposal: false, openQuestions: 0, hasWorker: true };
 assert.deepEqual(splitActionState(base), { show: true, ok: true, reason: null }, "a fresh triage build offers the trigger");
 assert.equal(splitActionState({ ...base, openProposal: true }).ok, false, "an open proposal blocks a second one");
 assert.match(splitActionState({ ...base, openProposal: true }).reason, /already open/, "the block names the pending proposal");
@@ -37,6 +37,8 @@ assert.equal(splitActionState({ ...base, stage: "setup" }).show, false, "past th
 assert.equal(splitActionState({ ...base, kind: "research" }).show, false, "research cards never show the trigger");
 assert.equal(splitActionState({ ...base, status: "completed" }).show, false, "done cards never show the trigger");
 assert.equal(splitActionState({ ...base, archived: true }).show, false, "archived cards never show the trigger");
+assert.equal(splitActionState({ ...base, hasWorker: false }).show, false, "a parked Inbox card shows no split trigger — there is no triage worker to propose from");
+assert.equal(splitActionState({ ...base, hasWorker: undefined }).show, false, "an unknown thread state hides the trigger rather than promising it");
 
 // Answer matching: only the proposal's own question text lands in the row.
 const decisions = [

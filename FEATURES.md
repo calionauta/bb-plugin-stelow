@@ -282,7 +282,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   outcome is a full-width, wrapping heading; Build cards name their specific
   workflow stage (`Critique`, `Audit`, etc.) and workflow type below it — never
   the Kanban column or duplicated lifecycle labels such as `In progress` or
-  `Completed`. The same stage/type summary is reused in the open card. A blue
+  `Completed`. A parked Inbox card claims no checkpoint it never reached and
+  reads Not started instead. The same stage/type summary is reused in the open card. A blue
   live border means a worker is executing; an amber attention border means the
   card is waiting on the user, so neither state needs another tag. Idle
   recovery is a separate Resume action. Tiles signal failures with the Failed
@@ -521,7 +522,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   parent, partial approval keeps it narrowed to the remainder. Never
   unilateral, never by worker claim. A standard ask answered at the split
   point warns that its answer executes nothing, with the exact re-ask
-  repair. The open card offers Propose split at triage/select: one click
+  repair. The open card offers Propose split at triage/select once a worker
+  exists to propose from — parked Inbox cards show no trigger, and the
+  trigger RPC refuses threadless cards outright. One click
   drives the worker into the --tag split protocol (refused past the split
   point or while a proposal awaits an answer). One shared gate
   (`lib/split-proposal.mjs`: `splitEligibility`, `splitActionState`,

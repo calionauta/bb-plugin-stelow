@@ -91,6 +91,8 @@ assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.s
 assert.match(server, /async function recoveredCheckoutIntegrity\(/, "recovered checkouts have a dedicated integrity check before diffing");
 assert.match(server, /const recoveryError = await recoveredCheckoutIntegrity\(card, workspace\.path\)/, "recovered diffs fail closed when their attached Git root changes");
 assert.match(server, /verificationReadiness\(verificationRun, gitEvidence\)/, "Build completion requires a host-recorded test result at the current Git identity");
+assert.match(server, /hasWorker: card\.worker_thread_id !== null/, "the split flag knows whether a worker exists to propose from");
+assert.match(server, /if \(!card\.worker_thread_id\) return \{ ok: false, error: "This card has no worker thread\." \}/, "the split trigger refuses threadless cards even if the UI ever offers it");
 assert.match(server, /CREATE TABLE IF NOT EXISTS question_evidence/, "asked documents keep an ask-time baseline for staleness notices");
 assert.match(server, /void snapshotQuestionEvidence\(cardRow\.id, groups\.flatMap/, "asking snapshots its documents before the blocking wait, never blocking the ask");
 assert.match(server, /stalenessForQuestions\(cardId, \[\.\.\.pending, \.\.\.expiredQuestions\]\)/, "card reads compare every open question against its baseline");
@@ -185,6 +187,8 @@ assert.match(app, /card\.activity === "running"\) return "stelow-border-running"
 assert.match(boardCard, /liveBorderClass\(card\)/, "a Build card needing attention uses its shared live attention border");
 assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
 assert.match(buildStatusPills, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
+assert.match(buildStatusPills, /const started = card\.workerThreadId !== null/, "a parked card names no checkpoint it never reached");
+assert.match(buildStatusPills, />Not started<\/Pill>/, "unstarted cards read Not started on tiles and open cards alike");
 assert.match(buildStatusPills, /icon=\{<Icon name=\{STAGE_ICON\}/, "the stage chip carries its kind icon");
 assert.match(buildStatusPills, /icon=\{<Icon name=\{INTENT_ICON\[card\.intent\]/, "the workflow-type chip carries its kind icon");
 assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the live checkpoint treatment has one definition");

@@ -23,6 +23,7 @@ export declare function splitActionState(input: {
   archived: unknown;
   openProposal: unknown;
   openQuestions: unknown;
+  hasWorker?: unknown;
 }): { show: boolean; ok: boolean; reason: string | null };
 export declare function matchSplitDecision(
   proposalQuestion: unknown,

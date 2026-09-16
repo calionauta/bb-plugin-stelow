@@ -44,6 +44,14 @@ assert.match(server, /if \(!card\.worker_thread_id\) \{\s*const started = await 
 assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
 assert.match(app, /function boardColumnOf\(card: Pick<CardItem, "status" \| "stage" \| "workerThreadId">\)/, "the board projection keeps thread state, so a parked card reaches the Inbox");
 
+// Leaving the Inbox starts through the same starter on every track, and the
+// starter resolves creation-time choices: the pinned preset override
+// (provider/model) and the card's own project workspace — never ambient defaults.
+assert.match(server, /const effective = getPresetForBand\(/, "Inbox exits spawn through the override-aware preset resolution");
+assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choice pinned at creation wins over band defaults at spawn");
+assert.match(server, /const workspace = await cardWorkspace\(row\);/, "respawns run in the card's own project workspace");
+assert.match(server, /if \(decision\.move\.status === "in-progress" && !card\.worker_thread_id\)/, "dragging a lightweight card to Doing starts it too");
+
 // A Build workflow is code work: a Personal/exploratory folder only holds
 // Stelow state and cannot truthfully produce a diff, branch, or commit.
 assert.match(server, /Build cards require a project workspace with a Git source/, "new Build cards refuse an exploratory workspace");
