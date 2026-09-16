@@ -8,6 +8,19 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.41] - 2026-09-16
+
+### Fixed
+
+- **Workflow progress names the checkpoint with the live pill.** The header
+  hint uses the same pulsing treatment as the timeline cursor instead of
+  detached plain text.
+- **Stage and workflow-type chips carry a kind icon** on Kanban tiles and
+  open cards alike (one shared component, so both surfaces stay identical).
+- **Conversation reads as a thread.** Card notes render as author bubbles
+  (You/Agent) and the composer names where native attachments and mentions
+  live, with the live worker thread one tap away beside Send.
+
 ## [0.18.40] - 2026-09-16
 
 ### Fixed
