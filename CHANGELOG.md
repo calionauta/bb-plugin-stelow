@@ -8,6 +8,18 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.42] - 2026-09-16
+
+### Fixed
+
+- **Research/Explore chips match Build's language.** Position and playbook
+  tags share one component with kind icons (track glyph for position,
+  content glyph for the tag), `statusTone` for state and muted for tags —
+  on tiles and open heroes alike. Tiles show identity (the board gives
+  position); open cards add the position pill. The open heroes no longer
+  out-color their tile twins, and Explore's open card pulses its live
+  border while working like every other track.
+
 ## [0.18.41] - 2026-09-16
 
 ### Fixed
