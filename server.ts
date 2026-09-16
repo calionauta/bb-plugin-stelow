@@ -55,7 +55,7 @@ import { gateEvidenceGate } from "./lib/gate-ask-evidence.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
-import { detectedTestCommand, verificationReadiness } from "./lib/audit-verification.mjs";
+import { detectedTestCommand, sameGitEvidence, verificationReadiness } from "./lib/audit-verification.mjs";
 import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
 
@@ -5907,6 +5907,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const trailCheck = trail.code === 0 ? await runHelper(["audit-trail", "check", "--strict", "--json"], projectPath!, doneStateDir ?? undefined) : null;
           const trailGate = auditTrailGate({ build: trail, check: trailCheck, verifiedGit: gitEvidence });
           if (!trailGate.ready) return { exitCode: 1, stderr: trailGate.error ?? "Audit trail validation failed." };
+          // The audit receipt, portable trail, and final Done transition all
+          // name one checkout. Sample once more immediately before the state
+          // write so an external checkout or commit between `check` and Done
+          // cannot leave a completed card pointing at stale evidence.
+          const postTrailGitEvidence = checkout?.path ? await recoveryGitEvidence(checkout.path) : null;
+          if (checkout?.path && !sameGitEvidence(gitEvidence, postTrailGitEvidence)) {
+            return { exitCode: 1, stderr: "The checkout moved while the portable audit trail was being finalized. Re-run audit, then done." };
+          }
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           return { exitCode: 0, stdout: `Done. Workflow "${card.name}" completed at audit.` };
