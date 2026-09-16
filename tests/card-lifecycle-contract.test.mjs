@@ -91,6 +91,11 @@ assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.s
 assert.match(server, /async function recoveredCheckoutIntegrity\(/, "recovered checkouts have a dedicated integrity check before diffing");
 assert.match(server, /const recoveryError = await recoveredCheckoutIntegrity\(card, workspace\.path\)/, "recovered diffs fail closed when their attached Git root changes");
 assert.match(server, /verificationReadiness\(verificationRun, gitEvidence\)/, "Build completion requires a host-recorded test result at the current Git identity");
+assert.match(server, /CREATE TABLE IF NOT EXISTS question_evidence/, "asked documents keep an ask-time baseline for staleness notices");
+assert.match(server, /void snapshotQuestionEvidence\(cardRow\.id, groups\.flatMap/, "asking snapshots its documents before the blocking wait, never blocking the ask");
+assert.match(server, /stalenessForQuestions\(cardId, \[\.\.\.pending, \.\.\.expiredQuestions\]\)/, "card reads compare every open question against its baseline");
+assert.match(app, /function StalenessNotice/, "a stale question names what moved and points at the existing exits");
+assert.match(app, /<StalenessNotice staleness=\{current\.staleness\} \/>/, "each open question carries its own notice");
 assert.match(server, /auditReceiptReadiness\(receiptContent, stateBlob \? parseArtifactManifest\(stateBlob\) : \[\], checkout\?\.path \?\? null, gitEvidence, verificationRun\)/, "Build completion passes host-sampled Git and test evidence into receipt validation");
 
 // The single updateCard choke point strips resuscitations twice: against the
@@ -252,8 +257,11 @@ assert.match(server, /Questions are English-only/, "the worker cannot opt a stru
 assert.match(server, /englishQuestionContentError\(group\.question, group\.options\)/, "the CLI rejects Portuguese structured question content before it can create a mismatched card form");
 assert.match(answerExpired, /formatBatchContinuation\(decisions\)/, "recovered answers use the same neutral continuation as live answers");
 assert.doesNotMatch(answerExpired, /question that timed out/, "recovered answer delivery does not leak timeout jargon into the worker thread");
-assert.match(app, /All updates/, "Inbox exposes read state without replacing its lifecycle tabs");
-assert.match(app, /Unread only/, "Inbox can narrow every selected tab to unread entries");
+assert.match(app, /<input type="checkbox" checked=\{unreadOnly\}/, "read state is one checkbox, not a Show-labeled button pair");
+assert.match(app, /Unread only<\/label>/, "Inbox can narrow every selected tab to unread entries");
+assert.match(app, /FILTER_ACTIVE\[entry\.id\]/, "each Inbox tab carries its semantic color when active");
+assert.match(app, /FILTER_DOT\[entry\.id\]/, "each Inbox tab names its kind with a status dot");
+assert.doesNotMatch(app, />Show<\/span><button/, "no detached Show label explains the read filter");
 assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "question choices use visible, high-contrast selection controls");
 assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split question is host-enriched in English before it reaches the user");
 assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");

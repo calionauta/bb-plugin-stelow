@@ -56,6 +56,7 @@ import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
 import { detectedTestCommand, verificationReadiness } from "./lib/audit-verification.mjs";
+import { stalenessOf } from "./lib/question-staleness.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -376,8 +377,8 @@ export const rpcContract = defineRpcContract({
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
-      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiresAt: z.number().nullable() })),
-      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiredAt: z.number() })),
+      pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiresAt: z.number().nullable(), staleness: z.object({ docRevised: z.boolean(), docRemoved: z.boolean(), checkoutMoved: z.boolean(), commitCount: z.number(), touchedPaths: z.array(z.string()) }).nullable().optional() })),
+      expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiredAt: z.number(), staleness: z.object({ docRevised: z.boolean(), docRemoved: z.boolean(), checkoutMoved: z.boolean(), commitCount: z.number(), touchedPaths: z.array(z.string()) }).nullable().optional() })),
       // Dumb-UI split flag: the card reads show/ok/reason, never
       // re-implements stage rules (single source: lib/split-proposal).
       splitAction: z.object({ show: z.boolean(), ok: z.boolean(), reason: z.string().nullable() }),
@@ -1278,6 +1279,20 @@ export default async function plugin(bb: BbPluginApi) {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
   db.exec("CREATE INDEX IF NOT EXISTS idx_verification_runs_card ON verification_runs(card_id, created_at DESC)");
+  // Ask-time evidence for staleness notices: what each questioned document
+  // contained and where its checkout stood when the question was asked.
+  // Keyed by (card, artifact path), latest wins — re-asking about a revised
+  // document re-baselines it. Advisory only: readers compare, never block.
+  db.exec(`CREATE TABLE IF NOT EXISTS question_evidence (
+    card_id TEXT NOT NULL,
+    artifact_path TEXT NOT NULL,
+    artifact_sha256 TEXT NOT NULL,
+    git_root TEXT,
+    head_sha TEXT,
+    asked_at INTEGER NOT NULL,
+    PRIMARY KEY (card_id, artifact_path),
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  )`);
   if (!cardColumns.some((column) => column.name === "split_from")) {
     db.exec("ALTER TABLE cards ADD COLUMN split_from TEXT");
   }
@@ -2067,14 +2082,127 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
 
   type RecoveryGitEvidence = { isGit: boolean; gitRoot: string | null; branch: string | null; headSha: string | null; changedFiles: number };
-  async function recoveryGitEvidence(path: string): Promise<RecoveryGitEvidence> {
-    const runGit = (args: string[]) => new Promise<{ ok: boolean; stdout: string }>((done) => {
-      execFile("git", args, { cwd: path, timeout: 15_000, maxBuffer: 1024 * 1024 }, (error, stdout) => done({ ok: !error, stdout: typeof stdout === "string" ? stdout : "" }));
+  type QuestionStalenessVerdict = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
+  // Read-time staleness for a card's open questions: each questioned document
+  // against its ask-time baseline, plus the touched-paths evidence behind a
+  // moved checkout. Advisory only — every question stays answerable.
+  async function stalenessForQuestions(
+    cardId: string,
+    questions: Array<{ id: string; options: Array<{ artifact: { absolutePath: string | null } | null }> }>,
+  ): Promise<Map<string, QuestionStalenessVerdict>> {
+    const out = new Map<string, QuestionStalenessVerdict>();
+    try {
+      const rows = db.prepare("SELECT artifact_path, artifact_sha256, git_root, head_sha FROM question_evidence WHERE card_id = ?").all(cardId) as Array<{ artifact_path: string; artifact_sha256: string; git_root: string | null; head_sha: string | null }>;
+      if (rows.length === 0) return out;
+      const byPath = new Map(rows.map((row) => [row.artifact_path, row]));
+      const heads = new Map<string, string | null>();
+      const touchedByMove = new Map<string, { commitCount: number; paths: string[] }>();
+      const headFor = async (gitRoot: string): Promise<string | null> => {
+        if (!heads.has(gitRoot)) {
+          const current = await recoveryGitEvidence(gitRoot).catch(() => null);
+          heads.set(gitRoot, current?.headSha ?? null);
+        }
+        return heads.get(gitRoot) ?? null;
+      };
+      for (const question of questions) {
+        const flags = { docRevised: false, docRemoved: false, checkoutMoved: false };
+        let detail = { commitCount: 0, paths: [] as string[] };
+        for (const option of question.options ?? []) {
+          const absolute = option?.artifact?.absolutePath;
+          if (!absolute) continue;
+          const row = byPath.get(absolute);
+          if (!row) continue;
+          const sha = await sha256OfHostFile(absolute);
+          const head = row.git_root ? await headFor(row.git_root) : null;
+          const single: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean } | null = stalenessOf(
+            { artifactSha256: row.artifact_sha256, gitRoot: row.git_root, headSha: row.head_sha },
+            { sha256: sha, headSha: head },
+          );
+          if (!single) continue;
+          if (single.docRevised) flags.docRevised = true;
+          if (single.docRemoved) flags.docRemoved = true;
+          if (single.checkoutMoved) flags.checkoutMoved = true;
+          if (single.checkoutMoved && row.git_root && row.head_sha && detail.paths.length === 0) {
+            const key = `${row.git_root} ${row.head_sha}`;
+            if (!touchedByMove.has(key)) touchedByMove.set(key, await gitTouchedSince(row.git_root, row.head_sha));
+            detail = touchedByMove.get(key)!;
+          }
+        }
+        if (flags.docRevised || flags.docRemoved || flags.checkoutMoved) {
+          out.set(question.id, { ...flags, commitCount: detail.commitCount, touchedPaths: detail.paths });
+        }
+      }
+    } catch { /* advisory only */ }
+    return out;
+  }
+  function runGitIn(cwd: string, args: string[], maxBuffer = 1024 * 1024): Promise<{ ok: boolean; stdout: string }> {
+    return new Promise((done) => {
+      execFile("git", args, { cwd, timeout: 15_000, maxBuffer }, (error, stdout) => done({ ok: !error, stdout: typeof stdout === "string" ? stdout : "" }));
     });
-    const root = await runGit(["rev-parse", "--show-toplevel"]);
+  }
+  async function recoveryGitEvidence(path: string): Promise<RecoveryGitEvidence> {
+    const root = await runGitIn(path, ["rev-parse", "--show-toplevel"]);
     if (!root.ok || !root.stdout.trim()) return { isGit: false, gitRoot: null, branch: null, headSha: null, changedFiles: 0 };
-    const [branch, head, status] = await Promise.all([runGit(["branch", "--show-current"]), runGit(["rev-parse", "HEAD"]), runGit(["status", "--porcelain=v1", "--untracked-files=all"])]);
+    const [branch, head, status] = await Promise.all([runGitIn(path, ["branch", "--show-current"]), runGitIn(path, ["rev-parse", "HEAD"]), runGitIn(path, ["status", "--porcelain=v1", "--untracked-files=all"])]);
     return { isGit: true, gitRoot: root.stdout.trim(), branch: branch.ok ? branch.stdout.trim() || null : null, headSha: head.ok ? head.stdout.trim() || null : null, changedFiles: status.ok ? status.stdout.split("\n").filter(Boolean).length : 0 };
+  }
+
+  // Stelow's own machinery never makes a plan stale: filter it from the
+  // touched-paths a staleness notice names.
+  const STALENESS_NOISE_PREFIXES = ["skills/", "data/", ".stelow/", "stelow.json"];
+  // Files a checkout gained since an ask-time HEAD: what the human needs to
+  // judge whether a waiting question's plan still matches the code.
+  // Fail-soft — staleness is advisory, and an unreadable history must never
+  // break cardDetail.
+  async function gitTouchedSince(gitRoot: string, fromHead: string): Promise<{ commitCount: number; paths: string[] }> {
+    const empty = { commitCount: 0, paths: [] as string[] };
+    try {
+      const [count, log] = await Promise.all([
+        runGitIn(gitRoot, ["rev-list", "--count", `${fromHead}..HEAD`]),
+        runGitIn(gitRoot, ["log", "--name-only", "--pretty=format:", `${fromHead}..HEAD`, "--"], 4 * 1024 * 1024),
+      ]);
+      if (!count.ok || !log.ok) return empty;
+      const seen = new Set<string>();
+      for (const line of log.stdout.split("\n")) {
+        const path = line.trim();
+        if (!path || seen.has(path) || STALENESS_NOISE_PREFIXES.some((prefix) => path === prefix || path.startsWith(prefix))) continue;
+        seen.add(path);
+      }
+      return { commitCount: Number(count.stdout.trim()) || 0, paths: [...seen].slice(0, 6) };
+    } catch { return empty; }
+  }
+
+  async function sha256OfHostFile(path: string): Promise<string | null> {
+    try {
+      const file = await bb.sdk.files.read({ path }).catch(() => null) as { content?: unknown } | null;
+      if (!file || typeof file.content !== "string") return null;
+      return createHash("sha256").update(file.content, "utf8").digest("hex");
+    } catch { return null; }
+  }
+
+  // Ask-time evidence baseline for staleness notices. Advisory and fail-soft:
+  // a question must never fail because its baseline could not be recorded.
+  // Keyed by (card, artifact path), latest wins — re-asking about a revised
+  // document re-baselines it.
+  async function snapshotQuestionEvidence(cardId: string, optionArtifacts: Array<{ artifact: { path: string } | null }>): Promise<void> {
+    try {
+      const card = getCard(cardId);
+      if (!card) return;
+      const resolved = await resolveAskOptions(card, optionArtifacts.map((entry) => ({ label: "", description: "", preview: null as string | null, artifact: entry.artifact })));
+      const seen = new Set<string>();
+      const workspace = await cardWorkspace(card).catch(() => null);
+      const git = workspace?.path ? await recoveryGitEvidence(workspace.path).catch(() => null) : null;
+      const askedAt = now();
+      for (const option of resolved) {
+        const absolute = option.artifact?.absolutePath;
+        if (!absolute || seen.has(absolute)) continue;
+        seen.add(absolute);
+        const sha = await sha256OfHostFile(absolute);
+        if (!sha) continue;
+        db.prepare("INSERT OR REPLACE INTO question_evidence (card_id, artifact_path, artifact_sha256, git_root, head_sha, asked_at) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(cardId, absolute, sha, git?.gitRoot ?? null, git?.headSha ?? null, askedAt);
+      }
+    } catch { /* advisory only */ }
   }
 
   function testCommandForCheckout(path: string) {
@@ -3997,14 +4125,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         openProposal: Boolean(splitOpen),
         openQuestions: pending.length + expiredQuestions.length,
       });
+      // Staleness notices, computed on read: each questioned document against
+      // its ask-time baseline. Advisory only — questions stay answerable.
+      const questionStaleness = await stalenessForQuestions(cardId, [...pending, ...expiredQuestions]);
+      const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
+        questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
         card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
-        pendingQuestions: pending,
-        expiredQuestions,
+        pendingQuestions: withStaleness(pending),
+        expiredQuestions: withStaleness(expiredQuestions),
         splitAction,
         stageSkips,
         artifacts,
@@ -5464,6 +5597,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           }
         }
         updateCard(cardRow.id, { activity: "awaiting-answer" });
+        // Baseline the questioned documents for staleness notices: what each
+        // file contains and where its checkout stands, right now, before the
+        // blocking wait begins. Advisory and fail-soft — never blocks asking.
+        void snapshotQuestionEvidence(cardRow.id, groups.flatMap((group) => group.options));
         let result: Awaited<ReturnType<typeof bb.ui.requestInput>>;
         let requestFailed = false;
         const askedAt = Date.now();

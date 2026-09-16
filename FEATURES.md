@@ -210,6 +210,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   where observed; legacy rows keep the generic kind label).
   The badge counts the same unresolved actions shown by **Needs attention**;
   completions remain available in All without presenting themselves as work.
+  The toolbar is one row: four tabs with semantic status dots (amber waits,
+  emerald resolved, zinc archived, primary all) and a single Unread-only
+  checkbox — no detached Show label.
 - **Question recovery.** A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
@@ -544,6 +547,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   else. Per-option evidence opens inside the option row as the shared
   outline button (Open document, same viewer, never a hand-rolled color
   beside the amber panel); the inline glance expands below.
+- **Stale-question notices** (`bb stelow ask` snapshots, `lib/question-staleness.mjs`).
+  Asking records what each questioned document contained and where its
+  checkout stood (doc hash + Git HEAD, latest wins per card and path).
+  Every card read compares open questions against their baseline: a revised
+  or removed document, or a checkout that moved (with the touched paths),
+  raises an amber notice naming what changed and pointing at the existing
+  exits — re-open the doc, request changes, regress the stage. Advisory
+  only: questions stay answerable, nothing auto-replans.
 - **Deferred start on every track.** Build, research, and explore
   creation all offer Start immediately (checked): unchecked parks the
   card in the Inbox with no worker — no run, no burn, no badge. Parked

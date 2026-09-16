@@ -512,6 +512,16 @@ function InboxPanel() {
     { id: "archived", label: "Archived", description: "Archived updates. Restore an item to return it to history." },
     { id: "all", label: "All", description: "All active Inbox updates, newest first." },
   ];
+  // One semantic color per tab, from the same status vocabulary the cards
+  // use (amber waits, emerald resolved, zinc archived, primary current):
+  // the dot names the kind at a glance, the active tint only confirms it.
+  const FILTER_DOT: Record<string, string> = { attention: "bg-amber-500", resolved: "bg-emerald-500", archived: "bg-zinc-500", all: "bg-primary" };
+  const FILTER_ACTIVE: Record<string, string> = {
+    attention: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+    resolved: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+    archived: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
+    all: "bg-primary/15 text-primary",
+  };
   const selected = filters.find((entry) => entry.id === filter)!;
   // No blank on reload: first mount skeletons, later polls keep stale
   // content with a quiet updating hint instead of flashing.
@@ -519,7 +529,7 @@ function InboxPanel() {
   const fatalError = loadError && notifications.length === 0;
   const emptyTitle = unreadOnly ? "No unread updates" : filter === "attention" ? "All clear" : `No ${selected.label.toLowerCase()} updates`;
   const emptyDescription = unreadOnly ? "Everything in this view has been read." : filter === "attention" ? "Stelow will surface work only when it needs you." : selected.description;
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} className={`cursor-pointer min-h-11 shrink-0 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>{entry.label}</button>)}</div><div className="flex min-h-11 items-center gap-2" aria-label="Read state"><span className="text-xs font-medium text-muted-foreground">Show</span><button onClick={() => setUnreadOnly(false)} aria-pressed={!unreadOnly} className={`cursor-pointer min-h-11 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${!unreadOnly ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}>All updates</button><button onClick={() => setUnreadOnly(true)} aria-pressed={unreadOnly} className={`cursor-pointer min-h-11 rounded-md px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${unreadOnly ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}>Unread only</button></div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{emptyTitle}</h2><p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p></section>}</div></div>;
+  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} title={entry.description} className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? FILTER_ACTIVE[entry.id] ?? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}><span aria-hidden className={`size-1.5 rounded-full ${FILTER_DOT[entry.id] ?? "bg-primary"}`} />{entry.label}</button>)}</div><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={unreadOnly} onChange={(event) => setUnreadOnly(event.target.checked)} className="size-4 accent-primary" />Unread only</label></div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{emptyTitle}</h2><p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p></section>}</div></div>;
 }
 
 function composerExecutionOf(request: NewThreadRequest) {
@@ -3078,7 +3088,8 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
 
 type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
 type ArtifactViewerMode = "review" | "comment";
-type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> };
+type QuestionStalenessNotice = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
+type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; staleness?: QuestionStalenessNotice | null };
 
 function artifactViewerModeForOption(label: string): ArtifactViewerMode {
   // An approval is a decision after reading, not a request to alter the
@@ -3104,7 +3115,27 @@ function OptionPreview({ preview }: { preview: string | null }) {
   );
 }
 
-// One sitting for every pending question: stepper with counter, per-question
+// Advisory only: names what moved since a question was asked — a revised or
+// removed document, a moved checkout with the touched paths — and points at
+// the existing exits (re-open the doc, request changes, regress the stage).
+// It never blocks answering and adds no new actions of its own.
+function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) {
+  if (!staleness.docRevised && !staleness.docRemoved && !staleness.checkoutMoved) return null;
+  return (
+    <div className="rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-xs leading-relaxed text-amber-900 dark:text-amber-200" role="note" aria-label="Evidence changed since asked">
+      <p className="font-semibold">Something changed since this question was asked</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+        {staleness.docRevised ? <li>A linked document was revised — open the current version from the options below before answering.</li> : null}
+        {staleness.docRemoved ? <li>A linked document can no longer be opened at its recorded path.</li> : null}
+        {staleness.checkoutMoved ? <li>{staleness.commitCount > 0
+          ? `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed since${staleness.touchedPaths.length > 0 ? `, touching ${staleness.touchedPaths.join(", ")}` : ""}. The plan may assume code that changed.`
+          : "The checkout moved since this question was asked. The plan may assume code that changed."}</li> : null}
+      </ul>
+      <p className="mt-1 text-amber-900/70 dark:text-amber-200/70">If the plan no longer matches the code, request changes or return it to an earlier stage from Workflow progress.</p>
+    </div>
+  );
+}
+
 // radio (single) / checkbox (multi) options plus a free-text "Other", explicit
 // skip, and a single atomic submit — one worker resume, one inbox resolution.
 function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHeading = true, onSubmit, onOpenArtifact }: {
@@ -3198,6 +3229,7 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
           ) : null}
           {current.title ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div> : null}
           {prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{prompt}</p> : null}
+          {current.staleness ? <StalenessNotice staleness={current.staleness} /> : null}
           {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">Choose deliveries or <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> — not both.</p> : null}
           <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
             {current.options.map((option) => {
@@ -3324,7 +3356,7 @@ function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact
         <QuestionBatch
           cardId={cardId}
           mode="expired"
-          questions={questions.map((q) => ({ id: q.id, title: "", prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options }))}
+          questions={questions.map((q) => ({ id: q.id, title: "", prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null }))}
           onAnswered={onAnswered}
           onOpenArtifact={onOpenArtifact}
         />
@@ -4827,7 +4859,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
                   </div>
                 ) : null}
                 {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => { onChanged(); void loadIndex(); }} /></div> : null}
@@ -5093,7 +5125,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => onChanged()} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={() => onChanged()} />
                   </div>
                 ) : null}
                 {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => onChanged()} /></div> : null}
@@ -5699,7 +5731,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </div>
                 {pendingFirst ? (
                   <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options })) ?? []} onAnswered={() => void load()} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
+                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={() => void load()} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
                   </div>
                 ) : null}
                 {detail?.splitAction?.show ? (
