@@ -8,6 +8,16 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.39] - 2026-09-16
+
+### Fixed
+
+- **The hero Review entry opens the document under decision.** It now prefers
+  the pending question's own option artifact over a manifest stage guess, so
+  a card waiting on tech-plan approval no longer offers the testing strategy
+  when two planning documents exist. The button also names the document
+  (`Review spec-tech_v1 ↗`) instead of a generic label.
+
 ## [0.18.38] - 2026-09-15
 
 ### Added
