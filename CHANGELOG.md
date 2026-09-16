@@ -8,6 +8,21 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.46] - 2026-09-16
+
+### Added
+
+- **Portable deterministic audit receipt.** Build completion now invokes the
+  vendored Stelow helper's `audit-trail build` and `audit-trail check` after
+  bb's checkout-bound `audit.md` gate. The generated receipt is the same
+  cross-host contract, not a plugin-specific audit format.
+
+### Changed
+
+- **Vendored Stelow core refreshed to 0.59.5-alpha.** Includes deterministic
+  audit-trail evidence hashes, mandatory final-audit generation, and removal
+  of retired host-integration residue.
+
 ## [0.18.45] - 2026-09-16
 
 ### Fixed
