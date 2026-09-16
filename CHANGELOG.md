@@ -8,6 +8,16 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.40] - 2026-09-16
+
+### Fixed
+
+- **The DB stage converges to the state.md checkpoint on every sync.** Cards
+  parked on a question or idle no longer render the last manually-advanced
+  stage while the timeline, preset band, split eligibility, and hero read the
+  DB value. The convergence write carries stage only; status, columns, and
+  the activity-only question-wait contract are untouched.
+
 ## [0.18.39] - 2026-09-16
 
 ### Fixed
