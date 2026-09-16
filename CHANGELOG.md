@@ -8,6 +8,13 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.45] - 2026-09-16
+
+### Fixed
+
+- **The parked hero claims no checkpoint either.** Unstarted cards read
+  Not started in the hero, matching their pills and the parked copy.
+
 ## [0.18.44] - 2026-09-16
 
 ### Fixed
