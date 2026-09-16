@@ -39,7 +39,7 @@ import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-pol
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
-import { ActivityPill, BuildStatusPills, Pill } from "./components/dashboard/build-status-pills";
+import { ActivityPill, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, Pill } from "./components/dashboard/build-status-pills";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -2638,7 +2638,7 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, skips, off
                       onClick={() => onPick(stage)}
                       className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
                       isCurrent
-                        ? "bg-primary/15 text-primary ring-2 ring-primary/60 stelow-stage-pulse"
+                        ? CURRENT_STAGE_PILL_CLASS
                         : passed
                         ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
                         : skipReason ?? isOffRoute
@@ -3825,7 +3825,7 @@ function DisclosureChevron({ className = "", open }: { className?: string; open?
   return <span aria-hidden className={`inline-flex size-5 shrink-0 items-center justify-center text-sm leading-none text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${rotation} ${className}`}>▶</span>;
 }
 
-function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
+function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: string; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
   return (
     <details
@@ -4540,8 +4540,8 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
   );
 }
 
-function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen = false }: {
-  comments: CardDetailResponse["comments"]; draft: string; onDraftChange: (value: string) => void; onSend: () => void; defaultOpen?: boolean;
+function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen = false, threadId }: {
+  comments: CardDetailResponse["comments"]; draft: string; onDraftChange: (value: string) => void; onSend: () => void; defaultOpen?: boolean; threadId?: string | null;
 }) {
   return (
     <CardDisclosure
@@ -4549,22 +4549,32 @@ function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen 
       hint={comments.length ? `${comments.length}` : "talk to the agent"}
       defaultOpen={defaultOpen}
     >
-      <div className="divide-y divide-border">
-        {comments.length ? comments.map((entry) => (
-          <div key={entry.id} className="py-2 first:pt-0 last:pb-0">
-            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <Pill tone={entry.author === "agent" ? "bg-primary/15 text-primary" : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"}>{entry.author}</Pill>
-              <span>{new Date(entry.createdAt).toLocaleString()}</span>
+      <div className="space-y-2">
+        {comments.length ? comments.map((entry) => {
+          const mine = entry.author !== "agent";
+          return (
+            <div key={entry.id} className={`rounded-lg border p-2.5 ${mine ? "border-primary/25 bg-primary/5" : "border-border bg-muted/30"}`}>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${mine ? "bg-primary" : "bg-muted-foreground"}`} />
+                <span className="font-medium text-foreground">{mine ? "You" : "Agent"}</span>
+                <span title={new Date(entry.createdAt).toLocaleString()}>{new Date(entry.createdAt).toLocaleString()}</span>
+              </div>
+              <div className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></div>
             </div>
-            <p className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></p>
-          </div>
-        )) : <p className="text-xs text-muted-foreground">No comments yet — send the first note to the agent below.</p>}
+          );
+        }) : <p className="text-xs text-muted-foreground">No comments yet — send the first note to the agent below.</p>}
       </div>
       <label className="block space-y-1">
         <span className="text-xs font-medium text-muted-foreground">Write to the agent</span>
         <textarea value={draft} onChange={(event) => onDraftChange(event.target.value)} rows={3} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Ask, correct, or add context... (Cmd/Ctrl+Enter to send)" onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && draft.trim()) onSend(); }} />
       </label>
-      <div className="flex justify-end"><Button disabled={!draft.trim()} onClick={() => onSend()}>Send to agent</Button></div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] text-muted-foreground">⌘/Ctrl + Enter sends · attachments and @mentions live in the worker thread</span>
+        <span className="ml-auto inline-flex items-center gap-2">
+          {threadId ? <OpenThreadButton threadId={threadId} /> : null}
+          <Button disabled={!draft.trim()} onClick={() => onSend()}>Send to agent</Button>
+        </span>
+      </div>
     </CardDisclosure>
   );
 }
@@ -4882,7 +4892,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
               />
             </CardDisclosure>
 
-            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
+            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
 
           </>
         ) : null}
@@ -5119,7 +5129,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
 
-            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
+            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
 
           </>
         ) : null}
@@ -5748,7 +5758,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             <CardDisclosure
               title={archivedPresentation?.workflow.title ?? "Workflow progress"}
               subtitle={archivedPresentation ? undefined : "where this card is"}
-              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : card?.status === "completed" ? undefined : stageLabel(card.stage))}
+              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : card?.status === "completed" ? undefined : <CurrentStagePill stage={card.stage} />)}
               // Production rides the action slot (count + the single way to the
               // files) so no fact is printed twice once the section is open.
               action={artifactTotal > 0 ? (
@@ -6048,7 +6058,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             ) : null}
 
             {/* Conversation (history + composer) */}
-            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} />
+            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
 
           </>
         ) : null}

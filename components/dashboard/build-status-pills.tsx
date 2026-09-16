@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Icon, type IconName } from "@/components/ui/icon";
 import { stageLabel } from "../../lib/workflow-vocabulary.mjs";
 
 export type CardActivity = "idle" | "running" | "awaiting-answer" | "error" | string;
@@ -10,9 +11,32 @@ type BuildCardState = {
   activity: CardActivity;
 };
 
-export function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title }: { children: ReactNode; tone?: string; className?: string; title?: string }) {
-  return <span title={title} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
+export function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title, icon }: { children: ReactNode; tone?: string; className?: string; title?: string; icon?: ReactNode }) {
+  return <span title={title} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{icon ? <span aria-hidden className="inline-flex">{icon}</span> : null}{children}</span>;
 }
+
+// The live checkpoint treatment, shared by the timeline cursor and the
+// Workflow progress header: one pulsing shape for "where this card is".
+export const CURRENT_STAGE_PILL_CLASS = "bg-primary/15 text-primary ring-2 ring-primary/60 stelow-stage-pulse";
+
+export function CurrentStagePill({ stage }: { stage: string }) {
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${CURRENT_STAGE_PILL_CLASS}`} title="Current workflow checkpoint.">
+    <span aria-hidden>●</span>
+    {stageLabel(stage)}
+  </span>;
+}
+
+// One representative glyph per chip kind, so a stage never reads as a type
+// and a type never reads as a stage — on Kanban tiles and open cards alike.
+const STAGE_ICON: IconName = "Layers";
+const INTENT_ICON: Record<string, IconName> = {
+  "new-product": "Rocket",
+  feature: "Puzzle",
+  bugfix: "Bug",
+  refactor: "Code",
+  investigate: "Search",
+  unknown: "CircleDashed",
+};
 
 const ACTIVITY_PILL_CLASS: Record<string, string> = {
   running: "stelow-activity-working",
@@ -46,8 +70,8 @@ export function BuildStatusPills({ card, statusTone, intentLabel }: {
   intentLabel: (intent: string) => string | undefined;
 }) {
   return <>
-    <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at.">{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
-    {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage.">{intentLabel(card.intent) ?? card.intent}</Pill> : null}
+    <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at." icon={<Icon name={STAGE_ICON} className="size-3" aria-hidden />}>{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
+    {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage." icon={<Icon name={INTENT_ICON[card.intent] ?? "CircleDashed"} className="size-3" aria-hidden />}>{intentLabel(card.intent) ?? card.intent}</Pill> : null}
     {card.activity === "awaiting-answer" ? <ActivityPill activity={card.activity} /> : null}
   </>;
 }

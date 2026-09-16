@@ -119,7 +119,7 @@ assert.match(app, /exploreListGroups: "stelow-explore-list-groups-collapsed-v1"/
 assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
 assert.match(app, /aria-expanded=\{!isCollapsed\}/, "list group toggles expose expansion state");
 assert.match(app, /card\?\.status === "completed" \? "Completed without scoped execution\."/, "completed cards never claim shaping is in progress");
-assert.match(app, /card\?\.status === "completed" \? undefined : stageLabel\(card\.stage\)/, "completed cards carry no stale stage hint");
+assert.match(app, /card\?\.status === "completed" \? undefined : <CurrentStagePill stage=\{card\.stage\} \/>\)\}/, "completed cards carry no stale stage hint");
 assert.match(app, /Completed · \{completedWorkerPreset\}/, "completed cards show the recorded worker preset instead of a future phase");
 assert.match(app, /Preset recorded for the completed worker\./, "completed cards do not claim a preset applies to another worker");
 assert.match(app, /card\.status === "completed" \? "Completed" : stageLabel\(card\.stage\)/, "completed list rows do not present Audit as active work");
@@ -180,6 +180,12 @@ assert.match(app, /card\.activity === "running"\) return "stelow-border-running"
 assert.match(boardCard, /liveBorderClass\(card\)/, "a Build card needing attention uses its shared live attention border");
 assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
 assert.match(buildStatusPills, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
+assert.match(buildStatusPills, /icon=\{<Icon name=\{STAGE_ICON\}/, "the stage chip carries its kind icon");
+assert.match(buildStatusPills, /icon=\{<Icon name=\{INTENT_ICON\[card\.intent\]/, "the workflow-type chip carries its kind icon");
+assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the live checkpoint treatment has one definition");
+assert.match(buildStatusPills, /export function CurrentStagePill/, "the progress header reuses the timeline's checkpoint pill");
+assert.match(app, /\? CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");
+assert.match(app, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress header names the checkpoint with the pulsing pill, never detached plain text");
 assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
 assert.match(app, /Answering below resumes the worker\./, "the concurrent-error note points at the open question as the recovery path");
 assert.match(app, /Retry the failed worker in place instead of answering/, "the open card offers retry beside the question when both are live");
@@ -256,6 +262,9 @@ assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecovery
 assert.match(app, /function DisclosureSection\(\{ title, subtitle, hint/, "a section can name its job on its own line");
 assert.match(app, /title=\{archivedPresentation\?\.workflow\.title \?\? "Workflow progress"\}/, "the live progress section is named for the workflow, matching the map's family");
 assert.match(app, /subtitle=\{archivedPresentation \? undefined : "where this card is"\}/, "the progress subtitle is the counterpart to the map's What each stage does");
+assert.match(app, /hint\?: React\.ReactNode/, "disclosure hints accept live pills as well as plain text");
+assert.match(app, /attachments and @mentions live in the worker thread/, "the composer names where native attachments and mentions live");
+assert.match(app, /threadId=\{card\?\.workerThreadId \?\? null\} \/>/, "every track's conversation offers its live worker thread beside Send");
 assert.doesNotMatch(app, /onShowArtifacts/, "the per-stage document buttons are gone; files and navigation never share one shape");
 assert.doesNotMatch(app, /workflow\.progressTitle/, "the progress block no longer repeats the disclosure title it sits under");
 assert.doesNotMatch(app, /Agent advances alone/, "the override coaching stops being permanent chrome");
