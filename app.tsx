@@ -4242,6 +4242,15 @@ function heroFor(card: CardItem, detail: CardDetailResponse | null): { kind: Her
   }
   // A completed research index is represented by the Done column, not a
   // separate review state. Keep the hero calm and let the board carry status.
+  // A parked card names no checkpoint either: without a worker nothing has
+  // started, whatever the seeded stage says.
+  if (card.workerThreadId == null) {
+    return {
+      kind: "calm",
+      title: "Not started",
+      sub: "Parked in Inbox. Nothing runs until you start it.",
+    };
+  }
   return {
     kind: "calm",
     title: `At ${stageLabel(card.stage)} — nothing needs you`,
