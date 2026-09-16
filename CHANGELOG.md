@@ -8,6 +8,32 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.38] - 2026-09-15
+
+### Added
+
+- **Recovery audits are now real Build cards.** An attached legacy checkout
+  creates one idempotent recovery-audit card in its registered project. The
+  original exploratory card remains an immutable mismatch record; the audit
+  card has the normal workspace, test, commit, and pull-request flow.
+- **Build completion has host-recorded test evidence.** `bb stelow verify
+  --tests` selects only a safe conventional project test command, runs it
+  without a shell, and records its command, result digest, Git root, and
+  HEAD. `done` refuses a stale, failed, or merely claimed test result.
+- **Loose recovery evidence is visible.** Worker-reported folders and
+  patch/diff/bundle paths are retained for review, never silently copied or
+  applied to a project.
+
+### Changed
+
+- **Build state presentation is a shared component.** Kanban tiles and the
+  open-card header use the same stage → type → waiting-for-you order. A
+  waiting tag has a dashed amber live pulse; active work has no redundant
+  tag and instead gives both the closed and open card a blue live border.
+- **Server cleanup now maintains Stelow's managed-plugin cache.** It proves
+  the active SHA, keeps it and exactly one rollback cache, and removes only
+  older content-addressed Stelow cache entries.
+
 ## [0.18.37] - 2026-09-15
 
 ### Fixed
