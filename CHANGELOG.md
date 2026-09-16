@@ -6,13 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
-## [Unreleased]
+## [0.20.0] - 2026-09-16
 
 ### Changed
 
 - **Native plugin updates.** Stelow now asks BB for the installed plugin's
   compatible update status and applies an available update only after explicit
   confirmation in About; the sidebar shows a separate update indicator.
+
+### Fixed
+
+- **Fresh update status.** About and the sidebar now await BB's update check
+  for their initial read, so a fast panel mount cannot remain on a stale
+  "checking" value.
 
 ## [0.19.1] - 2026-09-16
 

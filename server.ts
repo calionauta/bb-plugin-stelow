@@ -5360,6 +5360,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async buildInfo() {
+      // The About panel and sidebar each issue one read on mount.  Do the
+      // lightweight BB-owned check as part of that read, rather than handing
+      // them an initial "checking" cache value that has no later push event.
+      // refreshPluginUpdate is fail-soft, so this never makes the panel fail.
+      await refreshPluginUpdate();
       let skills: string[] = [];
       try {
         skills = readdirSync(PLUGIN_SKILLS_DIR, { withFileTypes: true })

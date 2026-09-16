@@ -1779,6 +1779,7 @@ function AboutPanel() {
                     </button>
                   </p>
                   {buildInfo.pluginUpdate.outcome === "update-available" ? <p className="text-amber-700 dark:text-amber-300">Plugin {buildInfo.pluginUpdate.candidate} is available through BB.</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "checking" ? <p>Checking BB for a compatible plugin update…</p> : null}
                   {buildInfo.pluginUpdate.outcome === "current" ? <p>BB confirms this plugin is current.</p> : null}
                   {buildInfo.pluginUpdate.outcome === "pinned" || buildInfo.pluginUpdate.outcome === "incompatible" ? <p>{buildInfo.pluginUpdate.detail ?? "BB cannot apply an update for this installation."}</p> : null}
                   {buildInfo.pluginUpdate.outcome === "unavailable" ? <p>BB could not check for a plugin update.</p> : null}

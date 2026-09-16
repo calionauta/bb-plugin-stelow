@@ -52,6 +52,7 @@ assert.match(syncLib, /readPinnedStelowSource/, "release sync reads a pinned sou
 assert.doesNotMatch(server, /syncHelperScript|syncWorkflowSkills|background\.schedule\("stelow-skills-sync"/, "runtime never mutates vendored Stelow behavior");
 assert.match(server, /bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the installed-plugin update check");
 assert.match(server, /bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the explicit update operation");
+assert.match(server, /async buildInfo\(\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*await refreshPluginUpdate\(\);/, "each UI read obtains a fresh BB-owned update status");
 assert.match(app, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
 assert.match(app, /Update plugin…/, "About offers an explicit, confirmed plugin update");
 assert.match(app, /Stelow plugin update available/, "sidebar exposes a separate update indicator");

@@ -192,7 +192,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   side (`buildInfo` carries both; the upstream version syncs with the
   skills). The Stelow section opens with the identity mark, served lazily
   as a data URI over the `aboutLogo` RPC (bb serves only built bundles,
-  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product), checks GitHub releases read-only, and names a safe update path without mutating a running workflow. It also offers Reset onboarding (two-step
+  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product), asks BB for the installed plugin's compatible update status, and offers an explicit confirmation before BB applies it. A separate sidebar indicator announces availability; neither path mutates a running workflow before that confirmation. It also offers Reset onboarding (two-step
   confirm) to replay the first-visit setup dialogs. Work tracks describe
   themselves; product identity lives in exactly one place, never next
   to the wrong version.
