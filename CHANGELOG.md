@@ -8,6 +8,20 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.44] - 2026-09-16
+
+### Fixed
+
+- **Parked Inbox cards claim no stage.** Build tiles and open headers read
+  Not started until a worker exists — the triage checkpoint is no longer
+  shown for work that never began.
+- **No split trigger without a worker.** Propose split hides on parked
+  cards (there is no triage worker to propose from); the trigger RPC
+  refuses threadless cards as a backstop.
+- **Inbox exits spawn with creation-time choices.** Leaving the Inbox on
+  any track starts through the shared starter, which resolves the pinned
+  preset override (provider/model) and the card's own project workspace.
+
 ## [0.18.43] - 2026-09-16
 
 ### Added
