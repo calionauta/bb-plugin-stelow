@@ -8,6 +8,24 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.43] - 2026-09-16
+
+### Added
+
+- **Stale-question notices.** Asking snapshots each questioned document
+  (content hash) and its checkout (Git HEAD). Every card read compares open
+  questions against their baseline and names what moved — revised/removed
+  document, moved checkout with touched paths — pointing at the existing
+  exits (re-open the doc, request changes, regress the stage). Advisory
+  only: nothing auto-replans and every question stays answerable.
+
+### Fixed
+
+- **Inbox toolbar in the plugin's own language.** One row: four tabs with
+  semantic status dots (amber/emerald/zinc/primary, active tints to match)
+  plus a single Unread-only checkbox. The detached Show label and its
+  button pair are gone.
+
 ## [0.18.42] - 2026-09-16
 
 ### Fixed
