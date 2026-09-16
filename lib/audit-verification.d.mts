@@ -1,0 +1,2 @@
+export declare function detectedTestCommand(entries: unknown, packageJson?: unknown): { command: string; args: string[]; display: string } | null;
+export declare function verificationReadiness(run: { exit_code: number; git_root: string; head_sha: string; command?: string } | null | undefined, gitEvidence: { gitRoot?: string | null; headSha?: string | null } | null | undefined): { ready: true; error: null } | { ready: false; error: string };

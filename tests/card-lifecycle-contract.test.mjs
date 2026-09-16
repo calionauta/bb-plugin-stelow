@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const buildStatusPills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
   const start = server.indexOf(`    async ${name}(`);
@@ -89,7 +90,8 @@ assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.s
 assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: currentStage \}\)/, "a direct thread message reopens completed work through the same helper");
 assert.match(server, /async function recoveredCheckoutIntegrity\(/, "recovered checkouts have a dedicated integrity check before diffing");
 assert.match(server, /const recoveryError = await recoveredCheckoutIntegrity\(card, workspace\.path\)/, "recovered diffs fail closed when their attached Git root changes");
-assert.match(server, /auditReceiptReadiness\(receiptContent, stateBlob \? parseArtifactManifest\(stateBlob\) : \[\], checkout\?\.path \?\? null, gitEvidence\)/, "Build completion passes host-sampled Git evidence into receipt validation");
+assert.match(server, /verificationReadiness\(verificationRun, gitEvidence\)/, "Build completion requires a host-recorded test result at the current Git identity");
+assert.match(server, /auditReceiptReadiness\(receiptContent, stateBlob \? parseArtifactManifest\(stateBlob\) : \[\], checkout\?\.path \?\? null, gitEvidence, verificationRun\)/, "Build completion passes host-sampled Git and test evidence into receipt validation");
 
 // The single updateCard choke point strips resuscitations twice: against the
 // read-time snapshot and, for async callers whose write lands after Archive,
@@ -157,19 +159,19 @@ assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-vie
 assert.match(app, /function CardHeading\(/, "board tiles share a title-first card header");
 assert.match(app, /<h3 className="min-w-0 break-all text-sm font-semibold/, "card titles always use the whole available width and break rather than truncate");
 assert.doesNotMatch(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "a generic Status label does not duplicate the self-describing state pills");
-const buildStatusPills = appFunction("BuildStatusPills", "const ACTIVITY_PILL_CLASS");
-assert.match(buildStatusPills, /stageLabel\(card\.stage\)[\s\S]*Workflow stage[\s\S]*Workflow type/, "Build cards identify their specific workflow stage before their workflow type");
-assert.doesNotMatch(buildStatusPills, /ActivityPill|Board location|Lifecycle state/, "Build summaries do not duplicate column, lifecycle, or worker-state tags");
-assert.match(boardCard, /status=\{<BuildStatusPills card=\{card\} \/>\}/, "Kanban tiles use the shared Build state presentation");
-assert.match(header, /<BuildStatusPills card=\{card\} \/>/, "open Build cards use the same state presentation as Kanban tiles");
+assert.match(buildStatusPills, /Workflow stage[\s\S]*stageLabel\(card\.stage\)[\s\S]*Workflow type/, "Build cards identify their specific workflow stage before their workflow type");
+assert.match(buildStatusPills, /card\.activity === "awaiting-answer"[\s\S]*ActivityPill/, "Build summaries surface human waiting consistently");
+assert.doesNotMatch(buildStatusPills, /Board location|Lifecycle state/, "Build summaries do not duplicate column or lifecycle labels");
+assert.match(boardCard, /BuildStatusPills \{\.\.\.buildStatusPillProps\(card\)\}/, "Kanban tiles use the shared Build state presentation");
+assert.match(header, /BuildStatusPills \{\.\.\.buildStatusPillProps\(card\)\}/, "open Build cards use the same state presentation as Kanban tiles");
 assert.match(boardCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "build tiles offer heading recovery for idle stalls only, never for failures");
 assert.match(lightweightCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "research/explore tiles match: heading recovery is idle-only");
 assert.doesNotMatch(boardCard, /bg-destructive\/10/, "build tiles render no failure body — the open card explains");
 assert.doesNotMatch(lightweightCard, /bg-destructive\/10/, "research/explore tiles render no failure body either");
-assert.match(boardCard, /stelow-border-running/, "a running Build card uses its live border instead of a redundant In progress tag");
-assert.match(boardCard, /stelow-border-attention/, "a Build card needing attention uses its visual attention border instead of a redundant Waiting tag");
+assert.match(app, /card\.activity === "running"\) return "stelow-border-running"/, "a running Build card uses its live border instead of a redundant In progress tag");
+assert.match(boardCard, /liveBorderClass\(card\)/, "a Build card needing attention uses its shared live attention border");
 assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
-assert.match(app, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
+assert.match(buildStatusPills, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
 assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
 assert.match(app, /Answering below resumes the worker\./, "the concurrent-error note points at the open question as the recovery path");
 assert.match(app, /Retry the failed worker in place instead of answering/, "the open card offers retry beside the question when both are live");
@@ -238,7 +240,7 @@ assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how 
 const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
 assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
-assert.match(app, /Workflow stage — the specific checkpoint this card is at\./, "the first Build pill names the workflow checkpoint consistently");
+assert.match(buildStatusPills, /Workflow stage — the specific checkpoint this card is at\./, "the first Build pill names the workflow checkpoint consistently");
 assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecoveryCheckout/, "recovered exploratory cards use a host file target instead of a stale worker environment");
 // One progress section, one artifact home, one reference. The doc buttons that
 // duplicated Artifacts are gone, counts are counts, and the reference map is a

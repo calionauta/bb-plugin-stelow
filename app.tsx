@@ -39,6 +39,7 @@ import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-pol
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
+import { ActivityPill, BuildStatusPills, Pill } from "./components/dashboard/build-status-pills";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -233,14 +234,6 @@ type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknow
 type CardComment = CardDetailResponse["comments"][number];
 type ExpiredQuestion = CardDetailResponse["expiredQuestions"][number];
 
-function activityLabel(activity: CardItem["activity"]) {
-  if (activity === "idle") return "Paused";
-  if (activity === "running") return "Working";
-  if (activity === "awaiting-answer") return "Waiting for you";
-  if (activity === "error") return "Failed";
-  return activity;
-}
-
 function statusTone(status: string) {
   if (["completed", "done"].includes(status)) return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
   if (["in-progress", "approved"].includes(status)) return "bg-primary/15 text-primary";
@@ -261,54 +254,7 @@ function statusGlyph(status: string) {
   return "·";
 }
 
-function Pill({ children, tone = "bg-muted text-muted-foreground", className = "", title }: { children: React.ReactNode; tone?: string; className?: string; title?: string }) {
-  return <span title={title} className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${tone} ${className}`}>{children}</span>;
-}
-
-// One shared summary for an open Build card and its Kanban tile. The board
-// column is navigation context, not card identity: the specific workflow
-// checkpoint is what a person needs to recognize on either surface. Activity
-// deliberately stays out of this compact summary; the board's live border and
-// the detail hero communicate work/attention without competing state tags.
-function BuildStatusPills({ card }: { card: CardItem }) {
-  const stage = card.stage ? stageLabel(card.stage) : "Not started";
-  return (<>
-    <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at.">{stage}</Pill>
-    {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage.">{INTENT_LABEL[card.intent] ?? card.intent}</Pill> : null}
-  </>);
-}
-
-// given a distinct (dashed) visual so it reads as "suspended/transient", never
-// as a competing solid state. Repose (idle with nothing pending) renders
-// nothing: a paused worker is the normal resting state, not an alert.
-const ACTIVITY_PILL_CLASS: Record<string, string> = {
-  running: "stelow-activity-working",
-  "awaiting-answer": "stelow-activity-waiting",
-  error: "stelow-activity-error",
-};
-const ACTIVITY_GLYPH: Record<string, string> = {
-  running: "●",
-  "awaiting-answer": "⏳",
-  error: "✗",
-};
-const ACTIVITY_TITLE: Record<string, string> = {
-  running: "Worker is actively working",
-  "awaiting-answer": "Waiting for your answer",
-  error: "Worker failed. Needs attention.",
-};
-
-function ActivityPill({ activity, detail }: { activity: CardItem["activity"]; detail?: string | null }) {
-  const cls = ACTIVITY_PILL_CLASS[activity];
-  if (!cls) return null; // idle (repose) renders nothing
-  // Tiles carry no error body, so a failed tile names its reason on hover.
-  const title = activity === "error" && detail ? `Worker failed: ${detail}` : ACTIVITY_TITLE[activity];
-  return (
-    <span className={`stelow-activity-pill max-w-full truncate ${cls}`} title={title}>
-      <span aria-hidden>{ACTIVITY_GLYPH[activity]}</span>
-      {activityLabel(activity)}
-    </span>
-  );
-}
+const buildStatusPillProps = (card: CardItem) => ({ card, statusTone, intentLabel: (intent: string) => INTENT_LABEL[intent] });
 
 const DEBOUNCE_MS = 250;
 
@@ -2444,6 +2390,14 @@ function CardMetaRows({ card }: { card: CardItem }) {
   );
 }
 
+// Activity is transient and is communicated by the surface itself. Keeping
+// this mapping here lets every card shape use the exact same live language.
+function liveBorderClass(card: Pick<CardItem, "activity" | "needsAttention">): string {
+  if (card.activity === "running") return "stelow-border-running";
+  if (card.activity === "awaiting-answer" || card.needsAttention) return "stelow-border-attention";
+  return "";
+}
+
 // All board tiles share this header geometry. Identity, state and recovery
 // actions are deliberately distinct rows: a narrow board column must never
 // make a title look like a tiny label among controls, or make state look like
@@ -2463,16 +2417,11 @@ function CardHeading({ title, status, action }: { title: string; status: React.R
 function BoardCard({ card }: { card: CardItem }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
-  const running = card.activity === "running";
   // Retry is for active workers only: a Done card never offers it, even if a
   // stale error survived underneath.
   const terminal = card.status === "completed" || card.status === "archived" || card.status === "blocked";
   const stuck = !terminal && Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
-  const borderClass = running
-    ? "stelow-border-running"
-    : attention
-    ? "stelow-border-attention"
-    : "border-border hover:border-primary/60";
+  const borderClass = liveBorderClass(card) || "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
   const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
   const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
@@ -2490,12 +2439,12 @@ function BoardCard({ card }: { card: CardItem }) {
         else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
       }}
       title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
-      className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
+      className={`stelow-live-surface stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open card ${card.displayName}.`}
     >
       <CardHeading title={card.displayName}
         action={stuck && card.activity !== "error" ? <CardRetryButton cardId={card.id} label="Resume work" /> : null}
-        status={<BuildStatusPills card={card} />}
+        status={<BuildStatusPills {...buildStatusPillProps(card)} />}
       />
       {card.scopeSummary.scopesTotal > 0 ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
@@ -2511,16 +2460,11 @@ function BoardCard({ card }: { card: CardItem }) {
 function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: CardItem; tagLabel: string | null; tagTitle: string; ariaNoun: string }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
-  const running = card.activity === "running";
   // Retry is for active workers only: a Done card never offers it, even if a
   // stale error survived underneath.
   const terminal = card.status === "completed" || card.status === "archived" || card.status === "blocked";
   const stuck = !terminal && Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
-  const borderClass = running
-    ? "stelow-border-running"
-    : attention
-    ? "stelow-border-attention"
-    : "border-border hover:border-primary/60";
+  const borderClass = liveBorderClass(card) || "border-border hover:border-primary/60";
   const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
   const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
   const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
@@ -2538,7 +2482,7 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
         else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
       }}
       title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
-      className={`stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
+      className={`stelow-live-surface stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
       aria-label={`Open ${ariaNoun} ${card.displayName}.`}
     >
       <CardHeading title={card.displayName}
@@ -2985,7 +2929,7 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, o
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills card={card} /></span> : null}
+        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills {...buildStatusPillProps(card)} /></span> : null}
       </nav>
       {card ? <>
         {card.kind !== "build" ? <ActivityPill activity={card.activity} /> : null}
@@ -3839,10 +3783,12 @@ type WorkspaceRecoveryData = {
   kind: "attached" | "promote" | "external-project" | "ambiguous" | "documents-only";
   message: string;
   candidates: Array<{ projectId: string; projectName: string; path: string; branch: string | null; headSha: string | null; changedFiles: number; evidence: string }>;
+  looseEvidence: Array<{ path: string; kind: "folder" | "patch" }>;
   recovery: { projectId: string; projectName: string; path: string; attachedAt: number } | null;
+  audit: { cardId: string; cardName: string; createdAt: number } | null;
 };
 
-function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAttach }: { recovery: WorkspaceRecoveryData | null; loading: boolean; onRefresh: () => void; onPromote: () => void; onAttach: (projectId: string) => void }) {
+function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAttach, onCreateAudit, onOpenAudit }: { recovery: WorkspaceRecoveryData | null; loading: boolean; onRefresh: () => void; onPromote: () => void; onAttach: (projectId: string) => void; onCreateAudit: () => void; onOpenAudit: (cardId: string) => void }) {
   return <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-950 dark:text-amber-100">
     <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">Workspace recovery</p><Button size="sm" variant="outline" disabled={loading} onClick={onRefresh}>{loading ? "Checking…" : "Re-check evidence"}</Button></div>
     {!recovery && !loading ? <p>Checking whether this exploratory card has source material or a worker-reported registered checkout…</p> : null}
@@ -3859,7 +3805,8 @@ function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAtt
           <Button className="mt-2" size="sm" variant="outline" onClick={() => onAttach(candidate.projectId)} title="Records this reviewed checkout on the card. It does not change the checkout or Git.">Attach for audit trail…</Button>
         </div>)}
       </div> : null}
-      {recovery.kind === "attached" && recovery.recovery ? <div className="rounded border border-emerald-500/30 bg-emerald-500/10 p-2"><p className="font-medium">Attached: {recovery.recovery.projectName}</p><p className="mt-1 break-all text-emerald-900/80 dark:text-emerald-100/80"><code>{recovery.recovery.path}</code> · attached {new Date(recovery.recovery.attachedAt).toLocaleString()}</p><p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">Use the project’s BB workspace to review, test, and commit. This card keeps the original exploratory path in its audit trail.</p></div> : null}
+      {recovery.looseEvidence.length > 0 ? <div className="space-y-1 border-t border-amber-500/20 pt-2"><p className="text-amber-900/80 dark:text-amber-100/80">Reported loose evidence is preserved but never auto-applied: choose and review its destination in a recovery audit first.</p>{recovery.looseEvidence.map((entry) => <p key={entry.path} className="break-all text-muted-foreground"><code>{entry.path}</code> · {entry.kind === "patch" ? "patch/bundle" : "folder"}</p>)}</div> : null}
+      {recovery.kind === "attached" && recovery.recovery ? <div className="rounded border border-emerald-500/30 bg-emerald-500/10 p-2"><p className="font-medium">Attached: {recovery.recovery.projectName}</p><p className="mt-1 break-all text-emerald-900/80 dark:text-emerald-100/80"><code>{recovery.recovery.path}</code> · attached {new Date(recovery.recovery.attachedAt).toLocaleString()}</p><p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">This original card is preserved as a mismatch record. A separate Build recovery audit owns review, tests, commits, and PRs.</p>{recovery.audit ? <Button className="mt-2" size="sm" variant="outline" onClick={() => onOpenAudit(recovery.audit!.cardId)}>Open recovery audit</Button> : <Button className="mt-2" size="sm" variant="outline" onClick={onCreateAudit}>Create recovery audit</Button>}</div> : null}
     </> : null}
   </div>;
 }
@@ -4796,7 +4743,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const artifactCount = artifactGroups.reduce((total, group) => total + group.items.length, 0);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={`stelow-live-surface stelow-detail-surface flex h-full flex-col ${card ? liveBorderClass(card) : ""}`}>
       <div className="flex-1 overflow-auto p-4">
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {card ? (
@@ -5266,6 +5213,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecovery | null>(null);
   const [workspaceRecoveryLoading, setWorkspaceRecoveryLoading] = useState(false);
   const [recoveryAttachProjectId, setRecoveryAttachProjectId] = useState<string | null>(null);
+  const [creatingRecoveryAudit, setCreatingRecoveryAudit] = useState(false);
   const artifactsRef = useRef<HTMLDivElement | null>(null);
   // One way in: the progress section's file count opens Artifacts and brings
   // it into view. Instant scroll (no smooth) to respect reduced motion.
@@ -5403,6 +5351,22 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     setRecoveryAttachProjectId(null);
     toast.success("Checkout attached for review. No files, branch, or Git history were changed.");
     await Promise.all([loadWorkspaceRecovery(), load()]);
+  }
+
+  async function doCreateRecoveryAudit() {
+    setCreatingRecoveryAudit(true);
+    try {
+      const result = await rpc.call("createRecoveryAudit", { cardId });
+      if (!result.ok || !result.auditCardId) {
+        toast.error(result.error ?? "Could not create the recovery audit.");
+        return;
+      }
+      toast.success("Recovery audit started in the registered project workspace.");
+      await Promise.all([loadWorkspaceRecovery(), load()]);
+      goToCard(navigate, { kind: "build" }, result.auditCardId);
+    } finally {
+      setCreatingRecoveryAudit(false);
+    }
   }
 
   async function doRepair(intent?: string): Promise<boolean> {
@@ -5925,7 +5889,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               >
                 {!publication && !publicationLoading ? <p className="text-xs text-muted-foreground">Publication status is unavailable.</p> : null}
                 {card.workspaceKind === "exploratory" ? (
-                  <WorkspaceRecoveryPanel recovery={workspaceRecovery} loading={workspaceRecoveryLoading} onRefresh={() => void loadWorkspaceRecovery()} onPromote={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} onAttach={setRecoveryAttachProjectId} />
+                  <WorkspaceRecoveryPanel recovery={workspaceRecovery} loading={workspaceRecoveryLoading || creatingRecoveryAudit} onRefresh={() => void loadWorkspaceRecovery()} onPromote={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} onAttach={setRecoveryAttachProjectId} onCreateAudit={() => void doCreateRecoveryAudit()} onOpenAudit={(auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId)} />
                 ) : null}
                 {publication ? (
                   <div className="space-y-3 text-xs">
@@ -6281,15 +6245,17 @@ function PillsyStyles() {
   const style = document.createElement("style");
   style.id = "stelow-style";
   style.textContent = [
-    "@keyframes stelow-card-alive { 0%, 100% { border-color: hsl(220 90% 60% / 0.45); box-shadow: 0 0 0 0 hsl(220 90% 60% / 0); } 50% { border-color: hsl(220 90% 60% / 0.75); box-shadow: 0 0 0 2px hsl(220 90% 60% / 0.08); } }",
-    ".stelow-board-card.stelow-border-running, details.stelow-border-running { border-color: hsl(220 90% 60% / 0.5) !important; animation: stelow-card-alive 3.2s ease-in-out infinite; }",
-    "@media (prefers-reduced-motion: reduce) { .stelow-board-card.stelow-border-running, details.stelow-border-running { animation: none; border-color: hsl(220 90% 60% / 0.7) !important; } }", 
-    ".stelow-board-card.stelow-border-attention { border-color: hsl(38 92% 50% / 0.85) !important; box-shadow: 0 0 0 3px hsl(38 92% 50% / 0.12); }",
+    "@keyframes stelow-card-alive { 0%, 100% { border-color: hsl(220 90% 60% / 0.45); box-shadow: 0 0 0 0 hsl(220 90% 60% / 0); } 50% { border-color: hsl(220 90% 60% / 0.75); box-shadow: 0 0 0 2px hsl(220 90% 60% / 0.12); } }",
+    "@keyframes stelow-card-attention { 0%, 100% { border-color: hsl(38 92% 50% / 0.50); box-shadow: 0 0 0 0 hsl(38 92% 50% / 0); } 50% { border-color: hsl(38 92% 50% / 0.88); box-shadow: 0 0 0 3px hsl(38 92% 50% / 0.16); } }",
+    ".stelow-live-surface.stelow-border-running, details.stelow-border-running { border-color: hsl(220 90% 60% / 0.5) !important; animation: stelow-card-alive 3.2s ease-in-out infinite; }",
+    ".stelow-live-surface.stelow-border-attention { border-color: hsl(38 92% 50% / 0.75) !important; animation: stelow-card-attention 2.4s ease-in-out infinite; }",
+    ".stelow-detail-surface.stelow-border-running, .stelow-detail-surface.stelow-border-attention { box-shadow: inset 0 0 0 1px currentColor; }",
+    "@media (prefers-reduced-motion: reduce) { .stelow-live-surface.stelow-border-running, .stelow-live-surface.stelow-border-attention, details.stelow-border-running { animation: none; } .stelow-live-surface.stelow-border-running { border-color: hsl(220 90% 60% / 0.7) !important; } .stelow-live-surface.stelow-border-attention { border-color: hsl(38 92% 50% / 0.85) !important; } }",
     ".stelow-pill-working { background: hsl(220 90% 60% / 0.12); animation: stelow-breathe 1.8s ease-in-out infinite; color: hsl(220 90% 40%); }",
     "@keyframes stelow-breathe { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }",
     ".stelow-activity-pill { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 9999px; padding: 0.125rem 0.5rem; font-size: 11px; line-height: 18px; font-weight: 500; border-width: 1px; border-style: dashed; }",
     ".stelow-activity-onhold { border-color: hsl(240 5% 55% / 0.55); color: hsl(240 3% 45%); background: transparent; }",
-    ".stelow-activity-waiting { border-color: hsl(38 92% 45% / 0.7); color: hsl(38 80% 28%); background: hsl(38 92% 45% / 0.10); }",
+    ".stelow-activity-waiting { border-color: hsl(38 92% 45% / 0.7); color: hsl(38 80% 28%); background: hsl(38 92% 45% / 0.10); animation: stelow-breathe 1.8s ease-in-out infinite; }",
     ".stelow-activity-error { border-color: hsl(0 84% 55% / 0.7); color: hsl(0 70% 40%); background: hsl(0 84% 55% / 0.08); }",
     ".stelow-activity-working { border-color: hsl(220 90% 60% / 0.6); color: hsl(220 60% 40%); background: hsl(220 90% 60% / 0.08); animation: stelow-breathe 1.8s ease-in-out infinite; }",
     ".dark .stelow-activity-onhold { border-color: hsl(240 5% 60% / 0.5); color: hsl(240 10% 70%); }",

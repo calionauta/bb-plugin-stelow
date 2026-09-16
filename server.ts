@@ -1,4 +1,5 @@
 import { spawn, execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
@@ -53,7 +54,8 @@ import { contextAskGate } from "./lib/context-ask-gate.mjs";
 import { gateEvidenceGate } from "./lib/gate-ask-evidence.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
-import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths } from "./lib/workspace-recovery.mjs";
+import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
+import { detectedTestCommand, verificationReadiness } from "./lib/audit-verification.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -496,11 +498,15 @@ export const rpcContract = defineRpcContract({
   },
   workspaceRecovery: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ kind: z.enum(["attached", "promote", "external-project", "ambiguous", "documents-only"]), message: z.string(), workspace: z.object({ path: z.string().nullable(), isGit: z.boolean(), hasSource: z.boolean() }), candidates: z.array(z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), branch: z.string().nullable(), headSha: z.string().nullable(), changedFiles: z.number(), evidence: z.string() })), recovery: z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), attachedAt: z.number() }).nullable(), error: z.string().nullable() }),
+    output: z.object({ kind: z.enum(["attached", "promote", "external-project", "ambiguous", "documents-only"]), message: z.string(), workspace: z.object({ path: z.string().nullable(), isGit: z.boolean(), hasSource: z.boolean() }), candidates: z.array(z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), branch: z.string().nullable(), headSha: z.string().nullable(), changedFiles: z.number(), evidence: z.string() })), looseEvidence: z.array(z.object({ path: z.string(), kind: z.enum(["folder", "patch"]) })), recovery: z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), attachedAt: z.number() }).nullable(), audit: z.object({ cardId: z.string(), cardName: z.string(), createdAt: z.number() }).nullable(), error: z.string().nullable() }),
   },
   attachRecoveryCheckout: {
     input: z.object({ cardId: z.string(), projectId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  createRecoveryAudit: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), auditCardId: z.string().nullable(), auditCardName: z.string().nullable(), error: z.string().nullable() }),
   },
   answerExpiredQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().min(1).max(10_000)).min(1).max(20) })).min(1).max(12) }).strict(),
@@ -1080,7 +1086,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (exact commands and results), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
   // focused card with scopes. The host creates cards only from a recorded,
@@ -1248,6 +1254,30 @@ export default async function plugin(bb: BbPluginApi) {
     attached_at INTEGER NOT NULL,
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
+  // The original exploratory card remains historical evidence. A recovery
+  // audit is a separate, normal Build card in the registered project, with a
+  // real BB workspace and therefore the usual test/commit/PR controls.
+  db.exec(`CREATE TABLE IF NOT EXISTS recovery_audits (
+    source_card_id TEXT PRIMARY KEY,
+    audit_card_id TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (source_card_id) REFERENCES cards(id) ON DELETE CASCADE,
+    FOREIGN KEY (audit_card_id) REFERENCES cards(id) ON DELETE CASCADE
+  )`);
+  // Host-run test evidence is scoped to one card and Git identity. It is
+  // intentionally a ledger rather than a mutable receipt paragraph.
+  db.exec(`CREATE TABLE IF NOT EXISTS verification_runs (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    command TEXT NOT NULL,
+    git_root TEXT NOT NULL,
+    head_sha TEXT NOT NULL,
+    exit_code INTEGER NOT NULL,
+    output_sha256 TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  )`);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_verification_runs_card ON verification_runs(card_id, created_at DESC)");
   if (!cardColumns.some((column) => column.name === "split_from")) {
     db.exec("ALTER TABLE cards ADD COLUMN split_from TEXT");
   }
@@ -2047,6 +2077,24 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { isGit: true, gitRoot: root.stdout.trim(), branch: branch.ok ? branch.stdout.trim() || null : null, headSha: head.ok ? head.stdout.trim() || null : null, changedFiles: status.ok ? status.stdout.split("\n").filter(Boolean).length : 0 };
   }
 
+  function testCommandForCheckout(path: string) {
+    try {
+      const entries = readdirSync(path);
+      const packageJson = entries.includes("package.json") ? JSON.parse(readFileSync(nodeJoin(path, "package.json"), "utf8")) : null;
+      return detectedTestCommand(entries, packageJson);
+    } catch { return null; }
+  }
+
+  async function runHostTests(path: string, command: { command: string; args: string[]; display: string }) {
+    return new Promise<{ exitCode: number; output: string }>((done) => {
+      execFile(command.command, command.args, { cwd: path, timeout: 10 * 60_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+        const code = error && typeof (error as { code?: unknown }).code === "number" ? (error as { code: number }).code : error ? 1 : 0;
+        const output = `${typeof stdout === "string" ? stdout : ""}${typeof stderr === "string" ? `\n${stderr}` : ""}`.trim();
+        done({ exitCode: code, output });
+      });
+    });
+  }
+
   // Stelow seeds every workspace with `skills/`, `data/`, `.stelow/`, and
   // `stelow.json`. Treating that scaffolding as source made every exploratory
   // card look promotable, which hid the worker-reported-checkout path. The
@@ -2061,6 +2109,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   type RecoveryCandidate = { projectId: string; projectName: string; path: string; branch: string | null; headSha: string | null; changedFiles: number; evidence: string; gitRoot: string | null };
   async function recoverySnapshot(card: CardRow) {
     const attached = db.prepare("SELECT project_id, project_name, source_path, attached_at FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { project_id: string; project_name: string; source_path: string; attached_at: number } | undefined;
+    const audit = db.prepare("SELECT ra.audit_card_id, ra.created_at, COALESCE(c.display_name, c.name) AS card_name FROM recovery_audits ra JOIN cards c ON c.id = ra.audit_card_id WHERE ra.source_card_id = ?").get(card.id) as { audit_card_id: string; created_at: number; card_name: string } | undefined;
     const workspacePath = card.workspace_path;
     const workspace = workspacePath ? await recoveryGitEvidence(workspacePath) : { isGit: false, gitRoot: null, branch: null, headSha: null, changedFiles: 0 };
     // `last_assistant_text` may be blank on older cards after an idle sync.
@@ -2070,6 +2119,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       ? await bb.sdk.threads.output({ threadId: card.worker_thread_id }).then((result) => result.output ?? "").catch(() => "")
       : "";
     const paths = reportedCheckoutPaths(card.last_assistant_text ?? "", threadOutput);
+    const looseEvidence = reportedRecoveryEvidence(card.last_assistant_text ?? "", threadOutput)
+      .filter((entry) => existsSync(entry.path) && !paths.includes(entry.path));
     const projects = await bb.sdk.projects.list().catch(() => []);
     const candidates: RecoveryCandidate[] = [];
     for (const project of projects) for (const source of project.sources ?? []) {
@@ -2081,7 +2132,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
     const hasSource = exploratoryHasSource(workspacePath);
     const kind = recoveryDisposition({ workspaceIsGit: workspace.isGit, hasWorkspaceSource: hasSource, candidates, attached: Boolean(attached) });
-    return { kind, message: recoveryMessage(kind), workspace: { path: workspacePath, isGit: workspace.isGit, hasSource }, candidates, recovery: attached ? { projectId: attached.project_id, projectName: attached.project_name, path: attached.source_path, attachedAt: attached.attached_at } : null };
+    return { kind, message: recoveryMessage(kind), workspace: { path: workspacePath, isGit: workspace.isGit, hasSource }, candidates, looseEvidence, recovery: attached ? { projectId: attached.project_id, projectName: attached.project_name, path: attached.source_path, attachedAt: attached.attached_at } : null, audit: audit ? { cardId: audit.audit_card_id, cardName: audit.card_name, createdAt: audit.created_at } : null };
   }
 
   async function recoveredCheckoutIntegrity(card: CardRow, path: string): Promise<string | null> {
@@ -4339,8 +4390,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async workspaceRecovery({ cardId }) {
       const card = getCard(cardId);
-      if (!card) return { kind: "documents-only" as const, message: "Card not found.", workspace: { path: null, isGit: false, hasSource: false }, candidates: [], recovery: null, error: ERR_CARD_NOT_FOUND };
-      if (card.workspace_kind !== "exploratory") return { kind: "attached" as const, message: "This card already belongs to a project workspace.", workspace: { path: null, isGit: true, hasSource: true }, candidates: [], recovery: null, error: null };
+      if (!card) return { kind: "documents-only" as const, message: "Card not found.", workspace: { path: null, isGit: false, hasSource: false }, candidates: [], looseEvidence: [], recovery: null, audit: null, error: ERR_CARD_NOT_FOUND };
+      if (card.workspace_kind !== "exploratory") return { kind: "attached" as const, message: "This card already belongs to a project workspace.", workspace: { path: null, isGit: true, hasSource: true }, candidates: [], looseEvidence: [], recovery: null, audit: null, error: null };
       return { ...(await recoverySnapshot(card)), error: null };
     },
 
@@ -4357,6 +4408,52 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, error: null };
+    },
+
+    async createRecoveryAudit({ cardId }) {
+      const sourceCard = getCard(cardId);
+      if (!sourceCard) return { ok: false, auditCardId: null, auditCardName: null, error: ERR_CARD_NOT_FOUND };
+      if (sourceCard.workspace_kind !== "exploratory") return { ok: false, auditCardId: null, auditCardName: null, error: "Recovery audits only apply to the preserved exploratory card." };
+      const existing = db.prepare("SELECT audit_card_id FROM recovery_audits WHERE source_card_id = ?").get(cardId) as { audit_card_id: string } | undefined;
+      if (existing) {
+        const auditCard = getCard(existing.audit_card_id);
+        return { ok: true, auditCardId: existing.audit_card_id, auditCardName: auditCard?.display_name ?? auditCard?.name ?? "Recovery audit", error: null };
+      }
+      const recovery = db.prepare("SELECT project_id, project_name, source_path, evidence, git_root, branch, head_sha, changed_files FROM workspace_recoveries WHERE card_id = ?").get(cardId) as { project_id: string; project_name: string; source_path: string; evidence: string; git_root: string | null; branch: string | null; head_sha: string | null; changed_files: number } | undefined;
+      if (!recovery) return { ok: false, auditCardId: null, auditCardName: null, error: "Attach the exact registered checkout first. Recovery never guesses a project or changes files before that review." };
+      const project = await bb.sdk.projects.get({ projectId: recovery.project_id }).catch(() => null);
+      const source = project?.sources.find((entry) => entry.path === recovery.source_path) ?? project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
+      if (!source?.path || source.path !== recovery.source_path) return { ok: false, auditCardId: null, auditCardName: null, error: "The attached project source changed. Re-check recovery evidence before creating its audit card." };
+      const auditPrompt = [
+        `Recovery audit for the preserved exploratory card “${sourceCard.display_name ?? sourceCard.name}”.`,
+        `Evidence source: ${recovery.source_path}`,
+        `Recorded Git root: ${recovery.git_root ?? "unknown"}; branch: ${recovery.branch ?? "detached"}; HEAD: ${recovery.head_sha ?? "unknown"}; changed files at review: ${recovery.changed_files}.`,
+        "Inspect the existing uncommitted changes and the original card's artifacts before editing. Do not rewrite or complete the original exploratory card. Establish what is recoverable, make only justified fixes in this real project workspace, run the host-recorded test check, and use the normal Git changes / PR workflow for any publication.",
+      ].join("\n\n");
+      try {
+        const created = await createCardInternal({
+          projectId: recovery.project_id,
+          environment: { type: "host", hostId: source.hostId, workspace: { type: "unmanaged", path: source.path } },
+          prompt: auditPrompt,
+          attachments: [],
+          intent: "investigate",
+          appetite: "Complete",
+          reviewMode: "Product Spec + Interface + Tech Review + Code Diff",
+          kind: "build",
+          start: true,
+        });
+        const auditCard = getCard(created.cardId);
+        const createdAt = now();
+        db.prepare("INSERT INTO recovery_audits (source_card_id, audit_card_id, created_at) VALUES (?, ?, ?)").run(cardId, created.cardId, createdAt);
+        logCardComment(cardId, "card", cardId, "agent", `Recovery mismatch recorded. Original exploratory work remains immutable; recovery audit card ${created.cardId} now owns review, tests, commits, and PRs for ${recovery.project_name}.`);
+        logCardComment(created.cardId, "card", created.cardId, "agent", `Recovery audit created from preserved card ${cardId}. Evidence checkout: ${recovery.source_path}; recorded HEAD ${recovery.head_sha ?? "unknown"}.`);
+        bb.realtime.publish("card-state", { cardId });
+        bb.realtime.publish("card-state", { cardId: created.cardId });
+        bb.realtime.publish("board-changed", { cardId: created.cardId });
+        return { ok: true, auditCardId: created.cardId, auditCardName: auditCard?.display_name ?? auditCard?.name ?? "Recovery audit", error: null };
+      } catch (error) {
+        return { ok: false, auditCardId: null, auditCardName: null, error: error instanceof Error ? error.message : "Could not create the recovery audit card." };
+      }
     },
 
     async researchStrategies() {
@@ -5216,7 +5313,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
       { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
-      { name: "verify", summary: "Verify this card's artifacts are valid (worker self-check)", usage: "bb stelow verify [--card <card_id>] [--json]" },
+      { name: "verify", summary: "Verify artifacts, or run the Build card's host-recorded tests", usage: "bb stelow verify [--card <card_id>] [--tests] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -5583,7 +5680,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (checkout?.path && (!gitEvidence?.isGit || !gitEvidence.gitRoot || !gitEvidence.headSha)) {
             return { exitCode: 1, stderr: "Build completion is blocked: the execution checkout no longer has verifiable Git root and HEAD evidence. Restore the intended checkout, re-run audit, then run done." };
           }
-          const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : [], checkout?.path ?? null, gitEvidence);
+          const verificationRun = db.prepare("SELECT command, git_root, head_sha, exit_code FROM verification_runs WHERE card_id = ? ORDER BY created_at DESC LIMIT 1").get(cardId) as { command: string; git_root: string; head_sha: string; exit_code: number } | undefined;
+          const verification = verificationReadiness(verificationRun, gitEvidence);
+          if (!verification.ready) return { exitCode: 1, stderr: verification.error };
+          const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : [], checkout?.path ?? null, gitEvidence, verificationRun);
           if (!receipt.ready) return { exitCode: 1, stderr: receipt.error };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
@@ -5947,13 +6047,32 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
         for (let i = 0; i < args.length; i++) {
           if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--tests") continue;
           if (args[i] === "--json") continue;
-          return { exitCode: 2, stderr: "Usage: bb stelow verify [--card <card_id>] [--json]" };
+          return { exitCode: 2, stderr: "Usage: bb stelow verify [--card <card_id>] [--tests] [--json]" };
         }
         if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
         const card = getCard(cardId);
         if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
         const asJson = args.includes("--json");
+        const runTests = args.includes("--tests");
+        if (runTests) {
+          if (card.kind !== "build") return { exitCode: 2, stderr: "--tests applies to Build cards only; research and explore use their artifact verification." };
+          if (card.workspace_kind === "exploratory") return { exitCode: 1, stderr: "Build test verification needs a real project checkout. Create or open the recovery audit card instead of testing this preserved exploratory card." };
+          const checkout = await cardCheckout(card);
+          const evidence = checkout?.path ? await recoveryGitEvidence(checkout.path) : null;
+          if (!checkout?.path || !evidence?.isGit || !evidence.gitRoot || !evidence.headSha) return { exitCode: 1, stderr: "The Build checkout has no verifiable Git root and HEAD. Restore its project workspace, then retry." };
+          const command = testCommandForCheckout(checkout.path);
+          if (!command) return { exitCode: 1, stderr: "No safe conventional test command was found (package.json test script, go.mod, Cargo.toml, or pytest project). Add a project test command; Stelow will not execute arbitrary shell text from a receipt." };
+          const result = await runHostTests(checkout.path, command);
+          const run = { id: randomId("verify"), cardId, command: command.display, gitRoot: evidence.gitRoot, headSha: evidence.headSha, exitCode: result.exitCode, outputSha256: createHash("sha256").update(result.output).digest("hex"), createdAt: now() };
+          db.prepare("INSERT INTO verification_runs (id, card_id, command, git_root, head_sha, exit_code, output_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(run.id, run.cardId, run.command, run.gitRoot, run.headSha, run.exitCode, run.outputSha256, run.createdAt);
+          const report = { pass: result.exitCode === 0, command: command.display, gitRoot: evidence.gitRoot, headSha: evidence.headSha, outputSha256: run.outputSha256, output: result.output.slice(-8000) };
+          if (asJson) return { exitCode: result.exitCode, stdout: JSON.stringify(report, null, 2) };
+          return result.exitCode === 0
+            ? { exitCode: 0, stdout: `PASS: ${command.display} recorded at ${evidence.headSha}.\n${report.output}` }
+            : { exitCode: result.exitCode, stderr: `FAIL: ${command.display} recorded at ${evidence.headSha}.\n${report.output}` };
+        }
         if (card.kind === "research") {
           const readiness = await researchReadiness(card).catch(() => null);
           if (!readiness) return { exitCode: 1, stderr: "Unable to read card state — retry verify." };
@@ -5969,7 +6088,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const text = exploreVerifyText(report);
           return { exitCode: text.exitCode, ...(text.stdout ? { stdout: text.stdout } : {}), ...(text.stderr ? { stderr: text.stderr } : {}) };
         }
-        return { exitCode: 2, stderr: `verify applies to research/explore cards; "${cardId}" is a build card (build completion is the audit stage, not an artifact file).` };
+        return { exitCode: 2, stderr: `Build verification requires --tests: run \`bb stelow verify --tests\` before its audit receipt and done.` };
       }
       if (argv[0] === "preset") {
         const sub = argv[1];

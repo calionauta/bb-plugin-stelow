@@ -112,6 +112,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   person to re-check evidence rather than presenting a plausible diff from
   the wrong repository. Build audit receipts also name the host-verified Git
   root and exact HEAD, so a copied or stale receipt cannot mark work Done.
+- **Recovery audits are real Build cards** (`createRecoveryAudit`). Once a
+  checkout is attached, the panel offers Create recovery audit: one idempotent
+  Build card in the registered project with a normal BB workspace, so review,
+  host-recorded tests, commits, and PRs all work there. The original
+  exploratory card stays an immutable mismatch record; both cards cross-link
+  the handoff in their timelines. Worker-reported loose folders and
+  patch/diff/bundle paths are listed as preserved evidence and are never
+  auto-applied to any checkout.
 
 ## 2. Orient myself
 *When I open Stelow, I want to see everything and find my card.*
@@ -469,10 +477,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   their workflow is pre-seeded at spawn with the card id as owner, and a
   second seed would orphan a name-derived workflow at the project root —
   the refusal redirects to the card's own state dir.
-- **Worker self-check** (`bb stelow verify [--card] [--json]`). The same
+- **Worker self-check** (`bb stelow verify [--card] [--tests] [--json]`). The same
   predicates the sync gate enforces, runnable by the worker before
   finishing: per-round PASS/FAIL for research, artifact check for
-  explore, machine-readable JSON on request. Prompts require it; the
+  explore, machine-readable JSON on request. Build `--tests` runs only the
+  checkout's conventional test command (no shell text from the card) and
+  records command, exit, output digest, Git root, and HEAD in a host ledger
+  (`lib/audit-verification.mjs`); `done` accepts only a passing run at the
+  audited HEAD. Prompts require it; the
   sync stays the backstop — prompt, CLI, and gate share one definition
   of PASS (`lib/research-artifacts.mjs`).
 - **Explicit completion** (`bb stelow done [--card]`, `lib/completion.mjs`).

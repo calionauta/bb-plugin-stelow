@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths } from "../lib/workspace-recovery.mjs";
+import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "../lib/workspace-recovery.mjs";
 
 assert.deepEqual(reportedCheckoutPaths("Changes are uncommitted in `/home/deploy/repos/bb-plugin-stelow`."), ["/home/deploy/repos/bb-plugin-stelow"], "an explicit worker report yields a candidate path");
 assert.deepEqual(reportedCheckoutPaths("I edited /tmp/guess without reporting it as a checkout."), [], "bare paths never become recovery candidates");
+assert.deepEqual(reportedRecoveryEvidence("Saved /tmp/worker.patch and /work/loose-folder for review."), [{ path: "/tmp/worker.patch", kind: "patch" }, { path: "/work/loose-folder", kind: "folder" }], "loose paths become visible evidence without becoming write targets");
 assert.equal(recoveryDisposition({ workspaceIsGit: false, hasWorkspaceSource: false, candidates: [{}], attached: false }), "external-project");
 assert.equal(recoveryDisposition({ workspaceIsGit: true, hasWorkspaceSource: false, candidates: [], attached: false }), "promote");
 assert.equal(recoveryDisposition({ workspaceIsGit: false, hasWorkspaceSource: false, candidates: [{}, {}], attached: false }), "ambiguous");
