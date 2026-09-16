@@ -8,6 +8,46 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.18.47] - 2026-09-16
+
+### Added
+
+- **One tree, one receipt.** Build completion now runs `audit-trail build
+  --strict` and `check --strict`, then binds the trail's own snapshot to the
+  Git identity the `audit.md` receipt was verified at. A checkout that moved
+  during completion is refused with its fix named instead of leaving Done
+  holding two receipts for two different trees, and `--strict` refuses to seal
+  a receipt that would omit an unregistered workflow document.
+- **Audit evidence, labelled.** Stelow's trail is attributed to the Audit
+  stage it belongs to — no longer listed as an unregistered stray file — and
+  both receipts carry their role: the host's `audit.md` (acceptance criteria,
+  tests, checkout) beside Stelow's portable trail (state, artifacts, worktree
+  snapshot). A completed card opens its Artifacts section by default.
+- **Audit trail freshness** (`auditTrailStatus`). A completed Build card shows
+  a compact verified / changed-since-completion state with a re-check action.
+  The verdict is the helper's own: freshness is asked for on demand, never
+  computed on every board read, and `lib/audit-trail-contract.mjs` is the one
+  place that interprets it — refusing a contract version it cannot read.
+- **Review is not attention** (`hasPendingReview`). Finishing work is its own
+  quieter, emerald signal — a Review marker on Done cards and a **Ready for
+  review** Inbox entry — instead of being folded into the amber
+  needs-attention treatment. `needsAttention` keeps meaning "a worker is
+  blocked on you", and the Inbox badge keeps counting exactly the actions its
+  primary filter lists.
+
+### Changed
+
+- **Vendored Stelow core refreshed to 0.59.7-alpha.**
+
+### Fixed
+
+- **The board reacts to Inbox changes.** The three board panels now listen to
+  `inbox-changed`, so the Review marker clears when opening a Done card clears
+  its completion instead of lingering until an unrelated refresh.
+- **README no longer claims the sidebar badge counts unseen completions.** It
+  counts unresolved actions only, which is what the code and the Inbox filter
+  have done all along.
+
 ## [0.18.46] - 2026-09-16
 
 ### Added
