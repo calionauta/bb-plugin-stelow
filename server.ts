@@ -12,7 +12,7 @@ import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
-import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
+import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
@@ -45,7 +45,7 @@ import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSpli
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
-import { AUDIT_RECEIPT_FILE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
+import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
@@ -56,6 +56,7 @@ import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
 import { detectedTestCommand, verificationReadiness } from "./lib/audit-verification.mjs";
+import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
@@ -323,7 +324,7 @@ export const rpcContract = defineRpcContract({
   },
   listCards: {
     input: z.object({ projectId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable().optional() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
@@ -372,7 +373,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
@@ -383,7 +384,7 @@ export const rpcContract = defineRpcContract({
       // re-implements stage rules (single source: lib/split-proposal).
       splitAction: z.object({ show: z.boolean(), ok: z.boolean(), reason: z.string().nullable() }),
       stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
-      artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string() })),
+      artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable() })),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
@@ -456,6 +457,16 @@ export const rpcContract = defineRpcContract({
   cardDiff: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), entitySummary: z.object({ total: z.number(), fileCount: z.number(), added: z.number(), modified: z.number(), deleted: z.number(), renamed: z.number(), moved: z.number(), cosmeticOnly: z.boolean() }).nullable(), changedSymbols: z.array(z.object({ symbol: z.string(), files: z.array(z.string()), callers: z.number(), testCallers: z.number() })).nullable(), error: z.string().nullable() }),
+  },
+  auditTrailStatus: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      state: z.enum(["verified", "changed", "missing", "refused", "unsupported", "unavailable"]),
+      detail: z.string().nullable(),
+      head: z.string().nullable(),
+      path: z.string().nullable(),
+      contract: z.string().nullable(),
+    }),
   },
   publicationStatus: {
     input: z.object({ cardId: z.string() }).strict(),
@@ -934,6 +945,21 @@ function runHelper(args: string[], cwd: string, stateDir?: string): Promise<{ co
     child.on("close", (code) => resolveRun({ code, stdout, stderr }));
   });
 }
+
+// A completed Build card carries two receipts and their names differ by one
+// word, so neither is self-explaining. The host's `audit.md` is the record of
+// what was verified, by which tests, at which checkout; Stelow's portable
+// `audit-trail.md` is the deterministic lineage projection the CLI owns. The
+// CLI never registers its own output (it would have to digest itself), so the
+// host is the one that attributes the trail to Audit and labels both — instead
+// of showing a receipt the audit produced as an unregistered document.
+function auditReceiptNote(absolute: string): string | null {
+  const name = basename(absolute);
+  if (name === AUDIT_RECEIPT_FILE) return AUDIT_RECEIPT_NOTE;
+  if (name === AUDIT_TRAIL_FILE) return AUDIT_TRAIL_NOTE;
+  return null;
+}
+
 
 async function readJson(files: FilesApi, path: string): Promise<LooseRecord | null> {
   try {
@@ -3021,7 +3047,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Research and Explore cards emit their own completion events and a
       // manual board move needs no "Completed" ping — the human just did it.
       // Only agent-driven build completions notify.
-      if (previous.status !== "completed" && current.status === "completed" && current.kind === "build" && !opts?.suppressCompletionEvent) recordInboxEvent(current, "completed", "Completed. Review the final outcome.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
+      // One completion event per card, whichever path finishes it. A drag to
+      // Done is a board move, so it suppresses this; `bb stelow done` does not,
+      // because there the completion IS the outcome. The copy names the thing
+      // the human has to look at, since a finished Build card carries evidence
+      // rather than a result to read.
+      if (previous.status !== "completed" && current.status === "completed" && current.kind === "build" && !opts?.suppressCompletionEvent) recordInboxEvent(current, "completed", "Build complete — audit evidence is ready to review in Done.", `completed:${cardId}:${current.updated_at}`, current.updated_at);
       if (previous.activity !== "error" && current.activity === "error") {
         recordInboxEvent(current, "error", current.last_error || "Worker failed and needs attention.", `error:${cardId}:${current.updated_at}`, current.updated_at);
         // A fresh failure that lands while a specific question is already
@@ -3863,6 +3894,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           activity,
           lastError: row.last_error,
           needsAttention,
+          hasPendingReview: hasPendingReview(db, row.id),
           presetName: preset.name,
           presetProviderId: preset.provider_id,
           presetModelId: preset.model_id,
@@ -4022,7 +4054,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           return await bb.sdk.files.read({ path: join(sourcePath, "state.md") }).then((f) => f.content).catch(() => null);
         })();
         if (!stateBlob) return [];
-        const list: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }> = [];
+        const list: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note: string | null }> = [];
         const seen = new Set<string>();
         for (const fields of parseArtifactManifest(stateBlob)) {
           const stage = fields.stage;
@@ -4033,7 +4065,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           const full = resolveArtifactPath(sourcePath, relPath);
           if (!full) continue;
           const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
-          if (artifact && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId });
+          if (artifact && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId, note: auditReceiptNote(full) });
           if (full) seen.add(full);
         }
         // The audit trail must not depend on an agent remembering to declare
@@ -4066,7 +4098,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             if (!relPath) continue;
             const artifact = await bb.sdk.files.read({ path: absolute }).catch(() => null);
             if (!artifact) continue;
-            list.push({ stage: "unregistered", kind: "unregistered", path: relPath, display: basename(absolute), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: absolute, hostId: sourceHostId });
+            // The portable receipt is Audit evidence, not stray output: it is
+            // listed under the stage whose audit produced it.
+            const isTrail = basename(absolute) === AUDIT_TRAIL_FILE;
+            list.push({ stage: isTrail ? "audit" : "unregistered", kind: isTrail ? "audit-trail" : "unregistered", path: relPath, display: basename(absolute), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: absolute, hostId: sourceHostId, note: auditReceiptNote(absolute) });
             seen.add(absolute);
           }
         }
@@ -4132,7 +4167,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
         questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,
@@ -4809,6 +4844,32 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
       } catch { changedSymbols = null; }
       return { found: true, isRepo: true, files, truncated, entitySummary, changedSymbols, error: null };
+    },
+
+    async auditTrailStatus({ cardId }) {
+      // Freshness of Stelow's portable receipt, asked for on demand instead of
+      // computed on every board read: `check` re-derives the whole projection,
+      // which reads the workflow state and samples the worktree, so it is a
+      // deliberate request rather than a listing cost. The answer is the
+      // helper's own classification — this RPC never decides staleness itself,
+      // and the path is the CLI's fixed contract, not a second lookup.
+      const card = getCard(cardId);
+      if (!card) return { state: "unavailable" as const, detail: ERR_CARD_NOT_FOUND, head: null, path: null, contract: null };
+      if (card.kind !== "build") return { state: "unavailable" as const, detail: "Only Build cards carry an audit trail.", head: null, path: null, contract: null };
+      const workspace = await cardWorkspace(card).catch(() => null);
+      const projectPath = workspace?.path ?? null;
+      if (!projectPath) return { state: "unavailable" as const, detail: ERR_WORKSPACE_UNAVAILABLE, head: null, path: null, contract: null };
+      const stateDir = card.dir_hash ? await workflowStateDir(bb, projectPath, card.id, card.dir_hash).catch(() => null) : null;
+      if (!stateDir) return { state: "unavailable" as const, detail: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.", head: null, path: null, contract: null };
+      const run = await runHelper(["audit-trail", "check", "--json"], projectPath, stateDir);
+      const outcome = auditTrailOutcome(run);
+      return {
+        state: outcome.state,
+        detail: outcome.detail,
+        head: typeof outcome.result?.snapshot?.head === "string" ? outcome.result.snapshot.head : null,
+        path: nodeJoin(stateDir, AUDIT_TRAIL_FILE),
+        contract: typeof outcome.result?.contract === "string" ? outcome.result.contract : null,
+      };
     },
 
     async publicationStatus({ cardId }) {
@@ -5833,13 +5894,19 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (!verification.ready) return { exitCode: 1, stderr: verification.error };
           const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : [], checkout?.path ?? null, gitEvidence, verificationRun);
           if (!receipt.ready) return { exitCode: 1, stderr: receipt.error };
-          // The upstream helper owns a portable, deterministic audit trail.
-          // Build it only after the stricter BB receipt passes, so every Done
-          // card carries the same cross-host lineage record as any other host.
-          const trail = await runHelper(["audit-trail", "build"], projectPath!, doneStateDir ?? undefined);
-          if (trail.code !== 0) return { exitCode: trail.code ?? 1, stderr: trail.stderr || "Could not generate the audit trail." };
-          const trailCheck = await runHelper(["audit-trail", "check"], projectPath!, doneStateDir ?? undefined);
-          if (trailCheck.code !== 0) return { exitCode: trailCheck.code ?? 1, stderr: trailCheck.stderr || "Audit trail validation failed." };
+          // Stelow owns a portable, deterministic audit trail. Build it only
+          // after the stricter BB receipt passes, so every Done card carries
+          // the same cross-host lineage record as any other host. `--strict`
+          // makes the receipt's links complete (a produced document that was
+          // never registered would otherwise be missing from them), and the
+          // gate re-binds the trail to the Git identity the receipt was
+          // validated at: the helper samples the tree while writing, so a
+          // checkout that moved after the receipt check fails here instead of
+          // leaving Done with two receipts attesting different trees.
+          const trail = await runHelper(["audit-trail", "build", "--strict", "--json"], projectPath!, doneStateDir ?? undefined);
+          const trailCheck = trail.code === 0 ? await runHelper(["audit-trail", "check", "--strict", "--json"], projectPath!, doneStateDir ?? undefined) : null;
+          const trailGate = auditTrailGate({ build: trail, check: trailCheck, verifiedGit: gitEvidence });
+          if (!trailGate.ready) return { exitCode: 1, stderr: trailGate.error ?? "Audit trail validation failed." };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           return { exitCode: 0, stdout: `Done. Workflow "${card.name}" completed at audit.` };

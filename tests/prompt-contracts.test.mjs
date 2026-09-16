@@ -87,8 +87,10 @@ assert.match(serverSource, /if \(argv\[0\] === "done"\) \{/, "the done handler e
 assert.match(serverSource, /if \(argv\[0\] === "playbook"\) \{/, "the playbook handler exists");
 assert.match(serverSource, /status\|ask\|seed\|advance\|done\|playbook\|split\|doctor/, "the CLI usage lists done, playbook, and split");
 assert.match(serverSource, /doneEligibility\(\{ kind: "build", stage: currentStage/, "build completion is gated in code, not prose");
-assert.match(serverSource, /runHelper\(\["audit-trail", "build"\]/, "build completion creates the upstream portable audit trail");
-assert.match(serverSource, /runHelper\(\["audit-trail", "check"\]/, "build completion verifies the upstream portable audit trail");
+assert.match(serverSource, /runHelper\(\["audit-trail", "build", "--strict", "--json"\]/, "build completion creates the upstream portable audit trail behind the strict gate");
+assert.match(serverSource, /runHelper\(\["audit-trail", "check", "--strict", "--json"\]/, "build completion re-validates the portable audit trail it just wrote");
+assert.match(serverSource, /auditTrailGate\(\{ build: trail, check: trailCheck, verifiedGit: gitEvidence \}\)/, "the trail is bound to the Git identity the audit receipt was verified at");
+assert.match(serverSource, /trail\.code === 0 \? await runHelper/, "check runs only after a build that succeeded");
 assert.match(serverSource, /researchVerifyReport\(cardId, strategyRounds\(card\)\.length/, "research completion requires a passing verify");
 assert.match(serverSource, /exploreVerifyReport\(cardId, card\.explore_stage, artifact\.ready\)/, "explore completion requires a passing verify");
 assert.match(serverSource, /presets are managed from the card's Agent preset section/, "preset mutation refuses worker threads");

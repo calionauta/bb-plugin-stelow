@@ -303,4 +303,25 @@ assert.match(app, /WORKFLOW_PHASES\.map\(\(phase\) =>/, "the workflow map groups
 assert.match(app, /inline-flex size-5 shrink-0 items-center justify-center text-sm/, "all shared disclosure chevrons reserve one readable minimum size");
 assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");
 
+// Finished work is not blocked work. The review signal is its own quieter
+// treatment, derived from ONE predicate, and it is the completion's read state
+// — never the amber attention flag the Inbox badge and attention filter count.
+assert.match(app, /function pendingReview\(card: Pick<CardItem, "status" \| "hasPendingReview">\): boolean \{/, "the review signal is one predicate, not pasted per surface");
+assert.match(app, /card\.status === "completed" && card\.hasPendingReview/, "only an unopened, completed card asks for review");
+assert.match(server, /hasPendingReview\(db, row\.id\)/, "list rows carry the review signal from the shared Inbox helper");
+assert.match(server, /hasPendingReview\(db, cardId\)/, "card detail carries the same review signal");
+assert.match(app, /bg-emerald-500\/15 px-2 py-0\.5 font-medium text-emerald-700/, "review is emerald, distinct from the amber attention chip");
+assert.match(server, /current\.kind === "build" && !opts\?\.suppressCompletionEvent/, "exactly one completion notification per finished Build card");
+assert.match(server, /Build complete — audit evidence is ready to review in Done\./, "the completion notification says what to review");
+
+// Two receipts, one word apart. Only their freshness tells them apart, so the
+// card asks the owning helper for that verdict and labels both where they list.
+assert.match(app, /rpc\.call\("auditTrailStatus", \{ cardId \}\)/, "freshness comes from the host, never guessed in the UI");
+assert.match(app, /card\.status === "completed" \? <AuditTrailStatusRow cardId=\{card\.id\} \/> : null/, "the freshness row appears only where a receipt can exist");
+assert.match(app, /if \(card\?\.status === "completed"\) setArtifactsOpen\(true\)/, "a completed card opens its evidence instead of hiding it");
+assert.match(server, /const isTrail = basename\(absolute\) === AUDIT_TRAIL_FILE;/, "the host recognizes the portable receipt by the name Stelow owns");
+assert.match(server, /stage: isTrail \? "audit" : "unregistered"/, "the portable receipt is attributed to the stage that produced it");
+assert.match(server, /note: auditReceiptNote\(/, "both receipts are labelled where they are listed");
+assert.match(server, /auditTrailGate\(\{ build: trail, check: trailCheck, verifiedGit: gitEvidence \}\)/, "the trail is bound to the Git identity the audit receipt was verified at");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

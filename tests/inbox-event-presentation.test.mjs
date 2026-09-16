@@ -13,7 +13,12 @@ const archivedError = { kind: "error", occurredAt: 10, resolvedAt: null, archive
 assert.deepEqual(inboxEventPresentation(archivedError), { label: "Archived Inbox update", tone: "bg-muted text-muted-foreground", stateAt: 30, stateLabel: "Archived" });
 assert.equal(isOpenInboxAction(archivedError), false);
 
-assert.equal(isOpenInboxAction({ kind: "completed", occurredAt: 10, resolvedAt: null, archivedAt: null }), false);
+// A completion is never an action badge (nothing is blocked), but while it is
+// open it names the request it really is: finished work to review.
+const openCompletion = { kind: "completed", occurredAt: 10, resolvedAt: null, archivedAt: null };
+assert.equal(isOpenInboxAction(openCompletion), false);
+assert.deepEqual(inboxEventPresentation(openCompletion), { label: "Ready for review", tone: null, stateAt: 10, stateLabel: null });
+assert.equal(inboxEventPresentation({ ...openCompletion, resolvedAt: 20, resolvedReason: "completed" }).label, "Completed", "a closed completion reads as history again");
 assert.deepEqual(unreadInboxEntries([{ id: "read", readAt: 1 }, { id: "unread", readAt: null }], true).map((entry) => entry.id), ["unread"], "Unread only is a secondary view filter");
 assert.equal(unreadInboxEntries([{ id: "read", readAt: 1 }], false).length, 1, "All updates keeps read history in the selected tab");
 

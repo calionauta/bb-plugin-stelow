@@ -286,6 +286,19 @@ function attentionLabel(card: CardItem): string {
   return "Paused. Resume it.";
 }
 
+// A finished card is work a human has to review, and a Done column that looks
+// inert teaches people to stop opening it. This is deliberately NOT the amber
+// needs-attention treatment: that one means "a worker is blocked on you", which
+// is what the Inbox badge and the attention filter count. Finished work gets
+// its own quieter, emerald signal so neither meaning is diluted.
+function pendingReview(card: Pick<CardItem, "status" | "hasPendingReview">): boolean {
+  return card.status === "completed" && card.hasPendingReview;
+}
+
+function ReviewChip() {
+  return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
+}
+
 function useDebouncedRealtime(channels: readonly string[], handler: () => void, delayMs = DEBOUNCE_MS) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
@@ -629,7 +642,7 @@ function BoardPanel({ active }: { active: boolean }) {
   }, [rpc]);
 
   useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
-  useDebouncedRealtime(["card-state", "board-changed"], () => void load(boardProjectId ?? routeProjectId));
+  useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void load(boardProjectId ?? routeProjectId));
   useEffect(() => {
     void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewMode: savedReviewMode }) => {
       setAppetite(savedAppetite);
@@ -1024,7 +1037,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   }, [rpc]);
 
   useEffect(() => { void load(researchProjectId ?? routeProjectId); }, [load, researchProjectId, routeProjectId]);
-  useDebouncedRealtime(["card-state", "board-changed"], () => void load(researchProjectId ?? routeProjectId));
+  useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void load(researchProjectId ?? routeProjectId));
 
   const strategyLabelById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
   const activeProjectId = researchProjectId ?? routeProjectId;
@@ -1261,7 +1274,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   }, [rpc]);
 
   useEffect(() => { void load(exploreProjectId ?? routeProjectId); }, [load, exploreProjectId, routeProjectId]);
-  useDebouncedRealtime(["card-state", "board-changed"], () => void load(exploreProjectId ?? routeProjectId));
+  useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void load(exploreProjectId ?? routeProjectId));
 
   const activeProjectId = exploreProjectId ?? routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
@@ -2285,7 +2298,7 @@ function TrackListRow({ card, meta, onOpen }: {
 }) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
-  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300">{attentionLabel(card)}</span> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
+  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300">{attentionLabel(card)}</span> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -2393,6 +2406,12 @@ function CardMetaRows({ card }: { card: CardItem }) {
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
           <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
           <span>{attentionLabel(card)}</span>
+        </div>
+      ) : null}
+      {pendingReview(card) ? (
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+          <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
+          <span>Review</span>
         </div>
       ) : null}
       {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
@@ -2754,6 +2773,62 @@ function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, g
     items: group.items,
   })), [artifacts, groupTitleForStage]);
   return <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />;
+}
+
+// A completed Build card carries two receipts whose names differ by one word,
+// so only their freshness tells them apart — and only Stelow can say that.
+// This asks the helper on demand (never on every board read: `check` re-derives
+// the projection and samples the worktree) and re-asks on the button, so a card
+// whose tree moved after completion says so instead of reading as verified
+// forever.
+type AuditTrailStatus = {
+  state: "verified" | "changed" | "missing" | "refused" | "unsupported" | "unavailable";
+  detail: string | null; head: string | null; path: string | null; contract: string | null;
+};
+
+const AUDIT_TRAIL_COPY: Record<AuditTrailStatus["state"], { label: string; tone: string; sub: string | null }> = {
+  verified: { label: "Audit trail verified", tone: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300", sub: null },
+  changed: { label: "Changed since completion", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300", sub: "The repository or the workflow documents moved after this card was audited, so its receipt no longer describes the current tree. Re-check after committing, or re-run the audit." },
+  missing: { label: "No audit trail", tone: "bg-muted text-muted-foreground", sub: "This card has no portable Stelow receipt. Cards completed before the receipt existed read this way." },
+  refused: { label: "Audit trail refused", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300", sub: null },
+  unsupported: { label: "Audit trail unreadable", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300", sub: null },
+  unavailable: { label: "Audit trail unavailable", tone: "bg-muted text-muted-foreground", sub: null },
+};
+
+function AuditTrailStatusRow({ cardId }: { cardId: string }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [status, setStatus] = useState<AuditTrailStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const check = useCallback(async () => {
+    setChecking(true);
+    try {
+      setStatus(await rpc.call("auditTrailStatus", { cardId }));
+    } catch {
+      setStatus({ state: "unavailable", detail: "The host could not read the audit trail.", head: null, path: null, contract: null });
+    } finally {
+      setChecking(false);
+    }
+  }, [cardId, rpc]);
+  useEffect(() => { void check(); }, [check]);
+  if (!status) return <p className="text-xs text-muted-foreground">Checking the audit trail…</p>;
+  const copy = AUDIT_TRAIL_COPY[status.state];
+  const detail = copy.sub ?? (status.state === "verified" ? (status.head ? `Attests HEAD ${status.head.slice(0, 12)}.` : null) : status.detail);
+  return (
+    <div className="mb-3 rounded-md border p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className={`rounded-full px-2 py-0.5 font-medium ${copy.tone}`}>{copy.label}</span>
+        <button
+          type="button"
+          onClick={() => void check()}
+          disabled={checking}
+          className="min-h-11 cursor-pointer rounded-md px-2 text-xs font-medium text-primary hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
+        >
+          {checking ? "Checking…" : "Re-check"}
+        </button>
+      </div>
+      {detail ? <p className="mt-1 text-muted-foreground">{detail}</p> : null}
+    </div>
+  );
 }
 
 function InputFiles({ card, detail, onView }: { card: CardItem; detail: CardDetailResponse | null; onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void }) {
@@ -5303,6 +5378,12 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   useEffect(() => {
     if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
   }, [cardId, card?.status, rpc]);
+  // A completed card's deliverable IS its evidence, so Artifacts opens by
+  // default there: the two receipts and their verification state are the first
+  // thing on the card, instead of behind the disclosure that serves live work.
+  useEffect(() => {
+    if (card?.status === "completed") setArtifactsOpen(true);
+  }, [card?.status]);
   useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
 
   const loadPublication = useCallback(async () => {
@@ -5871,6 +5952,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               open={artifactsOpen}
               onToggle={setArtifactsOpen}
             >
+              {card.status === "completed" ? <AuditTrailStatusRow cardId={card.id} /> : null}
               {detail ? (
                 <ArtifactGroups
                   artifacts={detail.artifacts}

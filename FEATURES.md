@@ -209,7 +209,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
   where observed; legacy rows keep the generic kind label).
   The badge counts the same unresolved actions shown by **Needs attention**;
-  completions remain available in All without presenting themselves as work.
+  completions remain available in All without presenting themselves as work,
+  and an unopened one reads **Ready for review** — the request it actually is —
+  until the Done card is opened, which is also what clears the card's Review
+  marker on the board.
   The toolbar is one row: four tabs with semantic status dots (amber waits,
   emerald resolved, zinc archived, primary all) and a single Unread-only
   checkbox — no detached Show label.
@@ -401,6 +404,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   completed card (no re-error after finishing), and a stale error
   underneath Done never flags needs-attention or Retry. The board and the
   detail agree because both read the same rule.
+- **Review is not attention** (`hasPendingReview`, `pendingReview`). Done
+  staying terminal for attention left a Done column that looked inert, so
+  finishing work is now its own quieter, emerald signal instead of being
+  folded into the amber one. `needsAttention` still means exactly one thing —
+  a worker is blocked on you — and the Inbox badge still counts exactly the
+  actions its primary filter lists. The review marker rides the completion's
+  own read state: `bb stelow done` writes it unread, opening the card clears
+  it, and the board listens to `inbox-changed` so the marker never lingers.
 - **Auto-continue** (`syncThreadState`, `lib/auto-continue.mjs`). A worker
   that narrates progress and stops idles after every stage (the provider
   ends a turn on any final text). While the finished turn left fresh
@@ -505,6 +516,28 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   upstream helper to build and check the deterministic cross-host lineage
   receipt. The plugin never owns a second trail format; another host can
   verify the same `audit-trail.md` from durable state and content hashes.
+  The receipt attests the whole tree the work was verified in — Git root,
+  `HEAD`, the tracked worktree diff, and the untracked manifest — so a later
+  commit, an uncommitted edit, or a new untracked file all make it stale.
+  `lib/audit-trail-contract.mjs` is the ONE place the plugin reads that
+  output: it pins the projection's contract version and keeps the completion
+  gate and the card's freshness badge from disagreeing.
+- **One tree, one receipt.** `audit-trail build --strict` runs only after the
+  `audit.md` gate, `check --strict` re-validates it, and the gate then binds
+  the trail's own snapshot to the Git identity the receipt was verified at. A
+  checkout that moved in between blocks completion with the fix named, rather
+  than leaving Done holding a receipt and a trail that describe two different
+  trees. `--strict` also refuses to seal a receipt that would omit a workflow
+  document nobody registered — a produced file is never silently dropped from
+  the lineage links.
+- **Audit evidence, labelled** (`AuditTrailStatusRow`, `auditTrailStatus`).
+  A completed Build card carries two receipts one word apart. Stelow's trail
+  is attributed to the stage that produced it — not shown as an unregistered
+  stray file — and both are labelled for what they are: the host's `audit.md`
+  (acceptance criteria, tests, checkout) and Stelow's portable trail (state,
+  artifacts, worktree snapshot). Freshness is asked for on demand, never on
+  every board read, because `check` re-derives the projection. A finished card
+  opens its Artifacts section by default: the evidence is the deliverable.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.

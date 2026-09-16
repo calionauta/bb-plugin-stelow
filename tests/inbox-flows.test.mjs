@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { ensureInboxResolvedReasonColumn, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge } from "../lib/inbox-events.mjs";
+import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge } from "../lib/inbox-events.mjs";
 import { inboxFilterEntries } from "../lib/inbox-event-presentation.mjs";
 
 const db = new Database(":memory:");
@@ -31,11 +31,19 @@ const completed = { id: "evt_completed", cardId: "card_1", kind: "completed", su
 assert.equal(insertInboxEvent(db, completed), true);
 assert.equal(listInboxEvents(db, false)[0].id, "evt_completed", "completion remains a recent update after action resolution");
 
+// Review signal: a completion nobody has opened yet. It is NOT the action
+// badge (a finished card is not blocked work), so this stays true while
+// countsForInboxBadge stays false for the same row.
+assert.equal(hasPendingReview(db, "card_1"), true, "an unopened completion asks for review");
+assert.equal(countsForInboxBadge({ kind: "completed", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: 300 }), false, "the same completion never inflates the action badge");
+assert.equal(hasPendingReview(db, "card_absent"), false, "a card with no completion has nothing to review");
+
 db.prepare("UPDATE inbox_events SET archived_at = ? WHERE id = ?").run(400, "evt_completed");
 assert.equal(listInboxEvents(db, false).length, 1, "only archived events are hidden; resolved history remains");
 assert.equal(listInboxEvents(db, true).length, 2, "archive view retains the full durable history");
 assert.equal(db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL").run(401, "evt_completed").changes, 1, "read acknowledgement persists");
 assert.equal(db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL").run(402, "evt_completed").changes, 0, "read acknowledgement is idempotent");
+assert.equal(hasPendingReview(db, "card_1"), false, "opening the Done card clears the review signal");
 assert.equal(db.prepare("UPDATE inbox_events SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL").run("evt_completed").changes, 1, "archived notification can be restored");
 assert.equal(listInboxEvents(db, false)[0].id, "evt_completed", "restored completion returns to recent updates");
 

@@ -29,4 +29,5 @@ export function syncQuestionInboxEvents(db: { prepare(query: string): { run(...v
 }): { inserted: number; resolved: number; reopened: number; pausedSuperseded: number };
 export function resolveActionInboxEvents(db: { prepare(query: string): { run(...values: unknown[]): { changes: number } } }, cardId: string, resolvedAt: number, kinds?: Array<"question" | "error" | "paused">, reason?: InboxResolutionReason | null): number;
 export function listInboxEvents(db: { prepare(query: string): { all(): unknown[] } }, includeArchived: boolean): unknown[];
+export function hasPendingReview(db: { prepare(query: string): { get(...values: unknown[]): unknown } }, cardId: string): boolean;
 export declare function countsForInboxBadge(entry: { kind: string; archivedAt: number | null; readAt?: number | null; resolvedAt?: number | null; occurredAt: number }, nowMs?: number): boolean;
