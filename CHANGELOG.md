@@ -8,6 +8,8 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-16
+
 ### Added
 
 - **Safe Stelow update path.** The plugin checks published upstream releases
