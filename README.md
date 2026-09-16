@@ -25,6 +25,40 @@ history). `stelow.json` and `.stelow/` remain the source of truth for the
 workflow itself — the board reads them, never replaces them. Details live in
 [FEATURES.md](./FEATURES.md).
 
+## Strategies and techniques
+
+The **Research tab** offers 14 product strategies. Each runs one
+`stelow-product-*` playbook and produces a `research-index.md` plus round
+files that can be fanned out into Build cards:
+
+- 💼 **Business models** — Cost and revenue model triggers to adapt and experiment with how the product makes money.
+- 🧬 **Evolutionary strategy** — Adaptability, optionality, and experimentation beyond fixed roadmaps.
+- 🎯 **Jobs to be done** — Segmentation, job map, desired outcomes, plus emotional and social jobs.
+- 🎁 **Launch promotions** — MAGIC launch offers: loss leader, gift cards, and irresistible freebies.
+- 🔭 **Market analysis** — PESTLE, foresight, Delphi, and Wardley maps on a market or niche.
+- 🏪 **Marketplace playbook** — Supply and demand tactics for stimulating marketplaces.
+- 🔓 **Open source strategy** — Delivering value by giving up control: business models and moats.
+- 🗺️ **Opportunity mapping** — Ranked solutions for a problem, from opportunities to bets.
+- 🎟️ **Paywall & onboarding** — Consumer-app monetization funnel, from paywall to trial policy.
+- 💰 **Pricing** — How to charge, how to package and limit usage, and how to frame perceived value.
+- 📣 **Product ads** — Ad categories by audience awareness stage, based on the transtheoretical model.
+- 🧪 **Product discovery** — Short-cycle validation: idea, early adopters, MVP, and first sale.
+- 💓 **Product health** — Success signals held in tension with counterbalance signals to avoid side effects.
+- 🤝 **Trust building** — Perception pillars and guarantees that make trust concrete.
+
+The **Explore tab** offers 8 one-shot techniques. Each runs one
+`stelow-workflow-*` playbook with no triage, pipeline, or gates, and produces
+a single `explore-<stage>.md` artifact:
+
+- 📐 **Shape Up proposal** — Turn an idea into a shaped proposal with IN/OUT scope, appetite, and risks before planning.
+- 🎨 **Interface alternatives** — Explore 1, 3, or 5 interface directions with explicit trade-offs before any code.
+- 🔍 **Product plan critique** — Review a plan or proposal for gaps, risks, assumptions, and open questions.
+- 🧱 **Tech plan + scopes** — Generate a technical plan with typed, dependency-ordered scopes from an existing document.
+- 🏗️ **Codebase critique** — Structural review of a codebase: architecture, coupling, hotspots, and maintenance risk.
+- 🖥️ **UX critique** — Evaluate an interface or live URL against heuristics, accessibility, and visual hierarchy.
+- 🧪 **Testing strategy** — AI-aware testing plan with security gates and risk-based coverage targets.
+- ✅ **Execution critique** — Post-implementation check verifying scope completion and surfacing gaps.
+
 ## Requirements
 
 1. bb desktop ≥ 0.38 ([getbb.app](https://getbb.app) — macOS one-click download,
