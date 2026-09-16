@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ const root = mkdtempSync(join(tmpdir(), "stelow-helper-test-"));
 mkdirSync(join(root, "skills"), { recursive: true });
 mkdirSync(join(root, "data"), { recursive: true });
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+copyFileSync(join(pluginRoot, "data", "stelow-source.json"), join(root, "data", "stelow-source.json"));
 
 // GitHub being offline or rate-limited is the sync's normal fail-soft path —
 // it reports those in `errors` and never throws. Skip only those; a missing
@@ -30,6 +31,9 @@ function assertVendoredHelper() {
   assert.ok(helper.includes("STELOW_STATEDIR"), "vendored helper supports per-workflow dirs");
   const pkg = JSON.parse(readFileSync(join(pluginRoot, "data", "stelow-package.json"), "utf8"));
   assert.match(pkg.version, /^\d+\.\d+\.\d+/, "vendored upstream package carries a semver version");
+  const source = JSON.parse(readFileSync(join(pluginRoot, "data", "stelow-source.json"), "utf8"));
+  assert.match(source.commit, /^[0-9a-f]{40}$/, "vendored helper names its immutable upstream commit");
+  assert.equal(pkg.version, source.version, "the displayed upstream version belongs to the pinned source commit");
 }
 
 try {
@@ -41,6 +45,8 @@ try {
   assert.ok(written.includes("STELOW_STATEDIR"), "synced helper supports per-workflow dirs");
   const pkg = JSON.parse(readFileSync(join(root, "data", "stelow-package.json"), "utf8"));
   assert.match(pkg.version, /^\d+\.\d+\.\d+/, "synced upstream package carries a semver version");
+  const source = JSON.parse(readFileSync(join(root, "data", "stelow-source.json"), "utf8"));
+  assert.equal(pkg.version, source.version, "synced package version matches the pinned source manifest");
 
   // Second run must be a no-op (state sha match) — no re-download, no churn.
   const before = readFileSync(join(root, "data", "stelow"), "utf8");

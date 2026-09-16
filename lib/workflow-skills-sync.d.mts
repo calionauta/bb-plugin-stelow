@@ -10,8 +10,10 @@ export interface SyncResult {
 
 export function syncWorkflowSkills(
   targetDir: string,
-  opts?: { log?: (msg: string) => void; statePath?: string },
+  opts: { ref: string; log?: (msg: string) => void; statePath?: string },
 ): Promise<SyncResult>;
+
+export function readPinnedStelowSource(repoRoot: string): { version: string; commit: string };
 
 export function syncHelperScript(
   repoRoot: string,

@@ -31,9 +31,9 @@ assert.match(auditTrailOutcome(crashRun(1, "bash: data/stelow: No such file")).d
 
 // A shape this plugin cannot read must never read as verified — including the
 // older helper that reports no contract version at all.
-const otherContract = auditTrailOutcome({ code: 0, stdout: JSON.stringify({ ok: true, contract: "v3", snapshot }), stderr: "" });
+const otherContract = auditTrailOutcome({ code: 0, stdout: JSON.stringify({ ok: true, contract: "v4", snapshot }), stderr: "" });
 assert.equal(otherContract.state, "unsupported");
-assert.match(otherContract.detail, /v3/);
+assert.match(otherContract.detail, /v4/);
 assert.match(otherContract.detail, /Update this plugin, or pin the vendored Stelow helper/);
 const noContract = auditTrailOutcome({ code: 0, stdout: JSON.stringify({ ok: true, path: "x", artifacts: 1 }), stderr: "" });
 assert.equal(noContract.state, "unsupported");
@@ -59,9 +59,9 @@ const unvalidated = auditTrailGate({ build: okRun(), check: failRun("audit-trail
 assert.equal(unvalidated.ready, false);
 assert.match(unvalidated.error, /did not validate \(changed\)/);
 
-const unsupported = auditTrailGate({ build: { code: 0, stdout: JSON.stringify({ ok: true, contract: "v3" }), stderr: "" }, check: okRun(), verifiedGit: git });
+const unsupported = auditTrailGate({ build: { code: 0, stdout: JSON.stringify({ ok: true, contract: "v4" }), stderr: "" }, check: okRun(), verifiedGit: git });
 assert.equal(unsupported.ready, false);
-assert.match(unsupported.error, /contract "v3"/, "an unreadable contract blocks completion without a generic wrapper");
+assert.match(unsupported.error, /contract "v4"/, "an unreadable contract blocks completion without a generic wrapper");
 
 // The receipt and the portable trail must attest one tree. A checkout that
 // moved while the trail was written is the window this closes.

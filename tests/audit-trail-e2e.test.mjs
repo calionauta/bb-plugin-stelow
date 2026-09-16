@@ -69,7 +69,7 @@ try {
   const trail = readFileSync(join(stateDir, "audit-trail.md"), "utf8");
   assert.ok(trail.includes(`[technical plan](plans/spec-tech_v1.md)`), "the receipt links the registered artifact");
   assert.ok(trail.includes("| Git HEAD |"), "the receipt records the repository snapshot");
-  assert.ok(!trail.includes("unregistered workflow documents"), "the Strict gate passed, so nothing is missing");
+  assert.ok(!trail.includes("unregistered workflow files | 1"), "the Strict gate passed, so nothing is missing");
 
   // The window the gate closes: the receipt was verified at one commit and the
   // checkout moved before the trail was written.

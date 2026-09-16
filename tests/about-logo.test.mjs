@@ -46,12 +46,13 @@ const syncLib = readFileSync(new URL("../lib/workflow-skills-sync.mjs", import.m
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 assert.equal(manifest.files.includes("assets"), true, "plugin package carries assets for the RPC to read");
 
-// buildInfo carries the upstream-skills verification timestamp and the
-// About tab renders it next to the plugin version.
-assert.match(server, /skillsSyncedAt: z\.number\(\)\.nullable\(\)/, "buildInfo exposes the skills verification timestamp");
-assert.match(server, /skillsSyncedAt: readLastSyncAt\(SYNC_STATE_FILE\)/, "verification timestamp is read live, not memoized");
-assert.match(syncLib, /if \(result\.errors\.length === 0\) (nextState|state)\[SYNC_TIMESTAMP_KEY\] = Date\.now\(\);/, "only clean verifications advance the timestamp");
-assert.match(app, /skills · synced /, "About shows a compact sync status, not a noisy paragraph");
+// A plugin release pins Stelow's helper and skills. Runtime must not mutate
+// that evidence from upstream main, and About names the pinned version.
+assert.match(server, /skillsSyncedAt: z\.number\(\)\.nullable\(\)/, "buildInfo keeps a compatible nullable field");
+assert.match(server, /skillsSyncedAt: null/, "runtime reports no mutable sync timestamp");
+assert.match(syncLib, /readPinnedStelowSource/, "release sync reads a pinned source manifest");
+assert.doesNotMatch(server, /syncHelperScript|syncWorkflowSkills|background\.schedule\("stelow-skills-sync"/, "runtime never mutates vendored Stelow behavior");
+assert.match(app, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
 assert.match(app, /setSkillsOpen\(true\)/, "sync status opens the vendored-skills dialog");
 assert.match(app, /Vendored Stelow skills/, "dialog names the vendored skill inventory");
 assert.match(app, /Reinstall .* at its latest release/, "installed tools offer reinstall-as-update");

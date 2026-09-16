@@ -36,7 +36,7 @@ import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
 import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
-import { WORKFLOW_SKILLS, readLastSyncAt, syncWorkflowSkills, syncHelperScript } from "./lib/workflow-skills-sync.mjs";
+import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
 import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
@@ -1124,17 +1124,6 @@ export default async function plugin(bb: BbPluginApi) {
   // above (prompt-contracts pins that), the nudge carries only the delta.
   const SPLIT_REQUEST_NUDGE = "Split requested: the user explicitly asked for a split proposal. Follow SPLIT_PROTOCOL in your system prompt: ask with --tag split --multiple (one --option per delivery plus exactly one --option \\\"Keep as one card\\\"), then STOP and wait; after the answer, execute the recorded approval with `bb stelow split`. Do not ask a standard question about splitting instead — only a --tag split proposal is executable.";
   const db = bb.storage.database();
-  // Sync state lives beside data.db (stable across managed-install cache
-  // rotations), never in the plugin root: a fresh cache dir would otherwise
-  // show "never synced" and re-download everything for up to 6h after each
-  // plugin update. Falls back to the plugin root when the db path is odd.
-  const pluginDataDir = (() => {
-    try {
-      const name = (db as unknown as { name?: unknown }).name;
-      if (typeof name === "string" && name.length > 0 && name !== ":memory:") return dirname(name);
-    } catch { /* fall through */ }
-    return pluginDir;
-  })();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS cards (
       id TEXT PRIMARY KEY,
@@ -3517,26 +3506,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     skills: context.thread.title?.startsWith("Stelow: ") ? [...WORKFLOW_SKILLS] : [],
   }));
 
-  // Auto-sync the vendored Stelow workflow skills + helper script from the
-  // Upstream skill sync (calionauta/stelow main): workflow skills AND
-  // product playbooks, vendored into the plugin so workers load them from
-  // `bb skill list` with no network at card time. Runs every 6h plus once
-  // at boot (a fresh managed-install cache has no sync state yet);
-  // fail-soft (network issues just log, never break the plugin).
-  // State lives in the plugin data dir (never inside skills/, which bb
-  // scans for skill candidates, and never in the ephemeral install cache).
-  const SKILLS_SYNC_CRON = process.env.STELOW_SKILLS_SYNC_CRON ?? "33 */6 * * *";
-  const SYNC_STATE_FILE = nodeJoin(pluginDataDir, ".sync-state.json");
-  async function runUpstreamSync() {
-    try {
-      await syncWorkflowSkills(PLUGIN_SKILLS_DIR, { log: (m) => bb.log.info(m), statePath: SYNC_STATE_FILE });
-      await syncHelperScript(pluginDir, { log: (m) => bb.log.info(m), statePath: SYNC_STATE_FILE });
-    } catch (e) {
-      bb.log.warn(`stelow-skills-sync failed (fail-soft): ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-  bb.background.schedule("stelow-skills-sync", SKILLS_SYNC_CRON, () => void runUpstreamSync());
-  void runUpstreamSync();
+  // The helper and skills are pinned to one upstream commit at plugin release
+  // time. Do not mutate them at boot: a running plugin must remain able to
+  // explain exactly which Stelow behavior produced an audit receipt.
 
   // NOTE: v0.6.0–v0.6.2 shipped a one-pass pw- → sw- boot migration. It ran,
   // production converged (zero pw- hashes and dirs), and the code was
@@ -4861,7 +4833,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!projectPath) return { state: "unavailable" as const, detail: ERR_WORKSPACE_UNAVAILABLE, head: null, path: null, contract: null };
       const stateDir = card.dir_hash ? await workflowStateDir(bb, projectPath, card.id, card.dir_hash).catch(() => null) : null;
       if (!stateDir) return { state: "unavailable" as const, detail: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.", head: null, path: null, contract: null };
-      const run = await runHelper(["audit-trail", "check", "--json"], projectPath, stateDir);
+      // This is the same completion contract, not a softer display-only
+      // verdict: a trail with any unregistered durable output is refused.
+      const run = await runHelper(["audit-trail", "check", "--strict", "--json"], projectPath, stateDir);
       const outcome = auditTrailOutcome(run);
       return {
         state: outcome.state,
@@ -5378,7 +5352,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           .map((e) => e.name)
           .sort();
       } catch { /* panel shows an empty list */ }
-      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: readSyncedStelowVersion(), skillsSyncedAt: readLastSyncAt(SYNC_STATE_FILE), skills };
+      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: readSyncedStelowVersion(), skillsSyncedAt: null, skills };
     },
 
     // About identity mark. Served as a data URI (never a static file URL —

@@ -9,6 +9,7 @@ import { syncWorkflowSkills, WORKFLOW_SKILLS } from "../lib/workflow-skills-sync
 // offline invariants (idempotence, no-op on second run) still run when online.
 const target = mkdtempSync(join(tmpdir(), "stelow-skills-test-"));
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const source = JSON.parse(readFileSync(join(pluginRoot, "data", "stelow-source.json"), "utf8"));
 
 // GitHub being offline or rate-limited is the sync's normal fail-soft path —
 // it reports those in `errors` and never throws. Skip only those; a missing
@@ -33,7 +34,7 @@ function assertVendoredSkills() {
 }
 
 try {
-  const first = await syncWorkflowSkills(target, { log: () => {} });
+  const first = await syncWorkflowSkills(target, { ref: source.commit, log: () => {} });
 
   assertCleanSync(first, "first sync");
   assert.ok(first.created.length > 0, "first sync created files");
@@ -44,7 +45,7 @@ try {
   );
 
   // Second run must be a no-op (state file skip) — no re-download, no churn.
-  const second = await syncWorkflowSkills(target, { log: () => {} });
+  const second = await syncWorkflowSkills(target, { ref: source.commit, log: () => {} });
   assertCleanSync(second, "second sync");
   assert.equal(second.created.length, 0, "second sync creates nothing");
   assert.equal(second.updated.length, 0, "second sync updates nothing");
@@ -64,7 +65,7 @@ try {
   writeFileSync(join(retired, "SKILL.md"), "# retired");
   mkdirSync(foreign, { recursive: true });
   writeFileSync(join(foreign, "x.md"), "# foreign");
-  const third = await syncWorkflowSkills(target, { log: () => {} });
+  const third = await syncWorkflowSkills(target, { ref: source.commit, log: () => {} });
   assertCleanSync(third, "prune run");
   assert.ok(!existsSync(retired), "retired stelow-* dir pruned");
   assert.ok(existsSync(join(foreign, "x.md")), "non-stelow dirs untouched");
@@ -81,13 +82,13 @@ try {
     const target2 = join(root2, "skills");
     const state2 = join(root2, ".sync-state.json");
     mkdirSync(target2, { recursive: true });
-    const a = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
+    const a = await syncWorkflowSkills(target2, { ref: source.commit, log: () => {}, statePath: state2 });
     assertCleanSync(a, "explicit-state sync");
     assert.ok(a.created.length > 0, "explicit-state sync created files");
     assert.ok(existsSync(state2), "state lands at the explicit path");
     const strays = readdirSync(target2).filter((e) => e.startsWith("."));
     assert.deepEqual(strays, [], "no dotfiles inside skills/");
-    const b = await syncWorkflowSkills(target2, { log: () => {}, statePath: state2 });
+    const b = await syncWorkflowSkills(target2, { ref: source.commit, log: () => {}, statePath: state2 });
     assertCleanSync(b, "explicit-state second run");
     assert.equal(b.changed, false, "explicit-state second run is a no-op");
     const syncedAt = JSON.parse(readFileSync(state2, "utf8"))["$syncedAt"];

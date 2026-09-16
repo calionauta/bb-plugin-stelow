@@ -191,7 +191,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   side (`buildInfo` carries both; the upstream version syncs with the
   skills). The Stelow section opens with the identity mark, served lazily
   as a data URI over the `aboutLogo` RPC (bb serves only built bundles,
-  never static files) with a silent text fallback. The plugin section shows a compact sync status (● dot + "N skills · synced X ago", opening the vendored inventory grouped Workflow/Product) and offers Reset onboarding (two-step
+  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product) and offers Reset onboarding (two-step
   confirm) to replay the first-visit setup dialogs. Work tracks describe
   themselves; product identity lives in exactly one place, never next
   to the wrong version.
@@ -487,7 +487,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 
 - **`bb stelow` CLI.** status, ask, seed, advance, doctor, preset management,
   fan-out, verify. Advance mechanics delegate to the upstream `stelow`
-  helper (synced like skills, no fork); transitions always resolve from
+  helper and skills pinned together at plugin release (no fork and no runtime
+  mutation); transitions always resolve from
   the vendored copy. `seed` refuses card workers (`lib/card-seed-guard.mjs`):
   their workflow is pre-seeded at spawn with the card id as owner, and a
   second seed would orphan a name-derived workflow at the project root —

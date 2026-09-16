@@ -324,5 +324,6 @@ assert.match(server, /stage: isTrail \? "audit" : "unregistered"/, "the portable
 assert.match(server, /note: auditReceiptNote\(/, "both receipts are labelled where they are listed");
 assert.match(server, /auditTrailGate\(\{ build: trail, check: trailCheck, verifiedGit: gitEvidence \}\)/, "the trail is bound to the Git identity the audit receipt was verified at");
 assert.match(server, /sameGitEvidence\(gitEvidence, postTrailGitEvidence\)/, "Done re-samples Git after the portable receipt validates");
+assert.match(server, /\["audit-trail", "check", "--strict", "--json"\]/, "the post-completion status uses the same strict receipt contract as Done");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

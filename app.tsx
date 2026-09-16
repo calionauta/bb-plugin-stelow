@@ -1758,14 +1758,14 @@ function AboutPanel() {
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               {buildInfo ? (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span aria-hidden className={buildInfo.skillsSyncedAt ? "text-emerald-500" : "text-amber-500"}>●</span>
+                  <span aria-hidden className="text-emerald-500">●</span>
                   <button
                     type="button"
                     onClick={() => setSkillsOpen(true)}
                     className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground"
-                    title={buildInfo.skillsSyncedAt ? `Upstream skills verified ${new Date(buildInfo.skillsSyncedAt).toLocaleString()} — click to see which` : "Upstream skills not yet verified on this host — click to see which"}
+                    title={`Pinned to Stelow ${buildInfo.stelowVersion ?? "at this plugin release"} — click to see which skills shipped`}
                   >
-                    {buildInfo.skills.length} skills · synced {buildInfo.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}
+                    {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
                   </button>
                 </p>
               ) : null}
