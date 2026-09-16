@@ -39,7 +39,7 @@ import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-pol
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
-import { ActivityPill, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, Pill } from "./components/dashboard/build-status-pills";
+import { ActivityPill, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill } from "./components/dashboard/build-status-pills";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -2457,7 +2457,7 @@ function BoardCard({ card }: { card: CardItem }) {
 // Lightweight-track card (Research + Explore share it — convention over
 // configuration): identical worker chrome, one tag pill whose label comes
 // from the track catalog (strategy for research, stage for explore).
-function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: CardItem; tagLabel: string | null; tagTitle: string; ariaNoun: string }) {
+function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun }: { card: CardItem; kind: "research" | "explore"; tagLabel: string | null; tagTitle: string; ariaNoun: string }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
   // Retry is for active workers only: a Done card never offers it, even if a
@@ -2490,7 +2490,7 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
         status={<ActivityPill activity={card.activity} detail={card.lastError} />}
       />
       {tagLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <Pill className="max-w-full" title={tagTitle}>{tagLabel}</Pill>
+        <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={null} tagLabel={tagLabel} tagTitle={tagTitle} kind={kind} />
       </div> : null}
       <CardMetaRows card={card} />
     </div>
@@ -2500,14 +2500,14 @@ function LightweightTrackCard({ card, tagLabel, tagTitle, ariaNoun }: { card: Ca
 // Research-track card: strategy instead of stage/intent, opens in the
 // Research panel. Retry, attention, and activity reuse the build pieces.
 function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: string | null }) {
-  return <LightweightTrackCard card={card} tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." ariaNoun="research" />;
+  return <LightweightTrackCard card={card} kind="research" tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." ariaNoun="research" />;
 }
 
 // Explore-track card: a single technique (one isolated Build-workflow skill)
 // instead of strategy/intent, opens in the Explore panel. Retry, attention,
 // and activity reuse the same pieces as the other tracks.
 function ExploreCard({ card, stageLabel }: { card: CardItem; stageLabel: string | null }) {
-  return <LightweightTrackCard card={card} tagLabel={stageLabel ?? card.exploreStage} tagTitle="Technique — the focused approach this exploration runs." ariaNoun="exploration" />;
+  return <LightweightTrackCard card={card} kind="explore" tagLabel={stageLabel ?? card.exploreStage} tagTitle="Technique — the focused approach this exploration runs." ariaNoun="exploration" />;
 }
 
 // Lightweight list view (Research + Explore share it): same grouping as the
@@ -2929,10 +2929,9 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, o
         <span>Stelow</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-        {card ? card.kind === "research" || card.kind === "explore" ? <Pill className="ml-2 shrink-0" tone={statusTone(card.status)} title={`${card.kind === "research" ? "Research" : "Explore"} status — this card's current board state.`}><span className="mr-1">{statusGlyph(card.status)}</span>{RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? statusLabel(card.status)}</Pill> : <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills {...buildStatusPillProps(card)} /></span> : null}
+        {card ? <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills {...buildStatusPillProps(card)} /></span> : null}
       </nav>
       {card ? <>
-        {card.kind !== "build" ? <ActivityPill activity={card.activity} /> : null}
         {card.kind === "build" && canEditWorkflowIntent(card) ? (
         <select
           aria-label="Intent"
@@ -4771,7 +4770,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                       <p className="text-xs text-muted-foreground">Review the results below, select opportunities to build, then move this card to Done.</p>
                     ) : null}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {strategyLabel ? <Pill tone="bg-primary/15 text-primary" title="Research strategy — the playbook driving this investigation.">{strategyLabel}</Pill> : null}
+                      <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? null} tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." kind="research" />
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-3">
@@ -5022,7 +5021,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
   const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={`stelow-live-surface stelow-detail-surface flex h-full flex-col ${card ? liveBorderClass(card) : ""}`}>
       <div className="flex-1 overflow-auto p-4">
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {card ? (
@@ -5037,7 +5036,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                     <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
                     <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {stageLabel ? <Pill tone="bg-primary/15 text-primary" title="Technique — the focused approach this exploration runs.">{stageLabel}</Pill> : null}
+                      <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? null} tagLabel={stageLabel} tagTitle="Technique — the focused approach this exploration runs." kind="explore" />
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pt-3">

@@ -186,6 +186,18 @@ assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the liv
 assert.match(buildStatusPills, /export function CurrentStagePill/, "the progress header reuses the timeline's checkpoint pill");
 assert.match(app, /\? CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");
 assert.match(app, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress header names the checkpoint with the pulsing pill, never detached plain text");
+// Research/Explore share one presentation: track icon for position, content
+// icon for the playbook tag, statusTone for state, muted for the tag. Tiles
+// show identity (tag) while open cards add position (column) — the board
+// already gives tiles their position, so only open cards need it.
+assert.match(buildStatusPills, /export function LightweightStatusPills/, "lightweight tracks share one state presentation");
+assert.match(buildStatusPills, /TRACK_ICON\[kind\]/, "the position chip carries its track glyph");
+assert.match(buildStatusPills, /TAG_ICON\[kind\]/, "the playbook tag carries its content glyph");
+assert.match(app, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{null\}/, "tiles show identity only — position comes from the board section");
+assert.match(app, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{RESEARCH_COLUMN_LABELS\[researchColumnOf\(card\)\]/, "open cards add the position pill the board cannot show them");
+assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Research strategy/, "the open research tag no longer out-colors its tile twin");
+assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Technique/, "the open explore tag no longer out-colors its tile twin");
+assert.match(app, /stelow-live-surface stelow-detail-surface flex h-full flex-col.*liveBorderClass\(card\)/, "every open track pulses its live border while working");
 assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
 assert.match(app, /Answering below resumes the worker\./, "the concurrent-error note points at the open question as the recovery path");
 assert.match(app, /Retry the failed worker in place instead of answering/, "the open card offers retry beside the question when both are live");

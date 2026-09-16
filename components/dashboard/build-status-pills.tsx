@@ -38,6 +38,32 @@ const INTENT_ICON: Record<string, IconName> = {
   unknown: "CircleDashed",
 };
 
+// Lightweight tracks reuse the track-tab glyphs (convention over
+// configuration): the state chip carries the track, the content chip the
+// playbook piece. One map, both tracks, every surface.
+const TRACK_ICON: Record<string, IconName> = { research: "Idea", explore: "Target" };
+const TAG_ICON: Record<string, IconName> = { research: "Puzzle", explore: "Beaker" };
+
+// Research/Explore state in one place: board position plus the playbook tag.
+// Tiles show identity only (tag) — the board section already gives position —
+// while open cards add the position pill, which the board cannot show them.
+// Tones match Build by construction: state uses statusTone, the tag stays
+// muted, activity keeps its shared vocabulary.
+export function LightweightStatusPills({ card, statusTone, columnLabel, tagLabel, tagTitle, kind }: {
+  card: { status: string };
+  statusTone: (status: string) => string;
+  columnLabel: string | null;
+  tagLabel: string | null;
+  tagTitle: string;
+  kind: "research" | "explore";
+}) {
+  const kindLabel = kind === "research" ? "Research" : "Explore";
+  return <>
+    {columnLabel ? <Pill tone={statusTone(card.status)} title={`${kindLabel} status — this card's current board state.`} icon={<Icon name={TRACK_ICON[kind] ?? "CircleDashed"} className="size-3" aria-hidden />}>{columnLabel}</Pill> : null}
+    {tagLabel ? <Pill title={tagTitle} icon={<Icon name={TAG_ICON[kind] ?? "CircleDashed"} className="size-3" aria-hidden />}>{tagLabel}</Pill> : null}
+  </>;
+}
+
 const ACTIVITY_PILL_CLASS: Record<string, string> = {
   running: "stelow-activity-working",
   "awaiting-answer": "stelow-activity-waiting",
