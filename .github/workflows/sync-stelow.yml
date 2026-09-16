@@ -61,6 +61,8 @@ jobs:
           SHA="$(node -p 'require("./data/stelow-source.json").commit')"
           VERSION="$(node -p 'require("./data/stelow-source.json").version')"
           BRANCH="automation/stelow-${SHA:0:12}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
           git add data/stelow data/product-strategies.json data/stelow-package.json data/stelow-source.json skills
           git commit -m "chore: sync Stelow ${VERSION}"

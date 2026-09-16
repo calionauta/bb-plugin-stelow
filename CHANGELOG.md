@@ -8,6 +8,13 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-09-16
+
+### Fixed
+
+- **Automated sync commits.** The synchronization workflow now configures the
+  GitHub Actions bot identity before committing its verified candidate.
+
 ## [0.19.0] - 2026-09-16
 
 ### Added
