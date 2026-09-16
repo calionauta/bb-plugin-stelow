@@ -500,6 +500,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the done instruction (budgeted), then pauses with the instruction on
   the card — completed cards read "Done — ready to review", never a lit
   audit with no next step.
+- **Portable audit receipt** (`scripts/stelow audit-trail`). After bb's
+  stricter checkout-bound `audit.md` gate passes, Build completion invokes the
+  upstream helper to build and check the deterministic cross-host lineage
+  receipt. The plugin never owns a second trail format; another host can
+  verify the same `audit-trail.md` from durable state and content hashes.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.

@@ -11,6 +11,7 @@ One board, one quiet inbox.
 - **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyze, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself.
 - **Explore runs:** pick one technique (Shape Up, interface alternatives, critiques, tech planning…), supply the input, get one artifact — no triage, no pipeline, no gates.
 - **Deterministic artifacts:** research round files and explore artifacts are pre-created by the plugin and validated in code; `bb stelow verify` lets the worker self-check before finishing.
+- **Auditable Build completion:** a Build card can become Done only at Audit, after the host records test evidence, validates its `audit.md` receipt against the exact checkout and Git HEAD, and builds/checks Stelow's portable `audit-trail.md` receipt.
 - **About tab:** what Stelow is vs what the plugin adds, with each repo link and each version side by side.
 - **Workflow actions:** start a Stelow agent thread, open generated artifacts, approve gates, advance stages, repair a stuck workflow, or archive a card.
 - **Native approval receipts:** approvals are written to `.stelow/approvals/{dirHash}/` using Stelow's canonical filenames.
@@ -64,9 +65,10 @@ a single `explore-<stage>.md` artifact:
 1. bb desktop ≥ 0.38 ([getbb.app](https://getbb.app) — macOS one-click download,
    `npx bb-app@latest` elsewhere; your agents run on your own subscriptions).
 2. A normal bb project backed by a local workspace source.
-3. Stelow skills: **bundled with the plugin** (shipped in `skills/`), so no
-   external install step is required. The worker agent loads the stage guides
-   from the plugin's own skills directory.
+3. Stelow skills and product playbooks: **bundled with the plugin** (shipped
+   in `skills/`), so no external install step is required. The worker agent
+   loads its stage guide or selected strategy from the plugin's own skills
+   directory.
 4. A `stelow.json` created by a Stelow workflow for board data.
 5. Optional host tools (all fail-soft — the plugin never installs binaries
    itself): [`sem`](https://github.com/Ataraxy-Labs/sem) adds a one-line
@@ -89,14 +91,8 @@ Or in bb: Extensions → Plugins → Add plugin, paste
 Pin a release with `@vX.Y.Z` (e.g. `@v0.13.0`); update with
 `bb plugin update stelow`.
 
-Research cards also need the product playbooks from the agent skills hub:
-
-```bash
-npx skills add calionauta/stelow -g
-```
-
-(`bb skill list` to confirm. Third-party plugins are full-trust server code:
-install only sources you trust.)
+(`bb skill list` can confirm the bundled skills. Third-party plugins are
+full-trust server code: install only sources you trust.)
 
 For development (clone + hot-reload):
 

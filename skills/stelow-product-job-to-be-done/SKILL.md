@@ -76,8 +76,6 @@ For a complete JTBD analysis, follow this logical sequence:
 - Options with short `label` and `description`
 - Examples: prompt selection (1-10), analysis type, next steps, etc.
 
-When no question tool is available, use enumerated text in chat (A/B/C/D or 1/2/3).
-
 ---
 
 ## General Instructions for the Agent
@@ -90,6 +88,91 @@ When no question tool is available, use enumerated text in chat (A/B/C/D or 1/2/
 - **Chain prompts sequentially** when the user wants a full analysis — the output of one prompt feeds into the next (e.g., Situational Variables → Functional Needs).
 - **Language of output**: The prompts are written in English (instructions to the LLM), but results should be delivered in the language used by the user.
 - Read the appropriate file from `references/` before executing a prompt.
+
+---
+
+## Research Mode (current or niche context)
+
+JTBD is grounded first in the user's context and in interviews. The LLM and
+external research can generate useful candidates — they do not invent evidence
+about people or replace validation.
+
+Use the shared web-research contract (`../stelow-workflow-orchestrator/references/cli-tools/web-research.md`)
+when current or niche-specific material can help discover or test candidates:
+
+- language people use for a struggle, workaround, or desired progress;
+- possible Jobs, situational variables, Job Map steps, and desired outcomes;
+- named competitors or alternatives, a changing category, or an emerging
+  practice; and
+- a score that relies on the current solution landscape.
+
+Use host-native search and primary sources to establish what exists and what
+has changed. Add `last30days` when recent launches, practitioner discussion,
+or a current niche signal could change the candidate set or its priority. It
+complements primary evidence; a frequent discussion or launch is never proof
+of a Job, a struggle, prevalence, or causal relationship.
+
+### Hypothesis and Bet Discipline
+
+When research contributes to a JTBD output, call it a **draft guide**, not a
+market finding. Mark each research-led Job, step, desired outcome, or ranking
+as a **hypothesis**. Prioritize hypotheses as **bets** using the decision
+context, fit with the supplied evidence, source coverage, and recency — not as
+a scientific measurement of demand or truth.
+
+For a prioritized research-led bet, record:
+
+- **Bet:** the candidate Job, step, outcome, or segment;
+- **Why now:** the supplied context and signals that made it worth exploring;
+- **Evidence, origin, and bias:** whether it is user-provided input, external
+  research, or a simulation; source types, gaps, recency, and whose
+  perspective is overrepresented or missing;
+- **Confidence:** directional only (low, medium, or high), never a statistical
+  claim; and
+- **Next validation:** the cheapest interview, observation, or behavioral-data
+  check that could disconfirm it.
+
+### Source and Status for Evidence
+
+User-provided interviews and research are first-class inputs. Use them when
+they support the analysis, and make their origin clear without inventing a
+sample size, method, or representativeness. Use one of these statuses wherever
+an insight, example, or voice depends on supplied material:
+
+- **Input-derived — direct quote:** exact wording present in the material the
+  user supplied; preserve its meaning and do not add a participant identity.
+- **Input-derived — paraphrase:** a faithful restatement of one supplied
+  account; do not put it in quotation marks.
+- **Input-derived — synthesis:** a pattern drawn from multiple supplied
+  interviews or research artifacts; state the supplied scope and limitations.
+- **Simulated hypothesis — not participant data:** a plausible invented
+  example used to make a candidate concrete, never evidence about a group.
+
+This provenance discipline applies to every JTBD prompt. Only call a finding
+validated when the supplied material actually supports it; otherwise preserve
+it as a hypothesis or bet. Keep participant information anonymized and avoid
+repeating unnecessary sensitive details.
+
+### Required Research Appendix
+
+When research contributed to the output, append this section after the native
+prompt output. Do not add an empty appendix when no research was used.
+
+```markdown
+## Research-led Draft Bets
+
+> Directional guide, not a market measurement or validated JTBD finding.
+
+### Bet: [candidate Job, step, outcome, segment, or alternative]
+- **Why now:** [decision context and signals]
+- **Evidence, origin, and bias:** [user-provided input, external sources, or simulation; recency, coverage gaps, and missing or overrepresented perspectives]
+- **Confidence:** [low | medium | high — directional only]
+- **Next validation:** [the cheapest interview, observation, or behavioral-data check that could disconfirm it]
+```
+
+Interviews and user-provided behavioral evidence establish why people hire,
+switch, or struggle. Record coverage limitations and do not fabricate findings
+when research is unavailable.
 
 ---
 
@@ -188,4 +271,3 @@ the rest of this file (unchanged). Summary:
 Primary actions (per stages.yaml): `read, write`. Run only the actions that
 produce the artifacts promised in `## Hand-off`; skip anything that does
 not advance the workflow.
-

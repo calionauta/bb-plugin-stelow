@@ -5833,6 +5833,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (!verification.ready) return { exitCode: 1, stderr: verification.error };
           const receipt = auditReceiptReadiness(receiptContent, stateBlob ? parseArtifactManifest(stateBlob) : [], checkout?.path ?? null, gitEvidence, verificationRun);
           if (!receipt.ready) return { exitCode: 1, stderr: receipt.error };
+          // The upstream helper owns a portable, deterministic audit trail.
+          // Build it only after the stricter BB receipt passes, so every Done
+          // card carries the same cross-host lineage record as any other host.
+          const trail = await runHelper(["audit-trail", "build"], projectPath!, doneStateDir ?? undefined);
+          if (trail.code !== 0) return { exitCode: trail.code ?? 1, stderr: trail.stderr || "Could not generate the audit trail." };
+          const trailCheck = await runHelper(["audit-trail", "check"], projectPath!, doneStateDir ?? undefined);
+          if (trailCheck.code !== 0) return { exitCode: trailCheck.code ?? 1, stderr: trailCheck.stderr || "Audit trail validation failed." };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           return { exitCode: 0, stdout: `Done. Workflow "${card.name}" completed at audit.` };

@@ -87,6 +87,8 @@ assert.match(serverSource, /if \(argv\[0\] === "done"\) \{/, "the done handler e
 assert.match(serverSource, /if \(argv\[0\] === "playbook"\) \{/, "the playbook handler exists");
 assert.match(serverSource, /status\|ask\|seed\|advance\|done\|playbook\|split\|doctor/, "the CLI usage lists done, playbook, and split");
 assert.match(serverSource, /doneEligibility\(\{ kind: "build", stage: currentStage/, "build completion is gated in code, not prose");
+assert.match(serverSource, /runHelper\(\["audit-trail", "build"\]/, "build completion creates the upstream portable audit trail");
+assert.match(serverSource, /runHelper\(\["audit-trail", "check"\]/, "build completion verifies the upstream portable audit trail");
 assert.match(serverSource, /researchVerifyReport\(cardId, strategyRounds\(card\)\.length/, "research completion requires a passing verify");
 assert.match(serverSource, /exploreVerifyReport\(cardId, card\.explore_stage, artifact\.ready\)/, "explore completion requires a passing verify");
 assert.match(serverSource, /presets are managed from the card's Agent preset section/, "preset mutation refuses worker threads");

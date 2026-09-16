@@ -8,6 +8,18 @@ avoiding demographic segmentation. Recommended first step in a JTBD analysis.
 **Variables to fill in:**
 - `[fill in with the market definition]`: The market definition or job to be done being analyzed
 
+## Evidence Policy
+
+Generate situational segments from the job and user/interview context first.
+When demand, purchasing power, ease of reach, or barriers are ranked using
+current niche conditions rather than supplied evidence, use the shared
+web-research contract (`../../stelow-workflow-orchestrator/references/cli-tools/web-research.md`).
+Use `last30days` only if a recent signal could change the segment ranking;
+treat it as context, not validation that the segment has the stated struggle.
+When research contributed, append the required
+[Research-led Draft Bets](../SKILL.md#hypothesis-and-bet-discipline) section
+after the native output.
+
 ---
 
 ## Prompt Completo

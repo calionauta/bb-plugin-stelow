@@ -8,6 +8,17 @@ Feeds directly into Prompt 7 (Functional Needs). Run this before discovering des
 **Variables to fill in:**
 - `{fill in here}`: The Job To Be Done to be analyzed
 
+## Research Assist (optional)
+
+When the user's context does not expose the niche's environment, constraints,
+or workarounds, use the shared web-research contract
+(`../../stelow-workflow-orchestrator/references/cli-tools/web-research.md`) to
+generate candidate situational variables. Use `last30days` only for recent
+context shifts. Treat the result as hypotheses about circumstances, not claims
+about their frequency or impact, until interviews or observation validate them.
+When research contributed, append the required [Research-led Draft Bets](../SKILL.md#hypothesis-and-bet-discipline)
+section after the native output.
+
 ---
 
 ## Prompt Completo
