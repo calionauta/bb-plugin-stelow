@@ -42,6 +42,17 @@ Any commit that adds, changes, or removes a user-facing feature must
 update `FEATURES.md` in the same commit — a feature without an entry
 does not exist.
 
+## Code standards
+
+Quality rules live in the coding-standards skill — never restated here.
+Load `stelow-product-coding-standards` (KISS, DRY, convention over
+configuration, plus LoB/SoC/Fail Fast/YAGNI with file/function size limits)
+before writing or reviewing code. If the skill is not installed, install it
+with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
+(same standard, public source) and continue.
+
+All changes — code, comments, docs, CHANGELOG, UI copy — are in English.
+
 ## Verify before commit
 
 - `npm run typecheck` and `npm test` must be green.
@@ -64,3 +75,7 @@ does not exist.
 Keep feature commits separate. A release is: CHANGELOG entry +
 `package.json`/`package-lock.json` bump + `release: vX.Y.Z` commit +
 `vX.Y.Z` tag + push both + `gh release create` with English notes.
+
+Never release automatically. After committing and pushing, ask the user
+whether they want a release and wait for confirmation before tagging,
+publishing, or deploying anything.
