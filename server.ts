@@ -3147,10 +3147,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       } catch { /* staleness stays best-effort; id comparison below still applies */ }
       const lastOutput = (await bb.sdk.threads.output({ threadId: card.worker_thread_id }).catch(() => null))?.output ?? null;
       // Stage source of truth is state.md (the agent advances it via `bb stelow
-      // advance`); the DB `stage` is only written by the manual advanceCard RPC.
+      // advance`); the DB `stage` is a cache. Converge it on every sync —
+      // including question-wait and idle polls — so pills, progress, preset
+      // band, split eligibility, and the hero all read the real checkpoint
+      // instead of the last manually-advanced one. This write carries stage
+      // only: status/column movement stays with the explicit advance/moveCard
+      // paths and the new-card guard below, and question waits keep their
+      // activity-only contract (see lib/card-question-state).
       let currentStage = card.stage;
       if (stateBlob) {
         currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
+      }
+      if (currentStage && currentStage !== card.stage) {
+        updateCard(cardId, { stage: currentStage });
       }
       if (status === "active" || status === "starting") {
         const questionIds = await syncOpenQuestionInbox(card);

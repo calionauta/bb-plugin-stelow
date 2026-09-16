@@ -102,6 +102,14 @@ assert.match(server, /stripArchivedResuscitation\(latest\?\.status, write\)/, "m
 // CLI names archived threads instead of misreporting ownership.
 assert.match(server, /if \(!card\?\.worker_thread_id \|\| isArchivedCard\(card\) \|\| card\.status === "completed" \|\| card\.status === "blocked"\) return;/, "sync polls never touch archived cards");
 assert.match(server, /if \(cardRow\.status === "archived"\) return \{ exitCode: 2, stderr: "This card is archived\." \}/, "ask on an archived thread names the state");
+// Stage truth is state.md: every sync converges the DB cache once, upfront,
+// so question-wait and idle polls never render the last manually-advanced
+// checkpoint while the timeline, preset band, split eligibility, and hero
+// read the DB value. The convergence write carries stage only — status and
+// column movement stay with the explicit advance/move paths, and question
+// waits keep their activity-only contract.
+assert.match(server, /if \(currentStage && currentStage !== card\.stage\) \{\s+updateCard\(cardId, \{ stage: currentStage \}\);/, "sync converges the DB stage to the state.md slug on every poll");
+assert.match(server, /updateCard\(cardId, questionWaitUpdates\(lastOutput\)\)/, "question waits still write activity only");
 
 // List-view groups collapse with archived collapsed by default and stored
 // choices surviving reloads; completed build cards read as one state.
