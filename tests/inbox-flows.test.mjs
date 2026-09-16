@@ -33,9 +33,9 @@ assert.equal(listInboxEvents(db, false)[0].id, "evt_completed", "completion rema
 
 // Review signal: a completion nobody has opened yet. It is NOT the action
 // badge (a finished card is not blocked work), so this stays true while
-// countsForInboxBadge stays false for the same row.
+// countsForInboxBadge carries the same review request to the sidebar.
 assert.equal(hasPendingReview(db, "card_1"), true, "an unopened completion asks for review");
-assert.equal(countsForInboxBadge({ kind: "completed", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: 300 }), false, "the same completion never inflates the action badge");
+assert.equal(countsForInboxBadge({ kind: "completed", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: 300 }), true, "the same completion reaches the attention badge until opened");
 assert.equal(hasPendingReview(db, "card_absent"), false, "a card with no completion has nothing to review");
 
 db.prepare("UPDATE inbox_events SET archived_at = ? WHERE id = ?").run(400, "evt_completed");
@@ -114,14 +114,14 @@ db.prepare("DELETE FROM cards WHERE id = ?").run("card_1");
 assert.equal(db.prepare("SELECT COUNT(*) AS count FROM inbox_events").get().count, 0, "deleting a card cascades to its Inbox history");
 
 // Badge rule: unresolved actions count whether or not the user has already
-// read them; completion is history and never inflates the action badge.
+// read them; an unread completion counts until its review is acknowledged.
 const NOW = 1_000_000_000;
 const action = { kind: "question", archivedAt: null, resolvedAt: null, readAt: NOW, occurredAt: NOW - 30 * 86_400_000 };
 assert.equal(countsForInboxBadge(action, NOW), true, "unresolved action counts even when read and old");
 assert.equal(countsForInboxBadge({ ...action, resolvedAt: NOW }, NOW), false, "resolved action stops counting");
 assert.equal(countsForInboxBadge({ ...action, archivedAt: NOW }, NOW), false, "archived action stops counting");
 const completedBadgeEvent = { kind: "completed", archivedAt: null, resolvedAt: null, readAt: null, occurredAt: NOW };
-assert.equal(countsForInboxBadge(completedBadgeEvent, NOW), false, "a completion stays in history instead of inflating the action badge");
+assert.equal(countsForInboxBadge(completedBadgeEvent, NOW), true, "an unread completion reaches the review badge");
 
 // Inbox filters distinguish attention work from durable history. A resolved
 // question may have followed a human answer, so the filter is lifecycle-based,
@@ -132,7 +132,7 @@ const filteredEvents = [
   { kind: "completed", archivedAt: null, resolvedAt: null, readAt: null },
   { kind: "paused", archivedAt: 1, resolvedAt: null, readAt: null },
 ];
-assert.equal(inboxFilterEntries(filteredEvents, "attention").length, 1, "Needs attention contains unresolved work even after it has been read");
+assert.equal(inboxFilterEntries(filteredEvents, "attention").length, 2, "Needs attention contains unresolved work and unread review requests");
 assert.equal(inboxFilterEntries(filteredEvents, "attention").length, filteredEvents.filter((event) => countsForInboxBadge(event)).length, "the primary Inbox list and sidebar badge use the same action set");
 assert.equal(inboxFilterEntries(filteredEvents, "resolved").length, 1, "Resolved history contains no-longer-actionable work");
 assert.equal(inboxFilterEntries(filteredEvents, "archived").length, 1, "Archived filter retains archived events");

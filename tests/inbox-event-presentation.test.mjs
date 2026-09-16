@@ -16,7 +16,7 @@ assert.equal(isOpenInboxAction(archivedError), false);
 // A completion is never an action badge (nothing is blocked), but while it is
 // open it names the request it really is: finished work to review.
 const openCompletion = { kind: "completed", occurredAt: 10, resolvedAt: null, archivedAt: null };
-assert.equal(isOpenInboxAction(openCompletion), false);
+assert.equal(isOpenInboxAction(openCompletion), true, "an unread completion asks for human review");
 assert.deepEqual(inboxEventPresentation(openCompletion), { label: "Ready for review", tone: null, stateAt: 10, stateLabel: null });
 assert.equal(inboxEventPresentation({ ...openCompletion, resolvedAt: 20, resolvedReason: "completed" }).label, "Completed", "a closed completion reads as history again");
 assert.deepEqual(unreadInboxEntries([{ id: "read", readAt: 1 }, { id: "unread", readAt: null }], true).map((entry) => entry.id), ["unread"], "Unread only is a secondary view filter");

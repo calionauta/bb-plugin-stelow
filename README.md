@@ -79,17 +79,18 @@ The singleton bb personal project has no workspace source, so the board asks you
 
 ## Install
 
-> Pending marketplace approval — install a tracking release from this repository for now (update checks then keep working):
+> Pending marketplace approval — install a released version from this repository:
 
 ```bash
-bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@semver:^0.13.0" --yes
+bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@v0.18.49" --yes
 bb plugin list   # stelow should show as running
 ```
 
 Or in bb: Extensions → Plugins → Add plugin, paste
 `git:https://github.com/calionauta/bb-plugin-stelow.git`, Install.
-Pin a release with `@vX.Y.Z` (e.g. `@v0.13.0`); update with
-`bb plugin update stelow`.
+The plugin checks upstream Stelow releases without changing a running
+workflow. When About reports an update, run `bb plugin update stelow` to
+adopt the next released, verified bundle.
 
 (`bb skill list` can confirm the bundled skills. Third-party plugins are
 full-trust server code: install only sources you trust.)

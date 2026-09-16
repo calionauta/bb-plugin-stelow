@@ -58,6 +58,7 @@ import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheck
 import { detectedTestCommand, sameGitEvidence, verificationReadiness } from "./lib/audit-verification.mjs";
 import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
+import { checkStelowUpdate, compareStelowVersions } from "./lib/stelow-update.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -118,9 +119,8 @@ const BUILD_INFO = (() => {
   return { version, builtAt };
 })();
 
-/** Read the upstream version live: the scheduled sync can update this file
- * after the plugin module has loaded, between About-tab visits. */
-function readSyncedStelowVersion(): string | null {
+/** The upstream version shipped with this plugin release. */
+function readPinnedStelowVersion(): string | null {
   for (const candidate of [nodeJoin(pluginDir, "data", "stelow-package.json"), nodeJoin(pluginDir, "..", "data", "stelow-package.json")]) {
     try {
       const parsed = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown };
@@ -596,7 +596,7 @@ export const rpcContract = defineRpcContract({
   },
   buildInfo: {
     input: z.object({}).strict(),
-    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skillsSyncedAt: z.number().nullable(), skills: z.array(z.string()) }),
+    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skills: z.array(z.string()), stelowUpdate: z.object({ state: z.enum(["checking", "current", "available", "unavailable"]), version: z.string().nullable(), url: z.string().nullable(), checkedAt: z.number().nullable() }) }),
   },
   aboutLogo: {
     input: z.object({}).strict(),
@@ -1124,6 +1124,22 @@ export default async function plugin(bb: BbPluginApi) {
   // above (prompt-contracts pins that), the nudge carries only the delta.
   const SPLIT_REQUEST_NUDGE = "Split requested: the user explicitly asked for a split proposal. Follow SPLIT_PROTOCOL in your system prompt: ask with --tag split --multiple (one --option per delivery plus exactly one --option \\\"Keep as one card\\\"), then STOP and wait; after the answer, execute the recorded approval with `bb stelow split`. Do not ask a standard question about splitting instead — only a --tag split proposal is executable.";
   const db = bb.storage.database();
+  // Read-only discovery only: releases can be noticed automatically, but no
+  // running helper or skill is ever replaced outside a plugin release.
+  let stelowUpdate: { state: "checking" | "current" | "available" | "unavailable"; version: string | null; url: string | null; checkedAt: number | null } = { state: "checking", version: null, url: null, checkedAt: null };
+  async function refreshStelowUpdate() {
+    try {
+      const latest = await checkStelowUpdate();
+      const current = readPinnedStelowVersion();
+      const newer = current != null && (compareStelowVersions(latest.version, current) ?? 0) > 0;
+      stelowUpdate = { state: newer ? "available" : "current", version: latest.version, url: latest.url, checkedAt: Date.now() };
+    } catch (error) {
+      stelowUpdate = { state: "unavailable", version: null, url: null, checkedAt: Date.now() };
+      bb.log.warn(`stelow update check failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  bb.background.schedule("stelow-update-check", "17 6 * * *", () => void refreshStelowUpdate());
+  void refreshStelowUpdate();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS cards (
       id TEXT PRIMARY KEY,
@@ -5343,8 +5359,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async buildInfo() {
-      // skillsSyncedAt and skills are read live (not memoized like
-      // BUILD_INFO): the 6h upstream sync lands between About visits.
       let skills: string[] = [];
       try {
         skills = readdirSync(PLUGIN_SKILLS_DIR, { withFileTypes: true })
@@ -5352,7 +5366,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           .map((e) => e.name)
           .sort();
       } catch { /* panel shows an empty list */ }
-      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: readSyncedStelowVersion(), skillsSyncedAt: null, skills };
+      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: readPinnedStelowVersion(), skills, stelowUpdate };
     },
 
     // About identity mark. Served as a data URI (never a static file URL —

@@ -1,0 +1,70 @@
+name: sync Stelow
+
+on:
+  repository_dispatch:
+    types: [stelow-release]
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-stelow
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: calionauta/stelow
+          ref: ${{ github.event.client_payload.commit || 'main' }}
+          path: upstream
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Synchronize one immutable upstream revision
+        run: |
+          test -z "$(git -C upstream status --porcelain)"
+          UPSTREAM_SHA="$(git -C upstream rev-parse HEAD)"
+          test "${#UPSTREAM_SHA}" = 40
+          test -f upstream/scripts/stelow
+          test -f upstream/product-strategies.json
+          test -f upstream/package.json
+          test "$(find upstream/skills -mindepth 1 -maxdepth 1 -type d -name 'stelow-*' | wc -l)" -gt 0
+          find skills -mindepth 1 -maxdepth 1 -type d -name 'stelow-*' -exec rm -rf {} +
+          cp -a upstream/skills/. skills/
+          cp upstream/scripts/stelow data/stelow
+          cp upstream/product-strategies.json data/product-strategies.json
+          cp upstream/package.json data/stelow-package.json
+          UPSTREAM_SHA="$UPSTREAM_SHA" node --input-type=module -e 'import { readFileSync, writeFileSync } from "node:fs"; const pkg = JSON.parse(readFileSync("upstream/package.json", "utf8")); if (typeof pkg.version !== "string") throw new Error("upstream package has no version"); writeFileSync("data/stelow-source.json", JSON.stringify({ version: pkg.version, commit: process.env.UPSTREAM_SHA }, null, 2) + "\n");'
+      - name: Verify the candidate
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm pack --dry-run --json >/dev/null
+      - name: Open or update the synchronization pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet; then exit 0; fi
+          SHA="$(node -p 'require("./data/stelow-source.json").commit')"
+          VERSION="$(node -p 'require("./data/stelow-source.json").version')"
+          BRANCH="automation/stelow-${SHA:0:12}"
+          git checkout -B "$BRANCH"
+          git add data/stelow data/product-strategies.json data/stelow-package.json data/stelow-source.json skills
+          git commit -m "chore: sync Stelow ${VERSION}"
+          git push --force-with-lease origin "$BRANCH"
+          if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')" = "0" ]; then
+            gh pr create --base master --head "$BRANCH" --title "chore: sync Stelow ${VERSION}" --body "Automated, immutable sync from calionauta/stelow@${SHA}. The workflow ran typecheck, tests, and package verification. Review and merge; releases remain explicit."
+          fi

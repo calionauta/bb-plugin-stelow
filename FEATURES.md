@@ -183,15 +183,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Every step may carry its own primary action, so configuration
   surfaces where it is explained. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
-- **Sidebar badge.** Unresolved actions only; it always agrees with the
-  Inbox's primary **Needs attention** list. Per-tab active counts (About
-  carries no count). All realtime.
+- **Sidebar badge.** Unresolved actions and unread completions; it always
+  agrees with the Inbox's primary **Needs attention** list. A completion is
+  emerald review work, not an amber blocked workflow, and clears when its Done
+  card is opened. Per-tab active counts (About carries no count). All realtime.
 - **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
   plugin — each with its own paragraph, repo link, and version side by
   side (`buildInfo` carries both; the upstream version syncs with the
   skills). The Stelow section opens with the identity mark, served lazily
   as a data URI over the `aboutLogo` RPC (bb serves only built bundles,
-  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product) and offers Reset onboarding (two-step
+  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product), checks GitHub releases read-only, and names a safe update path without mutating a running workflow. It also offers Reset onboarding (two-step
   confirm) to replay the first-visit setup dialogs. Work tracks describe
   themselves; product identity lives in exactly one place, never next
   to the wrong version.
@@ -208,9 +209,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (needed-you-once, cleared on its own) and each row names HOW it cleared
   (answered, withdrawn, resumed, completed — recorded as `resolved_reason`
   where observed; legacy rows keep the generic kind label).
-  The badge counts the same unresolved actions shown by **Needs attention**;
-  completions remain available in All without presenting themselves as work,
-  and an unopened one reads **Ready for review** — the request it actually is —
+  The badge counts the same action and review requests shown by **Needs attention**;
+  an unopened completion reads **Ready for review** — the request it actually is —
   until the Done card is opened, which is also what clears the card's Review
   marker on the board.
   The toolbar is one row: four tabs with semantic status dots (amber waits,

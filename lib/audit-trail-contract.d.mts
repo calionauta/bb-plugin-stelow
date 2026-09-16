@@ -1,4 +1,4 @@
-export declare const AUDIT_TRAIL_CONTRACT: "v2";
+export declare const AUDIT_TRAIL_CONTRACT: "v3";
 export declare const AUDIT_TRAIL_FILE: "audit-trail.md";
 export declare const AUDIT_TRAIL_NOTE: string;
 

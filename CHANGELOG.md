@@ -8,6 +8,21 @@ and this project adheres to a single-version-per-release tag format
 
 ## [Unreleased]
 
+### Added
+
+- **Safe Stelow update path.** The plugin checks published upstream releases
+  read-only and names a newer version in About, while a scheduled GitHub
+  workflow prepares an immutable, tested synchronization pull request.
+- **Completion review badge.** An unread Done card now reaches Needs attention
+  and the sidebar badge until a human opens it; its emerald review treatment
+  remains distinct from an amber blocked workflow.
+
+### Fixed
+
+- **Audit contract metadata.** The TypeScript declaration now agrees with the
+  executable v3 contract, and the skill inventory describes its pinned source
+  rather than a stale runtime-sync timestamp.
+
 ## [0.18.47] - 2026-09-16
 
 ### Added

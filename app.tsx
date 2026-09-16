@@ -1682,7 +1682,7 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
 
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skillsSyncedAt: number | null; skills: string[] } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; stelowUpdate: { state: "checking" | "current" | "available" | "unavailable"; version: string | null; url: string | null; checkedAt: number | null } } | null>(null);
   const [aboutLogo, setAboutLogo] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
@@ -1757,17 +1757,17 @@ function AboutPanel() {
               </h2>
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               {buildInfo ? (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span aria-hidden className="text-emerald-500">●</span>
-                  <button
-                    type="button"
-                    onClick={() => setSkillsOpen(true)}
-                    className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground"
-                    title={`Pinned to Stelow ${buildInfo.stelowVersion ?? "at this plugin release"} — click to see which skills shipped`}
-                  >
-                    {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
-                  </button>
-                </p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p className="flex items-center gap-1.5">
+                    <span aria-hidden className="text-emerald-500">●</span>
+                    <button type="button" onClick={() => setSkillsOpen(true)} className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground" title={`Pinned to Stelow ${buildInfo.stelowVersion ?? "at this plugin release"} — click to see which skills shipped`}>
+                      {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
+                    </button>
+                  </p>
+                  {buildInfo.stelowUpdate.state === "available" ? <p className="text-amber-700 dark:text-amber-300">Stelow {buildInfo.stelowUpdate.version} is available. Update this plugin to adopt it safely.{buildInfo.stelowUpdate.url ? <> <UrlLink href={buildInfo.stelowUpdate.url} className="underline">Release notes ↗</UrlLink></> : null}</p> : null}
+                  {buildInfo.stelowUpdate.state === "current" ? <p>Checked upstream; this pinned release is current.</p> : null}
+                  {buildInfo.stelowUpdate.state === "unavailable" ? <p>Could not check upstream. The pinned release remains unchanged.</p> : null}
+                </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
@@ -1791,7 +1791,7 @@ function AboutPanel() {
         <DialogHeader>
           <DialogTitle>Vendored Stelow skills</DialogTitle>
           <DialogDescription>
-            Synced from calionauta/stelow {buildInfo?.skillsSyncedAt ? relativeTime(buildInfo.skillsSyncedAt) : "never"}. Workers load these from the plugin — no network at card time.
+            Pinned to Stelow {buildInfo?.stelowVersion ?? "this plugin release"}. Workers load these exact files from the plugin — no network or silent updates at card time.
           </DialogDescription>
         </DialogHeader>
         {(["stelow-workflow-", "stelow-product-"] as const).map((prefix) => {
