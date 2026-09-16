@@ -56,10 +56,13 @@ assert.match(serverSource, /inheritAskArtifact/, "per-option artifacts inherit t
 assert.match(serverSource, /const inherited = inheritAskArtifact\(options\)/, "the resolver inherits before resolving");
 assert.doesNotMatch(serverSource, /options\.every\(\(option\) => !option\.artifact\)/, "the all-or-nothing fallback is gone");
 
-// Hero fallback: with no manifest artifact, the card offers the first
-// evidence attached to a pending or recoverable question instead.
+// Hero entry: the document under decision wins over a manifest guess. Board
+// position deliberately stays behind while a question waits, so the pending
+// question's own option artifact must come first; manifest stage match is
+// second, newest artifact only the last resort.
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
-assert.match(appSource, /pendingQuestionArtifact/, "the hero falls back to question-attached evidence");
+assert.match(appSource, /pendingQuestionArtifact/, "the hero reads question-attached evidence");
+assert.match(appSource, /pendingQuestionArtifact \?\? detail\.artifacts\.find/, "the pending document wins over the manifest guess");
 assert.match(appSource, /artifactViewerModeForOption/, "approval and change options select their appropriate viewer mode");
 assert.match(appSource, /mode === "comment"/, "the review-only viewer hides comment and editor controls");
 assert.match(appSource, /const inherited = inheritAskArtifact\(list\)/, "thread questions inherit per-option evidence too");

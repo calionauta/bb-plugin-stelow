@@ -5573,18 +5573,27 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const scopeTotal = detail?.scopes.length ?? 0;
   const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
   const artifactTotal = detail?.artifacts.length ?? 0;
-  // Gate review entry: the artifact the pending decision is about. Gate
-  // reviews the shaped spec, int-gate/selection the interface proposals,
-  // plan-gate the tech plan. Falls back to the newest artifact, if any.
+  // Gate review entry: the document the pending decision is actually about.
+  // The pending question's own option artifact wins: board position (card.stage)
+  // deliberately stays at the last advanced stage while a question waits (see
+  // lib/card-question-state), so a gate-stage manifest lookup alone can point
+  // at the wrong file when two planning documents exist. Manifest is the
+  // second source, newest artifact only the last resort.
   const GATE_ARTIFACT_STAGE: Record<string, string> = { gate: "shape", "int-gate": "interface", selection: "interface", "plan-gate": "planning" };
-  // Fallback: evidence attached to a pending or recoverable question — the
-  // plan under decision even when the manifest doesn't list it yet. Same
+  // Evidence attached to a pending or recoverable question — the document
+  // under decision even when the manifest doesn't list it yet. Same
   // viewer, same shape: option artifacts carry display/path/absolute/host.
   const pendingQuestionArtifact = detail
     ? [...detail.pendingQuestions, ...detail.expiredQuestions].flatMap((q) => q.options ?? []).find((o) => o?.artifact)?.artifact ?? null
     : null;
   const reviewArtifact = detail && card && (hero?.kind === "decision" || detail.pendingQuestions.length > 0)
-    ? detail.artifacts.find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts[detail.artifacts.length - 1] ?? pendingQuestionArtifact ?? null
+    ? pendingQuestionArtifact ?? detail.artifacts.find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts[detail.artifacts.length - 1] ?? null
+    : null;
+  // Viewer-ready shape, narrowed once here (property narrowing does not
+  // survive into the onClick closure below). The button only renders when a
+  // readable absolute path exists; agent-produced labels fall back plainly.
+  const reviewTarget = reviewArtifact?.absolutePath
+    ? { display: reviewArtifact.display ?? "artifact", path: reviewArtifact.absolutePath, relPath: reviewArtifact.path ?? reviewArtifact.absolutePath, hostId: reviewArtifact.hostId ?? "" }
     : null;
 
   return (
@@ -5635,9 +5644,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                         <Button size="sm" variant="outline" disabled={retrying} onClick={() => void doRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{retrying ? "Retrying…" : "Retry worker"}</Button>
                       ) : null}
                       {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
-                      {hero.kind === "decision" && reviewArtifact ? (
+                      {hero.kind === "decision" && reviewTarget ? (
                         <span className="w-full">
-                          <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewArtifact.display, path: reviewArtifact.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewArtifact.path, reviewArtifact.hostId, reviewArtifact.absolutePath), mode: "review" })} title={`Read ${reviewArtifact.display} before deciding`}>Review artifact ↗</Button>
+                          <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewTarget.display, path: reviewTarget.path, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewTarget.relPath, reviewTarget.hostId, reviewTarget.path), mode: "review" })} title={`Read ${reviewTarget.display} before deciding`}>Review {reviewTarget.display} ↗</Button>
                         </span>
                       ) : null}
                       {hero.kind === "error" && card.workerThreadId ? (
