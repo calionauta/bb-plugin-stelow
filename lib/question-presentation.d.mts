@@ -16,6 +16,7 @@ export declare function questionCopy(): {
   continue: string;
   continueWithAnswers: (count: number) => string;
   batchProgress: (done: number, total: number, canSkip: boolean) => string;
+  answersRemaining: (count: number, canSkip: boolean) => string;
   pickOneOrMore: string;
   recoveryHeading: string;
 };

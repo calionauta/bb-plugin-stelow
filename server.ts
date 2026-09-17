@@ -5280,17 +5280,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async answerExpiredQuestions({ cardId, answers }) {
-      // Atomic batch for timed-out questions: one comment trail and one resume
-      // message. Remaining open decisions stay actionable.
+      // Timed-out questions remain one atomic blocking decision. Never resume
+      // the worker with a subset: later answers may reverse its direction.
       const card = getCard(cardId);
       if (!card) return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
       if (isArchivedCard(card)) return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
+      const openRows = db.prepare("SELECT id, thread_id, question FROM expired_questions WHERE card_id = ? AND answered = 0").all(cardId) as Array<{ id: string; thread_id: string; question: string }>;
+      const openIds = new Set(openRows.map((row) => row.id));
       const rows = new Map<string, { thread_id: string; question: string; answers: string[] }>();
       for (const item of answers) {
-        const row = db.prepare("SELECT * FROM expired_questions WHERE id = ? AND card_id = ? AND answered = 0").get(item.questionId, cardId) as { thread_id: string; question: string } | undefined;
-        if (row && !rows.has(item.questionId)) rows.set(item.questionId, { thread_id: row.thread_id, question: row.question, answers: item.answers });
+        const row = openRows.find((entry) => entry.id === item.questionId);
+        const cleanAnswers = item.answers.map((answer) => answer.trim()).filter(Boolean);
+        if (row && !rows.has(item.questionId) && cleanAnswers.length > 0) rows.set(item.questionId, { thread_id: row.thread_id, question: row.question, answers: cleanAnswers });
       }
-      if (rows.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };
+      if (openIds.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };
+      if (rows.size !== openIds.size) return { ok: false as const, answered: 0, error: "Answer every pending question before submitting." };
       const decisions: Array<{ question: string; answers: string[] }> = [];
       // Resume the CURRENT worker: the row's thread may be stale (restart /
       // reseed archives the thread but keeps its expired questions).

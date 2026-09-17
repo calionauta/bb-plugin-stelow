@@ -3299,7 +3299,9 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
     return out;
   };
   const doneCount = questions.filter((q) => skipped.has(q.id) || merged(q.id).length > 0).length;
-  const complete = allowSkip ? doneCount === questions.length : doneCount > 0;
+  const remainingCount = questions.length - doneCount;
+  const complete = remainingCount === 0;
+  const isLastQuestion = index === questions.length - 1;
   const pick = (question: BatchItem, label: string) => {
     setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
     setSelected((prev) => {
@@ -3428,10 +3430,11 @@ function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHead
           ) : current.multiple && !isSplitProposal ? (
             <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{copy.pickOneOrMore}</p>
           ) : null}
+          {isLastQuestion && !complete ? <p role="status" className="text-xs text-amber-900/70 dark:text-amber-200/70">{copy.answersRemaining(remainingCount, allowSkip)}</p> : null}
           <div className="flex flex-wrap items-center gap-2">
             {questions.length > 1 ? <Button size="sm" variant="outline" disabled={index === 0 || busy} onClick={() => setIndex((i) => Math.max(0, i - 1))}>{copy.back}</Button> : null}
             {questions.length > 1 && index < questions.length - 1 ? <Button size="sm" variant="outline" disabled={busy} onClick={() => setIndex((i) => Math.min(questions.length - 1, i + 1))}>{copy.next}</Button> : null}
-            <Button size="sm" disabled={!complete || busy} onClick={() => onSubmit(questions.map((q) => merged(q.id)))}>{busy ? copy.sending : submitLabel}</Button>
+            {isLastQuestion ? <Button size="sm" disabled={!complete || busy} onClick={() => onSubmit(questions.map((q) => merged(q.id)))}>{busy ? copy.sending : submitLabel}</Button> : null}
           </div>
         </div>
       </div>
@@ -3452,9 +3455,8 @@ function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: 
         const result = await rpc.call("answerQuestions", { cardId, answers: questions.map((q, i) => ({ questionId: q.id, answers: all[i] ?? [] })) });
         if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
       } else {
-        // Timed-out questions retain every selected option; untouched ones
-        // stay open. This matters for split proposals, where partial approval
-        // is a deliberate multi-choice decision.
+        // Timed-out questions retain every selected option. The batch stays
+        // atomic, so a later answer cannot revise work already resumed.
         const payload = expiredAnswerPayload(questions, all);
         if (payload.length === 0) return;
         const result = await rpc.call("answerExpiredQuestions", { cardId, answers: payload });

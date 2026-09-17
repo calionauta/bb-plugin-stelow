@@ -253,7 +253,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   single-choice and high-contrast checkbox for multi-choice, a free-text
   Other on ordinary questions, and explicit Skip (AI uses its
   recommendation). One atomic
-  submit answers everything — one worker resume, one inbox resolution.
+  submit answers everything — one worker resume, one inbox resolution. The
+  final submit action appears only on the last step and remains unavailable
+  until every question has a decision (answer or explicit Skip); timed-out
+  batches follow the same all-or-nothing rule, so recovery never resumes work
+  from partial context.
   Workers batch independent questions into one `bb stelow ask` call
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.

@@ -271,8 +271,11 @@ assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "quest
 assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split question is host-enriched in English before it reaches the user");
 assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");
 assert.match(app, /recoveryHeading/, "recovered questions explain the state without leaking timeout jargon");
-assert.match(answerExpired, /answers: item\.answers/, "timed-out multi-choice answers retain every selected value");
+assert.match(answerExpired, /item\.answers\.map\(\(answer\) => answer\.trim\(\)\)\.filter\(Boolean\)/, "timed-out answers are normalized before completeness validation");
 assert.match(answerExpired, /recordSplitAnswer\(db, cardId, decisions\)/, "a timed-out split answer records through the same shared helper as a live answer");
+assert.match(answerExpired, /if \(rows\.size !== openIds\.size\) return \{ ok: false as const, answered: 0, error: "Answer every pending question before submitting\." \}/, "timed-out batches refuse a partial answer at the RPC boundary");
+assert.match(app, /const isLastQuestion = index === questions\.length - 1;/, "the final action is scoped to the final question step");
+assert.match(app, /\{isLastQuestion \? <Button size="sm" disabled=\{!complete \|\| busy\}/, "the batch action only renders on the last step and waits for every decision");
 assert.match(app, /These needed you once, then cleared on their own/, "the Resolved filter explains why it exists");
 assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how it cleared");
 
