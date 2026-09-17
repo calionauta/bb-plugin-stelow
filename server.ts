@@ -17,6 +17,7 @@ import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./l
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { decideAskGate } from "./lib/ask-gate.mjs";
+import { consumeAskContract, recordAskContracts, validateAskContracts } from "./lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
@@ -1279,6 +1280,16 @@ export default async function plugin(bb: BbPluginApi) {
       answered INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
     )`,
+    `CREATE TABLE IF NOT EXISTS ask_contracts (
+      id TEXT PRIMARY KEY,
+      card_id TEXT NOT NULL,
+      question_text TEXT NOT NULL,
+      contract_id TEXT NOT NULL,
+      asked_at INTEGER NOT NULL,
+      consumed_at INTEGER,
+      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_ask_contracts_card ON ask_contracts(card_id, consumed_at, asked_at)`,
   ]);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
@@ -2595,8 +2606,32 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return Number.isFinite(parsed) ? parsed : null;
   }
 
-  async function questionContractsGate(card: CardRow, stateDir: string | null): Promise<string | null> {
-    if (!stateDir) return null;
+  // Stage checklist for --contract validation. Mirrors the advance
+  // guard's read (state.md slug truth + strict config, fail-open nulls);
+  // kept separate so guard refactors never shift ask-time validation
+  // silently. Returns null when unreadable — declarations then record raw.
+  async function askContractChecklist(cardId: string): Promise<Array<{ id: string; kind: string }> | null> {
+    try {
+      const card = getCard(cardId);
+      if (!card) return null;
+      const workspace = await cardWorkspace(card);
+      if (!workspace?.path) return null;
+      const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash) : null;
+      if (!stateDir) return null;
+      const stateFile = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).catch(() => null);
+      const state = typeof stateFile?.content === "string" ? stateFile.content : null;
+      if (!state) return null;
+      const { appetite, reviewMode } = parseWorkflowConfig(state, { strict: true });
+      if (!appetite || !reviewMode) return null;
+      const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
+      if (!stage) return null;
+      return requiredForStage({ stage, appetite, reviewMode });
+    } catch {
+      return null;
+    }
+  }
+
+  async function questionContractsGate(card: CardRow, stateDir: string | null): Promise<string | null> {    if (!stateDir) return null;
     const stateFile = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).catch(() => null);
     const state = typeof stateFile?.content === "string" ? stateFile.content : null;
     if (!state) return null; // unreadable state fails open
@@ -3934,6 +3969,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // mislabel them superseded.
         markQuestionsAnswered(db, { cardId, interactionIds: [...answeredInteractionIds], occurredAt: now() });
         syncPendingQuestionInbox(card, openQuestionIds);
+        // Contract provenance: answers that match a declared contract id
+        // name it in the trail. Undeclared answers behave exactly as before.
+        const contractNotes: string[] = [];
+        for (const decision of decisions) {
+          const matched = decision.question ? consumeAskContract(db, cardId, decision.question) : null;
+          if (matched) contractNotes.push(`Q: ${decision.question}\nA: ${decision.answers.join(", ")} [contract: ${matched}]`);
+        }
+        if (contractNotes.length > 0) {
+          logCardComment(cardId, "card", cardId, "user", `Answer to a pending question:\n\n${contractNotes.join("\n\n")}`);
+        }
         // A fresh human answer resumes the worker: a stale provider error
         // from the interrupted turn must not linger as "Failed" beside the
         // recovery path. Failure history stays in the event log.
@@ -4529,6 +4574,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       db.prepare("DELETE FROM comments WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);
+      db.prepare("DELETE FROM ask_contracts WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM inbox_events WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM card_threads WHERE card_id = ?").run(cardId);
       db.prepare("UPDATE github_imports SET card_id = NULL WHERE card_id = ?").run(cardId);
@@ -4708,6 +4754,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (seed.error) return { reseeded: false, error: seed.error, reclassified: false };
       if (seed.dirHash) {
         db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(seed.dirHash, now(), cardId);
+        // A fresh workflow is a fresh episode: stale declarations must not
+        // attribute future answers to the previous attempt's contracts.
+        db.prepare("DELETE FROM ask_contracts WHERE card_id = ?").run(cardId);
       }
       let preset: PresetRow;
       if (presetId) {
@@ -5533,7 +5582,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const threadId = card.worker_thread_id ?? rows.values().next().value?.thread_id ?? null;
       db.transaction(() => {
         for (const [questionId, row] of rows) {
-          logCardComment(cardId, "card", cardId, "user", `Answer to a pending question:\n\nQ: ${row.question}\nA: ${row.answers.join(", ")}`);
+          const matched = consumeAskContract(db, cardId, row.question);
+          logCardComment(cardId, "card", cardId, "user", `Answer to a pending question${matched ? ` (contract: ${matched})` : ""}:\n\nQ: ${row.question}\nA: ${row.answers.join(", ")}`);
           db.prepare("UPDATE expired_questions SET answered = 1 WHERE id = ?").run(questionId);
           decisions.push({ question: row.question, answers: row.answers });
         }
@@ -5944,7 +5994,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const parsed = parseAskGroups(askArgv);
         if (!threadId) return { exitCode: 2, stderr: "Missing --thread <thr_id>." };
         if (parsed.error || !parsed.groups) return { exitCode: 2, stderr: parsed.error ?? "Usage: bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]..." };
-        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, kind: tag === "split" ? "split" as const : "standard" as const, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })) }));
+        const groups = parsed.groups.map((group) => ({ question: group.question, multiple: group.multiple, kind: tag === "split" ? "split" as const : "standard" as const, options: group.options.map((o) => ({ label: o.label, description: o.description, preview: o.preview, artifact: o.artifact })), contract: group.contract ?? null }));
         for (const group of groups) {
           const languageError = englishQuestionContentError(group.question, group.options);
           if (languageError) return { exitCode: 2, stderr: languageError };
@@ -5982,6 +6032,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             groups,
           });
           if (!questionDecision.allowed) return { exitCode: questionDecision.code, stderr: questionDecision.reason! };
+        }
+        // Optional contract declaration (lib/ask-contracts): links this ask
+        // to a question contract for later matching. Validated, never
+        // enforced here — unknown ids with a readable checklist refuse with
+        // the valid list; without one the ask records raw (fail-open).
+        // Split asks carry none (their own mechanics own the semantics).
+        const declared = groups.filter((group) => typeof group.contract === "string" && group.contract);
+        if (tag === "split" && declared.length > 0) {
+          return { exitCode: 2, stderr: "Split asks carry no contract id — remove --contract." };
+        }
+        if (declared.length > 0) {
+          const checklist = await askContractChecklist(cardRow.id);
+          const verdict = validateAskContracts(declared.map((group) => ({ contractId: group.contract })), checklist);
+          if (!verdict.ok) return { exitCode: 2, stderr: verdict.error! };
+          recordAskContracts(db, declared.map((group) => ({ id: randomId("askc"), cardId: cardRow.id, question: group.question, contractId: group.contract, askedAt: Date.now() })));
         }
         // A split proposal ask (lib/split-proposal): options are proposed
         // child cards, recorded by the host and executed by `bb stelow
@@ -6041,8 +6106,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         } as const;
         const first = groups[0]!;
         try {
+          // Contract ids are host bookkeeping, not renderer input: strip
+          // them so the interaction payload keeps its exact BB shape.
+          const payloadGroups = groups.map((group) => ({ question: group.question, multiple: group.multiple, kind: group.kind, options: group.options }));
           result = batched
-            ? await bb.ui.requestInput({ ...askInput, payload: { questions: groups } }, { signal: ctx.signal })
+            ? await bb.ui.requestInput({ ...askInput, payload: { questions: payloadGroups } }, { signal: ctx.signal })
             : await bb.ui.requestInput({ ...askInput, payload: { question: first.question, multiple: first.multiple, kind: first.kind, options: first.options } }, { signal: ctx.signal });
         } catch {
           // The request itself blew up mid-flight (e.g. dispose tore down the

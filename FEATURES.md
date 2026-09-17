@@ -268,6 +268,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (repeat `--question` groups; `--multiple` also accepts the unambiguous
   mode-first form used after a tag); dependent questions stay sequential.
   Timed-out asks stay answerable on the card, batched the same way.
+  A group may declare its question contract (`--contract <id>`, validated
+  against the stage checklist, recorded raw when unreadable); answers
+  matching a declaration name it in the trail, undeclared flows behave
+  exactly as before.
   Options carry descriptions plus optional detail: `preview` (inline
   glance, expandable) and `artifact` (workspace-relative path opening in
   the viewer on cards, plain filename in threads). Workers attach them

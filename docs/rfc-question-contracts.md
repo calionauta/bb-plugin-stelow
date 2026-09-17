@@ -161,6 +161,13 @@ Enforcement points (server.ts):
   pre-helper in both `advanceCard` RPC and CLI `bb stelow advance`
   (skipped for `--dry-run` and cardless invocations). Boundary reads the
   real `history.at` entries; unreadable state/config fails open.
+- Provenance without enforcement: optional `--contract <id>` per ask
+  group (`lib/question-batch.mjs`, `lib/ask-contracts.mjs`,
+  `ask_contracts` table) links answers back to declarations in the trail;
+  undeclared flows are byte-identical. Upstream parity shipped in stelow
+  (`--contract` in `scripts/stelow` + `ask.md`). Enforcement using
+  recorded ids stays parked pending real-data need (ad-hoc questions must
+  keep working; exact matching needs protocol-level ids).
 - Residual simplifications (accepted, harden later): a human-ask contract
   is satisfied by any question answered since stage entry (not matched
   per contract id); in-flight legacy cards may refuse once post-deploy

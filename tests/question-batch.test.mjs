@@ -15,7 +15,7 @@ import {
   const single = parseAskGroups(["--thread", "t", "--question", "Q?", "--option", "A", "--option", "B"]);
   assert.equal(single.error, undefined);
   assert.equal(single.groups.length, 1);
-  assert.deepEqual(single.groups[0], { question: "Q?", multiple: false, options: [{ label: "A", description: "", preview: null, artifact: null }, { label: "B", description: "", preview: null, artifact: null }] });
+  assert.deepEqual(single.groups[0], { question: "Q?", multiple: false, options: [{ label: "A", description: "", preview: null, artifact: null }, { label: "B", description: "", preview: null, artifact: null }], contract: null });
 }
 {
   const multi = parseAskGroups(["--question", "Q1?", "--option", "A", "--option", "B", "--question", "Q2?", "--multiple", "--option", "C", "--option", "D"]);
@@ -38,6 +38,18 @@ import {
 {
   const empty = parseAskGroups(["--thread", "t"]);
   assert.match(empty.error, /Usage/);
+}
+{
+  // Optional contract declaration travels with its group for later matching.
+  const declared = parseAskGroups(["--question", "Q?", "--contract", "interface-pick", "--option", "A", "--option", "B"]);
+  assert.equal(declared.error, undefined);
+  assert.equal(declared.groups[0].contract, "interface-pick");
+  const plain = parseAskGroups(["--question", "Q?", "--option", "A", "--option", "B"]);
+  assert.equal(plain.groups[0].contract, null);
+  const bad = parseAskGroups(["--question", "Q?", "--contract", "not a slug!", "--option", "A", "--option", "B"]);
+  assert.match(bad.error, /slug/);
+  const early = parseAskGroups(["--contract", "x", "--question", "Q?", "--option", "A", "--option", "B"]);
+  assert.match(early.error, /follow a --question/);
 }
 
 // Payload shape detection + expansion.

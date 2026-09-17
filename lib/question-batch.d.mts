@@ -4,13 +4,14 @@ export declare function questionKind(raw: unknown): "standard" | "split";
 export declare const MAX_DESC_CHARS: number;
 export declare const MAX_PREVIEW_CHARS: number;
 export declare const MAX_ARTIFACT_CHARS: number;
+export declare const CONTRACT_ID_PATTERN: RegExp;
 export declare interface AskOption {
   label: string;
   description: string;
   preview: string | null;
   artifact: { path: string; display?: string } | null;
 }
-export declare function parseAskGroups(argv: string[]): { groups: Array<{ question: string; multiple: boolean; options: AskOption[] }>; error?: undefined } | { groups?: undefined; error: string };
+export declare function parseAskGroups(argv: string[]): { groups: Array<{ question: string; multiple: boolean; options: AskOption[]; contract: string | null }>; error?: undefined } | { groups?: undefined; error: string };
 export declare function cleanOptions(raw: unknown): AskOption[];
 export declare function normalizeAskArtifactPath(raw: unknown): { path: string; display: string } | null;
 export declare function inheritAskArtifact(options: unknown): Array<{ path: string; display: string } | null>;
