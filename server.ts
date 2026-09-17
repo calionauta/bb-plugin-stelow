@@ -38,7 +38,8 @@ import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-
 import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
-import { failureCauseFromEvents } from "./lib/worker-failure.mjs";
+import { failureCauseFromEvents, truncateCause } from "./lib/worker-failure.mjs";
+import { MAX_SPAWN_RETRIES, claimSpawnRetry, isRetryableSpawnError, resetSpawnRetry, spawnRetryDelayMs } from "./lib/spawn-retry.mjs";
 import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
@@ -1286,6 +1287,14 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "explore_stage")) {
     db.exec("ALTER TABLE cards ADD COLUMN explore_stage TEXT");
   }
+  // Automatic spawn-retry budget (lib/spawn-retry): attempts claimed per
+  // failed thread, so a restart/reseed or a new failure starts fresh.
+  if (!cardColumns.some((column) => column.name === "spawn_retry_count")) {
+    db.exec("ALTER TABLE cards ADD COLUMN spawn_retry_count INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!cardColumns.some((column) => column.name === "spawn_retry_thread")) {
+    db.exec("ALTER TABLE cards ADD COLUMN spawn_retry_thread TEXT");
+  }
   const expiredQuestionColumns = db.prepare("PRAGMA table_info(expired_questions)").all() as Array<{ name: string }>;
   if (!expiredQuestionColumns.some((column) => column.name === "kind")) {
     db.exec("ALTER TABLE expired_questions ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard'");
@@ -1944,7 +1953,7 @@ ${prompt}` }, ...workerAttachments],
     return { cardId, threadId: thread?.id ?? null };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; spawn_retry_count: number | null; spawn_retry_thread: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null; resolved_reason: string | null };
   type PresetRow = {
@@ -2833,6 +2842,74 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { return null; }
   }
 
+  // Automatic spawn retries (lib/spawn-retry). One retry in flight per
+  // card: a retry spawns a whole worker, so duplicates would double burn
+  // and race on state.md. The map holds cardId -> failed threadId.
+  const pendingSpawnRetries = new Map<string, string>();
+  const spawnRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  // Whether a dead worker earns an automatic respawn: start-phase only
+  // (never produced output) with a transient infrastructure cause, budget
+  // remaining for this thread, and no retry already in flight.
+  function canAutoRetrySpawn(card: CardRow, cause: string): boolean {
+    if (card.last_assistant_text != null) return false;
+    if (!isRetryableSpawnError(cause)) return false;
+    if (pendingSpawnRetries.get(card.id) === card.worker_thread_id) return false;
+    const used = card.spawn_retry_thread === card.worker_thread_id ? (card.spawn_retry_count ?? 0) : 0;
+    return used < MAX_SPAWN_RETRIES;
+  }
+
+  function scheduleSpawnRetry(cardId: string, threadId: string): boolean {
+    if (pendingSpawnRetries.get(cardId) === threadId) return true;
+    let attempt = 0;
+    try {
+      attempt = claimSpawnRetry(db, cardId, threadId, MAX_SPAWN_RETRIES);
+    } catch {
+      return false;
+    }
+    // Lost the race (or budget exhausted between check and claim): leave
+    // the card to the normal error path instead of spawning uncounted.
+    if (attempt < 1) return false;
+    pendingSpawnRetries.set(cardId, threadId);
+    const card = getCard(cardId);
+    const short = truncateCause(card?.last_error) ?? "unknown error";
+    updateCard(cardId, { activity: "running", last_error: `Worker failed to start (${short}) — automatic retry ${attempt}/${MAX_SPAWN_RETRIES}.` });
+    const timer = setTimeout(() => {
+      spawnRetryTimers.delete(cardId);
+      void runSpawnRetryAttempt(cardId, threadId, attempt);
+    }, spawnRetryDelayMs(attempt));
+    spawnRetryTimers.set(cardId, timer);
+    return true;
+  }
+
+  async function runSpawnRetryAttempt(cardId: string, threadId: string, attempt: number): Promise<void> {
+    try {
+      // Idempotency re-validation: abort unless the same dead worker still
+      // owns a non-terminal card that never started working.
+      const card = getCard(cardId);
+      if (!card || card.status === "archived" || card.status === "completed" || card.status === "blocked") return;
+      if (card.worker_thread_id !== threadId) return;
+      if (card.last_assistant_text != null) return;
+      const result = await spawnFreshWorker(cardId, "restart");
+      if (result.ok) {
+        // spawnFreshWorker clears the retry budget on success.
+        logCardComment(cardId, "card", cardId, "agent", `Worker start recovered automatically (attempt ${attempt}/${MAX_SPAWN_RETRIES}).`);
+        bb.realtime.publish("card-state", { cardId });
+        return;
+      }
+      if (attempt < MAX_SPAWN_RETRIES && result.error && isRetryableSpawnError(result.error)) {
+        pendingSpawnRetries.delete(cardId);
+        scheduleSpawnRetry(cardId, threadId);
+        return;
+      }
+      // Exhausted or non-transient: honest error — the updateCard transition
+      // to error emits the single inbox event.
+      updateCard(cardId, { activity: "error", last_error: `${result.error ?? "Worker failed to start."} (automatic spawn retries exhausted)` });
+    } finally {
+      if (pendingSpawnRetries.get(cardId) === threadId) pendingSpawnRetries.delete(cardId);
+    }
+  }
+
   // Single writer for "the worker thread died". Keeps a recorded cause (event
   // error or a previous last_error); otherwise resolves the provider detail
   // once and stores it, so the Failed pill, the detail hero, and the inbox
@@ -2842,10 +2919,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     // terminal card with an error.
     const current = getCard(cardId);
     if (current && (current.status === "completed" || current.status === "archived" || current.status === "blocked")) return;
+    // A retry already in flight for this exact failure: leave its state
+    // alone (the next poll would otherwise schedule a duplicate).
+    if (current && pendingSpawnRetries.get(cardId) === threadId) return;
     const recorded = current?.last_error;
     const specific = typeof eventError === "string" && eventError.trim() ? eventError.trim()
       : typeof recorded === "string" && recorded.trim() ? recorded.trim()
       : await workerFailureCause(threadId);
+    // Re-read after the await: a retry may have been scheduled (or the card
+    // archived) while the cause resolved — never overwrite that verdict.
+    const fresh = getCard(cardId);
+    if (!fresh || fresh.status === "completed" || fresh.status === "archived" || fresh.status === "blocked") return;
+    if (pendingSpawnRetries.get(cardId) === threadId) return;
+    // Transient start-phase failure: respawn automatically (bounded) instead
+    // of paging the human. The inbox stays quiet until retries exhaust. A
+    // declined schedule falls through to the honest error below.
+    if (specific && canAutoRetrySpawn(fresh, specific) && scheduleSpawnRetry(cardId, threadId)) return;
     if (specific) updateCard(cardId, { activity: "error", last_error: specific });
     else updateCard(cardId, { activity: "error" });
   }
@@ -3143,6 +3232,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     // worker's stalls say nothing about this one.
     const reset = resetAutoContinue();
     updateCard(cardId, { auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+    // A live worker also clears the spawn-retry budget: the start phase
+    // succeeded, so any future failure is a new episode.
+    resetSpawnRetry(db, cardId);
     bb.realtime.publish("card-state", { cardId });
     return { ok: true, error: null };
   };
@@ -3552,7 +3644,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       for (const row of rows) void syncThreadState(row.id);
     } catch { /* db closed during reload; next tick retries */ }
   }, RECONCILE_MS);
-  bb.onDispose(async () => clearInterval(reconcileTimer));
+  bb.onDispose(async () => {
+    clearInterval(reconcileTimer);
+    // Pending spawn retries must not fire after reload: the next poll
+    // re-drives them from the persisted claim ledger instead.
+    for (const timer of spawnRetryTimers.values()) clearTimeout(timer);
+    spawnRetryTimers.clear();
+  });
 
   // Workflow mechanics are private to workers created by the Build panel.
   // Manifest skills are static registrations in BB, so configure() is the

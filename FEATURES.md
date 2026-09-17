@@ -426,6 +426,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   sends — no human click per stage. A silent stop or an exhausted budget
   still surfaces as paused with exactly one inbox event per idle period;
   manual Retry/Restart reseeds the budget.
+- **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
+  A worker that dies before producing any output from a transient
+  start-phase cause (skill-tree fetch race, thread.start failure, 502/503,
+  lost host session) is respawned automatically — up to 3 attempts with
+  1–2s / 2–4s / 4–8s jittered backoff — instead of paging the human.
+  Retries are idempotent (one in flight per card, attempts claimed in the
+  DB per failed thread, fresh-state revalidation before each spawn); only
+  the final exhaustion writes Failed with its single inbox event.
+  Mid-workflow failures and refusals never auto-retry.
 - **Restart worker** (`restartWorker`). Fresh thread on the current
   preset from the current stage; applies preset changes. Predecessor
   archived with an inline mention for context.
