@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.22.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.21.0...v0.22.0) (2026-09-17)
+
+
+### Features
+
+* atomic per-skill publish for the Stelow skills sync ([c4d9b0e](https://github.com/calionauta/bb-plugin-stelow/commit/c4d9b0e68d3b82c79ac2205ed0d2507c6a805cf2))
+* bounded automatic retry for transient worker-start failures ([8fc9864](https://github.com/calionauta/bb-plugin-stelow/commit/8fc9864c3f765c12143f484cca083d5d452808d4))
+* record portable reconnaissance capability ([31eed96](https://github.com/calionauta/bb-plugin-stelow/commit/31eed963fe8f0ee654acd1b24641884043894002))
+
+
+### Bug Fixes
+
+* hide unpublished stelow artifacts ([d8e1e2a](https://github.com/calionauta/bb-plugin-stelow/commit/d8e1e2a86a14836453d40a5d5ca805249daac7c8))
+* isolate reconnaissance receipts per workflow ([b411e44](https://github.com/calionauta/bb-plugin-stelow/commit/b411e44556fc01718c1ae325f15746dd1ba2d903))
+* require complete structured question batches ([2db51e5](https://github.com/calionauta/bb-plugin-stelow/commit/2db51e5c81f67a853eac5bc05f3585ea20d1b707))
+* use single-package release-please mode ([ddb0d02](https://github.com/calionauta/bb-plugin-stelow/commit/ddb0d02490a76e7b528492a33c7a67fdb9f1b84a))
+
 ## [0.21.0] - 2026-09-17
 
 ### Added
