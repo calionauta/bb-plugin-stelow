@@ -55,6 +55,7 @@ import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execu
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
 import { requiredForStage } from "./lib/question-contracts.mjs";
+import { checkAdvanceContracts } from "./lib/advance-contracts.mjs";
 import { contextAskGate } from "./lib/context-ask-gate.mjs";
 import { gateEvidenceGate } from "./lib/gate-ask-evidence.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
@@ -2586,10 +2587,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
   }
 
-  function stageEnteredAt(state: string, stage: string): number | null {
-    // Real state.md history uses `at:` (helper-written); `entered_at:` accepted too. No boundary, no enforcement.
-    const match = state.match(new RegExp(`(?:^|\\n)\\s*- stage:\\s*${stage.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*\\n(?:\\s+[^\\n]*\\n)*?\\s+(?:at|entered_at):\\s*([^\\n]+)`, "m"));
-    const value = match?.[1]?.trim().replace(/["']/g, "") ?? "";
+  function stageEnteredAt(state: string): number | null {
+    // `advance` appends the completed stage with `at:` as it enters the next
+    // one. Therefore the final history timestamp is the current stage's entry
+    // boundary (and is the only real format the helper writes).
+    const values = [...state.matchAll(/^\s+at:\s*([^\n]+)$/gm)];
+    const value = values.at(-1)?.[1]?.trim().replace(/["']/g, "") ?? "";
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -2606,27 +2609,26 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (!stage || !appetite || !reviewMode) return null; // config is not trustworthy
     const required = requiredForStage({ stage, appetite, reviewMode }).filter((entry) => entry.kind !== "skip");
     if (required.length === 0) return null;
-    const enteredAt = stageEnteredAt(state, stage);
+    const enteredAt = stageEnteredAt(state);
     if (!enteredAt) return null; // legacy history has no entry boundary
     const paths = await bb.sdk.files.listPaths({ path: stateDir, includeFiles: true, includeDirectories: false, limit: 500 }).catch(() => null);
     if (!paths) return null;
     const allPaths = array(record(paths).paths).map((entry) => typeof entry === "string" ? entry : text(record(entry).path)).filter(Boolean);
-    for (const contract of required) {
-      const pattern = new RegExp(`^${contract.receipt.replace(/[.+^${}()|[\\]\\\\]/g, "\\$&").replace(/\\\*/g, ".*")}$`);
-      const receiptPath = allPaths.find((path) => pattern.test(path.startsWith(`${stateDir}/`) ? path.slice(stateDir.length + 1) : path));
-      const receipt = receiptPath ? await bb.sdk.files.read({ path: receiptPath }).catch(() => null) : null;
-      const content = typeof receipt?.content === "string" ? receipt.content : "";
-      const modifiedAtMs = typeof receipt?.modifiedAtMs === "number" ? receipt.modifiedAtMs : 0;
-      if (contract.kind === "agent-receipt") {
-        const marker = contract.id.startsWith("assumptions-") ? /^assumptions_resolved:/m : contract.id.startsWith("scope-adjustment-") ? /^scope_adjustment:/m : contract.id === "critique-report" ? /^gap_verdict:/m : null;
-        if (!receiptPath || modifiedAtMs < enteredAt || (marker && !marker.test(content))) return `Refused: complete \`${contract.id}\` for \`${stage}\` — write the fresh receipt \`${contract.receipt}\` after entering this stage, then advance again.`;
-      } else if (contract.kind === "human-ask") {
-        if (contract.id === "critique-gap-resolution" && /gap_verdict:\s*["']?0 gaps/i.test(content)) continue;
-        const answered = db.prepare("SELECT 1 FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_reason = 'answered' AND resolved_at >= ? LIMIT 1").get(card.id, enteredAt);
-        if (!answered) return `Refused: answer the required \`${contract.id}\` question for \`${stage}\` (or record its required receipt), then advance again.`;
-      }
-    }
-    return null;
+    const receipts = await Promise.all(allPaths.map(async (receiptPath) => {
+      const receipt = await bb.sdk.files.read({ path: receiptPath }).catch(() => null);
+      return {
+        path: receiptPath.startsWith(`${stateDir}/`) ? receiptPath.slice(stateDir.length + 1) : receiptPath,
+        content: typeof receipt?.content === "string" ? receipt.content : "",
+        modifiedAtMs: typeof receipt?.modifiedAtMs === "number" && Number.isFinite(receipt.modifiedAtMs) ? receipt.modifiedAtMs : null,
+      };
+    }));
+    // Synchronize the durable inbox before asking it for evidence. A provider
+    // read failure remains fail-open inside the collector rather than becoming
+    // proof that no answer exists.
+    const synced = await syncOpenQuestionInbox(card);
+    if (synced === null) return null;
+    const answered = Boolean(db.prepare("SELECT 1 FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_reason = 'answered' AND resolved_at >= ? LIMIT 1").get(card.id, enteredAt));
+    return checkAdvanceContracts({ stage, enteredAt, contracts: required, receipts, answered });
   }
 
   /**
@@ -6186,6 +6188,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
         const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
         if (guard) return { exitCode: 1, stderr: guard };
+        if (!dryRun && cliCard) {
+          const questionGuard = await questionContractsGate(cliCard, stateDir);
+          if (questionGuard) return { exitCode: 1, stderr: questionGuard };
+        }
         const helperArgs = ["advance", stage, ...(dryRun ? ["--dry-run"] : []), ...(json ? ["--json"] : [])];
         const result = await runHelper(helperArgs, rootPath, stateDir ?? undefined);
         // Helper exit codes are meaningful (2 = usage, 1 = invalid transition):
