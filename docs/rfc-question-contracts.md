@@ -156,3 +156,12 @@ Enforcement points (server.ts):
 - Still pending: advance-time enforcement linkage (P1–P3) — the mirror
   is read by nothing in `advanceCard` yet, deliberately. Wiring it is
   the remaining work; see the handoff below.
+- Enforcement wired (eaaf062): pure `lib/advance-contracts.mjs` +
+  fixtures under `tests/fixtures/question-contracts/`, checked
+  pre-helper in both `advanceCard` RPC and CLI `bb stelow advance`
+  (skipped for `--dry-run` and cardless invocations). Boundary reads the
+  real `history.at` entries; unreadable state/config fails open.
+- Residual simplifications (accepted, harden later): a human-ask contract
+  is satisfied by any question answered since stage entry (not matched
+  per contract id); in-flight legacy cards may refuse once post-deploy
+  and self-heal on the named fix.
