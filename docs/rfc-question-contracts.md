@@ -1,8 +1,9 @@
 # RFC: Question Contracts (upstream + plugin)
 
-Status: plan — not implemented. Goal: make it mechanically knowable which
-questions must happen, in which skills/stages, under which situations and
-configs, so any LLM (or host) can implement and verify enforcement.
+Status: partially implemented (P0 done, P1–P3 pending — see §10).
+Goal: make it mechanically knowable which questions must happen, in which
+skills/stages, under which situations and configs, so any LLM (or host)
+can implement and verify enforcement.
 
 ## 1. Problem
 
@@ -125,3 +126,15 @@ Enforcement points (server.ts):
 - `--force` and split mechanics keep their explicit overrides.
 - No enforcement for research/explore tracks (stageless by design).
 - Unknown review modes fail open (existing `skippedStages` precedent).
+
+## 10. Implementation status
+
+- P0 done: upstream `questions:` blocks for `selection` (synced at
+  `data/stelow-source.json` commit `4fc5a17`), plugin mirror
+  `lib/question-contracts.mjs` + `tests/question-contracts.test.mjs`
+  (wired as `test:contracts`), per-option evidence gate for selection
+  asks (`lib/gate-ask-evidence.mjs`), single-source `INTERFACE_PICK`
+  prompt clause. Do NOT re-implement.
+- P1–P3 pending: blocked on §5 TODO inventory + upstream `questions:`
+  blocks for those stages. Enforcing without them would invent
+  methodology in the plugin — refused by design (see §9).
