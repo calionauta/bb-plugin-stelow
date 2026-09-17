@@ -599,6 +599,7 @@ function BoardPanel({ active }: { active: boolean }) {
   // it; refreshes update state silently.
   const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
+  const [createBuildError, setCreateBuildError] = useState<string | null>(null);
   // Deferred start: unchecked parks the card in Inbox with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
@@ -711,6 +712,7 @@ function BoardPanel({ active }: { active: boolean }) {
       .map((part) => ({ type: part.type, path: part.path }));
     const prompt = text;
     if (!prompt.trim()) return;
+    setCreateBuildError(null);
     try {
       const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode, start: startImmediately, execution: composerExecutionOf(request) });
       setPrompt("");
@@ -718,7 +720,9 @@ function BoardPanel({ active }: { active: boolean }) {
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success(startImmediately ? "Card started in Triage. Stelow will triage it." : "Card parked in Inbox. Start it from the card when ready.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to start the card.");
+      const message = error instanceof Error ? error.message : "Unable to start the card.";
+      setCreateBuildError(message);
+      toast.error(message);
       throw error;
     }
   }
@@ -815,12 +819,13 @@ function BoardPanel({ active }: { active: boolean }) {
             </div>
           ) : null}
 
-          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) setStartImmediately(true); }}>
+          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) { setStartImmediately(true); setCreateBuildError(null); } }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new issue</DialogTitle>
                 <DialogDescription>Describe the outcome, problem, or change. Planning depth and review checkpoints below start from the board defaults — keep them or adjust, then submit.</DialogDescription>
               </DialogHeader>
+              {createBuildError ? <CreateCardAlert message={createBuildError} /> : null}
               <NewThreadComposer
                 defaultProjectId={activeProjectId ?? undefined}
                 defaultProviderId={analysisWorkerPreset?.providerId}
@@ -1015,6 +1020,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   // Background refreshes must never flash loading UI (see BoardPanel).
   const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<string | null>(null);
   const [strategyAttention, setStrategyAttention] = useState(0);
@@ -1097,6 +1103,7 @@ function ResearchPanel({ active }: { active: boolean }) {
       // lose what the user typed (SDK clears the draft only on resolve).
       throw new Error("Pick a strategy first.");
     }
+    setCreateError(null);
     try {
       const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy, start: startImmediately, execution: composerExecutionOf(request) });
       setPrompt("");
@@ -1104,7 +1111,9 @@ function ResearchPanel({ active }: { active: boolean }) {
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success(startImmediately ? "Research started. Results will appear on this card when ready." : "Research parked in Inbox. Start it from the card when ready.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to start research.");
+      const message = error instanceof Error ? error.message : "Unable to start research.";
+      setCreateError(message);
+      toast.error(message);
       throw error;
     }
   }
@@ -1142,12 +1151,13 @@ function ResearchPanel({ active }: { active: boolean }) {
             active={active}
           />
 
-          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStrategy(null); setStartImmediately(true); } }}>
+          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStrategy(null); setStartImmediately(true); setCreateError(null); } }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new research</DialogTitle>
                 <DialogDescription>Pick a strategy below, then describe what to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
               </DialogHeader>
+              {createError ? <CreateCardAlert message={createError} /> : null}
               <div className="grid gap-4">
                 <div className="grid gap-1.5">
                   <span className="text-xs font-medium text-foreground">Choose a strategy</span>
@@ -1252,6 +1262,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   // Background refreshes must never flash loading UI (see BoardPanel).
   const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<string | null>(null);
   const [stageAttention, setStageAttention] = useState(0);
@@ -1331,6 +1342,7 @@ function ExplorePanel({ active }: { active: boolean }) {
       // lose what the user typed (SDK clears the draft only on resolve).
       throw new Error("Pick a stage first.");
     }
+    setCreateError(null);
     try {
       const result = await rpc.call("createExploreCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, stageId: stage, start: startImmediately, execution: composerExecutionOf(request) });
       setPrompt("");
@@ -1338,7 +1350,9 @@ function ExplorePanel({ active }: { active: boolean }) {
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success(startImmediately ? "Exploration started. The result will appear on this card when ready." : "Exploration parked in Inbox. Start it from the card when ready.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to start exploration.");
+      const message = error instanceof Error ? error.message : "Unable to start exploration.";
+      setCreateError(message);
+      toast.error(message);
       throw error;
     }
   }
@@ -1376,12 +1390,13 @@ function ExplorePanel({ active }: { active: boolean }) {
             active={active}
           />
 
-          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStage(null); setStartImmediately(true); } }}>
+          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStage(null); setStartImmediately(true); setCreateError(null); } }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new exploration</DialogTitle>
                   <DialogDescription>Pick one technique below, then describe the input — an idea, an existing proposal, a codebase, or a URL. The agent runs that approach and returns a focused result.</DialogDescription>
               </DialogHeader>
+              {createError ? <CreateCardAlert message={createError} /> : null}
               <div className="grid gap-4">
                 <div className="grid gap-1.5">
                   <span className="text-xs font-medium text-foreground">Choose a technique</span>
@@ -1763,6 +1778,22 @@ function PluginUpdateStatus({ update, github, confirming, checking, onCheck }: {
           </button>
         </p>
       )}
+    </div>
+  );
+}
+
+// Persistent submit-failure alert for the create dialogs. A toast alone
+// fades; this stays until the next submit or reopen, and the throw that
+// preserves the composer draft (the SDK clears it only on resolve) keeps
+// the dialog open so the cause can be fixed and retried in place.
+function CreateCardAlert({ message }: { message: string }) {
+  return (
+    <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-5">
+      <span aria-hidden className="text-amber-600 dark:text-amber-400">⚠</span>
+      <div>
+        <p className="font-medium text-foreground">Couldn’t start this card</p>
+        <p className="text-muted-foreground">{message} Nothing was lost — fix it above and submit again.</p>
+      </div>
     </div>
   );
 }
