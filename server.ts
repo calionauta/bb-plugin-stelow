@@ -2587,7 +2587,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
 
   function stageEnteredAt(state: string, stage: string): number | null {
-    const match = state.match(new RegExp(`(?:^|\\n)\\s*- stage:\\s*${stage.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*\\n(?:\\s+[^\\n]*\\n)*?\\s+entered_at:\\s*([^\\n]+)`, "m"));
+    // Real state.md history uses `at:` (helper-written); `entered_at:` accepted too. No boundary, no enforcement.
+    const match = state.match(new RegExp(`(?:^|\\n)\\s*- stage:\\s*${stage.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*\\n(?:\\s+[^\\n]*\\n)*?\\s+(?:at|entered_at):\\s*([^\\n]+)`, "m"));
     const value = match?.[1]?.trim().replace(/["']/g, "") ?? "";
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : null;
