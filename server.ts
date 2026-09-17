@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } fr
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths } from "./lib/artifact-manifest.mjs";
+import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths } from "./lib/artifact-manifest.mjs";
 import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
@@ -1037,9 +1037,11 @@ async function findArtifacts(files: FilesApi, root: string, workflow: LooseRecor
     for (const entry of array(record(receiptResult).paths)) receipts.add(typeof entry === "string" ? entry.split("/").pop()! : text(record(entry).path).split("/").pop()!);
   } catch { /* no approvals yet */ }
 
-  return paths
+  const candidates = await Promise.all(paths
     .filter((path) => path.endsWith(".md"))
-    .map((path) => {
+    .map(async (path) => {
+      const content = await files.read({ path }).then((file) => file.content).catch(() => null);
+      if (!isPublishableArtifactContent(content)) return null;
       const relative = path.startsWith(root) ? path.slice(root.length + 1) : `.stelow/${created}/${dirHash}/${path.replace(/^\//, "")}`;
       const filename = relative.split("/").pop() ?? relative;
       const kind: Workflow["artifacts"][number]["kind"] = filename.startsWith("spec-product") ? "product-spec"
@@ -1050,7 +1052,9 @@ async function findArtifacts(files: FilesApi, root: string, workflow: LooseRecor
         : kind === "interfaces" ? GATES["int-gate"].receipt
         : kind === "tech-plan" ? GATES["plan-gate"].receipt : "";
       return { kind, label: filename, path: relative, approved: receipt ? receipts.has(receipt) : false };
-    })
+    }));
+  return candidates
+    .filter((artifact): artifact is Workflow["artifacts"][number] => artifact !== null)
     .sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -1660,7 +1664,7 @@ Step 3 — write your findings to <state-dir>/research-index.md (create it) in E
 Unchecked boxes mean "available for fan-out" and NOTHING else — they are not task state. NEVER check a box yourself — the plugin checks the ones the user turns into build cards. If you run another strategy later, APPEND a new ### section under ## Opportunities plus new rows under ## Outputs; never rewrite existing items.
 
 Step 3b — write this round's native output NEXT TO the index, never instead of it. Contract (the plugin enforces it in code — a round that fails these checks blocks Done and is flagged in the inbox, so treat this as a hard requirement, not advice):
-- target: <workspaceRoot>/${roundFile} — the file already exists (pre-created). Write the playbook's full result VERBATIM into it. Do NOT add a manifest block for it (pre-registered).
+- target: <workspaceRoot>/${roundFile} — this is the deterministic destination reserved for this round. Create it with the playbook's full result VERBATIM. Do NOT add a manifest block for it: the card discovers this canonical round file once it has content.
 - one file per write command with a direct path; never combine round + index + state.md writes in one heredoc/command chain. Prefer your host's native file-write tool.
 - verify by reading ${roundFile} back: it must hold your playbook output with real substance (200+ chars) — never the research index, never empty. If the read-back fails any check, rewrite immediately before finishing.
 - fan-out sub-steps (e.g. JTBD's numbered prompts): save EACH beside it as <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md (same stamp; <substep-slug> is the lowercase-hyphenated sub-step name), verified the same way.
@@ -1833,14 +1837,9 @@ ${prompt}`;
     const creationRoundFile = isResearch && researchStrategy && seed.stateDir
       ? roundRelPath(seed.stateDir, rootPath, roundFileName(researchStrategy.id, 1, creationStamp))
       : "";
-    if (creationRoundFile) await ensureRoundFile(rootPath, creationRoundFile);
-    // Explore parity with rounds: pre-create the stage artifact so the card
-    // renders its slot even if the worker never writes (plugin owns
-    // structure, worker owns content; restarts reuse, never clobber).
-    const creationExploreFile = isExplore && exploreStage && seed.stateDir
-      ? (workspaceRelative(rootPath, join(seed.stateDir, exploreArtifactFile(exploreStage.id))) ?? exploreArtifactFile(exploreStage.id))
-      : "";
-    if (creationExploreFile) await ensureRoundFile(rootPath, creationExploreFile);
+    if (creationRoundFile) await ensureArtifactParent(rootPath, creationRoundFile);
+    // Paths are deterministic, but files are created only when their worker
+    // has reviewable content. A missing output is pending, never an empty UI.
     const researchPrompt = isResearch && researchStrategy ? researchWorkerPrompt({
       displayName,
       prompt,
@@ -2714,7 +2713,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             const full = resolveArtifactPath(workspacePath, fields.path);
             if (!full) continue;
             const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
-            if (!artifact) continue;
+            if (!artifact || !isPublishableArtifactContent(artifact.content)) continue;
             round.files.push({ display: fields.label ?? full.split("/").pop()!, path: fields.path, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
           }
           round.files.sort((a, b) => (a.display < b.display ? -1 : 1));
@@ -2743,9 +2742,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
         } else {
           round.status = round.n === rounds.length && live ? "pending" : "missing";
-          // A still-running round whose file already mirrors the index has
-          // nothing worth opening yet — don't surface a wrong-artifact button.
-          if (round.status === "pending" && !(typeof content === "string" && researchRoundMirrorsIndex(content, indexBlob))) round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
+          // Pending work has no artifact affordance until it has real text.
+          // A thin draft may still be useful to inspect, but an empty file or
+          // an index mirror must never render as a reviewable document.
+          if (round.status === "pending" && isPublishableArtifactContent(content) && !researchRoundMirrorsIndex(content, indexBlob)) round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
         }
       } else {
         round.status = round.n === rounds.length && live ? "pending" : "missing";
@@ -2781,17 +2781,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     );
   }
 
-  // Pre-create an empty round file (parents included) so the rounds list
-  // works even if the worker never writes: the plugin owns structure, the
-  // worker owns content. Never clobbers existing content (restart reuses).
-  async function ensureRoundFile(workspacePath: string, relPath: string): Promise<void> {
+  // Create only the destination directory. Artifact files themselves are
+  // published by workers with content, never reserved as blank placeholders.
+  async function ensureArtifactParent(workspacePath: string, relPath: string): Promise<void> {
     try {
       const full = resolveArtifactPath(workspacePath, relPath);
       if (!full) return;
-      const exists = await bb.sdk.files.read({ path: full }).then(() => true).catch(() => false);
-      if (exists) return;
-      await bb.sdk.files.write({ path: full, content: "", createParents: true }).catch(() => undefined);
-    } catch { /* worker still writes content on its own path */ }
+      await bb.sdk.files.mkdir({ path: dirname(full), rootPath: workspacePath, recursive: true });
+    } catch { /* workers can still create parents with their native writer */ }
   }
 
   // Workspace-relative round path inside the state dir's rounds/.
@@ -3311,7 +3308,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (!normalized) return null;
     const workspace = await cardWorkspace(card).catch(() => null);
     const full = workspace?.path ? resolveArtifactPath(workspace.path, normalized.path) : null;
-    return { ...normalized, absolutePath: full, hostId: workspace?.hostId ?? null };
+    if (!full || !workspace?.hostId) return null;
+    const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
+    if (!artifact || !isPublishableArtifactContent(artifact.content)) return null;
+    return { ...normalized, absolutePath: full, hostId: workspace.hostId };
   }
 
   // Per-option artifacts for one rendered ask. A worker that attached
@@ -4191,7 +4191,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           const full = resolveArtifactPath(sourcePath, relPath);
           if (!full) continue;
           const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
-          if (artifact && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId, note: auditReceiptNote(full) });
+          if (artifact && isPublishableArtifactContent(artifact.content) && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId, note: auditReceiptNote(full) });
           if (full) seen.add(full);
         }
         // The audit trail must not depend on an agent remembering to declare
@@ -4223,7 +4223,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             const relPath = workspaceRelative(sourcePath, absolute);
             if (!relPath) continue;
             const artifact = await bb.sdk.files.read({ path: absolute }).catch(() => null);
-            if (!artifact) continue;
+            if (!artifact || !isPublishableArtifactContent(artifact.content)) continue;
             // The portable receipt is Audit evidence, not stray output: it is
             // listed under the stage whose audit produced it.
             const isTrail = basename(absolute) === AUDIT_TRAIL_FILE;
@@ -4502,14 +4502,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (researchStrategy) {
         reseedFile = [...strategyRounds(card)].reverse().find((entry) => entry.id === researchStrategy.id)?.file
           ?? (seed.stateDir ? roundRelPath(seed.stateDir, source.path, roundFileName(researchStrategy.id, reseedRoundNo, reseedStamp)) : "");
-        if (reseedFile) await ensureRoundFile(source.path, reseedFile);
+        if (reseedFile) await ensureArtifactParent(source.path, reseedFile);
       }
-      // Explore parity: reseed wipes the state dir, so re-create the stage
-      // artifact slot (never clobbers — reseed means it was just wiped).
-      if (exploreStage && seed.stateDir) {
-        const reseedExploreFile = workspaceRelative(source.path, join(seed.stateDir, exploreArtifactFile(exploreStage.id))) ?? exploreArtifactFile(exploreStage.id);
-        await ensureRoundFile(source.path, reseedExploreFile);
-      }
+      // The stage path stays deterministic after reseed; workers create it
+      // only once they have reviewable content.
       const researchReseed = researchStrategy ? researchWorkerPrompt({
         displayName: card.display_name ?? card.name,
         prompt: card.prompt,
@@ -5272,7 +5268,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const roundFile = fanoutStateDir && fanoutWorkspace?.path
         ? roundRelPath(fanoutStateDir, fanoutWorkspace.path, roundFileName(picked.id, roundNo, roundStamp))
         : "";
-      if (roundFile && fanoutWorkspace?.path) await ensureRoundFile(fanoutWorkspace.path, roundFile);
+      if (roundFile && fanoutWorkspace?.path) await ensureArtifactParent(fanoutWorkspace.path, roundFile);
       const result = await respawnWorkerForBand(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append", roundNo, roundStamp, roundFile });
       if (!result.ok) return { ok: false, strategy: null, error: result.error ?? "Could not start the strategy round." };
       const history = [...strategyRounds(card), { id: picked.id, at: roundAt, file: roundFile }];

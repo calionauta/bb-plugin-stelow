@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ROUNDS_DIR, slugify, roundTimestamp, roundFileName, parseRoundPath, normalizeHistory } from "../lib/research-rounds.mjs";
 
 // Naming: <strategy>[-<subskill>]-r<n>-<stamp>.md basenames (the server
@@ -34,5 +37,14 @@ assert.deepEqual(
 );
 assert.equal(parseRoundPath("rounds/pricing-r2-20260905-1830.md", "paywall"), null, "wrong strategy");
 assert.equal(parseRoundPath("plans/spec-product_v1.md", "pricing"), null, "non-round file");
+
+// All user-facing round files, including pending primaries and optional
+// sub-steps, share the publishability guard. A reserved path may be missing;
+// neither an empty placeholder nor whitespace may render as an artifact.
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+assert.match(serverSource, /if \(!artifact \|\| !isPublishableArtifactContent\(artifact\.content\)\) continue;/, "empty sub-step artifacts are skipped");
+assert.match(serverSource, /round\.status === "pending" && isPublishableArtifactContent\(content\) && !researchRoundMirrorsIndex/, "empty pending primary artifacts are skipped");
+assert.match(serverSource, /async function ensureArtifactParent/, "round directories are created without reserving empty files");
+assert.doesNotMatch(serverSource, /ensureRoundFile/, "the old empty-file helper is gone");
 
 console.log("research rounds test ok: paths, strict history, round path parsing");

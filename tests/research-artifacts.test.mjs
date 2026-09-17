@@ -32,6 +32,7 @@ assert.equal(isValidRoundContent(null, INDEX), false, "missing round is invalid"
 // Explore: single file, no index to mirror — presence + substance only.
 assert.equal(isValidExploreContent("# Shape Up\n\n" + "x".repeat(300)), true, "real explore artifact is valid");
 assert.equal(isValidExploreContent(""), false, "empty explore artifact is invalid");
+assert.equal(isValidExploreContent("   \n\t"), false, "whitespace-only explore artifact is invalid");
 assert.equal(isValidExploreContent("thin"), false, "thin explore artifact is invalid");
 assert.equal(isValidExploreContent("", null), false, "explicit null threshold still invalid");
 assert.equal(exploreArtifactFile("shape-up"), "explore-shape-up.md", "explore file convention");

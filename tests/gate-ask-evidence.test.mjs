@@ -52,6 +52,8 @@ assert.match(serverSource, /async function fallbackGateAskArtifact/, "older gate
 // !option.artifact)" fallback only covered all-label-only asks, which is
 // exactly how the 2026-09-15 plan gate shipped an unreadable "Approve plan".
 assert.match(serverSource, /async function resolveAskOptions/, "one resolver owns per-option artifacts");
+assert.match(serverSource, /async function resolveAskArtifact/, "ask attachments use one guarded resolver");
+assert.match(serverSource, /!artifact \|\| !isPublishableArtifactContent\(artifact\.content\)/, "empty ask attachments do not render as evidence");
 assert.match(serverSource, /inheritAskArtifact/, "per-option artifacts inherit the ask's document");
 assert.match(serverSource, /const inherited = inheritAskArtifact\(options\)/, "the resolver inherits before resolving");
 assert.doesNotMatch(serverSource, /options\.every\(\(option\) => !option\.artifact\)/, "the all-or-nothing fallback is gone");

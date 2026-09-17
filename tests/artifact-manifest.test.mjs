@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths } from "../lib/artifact-manifest.mjs";
+import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths } from "../lib/artifact-manifest.mjs";
 
 const manifest = parseArtifactManifest(`---
 name: workflow
@@ -26,6 +26,9 @@ assert.equal(resolveArtifactPath("/workspace/project", ".stelow/example/spec.md"
 assert.equal(resolveArtifactPath("/workspace/project", "/etc/passwd"), null, "absolute artifact paths are rejected");
 assert.equal(resolveArtifactPath("/workspace/project", "../outside.md"), null, "parent traversal is rejected");
 assert.equal(resolveArtifactPath("/workspace/project", ".stelow/../outside.md"), null, "embedded parent traversal is rejected");
+assert.equal(isPublishableArtifactContent("# Ready\n"), true, "non-empty Markdown is publishable");
+assert.equal(isPublishableArtifactContent("  \n\t "), false, "whitespace-only placeholders are not publishable");
+assert.equal(isPublishableArtifactContent(null), false, "missing content is not publishable");
 
 // The audit trail must not depend on the agent remembering to register its
 // own output: whatever the manifest missed is still listed.
