@@ -54,6 +54,7 @@ import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
+import { requiredForStage } from "./lib/question-contracts.mjs";
 import { contextAskGate } from "./lib/context-ask-gate.mjs";
 import { gateEvidenceGate } from "./lib/gate-ask-evidence.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
@@ -2583,6 +2584,48 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch {
       return card.stage ?? null;
     }
+  }
+
+  function stageEnteredAt(state: string, stage: string): number | null {
+    const match = state.match(new RegExp(`(?:^|\\n)\\s*- stage:\\s*${stage.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*\\n(?:\\s+[^\\n]*\\n)*?\\s+entered_at:\\s*([^\\n]+)`, "m"));
+    const value = match?.[1]?.trim().replace(/["']/g, "") ?? "";
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  async function questionContractsGate(card: CardRow, stateDir: string | null): Promise<string | null> {
+    if (!stateDir) return null;
+    const stateFile = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).catch(() => null);
+    const state = typeof stateFile?.content === "string" ? stateFile.content : null;
+    if (!state) return null; // unreadable state fails open
+    const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
+    const appetiteRaw = state.match(/^\s*appetite:\s*(.+)$/m)?.[1];
+    const modeRaw = state.match(/^\s*review_mode:\s*(.+)$/m)?.[1];
+    if (!stage || !appetiteRaw || !modeRaw) return null; // config is not trustworthy
+    const { appetite, reviewMode } = parseWorkflowConfig(state);
+    const required = requiredForStage({ stage, appetite, reviewMode }).filter((entry) => entry.kind !== "skip");
+    if (required.length === 0) return null;
+    const enteredAt = stageEnteredAt(state, stage);
+    if (!enteredAt) return null; // legacy history has no entry boundary
+    const paths = await bb.sdk.files.listPaths({ path: stateDir, includeFiles: true, includeDirectories: false, limit: 500 }).catch(() => null);
+    if (!paths) return null;
+    const allPaths = array(record(paths).paths).map((entry) => typeof entry === "string" ? entry : text(record(entry).path)).filter(Boolean);
+    for (const contract of required) {
+      const pattern = new RegExp(`^${contract.receipt.replace(/[.+^${}()|[\\]\\\\]/g, "\\$&").replace(/\\\*/g, ".*")}$`);
+      const receiptPath = allPaths.find((path) => pattern.test(path.startsWith(`${stateDir}/`) ? path.slice(stateDir.length + 1) : path));
+      const receipt = receiptPath ? await bb.sdk.files.read({ path: receiptPath }).catch(() => null) : null;
+      const content = typeof receipt?.content === "string" ? receipt.content : "";
+      const modifiedAtMs = typeof receipt?.modifiedAtMs === "number" ? receipt.modifiedAtMs : 0;
+      if (contract.kind === "agent-receipt") {
+        const marker = contract.id.startsWith("assumptions-") ? /^assumptions_resolved:/m : contract.id.startsWith("scope-adjustment-") ? /^scope_adjustment:/m : contract.id === "critique-report" ? /^gap_verdict:/m : null;
+        if (!receiptPath || modifiedAtMs < enteredAt || (marker && !marker.test(content))) return `Refused: complete \`${contract.id}\` for \`${stage}\` — write the fresh receipt \`${contract.receipt}\` after entering this stage, then advance again.`;
+      } else if (contract.kind === "human-ask") {
+        if (contract.id === "critique-gap-resolution" && /gap_verdict:\s*["']?0 gaps/i.test(content)) continue;
+        const answered = db.prepare("SELECT 1 FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_reason = 'answered' AND resolved_at >= ? LIMIT 1").get(card.id, enteredAt);
+        if (!answered) return `Refused: answer the required \`${contract.id}\` question for \`${stage}\` (or record its required receipt), then advance again.`;
+      }
+    }
+    return null;
   }
 
   /**
@@ -5519,6 +5562,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const source = { path: workspace.path, hostId: workspace.hostId };
       const guard = await ensureProjectArtifacts(bb, source.path, stateDir, Boolean(card.dir_hash));
       if (guard) return { ok: false, stdout: "", error: guard };
+      // Check the stage being left before the helper mutates state.md. The
+      // workflow file is slug truth, so a refusal leaves both it and the DB
+      // card at the same stage.
+      const questionGuard = await questionContractsGate(card, stateDir);
+      if (questionGuard) return { ok: false, stdout: "", error: questionGuard };
       const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
       if (result.code !== 0) return { ok: false, stdout: result.stdout, error: result.stderr || "stelow advance failed" };
       // Band-preset swap, mirroring the CLI advance path: if the phase of the
