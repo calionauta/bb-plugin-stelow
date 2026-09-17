@@ -17,8 +17,10 @@ const neverSeedDefs = serverSource.match(/const NEVER_SEED = "/g) ?? [];
 assert.equal(neverSeedDefs.length, 1, "NEVER_SEED is defined once, not pasted per prompt");
 const turnDisciplineDefs = serverSource.match(/const TURN_DISCIPLINE = "/g) ?? [];
 assert.equal(turnDisciplineDefs.length, 1, "TURN_DISCIPLINE is defined once, not pasted per prompt");
+assert.equal((serverSource.match(/const COMMIT_STYLE = "/g) ?? []).length, 1, "COMMIT_STYLE is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/orphans a second workflow outside your card/g) ?? []).length, 1, "the seed-ban prose lives in the const only");
 assert.equal((serverSource.match(/never end a turn with a bare progress report/g) ?? []).length, 1, "the turn-discipline prose lives in the const only");
+assert.equal((serverSource.match(/Never commit empty or `wip` messages/g) ?? []).length, 1, "the commit-style prose lives in the const only");
 assert.equal((serverSource.match(/const RECON_PROTOCOL = "/g) ?? []).length, 1, "RECON_PROTOCOL is defined once");
 
 // Every build spawn path references both consts. Prompt templates are
@@ -50,6 +52,7 @@ for (const { site, at } of ordered) {
   const window = serverSource.slice(at, stop);
   assert.ok(window.includes("${NEVER_SEED}"), `the ${site} prompt references NEVER_SEED`);
   assert.ok(window.includes("${TURN_DISCIPLINE}"), `the ${site} prompt references TURN_DISCIPLINE`);
+  assert.ok(window.includes("${COMMIT_STYLE}"), `the ${site} prompt references COMMIT_STYLE`);
   assert.ok(window.includes("${RECON_PROTOCOL}"), `the ${site} prompt references RECON_PROTOCOL`);
 }
 
