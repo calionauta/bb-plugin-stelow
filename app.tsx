@@ -2839,6 +2839,7 @@ function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, g
 type AuditTrailStatus = {
   state: "verified" | "changed" | "missing" | "refused" | "unsupported" | "unavailable";
   detail: string | null; head: string | null; path: string | null; contract: string | null;
+  recon: { state: "recorded" | "missing" | "invalid"; detail: string } | null;
 };
 
 const AUDIT_TRAIL_COPY: Record<AuditTrailStatus["state"], { label: string; tone: string; sub: string | null }> = {
@@ -2859,7 +2860,7 @@ function AuditTrailStatusRow({ cardId }: { cardId: string }) {
     try {
       setStatus(await rpc.call("auditTrailStatus", { cardId }));
     } catch {
-      setStatus({ state: "unavailable", detail: "The host could not read the audit trail.", head: null, path: null, contract: null });
+      setStatus({ state: "unavailable", detail: "The host could not read the audit trail.", head: null, path: null, contract: null, recon: null });
     } finally {
       setChecking(false);
     }
@@ -2882,6 +2883,7 @@ function AuditTrailStatusRow({ cardId }: { cardId: string }) {
         </button>
       </div>
       {detail ? <p className="mt-1 text-muted-foreground">{detail}</p> : null}
+      {status.recon && status.recon.state !== "recorded" ? <p className="mt-1 text-amber-700 dark:text-amber-300">Recon warning: {status.recon.detail}</p> : null}
     </div>
   );
 }

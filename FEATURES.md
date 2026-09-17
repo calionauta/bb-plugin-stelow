@@ -378,6 +378,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   heads the file list — absent otherwise, never an error. When `cymbal`
   is installed, a second line lists changed symbols with caller impact
   (blast radius at a glance) under the same fail-soft rule.
+- **Portable reconnaissance receipts** (`recon.sh`, `RECON_PROTOCOL`,
+  `reconReceiptStatus`). Stelow preflights optional analysis tools from the
+  target Git workspace and writes `context/recon-receipt.json`; BB injects the
+  portable contract at workflow handoff and shows a non-blocking audit warning
+  when a completed Build card lacks a valid receipt.
 - **Worker section** (`WorkerSection`, always visible right under the
   hero in both tracks): preset pill + provider/model + inline note
   (applies to the next worker — Resume keeps the current one); completed
