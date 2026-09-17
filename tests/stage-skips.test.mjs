@@ -7,12 +7,12 @@ import { STAGE_SEQUENCE } from "../lib/artifact-groups.mjs";
 
 const FULL = ["triage", "select", "setup", "context", "shape", "critique", "gate", "scope", "interface", "int-gate", "selection", "planning", "plan-gate", "execution", "verification", "diff-gate", "audit"];
 
-// Strictest mode runs every gate (diff-gate included) — only context stays
-// skipped there, per the gate table. A missing review mode fails open.
+// Strictest mode runs every gate (diff-gate included). Context is resolved by
+// upstream context:5, so review mode alone never invents a skip.
 assert.deepEqual(
   skippedStages({ kind: "build", intent: "feature", reviewMode: "Product Spec + Interface + Tech Review + Code Diff", sequence: STAGE_SEQUENCE }).skipped.map((s) => s.stage),
-  ["context"],
-  "strictest mode skips only context",
+  [],
+  "strictest mode does not invent a context skip",
 );
 
 // Auto skips plan-gate, diff-gate, selection — with reasons naming the mode.
@@ -34,6 +34,11 @@ assert.deepEqual(
 assert.deepEqual(skippedStages({ kind: "build", intent: "unknown", reviewMode: "Auto", sequence: STAGE_SEQUENCE }), { offRoute: [], skipped: [] }, "unknown intent invents nothing");
 assert.deepEqual(skippedStages({ kind: "build", intent: "feature", reviewMode: "Bogus", sequence: STAGE_SEQUENCE }), { offRoute: [], skipped: [] }, "unknown mode invents nothing");
 assert.deepEqual(skippedStages({ kind: "research", intent: "investigate", reviewMode: "Auto", sequence: STAGE_SEQUENCE }), { offRoute: [], skipped: [] }, "non-build tracks are empty");
+
+assert.ok(
+  skippedStages({ kind: "build", intent: "feature", reviewMode: "Product Spec + Interface + Scopes", sequence: STAGE_SEQUENCE }).skipped.some((entry) => entry.stage === "plan-gate"),
+  "Scopes skips the unpromised plan gate",
+);
 
 // Cross-check: INTENT_ROUTES and MODE_SKIPS match the vendored methodology
 // source (transitions.md stub routes + gate table). Upstream edits fail here,

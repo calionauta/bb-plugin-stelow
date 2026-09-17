@@ -4,21 +4,18 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONTEXT_SKIP_INTENTS, CONTEXT_STAGE, contextAskGate } from "../lib/context-ask-gate.mjs";
 
-// Deterministic, host-enforced: refactor/bugfix never reaches the human
-// with product-strategy questions at the context stage. No LLM judgment,
-// no signal sniffing — intent plus stage decide.
+// context:5 permits a reduced opt-in ask for refactor/bugfix when the
+// baseline is verifiable. The host cannot inspect that methodology predicate,
+// so it must fail open instead of imposing its former blanket refusal.
 assert.deepEqual(CONTEXT_SKIP_INTENTS, ["refactor", "bugfix"], "the skip set is one const");
 assert.equal(CONTEXT_STAGE, "context", "the gate covers the strategy stage only");
 
 const refactorAtContext = { kind: "build", intent: "refactor", stage: "context", tag: "standard", forced: false };
-assert.equal(contextAskGate(refactorAtContext).allowed, false, "refactor at context is refused");
-assert.match(contextAskGate(refactorAtContext).error, /skip product-strategy questions/, "the refusal names what is skipped");
-assert.match(contextAskGate(refactorAtContext).error, /Advance to `shape`/, "the refusal names the redirect");
-assert.match(contextAskGate(refactorAtContext).error, /--force/, "the refusal names the explicit override");
+assert.equal(contextAskGate(refactorAtContext).allowed, true, "refactor at context may use the permitted reduced ask");
 assert.equal(
   contextAskGate({ kind: "build", intent: "bugfix", stage: "context", tag: "standard", forced: false }).allowed,
-  false,
-  "bugfix at context is refused",
+  true,
+  "bugfix at context may use the permitted reduced ask",
 );
 
 // Every escape hatch stays open: explicit force, other intents, other
@@ -39,4 +36,4 @@ assert.match(serverSource, /contextAskGate\(\{/, "the ask handler decides throug
 assert.match(serverSource, /stage: gateCard \? await cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
 assert.match(serverSource, /forced: argv\.includes\("--force"\)/, "the explicit override reaches the gate");
 
-console.log("context ask gate test ok: refactor/bugfix skip strategy, force opts back in");
+console.log("context ask gate test ok: context:5 reduced asks remain possible, force opts back in");

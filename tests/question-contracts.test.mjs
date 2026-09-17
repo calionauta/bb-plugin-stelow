@@ -4,7 +4,8 @@ import { EXPECTED_QUESTION_CONTRACTS, loadQuestionContracts, parseQuestionContra
 
 // The host's enforcement mirror is deliberately pinned to the vendored
 // upstream source: methodology changes cannot silently change what bb blocks.
-assert.deepEqual(loadQuestionContracts(), EXPECTED_QUESTION_CONTRACTS, "vendored question contract matches the host mirror");
+const byStageAndId = (a, b) => `${a.stage}/${a.id}`.localeCompare(`${b.stage}/${b.id}`);
+assert.deepEqual([...loadQuestionContracts()].sort(byStageAndId), [...EXPECTED_QUESTION_CONTRACTS].sort(byStageAndId), "vendored question contract matches the host mirror");
 
 const humanModes = [
   "Product Spec + Interface Gates",
