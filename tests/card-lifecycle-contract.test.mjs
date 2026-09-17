@@ -325,5 +325,8 @@ assert.match(server, /note: auditReceiptNote\(/, "both receipts are labelled whe
 assert.match(server, /auditTrailGate\(\{ build: trail, check: trailCheck, verifiedGit: gitEvidence \}\)/, "the trail is bound to the Git identity the audit receipt was verified at");
 assert.match(server, /sameGitEvidence\(gitEvidence, postTrailGitEvidence\)/, "Done re-samples Git after the portable receipt validates");
 assert.match(server, /\["audit-trail", "check", "--strict", "--json"\]/, "the post-completion status uses the same strict receipt contract as Done");
+assert.match(server, /recon: reconReceiptStatus\(/, "the host derives reconnaissance evidence from the portable receipt, never UI state");
+assert.match(server, /RECON_RECEIPT_FILE/, "the reconnaissance receipt path is one shared contract");
+assert.match(app, /Recon warning: \{status\.recon\.detail\}/, "a missing or invalid reconnaissance receipt is visible but non-blocking");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");
