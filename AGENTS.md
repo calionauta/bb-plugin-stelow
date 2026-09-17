@@ -58,6 +58,16 @@ Any commit that adds, changes, or removes a user-facing feature must
 update `FEATURES.md` in the same commit — a feature without an entry
 does not exist.
 
+## Upstream blueprint
+
+This plugin is the reference implementation behind upstream
+`docs/host-plugin-blueprint.md` — abstracted lifecycle, inbox,
+ask/answer, sync, and UI rules for building other hosts. Any commit
+that adds or changes a user-facing pattern, lifecycle rule, or portable
+`lib/` module must also propose the matching blueprint edit upstream
+(separate commit in the stelow checkout): a pattern without a blueprint
+entry does not exist outside this plugin.
+
 ## Code standards
 
 Quality rules live in the coding-standards skill — never restated here.
