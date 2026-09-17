@@ -32,7 +32,7 @@ assert.equal(contextAskGate({ ...refactorAtContext, kind: "research" }).allowed,
 // anything persists — a refusal never pings the human. `--force` passes
 // through the group parser untouched (unknown flags are ignored there).
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
-assert.match(serverSource, /contextAskGate\(\{/, "the ask handler decides through the shared gate");
+assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher (intent gate inside)");
 assert.match(serverSource, /stage: gateCard \? await cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
 assert.match(serverSource, /forced: argv\.includes\("--force"\)/, "the explicit override reaches the gate");
 

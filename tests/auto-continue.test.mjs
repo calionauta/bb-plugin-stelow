@@ -121,7 +121,9 @@ assert.match(serverSource, /bb\.sdk\.threads\.send\(\{ threadId: card\.worker_th
 assert.match(serverSource, /auto_continue_count: autoNext\.count, auto_continue_stage: autoNext\.stage/, "a resume records its budget use");
 assert.match(serverSource, /function buildContinueNudge\(\): string/, "manual Retry and auto-continue share one nudge");
 assert.match(serverSource, /Only a visible structured form on the card counts as a pending question/, "the recovery nudge cannot wait on an invisible question");
-assert.match(serverSource, /questionOpenGuard\(\{\s*liveInteractions: liveAsks\.length,\s*expiredQuestions: openExpiredQuestionIds\(cardRow\.id\)\.length,\s*\}\)/, "asks only deduplicate actual live or recoverable card forms");
+assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
+assert.match(serverSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
+assert.match(serverSource, /expiredCount: openExpiredQuestionIds\(cardRow\.id\)\.length,/, "the dispatcher receives the recoverable expired count");
 const resets = serverSource.match(/resetAutoContinue\(\)/g) ?? [];
 assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");

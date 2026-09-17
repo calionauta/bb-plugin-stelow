@@ -16,7 +16,7 @@ import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, li
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
-import { questionOpenGuard } from "./lib/question-presence.mjs";
+import { decideAskGate } from "./lib/ask-gate.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
@@ -56,8 +56,6 @@ import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
 import { requiredForStage } from "./lib/question-contracts.mjs";
 import { checkAdvanceContracts } from "./lib/advance-contracts.mjs";
-import { contextAskGate } from "./lib/context-ask-gate.mjs";
-import { gateEvidenceGate } from "./lib/gate-ask-evidence.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
 import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
@@ -5967,41 +5965,23 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (liveAsks === null) {
           return { exitCode: 1, stderr: "Could not verify whether a card question is already open. Retry this same ask once; do not assume a prior question is visible." };
         }
-        const questionGuard = questionOpenGuard({
-          liveInteractions: liveAsks.length,
-          expiredQuestions: openExpiredQuestionIds(cardRow.id).length,
-        });
-        if (!questionGuard.canOpen) return { exitCode: 1, stderr: questionGuard.reason! };
-        // Deterministic intent gate (lib/context-ask-gate): refactor/bugfix
-        // cards skip product-strategy questions at the context stage.
-        // Host-enforced on slug truth — never LLM-judged. `--force` opts
-        // back in explicitly; nothing is persisted before this line, so a
-        // refusal never pings the human.
+        // One dispatcher owns ask-refusal precedence (lib/ask-gate):
+        // duplicate, then intent, then evidence. Nothing is persisted
+        // before this line, so a refusal never pings the human. The split
+        // branch below stays separate — it validates AND persists.
         {
           const gateCard = getCard(cardRow.id);
-          const contextGate = contextAskGate({
+          const questionDecision = decideAskGate({
+            liveCount: liveAsks.length,
+            expiredCount: openExpiredQuestionIds(cardRow.id).length,
             kind: gateCard?.kind,
             intent: gateCard?.intent,
             stage: gateCard ? await cardStageSlug(gateCard) : null,
             tag,
             forced: argv.includes("--force"),
-          });
-          if (!contextGate.allowed) return { exitCode: 2, stderr: contextGate.error! };
-        }
-        // Evidence gate (lib/gate-ask-evidence): a review gate with nothing
-        // to review is refused — "approve the plan" must carry the plan via
-        // --artifact (or --preview), or --force. Label-only options keep
-        // working at every non-gate stage.
-        {
-          const gateCard = getCard(cardRow.id);
-          const evidenceGate = gateEvidenceGate({
-            kind: gateCard?.kind,
-            stage: gateCard ? await cardStageSlug(gateCard) : null,
-            tag,
-            forced: argv.includes("--force"),
             groups,
           });
-          if (!evidenceGate.allowed) return { exitCode: 2, stderr: evidenceGate.error! };
+          if (!questionDecision.allowed) return { exitCode: questionDecision.code, stderr: questionDecision.reason! };
         }
         // A split proposal ask (lib/split-proposal): options are proposed
         // child cards, recorded by the host and executed by `bb stelow
