@@ -80,10 +80,13 @@ All changes — code, comments, docs, CHANGELOG, UI copy — are in English.
 
 ## Releases
 
-Keep feature commits separate. A release is: CHANGELOG entry +
-`package.json`/`package-lock.json` bump + `release: vX.Y.Z` commit +
-`vX.Y.Z` tag + push both + `gh release create` with English notes.
+Releases run on release-please: every push to `master` refreshes the
+open release PR (version bump in `package.json`/`package-lock.json` +
+generated notes); merging it cuts the `vX.Y.Z` tag and the GitHub
+release. The merge is the release — never tag or `gh release create`
+from a laptop.
 
-Never release automatically. After committing and pushing, ask the user
-whether they want a release and wait for confirmation before tagging,
-publishing, or deploying anything.
+Never merge the release PR unreviewed. Curate the generated notes in
+the PR first when the Keep-a-Changelog prose needs a human touch, and
+confirm CI is green on it. Keep feature commits separate; the release
+PR owns the version bump.
