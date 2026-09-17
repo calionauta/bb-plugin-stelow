@@ -18,6 +18,9 @@ assert.equal(neverSeedDefs.length, 1, "NEVER_SEED is defined once, not pasted pe
 const turnDisciplineDefs = serverSource.match(/const TURN_DISCIPLINE = "/g) ?? [];
 assert.equal(turnDisciplineDefs.length, 1, "TURN_DISCIPLINE is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/const COMMIT_STYLE = "/g) ?? []).length, 1, "COMMIT_STYLE is defined once, not pasted per prompt");
+assert.equal((serverSource.match(/const INTERFACE_PICK = "/g) ?? []).length, 1, "INTERFACE_PICK is defined once, not pasted per prompt");
+assert.equal((serverSource.match(/Interface-pick discipline: check review_mode/g) ?? []).length, 1, "the interface-pick prose lives in the const only");
+assert.equal((serverSource.match(/\$\{INTERFACE_PICK\}/g) ?? []).length, 4, "spawn, restart, nudge, and ask copy reference INTERFACE_PICK");
 assert.equal((serverSource.match(/orphans a second workflow outside your card/g) ?? []).length, 1, "the seed-ban prose lives in the const only");
 assert.equal((serverSource.match(/never end a turn with a bare progress report/g) ?? []).length, 1, "the turn-discipline prose lives in the const only");
 assert.equal((serverSource.match(/Never commit empty or `wip` messages/g) ?? []).length, 1, "the commit-style prose lives in the const only");
