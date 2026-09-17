@@ -2255,12 +2255,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   type DiscardEvidence = {
     status: string; workspaceKind: string; checkoutPath: string | null; dirExists: boolean;
     isGit: boolean; branch: string | null; hasUpstream: boolean; upstreamRef: string | null;
-    changed: string[]; untracked: string[]; unpushedCommits: number; resetTarget: string | null;
+    changed: string[]; untracked: string[]; unpushedCommits: number; stashCount: number; resetTarget: string | null;
     linkedWorktree: boolean; sharedWith: number;
   };
   const EXPLORATORY_SCOPE = nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory");
   async function discardEvidence(card: CardRow): Promise<DiscardEvidence> {
-    const blank: DiscardEvidence = { status: card.status, workspaceKind: card.workspace_kind, checkoutPath: null, dirExists: false, isGit: false, branch: null, hasUpstream: false, upstreamRef: null, changed: [], untracked: [], unpushedCommits: 0, resetTarget: null, linkedWorktree: false, sharedWith: 0 };
+    const blank: DiscardEvidence = { status: card.status, workspaceKind: card.workspace_kind, checkoutPath: null, dirExists: false, isGit: false, branch: null, hasUpstream: false, upstreamRef: null, changed: [], untracked: [], unpushedCommits: 0, stashCount: 0, resetTarget: null, linkedWorktree: false, sharedWith: 0 };
     if (card.workspace_kind === "exploratory") {
       const explorPath = card.workspace_path;
       if (!explorPath) return blank;
@@ -2278,11 +2278,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const top = await runGitIn(checkout, ["rev-parse", "--show-toplevel"]);
     if (!top.ok || !top.stdout.trim()) return { ...blank, checkoutPath: checkout };
     const gitRoot = top.stdout.trim();
-    const [branchR, upstreamR, statusR, unpushedR] = await Promise.all([
+    const [branchR, upstreamR, statusR, unpushedR, stashR] = await Promise.all([
       runGitIn(gitRoot, ["branch", "--show-current"]),
       runGitIn(gitRoot, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]),
       runGitIn(gitRoot, ["status", "--porcelain=v1", "--untracked-files=all"]),
       runGitIn(gitRoot, ["rev-list", "--count", "HEAD", "--not", "--remotes"]),
+      runGitIn(gitRoot, ["stash", "list", "--format=%gd"]),
     ]);
     const branch = branchR.ok ? branchR.stdout.trim() || null : null;
     const changed: string[] = [];
@@ -2295,6 +2296,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
     }
     const unpushedCommits = unpushedR.ok ? Number.parseInt(unpushedR.stdout.trim(), 10) || 0 : 0;
+    const stashCount = stashR.ok ? stashR.stdout.split("\n").filter(Boolean).length : 0;
     // Reset target: parent of the first commit made since the card started
     // (card-attributable work); no card-era commit means dirty-files-only.
     let resetTarget: string | null = null;
@@ -2316,7 +2318,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     try {
       sharedWith = (db.prepare("SELECT COUNT(*) AS n FROM cards WHERE id != ? AND status != 'archived' AND project_id = ?").get(card.id, card.project_id) as { n: number } | undefined)?.n ?? 0;
     } catch { /* advisory */ }
-    return { ...blank, checkoutPath: gitRoot, isGit: true, branch, hasUpstream: upstreamR.ok && Boolean(upstreamR.stdout.trim()), upstreamRef: upstreamR.ok && upstreamR.stdout.trim() ? upstreamR.stdout.trim() : null, changed, untracked, unpushedCommits, resetTarget, linkedWorktree, sharedWith };
+    return { ...blank, checkoutPath: gitRoot, isGit: true, branch, hasUpstream: upstreamR.ok && Boolean(upstreamR.stdout.trim()), upstreamRef: upstreamR.ok && upstreamR.stdout.trim() ? upstreamR.stdout.trim() : null, changed, untracked, unpushedCommits, stashCount, resetTarget, linkedWorktree, sharedWith };
   }
   async function recoveryGitEvidence(path: string): Promise<RecoveryGitEvidence> {
     const root = await runGitIn(path, ["rev-parse", "--show-toplevel"]);
@@ -4529,6 +4531,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           const mainDir = common.ok && common.stdout.trim() ? common.stdout.trim() : "";
           const mainAbs = mainDir ? (isAbsolute(mainDir) ? mainDir : nodeJoin(fresh.checkoutPath ?? "", mainDir)) : "";
           if (!mainAbs) throw new Error("Cannot locate the main checkout.");
+          // Best-effort: a locked worktree refuses removal until unlocked.
+          await runGitIn(mainAbs, ["worktree", "unlock", fresh.checkoutPath ?? ""]);
           const removed = await runGitIn(mainAbs, ["worktree", "remove", "--force", fresh.checkoutPath ?? ""]);
           if (!removed.ok) throw new Error("Could not remove the worktree.");
           const pruned = await runGitIn(mainAbs, ["branch", "-D", fresh.branch ?? ""]);

@@ -10,6 +10,7 @@ type DiscardEvidence = {
   changed: string[];
   untracked: string[];
   unpushedCommits: number;
+  stashCount: number;
   resetTarget: string | null;
   linkedWorktree: boolean;
   sharedWith: number;

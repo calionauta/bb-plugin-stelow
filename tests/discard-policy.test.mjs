@@ -83,12 +83,16 @@ assert.match(removed.body, /deletes \/tmp\/x/, "dir delete names the path");
 
 // File sample caps the list; the trail records the outcome.
 assert.equal(previewFileSample(["a"], ["b"]), "a, b", "short lists print whole");
+assert.equal(previewFileSample(["a"], ["b"], 1), "a and 1 more", "cap is honored");
 assert.equal(
   previewFileSample(Array.from({ length: 10 }, (_, i) => `f${i}.ts`), []),
   "f0.ts, f1.ts, f2.ts, f3.ts, f4.ts, f5.ts, f6.ts, f7.ts and 2 more",
   "long lists cap at eight",
 );
 assert.match(discardTrail("branch-reset", base), /Reset bb\/card-x to abc123def456/, "trail records the reset");
+assert.match(discardTrail("branch-reset", base), /\[a\.ts, b\.ts\]/, "trail carries the file list");
 assert.match(discardTrail("worktree-drop", base), /Discarded the bb\/card-x worktree/, "trail records the drop");
+const stashed = discardConfirm({ ...base, stashCount: 2 }, "branch-reset");
+assert.match(stashed.body, /2 stash entries are left untouched/, "stashes are named, never dropped");
 
 console.log("discard policy test ok: eligibility matrix, per-action confirm copy, trail");

@@ -83,6 +83,11 @@ All changes — code, comments, docs, CHANGELOG, UI copy — are in English.
   unresolved action items only; resolved items persist under history.
 - One primary action per card state. Destructive actions live behind
   confirm dialogs in Manage, never as the prominent choice.
+- Every destructive or background operation leaves an openable record: a
+  trail comment naming the outcome plus its evidence (files, SHAs,
+  counts), never a bare toast. Terminal output streams where it runs;
+  confirm dialogs state the exact blast radius with details before
+  anything runs.
 - Touch targets are `min-h-11`; every clickable gets `cursor-pointer`
   (Tailwind v4 does not imply it); text fields keep the text cursor.
 
