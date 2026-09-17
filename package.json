@@ -73,7 +73,7 @@
     "test:composer-execution": "node tests/composer-execution.test.mjs",
     "test:preset-ui": "node tests/preset-ui.test.mjs",
     "test:paths": "node tests/plugin-paths.test.mjs",
-    "test:about": "node tests/about-logo.test.mjs",
+    "test:about": "node tests/about-logo.test.mjs && node tests/plugin-update.test.mjs",
     "test:fresh": "node tests/fresh-install.test.mjs",
     "test:helper-sync": "node tests/workflow-helper-sync.test.mjs",
     "test:inbox": "node tests/inbox-flows.test.mjs && node tests/inbox-event-presentation.test.mjs",

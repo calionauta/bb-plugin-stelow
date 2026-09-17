@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [Unreleased]
+
+### Added
+
+- **Readable, recheckable plugin updates.** About shows tag versions instead
+  of raw commit shas, names the installed and candidate versions in the
+  update confirmation, offers "Check again" with a last-checked timestamp,
+  and reports a post-update reload honestly instead of as a failure.
+  Mount-time reads share one in-flight check with a one-minute reuse
+  window via the new `checkPluginUpdate` RPC.
+
 ## [0.20.0] - 2026-09-16
 
 ### Changed

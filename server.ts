@@ -19,6 +19,7 @@ import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtif
 import { questionOpenGuard } from "./lib/question-presence.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
+import { mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
@@ -287,6 +288,17 @@ const publicationCommitDiffSchema = z.object({
   files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), binary: z.boolean(), changeKind: z.string(), additions: z.number(), deletions: z.number(), truncated: z.boolean(), loadMode: z.string() })),
   truncated: z.boolean(),
   error: z.string().nullable(),
+});
+// BB-native self-update state. Displays ride along because git installs
+// report commit shas as versions — the panel formats those, never raw shas.
+const pluginUpdateSchema = z.object({
+  outcome: z.enum(["checking", "update-available", "current", "incompatible", "pinned", "unavailable"]),
+  installed: z.string().nullable(),
+  installedDisplay: z.string().nullable(),
+  candidate: z.string().nullable(),
+  candidateDisplay: z.string().nullable(),
+  detail: z.string().nullable(),
+  checkedAt: z.number().nullable(),
 });
 
 export const rpcContract = defineRpcContract({
@@ -595,11 +607,15 @@ export const rpcContract = defineRpcContract({
   },
   buildInfo: {
     input: z.object({}).strict(),
-    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skills: z.array(z.string()), pluginUpdate: z.object({ outcome: z.enum(["checking", "update-available", "current", "incompatible", "pinned", "unavailable"]), installed: z.string().nullable(), candidate: z.string().nullable(), detail: z.string().nullable(), checkedAt: z.number().nullable() }) }),
+    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skills: z.array(z.string()), pluginUpdate: pluginUpdateSchema }),
   },
   applyPluginUpdate: {
     input: z.object({}).strict(),
     output: z.object({ applied: z.boolean(), outcome: z.enum(["rolled-back", "current", "updated", "unavailable"]), detail: z.string().nullable(), from: z.string().nullable(), to: z.string().nullable() }),
+  },
+  checkPluginUpdate: {
+    input: z.object({}).strict(),
+    output: pluginUpdateSchema,
   },
   aboutLogo: {
     input: z.object({}).strict(),
@@ -1129,17 +1145,37 @@ export default async function plugin(bb: BbPluginApi) {
   const db = bb.storage.database();
   // BB is the source of truth for the installed plugin and its update range.
   // This read-only check never changes the helper or an active workflow.
-  let pluginUpdate = { outcome: "checking" as "checking" | "update-available" | "current" | "incompatible" | "pinned" | "unavailable", installed: null as string | null, candidate: null as string | null, detail: null as string | null, checkedAt: null as number | null };
-  async function refreshPluginUpdate() {
+  // Mount-time reads share one in-flight check and reuse a fresh result for
+  // a minute, so the sidebar and About never double-hit upstream resolution.
+  type PluginUpdateState = z.infer<typeof pluginUpdateSchema>;
+  let pluginUpdate: PluginUpdateState = { outcome: "checking", installed: null, installedDisplay: null, candidate: null, candidateDisplay: null, detail: null, checkedAt: null };
+  let updateCheckAt = 0;
+  let updateCheckInflight: Promise<void> | null = null;
+  async function refreshPluginUpdate(force = false) {
+    if (!force && pluginUpdate.outcome !== "checking" && Date.now() - updateCheckAt < 60_000) return;
+    if (updateCheckInflight) {
+      await updateCheckInflight;
+      return;
+    }
+    updateCheckInflight = (async () => {
+      try {
+        const entries = await bb.sdk.plugins.checkUpdates({ pluginId: bb.pluginId });
+        pluginUpdate = { ...mapUpdateEntry(selectOwnEntry(entries, bb.pluginId)), checkedAt: Date.now() };
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        pluginUpdate = { outcome: "unavailable", installed: null, installedDisplay: null, candidate: null, candidateDisplay: null, detail, checkedAt: Date.now() };
+        bb.log.warn(`plugin update check failed: ${detail}`);
+      } finally {
+        updateCheckAt = Date.now();
+      }
+    })();
     try {
-      const entry = (await bb.sdk.plugins.checkUpdates({ pluginId: bb.pluginId })).find((item) => item.id === bb.pluginId);
-      pluginUpdate = entry ? { outcome: entry.outcome, installed: entry.installed.version, candidate: entry.candidate?.version ?? null, detail: entry.detail ?? null, checkedAt: Date.now() } : { outcome: "unavailable", installed: null, candidate: null, detail: "BB returned no update status for this plugin.", checkedAt: Date.now() };
-    } catch (error) {
-      pluginUpdate = { outcome: "unavailable", installed: null, candidate: null, detail: error instanceof Error ? error.message : String(error), checkedAt: Date.now() };
-      bb.log.warn(`plugin update check failed: ${pluginUpdate.detail}`);
+      await updateCheckInflight;
+    } finally {
+      updateCheckInflight = null;
     }
   }
-  bb.background.schedule("stelow-plugin-update-check", "17 6 * * *", () => void refreshPluginUpdate());
+  bb.background.schedule("stelow-plugin-update-check", "17 6 * * *", () => void refreshPluginUpdate(true));
   void refreshPluginUpdate();
   bb.storage.migrate(db, [
     `CREATE TABLE IF NOT EXISTS cards (
@@ -5377,11 +5413,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async applyPluginUpdate() {
       try {
         const result = await bb.sdk.plugins.applyUpdate({ pluginId: bb.pluginId });
-        await refreshPluginUpdate();
+        await refreshPluginUpdate(true);
         return { applied: result.applied, outcome: result.outcome, detail: result.detail ?? null, from: result.from.version, to: result.to?.version ?? null };
       } catch (error) {
         return { applied: false, outcome: "unavailable" as const, detail: error instanceof Error ? error.message : String(error), from: null, to: null };
       }
+    },
+    async checkPluginUpdate() {
+      await refreshPluginUpdate(true);
+      return pluginUpdate;
     },
 
     // About identity mark. Served as a data URI (never a static file URL —

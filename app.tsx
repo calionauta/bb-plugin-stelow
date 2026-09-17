@@ -33,6 +33,7 @@ import { questionCopy } from "./lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
 import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
+import { shortRef } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
@@ -1685,7 +1686,7 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
 
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; pluginUpdate: { outcome: "checking" | "update-available" | "current" | "incompatible" | "pinned" | "unavailable"; installed: string | null; candidate: string | null; detail: string | null; checkedAt: number | null } } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; pluginUpdate: { outcome: "checking" | "update-available" | "current" | "incompatible" | "pinned" | "unavailable"; installed: string | null; installedDisplay: string | null; candidate: string | null; candidateDisplay: string | null; detail: string | null; checkedAt: number | null } } | null>(null);
   const [aboutLogo, setAboutLogo] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
@@ -1714,6 +1715,7 @@ function AboutPanel() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmPluginUpdate, setConfirmPluginUpdate] = useState(false);
   const [updatingPlugin, setUpdatingPlugin] = useState(false);
+  const [checkingPluginUpdate, setCheckingPluginUpdate] = useState(false);
   const [pluginUpdateError, setPluginUpdateError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -1734,11 +1736,33 @@ function AboutPanel() {
   }
   function applyPluginUpdate() {
     setUpdatingPlugin(true); setPluginUpdateError(null);
+    // Applying swaps the server bundle and reloads the plugin, so a failed
+    // follow-up read means "reloading", not "failed" — say so honestly.
+    let applied = false;
     void rpc.call("applyPluginUpdate", {}).then((result) => {
-      if (!result.applied) setPluginUpdateError(result.detail ?? "BB did not apply an update.");
-      else toast.success(`Plugin updated to ${result.to ?? "the latest compatible version"}.`);
+      applied = result.applied;
+      if (!result.applied) {
+        setPluginUpdateError(result.detail ?? "BB did not apply an update.");
+        return null;
+      }
+      toast.success(`Plugin updated to ${shortRef(result.to, null) ?? "the latest compatible version"}.`);
       return rpc.call("buildInfo", {});
-    }).then(setBuildInfo).catch((error) => setPluginUpdateError(error instanceof Error ? error.message : "Plugin update failed.")).finally(() => { setUpdatingPlugin(false); setConfirmPluginUpdate(false); });
+    }).then((info) => {
+      if (info) setBuildInfo(info);
+      else if (applied) setPluginUpdateError("Update applied — Stelow is reloading; the new version appears shortly.");
+    }).catch((error) => {
+      setPluginUpdateError(applied
+        ? "Update applied — Stelow is reloading; the new version appears shortly."
+        : error instanceof Error ? error.message : "Plugin update failed.");
+    }).finally(() => { setUpdatingPlugin(false); setConfirmPluginUpdate(false); });
+  }
+  function recheckPluginUpdate() {
+    setCheckingPluginUpdate(true); setPluginUpdateError(null); setConfirmPluginUpdate(false);
+    void rpc.call("checkPluginUpdate", {}).then((update) => {
+      setBuildInfo((prev) => prev ? { ...prev, pluginUpdate: update } : prev);
+    }).catch((error) => {
+      setPluginUpdateError(error instanceof Error ? error.message : "Update check failed.");
+    }).finally(() => setCheckingPluginUpdate(false));
   }
   return (
     <>
@@ -1778,16 +1802,29 @@ function AboutPanel() {
                       {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
                     </button>
                   </p>
-                  {buildInfo.pluginUpdate.outcome === "update-available" ? <p className="text-amber-700 dark:text-amber-300">Plugin {buildInfo.pluginUpdate.candidate} is available through BB.</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "update-available" ? <p className="text-amber-700 dark:text-amber-300">{confirmPluginUpdate ? `Update from ${shortRef(buildInfo.pluginUpdate.installed, buildInfo.pluginUpdate.installedDisplay) ?? "the installed version"} to ${shortRef(buildInfo.pluginUpdate.candidate, buildInfo.pluginUpdate.candidateDisplay) ?? "the latest version"}? Stelow reloads afterwards.` : `Plugin ${shortRef(buildInfo.pluginUpdate.candidate, buildInfo.pluginUpdate.candidateDisplay) ?? "An update"} is available through BB.`}</p> : null}
                   {buildInfo.pluginUpdate.outcome === "checking" ? <p>Checking BB for a compatible plugin update…</p> : null}
-                  {buildInfo.pluginUpdate.outcome === "current" ? <p>BB confirms this plugin is current.</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "current" ? <p>BB confirms this plugin is current{shortRef(buildInfo.pluginUpdate.installed, buildInfo.pluginUpdate.installedDisplay) ? ` (${shortRef(buildInfo.pluginUpdate.installed, buildInfo.pluginUpdate.installedDisplay)})` : ""}.</p> : null}
                   {buildInfo.pluginUpdate.outcome === "pinned" || buildInfo.pluginUpdate.outcome === "incompatible" ? <p>{buildInfo.pluginUpdate.detail ?? "BB cannot apply an update for this installation."}</p> : null}
-                  {buildInfo.pluginUpdate.outcome === "unavailable" ? <p>BB could not check for a plugin update.</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "unavailable" ? <p>{buildInfo.pluginUpdate.detail ?? "BB could not check for a plugin update."}</p> : null}
+                  {buildInfo.pluginUpdate.outcome === "checking" ? null : (
+                    <p>
+                      {buildInfo.pluginUpdate.checkedAt ? `Last checked ${relativeTime(buildInfo.pluginUpdate.checkedAt)} · ` : null}
+                      <button
+                        type="button"
+                        onClick={recheckPluginUpdate}
+                        disabled={checkingPluginUpdate}
+                        className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground disabled:cursor-default disabled:opacity-60"
+                      >
+                        {checkingPluginUpdate ? "Checking…" : "Check again"}
+                      </button>
+                    </p>
+                  )}
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
-                {buildInfo?.pluginUpdate.outcome === "update-available" ? (confirmPluginUpdate ? <><Button size="sm" disabled={updatingPlugin} onClick={applyPluginUpdate}>{updatingPlugin ? "Updating…" : "Confirm update"}</Button><Button size="sm" variant="ghost" disabled={updatingPlugin} onClick={() => setConfirmPluginUpdate(false)}>Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => setConfirmPluginUpdate(true)}>Update plugin…</Button>) : null}
+                {buildInfo?.pluginUpdate.outcome === "update-available" ? (confirmPluginUpdate ? <><Button size="sm" disabled={updatingPlugin} onClick={applyPluginUpdate}>{updatingPlugin ? "Updating…" : "Confirm update"}</Button><Button size="sm" variant="ghost" disabled={updatingPlugin} onClick={() => setConfirmPluginUpdate(false)}>Cancel</Button></> : <Button size="sm" variant="outline" disabled={checkingPluginUpdate} onClick={() => setConfirmPluginUpdate(true)}>Update plugin…</Button>) : null}
                 {confirmReset ? (
                   <>
                     <Button size="sm" variant="destructive" onClick={resetOnboarding} title="Clear onboarding state so every track shows its setup dialog again">Confirm reset</Button>
