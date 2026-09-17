@@ -43,6 +43,14 @@ name a valid redirect — a refusal without an exit is a deadlock with a
 good error message. Verify all paths live with fixture `state.md` files
 before shipping guard changes.
 
+## Commits
+
+Write conventional commits: `type: subject` in English, imperative,
+no scope unless it disambiguates. Only `feat`, `fix`, `perf`, and
+`BREAKING CHANGE:` footers bump the version and appear in release
+notes — `test`, `chore`, `docs`, `refactor` never do. A user-facing
+change committed under the wrong type ships in no release.
+
 ## Feature inventory
 
 `FEATURES.md` lists every user-facing feature grouped by job-to-be-done.
