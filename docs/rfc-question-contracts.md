@@ -147,6 +147,12 @@ Enforcement points (server.ts):
   (wired as `test:contracts`), per-option evidence gate for selection
   asks (`lib/gate-ask-evidence.mjs`), single-source `INTERFACE_PICK`
   prompt clause. Do NOT re-implement.
-- P1–P3 pending: blocked on §5 TODO inventory + upstream `questions:`
-  blocks for those stages. Enforcing without them would invent
-  methodology in the plugin — refused by design (see §9).
+- Upstream contracts published (eaea821, 0.60.0-alpha, synced):
+  `questions:` blocks for `shape`/`critique`/`scope`, `gap_verdict` and
+  `scope_adjustment` frontmatter receipts, Code Diff coverage, `context:5`
+  canonical in transitions, no plan-gate in Scopes. Plugin mirror
+  extended; `contextAskGate` relaxed to the permitted reduced ask;
+  `NON_AUTO_SKIPS` emptied (worker-side `context:5` decides).
+- Still pending: advance-time enforcement linkage (P1–P3) — the mirror
+  is read by nothing in `advanceCard` yet, deliberately. Wiring it is
+  the remaining work; see the handoff below.
