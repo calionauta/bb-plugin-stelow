@@ -186,7 +186,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Sidebar badge.** Unresolved actions and unread completions; it always
   agrees with the Inbox's primary **Needs attention** list. A completion is
   emerald review work, not an amber blocked workflow, and clears when its Done
-  card is opened. Per-tab active counts (About carries no count). All realtime.
+  card is opened. Per-tab active counts (About carries no count, but carries
+  an update dot when a plugin update is known). A shared update signal (BB
+  candidate or newer GitHub release) drives both the sidebar badge and the
+  About tab dot. All realtime.
 - **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
   plugin — each with its own paragraph, repo link, and version side by
   side (`buildInfo` carries both; the upstream version syncs with the

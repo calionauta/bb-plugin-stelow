@@ -361,10 +361,23 @@ function useInboxAccessory(): SidebarAccessoryHandle {
 
 function StelowInboxSidebarAccessory() {
   const { count, tone } = useInboxAccessory();
-  const rpc = useRpc<typeof rpcContract>();
-  const [updateAvailable, setUpdateAvailable] = useState(false);
-  useEffect(() => { void rpc.call("buildInfo", {}).then((info) => setUpdateAvailable(info.pluginUpdate.outcome === "update-available")).catch(() => undefined); }, [rpc]);
+  const updateAvailable = usePluginUpdateSignal();
   return <span className="inline-flex items-center gap-1"><SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />{updateAvailable ? <span aria-label="Stelow plugin update available" title="Plugin update available" className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300">↑</span> : null}</span>;
+}
+
+// Update signal shared by the sidebar accessory and the About tab badge: a
+// BB-managed candidate, or a newer GitHub release behind an unmanaged
+// install. BB pushes no update events, so every surface polls buildInfo on
+// mount (the server coalesces reads in a one-minute window).
+function usePluginUpdateSignal(): boolean {
+  const rpc = useRpc<typeof rpcContract>();
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    void rpc.call("buildInfo", {}).then((info) => {
+      setAvailable(info.pluginUpdate.outcome === "update-available" || info.githubRelease?.newer === true);
+    }).catch(() => undefined);
+  }, [rpc]);
+  return available;
 }
 
 function useBuildAccessory(): SidebarAccessoryHandle {
@@ -1510,9 +1523,10 @@ function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   return { kind: "track", track: "build" };
 }
 
-function StelowTabBar({ tab, counts, onSelect }: {
+function StelowTabBar({ tab, counts, aboutAlert, onSelect }: {
   tab: StelowTrack;
   counts: { inbox: number; build: number; research: number; explore: number; about: number };
+  aboutAlert?: boolean;
   onSelect: (track: StelowTrack) => void;
 }) {
   const countFor = (key: StelowTrack) => counts[key];
@@ -1535,7 +1549,7 @@ function StelowTabBar({ tab, counts, onSelect }: {
           >
             <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
             <span>{entry.title}</span>
-            {entry.key === "about" ? null : (
+            {entry.key === "about" ? (aboutAlert ? <span aria-label="Plugin update available" title="Plugin update available" className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300">↑</span> : null) : (
               <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${active ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"}`}>{count}</span>
             )}
           </button>
@@ -1745,7 +1759,7 @@ function PluginUpdateStatus({ update, github, confirming, checking, onCheck }: {
             disabled={checking}
             className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground disabled:cursor-default disabled:opacity-60"
           >
-            {checking ? "Checking…" : "Check again"}
+            {checking ? "Checking…" : "Check update"}
           </button>
         </p>
       )}
@@ -1960,6 +1974,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
   const goTrack = useCallback((track: StelowTrack) => {
     goToTrack(navigate, track);
   }, [navigate]);
+  const aboutAlert = usePluginUpdateSignal();
 
   if (route.kind === "card") {
     return <StelowCardDetail cardId={route.cardId} eventId={route.eventId} backTrack={route.origin} navigate={navigate} />;
@@ -1979,7 +1994,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
   // data has to come from somewhere.
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <StelowTabBar tab={tab} counts={counts} onSelect={goTrack} />
+      <StelowTabBar tab={tab} counts={counts} aboutAlert={aboutAlert} onSelect={goTrack} />
       <div className={tab === "inbox" ? "min-h-0 flex-1" : "hidden"}>
         <InboxPanel />
       </div>
