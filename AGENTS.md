@@ -27,6 +27,14 @@ work on each update.
   with a node test, following `inbox-events` / `ask-cancel` precedent —
   never inline-only in `server.ts` handlers.
 
+## Skills sync
+
+- Run manual syncs only via `node scripts/sync-stelow-assets.mjs`
+  (pinned commit, ledger in `data/`, atomic per-skill swap).
+- After syncing a live checkout, run `npm run reload` so the server
+  re-registers skill trees. A spawn landing on a just-swapped tree 404s
+  until rescan — start-phase failures auto-retry (bounded), then inbox.
+
 ## Transitions are enforced in one place
 
 Stage/mode rules live upstream (`scripts/stelow` `do_advance`, mirrored
