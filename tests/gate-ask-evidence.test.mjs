@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GATE_EVIDENCE_STAGES, gateEvidenceGate } from "../lib/gate-ask-evidence.mjs";
+import { GATE_EVIDENCE_STAGES, PER_OPTION_EVIDENCE_STAGES, gateEvidenceGate } from "../lib/gate-ask-evidence.mjs";
 
 // A review gate with nothing to review is refused deterministically:
 // "approve the plan" must carry the plan. Label-only options keep working
@@ -72,5 +72,43 @@ assert.match(appSource, /const inherited = inheritAskArtifact\(list\)/, "thread 
 // never drift back into a hand-rolled third color beside the amber panel.
 assert.match(appSource, /variant="outline"\s+size="sm"\s+onClick=\{\(\) => onOpenArtifact\(/, "the document control uses the shared outline treatment");
 assert.doesNotMatch(appSource, /border-emerald-500\/40 bg-emerald-500\/10 px-3/, "the emerald slab beside the amber options is gone");
+
+// Selection compares proposals: one evidenced option must not launder
+// blind siblings (upstream Pattern 2 fills every option). Other gates
+// review one shared document, so "Approve" stays legitimately label-only.
+assert.deepEqual(PER_OPTION_EVIDENCE_STAGES, ["selection"], "per-option evidence is selection-only");
+const selectionAsk = {
+  kind: "build",
+  stage: "selection",
+  tag: "standard",
+  forced: false,
+  groups: [{
+    question: "Which interface direction?",
+    options: [
+      { label: "A", description: "a", preview: "wireframe", artifact: { path: "proposal-a.md" } },
+      { label: "Hybrid", description: "h", preview: "wireframe", artifact: { path: "interfaces.md" } },
+      { label: "C", description: "c", preview: null, artifact: null },
+    ],
+  }],
+};
+assert.equal(gateEvidenceGate(selectionAsk).allowed, false, "one blind option fails selection");
+assert.match(gateEvidenceGate(selectionAsk).error, /every option/, "the refusal names the per-option fix");
+const fullSelection = structuredClone(selectionAsk);
+fullSelection.groups[0].options[2].preview = "wireframe";
+assert.equal(gateEvidenceGate(fullSelection).allowed, true, "fully evidenced selection passes");
+const mixedPlanGate = {
+  kind: "build",
+  stage: "plan-gate",
+  tag: "standard",
+  forced: false,
+  groups: [{
+    question: "Approve the plan?",
+    options: [
+      { label: "Approve", description: "go", preview: null, artifact: null },
+      { label: "Request changes", description: "no", preview: "3 scopes", artifact: null },
+    ],
+  }],
+};
+assert.equal(gateEvidenceGate(mixedPlanGate).allowed, true, "label-only approvals stay valid at plan-gate");
 
 console.log("gate ask evidence test ok: gates require evidence, everything else untouched");
