@@ -35,6 +35,20 @@ assert.deepEqual(
 assert.deepEqual(parseWorkflowConfig(null), { appetite: "Lean", reviewMode: "Auto" }, "a missing blob fails open, never throws");
 assert.deepEqual(parseWorkflowConfig(""), { appetite: "Lean", reviewMode: "Auto" }, "an empty blob fails open, never throws");
 
+// Strict mode distinguishes "declared" from "assumed": guards must never
+// enforce against a default the file never stated.
+assert.deepEqual(
+  parseWorkflowConfig(indented, { strict: true }),
+  { appetite: "Complete", reviewMode: "Product Spec + Interface + Tech Review" },
+  "strict keeps declared values",
+);
+assert.deepEqual(
+  parseWorkflowConfig("---\nintent: refactor\n---\n", { strict: true }),
+  { appetite: null, reviewMode: null },
+  "strict returns nulls instead of defaults",
+);
+assert.deepEqual(parseWorkflowConfig(null, { strict: true }), { appetite: null, reviewMode: null }, "strict never throws either");
+
 // Schema guarantee: what seeding writes, the reader reads back whole.
 // Mirrors ensureWorkflow's template substitution exactly, so the write
 // boundary (strict zod enums at the RPC) and the read boundary can never

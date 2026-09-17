@@ -2600,10 +2600,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const state = typeof stateFile?.content === "string" ? stateFile.content : null;
     if (!state) return null; // unreadable state fails open
     const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
-    const appetiteRaw = state.match(/^\s*appetite:\s*(.+)$/m)?.[1];
-    const modeRaw = state.match(/^\s*review_mode:\s*(.+)$/m)?.[1];
-    if (!stage || !appetiteRaw || !modeRaw) return null; // config is not trustworthy
-    const { appetite, reviewMode } = parseWorkflowConfig(state);
+    // Strict parse: missing keys yield nulls (never assumed defaults) — a
+    // guard must not enforce against a mode the file never declared.
+    const { appetite, reviewMode } = parseWorkflowConfig(state, { strict: true });
+    if (!stage || !appetite || !reviewMode) return null; // config is not trustworthy
     const required = requiredForStage({ stage, appetite, reviewMode }).filter((entry) => entry.kind !== "skip");
     if (required.length === 0) return null;
     const enteredAt = stageEnteredAt(state, stage);

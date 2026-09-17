@@ -70,7 +70,7 @@ assert.ok(!serverSource.includes("Only build cards split. Research and explore")
 // Config inheritance reads through the same shared parser — no anchored
 // `^appetite:` reader (misses the indented block) and no truncating
 // `(\S+)` may reappear.
-assert.equal((serverSource.match(/parseWorkflowConfig\(/g) ?? []).length, 2, "card detail and split inheritance share one config parser");
+assert.equal((serverSource.match(/parseWorkflowConfig\(/g) ?? []).length, 3, "card detail, split inheritance, and advance guard share one config parser");
 assert.ok(!serverSource.includes("^appetite:"), "no anchored appetite reader survives");
 assert.ok(!serverSource.includes('review_mode:\\s*'), "no truncating review_mode reader survives");
 
