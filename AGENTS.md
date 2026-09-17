@@ -90,3 +90,10 @@ Never merge the release PR unreviewed. Curate the generated notes in
 the PR first when the Keep-a-Changelog prose needs a human touch, and
 confirm CI is green on it. Keep feature commits separate; the release
 PR owns the version bump.
+
+Release notes come from commit messages: `feat:`/`fix:` (plus `perf:`
+and `BREAKING CHANGE:`) bump the version and appear in the notes;
+`test:`/`chore:`/`docs:` do neither. A feature committed without its
+prefix ships in no release — message discipline is the release
+process. Keep Settings → General → Automatically delete head branches
+on so merged PRs don't accumulate stale branches.
