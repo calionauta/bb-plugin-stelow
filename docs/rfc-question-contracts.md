@@ -58,17 +58,29 @@ stages:
 
 ## 5. Inventory (verified vs TODO)
 
-| Stage / skill source | Upstream rule (verified) | Mode behavior |
-|---|---|---|
-| shape entry (Assumption Check, `shape-up/SKILL.md`) | Auto/Gate: auto-resolve, no questions; Interface Gates: top-3 + recommendation; Scopes/Tech: top-5 | agent-receipt vs human-ask |
-| shape exit (Scope Adjustment, post-gate IN/OUT multiSelect) | Human confirm only Scopes+ (`human-gates.md` Pattern 3); else LLM adjusts | human-ask vs agent-receipt |
-| critique gaps (`plan-critique/SKILL.md` mode caveat) | Auto/Gate: internal recommendations; Interface Gates+: top-N user questions | agent-receipt vs human-ask |
-| interface pick (Pattern 2, `interface-alternatives/SKILL.md` + `human-gates.md`) | Auto/Gate: LLM adopts hybrid; Interface Gates+: structured ask, every option with wireframe preview + proposal artifact | agent-receipt vs human-ask, per-option evidence |
-| tech-planning alignment (`tech-planning/SKILL.md`) | Stack inferred, no questions; auto-update vs ask per `alignment-check.md` | TODO: read fully |
-| plan-gate / tech review asks | Evidence-required asks; Tech Review+ includes technical questions | TODO: enumerate |
-| scope Pattern 3 ask shape | multiSelect IN/OUT | TODO: read ask-patterns Pattern 3 |
-| triage / select / setup / context asks | Triage intent question when ambiguous (prompt discipline); context skips refactor/bugfix | TODO: read `orchestrator/stages/{triage,select,setup,context}.md` |
-| verification / diff-gate / execution asks | Unknown | TODO: read stages + `transitions.md` Gate Conditions |
+| Stage / source | Trigger and exact upstream rule | `Auto` / `Product Spec Gate` | Interface Gates | Scopes / Tech / Code Diff | Contract status |
+|---|---|---|---|---|---|
+| `triage` (`stages/triage.md:7-16,37-64`) | Multi-item input (or explicit invocation): show all items and ask the organization decision. “Ask the user to verify the list FIRST.” | config is not declared yet | same | same | **Not contractable yet:** predicate is input shape, not review mode/appetite; `questions:` has no condition field. |
+| `select` (implemented by `stages/selection.md:6-8,38-56`) | Only after triage yielded candidates: “User picks one”, then routes remaining candidates. | config is not declared yet | same | same | **Not contractable yet:** conditional candidate pool and pre-config stage. |
+| `setup` (`stages/setup.md:279-283,327-331,416-447`) | Appetite and review mode are two mandatory, separate human asks before configuration exists. Stage selection is human-only in Interface Gates+; safe-change is human-only in Scopes+. | appetite/review: human; stage selection: agent; safe-change: skip/agent | appetite/review + stage selection: human; safe-change: agent | appetite/review + stage selection + safe-change: human | **Not an advance contract:** these asks establish the very config used to resolve later contracts. Deferred-inbox/resume asks are also conditional (`setup.md:19-48,160-174`). |
+| `context` (`stages/context.md:23-30,45-58`; `ask-patterns.md:37-76`) | Pattern 1 is an explicit human multi-select unless `Lean + Auto`, where it skips. Domain-library ask is only for detected domain signals (`context.md:82-111`). | Lean: skip; Core/Complete: human ask per `context.md` | human ask | human ask | **Blocked by upstream conflict:** `transitions.md:234-237` says Product Spec Gate, Scopes, and Code Diff context are skipped entirely, contradicting `context.md`. Resolve before a block. |
+| `shape` assumptions (`shape-up/SKILL.md:111-127`) | Auto/Gate: auto-resolve and write assumptions in spec; Interface Gates: top-3 human asks; Scopes/Tech: top-5 human asks. | agent receipt (`assumptions_resolved`) | human ask | human ask (Code Diff omitted) | **P3 candidate, but incomplete:** Code Diff is absent from the source matrix, so do not extend it by inference. |
+| `critique` gaps (`plan-critique/SKILL.md:221-262`; `ask-patterns.md:462-468`) | Auto/Gate resolves all gaps and saves `critiques/critique-report.md`; Interface Gates asks top-5 moderate/critical; Scopes/Tech asks top-5 moderate and top-3 critical. | agent receipt `critiques/critique-report.md` | human asks when qualifying gaps exist | human asks when qualifying gaps exist (Code Diff omitted by `plan-critique`) | **P1 evidence exists, but conditional:** no-gap and Code Diff semantics need an explicit upstream contract/receipt before enforcement. |
+| `scope` Pattern 3 (`ask-patterns.md:178-214`; `human-gates.md:22-24`) | After gate, multi-select “Remove from IN” and “Add to IN”; “only when review mode requires IN/OUT confirmation.” | agent resolves | agent resolves | human ask in Scopes+ | **P2 candidate:** source does not define an agent receipt file for lower modes; add one upstream before checking it. |
+| `planning:15` alignment (`references/alignment-check.md:53-89`) | Only `product_needs_update` / `blocking` ask. Auto/Gate update spec; Interface Gates+ ask (with progressively detailed impact). | agent updates/logs a receipt only if misaligned | human ask only if misaligned | human ask only if misaligned | **Conditional contract needed:** no required interaction when aligned; table omits Code Diff while prose says “>= Interface Gates” (`:71`). |
+| `plan-gate` (`stages/plan-gate.md:3-26`) | Visual-review receipt, not a structured human ask; Tech/Code Diff only per stage prose. | skip | skip | visual-review receipt | **Blocked by upstream conflict:** `transitions.md:242` says “others” (including Scopes) block, while stage prose explicitly skips Scopes. P1 must not turn this into an ask contract. |
+| `execution` (`stages/execution.md:140-141,172-175,203-253`) | Start is automatic: “DO NOT ask … what would you like to do next”. It only says higher modes “may add human approval checkpoints per PR”; no concrete ask or receipt is specified. | agent/automatic | unspecified contingent checkpoints | unspecified contingent checkpoints | **No contract:** insufficient methodology definition. |
+| `verification` (`stages/verification.md:296-305`) | P0/P1 findings: Auto/Gate fix/document; Interface Gates escalate; Scopes need fix or explicit acceptance; Tech/Code Diff block. | agent receipt/documentation | conditional human escalation | Scopes conditional human acceptance; Tech/Code Diff block | **No contract:** trigger, question form, and durable receipt are unspecified. |
+| `diff-gate` (`stages/diff-gate.md:3-31`) | Code Diff only; visual review is the gate. A dismissed/ambiguous result produces a contingent human ask. | skip | skip | Code Diff: visual-review receipt; contingent ask on dismissal/ambiguity | **No contract:** gate result is the predicate and no standardized receipt/ask identity exists. |
+
+### Inventory conclusion (2026-09-17)
+
+The quoted sources confirm P1–P3 must remain upstream-first. The ready
+direction is: define an explicit zero-gap/critique receipt for P1, define an
+explicit lower-mode scope-adjustment receipt for P2, and add the missing Code
+Diff behavior to the shape-assumptions matrix for P3. Until those definitions
+and the `context` / `plan-gate` conflicts above are resolved upstream, plugin
+enforcement would invent methodology and can falsely park live workflows.
 
 ## 6. Plugin design
 
