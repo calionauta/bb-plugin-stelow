@@ -1684,9 +1684,78 @@ function HostToolsSection({ tools, onInstall, installingId, errors }: {
   );
 }
 
+type PluginUpdateInfo = {
+  outcome: "checking" | "update-available" | "current" | "incompatible" | "pinned" | "unavailable";
+  installed: string | null;
+  installedDisplay: string | null;
+  candidate: string | null;
+  candidateDisplay: string | null;
+  detail: string | null;
+  checkedAt: number | null;
+};
+type GithubReleaseInfo = { tag: string; url: string; checkedAt: number; newer: boolean } | null;
+
+// Update status for the About panel: one tone-coded box directly under the
+// plugin title, so the verdict reads next to the version it describes.
+// role="status" announces state changes to assistive tech; the dot is
+// decorative (aria-hidden) because the title text names the state.
+function PluginUpdateStatus({ update, github, confirming, checking, onCheck }: {
+  update: PluginUpdateInfo;
+  github: GithubReleaseInfo;
+  confirming: boolean;
+  checking: boolean;
+  onCheck: () => void;
+}) {
+  const tone = update.outcome === "current" ? "text-emerald-500"
+    : update.outcome === "update-available" ? "text-amber-500"
+    : "text-muted-foreground/60";
+  const title = update.outcome === "update-available"
+    ? (confirming
+      ? `Update from ${shortRef(update.installed, update.installedDisplay) ?? "the installed version"} to ${shortRef(update.candidate, update.candidateDisplay) ?? "the latest version"}?`
+      : `Update available — ${shortRef(update.candidate, update.candidateDisplay) ?? "a new version"}`)
+    : update.outcome === "current"
+      ? `Up to date${shortRef(update.installed, update.installedDisplay) ? ` (${shortRef(update.installed, update.installedDisplay)})` : ""}`
+      : update.outcome === "checking"
+        ? "Checking BB for a compatible plugin update…"
+        : update.outcome === "pinned" || update.outcome === "incompatible"
+          ? "Not updated through BB"
+          : "Update check unavailable";
+  const unmanaged = update.outcome === "pinned" || update.outcome === "incompatible" || update.outcome === "unavailable";
+  return (
+    <div role="status" className="space-y-1 rounded-lg border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+        <span aria-hidden className={tone}>●</span>{title}
+      </p>
+      {update.outcome === "update-available" && !confirming ? <p>Confirm with “Update plugin…” below — Stelow reloads afterwards.</p> : null}
+      {update.outcome === "update-available" && confirming ? <p>Stelow reloads afterwards.</p> : null}
+      {unmanaged && update.detail ? <p>{update.detail}</p> : null}
+      {unmanaged && !update.detail ? <p>BB reports this install as not updatable through BB itself — local checkouts update with git pull, rebuild, and reload. “Check again” only re-reads BB’s verdict.</p> : null}
+      {unmanaged && github?.newer ? (
+        <p className="text-amber-700 dark:text-amber-300">
+          <UrlLink href={github.url} className="underline underline-offset-4 hover:text-foreground">{github.tag} is published on GitHub ↗</UrlLink>
+          {" "}— pull the checkout, rebuild, and reload to run it.
+        </p>
+      ) : null}
+      {update.outcome === "checking" ? null : (
+        <p>
+          {update.checkedAt ? `Last checked ${relativeTime(update.checkedAt)} · ` : null}
+          <button
+            type="button"
+            onClick={onCheck}
+            disabled={checking}
+            className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground disabled:cursor-default disabled:opacity-60"
+          >
+            {checking ? "Checking…" : "Check again"}
+          </button>
+        </p>
+      )}
+    </div>
+  );
+}
+
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
-  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; pluginUpdate: { outcome: "checking" | "update-available" | "current" | "incompatible" | "pinned" | "unavailable"; installed: string | null; installedDisplay: string | null; candidate: string | null; candidateDisplay: string | null; detail: string | null; checkedAt: number | null } } | null>(null);
+  const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; pluginUpdate: PluginUpdateInfo; githubRelease: GithubReleaseInfo } | null>(null);
   const [aboutLogo, setAboutLogo] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [hostTools, setHostTools] = useState<Array<{ id: string; present: boolean; version: string | null }> | null>(null);
@@ -1793,6 +1862,15 @@ function AboutPanel() {
               <h2 className="text-base font-semibold text-foreground">
                 bb-plugin-stelow {buildInfo ? <span className="text-[11px] font-normal text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
               </h2>
+              {buildInfo ? (
+                <PluginUpdateStatus
+                  update={buildInfo.pluginUpdate}
+                  github={buildInfo.githubRelease}
+                  confirming={confirmPluginUpdate}
+                  checking={checkingPluginUpdate}
+                  onCheck={recheckPluginUpdate}
+                />
+              ) : null}
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               {buildInfo ? (
                 <div className="space-y-1 text-xs text-muted-foreground">
@@ -1802,24 +1880,6 @@ function AboutPanel() {
                       {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
                     </button>
                   </p>
-                  {buildInfo.pluginUpdate.outcome === "update-available" ? <p className="text-amber-700 dark:text-amber-300">{confirmPluginUpdate ? `Update from ${shortRef(buildInfo.pluginUpdate.installed, buildInfo.pluginUpdate.installedDisplay) ?? "the installed version"} to ${shortRef(buildInfo.pluginUpdate.candidate, buildInfo.pluginUpdate.candidateDisplay) ?? "the latest version"}? Stelow reloads afterwards.` : `Plugin ${shortRef(buildInfo.pluginUpdate.candidate, buildInfo.pluginUpdate.candidateDisplay) ?? "An update"} is available through BB.`}</p> : null}
-                  {buildInfo.pluginUpdate.outcome === "checking" ? <p>Checking BB for a compatible plugin update…</p> : null}
-                  {buildInfo.pluginUpdate.outcome === "current" ? <p>BB confirms this plugin is current{shortRef(buildInfo.pluginUpdate.installed, buildInfo.pluginUpdate.installedDisplay) ? ` (${shortRef(buildInfo.pluginUpdate.installed, buildInfo.pluginUpdate.installedDisplay)})` : ""}.</p> : null}
-                  {buildInfo.pluginUpdate.outcome === "pinned" || buildInfo.pluginUpdate.outcome === "incompatible" ? <p>{buildInfo.pluginUpdate.detail ?? "BB cannot apply an update for this installation."}</p> : null}
-                  {buildInfo.pluginUpdate.outcome === "unavailable" ? <p>{buildInfo.pluginUpdate.detail ?? "BB could not check for a plugin update."}</p> : null}
-                  {buildInfo.pluginUpdate.outcome === "checking" ? null : (
-                    <p>
-                      {buildInfo.pluginUpdate.checkedAt ? `Last checked ${relativeTime(buildInfo.pluginUpdate.checkedAt)} · ` : null}
-                      <button
-                        type="button"
-                        onClick={recheckPluginUpdate}
-                        disabled={checkingPluginUpdate}
-                        className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground disabled:cursor-default disabled:opacity-60"
-                      >
-                        {checkingPluginUpdate ? "Checking…" : "Check again"}
-                      </button>
-                    </p>
-                  )}
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
