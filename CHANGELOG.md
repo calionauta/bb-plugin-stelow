@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.23.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.22.0...v0.23.0) (2026-09-17)
+
+
+### Features
+
+* contextual update status with GitHub release discovery ([69df8c5](https://github.com/calionauta/bb-plugin-stelow/commit/69df8c59ba754d97600849f0ea35e3ace5116c1a))
+* conventional commit style for worker-authored commits ([d5f120c](https://github.com/calionauta/bb-plugin-stelow/commit/d5f120ce5cef163b7132df0c8d378c3145b596da))
+* discard unpushed card work, then archive ([97ca2e2](https://github.com/calionauta/bb-plugin-stelow/commit/97ca2e2f83ff5747041fec905599a615517f26d4))
+* enforce question contracts before advance ([70e1d66](https://github.com/calionauta/bb-plugin-stelow/commit/70e1d6654cb94e5276a82d7928ba3f7ef6a444b4))
+* enforce question contracts in CLI advance ([eaaf062](https://github.com/calionauta/bb-plugin-stelow/commit/eaaf06297d47426ceb1f0fa69925369becc3cdf7))
+* keep-open create dialogs with persistent submit warnings ([4e30fca](https://github.com/calionauta/bb-plugin-stelow/commit/4e30fcafc50d0e98f60f859e1149da17f8dff362))
+* mirror upstream question contract for interface pick ([6bfb4c1](https://github.com/calionauta/bb-plugin-stelow/commit/6bfb4c17a3f9495c5a2831f1e7ea46d182b69b82))
+* mirror upstream question contracts for shape/critique/scope ([e621ce4](https://github.com/calionauta/bb-plugin-stelow/commit/e621ce4b114ba7788a84d2b8916a2845f6cec82a))
+* optional ask contract declarations with answer linkage ([d3c7772](https://github.com/calionauta/bb-plugin-stelow/commit/d3c77729471a74003da30ecaf9fff4eae777b5fe))
+* per-option evidence for interface selection asks ([21aa66b](https://github.com/calionauta/bb-plugin-stelow/commit/21aa66b6fe5598cc20380e4278e03c1ecc82073f))
+* shared update signal on sidebar, About tab, and Check update ([82517bb](https://github.com/calionauta/bb-plugin-stelow/commit/82517bbb3680a011d0be77a394042783cca23489))
+* stash-aware discard with full trail evidence ([4257af3](https://github.com/calionauta/bb-plugin-stelow/commit/4257af39205491c0f4ff939711dc9e252ac902ff))
+
+
+### Bug Fixes
+
+* advance guard reads real history boundary via strict shared parser ([0de0fe4](https://github.com/calionauta/bb-plugin-stelow/commit/0de0fe41e0e53df34ee5549cc8b031b2fb893147))
+* fail open when question contracts are unreadable ([89f88aa](https://github.com/calionauta/bb-plugin-stelow/commit/89f88aaf795c1579137d34e914bb4b8e4bba0ede))
+* read real state.md history boundary in advance guard ([d6713cf](https://github.com/calionauta/bb-plugin-stelow/commit/d6713cf0d2344107c3135f6fb7b7deb8a5cc7172))
+
 ## [0.22.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.21.0...v0.22.0) (2026-09-17)
 
 
