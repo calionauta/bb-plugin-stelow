@@ -1280,17 +1280,22 @@ export default async function plugin(bb: BbPluginApi) {
       answered INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
     )`,
-    `CREATE TABLE IF NOT EXISTS ask_contracts (
-      id TEXT PRIMARY KEY,
-      card_id TEXT NOT NULL,
-      question_text TEXT NOT NULL,
-      contract_id TEXT NOT NULL,
-      asked_at INTEGER NOT NULL,
-      consumed_at INTEGER,
-      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_ask_contracts_card ON ask_contracts(card_id, consumed_at, asked_at)`,
   ]);
+  // Ask-contract declarations (lib/ask-contracts). Deliberately outside
+  // bb.storage.migrate: index 6+ collides with a legacy-unknown row
+  // recorded before hash tracking existed, and BB refuses any statement
+  // there. NEVER append to the migrate array above — new tables go here
+  // via direct idempotent exec, like every other table below.
+  db.exec(`CREATE TABLE IF NOT EXISTS ask_contracts (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    contract_id TEXT NOT NULL,
+    asked_at INTEGER NOT NULL,
+    consumed_at INTEGER,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_ask_contracts_card ON ask_contracts(card_id, consumed_at, asked_at)`);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
   if (!cardColumns.some((column) => column.name === "display_name")) {
