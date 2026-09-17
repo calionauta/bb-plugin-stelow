@@ -2607,7 +2607,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     // guard must not enforce against a mode the file never declared.
     const { appetite, reviewMode } = parseWorkflowConfig(state, { strict: true });
     if (!stage || !appetite || !reviewMode) return null; // config is not trustworthy
-    const required = requiredForStage({ stage, appetite, reviewMode }).filter((entry) => entry.kind !== "skip");
+    // A corrupt or unreadable contract source must never deadlock every
+    // advance: fail open here, the pin test guards the source itself.
+    let required;
+    try {
+      required = requiredForStage({ stage, appetite, reviewMode }).filter((entry) => entry.kind !== "skip");
+    } catch {
+      return null;
+    }
     if (required.length === 0) return null;
     const enteredAt = stageEnteredAt(state);
     if (!enteredAt) return null; // legacy history has no entry boundary
