@@ -3035,10 +3035,11 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
-function CardActionsMenu({ card, onRestartFresh, onArchive, onDelete, onReclassify }: {
+function CardActionsMenu({ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify }: {
   card: CardItem;
   onRestartFresh: () => void;
   onArchive: () => void;
+  onDiscard: () => void;
   onDelete: () => void;
   onReclassify: (intent: string) => Promise<boolean>;
 }) {
@@ -3098,9 +3099,12 @@ function CardActionsMenu({ card, onRestartFresh, onArchive, onDelete, onReclassi
             {actions.showRestartFresh ? (
               <button type="button" onClick={() => choose(onRestartFresh)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Restart fresh…</button>
             ) : null}
-            {(canReclassify || actions.showRestartFresh) && (actions.showArchive || actions.showDelete) ? <div className="my-1 border-t" /> : null}
+            {(canReclassify || actions.showRestartFresh) && (actions.showArchive || actions.showDiscard || actions.showDelete) ? <div className="my-1 border-t" /> : null}
             {actions.showArchive ? (
               <button type="button" onClick={() => choose(onArchive)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Archive card…</button>
+            ) : null}
+            {actions.showDiscard ? (
+              <button type="button" onClick={() => choose(onDiscard)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Discard work…</button>
             ) : null}
             {actions.showDelete ? (
               <button type="button" onClick={() => choose(onDelete)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Delete permanently…</button>
@@ -3140,11 +3144,12 @@ function CardActionsMenu({ card, onRestartFresh, onArchive, onDelete, onReclassi
   );
 }
 
-function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, onReclassify }: {
+function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify }: {
   card: CardItem | null;
   onBack?: () => void;
   onRestartFresh: () => void;
   onArchive: () => void;
+  onDiscard: () => void;
   onDelete: () => void;
   onReclassify: (intent: string) => Promise<boolean>;
 }) {
@@ -3200,7 +3205,7 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDelete, o
           <option value="unknown">Unknown intent</option>
         </select>
         ) : null}
-        <CardActionsMenu card={card} onRestartFresh={onRestartFresh} onArchive={onArchive} onDelete={onDelete} onReclassify={onReclassify} />
+        <CardActionsMenu card={card} onRestartFresh={onRestartFresh} onArchive={onArchive} onDiscard={onDiscard} onDelete={onDelete} onReclassify={onReclassify} />
       </> : null}
       {onBack ? <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <Icon name="X" className="h-4 w-4" aria-hidden />
@@ -5461,6 +5466,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [splitError, setSplitError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [discardConfirm, setDiscardConfirm] = useState<{ title: string; body: string } | null>(null);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [promoteName, setPromoteName] = useState("");
   const [promoting, setPromoting] = useState(false);
@@ -5618,6 +5625,35 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
     toast.success("Card deleted.");
     onClose();
+  }
+
+  async function openDiscard() {
+    try {
+      const preview = await rpc.call("discardPreview", { cardId });
+      if (!preview.eligible) {
+        toast.error(preview.reason ?? "Nothing safe to discard.");
+        return;
+      }
+      setDiscardConfirm({ title: preview.confirmTitle ?? "Discard this card’s work?", body: preview.confirmBody ?? "" });
+      setDiscardOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not inspect the checkout.");
+    }
+  }
+
+  async function doDiscard() {
+    setDiscardOpen(false);
+    try {
+      const result = await rpc.call("discardCardChanges", { cardId });
+      if (!result.ok) {
+        toast.error(result.error ?? "Discard failed.");
+        return;
+      }
+      toast.success(result.summary ?? "Card work discarded.");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Discard failed.");
+    }
   }
 
   async function doPromote() {
@@ -5899,6 +5935,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         onBack={onBack}
         onRestartFresh={() => setRepairOpen(true)}
         onArchive={() => setArchiveOpen(true)}
+        onDiscard={() => void openDiscard()}
         onDelete={() => setDeleteOpen(true)}
         onReclassify={doRepair}
       />
@@ -6429,6 +6466,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         confirmLabel="Delete"
         confirmTone="destructive"
         onConfirm={doDelete}
+      />
+      <ConfirmActionDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        title={discardConfirm?.title ?? "Discard this card’s work?"}
+        description={discardConfirm?.body ?? ""}
+        confirmLabel="Discard work"
+        confirmTone="destructive"
+        onConfirm={doDiscard}
       />
       <ConfirmActionDialog
         open={recoveryAttachProjectId !== null}

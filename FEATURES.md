@@ -463,6 +463,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   every worker-touching RPC (move, advance, answers, comments, strategies)
   refuses archived cards with the named exit. Archived cards offer Delete
   instead of a redundant Archive.
+- **Discard work** (`discardPreview`, `discardCardChanges`,
+  `lib/discard-policy.mjs`). Archive parks with the work intact; discard
+  destroys unpushed work, then archives. Manage offers it on live and
+  archived cards (never completed/blocked); a preview first proves what
+  would happen — worktree drop, branch reset to the parent of the first
+  card-era commit, or exploratory folder delete — with file and commit
+  counts, and refuses honestly otherwise (pushed history, shared branch
+  line, detached HEAD, clean checkout). The confirm dialog states the
+  exact blast radius in English before anything runs; execution stops the
+  worker, re-validates the checkout, verifies the result, and leaves an
+  agent comment as the trail.
 - **Delete archived card** (`deleteCard`). Hard delete offered only on
   archived cards from Manage, behind an English confirm dialog. Removes
   the card row plus comments, presets, questions, inbox events, and

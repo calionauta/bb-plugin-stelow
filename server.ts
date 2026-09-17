@@ -1,6 +1,6 @@
 import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ import { questionOpenGuard } from "./lib/question-presence.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
+import { discardConfirm, discardEligibility, discardTrail } from "./lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "./lib/github-release.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
@@ -419,6 +420,14 @@ export const rpcContract = defineRpcContract({
   deleteCard: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
+  },
+  discardPreview: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ eligible: z.boolean(), action: z.enum(["worktree-drop", "branch-reset", "dir-delete"]).nullable(), reason: z.string().nullable(), branch: z.string().nullable(), files: z.array(z.string()), fileCount: z.number(), commitCount: z.number(), sharedWith: z.number(), confirmTitle: z.string().nullable(), confirmBody: z.string().nullable(), error: z.string().nullable() }),
+  },
+  discardCardChanges: {
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), summary: z.string().nullable(), error: z.string().nullable() }),
   },
   reseedCard: {
     input: z.object({ cardId: z.string(), presetId: z.string().nullable().optional(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).optional() }).strict(),
@@ -2239,6 +2248,75 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return new Promise((done) => {
       execFile("git", args, { cwd, timeout: 15_000, maxBuffer }, (error, stdout) => done({ ok: !error, stdout: typeof stdout === "string" ? stdout : "" }));
     });
+  }
+  // Discard evidence: everything discardEligibility (lib/discard-policy)
+  // needs, gathered fresh per call. Exploratory folders are exact paths;
+  // project checkouts resolve through the card's workspace like the worker's.
+  type DiscardEvidence = {
+    status: string; workspaceKind: string; checkoutPath: string | null; dirExists: boolean;
+    isGit: boolean; branch: string | null; hasUpstream: boolean; upstreamRef: string | null;
+    changed: string[]; untracked: string[]; unpushedCommits: number; resetTarget: string | null;
+    linkedWorktree: boolean; sharedWith: number;
+  };
+  const EXPLORATORY_SCOPE = nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory");
+  async function discardEvidence(card: CardRow): Promise<DiscardEvidence> {
+    const blank: DiscardEvidence = { status: card.status, workspaceKind: card.workspace_kind, checkoutPath: null, dirExists: false, isGit: false, branch: null, hasUpstream: false, upstreamRef: null, changed: [], untracked: [], unpushedCommits: 0, resetTarget: null, linkedWorktree: false, sharedWith: 0 };
+    if (card.workspace_kind === "exploratory") {
+      const explorPath = card.workspace_path;
+      if (!explorPath) return blank;
+      let dirExists = false;
+      try { dirExists = existsSync(explorPath); } catch { dirExists = false; }
+      let sharedWith = 0;
+      try {
+        sharedWith = (db.prepare("SELECT COUNT(*) AS n FROM cards WHERE id != ? AND status != 'archived' AND workspace_kind = 'exploratory' AND workspace_path = ?").get(card.id, explorPath) as { n: number } | undefined)?.n ?? 0;
+      } catch { /* count is advisory */ }
+      return { ...blank, checkoutPath: explorPath, dirExists, sharedWith };
+    }
+    const workspace = await cardWorkspace(card);
+    const checkout = workspace?.path ?? null;
+    if (!checkout) return blank;
+    const top = await runGitIn(checkout, ["rev-parse", "--show-toplevel"]);
+    if (!top.ok || !top.stdout.trim()) return { ...blank, checkoutPath: checkout };
+    const gitRoot = top.stdout.trim();
+    const [branchR, upstreamR, statusR, unpushedR] = await Promise.all([
+      runGitIn(gitRoot, ["branch", "--show-current"]),
+      runGitIn(gitRoot, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]),
+      runGitIn(gitRoot, ["status", "--porcelain=v1", "--untracked-files=all"]),
+      runGitIn(gitRoot, ["rev-list", "--count", "HEAD", "--not", "--remotes"]),
+    ]);
+    const branch = branchR.ok ? branchR.stdout.trim() || null : null;
+    const changed: string[] = [];
+    const untracked: string[] = [];
+    if (statusR.ok) {
+      for (const line of statusR.stdout.split("\n")) {
+        if (!line) continue;
+        if (line.startsWith("??")) untracked.push(line.slice(3));
+        else changed.push(line.slice(3));
+      }
+    }
+    const unpushedCommits = unpushedR.ok ? Number.parseInt(unpushedR.stdout.trim(), 10) || 0 : 0;
+    // Reset target: parent of the first commit made since the card started
+    // (card-attributable work); no card-era commit means dirty-files-only.
+    let resetTarget: string | null = null;
+    try {
+      const since = Math.floor(card.created_at / 1000);
+      const first = await runGitIn(gitRoot, ["log", "--format=%H", "--reverse", `--since=${since}`, "HEAD", "--"]);
+      const firstSha = first.ok ? first.stdout.split("\n").map((entry) => entry.trim()).filter(Boolean)[0] ?? null : null;
+      if (firstSha) {
+        const parent = await runGitIn(gitRoot, ["rev-parse", `${firstSha}^`]);
+        resetTarget = parent.ok && parent.stdout.trim() ? parent.stdout.trim() : null;
+      } else {
+        const head = await runGitIn(gitRoot, ["rev-parse", "HEAD"]);
+        resetTarget = head.ok && head.stdout.trim() ? head.stdout.trim() : null;
+      }
+    } catch { resetTarget = null; }
+    let linkedWorktree = false;
+    try { linkedWorktree = lstatSync(nodeJoin(gitRoot, ".git")).isFile(); } catch { linkedWorktree = false; }
+    let sharedWith = 0;
+    try {
+      sharedWith = (db.prepare("SELECT COUNT(*) AS n FROM cards WHERE id != ? AND status != 'archived' AND project_id = ?").get(card.id, card.project_id) as { n: number } | undefined)?.n ?? 0;
+    } catch { /* advisory */ }
+    return { ...blank, checkoutPath: gitRoot, isGit: true, branch, hasUpstream: upstreamR.ok && Boolean(upstreamR.stdout.trim()), upstreamRef: upstreamR.ok && upstreamR.stdout.trim() ? upstreamR.stdout.trim() : null, changed, untracked, unpushedCommits, resetTarget, linkedWorktree, sharedWith };
   }
   async function recoveryGitEvidence(path: string): Promise<RecoveryGitEvidence> {
     const root = await runGitIn(path, ["rev-parse", "--show-toplevel"]);
@@ -4401,6 +4479,78 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { deleted: true, error: null };
+    },
+
+    async discardPreview({ cardId }) {
+      const empty = { eligible: false, action: null as "worktree-drop" | "branch-reset" | "dir-delete" | null, reason: null as string | null, branch: null as string | null, files: [] as string[], fileCount: 0, commitCount: 0, sharedWith: 0, confirmTitle: null as string | null, confirmBody: null as string | null, error: null as string | null };
+      const card = getCard(cardId);
+      if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
+      const evidence = await discardEvidence(card);
+      const decision = discardEligibility(evidence);
+      if (!decision.eligible || !decision.action) return { ...empty, reason: decision.reason, branch: evidence.branch };
+      const copy = discardConfirm(evidence, decision.action);
+      const files = [...evidence.changed, ...evidence.untracked];
+      return { eligible: true, action: decision.action, reason: null, branch: evidence.branch, files: files.slice(0, 50), fileCount: files.length, commitCount: evidence.unpushedCommits, sharedWith: evidence.sharedWith, confirmTitle: copy.title, confirmBody: copy.body, error: null };
+    },
+    async discardCardChanges({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
+      if (card.status === "completed" || card.status === "blocked") return { ok: false, summary: null, error: "Completed work is history — reset it by hand." };
+      const evidence = await discardEvidence(card);
+      const decision = discardEligibility(evidence);
+      if (!decision.eligible || !decision.action) return { ok: false, summary: null, error: decision.reason ?? "Nothing safe to discard." };
+      // Stop first: discarding under a live worker races its next write.
+      await stopWorkerThread(card.worker_thread_id);
+      // Re-validate after the stop landed: a push, a cleanup, or a delete
+      // may have changed the checkout under this discard.
+      const live = getCard(cardId);
+      if (!live) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
+      const fresh = await discardEvidence(live);
+      const confirm = discardEligibility(fresh);
+      if (!confirm.eligible || confirm.action !== decision.action) {
+        return { ok: false, summary: null, error: confirm.reason ?? "The checkout changed under this discard — review it again." };
+      }
+      if ((decision.action === "worktree-drop" || decision.action === "branch-reset") && !fresh.branch) {
+        return { ok: false, summary: null, error: "The checkout lost its branch mid-discard — review it by hand." };
+      }
+      if (decision.action === "branch-reset" && !fresh.resetTarget) {
+        return { ok: false, summary: null, error: "No safe reset point could be determined — reset it by hand." };
+      }
+      try {
+        if (decision.action === "dir-delete") {
+          const target = fresh.checkoutPath ?? "";
+          if (target !== EXPLORATORY_SCOPE && !target.startsWith(`${EXPLORATORY_SCOPE}/`)) {
+            throw new Error("Refusing to delete outside the exploratory scope.");
+          }
+          rmSync(target, { recursive: true, force: true });
+          if (existsSync(target)) throw new Error("The folder survived deletion.");
+        } else if (decision.action === "worktree-drop") {
+          const common = await runGitIn(fresh.checkoutPath ?? "", ["rev-parse", "--git-common-dir"]);
+          const mainDir = common.ok && common.stdout.trim() ? common.stdout.trim() : "";
+          const mainAbs = mainDir ? (isAbsolute(mainDir) ? mainDir : nodeJoin(fresh.checkoutPath ?? "", mainDir)) : "";
+          if (!mainAbs) throw new Error("Cannot locate the main checkout.");
+          const removed = await runGitIn(mainAbs, ["worktree", "remove", "--force", fresh.checkoutPath ?? ""]);
+          if (!removed.ok) throw new Error("Could not remove the worktree.");
+          const pruned = await runGitIn(mainAbs, ["branch", "-D", fresh.branch ?? ""]);
+          if (!pruned.ok) throw new Error("Worktree removed, but the branch survived — delete it by hand.");
+          if (fresh.checkoutPath && existsSync(fresh.checkoutPath)) throw new Error("The worktree folder survived removal.");
+        } else {
+          const reset = await runGitIn(fresh.checkoutPath ?? "", ["reset", "--hard", fresh.resetTarget ?? ""]);
+          if (!reset.ok) throw new Error("Could not reset the branch.");
+          const cleaned = await runGitIn(fresh.checkoutPath ?? "", ["clean", "-fd"]);
+          if (!cleaned.ok) throw new Error("Branch reset, but untracked files survived — remove them by hand.");
+          const verify = await runGitIn(fresh.checkoutPath ?? "", ["status", "--porcelain=v1", "--untracked-files=all"]);
+          if (!verify.ok || verify.stdout.trim()) throw new Error("The checkout is not clean after discard — review it by hand.");
+        }
+      } catch (error) {
+        return { ok: false, summary: null, error: error instanceof Error ? error.message : "Discard failed midway — review the checkout by hand." };
+      }
+      const summary = discardTrail(decision.action, fresh);
+      logCardComment(cardId, "card", cardId, "agent", summary);
+      if (!isArchivedCard(live)) updateCard(cardId, { status: "archived", activity: "idle" });
+      bb.realtime.publish("card-state", { cardId });
+      bb.realtime.publish("board-changed", { cardId });
+      return { ok: true, summary, error: null };
     },
 
     async retryWorker({ cardId }) {

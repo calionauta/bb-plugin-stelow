@@ -3,7 +3,7 @@ import { isArchivedCard, stripArchivedResuscitation, workerActionPolicy, workerS
 
 assert.deepEqual(
   workerActionPolicy({ status: "in-progress", activity: "running" }),
-  { archived: false, hasActiveWorker: true, showPresetControls: true, showRestartFresh: false, showArchive: true, showDelete: false },
+  { archived: false, hasActiveWorker: true, showPresetControls: true, showRestartFresh: false, showArchive: true, showDelete: false, showDiscard: true },
   "a healthy worker has no recovery action",
 );
 assert.equal(workerActionPolicy({ status: "in-progress", activity: "error" }).showRestartFresh, true, "worker error can recover");
@@ -13,7 +13,7 @@ assert.equal(isArchivedCard({ status: "archived" }), true, "archived status is t
 assert.equal(isArchivedCard({ status: "completed" }), false, "completed is not archived");
 assert.deepEqual(
   workerActionPolicy({ status: "archived", activity: "error" }, true),
-  { archived: true, hasActiveWorker: false, showPresetControls: false, showRestartFresh: false, showArchive: false, showDelete: true },
+  { archived: true, hasActiveWorker: false, showPresetControls: false, showRestartFresh: false, showArchive: false, showDelete: true, showDiscard: true },
   "archived cards are terminal",
 );
 assert.equal(workerSectionPolicy({ status: "archived", activity: "idle" }, false, { historyCount: 0 }).showSection, false, "an archived card with no worker context omits the Worker section");

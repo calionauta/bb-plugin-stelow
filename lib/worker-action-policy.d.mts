@@ -17,6 +17,7 @@ export declare function workerActionPolicy(card: WorkerActionCard, needsAttentio
   showRestartFresh: boolean;
   showArchive: boolean;
   showDelete: boolean;
+  showDiscard: boolean;
 };
 
 export declare function workerSectionPolicy(card: WorkerActionCard, needsAttention?: boolean, content?: {
