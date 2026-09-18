@@ -1896,10 +1896,11 @@ function AboutPanel() {
 // the exact reinstall command. the current line never ships this component.
 const STELOW_MIGRATION_NOTICE_VERSION = "0.3.81";
 // Direct-range install: works regardless of the marketplace listing, so the
-// migration never depends on PR #310 landing. Manual copy keeps the prompt
-// (the terminal shows the resolved source); the detached auto chain passes
-// --yes because it runs without a TTY.
-const STELOW_REINSTALL_COMMAND = "bb plugin remove stelow && bb plugin install git:https://github.com/calionauta/bb-plugin-stelow.git@>=0.23.0";
+// migration never depends on PR #310 landing. The spec is quoted because a
+// bare `>=` in a shell word makes `>` a redirection (the range would vanish).
+// Manual copy keeps the prompt (the terminal shows the resolved source); the
+// detached auto chain passes --yes because it runs without a TTY.
+const STELOW_REINSTALL_COMMAND = 'bb plugin remove stelow && bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@>=0.23.0"';
 
 type CleanupFound = { name: string; hostId: string | null; stelowPath: string; cards: number };
 

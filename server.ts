@@ -2713,7 +2713,7 @@ function spawnDetachedStelowUpgrade(): void {
       "sh",
       [
         "-c",
-        "sleep 1 && bb plugin remove stelow && bb plugin install git:https://github.com/calionauta/bb-plugin-stelow.git@>=0.23.0 --yes",
+        'sleep 1 && bb plugin remove stelow && bb plugin install "git:https://github.com/calionauta/bb-plugin-stelow.git@>=0.23.0" --yes',
       ],
       { detached: true, stdio: ["ignore", logFd, logFd] },
     );
