@@ -11,9 +11,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   attachments, intent, planning depth, your review gates, agent preset from
   the analysis band. Planning depth and review gates render as compact
   rows under the composer — title plus current value always visible, so
-  consequential choices stay discoverable without a wall of nine radio
-  cards pushing content below the fold. One tap expands a row into the
-  full radio cards (real inputs, min-h-11 targets) — no hidden select.
+  consequential choices stay discoverable without a wall of option cards
+  pushing content below the fold. One tap expands a row into the
+  full controls (real inputs, min-h-11 targets) — no hidden select.
+  Review gates are a pure multi-select (product spec, interface
+  direction, build scopes, technical plan, code diff) with Select all /
+  Clear and one-click preset templates; nothing picked means Auto and the
+  composer remembers the last used selection.
   The fixed-height dialog with inner scroll never jumps. Bordered
   settings sections visibly contain the controls. BB's own Project, Environment,
   branch, and provider/model controls are authoritative: Stelow forwards the
@@ -453,7 +457,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preset from the current stage; applies preset changes. Predecessor
   archived with an inline mention for context.
 - **Restart fresh** (`reseedCard`). New worker from triage; scopes and
-  comments kept.
+  comments kept. A reseed restarts the workflow, not the human's review
+  choices: the card's current appetite and gate set carry over.
 - **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
   Every worker thread recorded; mirrored into the workflow's own
   `stelow.json` so history survives plugin DB loss.
@@ -514,7 +519,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Per-card override** (`assignPreset`). Pinned preset for one card;
   takes effect on (re)start, with a stale-worker warning until then.
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
-  your review gates remembered across cards.
+  your review gates remembered across cards. Legacy ladder rungs migrate
+  to their gate sets explicitly — a saved default never degrades to Auto.
 - **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).
   Every collapsible shares one bordered disclosure (right chevron when
   closed, rotates down when open); native details/summary keeps the

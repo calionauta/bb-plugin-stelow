@@ -1,0 +1,12 @@
+export declare const REVIEW_GATE_ATOMS: string[];
+export declare const LEGACY_REVIEW_MODE_TO_GATES: Record<string, string[]>;
+export declare const REVIEW_MODES: string[];
+export declare function normalizeReviewGates(input: unknown): string[];
+export declare function legacyLabelForGates(gates: unknown): string | null;
+export declare function formatReviewGates(gates: unknown): string;
+export declare function gateSelected(gates: unknown, atom: string): boolean;
+export declare function interfaceRequiresHuman(gates: unknown): boolean;
+export declare function scopeRequiresHuman(gates: unknown): boolean;
+export declare function planGateWaits(gates: unknown): boolean;
+export declare function diffGateWaits(gates: unknown): boolean;
+export declare function skipReasonForGate(stage: string, gates: unknown): string;

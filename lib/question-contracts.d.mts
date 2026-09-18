@@ -8,4 +8,4 @@ export type QuestionContract = {
   receipt: string;
 };
 
-export function requiredForStage(input?: { stage?: string; reviewMode?: string; appetite?: string; kind?: QuestionContract["kind"] }): Array<Pick<QuestionContract, "id" | "kind" | "receipt">>;
+export function requiredForStage(input?: { stage?: string; reviewMode?: string | string[]; appetite?: string; kind?: QuestionContract["kind"] }): Array<Pick<QuestionContract, "id" | "kind" | "receipt">>;

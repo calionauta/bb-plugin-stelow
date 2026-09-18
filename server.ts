@@ -55,6 +55,7 @@ import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
+import { formatReviewGates, legacyLabelForGates, normalizeReviewGates } from "./lib/review-gates.mjs";
 import { requiredForStage } from "./lib/question-contracts.mjs";
 import { checkAdvanceContracts } from "./lib/advance-contracts.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
@@ -179,7 +180,11 @@ const reviewModeSchema = z.enum([
   "Product Spec + Interface + Tech Review",
   "Product Spec + Interface + Tech Review + Code Diff",
 ]);
-const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewMode: reviewModeSchema }).strict();
+// Canonical storage is the gate set; legacy ladder strings are accepted
+// and normalized on read through the compat map (lib/review-gates).
+const reviewGateAtomSchema = z.enum(["spec", "interface", "scope", "tech", "diff"]);
+const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGateAtomSchema)]).default("Auto");
+const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewMode: z.string(), reviewGates: z.array(reviewGateAtomSchema).default([]) }).strict();
 
 const taskSchema = z.object({
   id: z.string(),
@@ -254,6 +259,7 @@ const workflowSchema = z.object({
   stage: z.string(),
   appetite: z.string(),
   reviewMode: z.string(),
+  reviewGates: z.array(reviewGateAtomSchema),
   dirHash: z.string().optional(),
   cwd: z.string().optional(),
   phases: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema })),
@@ -384,7 +390,7 @@ export const rpcContract = defineRpcContract({
     output: boardWorkflowDefaultsSchema,
   },
   createCard: {
-    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeSchema.default("Auto"), presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
+    input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeInputSchema, presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   updateCardIntent: {
@@ -772,7 +778,7 @@ function safeRelative(path: string): string {
   return path;
 }
 
-async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: string, name: string, intent: string, appetite = "Core", reviewMode = "Auto", fresh = false): Promise<{ statePath: string | null; stateDir: string | null; dirHash: string | null; error: string | null }> {
+async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: string, name: string, intent: string, appetite = "Core", reviewMode: string | string[] = "Auto", fresh = false): Promise<{ statePath: string | null; stateDir: string | null; dirHash: string | null; error: string | null }> {
   const transitionsPath = join(rootPath, "skills/stelow-workflow-orchestrator/references/transitions.md");
   const trackingPath = join(rootPath, "stelow.json");
   try {
@@ -812,15 +818,21 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
     const statePath = join(stateDir, "state.md");
     const stateBlob = await bb.sdk.files.read({ path: statePath }).then((f) => f.content).catch(() => "");
     if (!stateBlob.includes("current_stage:") || !ownsWorkflowState(stateBlob, workflowId)) {
+      // Canonical storage is the gate set (`review_gates: [spec, …]`, empty
+      // ≡ Auto). The legacy `review_mode:` ladder label is kept for
+      // upstream readers; novel sets have no rung, so they read back as
+      // Auto there — the worker prompt names `review_gates` first.
+      const gates = normalizeReviewGates(reviewMode);
+      const rung = legacyLabelForGates(gates) ?? "Auto";
       const body = STATE_TEMPLATE.replace("<workflow-id>", workflowId).replace("<workflow-name>", name).replace("<new-product|feature|bugfix|refactor|investigate|unknown>", intent);
-      writeFileSync(statePath, body.replace("appetite: Core", `appetite: ${appetite}`).replace("review_mode: Auto", `review_mode: ${reviewMode}`), "utf8");
+      writeFileSync(statePath, body.replace("appetite: Core", `appetite: ${appetite}`).replace("review_mode: Auto", `review_gates: ${formatReviewGates(gates)}\n  review_mode: ${rung}`), "utf8");
     }
 
     if (!existsSync(transitionsPath)) {
       writeFileSync(transitionsPath, readFileSync(TRANSITIONS_REF, "utf8"), "utf8");
     }
 
-    trackingData.workflows = upsertWorkflowEntry(workflows, { workflowId, name, description: "", status: "in-progress", cwd: rootPath, dirHash, created, updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite, review_mode: reviewMode } });
+    trackingData.workflows = upsertWorkflowEntry(workflows, { workflowId, name, description: "", status: "in-progress", cwd: rootPath, dirHash, created, updated: new Date().toISOString(), stage: { current_stage: "triage", previous_stage: null, transitioned_at: new Date().toISOString(), history: [{ stage: "triage", entered_at: new Date().toISOString() }] }, phases: [], config: { appetite, review_mode: legacyLabelForGates(normalizeReviewGates(reviewMode)) ?? "Auto", review_gates: normalizeReviewGates(reviewMode) } });
     writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
     return { statePath, stateDir, dirHash, error: null };
   } catch (error) {
@@ -1126,6 +1138,9 @@ async function boardFromRoot(bb: BbPluginApi, rootPath: string, onlyDirHash?: st
       stage: workflowStage || text(stage.current_stage, phases.find((phase) => phase.status === "in-progress")?.name ?? "Not started"),
       appetite: text(config.appetite, "Core"),
       reviewMode: text(config.review_mode, "Auto"),
+      reviewGates: normalizeReviewGates(
+        Array.isArray(config.review_gates) ? config.review_gates.filter((entry): entry is string => typeof entry === "string") : config.review_mode,
+      ) as Array<"spec" | "interface" | "scope" | "tech" | "diff">,
       ...(typeof raw.dirHash === "string" ? { dirHash: raw.dirHash } : {}),
       ...(typeof raw.cwd === "string" ? { cwd: raw.cwd } : {}),
       phases,
@@ -1160,7 +1175,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Interface-pick discipline is shared by every spawn prompt plus the
   // continue nudge: one const so a wording fix lands everywhere (the
   // prompt-contracts test pins single definition + all references).
-  const INTERFACE_PICK = "Interface-pick discipline: check review_mode in state.md first. Auto and Product Spec Gate mean LLM decides (pick your hybrid recommendation yourself, save selected-interface.md, advance; never park waiting for a human pick). Only Product Spec plus Interface Gates and above wait for a human choice. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting.";
+  const INTERFACE_PICK = "Interface-pick discipline: check review_gates in state.md first (review_mode is the legacy ladder label — normalize it to gates when review_gates is absent). For each selected gate the workflow waits for a human decision with a live structured ask; unselected gates never park: the LLM decides itself, writes the receipt (assumptions_resolved, selected_by: llm, approval receipts), and advances. Gate-tool fallback: if visual_review is unavailable in this host, do NOT park in chat waiting.";
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
@@ -1791,7 +1806,7 @@ ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
 
-  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, start = true, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; start?: boolean; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string | null }> {
+  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, start = true, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string | string[]; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; start?: boolean; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string | null }> {
     const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
     // The composer submits the Personal project id for “Don't work in a
     // project”. Some SDK project reads omit its `kind`, so accept its stable
@@ -1842,7 +1857,11 @@ ${prompt}`;
       throw new Error(`Unknown explore technique "${stageId ?? ""}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
     }
     const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : "unknown";
-    const seed = await seedWorkflow(bb, rootPath, cardId, slug, initialIntent, appetite, reviewMode);
+    // Canonical gates: legacy ladder strings normalize through the compat
+    // map, so the composer, board defaults, and reseed all carry the set.
+    const reviewGates = normalizeReviewGates(reviewMode);
+    const reviewRung = legacyLabelForGates(reviewGates) ?? (reviewGates.length === 0 ? "Auto" : `Custom ${formatReviewGates(reviewGates)}`);
+    const seed = await seedWorkflow(bb, rootPath, cardId, slug, initialIntent, appetite, reviewGates);
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
     // Spawn workers on their track's entry band (lib/tracks: each track
@@ -1940,7 +1959,7 @@ ${prompt}`;
 
 ${selectedManagedWorktree ? "BB provisioned the managed worktree selected by the user. Treat your current working directory as the code root; never redirect code changes to the project source path used for Stelow's workflow metadata." : ""}
 
-Step 1 — classify intent first: this card starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review mode=\`${reviewMode}\` are already recorded in state.md — use them, never re-ask.
+Step 1 — classify intent first: this card starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review gates=\`${formatReviewGates(reviewGates)}\` (${reviewRung}) are already recorded in state.md — use them, never re-ask.
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -1959,7 +1978,7 @@ ANY time you need user input, you MUST call the structured form, NEVER just writ
 
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
-Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. ${INTERFACE_PICK} In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. ${INTERFACE_PICK} For unselected gates, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${DONE_PROTOCOL}
 
@@ -1997,10 +2016,10 @@ ${prompt}` }, ...workerAttachments],
       recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
       if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
     }
-    // Build remembers the user's planning depth / review mode for the next
+    // Build remembers the user's planning depth / review gates for the next
     // card. Research and Explore carry fixed internals that must never
     // clobber those build defaults.
-    if (!isResearch && !isExplore) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode });
+    if (!isResearch && !isExplore) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode: reviewRung, reviewGates });
     bb.realtime.publish("card-state", { cardId });
     return { cardId, threadId: thread?.id ?? null };
   }
@@ -2166,7 +2185,7 @@ ANY time you need user input, you MUST call the structured form:
 
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. Never re-ask the same question. ${INTERFACE_PICK} In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. Never re-ask the same question. ${INTERFACE_PICK} For unselected gates, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${DONE_PROTOCOL}
 
@@ -2631,11 +2650,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const stateFile = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).catch(() => null);
       const state = typeof stateFile?.content === "string" ? stateFile.content : null;
       if (!state) return null;
-      const { appetite, reviewMode } = parseWorkflowConfig(state, { strict: true });
-      if (!appetite || !reviewMode) return null;
+      const { appetite, reviewMode, reviewGates } = parseWorkflowConfig(state, { strict: true });
+      if (!appetite || (!reviewMode && !reviewGates)) return null;
       const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
       if (!stage) return null;
-      return requiredForStage({ stage, appetite, reviewMode });
+      return requiredForStage({ stage, appetite, reviewMode: reviewGates ?? reviewMode ?? [] });
     } catch {
       return null;
     }
@@ -2648,13 +2667,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
     // Strict parse: missing keys yield nulls (never assumed defaults) — a
     // guard must not enforce against a mode the file never declared.
-    const { appetite, reviewMode } = parseWorkflowConfig(state, { strict: true });
-    if (!stage || !appetite || !reviewMode) return null; // config is not trustworthy
+    // Gate-aware: an explicit set enforces directly, a ladder string
+    // resolves through the compat map.
+    const { appetite, reviewMode, reviewGates } = parseWorkflowConfig(state, { strict: true });
+    if (!stage || !appetite || (!reviewMode && !reviewGates)) return null; // config is not trustworthy
     // A corrupt or unreadable contract source must never deadlock every
     // advance: fail open here, the pin test guards the source itself.
     let required;
     try {
-      required = requiredForStage({ stage, appetite, reviewMode }).filter((entry) => entry.kind !== "skip");
+      required = requiredForStage({ stage, appetite, reviewMode: reviewGates ?? reviewMode ?? [] }).filter((entry) => entry.kind !== "skip");
     } catch {
       return null;
     }
@@ -3884,7 +3905,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // waiting — this nudge is the only thing an audit-idle resume says.
   const AUDIT_DONE_NUDGE = "The workflow is at the audit stage. If audit work remains, finish it first. Then commit completion with `bb stelow done` — it verifies in code and refuses with the fix when something is missing. Never just announce completion and stop: only done completes the card.";
   function buildContinueNudge(): string {
-    return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. Only a visible structured form on the card counts as a pending question — a prior chat message or split-proposal record does not. If the user cannot see a form and the stage needs input, submit the same bb stelow ask once; the host refuses duplicates when a real form is open. Never claim to be waiting based on memory alone. ${INTERFACE_PICK} Auto approves and advances itself; gated modes use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
+    return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. Only a visible structured form on the card counts as a pending question — a prior chat message or split-proposal record does not. If the user cannot see a form and the stage needs input, submit the same bb stelow ask once; the host refuses duplicates when a real form is open. Never claim to be waiting based on memory alone. ${INTERFACE_PICK} Unselected gates approve and advance themselves; selected gates use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
   }
 
   bb.rpc.register(rpcContract, {
@@ -3900,7 +3921,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async boardWorkflowDefaults() {
       const stored = await bb.storage.kv.get<unknown>("board-workflow-defaults");
       const parsed = boardWorkflowDefaultsSchema.safeParse(stored);
-      return parsed.success ? parsed.data : { appetite: "Lean" as const, reviewMode: "Auto" as const };
+      if (!parsed.success) return { appetite: "Lean" as const, reviewMode: "Auto" as const, reviewGates: [] as Array<"spec" | "interface" | "scope" | "tech" | "diff"> };
+      // Explicit migration, never a silent safeParse fallback: a stored
+      // ladder string maps to its set, so a saved "Tech Review" default
+      // survives instead of degrading to Auto.
+      const record = stored as { reviewMode?: unknown; reviewGates?: unknown };
+      const reviewGates = normalizeReviewGates(record.reviewGates ?? record.reviewMode ?? []) as Array<"spec" | "interface" | "scope" | "tech" | "diff">;
+      return { appetite: parsed.data.appetite, reviewMode: legacyLabelForGates(reviewGates) ?? "Auto", reviewGates };
     },
 
     async approveGate({ projectId, workflowId, gate }) {
@@ -4467,13 +4494,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // GitHub round-trip is needed to render it.
       const githubRow = db.prepare("SELECT repo, number, commented_at FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number; commented_at: number | null } | undefined;
       const githubLink = githubRow ? { repo: githubRow.repo, number: githubRow.number, url: `https://github.com/${githubRow.repo}/issues/${githubRow.number}`, postedAt: githubRow.commented_at ?? null } : null;
-      // Workflow config for the skip model: review_mode/appetite live in the
-      // card's own state.md (seeded at creation, same source the worker
-      // reads). Parsed through the shared helper (indented `config:` block,
-      // no truncation) — missing state or fields fail open to Lean/Auto,
-      // and unknown modes/intents yield no skips, never invented ones.
+      // Workflow config for the skip model: review gates/appetite live in
+      // the card's own state.md (seeded at creation, same source the
+      // worker reads). Parsed through the shared helper (indented
+      // `config:` block, no truncation) — missing state or fields fail
+      // open to Lean/Auto, and unknown modes/intents yield no skips,
+      // never invented ones. Skips resolve from the explicit set.
       const workflowConfig = await (async () => {
-        const fallback = { appetite: "Lean", reviewMode: "Auto" };
+        const fallback = { appetite: "Lean", reviewMode: "Auto", reviewGates: [] as string[] };
         try {
           if (!sourcePath || !card.dir_hash) return fallback;
           const stateDir = await workflowStateDir(bb, sourcePath, card.id, card.dir_hash).catch(() => null);
@@ -4483,7 +4511,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           return parseWorkflowConfig(content);
         } catch { return fallback; }
       })();
-      const stageSkips = skippedStages({ kind: normalizeKind(card.kind), intent: card.intent, reviewMode: workflowConfig.reviewMode, sequence: STAGE_SEQUENCE });
+      const stageSkips = skippedStages({ kind: normalizeKind(card.kind), intent: card.intent, reviewMode: workflowConfig.reviewMode, reviewGates: workflowConfig.reviewGates, sequence: STAGE_SEQUENCE });
       // Split affordance from the shared rule. Stage is the DB value, just
       // converged with state.md by syncThreadState above — the trigger RPC
       // re-resolves the slug itself before acting, so this flag never moves
@@ -4760,7 +4788,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const source = workspace?.hostId && workspace.path ? { path: workspace.path, hostId: workspace.hostId } : null;
       if (!source) return { reseeded: false, error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.`, reclassified: false };
       // Re-seed into a fresh per-workflow dir so the card gets a clean state file.
-      const seed = await seedWorkflow(bb, source.path, card.id, card.name, intent, "Core", "Auto", true);
+      // A reseed restarts the workflow, not the human's review choices: the
+      // card's current appetite and gate set carry over instead of the
+      // hardcoded Core/Auto.
+      const currentConfig = await (async () => {
+        try {
+          if (!card.dir_hash) return null;
+          const stateDir = await workflowStateDir(bb, source.path, card.id, card.dir_hash).catch(() => null);
+          if (!stateDir) return null;
+          const content = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+          if (typeof content !== "string") return null;
+          return parseWorkflowConfig(content);
+        } catch { return null; }
+      })();
+      const seed = await seedWorkflow(bb, source.path, card.id, card.name, intent, currentConfig?.appetite ?? "Core", currentConfig?.reviewGates ?? [], true);
       if (seed.error) return { reseeded: false, error: seed.error, reclassified: false };
       if (seed.dirHash) {
         db.prepare("UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?").run(seed.dirHash, now(), cardId);
@@ -4848,7 +4889,7 @@ ANY time you need user input, you MUST call the structured form:
 
 Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
 
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. ${INTERFACE_PICK} In Auto, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; in gated modes, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
+Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is waiting for an answer. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed with the workflow. The question stays pending on the card and remains answerable; when the user answers it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask the same question — wait for the card answer. ${INTERFACE_PICK} For unselected gates, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
 
 ${DONE_PROTOCOL}
 
@@ -6501,14 +6542,17 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           : null;
         const parentStateAbs = parentStateDir ? join(parentStateDir, "state.md") : null;
         let parentAppetite = "Lean";
-        let parentReviewMode = "Auto";
+        let parentReviewGates: string[] = [];
         if (parentStateAbs) {
           const blob = await bb.sdk.files.read({ path: parentStateAbs }).then((file) => file.content).catch(() => null);
           // Shared parser: the indented `config:` block with whole,
           // untruncated values (a bare `(\S+)` once degraded
-          // "Product Spec + …" to "Product" on live children).
+          // "Product Spec + …" to "Product" on live children). Children
+          // inherit the parent's gate set, not just its ladder label.
           if (typeof blob === "string") {
-            ({ appetite: parentAppetite, reviewMode: parentReviewMode } = parseWorkflowConfig(blob));
+            const parsed = parseWorkflowConfig(blob);
+            parentAppetite = parsed.appetite;
+            parentReviewGates = parsed.reviewGates;
           }
         }
         for (const slice of todo) {
@@ -6521,7 +6565,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               attachments: cardAttachments(card.attachments).map((attachment) => ({ type: attachment.type, path: attachment.path })),
               intent: "unknown",
               appetite: parentAppetite,
-              reviewMode: parentReviewMode,
+              reviewMode: parentReviewGates,
               kind: "build",
             });
             db.prepare("UPDATE cards SET split_from = ? WHERE id = ?").run(cardId, spawned.cardId);

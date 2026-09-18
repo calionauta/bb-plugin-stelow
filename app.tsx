@@ -265,17 +265,45 @@ const APPETITE_OPTIONS = [
   { value: "Complete", label: "Complete", description: "Broad exploration and deeper validation across the whole request." },
 ] as const;
 
-const REVIEW_MODE_OPTIONS = [
-  { value: "Auto", label: "Auto", description: "The agent resolves gaps and proceeds without review gates." },
-  { value: "Product Spec Gate", label: "Product Spec Gate", description: "Review the shaped product specification." },
-  { value: "Product Spec + Interface Gates", label: "Product Spec + Interface Gates", description: "Review the product specification and interface direction." },
-  { value: "Product Spec + Interface + Scopes", label: "Product Spec + Interface + Scopes", description: "Also confirm the planned build scopes." },
-  { value: "Product Spec + Interface + Tech Review", label: "Product Spec + Interface + Tech Review", description: "Add technical-plan review before execution." },
-  { value: "Product Spec + Interface + Tech Review + Code Diff", label: "Product Spec + Interface + Tech Review + Code Diff", description: "Use every review gate, including the final code diff." },
+const REVIEW_GATE_OPTIONS = [
+  { value: "spec", label: "Product spec", description: "Review the shaped product specification and assumptions." },
+  { value: "interface", label: "Interface direction", description: "Pick the interface proposal after reviewing the alternatives." },
+  { value: "scope", label: "Build scopes", description: "Confirm the planned build scopes (IN/OUT)." },
+  { value: "tech", label: "Technical plan", description: "Review the technical plan before execution." },
+  { value: "diff", label: "Code diff", description: "Review the final code diff." },
 ] as const;
 
+const REVIEW_GATE_VALUES = REVIEW_GATE_OPTIONS.map((option) => option.value);
+
+// One-click templates write into the same multi-select state — they are
+// shortcuts, never a second model. The six legacy rungs plus named
+// shortcuts for combinations the ladder could never express.
+const REVIEW_GATE_PRESETS: ReadonlyArray<{ label: string; gates: ReviewGate[] }> = [
+  { label: "Auto", gates: [] },
+  { label: "Product Spec Gate", gates: ["spec"] },
+  { label: "Product Spec + Interface Gates", gates: ["spec", "interface"] },
+  { label: "Product Spec + Interface + Scopes", gates: ["spec", "interface", "scope"] },
+  { label: "Product Spec + Interface + Tech Review", gates: ["spec", "interface", "scope", "tech"] },
+  { label: "Product Spec + Interface + Tech Review + Code Diff", gates: ["spec", "interface", "scope", "tech", "diff"] },
+  { label: "Interface only", gates: ["interface"] },
+  { label: "Spec + tech plan", gates: ["spec", "tech"] },
+];
+
 type Appetite = (typeof APPETITE_OPTIONS)[number]["value"];
-type ReviewMode = (typeof REVIEW_MODE_OPTIONS)[number]["value"];
+type ReviewGate = (typeof REVIEW_GATE_OPTIONS)[number]["value"];
+type ReviewGates = ReviewGate[];
+
+function sanitizeReviewGates(value: unknown): ReviewGates {
+  if (!Array.isArray(value)) return [];
+  const valid: ReadonlySet<string> = new Set(REVIEW_GATE_VALUES);
+  const gates = value.filter((entry): entry is ReviewGate => typeof entry === "string" && valid.has(entry));
+  return REVIEW_GATE_VALUES.filter((atom): atom is ReviewGate => gates.includes(atom));
+}
+
+function reviewGatesSummary(gates: string[]): string {
+  if (gates.length === 0) return "Auto — the agent decides everything";
+  return gates.map((gate) => REVIEW_GATE_OPTIONS.find((option) => option.value === gate)?.label ?? gate).join(", ");
+}
 
 // Unified attention: ONE flag (needsAttention) + the reason (kind). All four
 // Attention label derived from the card's own activity/status — no separate
@@ -610,7 +638,17 @@ function BoardPanel({ active }: { active: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
   const [appetite, setAppetite] = useState<Appetite>("Lean");
-  const [reviewMode, setReviewMode] = useState<ReviewMode>("Auto");
+  // Review gates are a pure multi-select (empty ≡ Auto). The composer
+  // remembers the last used selection per surface; board defaults fill
+  // the gap only when nothing was remembered.
+  const [reviewGates, setReviewGates] = useState<ReviewGates>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEYS.reviewGates);
+      if (!raw) return [];
+      return sanitizeReviewGates(JSON.parse(raw));
+    } catch { return []; }
+  });
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterStage, setFilterStage] = useState<string>("all");
   const [filterIntent, setFilterIntent] = useState<string | "all">("all");
@@ -662,13 +700,24 @@ function BoardPanel({ active }: { active: boolean }) {
   useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
   useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void load(boardProjectId ?? routeProjectId));
   useEffect(() => {
-    void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewMode: savedReviewMode }) => {
+    void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewGates: savedGates }) => {
       setAppetite(savedAppetite);
-      setReviewMode(savedReviewMode);
+      // Last used wins: only fall back to the board default when the
+      // composer never remembered a selection on this surface.
+      try {
+        if (window.localStorage.getItem(STORAGE_KEYS.reviewGates) === null) {
+          setReviewGates(sanitizeReviewGates(savedGates));
+        }
+      } catch {
+        setReviewGates(sanitizeReviewGates(savedGates));
+      }
     }).catch(() => {
       /* Keep Lean/Auto when stored preferences cannot be read. */
     });
   }, [rpc]);
+  useEffect(() => {
+    try { window.localStorage.setItem(STORAGE_KEYS.reviewGates, JSON.stringify(reviewGates)); } catch { /* best-effort */ }
+  }, [reviewGates]);
 
   const activeProjectId = boardProjectId ?? routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
@@ -714,7 +763,7 @@ function BoardPanel({ active }: { active: boolean }) {
     if (!prompt.trim()) return;
     setCreateBuildError(null);
     try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode, start: startImmediately, execution: composerExecutionOf(request) });
+      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode: reviewGates, start: startImmediately, execution: composerExecutionOf(request) });
       setPrompt("");
       setCreateBuildOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
@@ -810,7 +859,7 @@ function BoardPanel({ active }: { active: boolean }) {
             onOpenPresets={() => setBoardPresetsOpen(true)}
             active={active}
             secondTitle="Defaults for new cards"
-            secondBody={<WorkflowSettings appetite={appetite} reviewMode={reviewMode} onAppetiteChange={setAppetite} onReviewModeChange={setReviewMode} groupNamePrefix="board-default" />}
+            secondBody={<WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={setAppetite} onReviewGatesChange={setReviewGates} groupNamePrefix="board-default" />}
           />
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
@@ -844,7 +893,7 @@ function BoardPanel({ active }: { active: boolean }) {
                   onConfigure={() => setBoardPresetsOpen(true)}
                 />
                 <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} />
-                <WorkflowSettings appetite={appetite} reviewMode={reviewMode} onAppetiteChange={setAppetite} onReviewModeChange={setReviewMode} groupNamePrefix="create" />
+                <WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={setAppetite} onReviewGatesChange={setReviewGates} groupNamePrefix="create" />
               </div>
             </DialogContent>
           </Dialog>
@@ -1481,6 +1530,7 @@ const STORAGE_KEYS = {
   researchColumns: "stelow-research-columns-collapsed-v1",
   exploreColumns: "stelow-explore-columns-collapsed-v1",
   lastTab: "stelow-tab-v1",
+  reviewGates: "stelow-review-gates-v1",
   onboardBuild: "stelow-onboard-build-v1",
   onboardResearch: "stelow-onboard-research-v1",
   onboardExplore: "stelow-onboard-explore-v1",
@@ -2134,18 +2184,81 @@ function CollapsibleChoiceCards<T extends string>({ label, hint, value, options,
   );
 }
 
-function WorkflowSettings({ appetite, reviewMode, onAppetiteChange, onReviewModeChange, groupNamePrefix }: {
+function WorkflowSettings({ appetite, reviewGates, onAppetiteChange, onReviewGatesChange, groupNamePrefix }: {
   appetite: Appetite;
-  reviewMode: ReviewMode;
+  reviewGates: ReviewGates;
   onAppetiteChange: (value: Appetite) => void;
-  onReviewModeChange: (value: ReviewMode) => void;
+  onReviewGatesChange: (value: ReviewGates) => void;
   groupNamePrefix: string;
 }) {
   return (
     <SettingsSection title="Workflow preferences" description="Planning depth sets how much the agent plans before building; review checkpoints are where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
       <CollapsibleChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
-      <CollapsibleChoiceCards label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer." value={reviewMode} options={REVIEW_MODE_OPTIONS} onChange={onReviewModeChange} groupName={`${groupNamePrefix}-review`} />
+      <ReviewGatePicker label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer. Nothing picked means Auto: the agent decides everything itself." value={reviewGates} onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
     </SettingsSection>
+  );
+}
+
+// Review checkpoints as a pure multi-select: real checkboxes (keyboard +
+// screen-reader native), Select all / Clear, and one-click preset
+// templates that write into the same state. Empty ≡ Auto.
+function ReviewGatePicker({ label, hint, value, onChange, groupName }: { label: string; hint?: string; value: ReviewGates; onChange: (value: ReviewGates) => void; groupName: string }) {
+  const [open, setOpen] = useState(false);
+  const summary = reviewGatesSummary(value);
+  function toggle(atom: ReviewGate) {
+    onChange(value.includes(atom) ? value.filter((entry) => entry !== atom) : [...value, atom].sort((a, b) => REVIEW_GATE_VALUES.indexOf(a) - REVIEW_GATE_VALUES.indexOf(b)));
+  }
+  return (
+    <div className="group rounded-md border bg-background/60">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-label={`${label}: ${summary}. ${open ? "Collapse" : "Change"}`}
+        className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+      >
+        <DisclosureChevron open={open} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium leading-5 text-foreground">{label}</span>
+          <span className="block truncate text-xs leading-5 text-muted-foreground" title={summary}>{summary}</span>
+        </span>
+        <span className="shrink-0 text-xs font-medium text-primary">{open ? "Less" : "Change"}</span>
+      </button>
+      {open ? (
+        <div className="grid gap-2 border-t px-3 pb-3 pt-2">
+          <fieldset className="flex min-w-0 flex-col gap-1.5">
+            <legend className="sr-only">{label}</legend>
+            {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => onChange([...REVIEW_GATE_VALUES])} className="min-h-11 cursor-pointer rounded-md border px-3 text-xs font-medium hover:bg-muted">Select all</button>
+              <button type="button" onClick={() => onChange([])} className="min-h-11 cursor-pointer rounded-md border px-3 text-xs font-medium hover:bg-muted">Clear</button>
+            </div>
+            <div className="grid gap-2">
+              {REVIEW_GATE_OPTIONS.map((option) => {
+                const selected = value.includes(option.value);
+                return (
+                  <label key={option.value} className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition focus-within:outline focus-within:outline-2 focus-within:outline-primary ${selected ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}>
+                    <input type="checkbox" name={groupName} value={option.value} checked={selected} onChange={() => toggle(option.value)} className="mt-0.5 size-4 shrink-0 accent-primary" />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium leading-5 text-foreground">{option.label}</span>
+                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{option.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Start from a template:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {REVIEW_GATE_PRESETS.map((preset) => (
+                <button key={preset.label} type="button" onClick={() => onChange([...preset.gates])} title={preset.gates.length === 0 ? "Auto" : preset.gates.join(", ")} className="min-h-11 cursor-pointer rounded-md border px-2.5 text-xs font-medium hover:bg-muted">{preset.label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
