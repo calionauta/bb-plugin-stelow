@@ -4982,15 +4982,32 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
       <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable</summary>
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (
-          <div key={entry.threadId} className="flex items-center gap-2 px-2 py-1.5 text-xs">
-            <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${entry.endedAt === null ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
-              {entry.presetName ? <span> · {entry.presetName}</span> : null}
-              {formatTokenUsage(entry.tokenUsage) ? <span title={`${entry.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(entry.tokenUsage)} tokens</span> : null}
-              <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
-            </span>
-            <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
+          <div key={entry.threadId}>
+            <div className="flex items-center gap-2 px-2 py-1.5 text-xs">
+              <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${entry.endedAt === null ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
+                {entry.presetName ? <span> · {entry.presetName}</span> : null}
+                {formatTokenUsage(entry.tokenUsage) ? <span title={`${entry.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(entry.tokenUsage)} tokens</span> : null}
+                <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
+              </span>
+              <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
+            </div>
+            {entry.children?.length ? (
+              <div className="space-y-1 border-t border-dashed px-2 py-1.5 pl-6 text-xs">
+                {entry.children.map((child) => (
+                  <div key={child.threadId} className="flex items-center gap-2">
+                    <span aria-hidden className="size-1 shrink-0 rounded-full bg-muted-foreground/40" />
+                    <span className="min-w-0 flex-1 truncate text-muted-foreground" title={child.threadId}>
+                      <span className="font-medium text-foreground">{child.title ?? child.threadId.slice(0, 12)}</span>
+                      <span> · {child.status}</span>
+                      {child.providerId ? <span> · {child.providerId}</span> : null}
+                    </span>
+                    <button onClick={() => navigate.toThread(child.threadId)} title="Open this child thread." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

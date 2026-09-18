@@ -1,6 +1,10 @@
 # RFC: BB Orchestration Leverage (article-driven)
 
-Status: plan — not implemented. Source article: Sawyer Hood, "software
+Status: partially implemented. P0 (token visibility) and P1 (automation
+rules engine + board dialog) shipped; P2 child-thread surfacing shipped
+(upstream `subagents.md` blessing + worker-history children rows); P3
+digest/lessons specified below, not built (needs an inbox surface
+decision). Source article: Sawyer Hood, "software
 factory" thread (2026-09-17): child-thread orchestration across providers,
 long-lived scheduled managers, Automations/SlopCop/Workflows plugins,
 drag-to-reparent, observability-first restraint.

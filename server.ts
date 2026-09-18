@@ -67,6 +67,7 @@ import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome }
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents } from "./lib/token-usage.mjs";
+import { shapeChildThreads } from "./lib/thread-children.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -427,7 +428,7 @@ export const rpcContract = defineRpcContract({
       splitAction: z.object({ show: z.boolean(), ok: z.boolean(), reason: z.string().nullable() }),
       stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
-      workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable() })),
+      workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable() })) })),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
       // exploratory workspaces, which live outside provisioned environments.
@@ -3126,6 +3127,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { return null; }
   }
 
+  async function workerChildThreads(threadId: string): Promise<Array<{ threadId: string; title: string | null; status: string; providerId: string | null }>> {
+    try {
+      const list = await bb.sdk.threads.list({ parentThreadId: threadId, limit: 10 });
+      return shapeChildThreads(list);
+    } catch { return []; }
+  }
+
   // Automatic spawn retries (lib/spawn-retry). One retry in flight per
   // card: a retry spawns a whole worker, so duplicates would double burn
   // and race on state.md. The map holds cardId -> failed threadId.
@@ -4580,6 +4588,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at,
         endedAt: row.ended_at, endedReason: row.ended_reason,
         tokenUsage: await workerTokenUsage(row.thread_id),
+        children: await workerChildThreads(row.thread_id),
       })));
       // Imported-issue link for the Done-card write-back affordance. The URL
       // is deterministic (github.com/<repo>/issues/<number>), so no extra

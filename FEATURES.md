@@ -469,6 +469,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Provider token usage.** Each worker-history row shows BB's latest
   provider-reported token total when available. Missing provider data stays
   hidden rather than presenting a misleading zero or an estimate.
+- **Child threads.** Workers that fan work out to fresh BB child threads
+  (same contract as subagents: fresh context, no sibling communication,
+  one owned output file each) show each child under its worker row with
+  title, status, provider, and an Open link — the parent still owns
+  synthesis. Threads without children render exactly as before.
 - **Preset-staleness detection.** Cards whose worker predates a preset
   change offer Restart instead of Resume.
 - **Archive card** (`cancelCard`). Stops + archives the worker; history
