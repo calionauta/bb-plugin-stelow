@@ -30,13 +30,24 @@ with cohesion-aware partitioning), CAID (+26.7% research parallelism).
 - **Draft destination (locked)**: a drafted card parks in the **Inbox
   column** (board position, no worker, no burn) — never as an inbox feed
   item, and **rules never start workers** (starting unreviewed drafts
-  would burn budget behind the human's back). Discovery rides the
+  would burn budget behind the human's back). Every rule-drafted card
+  carries an origin marker ("Drafted from GitHub issue #X", source link)
+  so it reads as proposed work, never as the user's own draft and never
+  as a stalled card. Discovery rides the
   column count the tab bar already shows; no new badge path.
 - **Stalled cards (locked semantics)**: a stalled card does NOT move
-  columns — board position is never attention (repo doctrine). It
+  columns — board position is never attention (repo doctrine), and
+  relocating it to Inbox would falsify its lifecycle (a 5/8-scopes card
+  is not "captured, not started") while mimicking unstarted drafts next
+  to it — inviting restart/archive/delete of mid-flight work, or
+  silent neglect as "not started yet". It
   raises/refreshes a `paused` inbox event pointing at the card's own
-  recovery actions (retry/restart/reseed/discard). Its code stays parked
-  exactly where it is.
+  recovery actions (retry/restart/reseed/discard), with the paused
+  banner and needs-attention marker in place. Its code stays parked
+  exactly where it is. If in-place attention ever proves insufficient,
+  strengthen the signals (escalating copy after N idle periods, digest),
+  never relocate the card: moves must mean lifecycle transitions
+  initiated by user or worker, never timer side effects.
 - **Code-safety invariant**: one card, one branch (`bb/` prefix) or one
   dedicated worktree — never auto-switch, auto-move, or auto-delete
   branches. A second card never touches another card's dirty checkout;
