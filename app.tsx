@@ -33,7 +33,7 @@ import { questionCopy } from "./lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
 import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
-import { shortRef } from "./lib/plugin-update.mjs";
+import { shortRef, isPathInstall } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
@@ -1751,6 +1751,10 @@ function PluginUpdateStatus({ version, update, github, confirming, checking, onC
           ? "Not updated through BB"
           : "Update check unavailable";
   const unmanaged = update.outcome === "pinned" || update.outcome === "incompatible" || update.outcome === "unavailable";
+  // Only path installs take the manual path (checkout pull + rebuild +
+  // reload); every other source is BB-managed, so manual instructions
+  // must never reach users who have no checkout.
+  const pathInstall = isPathInstall(update.installedDisplay);
   return (
     <div role="status" className="space-y-1 rounded-lg border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
       <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
@@ -1759,14 +1763,15 @@ function PluginUpdateStatus({ version, update, github, confirming, checking, onC
       {update.outcome === "update-available" && !confirming ? <p>Confirm with “Update plugin…” below — Stelow reloads afterwards.</p> : null}
       {update.outcome === "update-available" && confirming ? <p>Stelow reloads afterwards.</p> : null}
       {unmanaged && update.detail ? <p>{update.detail}</p> : null}
-      {unmanaged && !update.detail ? <p>BB reports this install as not updatable through BB itself — local checkouts update with git pull, rebuild, and reload. “Check update” refreshes BB’s verdict and the GitHub release lookup together.</p> : null}
-      {unmanaged && github && !github.newer && version !== "dev" && version.replace(/^v/, "") === github.tag.replace(/^v/, "") ? (
+      {unmanaged && !update.detail && pathInstall ? <p>BB reports this install as not updatable through BB itself — local checkouts update with git pull, rebuild, and reload. “Check update” refreshes BB’s verdict and the GitHub release lookup together.</p> : null}
+      {unmanaged && !update.detail && !pathInstall ? <p>BB can’t apply an update to this install automatically right now. “Check update” re-checks; new releases appear here once BB can apply them.</p> : null}
+      {unmanaged && pathInstall && github && !github.newer && version !== "dev" && version.replace(/^v/, "") === github.tag.replace(/^v/, "") ? (
         <p>Matches {github.tag} on GitHub — this checkout is current.</p>
       ) : null}
       {unmanaged && github?.newer ? (
         <p className="text-amber-700 dark:text-amber-300">
           <UrlLink href={github.url} className="underline underline-offset-4 hover:text-foreground">{github.tag} is published on GitHub ↗</UrlLink>
-          {" "}— pull the checkout, rebuild, and reload to run it.
+          {" "}{pathInstall ? "— pull the checkout, rebuild, and reload to run it." : "— it will be offered here once BB can apply it."}
         </p>
       ) : null}
       {update.outcome === "checking" ? null : (

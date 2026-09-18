@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mapUpdateEntry, selectOwnEntry, shortRef } from "../lib/plugin-update.mjs";
+import { mapUpdateEntry, selectOwnEntry, shortRef, isPathInstall } from "../lib/plugin-update.mjs";
 
 const own = {
   id: "stelow",
@@ -42,4 +42,10 @@ assert.equal(shortRef(null, null), null);
 const blocked = mapUpdateEntry({ id: "stelow", outcome: "incompatible", installed: { version: "x", display: "x" }, blocked: { reasons: ["requires bb >=0.99"], version: "v9" } });
 assert.equal(blocked.detail, "requires bb >=0.99");
 
-console.log("plugin update test ok: entry select, map, shortRef");
+assert.equal(isPathInstall("path:/home/deploy/repos/bb-plugin-stelow"), true, "path source is a path install");
+assert.equal(isPathInstall("  PATH:/x "), true, "prefix match is case- and space-tolerant");
+assert.equal(isPathInstall("https://github.com/calionauta/bb-plugin-stelow.git@v0.18.47 (4450336fde35)"), false, "git installs are BB-managed");
+assert.equal(isPathInstall("bb-plugin-auto-archive@0.1.4"), false, "registry installs are BB-managed");
+assert.equal(isPathInstall(null), false, "missing display is not a path install");
+
+console.log("plugin update test ok: entry select, map, shortRef, install source");

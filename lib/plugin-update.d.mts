@@ -8,3 +8,4 @@ export declare function mapUpdateEntry(entry: unknown): {
   detail: string | null;
 };
 export declare function shortRef(version: unknown, display: unknown): string | null;
+export declare function isPathInstall(display: unknown): boolean;
