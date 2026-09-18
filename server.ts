@@ -13,6 +13,7 @@ import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, refreshStalledPaused, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
+import { acquireWorkspaceClaims, addClaimWaiters, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
@@ -1175,7 +1176,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Seed is a cardless/human operation: card workflows are pre-seeded at
   // spawn and the seed CLI refuses card workers, so the copy must never
   // invite a card worker to seed (that orphaned a project-root workflow).
-  const CLI_EQUIVALENTS = "Run `bb stelow playbook` first: it prints your state.md, transitions.md, and stage playbook paths — never discover them with `bb skill list | awk` pipelines. Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers.";
+  const CLI_EQUIVALENTS = "Run `bb stelow playbook` first: it prints your state.md, transitions.md, and stage playbook paths — never discover them with `bb skill list | awk` pipelines. Scope sync runs automatically when you advance into execution; where a skill shows a `scripts/stelow ...` command, use the `bb stelow` equivalent instead (`bb stelow sync-scopes`, `bb stelow lock acquire|release|check`, `bb stelow config get`) — same flags. Never run `bb stelow seed`: card workflows arrive pre-seeded and the command refuses card workers. File-claim discipline: `lock acquire` also registers a workspace-level claim so sibling cards on this checkout see your files. A `BB-LOCK-BLOCKED` stderr means another live card holds the file — do NOT spin or retry in a loop: park that scope (work an independent scope meanwhile), the host pages the user and resumes you with a nudge when the file frees. `lock release` the moment a scope no longer needs its files; terminal states release everything automatically.";
   // Prompt clauses that every build spawn path must carry. They are consts
   // (not pasted prose) so a new spawn site cannot silently drop one — the
   // prompt-contract test fails when a site stops referencing them. This is
@@ -1501,6 +1502,10 @@ export default async function plugin(bb: BbPluginApi) {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_inbox_events_visible ON inbox_events(archived_at, occurred_at DESC);`);
+  // Workspace-level file claims (lib/card-claims): cross-card coordination
+  // for cards sharing one checkout. Same outside-the-migration-array
+  // pattern as inbox_events above.
+  ensureCardClaimsTables(db);
   const inboxColumns = db.prepare("PRAGMA table_info(inbox_events)").all() as Array<{ name: string }>;
   if (!inboxColumns.some((column) => column.name === "resolved_at")) db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
   // One-time cleanup of a historical bug: research completions used to emit
@@ -3513,6 +3518,62 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
   }
 
+  // Workspace claim coordination (lib/card-claims). A card that hits a file
+  // held by another live card parks that scope, not the thread: the worker
+  // gets a BB-LOCK-BLOCKED stderr, the user gets a paused inbox event naming
+  // the holder and the automatic unlock condition (release or TTL expiry),
+  // and the waiter row lets the host resume exactly the blocked cards when
+  // the files free up. Advisory-plus-apology: a stale claim is stolen, and
+  // the steal is trailed on the card instead of blocking work.
+  const CLAIM_TTL_MS = 30 * 60 * 1000;
+  function lockBlockedSummary(file: string, holderName: string, expiresAt: number): string {
+    const when = new Date(expiresAt).toLocaleString();
+    return `Waiting on ${file} (held by card "${holderName}"). Releases automatically when that card finishes the file or by ${when} — no action needed; the host resumes this card on release.`;
+  }
+  async function notifyClaimWaiters(workspacePath: string, files: string[]): Promise<void> {
+    if (files.length === 0 || !workspacePath) return;
+    const at = now();
+    let waiterRows: Array<{ card_id: string; scope: string | null }>;
+    try {
+      waiterRows = waitersForFiles(db, { workspacePath, files });
+    } catch { return; }
+    const seen = new Set<string>();
+    for (const waiter of waiterRows) {
+      if (seen.has(waiter.card_id)) continue;
+      seen.add(waiter.card_id);
+      const waiting = getCard(waiter.card_id);
+      if (!waiting || isArchivedCard(waiting)) {
+        try { clearClaimWaiters(db, { cardId: waiter.card_id }); } catch { /* advisory */ }
+        continue;
+      }
+      resolveInboxEvents(waiter.card_id, at, ["paused"], "resumed");
+      try { clearClaimWaiters(db, { cardId: waiter.card_id, workspacePath, files }); } catch { /* advisory */ }
+      if (waiting.worker_thread_id) {
+        const nudge = `Files you waited on are now free (${files.join(", ")}). Re-run \`bb stelow lock acquire --scope <id>\` for the files you still need, then continue the scope — do not re-claim files you no longer touch.`;
+        try {
+          await bb.sdk.threads.send({ threadId: waiting.worker_thread_id, mode: "auto", input: [{ type: "text", text: nudge, mentions: [], visibility: "agent-only" }] });
+        } catch { /* a dead thread stays parked; the user resumes by hand */ }
+      }
+      bb.realtime.publish("card-state", { cardId: waiter.card_id });
+    }
+  }
+  async function releaseCardClaimsAndNotify(cardId: string): Promise<void> {
+    let released: Array<{ workspacePath: string; file: string }>;
+    try {
+      released = releaseAllCardClaims(db, cardId);
+    } catch { return; }
+    if (released.length === 0) return;
+    const byWorkspace = new Map<string, string[]>();
+    for (const row of released) {
+      const list = byWorkspace.get(row.workspacePath) ?? [];
+      list.push(row.file);
+      byWorkspace.set(row.workspacePath, list);
+    }
+    for (const [workspacePath, files] of byWorkspace) {
+      await notifyClaimWaiters(workspacePath, files);
+    }
+  }
+
   // Stalled cards keep their column; their open paused event carries the
   // age instead. Shared by all three track syncs so paused means paused
   // everywhere. Guarded to idle cards and wrapped: escalation is advisory
@@ -3967,6 +4028,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const rows = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
       for (const row of rows) void syncThreadState(row.id);
     } catch { /* db closed during reload; next tick retries */ }
+    // Expired workspace claims are crashed workers that never released:
+    // reap them here and wake exactly the cards that waited on each file.
+    try {
+      const reaped = sweepExpiredClaims(db, Date.now());
+      if (reaped.length > 0) {
+        const byWorkspace = new Map<string, string[]>();
+        for (const row of reaped) {
+          const list = byWorkspace.get(row.workspacePath) ?? [];
+          list.push(row.file);
+          byWorkspace.set(row.workspacePath, list);
+        }
+        for (const [workspacePath, files] of byWorkspace) void notifyClaimWaiters(workspacePath, files);
+      }
+    } catch { /* advisory; next tick retries */ }
   }, RECONCILE_MS);
   bb.onDispose(async () => {
     clearInterval(reconcileTimer);
@@ -4725,6 +4800,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card) return { archived: false };
       await stopWorkerThread(card.worker_thread_id);
       updateCard(cardId, { status: "archived", activity: "idle" });
+      await releaseCardClaimsAndNotify(cardId);
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { archived: true };
@@ -4739,6 +4815,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card) return { deleted: false, error: ERR_CARD_NOT_FOUND };
       if (card.status !== "archived") return { deleted: false, error: "Only archived cards can be deleted. Archive it first." };
       await stopWorkerThread(card.worker_thread_id);
+      await releaseCardClaimsAndNotify(cardId);
       db.prepare("DELETE FROM comments WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);
@@ -5067,6 +5144,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (!started.ok) return { ok: false, error: started.error };
         }
         updateCard(cardId, { status: decision.move.status as "draft" | "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
+        // Terminal columns release workspace claims so parked cards never
+        // hold files hostage; waiters are notified on the same path.
+        if (decision.move.status === "archived" || decision.move.status === "completed") await releaseCardClaimsAndNotify(cardId);
         return { ok: true, error: null };
       }
       // A phase move sets the card's stage to that phase's entry stage
@@ -6534,6 +6614,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           }
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+          await releaseCardClaimsAndNotify(cardId);
           return { exitCode: 0, stdout: `Done. Workflow "${card.name}" completed at audit.` };
         }
         if (card.kind === "research") {
@@ -6548,6 +6629,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           }
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+          await releaseCardClaimsAndNotify(cardId);
           const doneCurrent = getCard(cardId);
           if (doneCurrent) recordInboxEvent(doneCurrent, "completed", "Research complete — results ready to review in Done.", `completed:${cardId}:index:${readiness.fingerprint ?? "ready"}`, now());
           return { exitCode: 0, stdout: `Done. Research "${card.name}" completed.` };
@@ -6563,6 +6645,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           }
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
+          await releaseCardClaimsAndNotify(cardId);
           const doneCurrent = getCard(cardId);
           if (doneCurrent) recordInboxEvent(doneCurrent, "completed", "Exploration complete — result ready to review in Done.", `explore-completed:${cardId}:${artifact.fingerprint ?? "ready"}`, now());
           return { exitCode: 0, stdout: `Done. Exploration "${card.name}" completed.` };
@@ -6807,6 +6890,80 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (guard) return { exitCode: 1, stderr: guard };
         // Helper exit codes are meaningful here (1 = lock conflict): pass through.
         const result = await runHelper(["lock", op, ...rest], rootPath, stateDir ?? undefined);
+        // Workspace-level claim registry (lib/card-claims): the helper lock
+        // is per-card (invisible to sibling cards); the registry below is
+        // per-workspace so concurrent cards on one checkout coordinate
+        // through the host. Host/UI callers without a card context keep the
+        // helper behavior unchanged.
+        if (cliCard && rootPath) {
+          const scopeIndex = rest.indexOf("--scope");
+          const claimScope = scopeIndex >= 0 ? (rest[scopeIndex + 1] ?? null) : null;
+          const claimFiles: string[] = [];
+          for (let i = 0; i < rest.length; i++) {
+            if (rest[i] === "--file" && rest[i + 1]) { claimFiles.push(rest[i + 1]!); i++; }
+            else if (!rest[i]!.startsWith("--") && rest[i - 1] !== "--scope" && rest[i - 1] !== "--ttl") claimFiles.push(rest[i]!);
+          }
+          const at = now();
+          if (op === "acquire") {
+            let outcome: { acquired: Array<{ file: string; fencing: number }>; renewed: Array<{ file: string }>; stolen: Array<{ file: string; previousHolder: string; fencing: number }>; conflicts: Array<{ file: string; heldBy: string; heldScope: string | null; expiresAt: number }> } | null = null;
+            try {
+              outcome = acquireWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles, scope: claimScope, ttlMs: CLAIM_TTL_MS, nowMs: at });
+            } catch { /* advisory: helper lock already decided */ }
+            if (outcome) {
+              for (const steal of outcome.stolen) {
+                logCardComment(cliCard.id, "card", cliCard.id, "agent", `Stole expired workspace claim on ${steal.file} (previous holder card ${steal.previousHolder}) — its lease lapsed, so work continues; the previous holder re-acquires if still live.`);
+              }
+              // Claims left by archived/gone cards are dead weight: reap and
+              // re-acquire instead of parking a live card behind a ghost.
+              const dead = outcome.conflicts.filter((entry) => {
+                const holder = getCard(entry.heldBy);
+                return !holder || isArchivedCard(holder);
+              });
+              if (dead.length > 0) {
+                try {
+                  const del = db.prepare("DELETE FROM card_claims WHERE workspace_path = ? AND file_path = ? AND card_id = ?");
+                  for (const entry of dead) del.run(rootPath, entry.file, entry.heldBy);
+                  outcome = acquireWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles, scope: claimScope, ttlMs: CLAIM_TTL_MS, nowMs: at });
+                } catch { /* advisory */ }
+              }
+              const live = outcome.conflicts.filter((entry) => {
+                const holder = getCard(entry.heldBy);
+                return holder && !isArchivedCard(holder);
+              });
+              if (live.length > 0) {
+                try { addClaimWaiters(db, { cardId: cliCard.id, workspacePath: rootPath, files: live.map((entry) => entry.file), scope: claimScope, nowMs: at }); } catch { /* advisory */ }
+                for (const entry of live) {
+                  const holder = getCard(entry.heldBy);
+                  recordInboxEvent(cliCard, "paused", lockBlockedSummary(entry.file, holder?.display_name ?? holder?.name ?? entry.heldBy, entry.expiresAt), `lock-blocked:${cliCard.id}:${entry.file}`, at);
+                }
+                const lines = live.map((entry) => {
+                  const holder = getCard(entry.heldBy);
+                  return `BB-LOCK-BLOCKED file=${entry.file} heldBy=${holder?.display_name ?? holder?.name ?? entry.heldBy} expiresAt=${new Date(entry.expiresAt).toISOString()}`;
+                });
+                const stderr = `${lines.join("\n")}\nPark this scope and work an independent one (or wait for the host nudge) — do not retry in a loop. The host resumes this card when the file frees.${result.stderr ? `\n${result.stderr}` : ""}`;
+                return { exitCode: 1, stdout: result.stdout, stderr };
+              }
+            }
+          } else if (op === "release") {
+            let released: Array<{ workspacePath: string; file: string }> = [];
+            try { released = releaseWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles }); } catch { /* advisory */ }
+            if (released.length > 0) await notifyClaimWaiters(rootPath, released.map((row) => row.file));
+          } else {
+            // check doubles as a lease heartbeat for the caller's own
+            // claims; cross-card walls ride on stderr so --json stdout
+            // stays parseable.
+            let seen: { free: string[]; conflicts: Array<{ file: string; heldBy: string; expiresAt: number }> } | null = null;
+            try { seen = checkWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles, ttlMs: CLAIM_TTL_MS, nowMs: at }); } catch { /* advisory */ }
+            const liveWalls = (seen?.conflicts ?? []).filter((entry) => {
+              const holder = getCard(entry.heldBy);
+              return holder && !isArchivedCard(holder);
+            });
+            if (liveWalls.length > 0) {
+              const lines = liveWalls.map((entry) => `BB-LOCK-WALL file=${entry.file} heldBy=${entry.heldBy} expiresAt=${new Date(entry.expiresAt).toISOString()}`);
+              return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: `${lines.join("\n")}${result.stderr ? `\n${result.stderr}` : ""}` };
+            }
+          }
+        }
         return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
       }
       if (argv[0] === "config") {

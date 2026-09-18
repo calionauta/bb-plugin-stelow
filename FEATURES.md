@@ -240,6 +240,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Recovery says plainly that the initial interactive request was interrupted,
   that there is no deadline, and that the saved answer resumes work — it never
   exposes the internal `timed-out` state as a second, redundant title.
+- **File-claim coordination.** Cards sharing one checkout coordinate files
+  through a workspace-level claim registry: `lock acquire` reserves the
+  files, a card that hits another live card's file parks that scope (no
+  retry loop) and gets a paused Inbox event naming the holder and the
+  automatic unlock (release or lease expiry), and the host resumes exactly
+  the waiting cards with an agent-only nudge when the files free. Done,
+  archive, cancel, and delete release every claim; expired leases are
+  reaped on the reconcile sweep.
 - **Split choices are unambiguous.** Candidate deliveries are checkbox cards;
   **Keep as one card** is visually separated and mutually exclusive. The
   outcome is stated once per choice, and the host rejects a contradictory
