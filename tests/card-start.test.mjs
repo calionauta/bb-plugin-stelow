@@ -11,7 +11,9 @@ const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 
 assert.match(server, /start = true/, "creation spawns by default");
-assert.equal((server.match(/start: false/g) ?? []).length, 0, "nothing forces an unstarted card — only the dialog variable");
+const forcedParks = server.match(/start: false/g) ?? [];
+assert.equal(forcedParks.length, 1, "exactly one forced park exists — the automation draft path");
+assert.ok(server.indexOf("start: false") > server.indexOf("async function runAutomationRules"), "the forced park lives inside runAutomationRules, never in a creation path");
 assert.match(server, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
 assert.match(server, /startWorker: \{/, "the start trigger is a named RPC");
 assert.match(server, /async startWorker\(\{ cardId \}\)/, "the handler resolves the card");

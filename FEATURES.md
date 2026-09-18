@@ -39,6 +39,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   just labels on open issues); assignee dropdown lists assignable users
   per tracked repo merged with assignees seen on issues. Per-issue
   assignees shown inline.
+- **Automation rules.** Per-project board settings can watch a GitHub label
+  and create one source-linked, unstarted Inbox draft per matching issue.
+  Rules run durably on BB's scheduler; they never start workers, move cards,
+  clear labels, merge code, or import work behind the user's back.
 - **GitHub completion write-back** (`postGithubCompletion`). Completed cards
   imported from an issue offer one explicit Manage action: post a factual
   English summary (scopes/tasks, prompt) as an issue comment via the

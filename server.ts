@@ -17,6 +17,7 @@ import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./l
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { decideAskGate } from "./lib/ask-gate.mjs";
+import { matchAutomationIssues } from "./lib/automation-rules.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "./lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
@@ -186,6 +187,7 @@ const reviewModeSchema = z.enum([
 const reviewGateAtomSchema = z.enum(["spec", "interface", "scope", "tech", "diff"]);
 const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGateAtomSchema)]).default("Auto");
 const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewMode: z.string(), reviewGates: z.array(reviewGateAtomSchema).default([]) }).strict();
+const automationRuleSchema = z.object({ id: z.string(), projectId: z.string(), enabled: z.boolean(), label: z.string(), createdAt: z.number(), updatedAt: z.number() });
 
 const taskSchema = z.object({
   id: z.string(),
@@ -389,6 +391,18 @@ export const rpcContract = defineRpcContract({
   boardWorkflowDefaults: {
     input: z.object({}).strict(),
     output: boardWorkflowDefaultsSchema,
+  },
+  listAutomationRules: {
+    input: z.object({ projectId: z.string().nullable() }).strict(),
+    output: z.object({ rules: z.array(automationRuleSchema) }),
+  },
+  saveAutomationRule: {
+    input: z.object({ id: z.string().nullable().optional(), projectId: z.string(), label: z.string().min(1).max(60), enabled: z.boolean().default(true) }).strict(),
+    output: z.object({ rule: automationRuleSchema }),
+  },
+  deleteAutomationRule: {
+    input: z.object({ id: z.string() }).strict(),
+    output: z.object({ ok: z.boolean() }),
   },
   createCard: {
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeInputSchema, presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
@@ -1527,6 +1541,17 @@ export default async function plugin(bb: BbPluginApi) {
   const githubImportColumns = db.prepare("PRAGMA table_info(github_imports)").all() as Array<{ name: string }>;
   if (!githubImportColumns.some((column) => column.name === "commented_at")) db.exec("ALTER TABLE github_imports ADD COLUMN commented_at INTEGER");
 
+  db.exec(`CREATE TABLE IF NOT EXISTS automation_rules (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, label TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS automation_rule_fires (
+    rule_id TEXT NOT NULL, source_key TEXT NOT NULL, card_id TEXT NOT NULL, fired_at INTEGER NOT NULL,
+    PRIMARY KEY (rule_id, source_key),
+    FOREIGN KEY (rule_id) REFERENCES automation_rules(id) ON DELETE CASCADE,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );`);
+
   // Publication is intentionally separate from a card's Done state. A card is
   // workflow-complete before its owner decides whether and how to publish it.
   db.exec(`CREATE TABLE IF NOT EXISTS publication_events (
@@ -1637,6 +1662,38 @@ export default async function plugin(bb: BbPluginApi) {
         outputSchema: z.any(),
       }),
   };
+
+  async function runAutomationRules(): Promise<void> {
+    const rules = db.prepare("SELECT id, project_id, label FROM automation_rules WHERE enabled = 1").all() as Array<{ id: string; project_id: string; label: string }>;
+    if (rules.length === 0) return;
+    const items = await g.listItems({ kind: "issue", state: "open" }).catch(() => null);
+    if (!items) return;
+    const github = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
+    const projectForRepo = new Map(github.repos.map((entry) => [entry.repo, entry.projectId]));
+    for (const rule of rules) {
+      // One read for already-fired issues: the matcher stays pure (lib/),
+      // the database stays in the handler.
+      const firedKeys = new Set(
+        (db.prepare("SELECT source_key FROM automation_rule_fires WHERE rule_id = ?").all(rule.id) as Array<{ source_key: string }>).map((row) => row.source_key),
+      );
+      const matches = matchAutomationIssues(items.items, { label: rule.label, projectId: rule.project_id, projectForRepo, firedKeys });
+      for (const match of matches) {
+        const sourceKey = match.key;
+        try {
+          const detail = await g.getIssue({ repo: match.repo, number: match.number });
+          const created = await createCardInternal({ projectId: rule.project_id, prompt: githubIssuePrompt(detail.issue, detail.issue.comments), attachments: [], intent: "investigate", appetite: "Lean", reviewMode: "Auto", start: false });
+          const card = getCard(created.cardId);
+          if (!card) continue;
+          logCardComment(card.id, "card", card.id, "agent", `Drafted from GitHub issue #${match.number}: ${detail.issue.url}`);
+          db.prepare("INSERT INTO automation_rule_fires (rule_id, source_key, card_id, fired_at) VALUES (?, ?, ?, ?)").run(rule.id, sourceKey, card.id, now());
+          bb.realtime.publish("board-changed", { reason: "automation-draft", cardId: card.id });
+        } catch (error) {
+          bb.log.warn(`automation rule ${rule.id} skipped ${sourceKey}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+  }
+  bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => runAutomationRules());
 
   // A curated issue reference for the card prompt, so the worker reads the
   // issue without re-fetching GitHub. Body + comments give the triage context.
@@ -3936,6 +3993,28 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const record = stored as { reviewMode?: unknown; reviewGates?: unknown };
       const reviewGates = normalizeReviewGates(record.reviewGates ?? record.reviewMode ?? []) as Array<"spec" | "interface" | "scope" | "tech" | "diff">;
       return { appetite: parsed.data.appetite, reviewMode: legacyLabelForGates(reviewGates) ?? "Auto", reviewGates };
+    },
+
+    async listAutomationRules({ projectId }) {
+      if (!projectId) return { rules: [] };
+      const rows = db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Array<{ id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number }>;
+      return { rules: rows.map((rule) => ({ id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, createdAt: rule.created_at, updatedAt: rule.updated_at })) };
+    },
+
+    async saveAutomationRule({ id, projectId, label, enabled }) {
+      const cleanLabel = label.trim();
+      if (!cleanLabel) throw new Error("Rule label cannot be empty.");
+      const ts = now();
+      const ruleId = id ?? randomId("rule");
+      db.prepare("INSERT INTO automation_rules (id, project_id, label, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET label = excluded.label, enabled = excluded.enabled, updated_at = excluded.updated_at")
+        .run(ruleId, projectId, cleanLabel, enabled ? 1 : 0, ts, ts);
+      const rule = db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules WHERE id = ?").get(ruleId) as { id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number };
+      return { rule: { id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, createdAt: rule.created_at, updatedAt: rule.updated_at } };
+    },
+
+    async deleteAutomationRule({ id }) {
+      db.prepare("DELETE FROM automation_rules WHERE id = ?").run(id);
+      return { ok: true };
     },
 
     async approveGate({ projectId, workflowId, gate }) {
