@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.26.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.25.0...v0.26.0) (2026-09-18)
+
+
+### Features
+
+* deterministic JTBD depth contracts on every composite substep ([3b5a911](https://github.com/calionauta/bb-plugin-stelow/commit/3b5a911206b390376f79b6f4b3f9ddcf3068c1d2))
+
+
+### Bug Fixes
+
+* gate research completion on every composite substep ([2c487f1](https://github.com/calionauta/bb-plugin-stelow/commit/2c487f197c79e699ba7b652843c7b52fc6a83673))
+
 ## [0.25.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.24.0...v0.25.0) (2026-09-18)
 
 
