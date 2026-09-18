@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.82] - 2026-09-18
+
+Follow-up to the 0.3.81 one-shot migration release, still on the frozen 0.3
+preview line. Nobody needs 0.3.81 first — 0.3.82 supersedes it and satisfies
+the same recorded range.
+
+### Added
+
+- **Guarded one-click auto-upgrade.** When everything is known-good, the modal
+  offers "Upgrade automatically": it archives the stale workspace state, then
+  runs `bb plugin remove stelow && bb plugin install stelow@bb-community --yes`
+  as a detached process (which survives the plugin being removed mid-flight,
+  refreshes the marketplace catalog first, and logs to
+  `~/.bb/stelow-auto-upgrade.log`). Stelow closes and reopens on the current
+  line in about a minute.
+- **Readiness gates (`bb.rpc: stelowUpgradeStatus`).** The automatic path is
+  only offered when all three hold: the `bb` CLI is reachable, the live
+  marketplace listing range already covers the current line (no reinstall
+  loop), and the local bb satisfies the current line's `engines.bb`. Any gate
+  failing shows an honest reason and falls back to the manual command block
+  from 0.3.81.
+
 ## [0.3.81] - 2026-09-18
 
 This is a one-shot migration release from the frozen 0.3 preview line. It

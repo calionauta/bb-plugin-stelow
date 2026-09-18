@@ -1,5 +1,5 @@
 import { spawn, execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -263,6 +263,18 @@ export const rpcContract = defineRpcContract({
         reason: z.string(),
       })),
     }),
+  },
+  stelowUpgradeStatus: {
+    input: z.object({}).strict(),
+    output: z.object({
+      ready: z.boolean(),
+      reason: z.string().nullable(),
+      bbVersion: z.string().nullable(),
+    }),
+  },
+  stelowUpgradeNow: {
+    input: z.object({}).strict(),
+    output: z.object({ started: z.boolean() }),
   },
   answerQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().max(2_000)).max(10) })).min(1).max(12) }).strict(),
@@ -2595,6 +2607,123 @@ async function archiveStelowWorkspaces(bb: BbPluginApi) {
   return { archived, skipped };
 }
 
+// v0.3.82: guarded one-click move to the current line. The recorded 0.3
+// range cannot reach 0.24.x, so the only way out is remove + reinstall.
+// When everything is known-good, run that chain as a detached process: it
+// survives this plugin being removed mid-flight, and the reinstall records
+// the marketplace's current range so the new line tracks from then on.
+
+const STELOW_MARKETPLACE_V2_URL =
+  "https://getbb.app/marketplace/v2/marketplace.json";
+const STELOW_CURRENT_LINE_TAG = "v0.24.0";
+const STELOW_UPGRADE_LOG = "stelow-auto-upgrade.log";
+
+function runFile(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: 30_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) reject(error);
+      else resolve(`${stdout ?? ""}${stderr ?? ""}`.trim());
+    });
+  });
+}
+
+function parseSemverParts(value: string): number[] | null {
+  const match = /^v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(value.trim());
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), match[3] === undefined ? 0 : Number(match[3])];
+}
+
+function versionAtLeast(version: string, floor: string): boolean {
+  const versionParts = parseSemverParts(version);
+  const floorParts = parseSemverParts(floor);
+  if (!versionParts || !floorParts) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (versionParts[index] !== floorParts[index]) return versionParts[index] > floorParts[index];
+  }
+  return true;
+}
+
+// True when the marketplace entry's range already covers the modern line
+// (>=0.18.0). Conservative on purpose: anything ambiguous disables the
+// automatic path and falls back to the manual command block.
+function stelowRangeCoversCurrentLine(range: string): boolean {
+  const match = /^>=\s*(\d+)\.(\d+)/.exec(range.trim());
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major > 0 || minor >= 18;
+}
+
+async function checkStelowUpgrade() {
+  let cliPresent = true;
+  let bbVersion: string | null = null;
+  try {
+    bbVersion = (await runFile("bb", ["--version"])).trim() || null;
+  } catch {
+    cliPresent = false;
+  }
+  let marketplaceReady = false;
+  try {
+    const response = await fetch(STELOW_MARKETPLACE_V2_URL, { signal: AbortSignal.timeout(15_000) });
+    if (response.ok) {
+      const doc = (await response.json()) as {
+        plugins?: Array<{ id?: string; source?: { git?: { range?: string } } }>;
+      };
+      const entry = (doc.plugins ?? []).find((plugin) => plugin.id === "stelow");
+      const range = entry?.source?.git?.range;
+      marketplaceReady = typeof range === "string" && stelowRangeCoversCurrentLine(range);
+    }
+  } catch {
+    marketplaceReady = false;
+  }
+  let compatible = false;
+  try {
+    if (bbVersion !== null && bbVersion !== "0.0.0") {
+      const response = await fetch(
+        `https://raw.githubusercontent.com/calionauta/bb-plugin-stelow/${STELOW_CURRENT_LINE_TAG}/package.json`,
+        { signal: AbortSignal.timeout(15_000) },
+      );
+      if (response.ok) {
+        const pkg = (await response.json()) as { engines?: { bb?: string } };
+        const floor = pkg.engines?.bb;
+        compatible = typeof floor === "string" && versionAtLeast(bbVersion, floor);
+      }
+    } else {
+      compatible = true; // dev builds skip engine checks
+    }
+  } catch {
+    compatible = false;
+  }
+  const reason = !cliPresent
+    ? "cli-missing"
+    : !marketplaceReady
+      ? "marketplace-stale"
+      : !compatible
+        ? "bb-too-old"
+        : null;
+  return { ready: reason === null, reason, bbVersion };
+}
+
+function spawnDetachedStelowUpgrade(): void {
+  const home = process.env.HOME ?? "/tmp";
+  const logDir = nodeJoin(home, ".bb");
+  mkdirSync(logDir, { recursive: true });
+  const logFd = openSync(nodeJoin(logDir, STELOW_UPGRADE_LOG), "a");
+  try {
+    const child = spawn(
+      "sh",
+      [
+        "-c",
+        "sleep 1 && bb marketplace refresh bb-community 2>/dev/null || true; bb plugin remove stelow && bb plugin install stelow@bb-community --yes",
+      ],
+      { detached: true, stdio: ["ignore", logFd, logFd] },
+    );
+    child.unref();
+  } finally {
+    closeSync(logFd);
+  }
+}
+
   bb.rpc.register(rpcContract, {
     board: async ({ projectId }) => {
       const board = await loadBoard(bb, projectId);
@@ -2610,6 +2739,14 @@ async function archiveStelowWorkspaces(bb: BbPluginApi) {
     },
     async stelowCleanupArchive() {
       return archiveStelowWorkspaces(bb);
+    },
+    async stelowUpgradeStatus() {
+      return checkStelowUpgrade();
+    },
+    async stelowUpgradeNow() {
+      await archiveStelowWorkspaces(bb);
+      spawnDetachedStelowUpgrade();
+      return { started: true };
     },
     async boardWorkflowDefaults() {
       const stored = await bb.storage.kv.get<unknown>("board-workflow-defaults");

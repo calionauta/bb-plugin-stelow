@@ -1902,54 +1902,80 @@ type CleanupFound = { name: string; hostId: string | null; stelowPath: string; c
 function UpdateMigrationNotice() {
   const rpc = useRpc<typeof rpcContract>();
   const [open, setOpen] = useState(true);
-  const [phase, setPhase] = useState<"loading" | "preview" | "archiving" | "done" | "error">("loading");
+  const [phase, setPhase] = useState<"loading" | "preview" | "archiving" | "upgrading" | "done" | "error">("loading");
   const [found, setFound] = useState<CleanupFound[]>([]);
   const [detail, setDetail] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [upgrade, setUpgrade] = useState<{ ready: boolean; reason: string | null; bbVersion: string | null } | null>(null);
+
+  const errorMessage = (error: unknown): string =>
+    error instanceof Error ? error.message : String(error);
 
   useEffect(() => {
     let alive = true;
     rpc.call("stelowCleanupPreview", {})
-      .then((result) => {
-        if (!alive) return;
-        setFound(result.found);
-        setPhase("preview");
-      })
-      .catch((error: unknown) => {
-        if (!alive) return;
-        setDetail(error instanceof Error ? error.message : String(error));
-        setPhase("error");
-      });
+      .then((result) => { if (alive) { setFound(result.found); setPhase("preview"); } })
+      .catch((error: unknown) => { if (alive) { setDetail(errorMessage(error)); setPhase("error"); } });
+    rpc.call("stelowUpgradeStatus", {})
+      .then((status) => { if (alive) setUpgrade(status); })
+      .catch(() => { if (alive) setUpgrade(null); });
     return () => { alive = false; };
   }, [rpc]);
+
+  const copyCommand = async () => {
+    let copiedNow = false;
+    try {
+      await navigator.clipboard.writeText(STELOW_REINSTALL_COMMAND);
+      copiedNow = true;
+    } catch { /* clipboard unavailable — the command block below is selectable */ }
+    setCopied(copiedNow);
+  };
 
   const archive = async () => {
     setPhase("archiving");
     try {
       const result = await rpc.call("stelowCleanupArchive", {});
-      let copiedNow = false;
-      try {
-        await navigator.clipboard.writeText(STELOW_REINSTALL_COMMAND);
-        copiedNow = true;
-      } catch { /* clipboard unavailable — fall back to the command block below */ }
-      setCopied(copiedNow);
+      await copyCommand();
       if (result.skipped.length > 0) {
         setDetail(`${result.skipped.length} workspace${result.skipped.length === 1 ? "" : "s"} could not be archived: ${result.skipped.map((item) => item.reason).join("; ")}`);
-      } else if (result.archived.length > 0) {
-        setDetail(`archived ${result.archived.length === 1 ? "1 folder" : `${result.archived.length} folders`} as .stelow-0.3-backup.`);
+      } else {
+        setDetail("Your workspace folders were moved aside. The reinstall command is ready below.");
       }
       setPhase("done");
     } catch (error: unknown) {
-      setDetail(error instanceof Error ? error.message : String(error));
+      setDetail(errorMessage(error));
+      setPhase("error");
+    }
+  };
+
+  const upgradeNow = async () => {
+    setPhase("upgrading");
+    try {
+      await rpc.call("stelowUpgradeNow", {});
+      // The detached chain removes this plugin (and with it this UI) about a
+      // second after this returns, then reinstalls from the marketplace. The
+      // upgrading panel below is what the user sees in that window.
+    } catch (error: unknown) {
+      setDetail(errorMessage(error));
       setPhase("error");
     }
   };
 
   const projectsLine = found.length === 0
-    ? "No stale workspace data was found — you can reinstall right away."
+    ? "No stale workspace data was found — you can upgrade right away."
     : found.length === 1
       ? "This workspace holds preview data from the old line:"
       : `These ${found.length} workspaces hold preview data from the old line:`;
+
+  const upgradeBlockedText = upgrade === null
+    ? null
+    : upgrade.reason === "cli-missing"
+      ? "The bb CLI is not reachable from this machine, so the automatic upgrade can't run here. Use the manual commands below instead."
+      : upgrade.reason === "marketplace-stale"
+        ? "The store listing still points at the preview line, so an automatic upgrade would land you back on it. Try again in a few days — or use the manual commands below now."
+        : upgrade.reason === "bb-too-old"
+          ? `Your bb (${upgrade.bbVersion ?? "unknown"}) is older than the current line requires. Update bb first, then upgrade Stelow.`
+          : null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1962,7 +1988,7 @@ function UpdateMigrationNotice() {
         </DialogHeader>
 
         {phase === "loading" && (
-          <div className="text-sm text-muted-foreground">Looking for preview workspace data…</div>
+          <div className="text-sm text-muted-foreground">Looking at your workspace…</div>
         )}
 
         {phase === "preview" && (
@@ -1981,13 +2007,28 @@ function UpdateMigrationNotice() {
               </ul>
             )}
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Archiving moves each <code className="rounded bg-muted/60 px-1 py-0.5">.stelow</code> folder to <code className="rounded bg-muted/60 px-1 py-0.5">.stelow-0.3-backup</code> inside that project. Nothing is deleted; the current line starts clean.
+              Archiving moves each <code className="rounded bg-muted/60 px-1 py-0.5">.stelow</code> folder to <code className="rounded bg-muted/60 px-1 py-0.5">.stelow-0.3-backup</code> inside that project. Nothing is deleted; the current line starts clean. The upgrade removes this plugin and reinstalls it — Stelow will close and reopen on the current line.
             </p>
+            {upgradeBlockedText && (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">{upgradeBlockedText}</p>
+            )}
           </div>
         )}
 
         {phase === "archiving" && (
           <div className="text-sm text-muted-foreground">Archiving preview workspace data…</div>
+        )}
+
+        {phase === "upgrading" && (
+          <div className="grid gap-3">
+            <p className="text-sm text-muted-foreground">
+              Upgrade started. Stelow will close for a moment and reopen on the current line automatically.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              If it does not return within about a minute, run this in your terminal:
+            </p>
+            <pre className="select-all overflow-x-auto rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed">{STELOW_REINSTALL_COMMAND}</pre>
+          </div>
         )}
 
         {phase === "done" && (
@@ -2010,10 +2051,18 @@ function UpdateMigrationNotice() {
 
         <DialogFooter className="flex-wrap gap-2">
           {phase === "preview" && (
-            <Button onClick={() => void archive()} className="cursor-pointer">Archive &amp; copy reinstall command</Button>
+            <>
+              {upgrade?.ready === true && (
+                <Button onClick={() => void upgradeNow()} className="cursor-pointer">Upgrade automatically</Button>
+              )}
+              <Button onClick={() => void archive()} variant={upgrade?.ready === true ? "outline" : "default"} className="cursor-pointer">Archive &amp; copy command</Button>
+            </>
           )}
           {phase === "archiving" && (
             <Button disabled className="opacity-60">Archiving…</Button>
+          )}
+          {phase === "upgrading" && (
+            <Button disabled className="opacity-60">Upgrading…</Button>
           )}
           {phase === "done" && (
             <>
@@ -2033,7 +2082,6 @@ function UpdateMigrationNotice() {
     </Dialog>
   );
 }
-
 function StelowPanel({ subPath }: { subPath: string }) {
   const navigate = useBbNavigate();
   const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);
