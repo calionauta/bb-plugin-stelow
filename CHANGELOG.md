@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.24.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.23.2...v0.24.0) (2026-09-18)
+
+
+### Features
+
+* automation rules for GitHub-label drafts ([8011c7f](https://github.com/calionauta/bb-plugin-stelow/commit/8011c7f1b35de6b7303ae3e8c5e8f9c2a93ca93c))
+* child threads in worker history ([d4c2a52](https://github.com/calionauta/bb-plugin-stelow/commit/d4c2a5248c0791579d5da4ef3f6e7087e9ad76fc))
+* escalate long-stalled paused events with their age ([4cd56af](https://github.com/calionauta/bb-plugin-stelow/commit/4cd56af692d9569954b809f37500615d98ce6b96))
+* provider token totals on worker history rows ([4eaa544](https://github.com/calionauta/bb-plugin-stelow/commit/4eaa544d841cbf4d4ca369b9c464b79e10953251))
+* review gates as multi-select replacing the cumulative ladder ([a81171f](https://github.com/calionauta/bb-plugin-stelow/commit/a81171fbb9b44420f5ce660c01e72d68cb6838d3))
+
+
+### Bug Fixes
+
+* update copy branches on install source ([9a87748](https://github.com/calionauta/bb-plugin-stelow/commit/9a87748505432f66c9eb387a5b99a61d2a7a5ea2))
+* update-check copy covers both sources ([366729c](https://github.com/calionauta/bb-plugin-stelow/commit/366729c8667a6dc70099a2e9e9d2a087edc090ed))
+
 ## [0.23.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.23.1...v0.23.2) (2026-09-18)
 
 
