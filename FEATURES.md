@@ -472,7 +472,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Child threads.** Workers that fan work out to fresh BB child threads
   (same contract as subagents: fresh context, no sibling communication,
   one owned output file each) show each child under its worker row with
-  title, status, provider, and an Open link — the parent still owns
+  title, status, provider, per-child token total, and an Open link — the parent still owns
   synthesis. Threads without children render exactly as before.
 - **Preset-staleness detection.** Cards whose worker predates a preset
   change offer Restart instead of Resume.

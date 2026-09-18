@@ -67,7 +67,7 @@ import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome }
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents } from "./lib/token-usage.mjs";
-import { shapeChildThreads } from "./lib/thread-children.mjs";
+import { attachChildTokenUsage, shapeChildThreads } from "./lib/thread-children.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -428,7 +428,7 @@ export const rpcContract = defineRpcContract({
       splitAction: z.object({ show: z.boolean(), ok: z.boolean(), reason: z.string().nullable() }),
       stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
-      workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable() })) })),
+      workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable(), tokenUsage: z.number().nullable() })) })),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
       // exploratory workspaces, which live outside provisioned environments.
@@ -3127,10 +3127,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { return null; }
   }
 
-  async function workerChildThreads(threadId: string): Promise<Array<{ threadId: string; title: string | null; status: string; providerId: string | null }>> {
+  async function workerChildThreads(threadId: string): Promise<Array<{ threadId: string; title: string | null; status: string; providerId: string | null; tokenUsage: number | null }>> {
     try {
       const list = await bb.sdk.threads.list({ parentThreadId: threadId, limit: 10 });
-      return shapeChildThreads(list);
+      const children = shapeChildThreads(list);
+      if (children.length === 0) return [];
+      // Per-child cost: token events live on each child thread. One latest
+      // event per child, in parallel, fail-open — an unreadable child keeps
+      // a null total (unknown, never zero). Runs only when children exist,
+      // so the common childless detail load pays nothing extra.
+      const usages = await Promise.all(children.map(async (child) => {
+        try {
+          const events = await bb.sdk.threads.events.list({ threadId: child.threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
+          return [child.threadId, tokenUsageFromEvents(events)] as const;
+        } catch { return [child.threadId, null] as const; }
+      }));
+      return attachChildTokenUsage(children, Object.fromEntries(usages));
     } catch { return []; }
   }
 

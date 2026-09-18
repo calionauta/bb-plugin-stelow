@@ -5002,6 +5002,7 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
                       <span className="font-medium text-foreground">{child.title ?? child.threadId.slice(0, 12)}</span>
                       <span> · {child.status}</span>
                       {child.providerId ? <span> · {child.providerId}</span> : null}
+                      {formatTokenUsage(child.tokenUsage) ? <span title={`${child.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(child.tokenUsage)} tokens</span> : null}
                     </span>
                     <button onClick={() => navigate.toThread(child.threadId)} title="Open this child thread." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
                   </div>
