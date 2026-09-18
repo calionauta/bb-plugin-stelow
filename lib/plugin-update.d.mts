@@ -9,3 +9,13 @@ export declare function mapUpdateEntry(entry: unknown): {
 };
 export declare function shortRef(version: unknown, display: unknown): string | null;
 export declare function isPathInstall(display: unknown): boolean;
+export interface PluginUpdateVerdict {
+  outcome: "checking" | "unavailable" | "update-available" | "current" | "incompatible" | "pinned";
+  installed: string | null;
+  installedDisplay: string | null;
+  candidate: string | null;
+  candidateDisplay: string | null;
+  detail: string | null;
+  checkedAt: number | null;
+}
+export declare function applyFailedCheck(previous: PluginUpdateVerdict | null, reason: string, checkedAt?: number): PluginUpdateVerdict;

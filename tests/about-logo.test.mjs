@@ -55,6 +55,8 @@ assert.match(server, /bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: bb\.pluginId \
 assert.match(server, /async buildInfo\(\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*await refreshPluginUpdate\(\);/, "each UI read obtains a fresh BB-owned update status");
 assert.match(app, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
 assert.match(app, /Update plugin…/, "About offers an explicit, confirmed plugin update");
+assert.match(app, /APPLY_SETTLE_MS/, "applying timeboxes the quiet phase so “Updating…” can’t spin forever when the reload severs the RPC channel");
+assert.match(app, /showing the last known verdict/, "a failed fresh check keeps the last verdict visible instead of erasing it");
 assert.match(app, /Stelow plugin update available/, "sidebar exposes a separate update indicator");
 assert.match(app, /setSkillsOpen\(true\)/, "sync status opens the vendored-skills dialog");
 assert.match(app, /Vendored Stelow skills/, "dialog names the vendored skill inventory");

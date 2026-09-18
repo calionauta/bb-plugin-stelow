@@ -24,7 +24,7 @@ import { matchAutomationIssues } from "./lib/automation-rules.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "./lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
-import { mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
+import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
 import { discardConfirm, discardEligibility, discardTrail } from "./lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "./lib/github-release.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
@@ -1243,7 +1243,10 @@ export default async function plugin(bb: BbPluginApi) {
         }
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        pluginUpdate = { outcome: "unavailable", installed: null, installedDisplay: null, candidate: null, candidateDisplay: null, detail, checkedAt: Date.now() };
+        // A transient failure keeps the last known verdict (a real candidate
+        // button must not vanish on a network blip) — applyFailedCheck only
+        // falls back to "unavailable" when there was no verdict yet.
+        pluginUpdate = applyFailedCheck(pluginUpdate, detail);
         bb.log.warn(`plugin update check failed: ${detail}`);
       } finally {
         updateCheckAt = Date.now();

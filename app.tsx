@@ -1894,6 +1894,7 @@ function PluginUpdateStatus({ version, update, github, confirming, updating, che
         )
       ) : null}
       {update.outcome === "update-available" ? <p>Stelow reloads afterwards.</p> : null}
+      {update.outcome === "update-available" && update.detail ? <p>{update.detail} — showing the last known verdict; Check update retries.</p> : null}
       {unmanaged && update.detail ? <p>{update.detail}</p> : null}
       {unmanaged && !update.detail && pathInstall ? <p>BB reports this install as not updatable through BB itself — local checkouts update with git pull, rebuild, and reload. “Check update” refreshes BB’s verdict and the GitHub release lookup together.</p> : null}
       {unmanaged && !update.detail && !pathInstall ? <p>BB can’t apply an update to this install automatically right now. “Check update” re-checks; new releases appear here once BB can apply them.</p> : null}
@@ -1991,25 +1992,41 @@ function AboutPanel() {
   }
   function applyPluginUpdate() {
     setUpdatingPlugin(true); setPluginUpdateError(null);
-    // Applying swaps the server bundle and reloads the plugin, so a failed
-    // follow-up read means "reloading", not "failed" — say so honestly.
+    // Applying swaps the server bundle and reloads the plugin. That reload can
+    // sever the RPC channel mid-call, leaving the promise pending forever (no
+    // resolve, no reject) — so timebox the quiet phase and, if nothing settles,
+    // say the reload is happening instead of spinning on "Updating…" with no
+    // verdict. A clean apply that never settles only does so because the
+    // reload cut the channel, so the reloading message is the honest one.
+    const APPLY_SETTLE_MS = 15_000;
+    let settled = false;
+    const settle = () => { if (settled) return; settled = true; setUpdatingPlugin(false); setConfirmPluginUpdate(false); };
+    const timer = window.setTimeout(() => {
+      setPluginUpdateError("Update applied — Stelow is reloading; the new version appears shortly.");
+      settle(); // the caller's component may have unmounted with the reload; a late settle is a no-op
+    }, APPLY_SETTLE_MS);
     let applied = false;
     void rpc.call("applyPluginUpdate", {}).then((result) => {
+      window.clearTimeout(timer);
       applied = result.applied;
       if (!result.applied) {
         setPluginUpdateError(result.detail ?? "BB did not apply an update.");
-        return null;
+        settle();
+        return;
       }
       toast.success(`Plugin updated to ${shortRef(result.to, null) ?? "the latest compatible version"}.`);
-      return rpc.call("buildInfo", {});
-    }).then((info) => {
-      if (info) setBuildInfo(info);
-      else if (applied) setPluginUpdateError("Update applied — Stelow is reloading; the new version appears shortly.");
+      return rpc.call("buildInfo", {}).then((info) => {
+        if (info) setBuildInfo(info);
+        else setPluginUpdateError("Update applied — Stelow is reloading; the new version appears shortly.");
+        settle();
+      });
     }).catch((error) => {
+      window.clearTimeout(timer);
       setPluginUpdateError(applied
         ? "Update applied — Stelow is reloading; the new version appears shortly."
         : error instanceof Error ? error.message : "Plugin update failed.");
-    }).finally(() => { setUpdatingPlugin(false); setConfirmPluginUpdate(false); });
+      settle();
+    });
   }
   function recheckPluginUpdate() {
     setCheckingPluginUpdate(true); setPluginUpdateError(null); setConfirmPluginUpdate(false);

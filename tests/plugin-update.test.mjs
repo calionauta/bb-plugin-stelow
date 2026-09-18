@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mapUpdateEntry, selectOwnEntry, shortRef, isPathInstall } from "../lib/plugin-update.mjs";
+import { mapUpdateEntry, selectOwnEntry, shortRef, isPathInstall, applyFailedCheck } from "../lib/plugin-update.mjs";
 
 const own = {
   id: "stelow",
@@ -48,4 +48,22 @@ assert.equal(isPathInstall("https://github.com/calionauta/bb-plugin-stelow.git@v
 assert.equal(isPathInstall("bb-plugin-auto-archive@0.1.4"), false, "registry installs are BB-managed");
 assert.equal(isPathInstall(null), false, "missing display is not a path install");
 
-console.log("plugin update test ok: entry select, map, shortRef, install source");
+// A failed refresh keeps the last known verdict; it must never hide a real
+// candidate on a transient network blip (the update button disappeared in
+// the field while a release was pending).
+const verdict = { outcome: "update-available", installed: "v0.25.0", installedDisplay: "x@v0.25.0", candidate: "v0.26.0", candidateDisplay: "x@v0.26.0", detail: null, checkedAt: 100 };
+const failed = applyFailedCheck(verdict, "fetch failed", 200);
+assert.equal(failed.outcome, "update-available", "a known candidate survives a failed refresh");
+assert.equal(failed.candidate, "v0.26.0", "candidate fields are preserved verbatim");
+assert.equal(failed.detail, "Update check failed: fetch failed", "failure names itself in the detail");
+assert.equal(failed.checkedAt, 200, "the failed attempt still stamps its check time");
+
+const noVerdict = applyFailedCheck({ outcome: "checking" }, "fetch failed");
+assert.equal(noVerdict.outcome, "unavailable", "no previous verdict falls back to unavailable, not a lie");
+assert.equal(noVerdict.candidate, null, "no candidate is invented for an unknown state");
+
+const currentVerdict = applyFailedCheck({ outcome: "current", installed: "v0.25.0", installedDisplay: "x@v0.25.0", candidate: null, candidateDisplay: null, detail: null, checkedAt: 100 }, "fetch failed", 300);
+assert.equal(currentVerdict.outcome, "current", "a previous freshness verdict is kept with the failure note");
+assert.equal(currentVerdict.detail, "Update check failed: fetch failed", "failure detail survives on kept verdicts too");
+
+console.log("plugin update test ok: entry select, map, shortRef, install source, failed-check merge");
