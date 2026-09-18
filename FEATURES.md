@@ -462,6 +462,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
   Every worker thread recorded; mirrored into the workflow's own
   `stelow.json` so history survives plugin DB loss.
+- **Provider token usage.** Each worker-history row shows BB's latest
+  provider-reported token total when available. Missing provider data stays
+  hidden rather than presenting a misleading zero or an estimate.
 - **Preset-staleness detection.** Cards whose worker predates a preset
   change offer Restart instead of Resume.
 - **Archive card** (`cancelCard`). Stops + archives the worker; history

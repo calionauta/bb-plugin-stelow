@@ -39,6 +39,7 @@ import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
+import { formatTokenUsage } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill } from "./components/dashboard/build-status-pills";
 import type { PreviewInfo, rpcContract } from "./server";
@@ -4938,6 +4939,7 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
               <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
               {entry.presetName ? <span> · {entry.presetName}</span> : null}
+              {formatTokenUsage(entry.tokenUsage) ? <span title={`${entry.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(entry.tokenUsage)} tokens</span> : null}
               <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
             </span>
             <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
