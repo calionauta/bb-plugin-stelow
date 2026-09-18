@@ -36,6 +36,7 @@ import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStat
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
+import { validateSubstep } from "./lib/artifact-validation.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
@@ -3050,7 +3051,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // missing/mirrored/thin round or substep is NOT done — the card stays open
   // and each invalid item surfaces as an inbox error naming what to re-run.
   // The worker prompt states this contract; this function is what makes it true.
-  async function researchRoundIntegrity(card: CardRow): Promise<Array<{ n: number; label: string; slug?: string; reason?: string }>> {
+  async function researchRoundIntegrity(card: CardRow): Promise<Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }>> {
     const workspace = await cardWorkspace(card);
     if (!workspace?.path || !card.dir_hash) return [];
     const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
@@ -3095,7 +3096,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     for (const sub of substeps) {
       await readAndCache(sub.path);
     }
-    invalid.push(...findInvalidSubsteps(substeps, (path) => contents.get(path) ?? null, indexBlob));
+    invalid.push(...findInvalidSubsteps(
+      substeps,
+      (path) => contents.get(path) ?? null,
+      indexBlob,
+      (slug, content) => validateSubstep(slug, content).failures.map((failure) => failure.detail),
+    ));
     return invalid;
   }
 

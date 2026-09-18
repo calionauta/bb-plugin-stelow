@@ -760,7 +760,11 @@ investigation that feeds the build board.*
   (`findInvalidSubsteps` over the history–manifest join); an index with an
   invalid round or substep is not Done — each invalid item surfaces as an
   inbox error and a `verify` FAIL line naming the file, the slug, and the
-  reason (missing, thin, or mirrors the index). The worker prompt states
+  reason (missing, thin, mirrors the index, or needs-depth with
+  expected-vs-found counts). Depth minima live in owned
+  `lib/artifact-contracts.mjs` (mirroring each upstream prompt's
+  Completeness contract) and run through `lib/artifact-validation.mjs` —
+  a short file with the right filename no longer passes. The worker prompt states
   the contract; the sync is what makes it true. Broad Full Mapping requests
   scope first (Targeted vs Full vs Recommend via `bb stelow ask`); workers
   write the playbook's full result verbatim, never a condensed summary.
