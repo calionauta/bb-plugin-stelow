@@ -1972,7 +1972,7 @@ function UpdateMigrationNotice() {
     : upgrade.reason === "cli-missing"
       ? "The bb CLI is not reachable from this machine, so the automatic upgrade can't run here. Use the manual commands below instead."
       : upgrade.reason === "marketplace-stale"
-        ? "The store listing still points at the preview line, so an automatic upgrade would land you back on it. Try again in a few days — or use the manual commands below now."
+        ? "The store listing still points at the preview line, so reinstalling now would land you back on it. Wait for the listing to update (usually a few days), then upgrade here — or run the commands below once it has."
         : upgrade.reason === "bb-too-old"
           ? `Your bb (${upgrade.bbVersion ?? "unknown"}) is older than the current line requires. Update bb first, then upgrade Stelow.`
           : null;
