@@ -2081,7 +2081,7 @@ function UpdateMigrationNotice() {
               {autoReady && (
                 <Button onClick={() => void upgradeNow()} className="cursor-pointer">Upgrade automatically</Button>
               )}
-              <Button onClick={() => void archive()} variant={autoReady ? "outline" : "default"} className="cursor-pointer">Archive &amp; copy command</Button>
+              <Button onClick={() => void archive()} variant={autoReady ? "outline" : "default"} className="cursor-pointer">Archive &amp; do it manually</Button>
               {autoReady && (
                 <Button variant="ghost" onClick={() => setShowManual((current) => !current)} className="cursor-pointer text-xs">
                   {showManual ? "hide commands" : "show commands"}
