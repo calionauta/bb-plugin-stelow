@@ -181,6 +181,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   and Explore each open a setup dialog once (localStorage) about agent
   presets — what they decide, band defaults, per-card pins. Build adds a
   second step for Planning depth + your review gates as board defaults.
+  Every track ends on a Stay in touch step: report a bug or idea through
+  the plugin repo, optionally follow along on X and LinkedIn.
   Preset setup counts across tracks: configuring on one tab silences the
   others (Build still opens into its defaults step). Opening Agent
   Presets never dismisses the setup dialog underneath.

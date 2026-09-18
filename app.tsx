@@ -42,6 +42,7 @@ import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.m
 import { formatTokenUsage } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill } from "./components/dashboard/build-status-pills";
+import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -3792,6 +3793,59 @@ const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "",
 // storageKey so it shows exactly once. All panels stay mounted for
 // keep-alive, so the dialog opens only while its own track is active —
 // otherwise first visit would stack three dialogs at once.
+function onboardingTotal(hasSecond: boolean) {
+  return hasSecond ? 3 : 2;
+}
+
+function PresetOnboardingBody({ step, total, secondBody, children }: {
+  step: number;
+  total: number;
+  secondBody?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  if (step === total - 1) return <StayInTouchStep />;
+  if (step === 1 && secondBody) return <>{secondBody}</>;
+  return (
+    <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
+      <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>
+      {children}
+    </div>
+  );
+}
+
+function PresetOnboardingFooter({ step, total, hasSecond, onOpenPresets, onNext, onBack, onDone }: {
+  step: number;
+  total: number;
+  hasSecond: boolean;
+  onOpenPresets: () => void;
+  onNext: () => void;
+  onBack: () => void;
+  onDone: () => void;
+}) {
+  if (step === total - 1) {
+    return (
+      <>
+        <Button variant="outline" onClick={onBack}>Back</Button>
+        <Button onClick={onDone}>Done</Button>
+      </>
+    );
+  }
+  if (step === 0) {
+    return (
+      <>
+        <Button variant="outline" onClick={onOpenPresets}>Open Agent Presets</Button>
+        {hasSecond || total > 1 ? <Button onClick={onNext}>Next</Button> : <Button onClick={onDone}>Got it</Button>}
+      </>
+    );
+  }
+  return (
+    <>
+      <Button variant="outline" onClick={onBack}>Back</Button>
+      <Button onClick={onNext}>Next</Button>
+    </>
+  );
+}
+
 function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPresets, active, secondTitle, secondBody }: {
   storageKey: string;
   title: string;
@@ -3805,11 +3859,13 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
   const [open, setOpen] = useState<boolean>(false);
   const [step, setStep] = useState(0);
   // When the shared presets step was already acknowledged on another track,
-  // the dialog opens straight at the second panel — a "Step 2 of 2" counter
+  // the dialog opens straight at the second panel — the step counter
   // would reference a step the user never saw, so it stays hidden.
   const [singleStep, setSingleStep] = useState(false);
-  function showStep(next: 0 | 1, single: boolean) { setStep(next); setSingleStep(single); }
+  function showStep(next: number, single: boolean) { setStep(next); setSingleStep(single); }
   const hasSecond = !!secondTitle;
+  const total = onboardingTotal(hasSecond);
+  const lastStep = total - 1;
   // Shared presets onboarding: configuring (or acknowledging) presets on
   // any track counts for all tracks — Research/Explore stay silent, Build
   // still opens straight into its defaults step.
@@ -3841,28 +3897,21 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
     <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
-          <DialogDescription>{step === 1 ? "Defaults new cards start from." : intro}</DialogDescription>
+          <DialogTitle>{step === lastStep ? "Stay in touch" : step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
+          <DialogDescription>{step === lastStep ? "Feedback and follow-ups." : step === 1 && secondTitle ? "Defaults new cards start from." : intro}</DialogDescription>
         </DialogHeader>
-        {hasSecond && !singleStep ? <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of 2</p> : null}
-        {step === 1 && secondBody ? secondBody : (
-          <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
-            <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>
-            {children}
-          </div>
-        )}
+        {!singleStep && total > 1 ? <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of {total}</p> : null}
+        <PresetOnboardingBody step={step} total={total} secondBody={secondBody}>{children}</PresetOnboardingBody>
         <DialogFooter>
-          {step === 0 ? (
-            <>
-              <Button variant="outline" onClick={() => { markSharedDone(); onOpenPresets(); }}>Open Agent Presets</Button>
-              {hasSecond ? <Button onClick={() => setStep(1)}>Next</Button> : <Button onClick={dismiss}>Got it</Button>}
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={() => setStep(0)}>Back</Button>
-              <Button onClick={dismiss}>Done</Button>
-            </>
-          )}
+          <PresetOnboardingFooter
+            step={step}
+            total={total}
+            hasSecond={hasSecond}
+            onOpenPresets={() => { markSharedDone(); onOpenPresets(); }}
+            onNext={() => setStep(step + 1)}
+            onBack={() => setStep(step - 1)}
+            onDone={dismiss}
+          />
         </DialogFooter>
       </DialogContent>
     </Dialog>
