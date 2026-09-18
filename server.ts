@@ -13,7 +13,9 @@ import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, refreshStalledPaused, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
-import { acquireWorkspaceClaims, addClaimWaiters, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
+import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
+import { isClaimTerminal } from "./lib/card-terminal.mjs";
+import { resolveClaimKey } from "./lib/card-claim-key.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
@@ -3525,7 +3527,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // and the waiter row lets the host resume exactly the blocked cards when
   // the files free up. Advisory-plus-apology: a stale claim is stolen, and
   // the steal is trailed on the card instead of blocking work.
-  const CLAIM_TTL_MS = 30 * 60 * 1000;
   function lockBlockedSummary(file: string, holderName: string, expiresAt: number): string {
     const when = new Date(expiresAt).toLocaleString();
     return `Waiting on ${file} (held by card "${holderName}"). Releases automatically when that card finishes the file or by ${when} — no action needed; the host resumes this card on release.`;
@@ -3542,7 +3543,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (seen.has(waiter.card_id)) continue;
       seen.add(waiter.card_id);
       const waiting = getCard(waiter.card_id);
-      if (!waiting || isArchivedCard(waiting)) {
+      if (!waiting || isClaimTerminal(waiting.status)) {
         try { clearClaimWaiters(db, { cardId: waiter.card_id }); } catch { /* advisory */ }
         continue;
       }
@@ -4030,11 +4031,31 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { /* db closed during reload; next tick retries */ }
     // Expired workspace claims are crashed workers that never released:
     // reap them here and wake exactly the cards that waited on each file.
+    // Claims held by terminal-status cards are dead weight too (a terminal
+    // card must hold nothing): reap them on the same path so legacy rows
+    // and future terminal writes never park files hostage.
     try {
       const reaped = sweepExpiredClaims(db, Date.now());
       if (reaped.length > 0) {
         const byWorkspace = new Map<string, string[]>();
         for (const row of reaped) {
+          const list = byWorkspace.get(row.workspacePath) ?? [];
+          list.push(row.file);
+          byWorkspace.set(row.workspacePath, list);
+        }
+        for (const [workspacePath, files] of byWorkspace) void notifyClaimWaiters(workspacePath, files);
+      }
+    } catch { /* advisory; next tick retries */ }
+    try {
+      const holders = db.prepare("SELECT id, status FROM cards").all() as Array<{ id: string; status: string }>;
+      for (const holder of holders) {
+        if (!isClaimTerminal(holder.status)) continue;
+        let released: Array<{ workspacePath: string; file: string }> = [];
+        try { released = releaseAllCardClaims(db, holder.id); } catch { continue; }
+        try { clearClaimWaiters(db, { cardId: holder.id }); } catch { /* advisory */ }
+        if (released.length === 0) continue;
+        const byWorkspace = new Map<string, string[]>();
+        for (const row of released) {
           const list = byWorkspace.get(row.workspacePath) ?? [];
           list.push(row.file);
           byWorkspace.set(row.workspacePath, list);
@@ -4420,7 +4441,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // human right now?", plus the reason (kind) that decides the primary
         // action (answer / inspect / retake). A terminal completion is not a
         // request for human action; idle-stuck, question and error are.
-        const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(row.status));
+        const termStatus = isClaimTerminal(row.status);
         // Idle-stuck uses last_idle_at when present (set on transition into
         // idle), falling back to updated_at as the idle-onset proxy so cards
         // without the timestamp still surface instead of staying invisible.
@@ -4673,7 +4694,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Surface pending stelow ask interactions regardless of the stored activity:
       // an ask parks the card awaiting an answer even when the thread is idle.
       const effectiveActivity = (card.activity === "error" ? "error" : pending.length > 0 || expiredQuestions.length > 0 ? "awaiting-answer" : card.activity as "idle" | "running" | "awaiting-answer" | "error");
-      const termStatus = ["completed", "archived", "blocked"].includes(normalizeStatus(card.status));
+      const termStatus = isClaimTerminal(card.status);
       const idleAt = (card.last_idle_at && card.last_idle_at > 0) ? card.last_idle_at : card.updated_at;
       const idleCandidate = effectiveActivity === "idle"
         && card.worker_thread_id !== null
@@ -5146,7 +5167,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         updateCard(cardId, { status: decision.move.status as "draft" | "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
         // Terminal columns release workspace claims so parked cards never
         // hold files hostage; waiters are notified on the same path.
-        if (decision.move.status === "archived" || decision.move.status === "completed") await releaseCardClaimsAndNotify(cardId);
+        if (isClaimTerminal(decision.move.status)) await releaseCardClaimsAndNotify(cardId);
         return { ok: true, error: null };
       }
       // A phase move sets the card's stage to that phase's entry stage
@@ -6892,10 +6913,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const result = await runHelper(["lock", op, ...rest], rootPath, stateDir ?? undefined);
         // Workspace-level claim registry (lib/card-claims): the helper lock
         // is per-card (invisible to sibling cards); the registry below is
-        // per-workspace so concurrent cards on one checkout coordinate
-        // through the host. Host/UI callers without a card context keep the
-        // helper behavior unchanged.
-        if (cliCard && rootPath) {
+        // keyed by the checkout the worker actually writes to
+        // (lib/card-claim-key), so cards isolated in their own worktrees do
+        // not falsely serialize. Host/UI callers without a card context keep
+        // the helper behavior unchanged.
+        // State dir and helper cwd stay on the source: state ≠ execution.
+        const claimRoot = cliCard && rootPath
+          ? (resolveClaimKey({ checkoutPath: (await cardCheckout(cliCard).catch(() => null))?.path ?? null, sourcePath: rootPath }) ?? rootPath)
+          : rootPath;
+        if (cliCard && claimRoot) {
           const scopeIndex = rest.indexOf("--scope");
           const claimScope = scopeIndex >= 0 ? (rest[scopeIndex + 1] ?? null) : null;
           const claimFiles: string[] = [];
@@ -6907,31 +6933,31 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (op === "acquire") {
             let outcome: { acquired: Array<{ file: string; fencing: number }>; renewed: Array<{ file: string }>; stolen: Array<{ file: string; previousHolder: string; fencing: number }>; conflicts: Array<{ file: string; heldBy: string; heldScope: string | null; expiresAt: number }> } | null = null;
             try {
-              outcome = acquireWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles, scope: claimScope, ttlMs: CLAIM_TTL_MS, nowMs: at });
+              outcome = acquireWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: claimRoot, files: claimFiles, scope: claimScope, ttlMs: CLAIM_TTL_MS, nowMs: at });
             } catch { /* advisory: helper lock already decided */ }
             if (outcome) {
               for (const steal of outcome.stolen) {
                 logCardComment(cliCard.id, "card", cliCard.id, "agent", `Stole expired workspace claim on ${steal.file} (previous holder card ${steal.previousHolder}) — its lease lapsed, so work continues; the previous holder re-acquires if still live.`);
               }
-              // Claims left by archived/gone cards are dead weight: reap and
+              // Claims left by terminal/gone cards are dead weight: reap and
               // re-acquire instead of parking a live card behind a ghost.
               const dead = outcome.conflicts.filter((entry) => {
                 const holder = getCard(entry.heldBy);
-                return !holder || isArchivedCard(holder);
+                return !holder || isClaimTerminal(holder.status);
               });
               if (dead.length > 0) {
                 try {
                   const del = db.prepare("DELETE FROM card_claims WHERE workspace_path = ? AND file_path = ? AND card_id = ?");
-                  for (const entry of dead) del.run(rootPath, entry.file, entry.heldBy);
-                  outcome = acquireWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles, scope: claimScope, ttlMs: CLAIM_TTL_MS, nowMs: at });
+                  for (const entry of dead) del.run(claimRoot, entry.file, entry.heldBy);
+                  outcome = acquireWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: claimRoot, files: claimFiles, scope: claimScope, ttlMs: CLAIM_TTL_MS, nowMs: at });
                 } catch { /* advisory */ }
               }
               const live = outcome.conflicts.filter((entry) => {
                 const holder = getCard(entry.heldBy);
-                return holder && !isArchivedCard(holder);
+                return holder !== undefined && !isClaimTerminal(holder.status);
               });
               if (live.length > 0) {
-                try { addClaimWaiters(db, { cardId: cliCard.id, workspacePath: rootPath, files: live.map((entry) => entry.file), scope: claimScope, nowMs: at }); } catch { /* advisory */ }
+                try { addClaimWaiters(db, { cardId: cliCard.id, workspacePath: claimRoot, files: live.map((entry) => entry.file), scope: claimScope, nowMs: at }); } catch { /* advisory */ }
                 for (const entry of live) {
                   const holder = getCard(entry.heldBy);
                   recordInboxEvent(cliCard, "paused", lockBlockedSummary(entry.file, holder?.display_name ?? holder?.name ?? entry.heldBy, entry.expiresAt), `lock-blocked:${cliCard.id}:${entry.file}`, at);
@@ -6946,17 +6972,17 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             }
           } else if (op === "release") {
             let released: Array<{ workspacePath: string; file: string }> = [];
-            try { released = releaseWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles }); } catch { /* advisory */ }
-            if (released.length > 0) await notifyClaimWaiters(rootPath, released.map((row) => row.file));
+            try { released = releaseWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: claimRoot, files: claimFiles }); } catch { /* advisory */ }
+            if (released.length > 0) await notifyClaimWaiters(claimRoot, released.map((row) => row.file));
           } else {
             // check doubles as a lease heartbeat for the caller's own
             // claims; cross-card walls ride on stderr so --json stdout
             // stays parseable.
             let seen: { free: string[]; conflicts: Array<{ file: string; heldBy: string; expiresAt: number }> } | null = null;
-            try { seen = checkWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: rootPath, files: claimFiles, ttlMs: CLAIM_TTL_MS, nowMs: at }); } catch { /* advisory */ }
+            try { seen = checkWorkspaceClaims(db, { cardId: cliCard.id, workspacePath: claimRoot, files: claimFiles, ttlMs: CLAIM_TTL_MS, nowMs: at }); } catch { /* advisory */ }
             const liveWalls = (seen?.conflicts ?? []).filter((entry) => {
               const holder = getCard(entry.heldBy);
-              return holder && !isArchivedCard(holder);
+              return holder !== undefined && !isClaimTerminal(holder.status);
             });
             if (liveWalls.length > 0) {
               const lines = liveWalls.map((entry) => `BB-LOCK-WALL file=${entry.file} heldBy=${entry.heldBy} expiresAt=${new Date(entry.expiresAt).toISOString()}`);
