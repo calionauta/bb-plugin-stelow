@@ -69,9 +69,18 @@ Remaining known gaps (accepted, not fixed):
 - Voluntary compliance upstream (no `TARGET_FILES` in prod) — methodology
   decision, owned by stelow repo, listed under Upstream mirror below.
 
-## Upstream mirror (separate commit in stelow checkout — NOT DONE)
-- [ ] blueprint §2 edit: "key claims by effective checkout, not project source"
-- [ ] voluntary-compliance decision belongs upstream (`scope-executor`)
+## Upstream mirror — DONE 2026-09-18
+- [x] blueprint §2 edit in stelow checkout: commit `5e0b656`
+  (`docs: blueprint terminal release covers blocked, claims keyed by
+  effective checkout`). Precedent `bd09375` confirms `docs:` for blueprint sync.
+- [ ] voluntary-compliance decision belongs upstream (`scope-executor`) —
+  product decision, needs human, not implementable unilaterally.
+
+## Ship status (local commits only — NOT PUSHED)
+- Plugin: `442118f` refactor, `fa580c8` fix, `9da61a9` docs (this file).
+- Stelow: `5e0b656` docs.
+- [ ] human: review, `git push`, `npm run build:reload` + `grep dist/`
+  (needs live BB; daemon runs on server.calionauta.com).
 
 ## Decision log
 - `isClaimTerminal` lives in new `lib/card-terminal.mjs` (not
