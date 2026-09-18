@@ -803,7 +803,18 @@ one input, one artifact.*
   `explore-<stage>.md` at spawn (reseed re-creates it after wiping);
   Done requires real substance in that file, fingerprinted per content
   so restarts earn a fresh completion event. Thin/missing artifacts
-  idle as unfinished, never as Done.
+  idle as unfinished, never as Done. Present files must also meet
+  their stage contract (`EXPLORE_CONTRACTS`: Shape Up frontmatter +
+  four sections, interface 8 sections, tech-plan scopes + task table,
+  critiques five sections, testing-strategy tables + gates, execution
+  critique registry + decision) — failures surface as `verify` FAIL
+  lines and inbox errors naming the missing depth.
+- **Build document depth** (`buildDocDepths`, `contractForBuildArtifact`).
+  At `done`, recognized workflow documents registered in `state.md`
+  (spec-product, spec-tech, interfaces, testing-strategy, critique
+  reports) are validated against the same stage contracts; audit.md,
+  receipts, and unknown files never block. Only a matched document
+  that fails depth refuses `done`, with file + expected-vs-found.
 - **Shared machinery.** Board column components, list view, status
   pill, hero, questions, presets, retry/restart/reseed, worker
   history, inbox, and realtime reuse the Research definitions

@@ -25,3 +25,14 @@ export interface StrategyContract {
 
 export declare const STRATEGY_CONTRACTS: StrategyContract[];
 export declare function contractForStrategy(id: unknown): StrategyContract | null;
+
+export interface ExploreContract {
+  id: string;
+  ref: string;
+  minWords?: number;
+  checks?: ArtifactCheck[];
+}
+
+export declare const EXPLORE_CONTRACTS: ExploreContract[];
+export declare function contractForExplore(stageId: unknown): ExploreContract | null;
+export declare function contractForBuildArtifact(filePath: unknown, content: unknown): ExploreContract | null;

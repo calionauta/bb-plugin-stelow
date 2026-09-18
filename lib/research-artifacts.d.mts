@@ -28,5 +28,6 @@ export declare function exploreVerifyReport(
   cardId: string,
   stage: string | null,
   ready: boolean,
-): { card: string; kind: "explore"; stage: string | null; pass: boolean };
-export declare function exploreVerifyText(report: { card: string; stage: string | null; pass: boolean }): { exitCode: number; stdout?: string; stderr?: string };
+  failures?: string[],
+): { card: string; kind: "explore"; stage: string | null; pass: boolean; failures: string[] };
+export declare function exploreVerifyText(report: { card: string; stage: string | null; pass: boolean; failures?: string[] }): { exitCode: number; stdout?: string; stderr?: string };

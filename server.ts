@@ -36,7 +36,7 @@ import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStat
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
-import { validateSubstep, validateVariant } from "./lib/artifact-validation.mjs";
+import { validateSubstep, validateVariant, validateExplore, buildDocDepths } from "./lib/artifact-validation.mjs";
 import { contractForStrategy } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -3419,7 +3419,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         if (questionIds.length > 0) {
           updateCard(card.id, questionWaitUpdates(lastOutput));
         } else {
-          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
+          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null, failures: [] as string[] }));
           const completing = artifact.ready && card.status !== "completed";
           if (completing) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
@@ -3431,8 +3431,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { activity: "idle", last_assistant_text: lastOutput, last_idle_at: idleAt });
             const current = getCard(card.id);
-            if (current && current.status !== "archived" && current.status !== "completed" && idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
-              recordInboxEvent(current, "paused", "Idle with unfinished explore — retry continues in place, restart begins fresh.", `paused:${card.id}:${idleAt}`, idleAt);
+            if (current && current.status !== "archived" && current.status !== "completed") {
+              if (artifact.failures.length > 0) {
+                recordInboxEvent(current, "error", `Explore ${card.explore_stage} needs depth — ${artifact.failures.join("; ")} — rewrite it, then run verify again.`, `explore-invalid:${card.id}`, now());
+              }
+              if (idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
+                recordInboxEvent(current, "paused", "Idle with unfinished explore — retry continues in place, restart begins fresh.", `paused:${card.id}:${idleAt}`, idleAt);
+              }
             }
           }
         }
@@ -3449,16 +3454,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // The stage's artifact file with real content: the deterministic completion
   // signal for an explore card (lib/research-artifacts: same substance rule
   // as research rounds, minus the index mirror). A missing/thin file means
-  // the stage skill has not produced its deliverable yet.
-  async function exploreArtifact(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null }> {
+  // the stage skill has not produced its deliverable yet; a present file
+  // must also meet its stage contract (lib/artifact-contracts).
+  async function exploreArtifact(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null; failures: string[] }> {
     const workspace = await cardWorkspace(card);
-    if (!workspace?.path || !card.dir_hash || !card.explore_stage) return { ready: false, fingerprint: null };
+    if (!workspace?.path || !card.dir_hash || !card.explore_stage) return { ready: false, fingerprint: null, failures: [] };
     const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
-    if (!stateDir) return { ready: false, fingerprint: null };
+    if (!stateDir) return { ready: false, fingerprint: null, failures: [] };
     const full = join(stateDir, exploreArtifactFile(card.explore_stage));
     const content = await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null);
-    if (!isValidExploreContent(content)) return { ready: false, fingerprint: null };
-    return { ready: true, fingerprint: shortFingerprint(content as string) };
+    if (!isValidExploreContent(content)) return { ready: false, fingerprint: null, failures: [] };
+    const failures = validateExplore(card.explore_stage, content).failures.map((failure) => failure.detail).slice(0, 3);
+    if (failures.length > 0) return { ready: false, fingerprint: null, failures };
+    return { ready: true, fingerprint: shortFingerprint(content as string), failures: [] };
   }
 
   // Mirror the card_threads ledger into the workflow's own stelow.json
@@ -6659,6 +6667,25 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (checkout?.path && (!gitEvidence?.isGit || !gitEvidence.gitRoot || !gitEvidence.headSha)) {
             return { exitCode: 1, stderr: "Build completion is blocked: the execution checkout no longer has verifiable Git root and HEAD evidence. Restore the intended checkout, re-run audit, then run done." };
           }
+          // Recognized workflow documents (spec-product, spec-tech, interfaces,
+          // testing-strategy, critique reports) must meet their stage contract
+          // (lib/artifact-contracts): unknown files, audit.md, and receipts
+          // never block — only a matched document that fails depth does.
+          if (projectPath && doneStateDir && stateBlob) {
+            const contents = new Map<string, string | null>();
+            for (const fields of parseArtifactManifest(stateBlob)) {
+              if (typeof fields.path !== "string" || !fields.path.endsWith(".md")) continue;
+              const full = resolveArtifactPath(projectPath, fields.path);
+              contents.set(fields.path, full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null);
+            }
+            const shallow = buildDocDepths(stateBlob, (path) => contents.get(path) ?? null);
+            if (shallow.length > 0) {
+              return {
+                exitCode: 1,
+                stderr: shallow.map((doc) => `FAIL ${doc.label} (${doc.path}): needs depth — ${doc.failures.join("; ")} — rewrite it, then run done again.`).join("\n"),
+              };
+            }
+          }
           const verificationRun = db.prepare("SELECT command, git_root, head_sha, exit_code FROM verification_runs WHERE card_id = ? ORDER BY created_at DESC LIMIT 1").get(cardId) as { command: string; git_root: string; head_sha: string; exit_code: number } | undefined;
           const verification = verificationReadiness(verificationRun, gitEvidence);
           if (!verification.ready) return { exitCode: 1, stderr: verification.error };
@@ -6710,8 +6737,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (card.kind === "explore") {
           const refusal = doneEligibility({ kind: "explore", stage: null, questionPending: pending.length > 0 });
           if (refusal) return { exitCode: 1, stderr: refusal };
-          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
-          const report = exploreVerifyReport(cardId, card.explore_stage, artifact.ready);
+          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null, failures: [] as string[] }));
+          const report = exploreVerifyReport(cardId, card.explore_stage, artifact.ready, artifact.failures);
           if (!report.pass) {
             const textOut = exploreVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the artifact above, then run done again." };
@@ -7167,8 +7194,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { exitCode: text.exitCode, ...(text.stdout ? { stdout: text.stdout } : {}), ...(text.stderr ? { stderr: text.stderr } : {}) };
         }
         if (card.kind === "explore") {
-          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null }));
-          const report = exploreVerifyReport(cardId, card.explore_stage, artifact.ready);
+          const artifact = await exploreArtifact(card).catch(() => ({ ready: false as const, fingerprint: null as string | null, failures: [] as string[] }));
+          const report = exploreVerifyReport(cardId, card.explore_stage, artifact.ready, artifact.failures);
           if (asJson) return { exitCode: report.pass ? 0 : 1, stdout: JSON.stringify(report, null, 2) };
           const text = exploreVerifyText(report);
           return { exitCode: text.exitCode, ...(text.stdout ? { stdout: text.stdout } : {}), ...(text.stderr ? { stderr: text.stderr } : {}) };

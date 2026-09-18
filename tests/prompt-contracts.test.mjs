@@ -100,7 +100,7 @@ assert.match(serverSource, /runHelper\(\["audit-trail", "check", "--strict", "--
 assert.match(serverSource, /auditTrailGate\(\{ build: trail, check: trailCheck, verifiedGit: gitEvidence \}\)/, "the trail is bound to the Git identity the audit receipt was verified at");
 assert.match(serverSource, /trail\.code === 0 \? await runHelper/, "check runs only after a build that succeeded");
 assert.match(serverSource, /researchVerifyReport\(cardId, strategyRounds\(card\)\.length/, "research completion requires a passing verify");
-assert.match(serverSource, /exploreVerifyReport\(cardId, card\.explore_stage, artifact\.ready\)/, "explore completion requires a passing verify");
+assert.match(serverSource, /exploreVerifyReport\(cardId, card\.explore_stage, artifact\.ready(, artifact\.failures)?\)/, "explore completion requires a passing verify");
 assert.match(serverSource, /presets are managed from the card's Agent preset section/, "preset mutation refuses worker threads");
 
 // Explicit completion is enforced, not inferred: the old audit+idle ⇒
