@@ -306,6 +306,11 @@ const pluginUpdateSchema = z.object({
   checkedAt: z.number().nullable(),
 });
 
+// Newest GitHub release known for installs BB cannot update (supplement to
+// the BB verdict, never a competitor): shared by buildInfo and
+// checkPluginUpdate so a forced re-check delivers both halves together.
+const githubReleaseSchema = z.object({ tag: z.string(), url: z.string(), checkedAt: z.number(), newer: z.boolean() });
+
 export const rpcContract = defineRpcContract({
   board: {
     input: z.object({ projectId: z.string().nullable() }).strict(),
@@ -621,7 +626,7 @@ export const rpcContract = defineRpcContract({
   },
   buildInfo: {
     input: z.object({}).strict(),
-    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skills: z.array(z.string()), pluginUpdate: pluginUpdateSchema, githubRelease: z.object({ tag: z.string(), url: z.string(), checkedAt: z.number(), newer: z.boolean() }).nullable() }),
+    output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skills: z.array(z.string()), pluginUpdate: pluginUpdateSchema, githubRelease: githubReleaseSchema.nullable() }),
   },
   applyPluginUpdate: {
     input: z.object({}).strict(),
@@ -629,7 +634,7 @@ export const rpcContract = defineRpcContract({
   },
   checkPluginUpdate: {
     input: z.object({}).strict(),
-    output: pluginUpdateSchema,
+    output: z.object({ pluginUpdate: pluginUpdateSchema, githubRelease: githubReleaseSchema.nullable() }),
   },
   aboutLogo: {
     input: z.object({}).strict(),
@@ -5815,7 +5820,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
     async checkPluginUpdate() {
       await refreshPluginUpdate(true);
-      return pluginUpdate;
+      return { pluginUpdate, githubRelease };
     },
 
     // About identity mark. Served as a data URI (never a static file URL —

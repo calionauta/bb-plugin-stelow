@@ -1877,7 +1877,7 @@ function AboutPanel() {
   function recheckPluginUpdate() {
     setCheckingPluginUpdate(true); setPluginUpdateError(null); setConfirmPluginUpdate(false);
     void rpc.call("checkPluginUpdate", {}).then((update) => {
-      setBuildInfo((prev) => prev ? { ...prev, pluginUpdate: update } : prev);
+      setBuildInfo((prev) => prev ? { ...prev, pluginUpdate: update.pluginUpdate, githubRelease: update.githubRelease } : prev);
     }).catch((error) => {
       setPluginUpdateError(error instanceof Error ? error.message : "Update check failed.");
     }).finally(() => setCheckingPluginUpdate(false));
