@@ -507,7 +507,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   name the cause instead of going blank.
 - **Self-healing** (`syncThreadState`, 45s reconcile sweep, thread
   idle/active/failed events). Suspicious idle and stalls surface as
-  paused with exactly one inbox event per idle period. No-op polls
+  paused with exactly one inbox event per idle period. A pause open past
+  3 days gets its event reworded with the age (`Stalled Nd`, same row —
+  cards never move columns for going quiet). No-op polls
   write nothing and publish nothing — panels reload only on real
   changes, and background refreshes never flash loading UI (first
   load owns the skeleton).

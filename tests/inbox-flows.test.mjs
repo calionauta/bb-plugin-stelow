@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge } from "../lib/inbox-events.mjs";
+import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents, countsForInboxBadge, STALLED_ESCALATION_MS, escalatePausedSummary, refreshStalledPaused, stalledDays } from "../lib/inbox-events.mjs";
 import { inboxFilterEntries } from "../lib/inbox-event-presentation.mjs";
 
 const db = new Database(":memory:");
@@ -150,4 +150,51 @@ assert.ok(olderDb.prepare("PRAGMA table_info(inbox_events)").all().some((column)
 ensureInboxResolvedReasonColumn(olderDb);
 assert.ok(olderDb.prepare("PRAGMA table_info(inbox_events)").all().filter((column) => column.name === "resolved_reason").length === 1, "the migration is idempotent");
 olderDb.close();
-console.log("inbox flows test ok: dedupe, resolve, completion, archive, and history visibility");
+
+// Stalled-paused escalation: an open paused event older than the second
+// window gets its summary reworded with the age — same row, same count,
+// same resolution rules. Fresh pauses, resolved pauses, and other kinds
+// are untouched; re-running is a no-op (idempotent by content).
+
+assert.equal(STALLED_ESCALATION_MS, 3 * 24 * 3600 * 1000, "escalation waits days, not minutes");
+assert.equal(stalledDays(2 * 86400000), 2, "whole days floor");
+assert.equal(stalledDays(-5), 0, "negative idle never goes below zero");
+assert.equal(
+  escalatePausedSummary("Idle with unfinished work.", 4 * 86400000),
+  "Stalled 4d — Idle with unfinished work.",
+  "the age prefixes the original copy",
+);
+assert.equal(
+  escalatePausedSummary("Stalled 3d — Idle with unfinished work.", 5 * 86400000),
+  "Stalled 5d — Idle with unfinished work.",
+  "re-escalation refreshes the age instead of stacking prefixes",
+);
+
+const staleDb = new Database(":memory:");
+staleDb.exec(`
+  CREATE TABLE cards (id TEXT PRIMARY KEY, display_name TEXT, name TEXT NOT NULL, project_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'build');
+  CREATE TABLE inbox_events (
+    id TEXT PRIMARY KEY, card_id TEXT NOT NULL, kind TEXT NOT NULL,
+    summary TEXT NOT NULL, dedupe_key TEXT NOT NULL UNIQUE, occurred_at INTEGER NOT NULL,
+    read_at INTEGER, archived_at INTEGER, resolved_at INTEGER
+  );
+`);
+staleDb.prepare("INSERT INTO cards VALUES (?, ?, ?, ?, ?)").run("card_9", "Stalled", "stalled", "project_1", "build");
+const nowMs = 1_000_000_000_000;
+staleDb.prepare("INSERT INTO inbox_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+  "evt_old", "card_9", "paused", "Idle with unfinished work.", "paused:card_9:1", 1, null, null, null,
+);
+staleDb.prepare("INSERT INTO inbox_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+  "evt_fresh", "card_9", "paused", "Idle with unfinished work.", "paused:card_9:2", nowMs - 1000, null, null, null,
+);
+staleDb.prepare("INSERT INTO inbox_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+  "evt_done", "card_9", "paused", "Idle with unfinished work.", "paused:card_9:3", 1, null, null, nowMs,
+);
+assert.equal(refreshStalledPaused(staleDb, { cardId: "card_9", nowMs }), 1, "only the old open paused event escalates");
+const escalated = staleDb.prepare("SELECT summary FROM inbox_events WHERE id = ?").get("evt_old").summary;
+assert.ok(escalated.startsWith("Stalled "), "the old event carries its age");
+assert.equal(staleDb.prepare("SELECT summary FROM inbox_events WHERE id = ?").get("evt_fresh").summary, "Idle with unfinished work.", "a fresh pause keeps its copy");
+assert.equal(refreshStalledPaused(staleDb, { cardId: "card_9", nowMs }), 0, "re-running without new aging changes nothing");
+assert.equal(refreshStalledPaused(staleDb, { cardId: "card_absent", nowMs }), 0, "unknown cards escalate nothing");
+staleDb.close();
+console.log("inbox flows test ok: dedupe, resolve, completion, archive, history visibility, and stalled escalation");

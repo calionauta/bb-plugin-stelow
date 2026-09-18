@@ -12,7 +12,7 @@ import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
-import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
+import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, refreshStalledPaused, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
@@ -3313,6 +3313,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch (error) {
       updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
     }
+    escalateIfStalled(card.id);
   }
 
   // Stable content fingerprint for an explore artifact: identical content
@@ -3371,6 +3372,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch (error) {
       updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
     }
+    escalateIfStalled(card.id);
   }
 
   // The stage's artifact file with real content: the deterministic completion
@@ -3497,6 +3499,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (insertInboxEvent(db, { id: randomId("evt"), cardId: card.id, kind, summary, dedupeKey, occurredAt })) {
       bb.realtime.publish("inbox-changed", { cardId: card.id });
     }
+  }
+
+  // Stalled cards keep their column; their open paused event carries the
+  // age instead. Shared by all three track syncs so paused means paused
+  // everywhere. Guarded to idle cards and wrapped: escalation is advisory
+  // and must never break a sync (e.g. dispose closing the DB mid-poll).
+  function escalateIfStalled(cardId: string): void {
+    const fresh = getCard(cardId);
+    if (!fresh || fresh.activity !== "idle") return;
+    try {
+      if (refreshStalledPaused(db, { cardId, nowMs: now() }) > 0) {
+        bb.realtime.publish("inbox-changed", { cardId });
+      }
+    } catch { /* advisory only */ }
   }
 
   // Worker shutdown shared by every path that parks a card: the Archive
@@ -3905,6 +3921,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch (error) {
       updateCard(cardId, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
     }
+    escalateIfStalled(cardId);
   }
 
   bb.events.on("thread.idle", ({ thread }) => {

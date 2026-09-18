@@ -31,3 +31,7 @@ export function resolveActionInboxEvents(db: { prepare(query: string): { run(...
 export function listInboxEvents(db: { prepare(query: string): { all(): unknown[] } }, includeArchived: boolean): unknown[];
 export function hasPendingReview(db: { prepare(query: string): { get(...values: unknown[]): unknown } }, cardId: string): boolean;
 export declare function countsForInboxBadge(entry: { kind: string; archivedAt: number | null; readAt?: number | null; resolvedAt?: number | null; occurredAt: number }, nowMs?: number): boolean;
+export declare const STALLED_ESCALATION_MS: number;
+export declare function stalledDays(idleMs: number): number;
+export declare function escalatePausedSummary(summary: unknown, idleMs: number): string;
+export declare function refreshStalledPaused(db: { prepare(query: string): { all(...values: unknown[]): Array<{ id: string; summary: string; occurred_at: number }>; run(...values: unknown[]): { changes: number } } }, input: { cardId: string; nowMs: number }): number;

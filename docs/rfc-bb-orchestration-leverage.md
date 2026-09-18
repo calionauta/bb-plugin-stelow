@@ -2,9 +2,12 @@
 
 Status: partially implemented. P0 (token visibility) and P1 (automation
 rules engine + board dialog) shipped; P2 child-thread surfacing shipped
-(upstream `subagents.md` blessing + worker-history children rows); P3
-digest/lessons specified below, not built (needs an inbox surface
-decision). Source article: Sawyer Hood, "software
+(upstream `subagents.md` blessing + worker-history children rows);
+stalled-paused escalation shipped (open paused events past 3 days carry
+their age, same row — cards never relocate). Digest-as-inbox-kind and
+lessons-file work below remain specified but unbuilt: they need an inbox
+surface decision and a lessons home + entry-skill reader respectively.
+Source article: Sawyer Hood, "software
 factory" thread (2026-09-17): child-thread orchestration across providers,
 long-lived scheduled managers, Automations/SlopCop/Workflows plugins,
 drag-to-reparent, observability-first restraint.
