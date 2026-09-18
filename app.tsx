@@ -1728,7 +1728,8 @@ type GithubReleaseInfo = { tag: string; url: string; checkedAt: number; newer: b
 // plugin title, so the verdict reads next to the version it describes.
 // role="status" announces state changes to assistive tech; the dot is
 // decorative (aria-hidden) because the title text names the state.
-function PluginUpdateStatus({ update, github, confirming, checking, onCheck }: {
+function PluginUpdateStatus({ version, update, github, confirming, checking, onCheck }: {
+  version: string;
   update: PluginUpdateInfo;
   github: GithubReleaseInfo;
   confirming: boolean;
@@ -1758,7 +1759,10 @@ function PluginUpdateStatus({ update, github, confirming, checking, onCheck }: {
       {update.outcome === "update-available" && !confirming ? <p>Confirm with “Update plugin…” below — Stelow reloads afterwards.</p> : null}
       {update.outcome === "update-available" && confirming ? <p>Stelow reloads afterwards.</p> : null}
       {unmanaged && update.detail ? <p>{update.detail}</p> : null}
-      {unmanaged && !update.detail ? <p>BB reports this install as not updatable through BB itself — local checkouts update with git pull, rebuild, and reload. “Check again” only re-reads BB’s verdict.</p> : null}
+      {unmanaged && !update.detail ? <p>BB reports this install as not updatable through BB itself — local checkouts update with git pull, rebuild, and reload. “Check update” only re-reads BB’s verdict.</p> : null}
+      {unmanaged && github && !github.newer && version !== "dev" && version.replace(/^v/, "") === github.tag.replace(/^v/, "") ? (
+        <p>Matches {github.tag} on GitHub — this checkout is current.</p>
+      ) : null}
       {unmanaged && github?.newer ? (
         <p className="text-amber-700 dark:text-amber-300">
           <UrlLink href={github.url} className="underline underline-offset-4 hover:text-foreground">{github.tag} is published on GitHub ↗</UrlLink>
@@ -1909,6 +1913,7 @@ function AboutPanel() {
               </h2>
               {buildInfo ? (
                 <PluginUpdateStatus
+                  version={buildInfo.version}
                   update={buildInfo.pluginUpdate}
                   github={buildInfo.githubRelease}
                   confirming={confirmPluginUpdate}
