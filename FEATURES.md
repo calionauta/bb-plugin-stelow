@@ -555,7 +555,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 *When I am an agent, CLI, or another surface, I want the same power.*
 
 - **`bb stelow` CLI.** status, ask, seed, advance, doctor, preset management,
-  fan-out, verify. Advance mechanics delegate to the upstream `stelow`
+  fan-out, verify, review. Advance mechanics delegate to the upstream `stelow`
   helper and skills pinned together at plugin release (no fork and no runtime
   mutation); transitions always resolve from
   the vendored copy. `seed` refuses card workers (`lib/card-seed-guard.mjs`):
@@ -581,6 +581,24 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the done instruction (budgeted), then pauses with the instruction on
   the card — completed cards read "Done — ready to review", never a lit
   audit with no next step.
+- **`bb stelow review` (opt-in, `lib/review-verdict.mjs`).** Independent
+  artifact review on explicit invocation only — no band default, no
+  silent fallback: without a designated reviewer preset the command
+  refuses with setup instructions (never borrows the worker preset, which
+  would recreate self-review). Refuses when deterministic `verify` fails,
+  so review budget is never spent on thin files (shift-left). Spawns a
+  hidden read-only reviewer thread on the designated preset, polls
+  bounded (10 min), validates the verdict shape, drops findings with
+  unverifiable quotes, persists `reviews/review-<stamp>.md`, and leaves
+  a card comment with the summary. v1 covers research + explore; build
+  document review is refused as unsupported. Workers may only offer
+  review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
+- **Reviewer preset designation** (`getReviewPreset`,
+  `assignReviewPreset`, `review_preset` table). One singleton preset
+  marked as artifact reviewer (different model family, low reasoning,
+  restrictive permission — full coerced to accept-edits); deleting the
+  preset clears the designation by cascade. The preset modal binds these
+  RPCs to show the badge + use-case explainer (UI follow-up).
 - **Portable audit receipt** (`scripts/stelow audit-trail`). After bb's
   stricter checkout-bound `audit.md` gate passes, Build completion invokes the
   upstream helper to build and check the deterministic cross-host lineage

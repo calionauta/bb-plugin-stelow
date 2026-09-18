@@ -8,7 +8,7 @@
 - [x] Phase 3 — all-strategy contracts: upstream contracts on the remaining thirteen skills (`stelow v0.63.0-alpha`); `STRATEGY_CONTRACTS` (14 primaries; market-analysis + paywall pass on ANY selected variant via `validateVariant`); primary depth in `researchRoundIntegrity`.
 - [x] Phase 4 — Explore + Build (same engine): `EXPLORE_CONTRACTS` for all 8 techniques (`stelow v0.64.0-alpha`); explore `verify`/`done`/inbox enforce depth; Build `done` validates recognized manifest documents via `contractForBuildArtifact` (audit.md/receipts/unknown never block). Gaps fixed in-flight: directory-beats-basename matcher precedence; prompt-contracts pin arity.
 - [x] Phase 5 — evidence honesty: `lib/research-evidence.mjs` detects the worker's own web-unavailable declaration (EN/PT); `verify`/`done`/completion carry hypothesis-only, never "complete research". Scoping ask already enforced since Phase 1. Preset default unchanged (cost decision, flagged not made).
-- [ ] Phase 6 (deferred, needs product decisions) — opt-in LLM reviewer (preset/budget/policy), chat-response seals, card Quality panel (UI; other session active in app.tsx).
+- [x] Phase 6a — reviewer command: `bb stelow review` opt-in (research + explore v1) with `review_preset` designation RPCs, shift-left refusal on verify-fail, cross-lineage hidden reviewer thread, quote-verified verdicts persisted to `reviews/`, worker offer via `REVIEW_PROTOCOL` ask-only. Preset modal UI + seals + Quality panel remain (RPCs stable for UI binding).
 - [ ] Phase 6 (deferred) — LLM reviewer, chat-response persistence + seals, card Quality panel.
 - [ ] Rollout follow-ups — observe-mode metrics (fail rate, top codes, re-runs, time-to-quality); legacy cards stay `legacy / not contract-validated`.
 

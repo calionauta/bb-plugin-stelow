@@ -68,6 +68,8 @@ assert.match(serverSource, /Never run \\?`bb stelow seed\\?`/, "CLI_EQUIVALENTS 
 // path, no pasted copies.
 const doneDefs = serverSource.match(/const DONE_PROTOCOL = "/g) ?? [];
 assert.equal(doneDefs.length, 1, "DONE_PROTOCOL is defined once, not pasted per prompt");
+const reviewDefs = serverSource.match(/const REVIEW_PROTOCOL = "/g) ?? [];
+assert.equal(reviewDefs.length, 1, "REVIEW_PROTOCOL is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/run `bb stelow done` to mark the card complete/g) ?? []).length, 1, "the done prose lives in the const only");
 const doneSites = {
   // Each site is bounded by an explicit end marker: prompt templates are
@@ -80,6 +82,14 @@ const doneSites = {
   research: { anchor: "NEVER check a box yourself", end: "function exploreWorkerPrompt" },
   explore: { anchor: "SINGLE-STAGE Stelow exploration", end: "async function createCardInternal" },
 };
+// Paid review is offered, never auto-run: both lightweight prompts reference
+// the single REVIEW_PROTOCOL const.
+for (const site of ["research", "explore"]) {
+  const { anchor, end } = doneSites[site];
+  const at = serverSource.indexOf(anchor);
+  const window = serverSource.slice(at, serverSource.indexOf(end, at));
+  assert.ok(window.includes("${REVIEW_PROTOCOL}"), `the ${site} prompt offers paid review as opt-in only`);
+}
 for (const [site, { anchor, end }] of Object.entries(doneSites)) {
   const at = serverSource.indexOf(anchor);
   assert.ok(at >= 0, `the ${site} prompt exists`);

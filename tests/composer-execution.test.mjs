@@ -104,7 +104,7 @@ for (const method of ["createCard", "createResearchCard", "createExploreCard"]) 
 }
 assert.match(server, /composerPresetOverride\(/, "creation resolves the override through the shared helper");
 assert.match(server, /composerSpawnInput\(/, "the spawn carries the shared spawn input");
-assert.equal((server.match(/executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g) ?? []).length, 2, "only restart/reseed keep the hardcoded preset-explicit sources; the initial spawn forwards the composer's");
+assert.equal((server.match(/executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g) ?? []).length, 3, "only restart/reseed/review keep the hardcoded preset-explicit sources; the initial spawn forwards the composer's");
 assert.match(server, /card-override-\$\{cardId\}/, "a divergent choice pins a card-override row");
 assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)/, "the override is pinned through card_presets");
 
