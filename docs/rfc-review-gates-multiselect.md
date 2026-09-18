@@ -28,14 +28,22 @@ checkpoints-you-pick while the UI delivers take-it-all rungs.
   (plan-gate + technical questions), `diff` (diff gate). `diff` stays
   separate: Code Diff ≠ Tech Review (same reason `diff-gate` already
   skips independently).
-- **Canonical storage**: array of atoms. Legacy ladder strings keep
-  working, mapped both directions (Auto→[], Spec Gate→[spec],
-  Interface Gates→[spec,interface], Scopes→+[scope], Tech Review→+[tech],
-  Code Diff→+[diff]); unknown strings fail open (existing precedent).
-- **Where it lives**: `state.md` + `stelow.json` config (alongside today's
-  `review_mode`), card creation input, `bb.storage.kv`
-  `board-workflow-defaults` (safeParse migrates stored ladder strings via
-  the same map). Appetite untouched — depth vs breadth stay orthogonal.
+- **Canonical storage**: array of atoms, written as a YAML flow list in
+  `state.md` frontmatter (`review_gates: [spec, interface]`) and a JSON
+  array in `stelow.json` config. Empty array ≡ Auto.
+- **Legacy compat**: ladder strings keep working, mapped both directions
+  (Auto→[], Spec Gate→[spec], Interface Gates→[spec,interface],
+  Scopes→+[scope], Tech Review→+[tech], Code Diff→+[diff]); unknown
+  strings fail open (existing precedent). `boardWorkflowDefaults`
+  migrates explicitly (old string → mapped set), never by silent
+  safeParse fallback to Auto — falling back would erase a saved
+  "Tech Review" default.
+- **Reseed preserves gates**: today's hardcoded reseed to Core/Auto must
+  carry the card's current set instead (a reseed restarts the workflow,
+  not the human's review choices).
+- **Out of scope**: research/explore tracks (stageless, already ignore
+  review mode); `approveGate` semantics (approves named gates on demand,
+  orthogonal to which gates wait).
 
 ## 3. Upstream changes (required first — gates semantics live there)
 
@@ -52,7 +60,9 @@ checkpoints-you-pick while the UI delivers take-it-all rungs.
 
 - **Schemas/RPC**: `reviewModeSchema` enum → set of atoms (accept legacy
   strings, normalize on read); `createCard`, board defaults, reseed
-  paths carry the set through.
+  paths carry the set through. Composer default = last used selection
+  (localStorage) falling back to the board default — never a hardcoded
+  rung.
 - **UI**: `WorkflowSettings` radio ladder → checkbox group + Select
   all / Clear + preset templates; composer default = last used
   (localStorage), board default = kv.

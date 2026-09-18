@@ -27,6 +27,23 @@ with cohesion-aware partitioning), CAID (+26.7% research parallelism).
 - **What**: user-configured rules mapping events to draft actions —
   GitHub label → draft card in Triage; worker-PR CI green → notify
   (never merge); card idle N days → escalate to inbox.
+- **Draft destination (locked)**: a drafted card parks in the **Inbox
+  column** (board position, no worker, no burn) — never as an inbox feed
+  item, and **rules never start workers** (starting unreviewed drafts
+  would burn budget behind the human's back). Discovery rides the
+  column count the tab bar already shows; no new badge path.
+- **Stalled cards (locked semantics)**: a stalled card does NOT move
+  columns — board position is never attention (repo doctrine). It
+  raises/refreshes a `paused` inbox event pointing at the card's own
+  recovery actions (retry/restart/reseed/discard). Its code stays parked
+  exactly where it is.
+- **Code-safety invariant**: one card, one branch (`bb/` prefix) or one
+  dedicated worktree — never auto-switch, auto-move, or auto-delete
+  branches. A second card never touches another card's dirty checkout;
+  cleanup is the explicit Discard action. Staleness is safe because
+  nothing moves by itself.
+- **Rules surface (open design point)**: board-level settings area,
+  per-project; each rule = event + filter + draft/notify template.
 - **Primitives**: `bb.background.schedule` (precedent: existing daily
   check), GitHub sync data, realtime/inbox (precedent: reconcile sweep).
 - **Hard rules (from repo doctrine)**: nothing auto-imports; no gate
