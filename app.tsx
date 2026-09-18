@@ -1904,6 +1904,12 @@ const STELOW_REINSTALL_COMMAND = 'bb plugin remove stelow && bb plugin install "
 
 type CleanupFound = { name: string; hostId: string | null; stelowPath: string; cards: number };
 
+// Migration builds nag on purpose. Dismissing is React state only — nothing
+// is persisted (no localStorage, no bb settings) — so every fresh open of the
+// plugin remounts this panel and the notice comes back. That is deliberate:
+// a closed dialog must not let a user keep running broken 0.3 preview state.
+// The current line (0.24+) never ships this component, so migrated users are
+// not bothered.
 function UpdateMigrationNotice() {
   const rpc = useRpc<typeof rpcContract>();
   const [open, setOpen] = useState(true);
@@ -1911,6 +1917,7 @@ function UpdateMigrationNotice() {
   const [found, setFound] = useState<CleanupFound[]>([]);
   const [detail, setDetail] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showManual, setShowManual] = useState(false);
   const [upgrade, setUpgrade] = useState<{ ready: boolean; reason: string | null; bbVersion: string | null; storeNotice: boolean } | null>(null);
 
   const errorMessage = (error: unknown): string =>
@@ -1944,7 +1951,7 @@ function UpdateMigrationNotice() {
       if (result.skipped.length > 0) {
         setDetail(`${result.skipped.length} workspace${result.skipped.length === 1 ? "" : "s"} could not be archived: ${result.skipped.map((item) => item.reason).join("; ")}`);
       } else {
-        setDetail("Your workspace folders were moved aside. The reinstall command is ready below.");
+        setDetail("Your workspace folders were moved aside. The reinstall command is below — run it in a terminal where the bb CLI is installed (test: bb --version).");
       }
       setPhase("done");
     } catch (error: unknown) {
@@ -1958,7 +1965,7 @@ function UpdateMigrationNotice() {
     try {
       await rpc.call("stelowUpgradeNow", {});
       // The detached chain removes this plugin (and with it this UI) about a
-      // second after this returns, then reinstalls from the marketplace. The
+      // second after this returns, then reinstalls from the repository. The
       // upgrading panel below is what the user sees in that window.
     } catch (error: unknown) {
       setDetail(errorMessage(error));
@@ -1966,11 +1973,12 @@ function UpdateMigrationNotice() {
     }
   };
 
+  const autoReady = upgrade?.ready === true;
   const projectsLine = found.length === 0
     ? "No stale workspace data was found — you can upgrade right away."
     : found.length === 1
-      ? "This workspace holds preview data from the old line:"
-      : `These ${found.length} workspaces hold preview data from the old line:`;
+      ? "1 workspace holds data from the old line."
+      : `${found.length} workspaces hold data from the old line.`;
 
   const upgradeBlockedText = upgrade === null
     ? null
@@ -2000,27 +2008,37 @@ function UpdateMigrationNotice() {
 
         {phase === "preview" && (
           <div className="grid gap-3">
+            {/* What will happen comes first; the folder details follow. */}
             <p className="text-sm text-muted-foreground">{projectsLine}</p>
-            {found.length > 0 && (
-              <ul className="grid gap-1.5">
-                {found.map((item) => (
-                  <li key={item.stelowPath} className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                    <span className="truncate font-medium">{item.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {item.cards === 0 ? "workspace data" : `${item.cards} card${item.cards === 1 ? "" : "s"}`} · preview line
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Archiving moves each <code className="rounded bg-muted/60 px-1 py-0.5">.stelow</code> folder to <code className="rounded bg-muted/60 px-1 py-0.5">.stelow-0.3-backup</code> inside that project. Nothing is deleted; the current line starts clean. The upgrade removes this plugin and reinstalls it — Stelow will close and reopen on the current line.
+              The upgrade archives the old workspace state, removes this plugin, and reinstalls the current line from the repository
+              (<code className="rounded bg-muted/60 px-1 py-0.5">{"git:…@>=0.23.0"}</code>). Stelow closes and reopens in about a minute — nothing is deleted.
             </p>
             {upgradeBlockedText && (
               <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">{upgradeBlockedText}</p>
             )}
             {storeNotice && (
               <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{storeNotice}</p>
+            )}
+
+            {found.length > 0 && (
+              <>
+                <p className="text-xs font-medium text-foreground">Will be archived as <code className="rounded bg-muted/60 px-1 py-0.5">.stelow-0.3-backup</code>:</p>
+                <ul className="grid max-h-52 gap-1.5 overflow-y-auto pr-1">
+                  {found.map((item) => (
+                    <li key={item.stelowPath} className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                      <span className="truncate font-medium">{item.name}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {item.cards === 0 ? "workspace data" : `${item.cards} card${item.cards === 1 ? "" : "s"}`} · preview line
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {showManual && (
+              <pre className="select-all overflow-x-auto rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed">{STELOW_REINSTALL_COMMAND}</pre>
             )}
           </div>
         )}
@@ -2034,10 +2052,10 @@ function UpdateMigrationNotice() {
             <p className="text-sm text-muted-foreground">
               Upgrade started. Stelow will close for a moment and reopen on the current line automatically.
             </p>
-            <p className="text-xs text-muted-foreground">
-              If it does not return within about a minute, run this in your terminal:
-            </p>
             <pre className="select-all overflow-x-auto rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed">{STELOW_REINSTALL_COMMAND}</pre>
+            <p className="text-xs text-muted-foreground">
+              If it does not return within about a minute, run the command above in a terminal where the bb CLI is installed (test: <code className="rounded bg-muted/60 px-1 py-0.5">bb --version</code>).
+            </p>
           </div>
         )}
 
@@ -2045,12 +2063,10 @@ function UpdateMigrationNotice() {
           <div className="grid gap-3">
             <p className="text-sm text-muted-foreground">
               {copied
-                ? "Archived. The reinstall command is on your clipboard — paste it in your terminal to finish the update."
-                : "Archived. Paste this command in your terminal to finish the update:"}
+                ? "Archived. The reinstall command is on your clipboard — paste it into a terminal where the bb CLI is installed (test: bb --version)."
+                : "Archived. Copy the command below and run it in a terminal where the bb CLI is installed (test: bb --version)."}
             </p>
-            {!copied && (
-              <pre className="select-all overflow-x-auto rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed">{STELOW_REINSTALL_COMMAND}</pre>
-            )}
+            <pre className="select-all overflow-x-auto rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed">{STELOW_REINSTALL_COMMAND}</pre>
             {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
           </div>
         )}
@@ -2062,10 +2078,15 @@ function UpdateMigrationNotice() {
         <DialogFooter className="flex-wrap gap-2">
           {phase === "preview" && (
             <>
-              {upgrade?.ready === true && (
+              {autoReady && (
                 <Button onClick={() => void upgradeNow()} className="cursor-pointer">Upgrade automatically</Button>
               )}
-              <Button onClick={() => void archive()} variant={upgrade?.ready === true ? "outline" : "default"} className="cursor-pointer">Archive &amp; copy command</Button>
+              <Button onClick={() => void archive()} variant={autoReady ? "outline" : "default"} className="cursor-pointer">Archive &amp; copy command</Button>
+              {autoReady && (
+                <Button variant="ghost" onClick={() => setShowManual((current) => !current)} className="cursor-pointer text-xs">
+                  {showManual ? "hide commands" : "show commands"}
+                </Button>
+              )}
             </>
           )}
           {phase === "archiving" && (
