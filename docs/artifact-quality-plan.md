@@ -6,7 +6,7 @@
 - [x] Phase 1 — JTBD presence gate: `substepPathsForRound`, `findInvalidSubsteps`, integrity/verify/done wiring, per-item FAIL lines, scoping ask, inbox names slug+reason with per-substep dedupe keys.
 - [x] Phase 2 — JTBD depth contracts: upstream Completeness contracts on all ten prompts (`stelow v0.62.0-alpha`); `lib/artifact-contracts.mjs` + `lib/artifact-validation.mjs`; `needs-depth` in verify/done/inbox. Proven: all 10 incident files fail with named reasons.
 - [x] Phase 3 — all-strategy contracts: upstream contracts on the remaining thirteen skills (`stelow v0.63.0-alpha`); `STRATEGY_CONTRACTS` (14 primaries; market-analysis + paywall pass on ANY selected variant via `validateVariant`); primary depth in `researchRoundIntegrity`.
-- [x] Phase 4 — Explore + Build (same engine): `EXPLORE_CONTRACTS` for all 8 techniques (`stelow v0.64.0-alpha`); explore `verify`/`done`/inbox enforce depth; Build `done` validates recognized manifest documents via `contractForBuildArtifact` (audit.md/receipts/unknown never block).
+- [x] Phase 4 — Explore + Build (same engine): `EXPLORE_CONTRACTS` for all 8 techniques (`stelow v0.64.0-alpha`); explore `verify`/`done`/inbox enforce depth; Build `done` validates recognized manifest documents via `contractForBuildArtifact` (audit.md/receipts/unknown never block). Gaps fixed in-flight: directory-beats-basename matcher precedence; prompt-contracts pin arity.
 - [ ] Phase 5 — evidence honesty (`hypothesis-only` cap without web) + scoping asks.
 - [ ] Phase 6 (deferred) — LLM reviewer, chat-response persistence + seals, card Quality panel.
 - [ ] Rollout follow-ups — observe-mode metrics (fail rate, top codes, re-runs, time-to-quality); legacy cards stay `legacy / not contract-validated`.
