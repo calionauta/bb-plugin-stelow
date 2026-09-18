@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.84] - 2026-09-18
+
+Follows 0.3.82/0.3.83 on the frozen 0.3 preview line. Supersedes them (still
+satisfies the same recorded `^0.3.14` range, so 0.3 installs are offered the
+newest of the three).
+
+### Changed
+
+- **Reinstall no longer depends on the marketplace listing.** The copy
+  command and the automatic chain install directly from the repository with
+  an explicit range:
+  `bb plugin install git:https://github.com/calionauta/bb-plugin-stelow.git@>=0.23.0`
+  instead of `bb plugin install stelow@bb-community`. Existing 0.3 users can
+  now reach the current line even before the marketplace listing moves; they
+  install as a direct source (a first-class BB state) instead of a catalog
+  install. New store installs are unaffected.
+- **The stale-listing gate became a notice.** `stelowUpgradeStatus` returns
+  `storeNotice` when the live listing still points at the preview line; the
+  modal shows it as an informational line instead of blocking. The remaining
+  gates are the bb CLI being reachable and the local bb satisfying the
+  current line's `engines.bb`.
+
+## [0.3.83] - 2026-09-18
+
+### Changed
+
+- **Honest stale-listing copy.** Before the marketplace listing moves to the
+  current line, reinstalling lands back on 0.3.x. 0.3.82 told users to use
+  the manual commands in that window, which traps them in a loop. The stale
+  message now says the reinstall would return them to the preview line.
+
 ## [0.3.82] - 2026-09-18
 
 Follow-up to the 0.3.81 one-shot migration release, still on the frozen 0.3

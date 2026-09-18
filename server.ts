@@ -270,6 +270,7 @@ export const rpcContract = defineRpcContract({
       ready: z.boolean(),
       reason: z.string().nullable(),
       bbVersion: z.string().nullable(),
+      storeNotice: z.boolean(),
     }),
   },
   stelowUpgradeNow: {
@@ -2696,12 +2697,10 @@ async function checkStelowUpgrade() {
   }
   const reason = !cliPresent
     ? "cli-missing"
-    : !marketplaceReady
-      ? "marketplace-stale"
-      : !compatible
-        ? "bb-too-old"
-        : null;
-  return { ready: reason === null, reason, bbVersion };
+    : !compatible
+      ? "bb-too-old"
+      : null;
+  return { ready: reason === null, reason, bbVersion, storeNotice: !marketplaceReady };
 }
 
 function spawnDetachedStelowUpgrade(): void {
@@ -2714,7 +2713,7 @@ function spawnDetachedStelowUpgrade(): void {
       "sh",
       [
         "-c",
-        "sleep 1 && bb marketplace refresh bb-community 2>/dev/null || true; bb plugin remove stelow && bb plugin install stelow@bb-community --yes",
+        "sleep 1 && bb plugin remove stelow && bb plugin install git:https://github.com/calionauta/bb-plugin-stelow.git@>=0.23.0 --yes",
       ],
       { detached: true, stdio: ["ignore", logFd, logFd] },
     );

@@ -1895,7 +1895,11 @@ function AboutPanel() {
 // was a preview, archives stale workspace state with one click, and hands them
 // the exact reinstall command. the current line never ships this component.
 const STELOW_MIGRATION_NOTICE_VERSION = "0.3.81";
-const STELOW_REINSTALL_COMMAND = "bb plugin remove stelow && bb plugin install stelow@bb-community";
+// Direct-range install: works regardless of the marketplace listing, so the
+// migration never depends on PR #310 landing. Manual copy keeps the prompt
+// (the terminal shows the resolved source); the detached auto chain passes
+// --yes because it runs without a TTY.
+const STELOW_REINSTALL_COMMAND = "bb plugin remove stelow && bb plugin install git:https://github.com/calionauta/bb-plugin-stelow.git@>=0.23.0";
 
 type CleanupFound = { name: string; hostId: string | null; stelowPath: string; cards: number };
 
@@ -1906,7 +1910,7 @@ function UpdateMigrationNotice() {
   const [found, setFound] = useState<CleanupFound[]>([]);
   const [detail, setDetail] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [upgrade, setUpgrade] = useState<{ ready: boolean; reason: string | null; bbVersion: string | null } | null>(null);
+  const [upgrade, setUpgrade] = useState<{ ready: boolean; reason: string | null; bbVersion: string | null; storeNotice: boolean } | null>(null);
 
   const errorMessage = (error: unknown): string =>
     error instanceof Error ? error.message : String(error);
@@ -1971,11 +1975,13 @@ function UpdateMigrationNotice() {
     ? null
     : upgrade.reason === "cli-missing"
       ? "The bb CLI is not reachable from this machine, so the automatic upgrade can't run here. Use the manual commands below instead."
-      : upgrade.reason === "marketplace-stale"
-        ? "The store listing still points at the preview line, so reinstalling now would land you back on it. Wait for the listing to update (usually a few days), then upgrade here — or run the commands below once it has."
-        : upgrade.reason === "bb-too-old"
-          ? `Your bb (${upgrade.bbVersion ?? "unknown"}) is older than the current line requires. Update bb first, then upgrade Stelow.`
-          : null;
+      : upgrade.reason === "bb-too-old"
+        ? `Your bb (${upgrade.bbVersion ?? "unknown"}) is older than the current line requires. Update bb first, then upgrade Stelow.`
+        : null;
+
+  const storeNotice = upgrade?.storeNotice === true
+    ? "The store listing still points at the preview line. This upgrade installs directly from the repository, so it works either way — the store entry updates later."
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -2011,6 +2017,9 @@ function UpdateMigrationNotice() {
             </p>
             {upgradeBlockedText && (
               <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-foreground">{upgradeBlockedText}</p>
+            )}
+            {storeNotice && (
+              <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{storeNotice}</p>
             )}
           </div>
         )}
