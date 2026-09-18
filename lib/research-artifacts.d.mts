@@ -22,8 +22,9 @@ export declare function researchVerifyReport(
   roundCount: number,
   indexReviewable: boolean,
   invalidRounds: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }>,
-): { card: string; kind: "research"; indexReviewable: boolean; invalidRounds: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }>; pass: boolean; roundCount: number };
-export declare function researchVerifyText(report: { card: string; pass: boolean; roundCount: number; invalidRounds?: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }): { exitCode: number; stdout?: string; stderr?: string };
+  evidence?: "verified" | "hypothesis-only",
+): { card: string; kind: "research"; indexReviewable: boolean; invalidRounds: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }>; pass: boolean; roundCount: number; evidence: string };
+export declare function researchVerifyText(report: { card: string; pass: boolean; roundCount: number; evidence?: string; invalidRounds?: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }): { exitCode: number; stdout?: string; stderr?: string };
 export declare function exploreVerifyReport(
   cardId: string,
   stage: string | null,

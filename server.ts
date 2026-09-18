@@ -42,6 +42,7 @@ import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normali
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
+import { evidenceStatus } from "./lib/research-evidence.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
 import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
@@ -1851,7 +1852,7 @@ Step 1 — load the stage skill: ${stage.label} (${stage.skill}) is bundled with
 
 Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \`bb stelow advance\`. Do NOT run the build workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-orchestrator) — only the stage skill above. You may read code, docs, or files in the workspace to ground the work; use the structured form below only if the input is genuinely ambiguous. Depth contract: run at MAXIMUM depth (appetite Complete in state.md) — full exploration, every variant the stage skill offers. Ask the user via the structured form whenever a choice affects the outcome — never auto-decide picks. But never park waiting for approval: there are no gates here, so a decision that would be a gate in the pipeline resolves via ask, then you finish.
 
-Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${stage.id}.md (create it; overwrite any existing content with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it back to verify it is non-empty. Self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or the fix. Do NOT end your turn on a FAIL.
+Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${stage.id}.md (create it; overwrite any existing content with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it back to verify it meets the stage contract (required sections, tables, depth — never a condensed summary). Self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or the fix. Do NOT end your turn on a FAIL.
 
 Step 4 — register the artifact so it renders on the card: append one block to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 
@@ -3120,6 +3121,25 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { /* workers can still create parents with their native writer */ }
   }
 
+  // Recognized Build documents registered in state.md, validated against
+  // their stage contracts (unknown files, audit.md, and receipts never
+  // match). Shared by done (blocking) and verify --tests (warnings).
+  async function buildDocDepthsForCard(card: CardRow): Promise<Array<{ path: string; label: string; failures: string[] }>> {
+    const workspace = await cardWorkspace(card).catch(() => null);
+    if (!workspace?.path || !card.dir_hash) return [];
+    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
+    if (!stateDir) return [];
+    const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+    if (!stateBlob) return [];
+    const contents = new Map<string, string | null>();
+    for (const fields of parseArtifactManifest(stateBlob)) {
+      if (typeof fields.path !== "string" || !fields.path.endsWith(".md")) continue;
+      const full = resolveArtifactPath(workspace.path, fields.path);
+      contents.set(fields.path, full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null);
+    }
+    return buildDocDepths(stateBlob, (path) => contents.get(path) ?? null);
+  }
+
   // Workspace-relative round path inside the state dir's rounds/.
   function roundRelPath(stateDirAbs: string, workspacePath: string, base: string): string {
     return workspaceRelative(workspacePath, join(stateDirAbs, `${ROUNDS_DIR}/${base}`)) ?? `${ROUNDS_DIR}/${base}`;
@@ -3143,17 +3163,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // share this predicate so they cannot diverge into "paused" vs "ready"
   // again. Build keeps its own terminal convention (state.md audit stage)
   // — each track reuses its canonical artifact, never a second definition.
-  async function researchReadiness(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null; invalid: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }> {
-    if (card.kind !== "research") return { ready: false, fingerprint: null, invalid: [] };
+  async function researchReadiness(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null; evidence: "verified" | "hypothesis-only"; invalid: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }> {
+    if (card.kind !== "research") return { ready: false, fingerprint: null, evidence: "verified", invalid: [] };
     const index = await readResearchIndex(card).catch(() => null);
-    if (!index || index.ok !== true) return { ready: false, fingerprint: null, invalid: [] };
-    if (!isResearchReadyForReview(index.content)) return { ready: false, fingerprint: null, invalid: [] };
+    if (!index || index.ok !== true) return { ready: false, fingerprint: null, evidence: "verified", invalid: [] };
+    const evidence = evidenceStatus(index.content);
+    if (!isResearchReadyForReview(index.content)) return { ready: false, fingerprint: null, evidence, invalid: [] };
     // Upstream of completion, not after it: an index with invalid rounds is
     // not ready. The sync names each invalid round as an inbox error so the
     // failure is impossible to miss and the human knows what to re-run.
     const invalid = await researchRoundIntegrity(card).catch(() => []);
-    if (invalid.length > 0) return { ready: false, fingerprint: null, invalid };
-    return { ready: true, fingerprint: researchReadyFingerprint(index.content), invalid: [] };
+    if (invalid.length > 0) return { ready: false, fingerprint: null, evidence, invalid };
+    return { ready: true, fingerprint: researchReadyFingerprint(index.content), evidence, invalid: [] };
   }
 
   // Failure cause for a dead worker with no output. thread.failed only
@@ -3343,14 +3364,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // index is reviewable AND every round file is valid. An index with
           // invalid rounds is not done — each invalid round is named as an
           // inbox error so the human knows exactly what to re-run.
-          const readiness = await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null, invalid: [] as Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }));
+          const readiness = await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null, evidence: "verified" as const, invalid: [] as Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }));
           if (readiness.ready) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
             resolveInboxEvents(card.id, now(), ["paused"], "completed");
             const readyCurrent = getCard(card.id);
+            const hypothesisSuffix = readiness.evidence === "hypothesis-only" ? " Marked hypothesis-only: web research was unavailable — requires human validation." : "";
             if (readyCurrent) {
-              recordInboxEvent(readyCurrent, "completed", "Research complete — results ready to review in Done.", `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
+              recordInboxEvent(readyCurrent, "completed", `Research complete — results ready to review in Done.${hypothesisSuffix}`, `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`, now());
             }
           } else {
             const idleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
@@ -6671,20 +6693,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // testing-strategy, critique reports) must meet their stage contract
           // (lib/artifact-contracts): unknown files, audit.md, and receipts
           // never block — only a matched document that fails depth does.
-          if (projectPath && doneStateDir && stateBlob) {
-            const contents = new Map<string, string | null>();
-            for (const fields of parseArtifactManifest(stateBlob)) {
-              if (typeof fields.path !== "string" || !fields.path.endsWith(".md")) continue;
-              const full = resolveArtifactPath(projectPath, fields.path);
-              contents.set(fields.path, full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null);
-            }
-            const shallow = buildDocDepths(stateBlob, (path) => contents.get(path) ?? null);
-            if (shallow.length > 0) {
-              return {
-                exitCode: 1,
-                stderr: shallow.map((doc) => `FAIL ${doc.label} (${doc.path}): needs depth — ${doc.failures.join("; ")} — rewrite it, then run done again.`).join("\n"),
-              };
-            }
+          const shallow = await buildDocDepthsForCard(card).catch(() => []);
+          if (shallow.length > 0) {
+            return {
+              exitCode: 1,
+              stderr: shallow.map((doc) => `FAIL ${doc.label} (${doc.path}): needs depth — ${doc.failures.join("; ")} — rewrite it, then run done again.`).join("\n"),
+            };
           }
           const verificationRun = db.prepare("SELECT command, git_root, head_sha, exit_code FROM verification_runs WHERE card_id = ? ORDER BY created_at DESC LIMIT 1").get(cardId) as { command: string; git_root: string; head_sha: string; exit_code: number } | undefined;
           const verification = verificationReadiness(verificationRun, gitEvidence);
@@ -6722,7 +6736,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (refusal) return { exitCode: 1, stderr: refusal };
           const readiness = await researchReadiness(card).catch(() => null);
           if (!readiness) return { exitCode: 1, stderr: "Unable to read card state — retry done." };
-          const report = researchVerifyReport(cardId, strategyRounds(card).length, readiness.ready || readiness.invalid.length > 0, readiness.invalid);
+          const report = researchVerifyReport(cardId, strategyRounds(card).length, readiness.ready || readiness.invalid.length > 0, readiness.invalid, readiness.evidence);
           if (!report.pass) {
             const textOut = researchVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the rounds above, then run done again." };
@@ -6731,7 +6745,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           await releaseCardClaimsAndNotify(cardId);
           const doneCurrent = getCard(cardId);
-          if (doneCurrent) recordInboxEvent(doneCurrent, "completed", "Research complete — results ready to review in Done.", `completed:${cardId}:index:${readiness.fingerprint ?? "ready"}`, now());
+          const doneHypothesisSuffix = readiness.evidence === "hypothesis-only" ? " Marked hypothesis-only: web research was unavailable — requires human validation." : "";
+          if (doneCurrent) recordInboxEvent(doneCurrent, "completed", `Research complete — results ready to review in Done.${doneHypothesisSuffix}`, `completed:${cardId}:index:${readiness.fingerprint ?? "ready"}`, now());
           return { exitCode: 0, stdout: `Done. Research "${card.name}" completed.` };
         }
         if (card.kind === "explore") {
@@ -7180,15 +7195,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const run = { id: randomId("verify"), cardId, command: command.display, gitRoot: evidence.gitRoot, headSha: evidence.headSha, exitCode: result.exitCode, outputSha256: createHash("sha256").update(result.output).digest("hex"), createdAt: now() };
           db.prepare("INSERT INTO verification_runs (id, card_id, command, git_root, head_sha, exit_code, output_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(run.id, run.cardId, run.command, run.gitRoot, run.headSha, run.exitCode, run.outputSha256, run.createdAt);
           const report = { pass: result.exitCode === 0, command: command.display, gitRoot: evidence.gitRoot, headSha: evidence.headSha, outputSha256: run.outputSha256, output: result.output.slice(-8000) };
-          if (asJson) return { exitCode: result.exitCode, stdout: JSON.stringify(report, null, 2) };
+          // Same stage contracts done enforces, surfaced early as warnings:
+          // fix them before done refuses with the same lines.
+          const docDepths = await buildDocDepthsForCard(card).catch(() => []);
+          const docWarning = docDepths.length > 0
+            ? `\nWARNING: workflow documents need depth (done will refuse):\n${docDepths.map((doc) => `FAIL ${doc.label} (${doc.path}): ${doc.failures.join("; ")}`).join("\n")}`
+            : "";
+          if (asJson) return { exitCode: result.exitCode, stdout: JSON.stringify({ ...report, docDepths }, null, 2) };
           return result.exitCode === 0
-            ? { exitCode: 0, stdout: `PASS: ${command.display} recorded at ${evidence.headSha}.\n${report.output}` }
-            : { exitCode: result.exitCode, stderr: `FAIL: ${command.display} recorded at ${evidence.headSha}.\n${report.output}` };
+            ? { exitCode: 0, stdout: `PASS: ${command.display} recorded at ${evidence.headSha}.\n${report.output}${docWarning}` }
+            : { exitCode: result.exitCode, stderr: `FAIL: ${command.display} recorded at ${evidence.headSha}.\n${report.output}${docWarning}` };
         }
         if (card.kind === "research") {
           const readiness = await researchReadiness(card).catch(() => null);
           if (!readiness) return { exitCode: 1, stderr: "Unable to read card state — retry verify." };
-          const report = researchVerifyReport(cardId, strategyRounds(card).length, readiness.ready || readiness.invalid.length > 0, readiness.invalid);
+          const report = researchVerifyReport(cardId, strategyRounds(card).length, readiness.ready || readiness.invalid.length > 0, readiness.invalid, readiness.evidence);
           if (asJson) return { exitCode: report.pass ? 0 : 1, stdout: JSON.stringify(report, null, 2) };
           const text = researchVerifyText(report);
           return { exitCode: text.exitCode, ...(text.stdout ? { stdout: text.stdout } : {}), ...(text.stderr ? { stderr: text.stderr } : {}) };

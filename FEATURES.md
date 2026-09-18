@@ -780,6 +780,10 @@ investigation that feeds the build board.*
   event per index fingerprint (a grown index earns a fresh one). The board
   column is the sole status; a user comment on a completed research card
   returns it to Doing and resumes the worker.
+  Evidence honesty (`lib/research-evidence.mjs`): when the index declares
+  web research unavailable, `verify`, `done`, and the completion event
+  carry hypothesis-only — the card completes structurally but is never
+  announced as complete research.
 
 ## 9. Explore track
 *When I want a single product step without the board, I want one stage,

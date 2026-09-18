@@ -62,6 +62,14 @@ const failIndex = researchVerifyText(researchVerifyReport("card_1", 0, false, []
 assert.equal(failIndex.exitCode, 1, "unreviewable index exits 1");
 assert.match(failIndex.stderr, /not reviewable yet/, "index failure names the index");
 
+// Evidence honesty: a structurally passing card that declared web research
+// unavailable carries hypothesis-only, never reads as complete research.
+const hypoPass = researchVerifyText(researchVerifyReport("card_1", 1, true, [], "hypothesis-only"));
+assert.equal(hypoPass.exitCode, 0, "hypothesis-only still passes structurally");
+assert.match(hypoPass.stdout, /hypothesis-only/, "pass names hypothesis-only");
+const verifiedPass = researchVerifyText(researchVerifyReport("card_1", 1, true, []));
+assert.doesNotMatch(verifiedPass.stdout ?? "", /hypothesis-only/, "verified pass carries no note");
+
 const explorePass = exploreVerifyReport("card_9", "shape-up", true);
 assert.equal(explorePass.pass, true, "real explore artifact passes");
 assert.deepEqual(exploreVerifyText(explorePass), { exitCode: 0, stdout: "PASS: explore card_9 — explore-shape-up.md holds the stage deliverable." }, "explore pass text");
