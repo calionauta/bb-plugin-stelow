@@ -16,6 +16,11 @@ import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./l
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
+import {
+  highestSatisfyingTag,
+  stelowRangeCoversCurrentLine,
+  versionAtLeast,
+} from "./lib/migration-readiness.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
@@ -2616,6 +2621,10 @@ async function archiveStelowWorkspaces(bb: BbPluginApi) {
 
 const STELOW_MARKETPLACE_V2_URL =
   "https://getbb.app/marketplace/v2/marketplace.json";
+const STELOW_REPO_URL = "https://github.com/calionauta/bb-plugin-stelow.git";
+// Fallback tag for the compat gate when git tag resolution fails (the gate
+// resolves the newest tag satisfying >=0.23.0 at runtime; this only covers
+// a broken git/network on the user's machine).
 const STELOW_CURRENT_LINE_TAG = "v0.24.0";
 const STELOW_UPGRADE_LOG = "stelow-auto-upgrade.log";
 
@@ -2626,33 +2635,6 @@ function runFile(cmd: string, args: string[]): Promise<string> {
       else resolve(`${stdout ?? ""}${stderr ?? ""}`.trim());
     });
   });
-}
-
-function parseSemverParts(value: string): number[] | null {
-  const match = /^v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(value.trim());
-  if (!match) return null;
-  return [Number(match[1]), Number(match[2]), match[3] === undefined ? 0 : Number(match[3])];
-}
-
-function versionAtLeast(version: string, floor: string): boolean {
-  const versionParts = parseSemverParts(version);
-  const floorParts = parseSemverParts(floor);
-  if (!versionParts || !floorParts) return false;
-  for (let index = 0; index < 3; index += 1) {
-    if (versionParts[index] !== floorParts[index]) return versionParts[index] > floorParts[index];
-  }
-  return true;
-}
-
-// True when the marketplace entry's range already covers the modern line
-// (>=0.18.0). Conservative on purpose: anything ambiguous disables the
-// automatic path and falls back to the manual command block.
-function stelowRangeCoversCurrentLine(range: string): boolean {
-  const match = /^>=\s*(\d+)\.(\d+)/.exec(range.trim());
-  if (!match) return false;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  return major > 0 || minor >= 18;
 }
 
 async function checkStelowUpgrade() {
@@ -2680,8 +2662,18 @@ async function checkStelowUpgrade() {
   let compatible = false;
   try {
     if (bbVersion !== null && bbVersion !== "0.0.0") {
+      // Resolve the newest tag the migration range picks (>=0.23.0) and check
+      // this bb against THAT tag's engines floor — a hardcoded tag would
+      // drift once the current line publishes a release with a higher floor.
+      let lineTag = STELOW_CURRENT_LINE_TAG;
+      try {
+        const tags = await runFile("git", ["ls-remote", "--tags", STELOW_REPO_URL]);
+        lineTag = highestSatisfyingTag(tags, "0.23.0") ?? STELOW_CURRENT_LINE_TAG;
+      } catch {
+        lineTag = STELOW_CURRENT_LINE_TAG;
+      }
       const response = await fetch(
-        `https://raw.githubusercontent.com/calionauta/bb-plugin-stelow/${STELOW_CURRENT_LINE_TAG}/package.json`,
+        `https://raw.githubusercontent.com/calionauta/bb-plugin-stelow/${lineTag}/package.json`,
         { signal: AbortSignal.timeout(15_000) },
       );
       if (response.ok) {

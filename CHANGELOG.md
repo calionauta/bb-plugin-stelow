@@ -6,6 +6,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.88] - 2026-09-18
+
+### Fixed
+
+- **Readiness gate no longer blocks everyone.** `parseSemverParts` matched
+  only at the start of its input, so the real `engines.bb` floor shape
+  (`>=0.38`) failed to parse and every user was told their bb was too old —
+  the automatic upgrade was silently disabled for all. The parsers/decision
+  helpers now live in `lib/migration-readiness.mjs` with a unit test
+  (`tests/migration-readiness.test.mjs`) covering floors, ranges, and tag
+  picking.
+- **Compat gate resolves the tag it checks.** Instead of a hardcoded
+  `v0.24.0`, the gate asks `git ls-remote` for the newest tag satisfying
+  `>=0.23.0` and checks that tag's `engines.bb` (hardcoded tag stays only as
+  a fallback). A future v0.25.0 with a higher engine floor will gate
+  correctly.
+
+### Changed
+
+- **Honest "no stale data" copy.** When no workspace had `.stelow` to
+  archive, the done state no longer claims folders were "moved aside".
+
+## [0.3.87] - 2026-09-18
+
+### Changed
+
+- **Manual action button renamed** from "Archive & copy command" to
+  "Archive & do it manually" — it reads as the counterpart to "Upgrade
+  automatically" instead of a utility action.
+
+## [0.3.86] - 2026-09-18
+
+### Changed
+
+- **Action-first modal.** The summary and the "Upgrade automatically"
+  decision lead; the archived-folder list moves below with an inner scroll
+  cap, so the decision stays visible with many workspaces.
+- **Manual path demoted in the ready state** to a "show commands" ghost
+  toggle; it returns as the primary button when a gate blocks the automatic
+  path.
+- **Terminal hints.** Upgrading/recovery/done tell users to run commands in
+  a terminal where the bb CLI is installed (test: `bb --version`).
+- **Command block always visible** in the done state (select-all), not only
+  when clipboard fails.
+- **Dismissal is React state only** (no persistence): the notice reappears
+  on every fresh open of the plugin — deliberate for a migration build.
+
+## [0.3.85] - 2026-09-18
+
+### Fixed
+
+- **Quote the git range spec.** A bare `>=` inside a shell word makes `>` a
+  redirection, which stripped the range off `git:…@>=0.23.0`. Both the
+  manual copy and the detached chain quote the spec now.
+
 ## [0.3.84] - 2026-09-18
 
 Follows 0.3.82/0.3.83 on the frozen 0.3 preview line. Supersedes them (still

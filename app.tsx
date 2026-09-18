@@ -1950,6 +1950,8 @@ function UpdateMigrationNotice() {
       await copyCommand();
       if (result.skipped.length > 0) {
         setDetail(`${result.skipped.length} workspace${result.skipped.length === 1 ? "" : "s"} could not be archived: ${result.skipped.map((item) => item.reason).join("; ")}`);
+      } else if (found.length === 0) {
+        setDetail("No old workspace data needed archiving. The reinstall command is below — run it in a terminal where the bb CLI is installed (test: bb --version).");
       } else {
         setDetail("Your workspace folders were moved aside. The reinstall command is below — run it in a terminal where the bb CLI is installed (test: bb --version).");
       }
