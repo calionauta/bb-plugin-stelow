@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.23.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.23.0...v0.23.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* keep migrate array frozen, create ask_contracts via direct exec ([0906c32](https://github.com/calionauta/bb-plugin-stelow/commit/0906c327cefbeafc5dacbf9a455abe5cb87c0662))
+* update-status copy names Check update, confirms GitHub match ([96581a6](https://github.com/calionauta/bb-plugin-stelow/commit/96581a6340b1c6d3c4fb5fb72728865eb1a36ac9))
+
 ## [0.23.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.22.0...v0.23.0) (2026-09-17)
 
 
