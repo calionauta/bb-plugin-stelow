@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.25.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.24.0...v0.25.0) (2026-09-18)
+
+
+### Features
+
+* add stay-in-touch step to first-visit setup ([effa526](https://github.com/calionauta/bb-plugin-stelow/commit/effa52647e590c3c4d925881c05957eb0cc220ad))
+* disclose agent-reach fetch router in About ([3df6ddb](https://github.com/calionauta/bb-plugin-stelow/commit/3df6ddbe715b8b6a45cfe867d7737332cb9de33f))
+* per-child token totals on worker history rows ([487a389](https://github.com/calionauta/bb-plugin-stelow/commit/487a3891243f31ccb4b5b70b87dc431df306ec08))
+* workspace file-claim coordination across cards ([c630f3f](https://github.com/calionauta/bb-plugin-stelow/commit/c630f3f13c4bf7494b5a22b7ca6031714371a47f))
+
+
+### Bug Fixes
+
+* release workspace claims on every terminal status, key by effective checkout ([fa580c8](https://github.com/calionauta/bb-plugin-stelow/commit/fa580c84981ace8915fe2b7c33bcdcfad13f723d))
+
 ## [0.24.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.23.2...v0.24.0) (2026-09-18)
 
 
