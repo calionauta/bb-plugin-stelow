@@ -1891,6 +1891,149 @@ function AboutPanel() {
   );
 }
 
+// v0.3.81 migration notice. this build tells 0.3-era installs that their line
+// was a preview, archives stale workspace state with one click, and hands them
+// the exact reinstall command. the current line never ships this component.
+const STELOW_MIGRATION_NOTICE_VERSION = "0.3.81";
+const STELOW_REINSTALL_COMMAND = "bb plugin remove stelow && bb plugin install stelow@bb-community";
+
+type CleanupFound = { name: string; hostId: string | null; stelowPath: string; cards: number };
+
+function UpdateMigrationNotice() {
+  const rpc = useRpc<typeof rpcContract>();
+  const [open, setOpen] = useState(true);
+  const [phase, setPhase] = useState<"loading" | "preview" | "archiving" | "done" | "error">("loading");
+  const [found, setFound] = useState<CleanupFound[]>([]);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    rpc.call("stelowCleanupPreview", {})
+      .then((result) => {
+        if (!alive) return;
+        setFound(result.found);
+        setPhase("preview");
+      })
+      .catch((error: unknown) => {
+        if (!alive) return;
+        setDetail(error instanceof Error ? error.message : String(error));
+        setPhase("error");
+      });
+    return () => { alive = false; };
+  }, [rpc]);
+
+  const archive = async () => {
+    setPhase("archiving");
+    try {
+      const result = await rpc.call("stelowCleanupArchive", {});
+      let copiedNow = false;
+      try {
+        await navigator.clipboard.writeText(STELOW_REINSTALL_COMMAND);
+        copiedNow = true;
+      } catch { /* clipboard unavailable — fall back to the command block below */ }
+      setCopied(copiedNow);
+      if (result.skipped.length > 0) {
+        setDetail(`${result.skipped.length} workspace${result.skipped.length === 1 ? "" : "s"} could not be archived: ${result.skipped.map((item) => item.reason).join("; ")}`);
+      } else if (result.archived.length > 0) {
+        setDetail(`archived ${result.archived.length === 1 ? "1 folder" : `${result.archived.length} folders`} as .stelow-0.3-backup.`);
+      }
+      setPhase("done");
+    } catch (error: unknown) {
+      setDetail(error instanceof Error ? error.message : String(error));
+      setPhase("error");
+    }
+  };
+
+  const projectsLine = found.length === 0
+    ? "No stale workspace data was found — you can reinstall right away."
+    : found.length === 1
+      ? "This workspace holds preview data from the old line:"
+      : `These ${found.length} workspaces hold preview data from the old line:`;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent fullscreenOnMobile className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Update Stelow</DialogTitle>
+          <DialogDescription>
+            This install is from the 0.3 preview line. The current line is a rewrite — new boards, workers, and gates — and 0.3 workspace state is not imported.
+          </DialogDescription>
+        </DialogHeader>
+
+        {phase === "loading" && (
+          <div className="text-sm text-muted-foreground">Looking for preview workspace data…</div>
+        )}
+
+        {phase === "preview" && (
+          <div className="grid gap-3">
+            <p className="text-sm text-muted-foreground">{projectsLine}</p>
+            {found.length > 0 && (
+              <ul className="grid gap-1.5">
+                {found.map((item) => (
+                  <li key={item.stelowPath} className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                    <span className="truncate font-medium">{item.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {item.cards === 0 ? "workspace data" : `${item.cards} card${item.cards === 1 ? "" : "s"}`} · preview line
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Archiving moves each <code className="rounded bg-muted/60 px-1 py-0.5">.stelow</code> folder to <code className="rounded bg-muted/60 px-1 py-0.5">.stelow-0.3-backup</code> inside that project. Nothing is deleted; the current line starts clean.
+            </p>
+          </div>
+        )}
+
+        {phase === "archiving" && (
+          <div className="text-sm text-muted-foreground">Archiving preview workspace data…</div>
+        )}
+
+        {phase === "done" && (
+          <div className="grid gap-3">
+            <p className="text-sm text-muted-foreground">
+              {copied
+                ? "Archived. The reinstall command is on your clipboard — paste it in your terminal to finish the update."
+                : "Archived. Paste this command in your terminal to finish the update:"}
+            </p>
+            {!copied && (
+              <pre className="select-all overflow-x-auto rounded-md border bg-muted/30 px-3 py-2 text-xs leading-relaxed">{STELOW_REINSTALL_COMMAND}</pre>
+            )}
+            {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+          </div>
+        )}
+
+        {phase === "error" && (
+          <p className="text-sm text-destructive">{detail ?? "Something went wrong while checking your workspace."}</p>
+        )}
+
+        <DialogFooter className="flex-wrap gap-2">
+          {phase === "preview" && (
+            <Button onClick={() => void archive()} className="cursor-pointer">Archive &amp; copy reinstall command</Button>
+          )}
+          {phase === "archiving" && (
+            <Button disabled className="opacity-60">Archiving…</Button>
+          )}
+          {phase === "done" && (
+            <>
+              <Button onClick={() => setOpen(false)} className="cursor-pointer">Done</Button>
+              <DialogClose asChild>
+                <Button variant="outline" className="cursor-pointer">Close</Button>
+              </DialogClose>
+            </>
+          )}
+          {(phase === "preview" || phase === "error") && (
+            <DialogClose asChild>
+              <Button variant="outline" className="cursor-pointer">Not now</Button>
+            </DialogClose>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function StelowPanel({ subPath }: { subPath: string }) {
   const navigate = useBbNavigate();
   const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);
@@ -1936,6 +2079,7 @@ function StelowPanel({ subPath }: { subPath: string }) {
   // data has to come from somewhere.
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
+      {STELOW_MIGRATION_NOTICE_VERSION === "0.3.81" && <UpdateMigrationNotice />}
       <StelowTabBar tab={tab} counts={counts} onSelect={goTrack} />
       <div className={tab === "inbox" ? "min-h-0 flex-1" : "hidden"}>
         <InboxPanel />

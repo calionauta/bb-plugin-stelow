@@ -236,6 +236,34 @@ export const rpcContract = defineRpcContract({
     input: z.object({}).strict(),
     output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() })) }),
   },
+  stelowCleanupPreview: {
+    input: z.object({}).strict(),
+    output: z.object({
+      found: z.array(z.object({
+        name: z.string(),
+        hostId: z.string().nullable(),
+        stelowPath: z.string(),
+        cards: z.number(),
+      })),
+    }),
+  },
+  stelowCleanupArchive: {
+    input: z.object({}).strict(),
+    output: z.object({
+      archived: z.array(z.object({
+        name: z.string(),
+        hostId: z.string().nullable(),
+        stelowPath: z.string(),
+        archivedTo: z.string(),
+      })),
+      skipped: z.array(z.object({
+        name: z.string(),
+        hostId: z.string().nullable(),
+        stelowPath: z.string(),
+        reason: z.string(),
+      })),
+    }),
+  },
   answerQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().max(2_000)).max(10) })).min(1).max(12) }).strict(),
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
@@ -2454,6 +2482,119 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // survive reloads; boot reconcile re-syncs their state, and a truly dead
   // plugin surfaces as an honest worker error on the next bb stelow call.
 
+  // v0.3.81 migration notice: locate stale 0.3 workspace state (.stelow dirs)
+// in every project source, so the frontend can offer an honest one-click
+// archive before the user re-installs from the current line. Works through
+// bb.sdk.files so remote-host sources are archived on their own host.
+//
+// Scan strategy: check `<source.path>/.stelow` first (project board state).
+// When that yields nothing, enumerate one level of child directories and
+// check `<child>/.stelow` — this catches exploratory-style workspaces where
+// each card owns its own subdirectory (`~/.bb/stelow/exploratory/<cardId>`).
+// Never recurses deeper than one child level.
+
+async function scanPath(
+  bb: BbPluginApi,
+  hostId: string | null,
+  basePath: string,
+  displayName: string,
+): Promise<Array<{ name: string; hostId: string | null; stelowPath: string; cards: number }>> {
+  const stelowPath = join(basePath, ".stelow");
+  try {
+    const listed = await bb.sdk.files.listPaths({
+      hostId: hostId ?? undefined,
+      path: stelowPath,
+      includeFiles: true,
+      includeDirectories: false,
+      limit: 2000,
+    });
+    const entries: Array<{ kind: string; name: string }> =
+      Array.isArray((listed as { paths?: unknown }).paths)
+        ? (listed as { paths: Array<{ kind: string; name: string }> }).paths
+        : [];
+    if (entries.length === 0) return [];
+    let cards = 0;
+    for (const entry of entries) {
+      if (entry.kind === "file" && entry.name === "state.md") cards += 1;
+    }
+    return [{ name: displayName, hostId, stelowPath, cards }];
+  } catch {
+    return [];
+  }
+}
+
+async function findStelowWorkspaces(bb: BbPluginApi) {
+  const projects = await bb.sdk.projects.list();
+  const seen = new Set<string>();
+  const found: Array<{ name: string; hostId: string | null; stelowPath: string; cards: number }> = [];
+  for (const project of projects) {
+    for (const source of project.sources ?? []) {
+      const identity = `${source.hostId}\u0000${source.path}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      // Check project-root .stelow first (build/board state).
+      const rootHits = await scanPath(bb, source.hostId, source.path, project.name ?? source.path);
+      if (rootHits.length > 0) { found.push(...rootHits); continue; }
+      // No root state — check child dirs one level deep for exploratory
+      // card workspaces (each card owns a subdirectory).
+      try {
+        const children = await bb.sdk.files.listPaths({
+          hostId: source.hostId ?? undefined,
+          path: source.path,
+          includeFiles: false,
+          includeDirectories: true,
+          limit: 100,
+        });
+        const dirs: Array<{ name: string; path: string }> =
+          Array.isArray((children as { paths?: unknown }).paths)
+            ? (children as { paths: Array<{ kind: string; name: string; path: string }> }).paths
+                .filter((entry) => entry.kind === "directory")
+            : [];
+        for (const dir of dirs) {
+          const childHits = await scanPath(bb, source.hostId, dir.path, `${project.name ?? source.path} · ${dir.name}`);
+          found.push(...childHits);
+        }
+      } catch {
+        // Host unreachable or empty source: skip.
+      }
+    }
+  }
+  return found;
+}
+
+async function archiveStelowWorkspaces(bb: BbPluginApi) {
+  const found = await findStelowWorkspaces(bb);
+  const archived: Array<{ name: string; hostId: string | null; stelowPath: string; archivedTo: string }> = [];
+  const skipped: Array<{ name: string; hostId: string | null; stelowPath: string; reason: string }> = [];
+  for (const entry of found) {
+    const base = `${entry.stelowPath}-0.3-backup`;
+    let destination = base;
+    try {
+      await bb.sdk.files.list({ hostId: entry.hostId ?? undefined, path: base, limit: 1 });
+      // a backup already exists: timestamp the destination instead of overwriting
+      destination = `${base}-${new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").slice(0, 19)}`;
+    } catch {
+      // destination is free
+    }
+    try {
+      await bb.sdk.files.move({
+        hostId: entry.hostId ?? undefined,
+        sourcePath: entry.stelowPath,
+        destinationPath: destination,
+      });
+      archived.push({ name: entry.name, hostId: entry.hostId, stelowPath: entry.stelowPath, archivedTo: destination });
+    } catch (error: unknown) {
+      skipped.push({
+        name: entry.name,
+        hostId: entry.hostId,
+        stelowPath: entry.stelowPath,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { archived, skipped };
+}
+
   bb.rpc.register(rpcContract, {
     board: async ({ projectId }) => {
       const board = await loadBoard(bb, projectId);
@@ -2463,6 +2604,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     projects: async () => {
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
+    },
+    async stelowCleanupPreview() {
+      return { found: await findStelowWorkspaces(bb) };
+    },
+    async stelowCleanupArchive() {
+      return archiveStelowWorkspaces(bb);
     },
     async boardWorkflowDefaults() {
       const stored = await bb.storage.kv.get<unknown>("board-workflow-defaults");

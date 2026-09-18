@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.3.81] - 2026-09-18
+
+This is a one-shot migration release from the frozen 0.3 preview line. It
+does not belong to the current development line and will never receive new
+features. Its only job: tell 0.3-era installs about the current line and
+hand them a clean path out.
+
+### Added
+
+- **Migration notice modal.** On open, Stelow shows a dialog explaining that
+  this install is from the 0.3 preview line and that 0.3 workspace state is
+  not imported by the current line.
+- **One-click archive (`bb.rpc: stelowCleanupPreview/Archive`).** The modal
+  lists every project workspace holding stale `.stelow` state (project roots
+  plus one level of exploratory card directories) and moves each folder to
+  `.stelow-0.3-backup` on its own host. Nothing is deleted.
+- **Reinstall affordance.** After archiving, the modal copies
+  `bb plugin remove stelow && bb plugin install stelow@bb-community` to the
+  clipboard (fallback: a select-all command block) so the user finishes the
+  move to the current line in one paste.
+
 ## [0.3.80] - 2026-09-12
 
 ### Changed
