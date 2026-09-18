@@ -394,7 +394,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   only, ~/.local/bin, verified by re-probe) with per-row error + log, plus
   one-click reinstall-as-update for installed tools. A separate "Ready via
   npx" group discloses the on-demand dependencies (skills hub, ctx7,
-  last30days, thermo-nuclear) with usage and consent rules — info only,
+  agent-reach, last30days, thermo-nuclear) with usage and consent rules — info only,
   no commands shown, no buttons. When `sem` is installed on the host, a one-line
   entity summary (added/modified/deleted/renamed, cosmetic-only flag)
   heads the file list — absent otherwise, never an error. When `cymbal`

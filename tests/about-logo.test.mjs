@@ -61,6 +61,7 @@ assert.match(app, /Vendored Stelow skills/, "dialog names the vendored skill inv
 assert.match(app, /Reinstall .* at its latest release/, "installed tools offer reinstall-as-update");
 assert.match(app, /Ready via npx/, "npx-resolved dependencies are listed without probe or buttons");
 assert.match(app, /last30days/, "social-signal skill is disclosed with its consent rule");
+assert.match(app, /agent-reach/, "fetch-router skill is disclosed with its consent rule");
 assert.match(app, /thermo-nuclear/, "nuclear review gate skill is disclosed");
 assert.match(
   app,
