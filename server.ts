@@ -34,8 +34,8 @@ import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.m
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
-import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "./lib/research-rounds.mjs";
-import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
+import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, ROUNDS_DIR } from "./lib/research-rounds.mjs";
+import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
@@ -1798,8 +1798,9 @@ Unchecked boxes mean "available for fan-out" and NOTHING else — they are not t
 Step 3b — write this round's native output NEXT TO the index, never instead of it. Contract (the plugin enforces it in code — a round that fails these checks blocks Done and is flagged in the inbox, so treat this as a hard requirement, not advice):
 - target: <workspaceRoot>/${roundFile} — this is the deterministic destination reserved for this round. Create it with the playbook's full result VERBATIM. Do NOT add a manifest block for it: the card discovers this canonical round file once it has content.
 - one file per write command with a direct path; never combine round + index + state.md writes in one heredoc/command chain. Prefer your host's native file-write tool.
-- verify by reading ${roundFile} back: it must hold your playbook output with real substance (200+ chars) — never the research index, never empty. If the read-back fails any check, rewrite immediately before finishing.
-- fan-out sub-steps (e.g. JTBD's numbered prompts): save EACH beside it as <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md (same stamp; <substep-slug> is the lowercase-hyphenated sub-step name), verified the same way.
+- verify by reading ${roundFile} back: it must hold the playbook's FULL result VERBATIM — every required section, item, table, and score the playbook asks for — never the research index, never empty, never a condensed summary. If the read-back fails any check, rewrite immediately before finishing.
+- fan-out sub-steps (e.g. JTBD's numbered prompts): save EACH beside it as <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md (same stamp; <substep-slug> is the lowercase-hyphenated sub-step name), each with its own full prompt output — the host validates every substep file individually and blocks Done on any missing or thin one.
+- scoping before broad Full Mapping: when the request names no audience, problem/job, or geography, ask FIRST via \`bb stelow ask\` (Targeted prompt vs Full Mapping vs Recommend) before running all ten prompts. Proceeding on assumptions is allowed only as explicitly marked hypotheses.
 - self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or names each failing round with the fix. Do NOT end your turn on a FAIL; rewrite and re-verify until PASS.
 
 Step 4 — register the index plus any EXTRA sub-step files so each renders on the card: append one block per file to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
@@ -3043,12 +3044,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
 
   // Deterministic artifact guarantee (enforced in code, not in prompt):
-  // readiness requires BOTH a reviewable index AND every round's native file
-  // valid (lib/research-artifacts). A complete index with a missing/mirrored
-  // round is NOT done — the card stays open and each invalid round surfaces
-  // as an inbox error naming what to re-run. The worker prompt states this
-  // contract; this function is what makes it true.
-  async function researchRoundIntegrity(card: CardRow): Promise<Array<{ n: number; label: string }>> {
+  // readiness requires a reviewable index AND every round's native file
+  // valid AND every registered composite substep valid
+  // (lib/research-artifacts + lib/research-rounds). A complete index with a
+  // missing/mirrored/thin round or substep is NOT done — the card stays open
+  // and each invalid item surfaces as an inbox error naming what to re-run.
+  // The worker prompt states this contract; this function is what makes it true.
+  async function researchRoundIntegrity(card: CardRow): Promise<Array<{ n: number; label: string; slug?: string; reason?: string }>> {
     const workspace = await cardWorkspace(card);
     if (!workspace?.path || !card.dir_hash) return [];
     const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
@@ -3057,16 +3059,44 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (history.length === 0) return [];
     const indexBlob = await bb.sdk.files.read({ path: join(stateDir, "research-index.md") }).then((f) => (typeof f.content === "string" ? f.content : null)).catch(() => null);
     const contents = new Map<string, string | null>();
+    const readAndCache = async (relPath: string): Promise<string | null> => {
+      if (contents.has(relPath)) return contents.get(relPath) ?? null;
+      const full = resolveArtifactPath(workspace.path, relPath);
+      const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
+      contents.set(relPath, content);
+      return content;
+    };
     for (const entry of history) {
-      const full = resolveArtifactPath(workspace.path, entry.file);
-      contents.set(entry.file, full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null);
+      await readAndCache(entry.file);
     }
-    return findInvalidRounds(
+    const invalid = findInvalidRounds(
       history,
       (path) => contents.get(path) ?? null,
       indexBlob,
       (id) => researchStrategyById(id)?.label ?? null,
     );
+    // Composite substeps join history primaries with state.md manifest paths
+    // (same strategy + round + stamp). Unregistered substep files stay
+    // visible via the card's unregistered-artifact path; only registered
+    // substeps gate completion, so the manifest remains the source of truth.
+    const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+    const manifestPaths = stateBlob
+      ? parseArtifactManifest(stateBlob).filter((fields) => fields.stage === "research" && typeof fields.path === "string").map((fields) => fields.path as string)
+      : [];
+    const substeps: Array<{ n: number; label: string; slug: string; path: string }> = [];
+    history.forEach((entry, index) => {
+      const n = index + 1;
+      const label = researchStrategyById(entry.id)?.label ?? entry.id;
+      for (const subPath of substepPathsForRound(manifestPaths, entry.id, entry.file)) {
+        const slug = parseRoundPath(subPath, entry.id)?.subskill ?? subPath.split("/").pop() ?? subPath;
+        substeps.push({ n, label, slug, path: subPath });
+      }
+    });
+    for (const sub of substeps) {
+      await readAndCache(sub.path);
+    }
+    invalid.push(...findInvalidSubsteps(substeps, (path) => contents.get(path) ?? null, indexBlob));
+    return invalid;
   }
 
   // Create only the destination directory. Artifact files themselves are

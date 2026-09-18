@@ -755,10 +755,15 @@ investigation that feeds the build board.*
   `researchRoundIntegrity`). Round validity (non-empty, substantive,
   never a mirror of the index) is enforced in code, not in prompt text:
   the plugin pre-creates every round file at spawn, and readiness
-  requires a reviewable index AND every round valid. An index with an
-  invalid round is not Done — each invalid round surfaces as an inbox
-  error naming what to re-run. The worker prompt states the contract;
-  the sync is what makes it true.
+  requires a reviewable index AND every round valid AND every registered
+  composite substep valid. Each substep file is checked individually
+  (`findInvalidSubsteps` over the history–manifest join); an index with an
+  invalid round or substep is not Done — each invalid item surfaces as an
+  inbox error and a `verify` FAIL line naming the file, the slug, and the
+  reason (missing, thin, or mirrors the index). The worker prompt states
+  the contract; the sync is what makes it true. Broad Full Mapping requests
+  scope first (Targeted vs Full vs Recommend via `bb stelow ask`); workers
+  write the playbook's full result verbatim, never a condensed summary.
 - **Completed research** (`isResearchReadyForReview`,
   `lib/research-ready.mjs`). An idle worker with an index that parses to
   ≥1 opportunity is complete — never a `paused` stall. The sync moves the

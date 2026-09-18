@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ROUNDS_DIR, slugify, roundTimestamp, roundFileName, parseRoundPath, normalizeHistory } from "../lib/research-rounds.mjs";
+import { ROUNDS_DIR, slugify, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, normalizeHistory } from "../lib/research-rounds.mjs";
 
 // Naming: <strategy>[-<subskill>]-r<n>-<stamp>.md basenames (the server
 // nests them under the state dir's rounds/); slugs stay filesystem-safe.
@@ -46,5 +46,25 @@ assert.match(serverSource, /if \(!artifact \|\| !isPublishableArtifactContent\(a
 assert.match(serverSource, /round\.status === "pending" && isPublishableArtifactContent\(content\) && !researchRoundMirrorsIndex/, "empty pending primary artifacts are skipped");
 assert.match(serverSource, /async function ensureArtifactParent/, "round directories are created without reserving empty files");
 assert.doesNotMatch(serverSource, /ensureRoundFile/, "the old empty-file helper is gone");
+
+// Substep join: manifest paths attach to the primary sharing strategy +
+// round + stamp; primaries, other rounds/stamps/strategies never join.
+const primary = ".stelow/s1/rounds/job-to-be-done-r1-20260905-1835.md";
+const manifest = [
+  primary,
+  ".stelow/s1/rounds/job-to-be-done-job-map-steps-r1-20260905-1835.md",
+  ".stelow/s1/rounds/job-to-be-done-functional-needs-r1-20260905-1835.md",
+  ".stelow/s1/rounds/job-to-be-done-job-map-steps-r1-20260905-1835.md",
+  ".stelow/s1/rounds/job-to-be-done-job-map-steps-r2-20260905-1835.md",
+  ".stelow/s1/rounds/job-to-be-done-job-map-steps-r1-20260906-0900.md",
+  ".stelow/s1/rounds/pricing-job-map-steps-r1-20260905-1835.md",
+  "plans/spec-product_v1.md",
+];
+assert.deepEqual(substepPathsForRound(manifest, "job-to-be-done", primary), [
+  ".stelow/s1/rounds/job-to-be-done-job-map-steps-r1-20260905-1835.md",
+  ".stelow/s1/rounds/job-to-be-done-functional-needs-r1-20260905-1835.md",
+], "substeps join on strategy+round+stamp, deduplicated");
+assert.deepEqual(substepPathsForRound([], "job-to-be-done", primary), [], "no manifest means no substeps");
+assert.deepEqual(substepPathsForRound(manifest, "job-to-be-done", "plans/spec.md"), [], "unparseable primary joins nothing");
 
 console.log("research rounds test ok: paths, strict history, round path parsing");

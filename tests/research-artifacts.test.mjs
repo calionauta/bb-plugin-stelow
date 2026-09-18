@@ -5,6 +5,7 @@ import {
   isValidExploreContent,
   exploreArtifactFile,
   findInvalidRounds,
+  findInvalidSubsteps,
   researchVerifyReport,
   researchVerifyText,
   exploreVerifyReport,
@@ -67,5 +68,42 @@ assert.deepEqual(exploreVerifyText(explorePass), { exitCode: 0, stdout: "PASS: e
 const exploreFail = exploreVerifyText(exploreVerifyReport("card_9", "shape-up", false));
 assert.equal(exploreFail.exitCode, 1, "thin explore artifact exits 1");
 assert.match(exploreFail.stderr, /explore-shape-up\.md is missing or thin/, "explore failure names the file");
+
+// Substeps: each registered file gates completion on its own — a valid
+// primary with a thin substep still fails, naming the substep and reason.
+const subs = [
+  { n: 1, label: "Jobs to be done", slug: "functional-needs", path: "rounds/jtbd-functional-needs-r1.md" },
+  { n: 1, label: "Jobs to be done", slug: "financial-needs", path: "rounds/jtbd-financial-needs-r1.md" },
+  { n: 1, label: "Jobs to be done", slug: "job-map-steps", path: "rounds/jtbd-job-map-steps-r1.md" },
+];
+const subFiles = {
+  "rounds/jtbd-functional-needs-r1.md": ROUND,
+  "rounds/jtbd-financial-needs-r1.md": "short",
+  "rounds/jtbd-job-map-steps-r1.md": null,
+};
+assert.deepEqual(
+  findInvalidSubsteps(subs, (path) => subFiles[path] ?? null, INDEX),
+  [
+    { n: 1, label: "Jobs to be done", slug: "financial-needs", reason: "thin" },
+    { n: 1, label: "Jobs to be done", slug: "job-map-steps", reason: "missing" },
+  ],
+  "thin and missing substeps named with reasons",
+);
+assert.deepEqual(findInvalidSubsteps([], () => null, INDEX), [], "no substeps is clean");
+assert.deepEqual(
+  findInvalidSubsteps(
+    [{ n: 2, label: "B", slug: "x", path: "f.md" }],
+    () => INDEX,
+    INDEX,
+  ),
+  [{ n: 2, label: "B", slug: "x", reason: "mirrors-index" }],
+  "mirrored substep fails",
+);
+// Gate composition: primary valid + substep thin means the round is NOT done.
+assert.equal(findInvalidRounds([{ id: "a", at: "t", file: "p.md" }], () => ROUND, INDEX, () => "A").length, 0, "primary valid alone");
+assert.equal(findInvalidSubsteps(subs, (path) => subFiles[path] ?? null, INDEX).length, 2, "but its substeps still block");
+const subFailText = researchVerifyText(researchVerifyReport("card_1", 1, true, [{ n: 1, label: "Jobs to be done", slug: "financial-needs", reason: "thin" }]));
+assert.equal(subFailText.exitCode, 1, "substep failure exits 1");
+assert.match(subFailText.stderr, /financial-needs/, "substep failure names the slug");
 
 console.log("research artifacts test ok: mirror detection, validity, integrity scan, verify reports");
