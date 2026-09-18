@@ -1,19 +1,21 @@
 # Plugin development
 
-After every change to this BB plugin, run `npm run build:reload` before handing off or committing. It regenerates the bundle and explicitly reloads this plugin in the running BB process without interrupting threads.
+## Commands
 
-`npm run build` may hot-reload when `dist/` becomes newer, but do not rely on that signal alone during development. Use `npm run reload` after a successful build whenever the UI still appears stale. Reopen the plugin panel afterwards; use a browser refresh only if the panel remains stale.
+- `npm run build:reload` — after every change and after each `package.json#version` bump: builds the bundle and reloads the plugin in the running BB; use `npm run reload` when the UI still looks stale (do not rely on `npm run build` hot-reload alone).
+- `npm run typecheck` — must be green before committing.
+- `npm test` — full suite; must be green.
+- `node scripts/sync-stelow-assets.mjs` — manual skill/data sync (pinned commit; then `npm run reload`).
+- `grep dist/` — confirm the bundle actually contains the change; the reload version string is unreliable.
 
-When changing `package.json#version`, run `npm run build:reload` after the version bump so the Plugins screen reports the new version.
+## Don'ts
 
-Do not restart `bb-daemon.service` to reload this plugin; it terminates active BB threads.
-
-## Dispose hooks
-
-`bb.onDispose` fires on every hot-reload, not just uninstall. Only clear
-timers and close handles there — never stop threads, delete data, or do
-anything destructive. Killing worker threads on dispose massacres in-flight
-work on each update.
+- Never restart `bb-daemon.service` to reload this plugin — it terminates active BB threads.
+- Never stop threads or delete data in `bb.onDispose` — it fires on every hot-reload, not just uninstall; killing workers massacres in-flight work.
+- Never hand-edit `skills/` or `data/stelow` — both sync from upstream and are overwritten without warning; fix upstream and let the sync propagate.
+- Never tag or `gh release create` from a laptop — on master the merged release PR is the release (release-please); the frozen 0.3 line (`v0.3.80`–`v0.3.88`) is the only exception (direct tags, never merged).
+- Never merge the release PR unreviewed; never widen a recorded marketplace range retroactively — installed plugins track their recorded range, not the listing.
+- Never write non-English code, comments, docs, CHANGELOG, or UI copy; never ship a user-facing feature without its `FEATURES.md`/blueprint entry.
 
 ## Owned vs vendored code
 
@@ -71,19 +73,11 @@ entry does not exist outside this plugin.
 ## Code standards
 
 Quality rules live in the coding-standards skill — never restated here.
-Load `stelow-product-coding-standards` (KISS, DRY, convention over
+Load `/skill:stelow-product-coding-standards` (KISS, DRY, convention over
 configuration, plus LoB/SoC/Fail Fast/YAGNI with file/function size limits)
 before writing or reviewing code. If the skill is not installed, install it
 with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
 (same standard, public source) and continue.
-
-All changes — code, comments, docs, CHANGELOG, UI copy — are in English.
-
-## Verify before commit
-
-- `npm run typecheck` and `npm test` must be green.
-- Confirm the bundle actually contains the change (`grep dist/`): the
-  version string in reload output is unreliable.
 
 ## State honesty (product principles, not preferences)
 
@@ -120,3 +114,21 @@ and `BREAKING CHANGE:`) bump the version and appear in the notes;
 prefix ships in no release — message discipline is the release
 process. Keep Settings → General → Automatically delete head branches
 on so merged PRs don't accumulate stale branches.
+
+## Frozen 0.3 migration line
+
+The 0.3 preview line is frozen forever. Tags `v0.3.80`–`v0.3.88` are
+one-shot migration releases — never move, delete, or retag them (bb refuses
+a moved tag as a security failure, and `v0.3.80` is the recorded resolved
+tag of 0.3-era installs). They are the one exception to the tag-release
+rule above: master goes through release-please; the frozen line is tagged
+directly and never merged to master.
+
+0.3-era installs update to `v0.3.88` (their recorded `^0.3.14` range allows
+it), then the in-app modal archives stale `.stelow` state and reinstalls
+the current line from the repository (`git:…@>=0.23.0`). The line needs no
+maintenance beyond these tags.
+
+Keep the marketplace entry range honest with the current line (`>=0.23.0`
+style). Never widen a recorded range retroactively — installed plugins
+track their recorded range, not the listing.
