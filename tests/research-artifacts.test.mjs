@@ -6,6 +6,7 @@ import {
   exploreArtifactFile,
   findInvalidRounds,
   findInvalidSubsteps,
+  substepQuality,
   researchVerifyReport,
   researchVerifyText,
   exploreVerifyReport,
@@ -113,5 +114,24 @@ assert.equal(findInvalidSubsteps(subs, (path) => subFiles[path] ?? null, INDEX).
 const subFailText = researchVerifyText(researchVerifyReport("card_1", 1, true, [{ n: 1, label: "Jobs to be done", slug: "financial-needs", reason: "thin" }]));
 assert.equal(subFailText.exitCode, 1, "substep failure exits 1");
 assert.match(subFailText.stderr, /financial-needs/, "substep failure names the slug");
+
+// Display quality: every expected slug reports missing/invalid/needs-depth/ready.
+const quality = substepQuality(
+  ["a", "b", "c"],
+  [{ slug: "a", content: ROUND }, { slug: "b", content: "short" }],
+  INDEX,
+  (slug, content) => (content.length > 100 ? ["needs more"] : []),
+);
+assert.deepEqual(quality, [
+  { slug: "a", status: "needs-depth" },
+  { slug: "b", status: "invalid" },
+  { slug: "c", status: "missing" },
+], "per-substep statuses");
+assert.deepEqual(substepQuality([], [{ slug: "a", content: ROUND }], INDEX), [], "no expected slugs means no rows");
+assert.deepEqual(
+  substepQuality(["a"], [{ slug: "a", content: ROUND }], INDEX),
+  [{ slug: "a", status: "ready" }],
+  "no depthCheck keeps presence-only display",
+);
 
 console.log("research artifacts test ok: mirror detection, validity, integrity scan, verify reports");

@@ -35,7 +35,7 @@ import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, ROUNDS_DIR } from "./lib/research-rounds.mjs";
-import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
+import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, substepQuality, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
 import { validateSubstep, validateVariant, validateExplore, buildDocDepths } from "./lib/artifact-validation.mjs";
 import { buildReviewPrompt, parseReviewOutput, reviewSummary } from "./lib/review-verdict.mjs";
 import { contractForStrategy } from "./lib/artifact-contracts.mjs";
@@ -506,7 +506,7 @@ export const rpcContract = defineRpcContract({
   },
   researchIndex: {
     input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ found: z.boolean(), indexPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string(), status: z.enum(["ready", "pending", "missing"]), missing: z.array(z.string()), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), error: z.string().nullable() }),
+    output: z.object({ found: z.boolean(), indexPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string(), status: z.enum(["ready", "pending", "missing"]), missing: z.array(z.string()), substeps: z.array(z.object({ slug: z.string(), status: z.enum(["ready", "missing", "invalid", "needs-depth"]) })), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), error: z.string().nullable() }),
   },
   fanOutResearch: {
     input: z.object({ cardId: z.string(), opportunityIds: z.array(z.string().min(1).max(120)).min(1).max(20) }).strict(),
@@ -1876,7 +1876,7 @@ ${prompt}`;
 
 Step 1 — load the stage skill: ${stage.label} (${stage.skill}) is bundled with this plugin (\`bb skill list\` shows it). Load it and follow its instructions exactly.
 
-Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \`bb stelow advance\`. Do NOT run the build workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-orchestrator) — only the stage skill above. You may read code, docs, or files in the workspace to ground the work; use the structured form below only if the input is genuinely ambiguous. Depth contract: run at MAXIMUM depth (appetite Complete in state.md) — full exploration, every variant the stage skill offers. Ask the user via the structured form whenever a choice affects the outcome — never auto-decide picks. But never park waiting for approval: there are no gates here, so a decision that would be a gate in the pipeline resolves via ask, then you finish.
+Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \`bb stelow advance\`. Do NOT run the build workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-orchestrator) — only the stage skill above. You may read code, docs, or files in the workspace to ground the work; use the structured form below only if the input is genuinely ambiguous. Depth contract: the deliverable must meet its stage contract (required sections, tables, depth per the skill's Completeness contract — \`bb stelow verify\` enforces it and names the failing check). Full exploration: every variant the stage skill offers. Ask the user via the structured form whenever a choice affects the outcome — never auto-decide picks. But never park waiting for approval: there are no gates here, so a decision that would be a gate in the pipeline resolves via ask, then you finish.
 
 Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${stage.id}.md (create it; overwrite any existing content with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it back to verify it meets the stage contract (required sections, tables, depth — never a condensed summary). Self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or the fix. Do NOT end your turn on a FAIL.
 
@@ -3016,16 +3016,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // Fail-soft throughout.
   async function researchRoundFiles(workspacePath: string | null, hostId: string | null, stateDir: string | null, history: Array<{ id: string; at: string; file: string }>, live: boolean) {
     type RoundFile = { display: string; path: string; absolutePath: string; hostId: string; generatedAt: string };
-    type Round = { n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; files: RoundFile[] };
+    type Round = { n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; substeps: Array<{ slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" }>; files: RoundFile[] };
     const rounds: Round[] = history.map((entry, index) => {
       const meta = researchStrategyById(entry.id);
-      return { n: index + 1, strategyId: entry.id, label: meta?.label ?? entry.id, emoji: meta?.emoji ?? "", at: entry.at, status: "missing" as const, missing: [], files: [] };
+      return { n: index + 1, strategyId: entry.id, label: meta?.label ?? entry.id, emoji: meta?.emoji ?? "", at: entry.at, status: "missing" as const, missing: [], substeps: [], files: [] };
     });
+    const substepContents = new Map<number, Array<{ slug: string; content: string | null }>>();
     if (workspacePath && stateDir) {
       try {
         const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
         const manifest = stateBlob ? parseArtifactManifest(stateBlob).filter((fields) => fields.stage === "research" && typeof fields.path === "string") : [];
         // Sub-step extras join the round sharing strategy + stamp.
+        // Contents ride along for per-substep quality (same predicates the
+        // verify gate enforces, so card and gate never disagree).
         for (const round of rounds) {
           const stamp = parseRoundPath(history[round.n - 1].file, round.strategyId)?.stamp;
           if (!stamp || !hostId) continue;
@@ -3038,6 +3041,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
             if (!artifact || !isPublishableArtifactContent(artifact.content)) continue;
             round.files.push({ display: fields.label ?? full.split("/").pop()!, path: fields.path, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
+            if (parsed.subskill && typeof artifact.content === "string") {
+              const list = substepContents.get(round.n) ?? [];
+              list.push({ slug: parsed.subskill, content: artifact.content });
+              substepContents.set(round.n, list);
+            }
           }
           round.files.sort((a, b) => (a.display < b.display ? -1 : 1));
         }
@@ -3055,6 +3063,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         .map((file) => parseRoundPath(file.path, round.strategyId)?.subskill)
         .filter((slug): slug is string => typeof slug === "string");
       round.missing = missingSubsteps(round.strategyId, present);
+      round.substeps = substepQuality(
+        expectedSubsteps(round.strategyId),
+        substepContents.get(round.n) ?? [],
+        indexBlob,
+        (slug, content) => validateSubstep(slug, content).failures.map((failure) => failure.detail),
+      );
       const full = workspacePath ? resolveArtifactPath(workspacePath, history[round.n - 1].file) : null;
       const primaryLabel = `Round ${round.n} — ${round.label}`;
       if (full && hostId) {

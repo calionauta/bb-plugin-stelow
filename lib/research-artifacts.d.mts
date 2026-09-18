@@ -17,6 +17,12 @@ export declare function findInvalidSubsteps(
   indexBlob: string | null,
   depthCheck?: ((slug: string, content: string) => string[]) | null,
 ): Array<{ n: number; label: string; slug: string; reason: string; detail?: string }>;
+export declare function substepQuality(
+  expected: unknown,
+  files: Array<{ slug: string; content: string | null }>,
+  indexBlob: string | null,
+  depthCheck?: ((slug: string, content: string) => string[]) | null,
+): Array<{ slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" }>;
 export declare function researchVerifyReport(
   cardId: string,
   roundCount: number,
