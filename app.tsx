@@ -389,10 +389,25 @@ function useInboxAccessory(): SidebarAccessoryHandle {
   return { count, tone };
 }
 
+// The update affordance shared by every surface — sidebar accessory, About
+// tab badge, About header, and the update status box — so the amber "↑" reads
+// as the same signal everywhere it appears. labeled={null} renders it
+// decorative for places where surrounding text already names the state.
+function UpdateBadge({ label = "Plugin update available" }: { label?: string | null }) {
+  return (
+    <span
+      {...(label === null ? { "aria-hidden": true } : { "aria-label": label, title: label })}
+      className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300"
+    >
+      ↑
+    </span>
+  );
+}
+
 function StelowInboxSidebarAccessory() {
   const { count, tone } = useInboxAccessory();
   const updateAvailable = usePluginUpdateSignal();
-  return <span className="inline-flex items-center gap-1"><SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />{updateAvailable ? <span aria-label="Stelow plugin update available" title="Plugin update available" className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300">↑</span> : null}</span>;
+  return <span className="inline-flex items-center gap-1"><SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />{updateAvailable ? <UpdateBadge label="Stelow plugin update available" /> : null}</span>;
 }
 
 // Update signal shared by the sidebar accessory and the About tab badge: a
@@ -1664,7 +1679,7 @@ function StelowTabBar({ tab, counts, aboutAlert, onSelect }: {
           >
             <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
             <span>{entry.title}</span>
-            {entry.key === "about" ? (aboutAlert ? <span aria-label="Plugin update available" title="Plugin update available" className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-300">↑</span> : null) : (
+            {entry.key === "about" ? (aboutAlert ? <UpdateBadge /> : null) : (
               <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${active ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"}`}>{count}</span>
             )}
           </button>
@@ -1826,16 +1841,21 @@ type PluginUpdateInfo = {
 type GithubReleaseInfo = { tag: string; url: string; checkedAt: number; newer: boolean } | null;
 
 // Update status for the About panel: one tone-coded box directly under the
-// plugin title, so the verdict reads next to the version it describes.
-// role="status" announces state changes to assistive tech; the dot is
-// decorative (aria-hidden) because the title text names the state.
-function PluginUpdateStatus({ version, update, github, confirming, checking, onCheck }: {
+// plugin title, so the verdict, the apply action, and the freshness check
+// read together next to the version they describe. role="status" announces
+// state changes to assistive tech; the leading mark is decorative
+// (aria-hidden) because the title text names the state.
+function PluginUpdateStatus({ version, update, github, confirming, updating, checking, onCheck, onConfirm, onCancel, onApply }: {
   version: string;
   update: PluginUpdateInfo;
   github: GithubReleaseInfo;
   confirming: boolean;
+  updating: boolean;
   checking: boolean;
   onCheck: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onApply: () => void;
 }) {
   const tone = update.outcome === "current" ? "text-emerald-500"
     : update.outcome === "update-available" ? "text-amber-500"
@@ -1857,12 +1877,23 @@ function PluginUpdateStatus({ version, update, github, confirming, checking, onC
   // must never reach users who have no checkout.
   const pathInstall = isPathInstall(update.installedDisplay);
   return (
-    <div role="status" className="space-y-1 rounded-lg border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+    <div role="status" className="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
       <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-        <span aria-hidden className={tone}>●</span>{title}
+        {update.outcome === "update-available" ? <UpdateBadge label={null} /> : <span aria-hidden className={tone}>●</span>}{title}
       </p>
-      {update.outcome === "update-available" && !confirming ? <p>Confirm with “Update plugin…” below — Stelow reloads afterwards.</p> : null}
-      {update.outcome === "update-available" && confirming ? <p>Stelow reloads afterwards.</p> : null}
+      {update.outcome === "update-available" ? (
+        confirming ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" disabled={updating} onClick={onApply}>{updating ? "Updating…" : "Confirm update"}</Button>
+            <Button size="sm" variant="ghost" disabled={updating} onClick={onCancel}>Cancel</Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={onConfirm} title="Apply the update and reload Stelow">Update plugin…</Button>
+          </div>
+        )
+      ) : null}
+      {update.outcome === "update-available" ? <p>Stelow reloads afterwards.</p> : null}
       {unmanaged && update.detail ? <p>{update.detail}</p> : null}
       {unmanaged && !update.detail && pathInstall ? <p>BB reports this install as not updatable through BB itself — local checkouts update with git pull, rebuild, and reload. “Check update” refreshes BB’s verdict and the GitHub release lookup together.</p> : null}
       {unmanaged && !update.detail && !pathInstall ? <p>BB can’t apply an update to this install automatically right now. “Check update” re-checks; new releases appear here once BB can apply them.</p> : null}
@@ -1956,7 +1987,7 @@ function AboutPanel() {
       window.localStorage.removeItem(STORAGE_KEYS.onboardPresets);
     } catch { /* best-effort */ }
     setConfirmReset(false);
-    toast.success("Onboarding reset. Visit each tab to see it again.");
+    toast.success("Onboarding reset — Build, Research, and Explore open their setup dialogs again on visit.");
   }
   function applyPluginUpdate() {
     setUpdatingPlugin(true); setPluginUpdateError(null);
@@ -1996,6 +2027,7 @@ function AboutPanel() {
           <header>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
               <h1 className="text-xl font-semibold tracking-tight">About</h1>
+              {buildInfo && (buildInfo.pluginUpdate.outcome === "update-available" || buildInfo.githubRelease?.newer === true) ? <UpdateBadge /> : null}
             </div>
           </header>
           <div className="grid max-w-2xl gap-5">
@@ -2023,8 +2055,12 @@ function AboutPanel() {
                   update={buildInfo.pluginUpdate}
                   github={buildInfo.githubRelease}
                   confirming={confirmPluginUpdate}
+                  updating={updatingPlugin}
                   checking={checkingPluginUpdate}
                   onCheck={recheckPluginUpdate}
+                  onConfirm={() => setConfirmPluginUpdate(true)}
+                  onCancel={() => setConfirmPluginUpdate(false)}
+                  onApply={applyPluginUpdate}
                 />
               ) : null}
               <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
@@ -2040,7 +2076,6 @@ function AboutPanel() {
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
-                {buildInfo?.pluginUpdate.outcome === "update-available" ? (confirmPluginUpdate ? <><Button size="sm" disabled={updatingPlugin} onClick={applyPluginUpdate}>{updatingPlugin ? "Updating…" : "Confirm update"}</Button><Button size="sm" variant="ghost" disabled={updatingPlugin} onClick={() => setConfirmPluginUpdate(false)}>Cancel</Button></> : <Button size="sm" variant="outline" disabled={checkingPluginUpdate} onClick={() => setConfirmPluginUpdate(true)}>Update plugin…</Button>) : null}
                 {confirmReset ? (
                   <>
                     <Button size="sm" variant="destructive" onClick={resetOnboarding} title="Clear onboarding state so every track shows its setup dialog again">Confirm reset</Button>
@@ -3804,7 +3839,7 @@ function PresetOnboardingBody({ step, total, secondBody, children }: {
   children?: React.ReactNode;
 }) {
   if (step === total - 1) return <StayInTouchStep />;
-  if (step === 1 && secondBody) return <>{secondBody}</>;
+  if (step === 1 && secondBody) return <div className="min-w-0">{secondBody}</div>;
   return (
     <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
       <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>
@@ -3895,7 +3930,7 @@ function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPres
   }
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className={`${hasSecond ? "sm:max-w-2xl" : "sm:max-w-lg"} sm:max-h-[calc(100dvh-1rem)] sm:overflow-y-auto`}>
         <DialogHeader>
           <DialogTitle>{step === lastStep ? "Stay in touch" : step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
           <DialogDescription>{step === lastStep ? "Feedback and follow-ups." : step === 1 && secondTitle ? "Defaults new cards start from." : intro}</DialogDescription>

@@ -36,7 +36,8 @@ import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStat
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
-import { validateSubstep } from "./lib/artifact-validation.mjs";
+import { validateSubstep, validateVariant } from "./lib/artifact-validation.mjs";
+import { contractForStrategy } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
@@ -3075,6 +3076,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       (path) => contents.get(path) ?? null,
       indexBlob,
       (id) => researchStrategyById(id)?.label ?? null,
+      (strategyId, content) => validateVariant(content, contractForStrategy(strategyId)).failures.map((failure) => failure.detail),
     );
     // Composite substeps join history primaries with state.md manifest paths
     // (same strategy + round + stamp). Unregistered substep files stay
@@ -3138,7 +3140,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // share this predicate so they cannot diverge into "paused" vs "ready"
   // again. Build keeps its own terminal convention (state.md audit stage)
   // — each track reuses its canonical artifact, never a second definition.
-  async function researchReadiness(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null; invalid: Array<{ n: number; label: string }> }> {
+  async function researchReadiness(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null; invalid: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }> {
     if (card.kind !== "research") return { ready: false, fingerprint: null, invalid: [] };
     const index = await readResearchIndex(card).catch(() => null);
     if (!index || index.ok !== true) return { ready: false, fingerprint: null, invalid: [] };
@@ -3338,7 +3340,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // index is reviewable AND every round file is valid. An index with
           // invalid rounds is not done — each invalid round is named as an
           // inbox error so the human knows exactly what to re-run.
-          const readiness = await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null, invalid: [] as Array<{ n: number; label: string }> }));
+          const readiness = await researchReadiness(card).catch(() => ({ ready: false as const, fingerprint: null as string | null, invalid: [] as Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }));
           if (readiness.ready) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
@@ -3353,7 +3355,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             const current = getCard(card.id);
             if (current && current.status !== "archived" && current.status !== "completed") {
               for (const round of readiness.invalid) {
-                recordInboxEvent(current, "error", `Round ${round.n} (${round.label}) is incomplete — restart it to regenerate the result.`, `round-invalid:${card.id}:${round.n}`, now());
+                const item = round.slug ? `${round.label} — ${round.slug}` : round.label;
+                const why = round.reason === "needs-depth" && round.detail
+                  ? `needs depth: ${round.detail}`
+                  : round.reason === "missing"
+                    ? "missing — write it"
+                    : round.reason === "mirrors-index"
+                      ? "mirrors the index — write the playbook output"
+                      : round.reason === "thin"
+                        ? "thin — write the full playbook output"
+                        : "incomplete";
+                const key = round.slug ? `round-invalid:${card.id}:${round.n}:${round.slug}` : `round-invalid:${card.id}:${round.n}`;
+                recordInboxEvent(current, "error", `Round ${round.n} (${item}) ${why} — restart it to regenerate the result.`, key, now());
               }
               if (idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
                 recordInboxEvent(current, "paused", "Idle with unfinished research — retry continues in place, restart begins fresh.", `paused:${card.id}:${idleAt}`, idleAt);

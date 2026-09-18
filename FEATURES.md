@@ -200,15 +200,15 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   agrees with the Inbox's primary **Needs attention** list. A completion is
   emerald review work, not an amber blocked workflow, and clears when its Done
   card is opened. Per-tab active counts (About carries no count, but carries
-  an update dot when a plugin update is known). A shared update signal (BB
+  an update badge when a plugin update is known). A shared update signal (BB
   candidate or newer GitHub release) drives both the sidebar badge and the
-  About tab dot. All realtime.
+  About tab badge. All realtime.
 - **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
   plugin — each with its own paragraph, repo link, and version side by
   side (`buildInfo` carries both; the upstream version syncs with the
   skills). The Stelow section opens with the identity mark, served lazily
   as a data URI over the `aboutLogo` RPC (bb serves only built bundles,
-  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product), asks BB for the installed plugin's compatible update status, and offers an explicit confirmation before BB applies it. The update verdict renders as one tone-coded status box directly under the plugin title (`role="status"`, decorative dot) instead of a bare line: current, available, checking, not-BB-managed, and unreachable each name their state and the path forward. Copy branches on install source (`isPathInstall`, unit-tested): path installs get the checkout pull + rebuild + reload path, every other source gets a no-checkout variant that never sends store users to a terminal. Installs BB cannot update (local checkouts) additionally learn the newest GitHub release from a fail-soft lookup (`lib/github-release.mjs`, supplement-only while BB offers no candidate), with a link and the checkout pull + rebuild + reload path — "Check update" re-reads both sources. Versions read as tags (`v0.20.0`), never raw commit shas; the confirmation names the installed and candidate versions, a "Last checked … · Check update" line forces a fresh check on demand, and a post-update read that fails during reload says the plugin is reloading instead of reporting a false failure. Mount-time reads share one in-flight check with a one-minute reuse window, so the sidebar and About never double-hit upstream resolution. A shared update signal (`usePluginUpdateSignal`: BB candidate or newer GitHub release) drives both the sidebar accessory badge and an About tab badge; neither path mutates a running workflow before that confirmation. It also offers Reset onboarding (two-step
+  never static files) with a silent text fallback. The plugin section shows the immutable Stelow version pinned into this plugin release (opening the vendored inventory grouped Workflow/Product), asks BB for the installed plugin's compatible update status, and offers an explicit confirmation before BB applies it. The update verdict renders as one tone-coded status box directly under the plugin title (`role="status"`) instead of a bare line: current, available, checking, not-BB-managed, and unreachable each name their state and the path forward. The box owns the whole update flow — verdict, the "Update plugin…" apply action (confirm/cancel in place), the reload warning, and the freshness check — so nothing cross-references a button living elsewhere. The shared amber "↑" badge (`UpdateBadge`) marks update-available everywhere: sidebar accessory, About tab, About header, and as the status box's leading mark. Copy branches on install source (`isPathInstall`, unit-tested): path installs get the checkout pull + rebuild + reload path, every other source gets a no-checkout variant that never sends store users to a terminal. Installs BB cannot update (local checkouts) additionally learn the newest GitHub release from a fail-soft lookup (`lib/github-release.mjs`, supplement-only while BB offers no candidate), with a link and the checkout pull + rebuild + reload path — "Check update" re-reads both sources. Versions read as tags (`v0.20.0`), never raw commit shas; the confirmation names the installed and candidate versions, a "Last checked … · Check update" line forces a fresh check on demand, and a post-update read that fails during reload says the plugin is reloading instead of reporting a false failure. Mount-time reads share one in-flight check with a one-minute reuse window, so the sidebar and About never double-hit upstream resolution. Neither path mutates a running workflow before that confirmation. It also offers Reset onboarding (two-step
   confirm) to replay the first-visit setup dialogs. Work tracks describe
   themselves; product identity lives in exactly one place, never next
   to the wrong version.
@@ -762,9 +762,14 @@ investigation that feeds the build board.*
   inbox error and a `verify` FAIL line naming the file, the slug, and the
   reason (missing, thin, mirrors the index, or needs-depth with
   expected-vs-found counts). Depth minima live in owned
-  `lib/artifact-contracts.mjs` (mirroring each upstream prompt's
-  Completeness contract) and run through `lib/artifact-validation.mjs` —
-  a short file with the right filename no longer passes. The worker prompt states
+  `lib/artifact-contracts.mjs` — ten JTBD substep entries plus one
+  primary-file entry per research strategy (market-analysis and paywall
+  pass when ANY selected variant validates) — mirroring each upstream
+  prompt's Completeness contract, and run through
+  `lib/artifact-validation.mjs` — a short file with the right filename
+  no longer passes, on primaries or substeps. Inbox errors name the
+  slug and reason with per-substep dedupe keys, so ten failures surface
+  as ten events. The worker prompt states
   the contract; the sync is what makes it true. Broad Full Mapping requests
   scope first (Targeted vs Full vs Recommend via `bb stelow ask`); workers
   write the playbook's full result verbatim, never a condensed summary.

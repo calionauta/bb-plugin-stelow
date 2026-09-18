@@ -1,5 +1,16 @@
 # Artifact quality plan — from 200-char validity to verifiable depth
 
+## Implementation status (task list)
+
+- [x] Phase 0 — incident evidence (`thr_tz3xaiq73p`: Stelow, not Ponytail; 10 thin substeps passed `verify`).
+- [x] Phase 1 — JTBD presence gate: `substepPathsForRound`, `findInvalidSubsteps`, integrity/verify/done wiring, per-item FAIL lines, scoping ask, inbox names slug+reason with per-substep dedupe keys.
+- [x] Phase 2 — JTBD depth contracts: upstream Completeness contracts on all ten prompts (`stelow v0.62.0-alpha`); `lib/artifact-contracts.mjs` + `lib/artifact-validation.mjs`; `needs-depth` in verify/done/inbox. Proven: all 10 incident files fail with named reasons.
+- [x] Phase 3 — all-strategy contracts: upstream contracts on the remaining thirteen skills (`stelow v0.63.0-alpha`); `STRATEGY_CONTRACTS` (14 primaries; market-analysis + paywall pass on ANY selected variant via `validateVariant`); primary depth in `researchRoundIntegrity`.
+- [ ] Phase 4 — Explore + Build artifacts (same engine, new entries).
+- [ ] Phase 5 — evidence honesty (`hypothesis-only` cap without web) + scoping asks.
+- [ ] Phase 6 (deferred) — LLM reviewer, chat-response persistence + seals, card Quality panel.
+- [ ] Rollout follow-ups — observe-mode metrics (fail rate, top codes, re-runs, time-to-quality); legacy cards stay `legacy / not contract-validated`.
+
 ## 0. Incident evidence (verified 2026-09-18)
 
 Thread `thr_tz3xaiq73p` (project `proj_ttth6cvs5r`, card `card_o54iz123`,

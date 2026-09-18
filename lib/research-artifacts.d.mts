@@ -9,7 +9,8 @@ export declare function findInvalidRounds(
   readContent: (path: string) => string | null,
   indexBlob: string | null,
   labelById?: ((id: string) => string | null) | null,
-): Array<{ n: number; label: string }>;
+  depthCheck?: ((strategyId: string, content: string) => string[]) | null,
+): Array<{ n: number; label: string; reason?: string; detail?: string }>;
 export declare function findInvalidSubsteps(
   substeps: Array<{ n: number; label: string; slug: string; path: string }>,
   readContent: (path: string) => string | null,

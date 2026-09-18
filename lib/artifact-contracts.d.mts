@@ -14,3 +14,14 @@ export interface ArtifactContract {
 
 export declare const JTBD_CONTRACTS: ArtifactContract[];
 export declare function contractForSubstep(slug: unknown): ArtifactContract | null;
+
+export interface StrategyContract {
+  id: string;
+  ref: string;
+  minWords?: number;
+  checks?: ArtifactCheck[];
+  variants?: Array<{ minWords?: number; checks?: ArtifactCheck[] }>;
+}
+
+export declare const STRATEGY_CONTRACTS: StrategyContract[];
+export declare function contractForStrategy(id: unknown): StrategyContract | null;
