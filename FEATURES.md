@@ -202,9 +202,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   agrees with the Inbox's primary **Needs attention** list. A completion is
   emerald review work, not an amber blocked workflow, and clears when its Done
   card is opened. Per-tab active counts (About carries no count, but carries
-  an update badge when a plugin update is known). A shared update signal (BB
-  candidate or newer GitHub release) drives both the sidebar badge and the
-  About tab badge. All realtime.
+  an update badge when a plugin update is known). One shared update signal
+  (BB candidate or newer GitHub release, `updateAvailableFrom`) drives the
+  sidebar accessory, the About tab badge, the About header, and the status
+  box from a single store: the first `buildInfo` read fills it, and a forced
+  Check update or a post-apply read republishes it — a check inside About
+  lights every surface at once instead of only the one that asked.
 - **About tab** (`AboutPanel`). Two sections — Stelow (upstream) and this
   plugin — each with its own paragraph, repo link, and version side by
   side (`buildInfo` carries both; the upstream version syncs with the

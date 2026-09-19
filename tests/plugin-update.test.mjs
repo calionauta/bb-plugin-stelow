@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mapUpdateEntry, selectOwnEntry, shortRef, isPathInstall, applyFailedCheck } from "../lib/plugin-update.mjs";
+import { mapUpdateEntry, selectOwnEntry, shortRef, isPathInstall, applyFailedCheck, updateAvailableFrom } from "../lib/plugin-update.mjs";
 
 const own = {
   id: "stelow",
@@ -66,4 +66,17 @@ const currentVerdict = applyFailedCheck({ outcome: "current", installed: "v0.25.
 assert.equal(currentVerdict.outcome, "current", "a previous freshness verdict is kept with the failure note");
 assert.equal(currentVerdict.detail, "Update check failed: fetch failed", "failure detail survives on kept verdicts too");
 
-console.log("plugin update test ok: entry select, map, shortRef, install source, failed-check merge");
+// The shared update signal: every surface (sidebar accessory, About tab
+// badge, About header, status box) reads this one predicate, so a forced
+// check that flips one must flip them all.
+assert.equal(updateAvailableFrom({ pluginUpdate: { outcome: "update-available" }, githubRelease: null }), true, "a BB candidate lights the signal");
+assert.equal(updateAvailableFrom({ pluginUpdate: { outcome: "current" }, githubRelease: { newer: true } }), true, "an unmanaged newer release also lights it");
+assert.equal(updateAvailableFrom({ pluginUpdate: { outcome: "current" }, githubRelease: { newer: false } }), false, "nothing pending reads as no update");
+assert.equal(updateAvailableFrom({ pluginUpdate: { outcome: "unavailable" }, githubRelease: null }), false, "an unreachable check is not an update");
+assert.equal(updateAvailableFrom({ pluginUpdate: { outcome: "checking" } }), false, "checking never claims an update");
+assert.equal(updateAvailableFrom({ pluginUpdate: { outcome: "incompatible" } }), false, "incompatible is a refusal, not a candidate");
+assert.equal(updateAvailableFrom(null), false, "null reads as no update, never a throw");
+assert.equal(updateAvailableFrom({}), false, "missing shapes read as no update");
+assert.equal(updateAvailableFrom({ pluginUpdate: "x", githubRelease: 7 }), false, "off-shape fields never throw or lie");
+
+console.log("plugin update test ok: entry select, map, shortRef, install source, failed-check merge, shared signal");

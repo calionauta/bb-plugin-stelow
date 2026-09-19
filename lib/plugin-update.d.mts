@@ -9,6 +9,7 @@ export declare function mapUpdateEntry(entry: unknown): {
 };
 export declare function shortRef(version: unknown, display: unknown): string | null;
 export declare function isPathInstall(display: unknown): boolean;
+export declare function updateAvailableFrom(info: unknown): boolean;
 export interface PluginUpdateVerdict {
   outcome: "checking" | "unavailable" | "update-available" | "current" | "incompatible" | "pinned";
   installed: string | null;
