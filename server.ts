@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "./lib/artifact-manifest.mjs";
+import { assignBundleNames, parseBundleManifest, staleBundleEntries, unbundledSources } from "./lib/run-bundle.mjs";
 import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
@@ -1259,7 +1260,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, run `bb stelow export` first: it copies the registered artifacts into `docs/runs/<card>/` plus a `manifest.md` (SHA pins, gap counts, paste-ready trailer). Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link — never skip it.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, the run bundle is already fresh: `done` refreshes `docs/runs/<card>/` plus `manifest.md` (SHA pins, gap counts) automatically on every completion and prints the paste-ready trailer in its output — a reopened card that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, unreadable, and newly registered sources without writing anything.";
   const RECON_PROTOCOL = "For any codebase reconnaissance, work from the target Git workspace root, never the card-state or skill directory. Run the bundled Stelow `recon.sh` preflight before using optional tools, passing this card's exact <state-dir> as its second argument; it writes `<state-dir>/context/recon-receipt.json`. Do not install tools inside the workflow. Cite that receipt and name missing optional tools in planning or audit output; a missing receipt is currently a warning, not a reason to fabricate or skip recon.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
@@ -6708,7 +6709,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "gap-scopes", summary: "Convert escalated gaps into rework scopes (idempotent)", usage: "bb stelow gap-scopes [--card <card_id>]" },
       { name: "metrics", summary: "Lead/cycle time and gap rates per card, or fleet-wide without --card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
       { name: "manifest", summary: "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)", usage: "bb stelow manifest [--json] [--card <card_id>]" },
-      { name: "export", summary: "Copy registered artifacts into docs/runs/<card> plus manifest.md (idempotent)", usage: "bb stelow export [--json] [--card <card_id>] [--dir <relpath>]" },
+      { name: "export", summary: "Refresh docs/runs/<card> plus manifest.md (idempotent, also automatic at done); --check reports drift without writing", usage: "bb stelow export [--json] [--check] [--card <card_id>] [--dir <relpath>]" },
       { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
@@ -7260,30 +7261,18 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         ];
         return { exitCode: 0, stdout: lines.join("\n") };
       }
-      if (argv[0] === "export") {
-        // Run-bundle export: copies the registered artifacts into a flat
-        // docs/runs/<card> directory plus a manifest.md (SHA pins, gap
-        // counts, paste-ready trailer). The worker commits the directory
-        // with the work; per-commit versioning comes from git log, not
-        // subdirectories. Idempotent: re-running overwrites the same names.
-        const args = argv.slice(1);
-        const json = args.includes("--json");
-        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
-        let dirFlag: string | undefined;
-        for (let i = 0; i < args.length; i++) {
-          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
-          if (args[i] === "--dir") { dirFlag = args[i + 1]; i++; continue; }
-          if (args[i] === "--json") continue;
-          return { exitCode: 2, stderr: "Usage: bb stelow export [--json] [--card <card_id>] [--dir <relpath>]" };
-        }
-        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
-        const card = getCard(cardId);
-        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+      // Shared run-bundle writer: `export` calls it on demand, `done` calls
+      // it on every completion so docs/runs/<card>/ converges to the card's
+      // current artifacts instead of rotting after the first manual export.
+      // Idempotent: stable basenames, overwrite-in-place, manifest rewritten.
+      type BundleCheck = { ok: true; check: true; fresh: boolean; stale: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string; reason: string }>; freshNew: string[]; missing: string[] };
+      type BundleWrite = { ok: true; check: false; dir: string; files: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string }>; missing: string[]; trailer: string[] };
+      type BundleFailure = { ok: false; error: string };
+      async function exportRunBundle(card: CardRow, opts: { checkOnly: true; dirRel?: string }): Promise<BundleCheck | BundleFailure>;
+      async function exportRunBundle(card: CardRow, opts?: { checkOnly?: false; dirRel?: string }): Promise<BundleWrite | BundleFailure>;
+      async function exportRunBundle(card: CardRow, opts?: { checkOnly?: boolean; dirRel?: string }) {
         const workspace = await cardWorkspace(card).catch(() => null);
-        if (!workspace?.path) return { exitCode: 1, stderr: "The card has no workspace to export into." };
-        const targetRel = dirFlag ?? `docs/runs/${cardId}`;
-        const targetAbs = resolveArtifactPath(workspace.path, targetRel);
-        if (!targetAbs) return { exitCode: 2, stderr: `Refusing --dir "${dirFlag ?? targetRel}": relative path inside the workspace only.` };
+        if (!workspace?.path) return { ok: false as const, error: "The card has no workspace to export into." };
         const stateDir = card.dir_hash
           ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null)
           : null;
@@ -7293,45 +7282,104 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const registered = stateBlob
           ? parseArtifactManifest(stateBlob).filter((fields) => typeof fields.path === "string" && fields.path.length > 0)
           : [];
-        try {
-          await bb.sdk.files.mkdir({ path: targetAbs, rootPath: workspace.path, recursive: true });
-        } catch {
-          return { exitCode: 1, stderr: `Could not create ${targetRel} — retry export.` };
-        }
-        const used = new Set<string>();
-        const files: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string }> = [];
-        const missing: string[] = [];
+        const targetRel = opts?.dirRel ?? `docs/runs/${card.id}`;
+        const targetAbs = resolveArtifactPath(workspace.path, targetRel);
+        if (!targetAbs) return { ok: false as const, error: `Refusing export dir "${targetRel}": relative path inside the workspace only.` };
+        const shaOf = (content: string) => createHash("sha256").update(content).digest("hex").slice(0, 8);
+        // Read current sources once: check and write both need content + SHA.
+        const readable: Array<{ stage: string | null; sourcePath: string; content: string; sha8: string }> = [];
+        const unreadable: string[] = [];
         for (const fields of registered) {
           const sourcePath = fields.path as string;
           const full = resolveArtifactPath(workspace.path, sourcePath);
           const content = full ? await bb.sdk.files.read({ path: full }).then((file) => file.content).catch(() => null) : null;
-          if (typeof content !== "string" || !content.trim()) { missing.push(sourcePath); continue; }
-          const base = sourcePath.replace(/\\/g, "/").split("/").pop() ?? "artifact.md";
-          let name = base;
-          if (used.has(name)) name = `${fields.stage ?? "stage"}-${base}`;
-          used.add(name);
+          if (typeof content !== "string" || !content.trim()) { unreadable.push(sourcePath); continue; }
+          readable.push({ stage: fields.stage ?? null, sourcePath, content, sha8: shaOf(content) });
+        }
+        if (opts?.checkOnly) {
+          const manifestContent = await bb.sdk.files.read({ path: join(targetAbs, "manifest.md") }).then((file) => file.content).catch(() => null);
+          const bundled = manifestContent === null ? [] : parseBundleManifest(manifestContent);
+          const shaBySource = new Map(readable.map((entry) => [entry.sourcePath, entry.sha8]));
+          const stale = staleBundleEntries(bundled, shaBySource);
+          const freshNew = unbundledSources(registered, bundled);
+          const drifted = stale.length > 0 || freshNew.length > 0 || unreadable.length > 0;
+          return {
+            ok: true as const,
+            check: true as const,
+            fresh: !drifted,
+            stale,
+            freshNew,
+            missing: unreadable,
+          };
+        }
+        try {
+          await bb.sdk.files.mkdir({ path: targetAbs, rootPath: workspace.path, recursive: true });
+        } catch {
+          return { ok: false as const, error: `Could not create ${targetRel} — retry export.` };
+        }
+        const planned = assignBundleNames(readable);
+        const files: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string }> = [];
+        const missing = [...unreadable];
+        for (const plan of planned) {
+          const source = readable.find((entry) => entry.sourcePath === plan.sourcePath);
+          if (!source) continue;
           try {
-            await bb.sdk.files.write({ path: join(targetAbs, name), rootPath: workspace.path, expectedSha256: null, content });
-          } catch { missing.push(sourcePath); continue; }
-          files.push({ name, stage: fields.stage ?? null, sha8: createHash("sha256").update(content).digest("hex").slice(0, 8), sourcePath });
+            await bb.sdk.files.write({ path: join(targetAbs, plan.name), rootPath: workspace.path, expectedSha256: null, content: source.content });
+          } catch { missing.push(plan.sourcePath); continue; }
+          files.push({ name: plan.name, stage: plan.stage, sha8: source.sha8, sourcePath: plan.sourcePath });
         }
         const gapState = card.kind === "build" ? await critiqueGapState(card).catch(() => null) : null;
         const gapTotals = gapState?.matched ? gapState.totals : null;
         const manifest = renderBundleManifest({
-          cardId, cardName: card.name, stage: card.stage, generatedAt: new Date().toISOString(), files, missing, gapTotals,
+          cardId: card.id, cardName: card.name, stage: card.stage, generatedAt: new Date().toISOString(), files, missing, gapTotals,
         });
         try {
           await bb.sdk.files.write({ path: join(targetAbs, "manifest.md"), rootPath: workspace.path, expectedSha256: null, content: manifest });
         } catch {
-          return { exitCode: 1, stderr: `Exported ${files.length} file(s) but could not write manifest.md — retry export.` };
+          return { ok: false as const, error: `Exported ${files.length} file(s) but could not write manifest.md — retry export.` };
         }
-        const trailer = buildArtifactTrailer(cardId, files.map((file) => ({ stage: file.stage, path: file.sourcePath })), gapTotals);
-        const payload = { card: cardId, dir: targetRel, files, missing, trailer };
+        const trailer = buildArtifactTrailer(card.id, files.map((file) => ({ stage: file.stage, path: file.sourcePath })), gapTotals);
+        return { ok: true as const, check: false as const, dir: targetRel, files, missing, trailer };
+      }
+      if (argv[0] === "export") {
+        // On-demand bundle refresh plus drift check. `done` refreshes the
+        // bundle automatically on every completion; --check reports
+        // changed/missing/new sources without writing anything.
+        // Idempotent: stable basenames, overwrite-in-place.
+        const args = argv.slice(1);
+        const json = args.includes("--json");
+        const checkOnly = args.includes("--check");
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        let dirFlag: string | undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--dir") { dirFlag = args[i + 1]; i++; continue; }
+          if (args[i] === "--json" || args[i] === "--check") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow export [--json] [--check] [--card <card_id>] [--dir <relpath>]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        const bundle = checkOnly
+          ? await exportRunBundle(card, { checkOnly: true, dirRel: dirFlag })
+          : await exportRunBundle(card, { dirRel: dirFlag });
+        if (!bundle.ok) return { exitCode: 1, stderr: bundle.error };
+        if (bundle.check) {
+          const drift = [
+            ...bundle.stale.map((entry) => `${entry.sourcePath} (${entry.reason})`),
+            ...bundle.freshNew.map((sourcePath) => `${sourcePath} (new)`),
+            ...bundle.missing.map((sourcePath) => `${sourcePath} (unreadable)`),
+          ];
+          if (json) return { exitCode: bundle.fresh ? 0 : 1, stdout: JSON.stringify({ fresh: bundle.fresh, stale: bundle.stale, new: bundle.freshNew, missing: bundle.missing }, null, 2) };
+          if (bundle.fresh) return { exitCode: 0, stdout: "Bundle fresh: docs/runs matches every registered artifact." };
+          return { exitCode: 1, stdout: [`Bundle stale — run \`bb stelow export\`, then commit:`, ...drift.map((line) => `- ${line}`)].join("\n") };
+        }
+        const payload = { card: card.id, dir: bundle.dir, files: bundle.files, missing: bundle.missing, trailer: bundle.trailer };
         if (json) return { exitCode: 0, stdout: JSON.stringify(payload, null, 2) };
         const lines = [
-          `Exported ${files.length} artifact(s) to ${targetRel}/ (+ manifest.md)${missing.length > 0 ? ` — ${missing.length} registered but unreadable: ${missing.join(", ")}` : ""}.`,
+          `Exported ${bundle.files.length} artifact(s) to ${bundle.dir}/ (+ manifest.md)${bundle.missing.length > 0 ? ` — ${bundle.missing.length} registered but unreadable: ${bundle.missing.join(", ")}` : ""}.`,
           `Commit the directory with the work, then paste below the commit subject:`,
-          ...trailer,
+          ...bundle.trailer,
         ];
         return { exitCode: 0, stdout: lines.join("\n") };
       }
@@ -7430,11 +7478,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (checkout?.path && !sameGitEvidence(gitEvidence, postTrailGitEvidence)) {
             return { exitCode: 1, stderr: "The checkout moved while the portable audit trail was being finalized. Re-run audit, then done." };
           }
+          const bundle = await exportRunBundle(card, {});
+          if (!bundle.ok) return { exitCode: 1, stderr: `Build completion is blocked: run-bundle export failed (${bundle.error}) — retry done.` };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           recordStageEvent(cardId, "done");
           await releaseCardClaimsAndNotify(cardId);
-          return { exitCode: 0, stdout: `Done. Workflow "${card.name}" completed at audit.` };
+          return { exitCode: 0, stdout: [`Done. Workflow "${card.name}" completed at audit.`, `Run bundle refreshed at ${bundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...bundle.trailer].join("\n") };
         }
         if (card.kind === "research") {
           const refusal = doneEligibility({ kind: "research", stage: null, questionPending: pending.length > 0 });
@@ -7450,6 +7500,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (policyRow?.mode === "required" && !(await passingReviewCovers(card, readiness.fingerprint).catch(() => false))) {
             return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current index — run `bb stelow review`, then run done again. (Enable only with a calibrated reviewer; see docs/phase6-independent-review-plan.md.)" };
           }
+          const researchBundle = await exportRunBundle(card, {});
+          if (!researchBundle.ok) return { exitCode: 1, stderr: `Research completion is blocked: run-bundle export failed (${researchBundle.error}) — retry done.` };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           recordStageEvent(cardId, "done");
@@ -7457,7 +7509,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const doneCurrent = getCard(cardId);
           const doneHypothesisSuffix = readiness.evidence === "hypothesis-only" ? " Marked hypothesis-only: web research was unavailable — requires human validation." : "";
           if (doneCurrent) recordInboxEvent(doneCurrent, "completed", `Research complete — results ready to review in Done.${doneHypothesisSuffix}`, `completed:${cardId}:index:${readiness.fingerprint ?? "ready"}`, now());
-          return { exitCode: 0, stdout: `Done. Research "${card.name}" completed.` };
+          return { exitCode: 0, stdout: [`Done. Research "${card.name}" completed.`, `Run bundle refreshed at ${researchBundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...researchBundle.trailer].join("\n") };
         }
         if (card.kind === "explore") {
           const refusal = doneEligibility({ kind: "explore", stage: null, questionPending: pending.length > 0 });
@@ -7472,13 +7524,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (explorePolicyRow?.mode === "required" && !(await passingReviewCovers(card, artifact.fingerprint).catch(() => false))) {
             return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current artifact — run `bb stelow review`, then run done again. (Enable only with a calibrated reviewer; see docs/phase6-independent-review-plan.md.)" };
           }
+          const exploreBundle = await exportRunBundle(card, {});
+          if (!exploreBundle.ok) return { exitCode: 1, stderr: `Exploration completion is blocked: run-bundle export failed (${exploreBundle.error}) — retry done.` };
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           recordStageEvent(cardId, "done");
           await releaseCardClaimsAndNotify(cardId);
           const doneCurrent = getCard(cardId);
           if (doneCurrent) recordInboxEvent(doneCurrent, "completed", "Exploration complete — result ready to review in Done.", `explore-completed:${cardId}:${artifact.fingerprint ?? "ready"}`, now());
-          return { exitCode: 0, stdout: `Done. Exploration "${card.name}" completed.` };
+          return { exitCode: 0, stdout: [`Done. Exploration "${card.name}" completed.`, `Run bundle refreshed at ${exploreBundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...exploreBundle.trailer].join("\n") };
         }
         return { exitCode: 1, stderr: `Unknown card kind "${card.kind}". Archive this card and start a new one.` };
       }

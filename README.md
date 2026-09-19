@@ -223,7 +223,7 @@ bb stelow sync-scopes [--json]        # parse spec-tech scopes (auto-runs on adv
 bb stelow gap-scopes [--card <card_id>]   # convert escalated gaps into rework scopes
 bb stelow metrics [--json] [--card <card_id>]  # lead/cycle time and gap rates (fleet-wide without --card)
 bb stelow manifest [--json] [--card <card_id>] # paste-ready Stelow-Artifacts trailer for commits
-bb stelow export [--json] [--card <card_id>]   # copy artifacts into docs/runs/<card> + manifest.md
+bb stelow export [--json] [--check] [--card <card_id>]   # refresh docs/runs/<card> + manifest.md (also automatic at done); --check reports drift
 bb stelow draft --prompt <brief> [--card <card_id>]  # disposable Tier G draft burst (generation preset)
 bb stelow review [--card <card_id>]       # opt-in independent artifact review
 bb stelow lock acquire|release|check --scope <id> [--file ...] [--ttl N] [--json]

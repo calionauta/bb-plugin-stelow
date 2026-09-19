@@ -604,13 +604,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   paste-ready `Stelow-Artifacts:` trailer block (card id, registered
   artifact paths, gap counts). The worker protocol requires pasting it
   below the commit subject.
-- **Run-bundle export** (`bb stelow export [--json] [--card] [--dir]`, `lib/artifact-manifest.mjs`).
+- **Run-bundle export** (`bb stelow export [--json] [--check] [--card] [--dir]`, `lib/run-bundle.mjs`).
   Copies the registered artifacts into flat `docs/runs/<card>/` plus a
   `manifest.md` (SHA-8 per file, gap counts, embedded trailer, missing
-  entries listed). Idempotent, path-confined to the workspace. The
+  entries listed). Idempotent, path-confined to the workspace, stable
+  basenames (a repeated name gets a stage prefix, never an overwrite). The
+  host refreshes the bundle automatically on every `done` and prints the
+  trailer in the completion output — a reopened card that completes again
+  refreshes it again — so the directory converges instead of rotting. The
   worker commits the directory with the work — git log versions it, no
-  per-commit subdirectories; the protocol requires export → commit →
-  trailer on every commit.
+  per-commit subdirectories; the protocol is commit → trailer on every
+  commit. Between completions, `export --check` reports changed, unreadable,
+  and newly registered sources without writing anything.
 - **Delegated draft bursts** (`bb stelow draft --prompt`, `lib/draft-burst.mjs`).
   Tier G: disposable text-in/text-out on the generation preset (board
   default, cascade board → band with a reserved card pin), judged 100%
