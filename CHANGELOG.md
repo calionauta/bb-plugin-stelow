@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.28.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.27.0...v0.28.0) (2026-09-19)
+
+
+### Features
+
+* automation dialog names GitHub setup and 5-minute cadence ([18bfb8e](https://github.com/calionauta/bb-plugin-stelow/commit/18bfb8e0830dcd5caf2390570eecc48c4337b288))
+* automation rules manage any BB project via picker ([0e43e8e](https://github.com/calionauta/bb-plugin-stelow/commit/0e43e8ec282482e1fdef39f2bdd2da96316f643d))
+* manage automation rules for any BB project ([b3d5630](https://github.com/calionauta/bb-plugin-stelow/commit/b3d563069db6131fcfb381d8ff4e94f1e9c5cfa3))
+
 ## [0.27.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.26.0...v0.27.0) (2026-09-19)
 
 
