@@ -6956,7 +6956,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete this card permanently?"
-        description="The archived card, its comments, and its history are removed from Stelow and cannot be recovered."
+        description="Removes the card, its comments, history, and its Stelow run files (.stelow artifacts) — cannot be recovered. Code changes in Git checkouts are kept: committed and uncommitted work survives the delete."
         confirmLabel="Delete"
         confirmTone="destructive"
         onConfirm={doDelete}

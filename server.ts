@@ -5210,6 +5210,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (card.status !== "archived") return { deleted: false, error: "Only archived cards can be deleted. Archive it first." };
       await stopWorkerThread(card.worker_thread_id);
       await releaseCardClaimsAndNotify(cardId);
+      // Files follow the row: the card's workflow state dir (.stelow run
+      // artifacts) is removed too, or orphaned runs pile up on disk.
+      // Git checkouts are never touched — committed and uncommitted code
+      // changes survive the delete; only Stelow's own bookkeeping goes.
+      // workflowStateDir returns a path only for state this card owns.
+      try {
+        const workspace = await cardWorkspace(card).catch(() => null);
+        const stateDir = workspace?.path && card.dir_hash
+          ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null)
+          : null;
+        if (stateDir) rmSync(stateDir, { recursive: true, force: true });
+      } catch { /* bookkeeping rows below still delete */ }
       db.prepare("DELETE FROM comments WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);

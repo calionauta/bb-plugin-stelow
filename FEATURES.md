@@ -493,7 +493,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the card back (single `updateCard` rule, re-checked at write time), and
   every worker-touching RPC (move, advance, answers, comments, strategies)
   refuses archived cards with the named exit. Archived cards offer Delete
-  instead of a redundant Archive.
+  instead of a redundant Archive. Delete removes the rows plus the card's
+  `.stelow` run files (no orphaned artifacts on disk); Git checkouts are
+  never touched, so code changes survive the delete — the confirm dialog
+  states exactly that.
 - **Discard work** (`discardPreview`, `discardCardChanges`,
   `lib/discard-policy.mjs`). Archive parks with the work intact; discard
   destroys unpushed work, then archives. Manage offers it on live and
