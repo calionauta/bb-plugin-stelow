@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths } from "../lib/artifact-manifest.mjs";
+import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer } from "../lib/artifact-manifest.mjs";
 
 const manifest = parseArtifactManifest(`---
 name: workflow
@@ -44,5 +44,17 @@ assert.deepEqual(unregisteredArtifactPaths(stateDirPaths, ["/w/.stelow/2026-09-1
 assert.deepEqual(unregisteredArtifactPaths(stateDirPaths, []), ["/w/.stelow/2026-09-15/sw-x/audit.md", "/w/.stelow/2026-09-15/sw-x/plans/spec-tech_v1.md"], "state.md, its backups, logs, and json bookkeeping are never artifacts");
 assert.deepEqual(unregisteredArtifactPaths(["/w/a.md", "/w/a.md"], []), ["/w/a.md"], "duplicates collapse");
 assert.deepEqual(unregisteredArtifactPaths(null, null), [], "off-shape input is an empty list, never a throw");
+
+// Commit trailer: the audit link between a commit and the run that produced it.
+assert.deepEqual(
+  buildArtifactTrailer("card-1", [{ stage: "shape", path: ".stelow/x/spec.md" }, { stage: null, path: "" }], { fixed: 1, documented: 2, escalated: 0 }),
+  ["Stelow-Card: card-1", "Stelow-Artifacts: 1", "Stelow-Artifact: [shape] .stelow/x/spec.md", "Stelow-Gaps: 1 fixed / 2 documented / 0 escalated"],
+  "blank paths dropped, gap line appended",
+);
+assert.deepEqual(
+  buildArtifactTrailer("card-2", [], null),
+  ["Stelow-Card: card-2", "Stelow-Artifacts: 0"],
+  "empty run still names the card with a zero count",
+);
 
 console.log("artifact-manifest test ok: typed manifests parsed and artifact paths stay inside the project");

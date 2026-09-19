@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } fr
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths } from "./lib/artifact-manifest.mjs";
+import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer } from "./lib/artifact-manifest.mjs";
 import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
@@ -1237,7 +1237,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, run `bb stelow manifest` first and paste its Stelow-Artifacts trailer block below the commit subject: a commit cannot carry files, so the trailer (card id, artifact paths, gap counts) is the durable audit link — never skip it.";
   const RECON_PROTOCOL = "For any codebase reconnaissance, work from the target Git workspace root, never the card-state or skill directory. Run the bundled Stelow `recon.sh` preflight before using optional tools, passing this card's exact <state-dir> as its second argument; it writes `<state-dir>/context/recon-receipt.json`. Do not install tools inside the workflow. Cite that receipt and name missing optional tools in planning or audit output; a missing receipt is currently a warning, not a reason to fabricate or skip recon.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
@@ -6638,6 +6638,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "verify", summary: "Verify artifacts, or run the Build card's host-recorded tests", usage: "bb stelow verify [--card <card_id>] [--tests] [--json]" },
       { name: "gap-scopes", summary: "Convert escalated gaps into rework scopes (idempotent)", usage: "bb stelow gap-scopes [--card <card_id>]" },
       { name: "metrics", summary: "Lead/cycle time and gap rates per card, or fleet-wide without --card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
+      { name: "manifest", summary: "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)", usage: "bb stelow manifest [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
@@ -7148,6 +7149,44 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             ? `Rework scopes: ${payload.reworkScopes.map((scope) => `${scope.id} (${scope.status})`).join(", ")}`
             : "Rework scopes: none");
         }
+        return { exitCode: 0, stdout: lines.join("\n") };
+      }
+      if (argv[0] === "manifest") {
+        // Commit-message trailer source, not a file attachment: git commits
+        // cannot carry files and GitHub shows no git-notes, so the durable
+        // audit link is a paste-ready Stelow-Artifacts trailer naming the
+        // registered artifacts. Read-only: never writes, never blocks.
+        const args = argv.slice(1);
+        const json = args.includes("--json");
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow manifest [--json] [--card <card_id>]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        const workspace = await cardWorkspace(card).catch(() => null);
+        const stateDir = workspace?.path && card.dir_hash
+          ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null)
+          : null;
+        const stateBlob = stateDir
+          ? await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((file) => file.content).catch(() => null)
+          : null;
+        const artifacts = stateBlob
+          ? parseArtifactManifest(stateBlob)
+            .filter((fields) => typeof fields.path === "string" && fields.path.length > 0)
+            .map((fields) => ({ stage: fields.stage ?? null, kind: fields.kind ?? null, label: fields.label ?? null, path: fields.path }))
+          : [];
+        const gapState = card.kind === "build" ? await critiqueGapState(card).catch(() => null) : null;
+        const trailer = buildArtifactTrailer(cardId, artifacts, gapState?.matched ? gapState.totals : null);
+        const payload = { card: cardId, name: card.name, stage: card.stage, artifacts, trailer };
+        if (json) return { exitCode: 0, stdout: JSON.stringify(payload, null, 2) };
+        const lines = [
+          `Manifest for ${card.name} (${cardId}) — paste below the commit subject:`,
+          ...trailer,
+        ];
         return { exitCode: 0, stdout: lines.join("\n") };
       }
       if (argv[0] === "done") {

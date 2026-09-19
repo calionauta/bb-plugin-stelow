@@ -575,6 +575,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`table-columns`, `lib/artifact-validation.mjs`): the tech plan must
   carry a task table with a Done Criterion column — a passing prose
   mention no longer satisfies per-scope acceptance.
+- **Commit trailer manifest** (`bb stelow manifest [--json] [--card]`, `lib/artifact-manifest.mjs`).
+  Commits cannot carry file attachments, so the durable audit link is a
+  paste-ready `Stelow-Artifacts:` trailer block (card id, registered
+  artifact paths, gap counts). The worker protocol requires pasting it
+  below the commit subject.
 - **Explicit completion** (`bb stelow done [--card]`, `lib/completion.mjs`).
   Done-ness was inferred from `audit` + idle, so narrate-and-stop looked
   identical to stuck. The worker commits; the host verifies in code —

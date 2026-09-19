@@ -12,3 +12,11 @@ export function resolveArtifactPath(projectRoot: string, artifactPath: string): 
 export function isPublishableArtifactContent(content: unknown): boolean;
 
 export function unregisteredArtifactPaths(allPaths: string[], registeredPaths: string[]): string[];
+
+export interface ArtifactTrailerGaps {
+  fixed?: number;
+  documented?: number;
+  escalated?: number;
+}
+
+export function buildArtifactTrailer(cardId: string, artifacts: Array<{ stage?: string | null; path?: string | null }>, gapTotals?: ArtifactTrailerGaps | null): string[];
