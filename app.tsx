@@ -4650,7 +4650,7 @@ function DisclosureChevron({ className = "", open }: { className?: string; open?
   return <span aria-hidden className={`inline-flex size-5 shrink-0 items-center justify-center text-sm leading-none text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${rotation} ${className}`}>▶</span>;
 }
 
-function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: string; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
+function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
   return (
     <details
@@ -4668,7 +4668,11 @@ function DisclosureSection({ title, subtitle, hint, action, children, defaultOpe
             <span className="block text-xs font-normal leading-5 text-muted-foreground">{subtitle}</span>
           </span>
         ) : <span>{title}</span>}
-        {hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null}
+        {typeof hint === "string" ? (
+          hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null
+        ) : (
+          hint ? <span className="ml-auto inline-flex shrink-0 items-center overflow-visible pl-2 text-xs font-normal text-muted-foreground">{hint}</span> : null
+        )}
         {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
       </summary>
       <div className="space-y-3 px-3 pb-3">{children}</div>
@@ -6843,8 +6847,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 is its own sibling section, never nested in here. */}
             <CardDisclosure
               title={archivedPresentation?.workflow.title ?? "Workflow progress"}
-              subtitle={archivedPresentation ? undefined : "where this card is"}
-              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : card?.status === "completed" ? undefined : <CurrentStagePill stage={card.stage} />)}
+              subtitle={archivedPresentation ? undefined : scopeTotal > 0 || card?.status === "completed" ? "where this card is" : <>where this card is · <CurrentStagePill stage={card.stage} /></>}
+              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : undefined)}
               // Production rides the action slot (count + the single way to the
               // files) so no fact is printed twice once the section is open.
               action={artifactTotal > 0 ? (

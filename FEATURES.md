@@ -346,6 +346,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Workflow progress** (`ScopeProgress`, `ScopesList`, `StageTimeline`) sits beside the
   **Workflow map** as two sibling sections that never pretend to be each
   other: progress is where this card is, the map is what each stage does.
+  Before scopes exist the live checkpoint pill rides the subtitle line
+  (`where this card is · ● Plan gate`), never a detached floating hint —
+  element hints render without truncation so the pill ring is never clipped.
   A progress hero shows scope/task bars with percentages, what is doing
   now, and what is blocked — above the per-scope detail.
   Scopes in dependency order with task counts, blockers, 17-stage timeline with

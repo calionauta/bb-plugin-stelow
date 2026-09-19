@@ -126,7 +126,7 @@ assert.match(app, /exploreListGroups: "stelow-explore-list-groups-collapsed-v1"/
 assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
 assert.match(app, /aria-expanded=\{!isCollapsed\}/, "list group toggles expose expansion state");
 assert.match(app, /card\?\.status === "completed" \? "Completed without scoped execution\."/, "completed cards never claim shaping is in progress");
-assert.match(app, /card\?\.status === "completed" \? undefined : <CurrentStagePill stage=\{card\.stage\} \/>\)\}/, "completed cards carry no stale stage hint");
+assert.match(app, /card\?\.status === "completed" \? "where this card is" : <>where this card is/, "completed cards carry no stale stage hint");
 assert.match(app, /Completed · \{completedWorkerPreset\}/, "completed cards show the recorded worker preset instead of a future phase");
 assert.match(app, /Preset recorded for the completed worker\./, "completed cards do not claim a preset applies to another worker");
 assert.match(app, /card\.status === "completed" \? "Completed" : stageLabel\(card\.stage\)/, "completed list rows do not present Audit as active work");
@@ -289,7 +289,7 @@ assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecovery
 // sibling of the progress section rather than nested inside card state.
 assert.match(app, /function DisclosureSection\(\{ title, subtitle, hint/, "a section can name its job on its own line");
 assert.match(app, /title=\{archivedPresentation\?\.workflow\.title \?\? "Workflow progress"\}/, "the live progress section is named for the workflow, matching the map's family");
-assert.match(app, /subtitle=\{archivedPresentation \? undefined : "where this card is"\}/, "the progress subtitle is the counterpart to the map's What each stage does");
+assert.match(app, /subtitle=\{archivedPresentation \? undefined : scopeTotal > 0 \|\| card\?\.status/, "the progress subtitle is the counterpart to the map's What each stage does");
 assert.match(app, /hint\?: React\.ReactNode/, "disclosure hints accept live pills as well as plain text");
 assert.match(app, /attachments and @mentions live in the worker thread/, "the composer names where native attachments and mentions live");
 assert.match(app, /threadId=\{card\?\.workerThreadId \?\? null\} \/>/, "every track's conversation offers its live worker thread beside Send");
