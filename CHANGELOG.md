@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.27.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.26.0...v0.27.0) (2026-09-19)
+
+
+### Features
+
+* close the ESCALATED gap loop in code with mother-card transparency ([69a7606](https://github.com/calionauta/bb-plugin-stelow/commit/69a76060332ce4928fd7c0700178614fa491ad27))
+* delegated draft bursts on a generation preset ([dd24ae0](https://github.com/calionauta/bb-plugin-stelow/commit/dd24ae05b8b9cc7af1520f97ec2ff001122ababa))
+* delete removes the card state dir, dialog states the blast radius ([cd14077](https://github.com/calionauta/bb-plugin-stelow/commit/cd14077e9bee8ad410ade89ba9a29c9eeb774892))
+* depth contracts on explore stages and build documents ([aaaaedd](https://github.com/calionauta/bb-plugin-stelow/commit/aaaaeddf353554c36f9a2e26a0ad04abbc7e4c7a))
+* enforce gap effort and report fleet metrics ([685e21a](https://github.com/calionauta/bb-plugin-stelow/commit/685e21afdbf815bd008d3a5097e18b541dfc0aa8))
+* fresh-context spawn contract ([e7ce34f](https://github.com/calionauta/bb-plugin-stelow/commit/e7ce34fa677064a44a76f2c8814221daa9ae2d21))
+* hypothesis-only evidence status plus early build warnings ([72a991e](https://github.com/calionauta/bb-plugin-stelow/commit/72a991e84f154623d15caf50f4cdebf0a2e52646))
+* loop escalated gaps back to execution on the mother card ([88bcfee](https://github.com/calionauta/bb-plugin-stelow/commit/88bcfee4e42190e2b09c3f4039a53bea09091c0e))
+* opt-in independent artifact review ([6acef06](https://github.com/calionauta/bb-plugin-stelow/commit/6acef06ed850ef0119fc0ce9d2bab5e439b0729c))
+* paste-ready Stelow-Artifacts commit trailer via manifest ([52f09f6](https://github.com/calionauta/bb-plugin-stelow/commit/52f09f6eb8803d2bbd45ece02dccc634dbbb9379))
+* require Done Criterion as a task-table column, not prose ([ea59893](https://github.com/calionauta/bb-plugin-stelow/commit/ea59893b97323933cdb04a867634b73b23a7ac57))
+* run-bundle export into docs/runs plus manifest ([a9dcca2](https://github.com/calionauta/bb-plugin-stelow/commit/a9dcca2997bc62d3646e93192fbe015cb5540b3e))
+* scope progress hero above the per-scope list ([24ca31f](https://github.com/calionauta/bb-plugin-stelow/commit/24ca31fb0cfe874f9240354f8284e3bfed12d969))
+* seals, quality panel, review policy, review-any-document ([e905227](https://github.com/calionauta/bb-plugin-stelow/commit/e9052276f38ee2716cab0a8caa83a3820c66a43f))
+* seed-time gitignore keeps live runs out of git ([f8a4ae2](https://github.com/calionauta/bb-plugin-stelow/commit/f8a4ae2eb0a76004eee91c41595e157374d30f49))
+* shift the rework loop left into verify and name the loop-back ([777a39b](https://github.com/calionauta/bb-plugin-stelow/commit/777a39b651b6b0d0f29c4ed2b453f830a369ace9))
+* sync-scopes publishes card refresh on tracking change ([44bede3](https://github.com/calionauta/bb-plugin-stelow/commit/44bede36d66f4c99a024b6ef633a67bc2c87cef1))
+
+
+### Bug Fixes
+
+* **about:** keep last update verdict on failed checks, timebox applying ([9120d0e](https://github.com/calionauta/bb-plugin-stelow/commit/9120d0e3c3f7826e6e4db13647ff788da387b518))
+* close remaining Phase 1-4 gaps ([6420a7b](https://github.com/calionauta/bb-plugin-stelow/commit/6420a7be1d356055bd5dd0eed7393ef5393354d8))
+* disposable drafts exempt from unregistered list ([35198e3](https://github.com/calionauta/bb-plugin-stelow/commit/35198e3d8c6aefc3f9afdfa2ed2078cdb7ab0f30))
+
 ## [0.26.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.25.0...v0.26.0) (2026-09-18)
 
 
