@@ -119,5 +119,9 @@ assert.match(server, /Run bundle refreshed at \$\{bundle\.dir\}/, "completion ou
 assert.match(server, /paste below the commit subject:`?, \.\.\.bundle\.trailer/, "completion output carries the paste-ready trailer");
 assert.match(server, /stelow export \[--json\] \[--check\] \[--card <card_id>\]/, "export usage advertises --check");
 assert.match(server, /`bb stelow export --check` reports changed/, "the done protocol teaches drift-checking between completions");
+assert.match(server, /\["status", "--porcelain", "--", targetRel\]/, "commit-awareness is a read-only git status on the bundle dir");
+assert.match(server, /differs from HEAD — commit it with the work/, "an uncommitted bundle names its fix");
+assert.match(server, /No registered artifacts — nothing to bundle\./, "an empty registration skips the write instead of committing noise");
+assert.match(server, /committed: bundle\.committed/, "--check JSON carries the commit dimension alongside freshness");
 
 console.log("run bundle wiring test ok: done refreshes on all tracks, failure refuses, --check advertised");

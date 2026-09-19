@@ -614,8 +614,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   refreshes it again — so the directory converges instead of rotting. The
   worker commits the directory with the work — git log versions it, no
   per-commit subdirectories; the protocol is commit → trailer on every
-  commit. Between completions, `export --check` reports changed, unreadable,
-  and newly registered sources without writing anything.
+  commit. Nothing registered means nothing written: an empty bundle is
+  skipped with "nothing to bundle" instead of an empty commit. Between
+  completions, `export --check` reports changed, unreadable, newly
+  registered, and uncommitted sources without writing anything (read-only
+  `git status` on the bundle dir; no repo means "workspace only").
 - **Delegated draft bursts** (`bb stelow draft --prompt`, `lib/draft-burst.mjs`).
   Tier G: disposable text-in/text-out on the generation preset (board
   default, cascade board → band with a reserved card pin), judged 100%

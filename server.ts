@@ -1260,7 +1260,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, the run bundle is already fresh: `done` refreshes `docs/runs/<card>/` plus `manifest.md` (SHA pins, gap counts) automatically on every completion and prints the paste-ready trailer in its output — a reopened card that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, unreadable, and newly registered sources without writing anything.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, the run bundle is already fresh: `done` refreshes `docs/runs/<card>/` plus `manifest.md` (SHA pins, gap counts) automatically on every completion and prints the paste-ready trailer in its output — a reopened card that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, unreadable, newly registered, and uncommitted sources without writing anything.";
   const RECON_PROTOCOL = "For any codebase reconnaissance, work from the target Git workspace root, never the card-state or skill directory. Run the bundled Stelow `recon.sh` preflight before using optional tools, passing this card's exact <state-dir> as its second argument; it writes `<state-dir>/context/recon-receipt.json`. Do not install tools inside the workflow. Cite that receipt and name missing optional tools in planning or audit output; a missing receipt is currently a warning, not a reason to fabricate or skip recon.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
@@ -6709,7 +6709,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "gap-scopes", summary: "Convert escalated gaps into rework scopes (idempotent)", usage: "bb stelow gap-scopes [--card <card_id>]" },
       { name: "metrics", summary: "Lead/cycle time and gap rates per card, or fleet-wide without --card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
       { name: "manifest", summary: "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)", usage: "bb stelow manifest [--json] [--card <card_id>]" },
-      { name: "export", summary: "Refresh docs/runs/<card> plus manifest.md (idempotent, also automatic at done); --check reports drift without writing", usage: "bb stelow export [--json] [--check] [--card <card_id>] [--dir <relpath>]" },
+      { name: "export", summary: "Refresh docs/runs/<card> plus manifest.md (idempotent, also automatic at done); --check reports content drift and uncommitted state without writing", usage: "bb stelow export [--json] [--check] [--card <card_id>] [--dir <relpath>]" },
       { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
@@ -7265,12 +7265,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // it on every completion so docs/runs/<card>/ converges to the card's
       // current artifacts instead of rotting after the first manual export.
       // Idempotent: stable basenames, overwrite-in-place, manifest rewritten.
-      type BundleCheck = { ok: true; check: true; fresh: boolean; stale: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string; reason: string }>; freshNew: string[]; missing: string[] };
-      type BundleWrite = { ok: true; check: false; dir: string; files: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string }>; missing: string[]; trailer: string[] };
+      type BundleCheck = { ok: true; check: true; dir: string; fresh: boolean; stale: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string; reason: string }>; added: string[]; missing: string[]; committed: boolean | null };
+      type BundleWrite = { ok: true; check: false; dir: string; files: Array<{ name: string; stage: string | null; sha8: string; sourcePath: string }>; missing: string[]; trailer: string[]; wrote: boolean };
       type BundleFailure = { ok: false; error: string };
       async function exportRunBundle(card: CardRow, opts: { checkOnly: true; dirRel?: string }): Promise<BundleCheck | BundleFailure>;
       async function exportRunBundle(card: CardRow, opts?: { checkOnly?: false; dirRel?: string }): Promise<BundleWrite | BundleFailure>;
-      async function exportRunBundle(card: CardRow, opts?: { checkOnly?: boolean; dirRel?: string }) {
+      async function exportRunBundle(card: CardRow, opts?: { checkOnly?: boolean; dirRel?: string }): Promise<BundleCheck | BundleWrite | BundleFailure> {
         const workspace = await cardWorkspace(card).catch(() => null);
         if (!workspace?.path) return { ok: false as const, error: "The card has no workspace to export into." };
         const stateDir = card.dir_hash
@@ -7301,16 +7301,35 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const bundled = manifestContent === null ? [] : parseBundleManifest(manifestContent);
           const shaBySource = new Map(readable.map((entry) => [entry.sourcePath, entry.sha8]));
           const stale = staleBundleEntries(bundled, shaBySource);
-          const freshNew = unbundledSources(registered, bundled);
-          const drifted = stale.length > 0 || freshNew.length > 0 || unreadable.length > 0;
+          const added = unbundledSources(registered, bundled);
+          const drifted = stale.length > 0 || added.length > 0 || unreadable.length > 0;
+          // Commit dimension (read-only): does the bundle dir match HEAD, or
+          // is it sitting uncommitted? Null when there is nothing to compare
+          // (no bundle yet) or no git repo to compare against — the bundle
+          // then lives in the workspace only, and the report says so.
+          let committed: boolean | null = null;
+          if (manifestContent !== null) {
+            const status = await runGitIn(workspace.path, ["status", "--porcelain", "--", targetRel]).catch(() => null);
+            committed = status && status.ok ? status.stdout.trim().length === 0 : null;
+          }
           return {
             ok: true as const,
             check: true as const,
+            dir: targetRel,
             fresh: !drifted,
             stale,
-            freshNew,
+            added,
             missing: unreadable,
+            committed,
           };
+        }
+        // Nothing readable and no bundle yet: writing a manifest of only
+        // missing entries would be noise — skip, and say so.
+        if (readable.length === 0) {
+          const priorManifest = await bb.sdk.files.read({ path: join(targetAbs, "manifest.md") }).then((file) => file.content).catch(() => null);
+          if (priorManifest === null) {
+            return { ok: true as const, check: false as const, dir: targetRel, files: [], missing: [...unreadable], trailer: [], wrote: false as const };
+          }
         }
         try {
           await bb.sdk.files.mkdir({ path: targetAbs, rootPath: workspace.path, recursive: true });
@@ -7339,7 +7358,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { ok: false as const, error: `Exported ${files.length} file(s) but could not write manifest.md — retry export.` };
         }
         const trailer = buildArtifactTrailer(card.id, files.map((file) => ({ stage: file.stage, path: file.sourcePath })), gapTotals);
-        return { ok: true as const, check: false as const, dir: targetRel, files, missing, trailer };
+        return { ok: true as const, check: false as const, dir: targetRel, files, missing, trailer, wrote: true as const };
       }
       if (argv[0] === "export") {
         // On-demand bundle refresh plus drift check. `done` refreshes the
@@ -7367,13 +7386,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (bundle.check) {
           const drift = [
             ...bundle.stale.map((entry) => `${entry.sourcePath} (${entry.reason})`),
-            ...bundle.freshNew.map((sourcePath) => `${sourcePath} (new)`),
+            ...bundle.added.map((sourcePath) => `${sourcePath} (new)`),
             ...bundle.missing.map((sourcePath) => `${sourcePath} (unreadable)`),
           ];
-          if (json) return { exitCode: bundle.fresh ? 0 : 1, stdout: JSON.stringify({ fresh: bundle.fresh, stale: bundle.stale, new: bundle.freshNew, missing: bundle.missing }, null, 2) };
-          if (bundle.fresh) return { exitCode: 0, stdout: "Bundle fresh: docs/runs matches every registered artifact." };
-          return { exitCode: 1, stdout: [`Bundle stale — run \`bb stelow export\`, then commit:`, ...drift.map((line) => `- ${line}`)].join("\n") };
+          const settled = bundle.fresh && bundle.committed !== false;
+          if (bundle.committed === false) drift.push(`${bundle.dir}/ differs from HEAD — commit it with the work`);
+          if (json) return { exitCode: settled ? 0 : 1, stdout: JSON.stringify({ fresh: bundle.fresh, committed: bundle.committed, stale: bundle.stale, added: bundle.added, missing: bundle.missing }, null, 2) };
+          if (settled) return { exitCode: 0, stdout: `Bundle fresh: docs/runs matches every registered artifact.${bundle.committed === null ? " (no git repo — bundle lives in the workspace only)" : " (committed)"}` };
+          return { exitCode: 1, stderr: [`Bundle not settled — run \`bb stelow export\`, then commit:`, ...drift.map((line) => `- ${line}`)].join("\n") };
         }
+        if (!bundle.wrote) return { exitCode: 0, stdout: `No registered artifacts — nothing to bundle.${bundle.missing.length > 0 ? ` (${bundle.missing.length} registered but unreadable: ${bundle.missing.join(", ")})` : ""}` };
         const payload = { card: card.id, dir: bundle.dir, files: bundle.files, missing: bundle.missing, trailer: bundle.trailer };
         if (json) return { exitCode: 0, stdout: JSON.stringify(payload, null, 2) };
         const lines = [
@@ -7484,7 +7506,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           recordStageEvent(cardId, "done");
           await releaseCardClaimsAndNotify(cardId);
-          return { exitCode: 0, stdout: [`Done. Workflow "${card.name}" completed at audit.`, `Run bundle refreshed at ${bundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...bundle.trailer].join("\n") };
+          return { exitCode: 0, stdout: bundle.wrote ? [`Done. Workflow "${card.name}" completed at audit.`, `Run bundle refreshed at ${bundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...bundle.trailer].join("\n") : `Done. Workflow "${card.name}" completed at audit. No registered artifacts — nothing to bundle.` };
         }
         if (card.kind === "research") {
           const refusal = doneEligibility({ kind: "research", stage: null, questionPending: pending.length > 0 });
@@ -7509,7 +7531,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const doneCurrent = getCard(cardId);
           const doneHypothesisSuffix = readiness.evidence === "hypothesis-only" ? " Marked hypothesis-only: web research was unavailable — requires human validation." : "";
           if (doneCurrent) recordInboxEvent(doneCurrent, "completed", `Research complete — results ready to review in Done.${doneHypothesisSuffix}`, `completed:${cardId}:index:${readiness.fingerprint ?? "ready"}`, now());
-          return { exitCode: 0, stdout: [`Done. Research "${card.name}" completed.`, `Run bundle refreshed at ${researchBundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...researchBundle.trailer].join("\n") };
+          return { exitCode: 0, stdout: researchBundle.wrote ? [`Done. Research "${card.name}" completed.`, `Run bundle refreshed at ${researchBundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...researchBundle.trailer].join("\n") : `Done. Research "${card.name}" completed. No registered artifacts — nothing to bundle.` };
         }
         if (card.kind === "explore") {
           const refusal = doneEligibility({ kind: "explore", stage: null, questionPending: pending.length > 0 });
@@ -7532,7 +7554,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           await releaseCardClaimsAndNotify(cardId);
           const doneCurrent = getCard(cardId);
           if (doneCurrent) recordInboxEvent(doneCurrent, "completed", "Exploration complete — result ready to review in Done.", `explore-completed:${cardId}:${artifact.fingerprint ?? "ready"}`, now());
-          return { exitCode: 0, stdout: [`Done. Exploration "${card.name}" completed.`, `Run bundle refreshed at ${exploreBundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...exploreBundle.trailer].join("\n") };
+          return { exitCode: 0, stdout: exploreBundle.wrote ? [`Done. Exploration "${card.name}" completed.`, `Run bundle refreshed at ${exploreBundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...exploreBundle.trailer].join("\n") : `Done. Exploration "${card.name}" completed. No registered artifacts — nothing to bundle.` };
         }
         return { exitCode: 1, stderr: `Unknown card kind "${card.kind}". Archive this card and start a new one.` };
       }
