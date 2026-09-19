@@ -592,6 +592,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   paste-ready `Stelow-Artifacts:` trailer block (card id, registered
   artifact paths, gap counts). The worker protocol requires pasting it
   below the commit subject.
+- **Run-bundle export** (`bb stelow export [--json] [--card] [--dir]`, `lib/artifact-manifest.mjs`).
+  Copies the registered artifacts into flat `docs/runs/<card>/` plus a
+  `manifest.md` (SHA-8 per file, gap counts, embedded trailer, missing
+  entries listed). Idempotent, path-confined to the workspace. The
+  worker commits the directory with the work — git log versions it, no
+  per-commit subdirectories; the protocol requires export → commit →
+  trailer on every commit.
 - **Explicit completion** (`bb stelow done [--card]`, `lib/completion.mjs`).
   Done-ness was inferred from `audit` + idle, so narrate-and-stop looked
   identical to stuck. The worker commits; the host verifies in code —

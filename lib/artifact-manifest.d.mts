@@ -20,3 +20,22 @@ export interface ArtifactTrailerGaps {
 }
 
 export function buildArtifactTrailer(cardId: string, artifacts: Array<{ stage?: string | null; path?: string | null }>, gapTotals?: ArtifactTrailerGaps | null): string[];
+
+export interface BundleManifestFile {
+  name: string;
+  stage?: string | null;
+  sha8?: string | null;
+  sourcePath: string;
+}
+
+export interface BundleManifestInput {
+  cardId: string;
+  cardName: string;
+  stage: string;
+  generatedAt: string;
+  files: BundleManifestFile[];
+  missing: string[];
+  gapTotals?: ArtifactTrailerGaps | null;
+}
+
+export function renderBundleManifest(input: BundleManifestInput): string;

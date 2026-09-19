@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer } from "../lib/artifact-manifest.mjs";
+import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "../lib/artifact-manifest.mjs";
 
 const manifest = parseArtifactManifest(`---
 name: workflow
@@ -56,5 +56,20 @@ assert.deepEqual(
   ["Stelow-Card: card-2", "Stelow-Artifacts: 0"],
   "empty run still names the card with a zero count",
 );
+
+// Run bundle manifest: stable names, SHA pins, missing listed, trailer embedded.
+const bundle = renderBundleManifest({
+  cardId: "card-1",
+  cardName: "Login",
+  stage: "audit",
+  generatedAt: "2026-09-19T00:00:00.000Z",
+  files: [{ name: "audit.md", stage: "audit", sha8: "abc12345", sourcePath: ".stelow/x/audit.md" }],
+  missing: [".stelow/x/gone.md"],
+  gapTotals: { fixed: 1, documented: 0, escalated: 2 },
+});
+assert.ok(bundle.includes("| audit.md | audit | `abc12345` | .stelow/x/audit.md |"), "file row pins name, stage, SHA, source");
+assert.ok(bundle.includes("- .stelow/x/gone.md"), "missing entries listed, never hidden");
+assert.ok(bundle.includes("1 fixed / 0 documented / 2 escalated"), "gap counts rendered");
+assert.ok(bundle.includes("Stelow-Card: card-1"), "trailer embedded for pasting");
 
 console.log("artifact-manifest test ok: typed manifests parsed and artifact paths stay inside the project");
