@@ -601,8 +601,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   trailer on every commit.
 - **Delegated draft bursts** (`bb stelow draft --prompt`, `lib/draft-burst.mjs`).
   Tier G: disposable text-in/text-out on the generation preset (board
-  default, cascade card → board → band), judged 100% by the card worker
-  before use. Hidden thread, 3-minute budget, full→accept-edits coercion,
+  default, cascade board → band with a reserved card pin), judged 100%
+  by the card worker before use. Hidden thread, 3-minute budget,
+  full→accept-edits coercion,
   stopped afterwards, record in `drafts/`. Anything needing tools, exact
   shapes, or multi-step work stays Tier R (band preset) — the draft
   prompt forbids files, commands, questions, and advances. Same command
