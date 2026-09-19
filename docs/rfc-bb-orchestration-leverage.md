@@ -14,8 +14,9 @@ drag-to-reparent, observability-first restraint.
 
 Governing filter (non-negotiable, from stelow's papers table): anything
 that increases observability without shared live state passes; anything
-that creates swarm coordination fails — CooperBench (2-agent cooperation
-25% vs 50% solo, monotonic decline), coordination overhead quadratic
+that creates swarm coordination fails — CooperBench (peer agents score on
+average 30% lower together than solo, monotonic decline), coordination
+overhead quadratic
 (C(n)=0.023n², 50% tokens lost at n=7), Co-Coder (parallel speedup only
 with cohesion-aware partitioning), CAID (+26.7% research parallelism).
 

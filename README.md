@@ -9,6 +9,7 @@ One board, one quiet inbox.
 ## What it adds
 
 - **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyze, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself.
+- **Automation rules:** per-project board settings can watch a GitHub label; each newly matching open issue becomes one unstarted Inbox draft (never a running worker) with its source link. Rules run on the host scheduler and are idempotent.
 - **Explore runs:** pick one technique (Shape Up, interface alternatives, critiques, tech planning…), supply the input, get one artifact — no triage, no pipeline, no gates.
 - **Deterministic artifacts:** research round files and explore artifacts are pre-created by the plugin and validated in code — per-skill depth contracts (sections, counts, tables), not just file presence; `bb stelow verify` lets the worker self-check before finishing, and cards show per-artifact quality with one-click repair.
 - **Opt-in independent review:** `bb stelow review` spends a designated cross-lineage reviewer preset (never the worker's), only on structurally valid artifacts; chat seals and completion records carry verified / hypothesis-only provenance instead of claiming complete research.
