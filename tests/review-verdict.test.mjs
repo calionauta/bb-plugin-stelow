@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildReviewPrompt, extractJsonBlock, parseReviewOutput, reviewSummary, MAX_REVIEW_CHARS } from "../lib/review-verdict.mjs";
+import { buildReviewPrompt, extractJsonBlock, parseReviewOutput, reviewSummary, reviewCoversFingerprint, MAX_REVIEW_CHARS } from "../lib/review-verdict.mjs";
 
 const ARTIFACT = "## Top 10:\n#### 1/10 Ensure outcome one\n- Alternative: achieve result one\n";
 
@@ -42,5 +42,16 @@ assert.equal(extractJsonBlock("nothing"), null, "no block is null");
 // Summary names verdict, counts, and drops.
 assert.match(reviewSummary(parsed), /needs-revision.*1 finding\(s\), 1 failing/, "summary counts");
 assert.match(reviewSummary(forgedParsed), /1 finding\(s\) dropped/, "summary names drops");
+
+// Policy gate: only a passing review stamped with this fingerprint counts.
+const reviews = [
+  { name: "review-b.md", content: "Status: pass\nFingerprint: 3\n" },
+  { name: "review-a.md", content: "Status: needs-revision\nFingerprint: 2\n" },
+];
+assert.equal(reviewCoversFingerprint(reviews, "3"), true, "passing review covers its fingerprint");
+assert.equal(reviewCoversFingerprint(reviews, "2"), false, "failing review never covers");
+assert.equal(reviewCoversFingerprint(reviews, "9"), false, "stale fingerprint is uncovered");
+assert.equal(reviewCoversFingerprint([], "3"), false, "no reviews means uncovered");
+assert.equal(reviewCoversFingerprint([{ name: "x.md", content: "free prose" }], "3"), false, "unshaped files never satisfy");
 
 console.log("review verdict test ok: prompt shaping, quote verification, graceful degradation");

@@ -36,9 +36,9 @@ import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStat
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "./lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, ROUNDS_DIR } from "./lib/research-rounds.mjs";
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, substepQuality, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
-import { validateSubstep, validateVariant, validateExplore, buildDocDepths } from "./lib/artifact-validation.mjs";
-import { buildReviewPrompt, parseReviewOutput, reviewSummary } from "./lib/review-verdict.mjs";
-import { contractForStrategy } from "./lib/artifact-contracts.mjs";
+import { validateArtifact, validateSubstep, validateVariant, validateExplore, buildDocDepths, sealStatus } from "./lib/artifact-validation.mjs";
+import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
+import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
@@ -396,6 +396,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
     output: z.object({ content: z.string().nullable(), truncated: z.boolean(), error: z.string().nullable() }),
   },
+  qualitySeal: {
+    input: z.object({ cardId: z.string().nullable().optional(), threadId: z.string().nullable().optional(), path: z.string().min(1).max(4_000) }).strict(),
+    output: z.object({ status: z.enum(["verified", "hypothesis-only", "needs-revision", "unverified"]), failures: z.array(z.string()), evidence: z.string().nullable(), label: z.string().nullable() }),
+  },
   boardWorkflowDefaults: {
     input: z.object({}).strict(),
     output: boardWorkflowDefaultsSchema,
@@ -644,6 +648,14 @@ export const rpcContract = defineRpcContract({
   },
   assignReviewPreset: {
     input: z.object({ presetId: z.string().nullable() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  getReviewPolicy: {
+    input: z.object({}).strict(),
+    output: z.object({ mode: z.enum(["off", "required"]) }),
+  },
+  setReviewPolicy: {
+    input: z.object({ mode: z.enum(["off", "required"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   assignPreset: {
@@ -1504,6 +1516,14 @@ export default async function plugin(bb: BbPluginApi) {
     assigned_at INTEGER NOT NULL,
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
   )`);
+  // Review enforcement policy (default off): when required, research/explore
+  // done refuses without a passing review stamped with the current
+  // fingerprint. Mechanism only — calibration stays a documented prerequisite.
+  db.exec(`CREATE TABLE IF NOT EXISTS review_policy (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    mode TEXT NOT NULL CHECK (mode IN ('off', 'required')),
+    assigned_at INTEGER NOT NULL
+  )`);
   // Rebuild tables created with the build-only band allowlist, preserving
   // rows. Runs once: the rebuilt schema has no CHECK to match against.
   const stagePresetsSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'stage_presets'").get() as { sql: string } | undefined;
@@ -1842,7 +1862,7 @@ Step 4 — register the index plus any EXTRA sub-step files so each renders on t
         label: Research index
 (one more block per sub-step file, with label "Round ${roundNo} — ${strategyLabel} (<substep-slug>)" and its own path. The round's own file needs no block — it is pre-registered.)
 
-Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${workspaceRoot}>" display="<short file name>"}\` once per file (the index, the round file, and every sub-step file), each directive on its own line — bb renders these as clickable chips so the user can open, read, and comment on each output directly from the thread.
+Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${workspaceRoot}>" display="<short file name>"}\` once per file (the index, the round file, and every sub-step file), each directive on its own line — bb renders these as clickable chips so the user can open, read, and comment on each output directly from the thread. Then emit one quality seal per produced file: \`::stelow-quality{path="<same relative path>"}\` once per file, each on its own line — bb revalidates each file live and renders verified / hypothesis / needs-work / unverified (the seal resolves from the host, never from your claim).
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
@@ -1888,7 +1908,7 @@ Step 4 — register the artifact so it renders on the card: append one block to 
         path: <explore-${stage.id}.md path relative to ${workspaceRoot}>
         label: ${stage.label}
 
-Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${workspaceRoot}>" display="${stage.label}"}\` on its own line — bb renders these as clickable chips.
+Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${workspaceRoot}>" display="${stage.label}"}\` on its own line — bb renders these as clickable chips. Then emit \`::stelow-quality{path="<same relative path>"}\` on its own line — bb revalidates the file live and renders verified / hypothesis / needs-work / unverified.
 
 CRITICAL — User input contract:
 ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
@@ -3180,6 +3200,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       contents.set(fields.path, full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null);
     }
     return buildDocDepths(stateBlob, (path) => contents.get(path) ?? null);
+  }
+
+  // Passing review covering this fingerprint (policy gate). Lists the
+  // card's reviews/ dir newest-first; only a Status: pass file stamped
+  // with the current fingerprint satisfies. Fail-soft: unreadable state
+  // reads as uncovered, and done names the fix.
+  async function passingReviewCovers(card: CardRow, fingerprint: string | null): Promise<boolean> {
+    if (!fingerprint) return false;
+    const workspace = await cardWorkspace(card).catch(() => null);
+    if (!workspace?.path || !card.dir_hash) return false;
+    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
+    if (!stateDir) return false;
+    try {
+      const listed = await bb.sdk.files.listPaths({ path: join(stateDir, "reviews"), includeFiles: true, includeDirectories: false });
+      const paths = array(record(listed).paths).map((entry) => text(record(entry).path)).filter((path) => path.endsWith(".md")).sort().reverse();
+      const files: Array<{ name: string; content: string | null }> = [];
+      for (const path of paths) {
+        const content = await bb.sdk.files.read({ path }).then((f) => f.content).catch(() => null);
+        files.push({ name: path.split("/").pop() ?? path, content });
+      }
+      return reviewCoversFingerprint(files, fingerprint);
+    } catch {
+      return false;
+    }
   }
 
   // Workspace-relative round path inside the state dir's rounds/.
@@ -4692,6 +4736,73 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, start, execution: execution ?? null });
     },
 
+    async qualitySeal({ cardId, threadId, path }) {
+      // Chat seal backing (docs/phase6-independent-review-plan.md): resolve
+      // the card (directly or via worker thread), revalidate the artifact
+      // live, and report provenance. Never trusts directive attributes —
+      // unknown shapes and unreadable files read as unverified.
+      const unverified = { status: "unverified" as const, failures: [] as string[], evidence: null as string | null, label: null as string | null };
+      const card = (cardId ? getCard(cardId) : null) ?? (threadId ? getCardByWorkerThread(threadId) ?? null : null);
+      if (!card) return unverified;
+      const workspace = await cardWorkspace(card).catch(() => null);
+      if (!workspace?.path) return unverified;
+      const full = resolveArtifactPath(workspace.path, path);
+      const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
+      if (typeof content !== "string" || !content.trim()) return unverified;
+      let failures: string[] = [];
+      let label: string | null = null;
+      let matched = false;
+      let evidence: string | null = "verified";
+      if (card.kind === "research") {
+        const history = strategyRounds(card);
+        const primary = history.find((entry) => entry.file === path);
+        if (primary) {
+          matched = true;
+          label = researchStrategyById(primary.id)?.label ?? primary.id;
+          const result = validateVariant(content, contractForStrategy(primary.id));
+          failures = result.pass ? [] : result.failures.map((failure) => failure.detail).slice(0, 3);
+        } else {
+          for (const entry of history) {
+            const parsed = parseRoundPath(path, entry.id);
+            if (parsed?.subskill) {
+              matched = true;
+              label = `${researchStrategyById(entry.id)?.label ?? entry.id} — ${parsed.subskill}`;
+              const index = await readResearchIndex(card).catch(() => null);
+              const indexBlob = index && index.ok === true && typeof index.content === "string" ? index.content : null;
+              if (!isValidRoundContent(content, indexBlob)) {
+                failures = ["missing, thin, or mirrors the index — rewrite it"];
+              } else {
+                failures = validateSubstep(parsed.subskill, content).failures.map((failure) => failure.detail).slice(0, 3);
+              }
+              break;
+            }
+          }
+        }
+        const index = await readResearchIndex(card).catch(() => null);
+        if (index && index.ok === true && typeof index.content === "string") evidence = evidenceStatus(index.content);
+      } else if (card.kind === "explore") {
+        if (path.endsWith(exploreArtifactFile(card.explore_stage ?? ""))) {
+          matched = true;
+          label = techniqueById(card.explore_stage ?? "")?.label ?? card.explore_stage;
+          if (!isValidExploreContent(content)) {
+            failures = ["missing or thin — write the stage deliverable"];
+          } else {
+            failures = validateExplore(card.explore_stage ?? "", content).failures.map((failure) => failure.detail).slice(0, 3);
+          }
+        }
+      } else {
+        const contract = contractForBuildArtifact(path, content);
+        if (contract) {
+          matched = true;
+          label = contract.id;
+          const result = validateArtifact(content, contract);
+          failures = result.pass ? [] : result.failures.map((failure) => failure.detail).slice(0, 3);
+        }
+      }
+      if (!matched) return unverified;
+      return { status: sealStatus(failures.length === 0 ? { pass: true } : { pass: false }, evidence ?? "verified"), failures, evidence, label };
+    },
+
     async cardDetail({ cardId }) {
       const initial = getCard(cardId);
       if (!initial) throw new Error(ERR_CARD_NOT_FOUND);
@@ -6158,6 +6269,17 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { ok: true, error: null };
     },
 
+    async getReviewPolicy() {
+      const row = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
+      return { mode: row?.mode === "required" ? "required" as const : "off" as const };
+    },
+
+    async setReviewPolicy({ mode }) {
+      db.prepare("INSERT OR REPLACE INTO review_policy (id, mode, assigned_at) VALUES (1, ?, ?)").run(mode, now());
+      bb.realtime.publish("board-changed", { reviewPolicy: mode });
+      return { ok: true, error: null };
+    },
+
     async assignPreset({ cardId, presetId }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
@@ -6376,7 +6498,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
       { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
       { name: "verify", summary: "Verify artifacts, or run the Build card's host-recorded tests", usage: "bb stelow verify [--card <card_id>] [--tests] [--json]" },
-      { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>]" },
+      { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -6803,6 +6925,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const textOut = researchVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the rounds above, then run done again." };
           }
+          const policyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
+          if (policyRow?.mode === "required" && !(await passingReviewCovers(card, readiness.fingerprint).catch(() => false))) {
+            return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current index — run `bb stelow review`, then run done again. (Enable only with a calibrated reviewer; see docs/phase6-independent-review-plan.md.)" };
+          }
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           await releaseCardClaimsAndNotify(cardId);
@@ -6819,6 +6945,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (!report.pass) {
             const textOut = exploreVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the artifact above, then run done again." };
+          }
+          const explorePolicyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
+          if (explorePolicyRow?.mode === "required" && !(await passingReviewCovers(card, artifact.fingerprint).catch(() => false))) {
+            return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current artifact — run `bb stelow review`, then run done again. (Enable only with a calibrated reviewer; see docs/phase6-independent-review-plan.md.)" };
           }
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
@@ -7290,19 +7420,23 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // explicit opt-in, read-only, cross-lineage. Refuses without a
         // designated review preset (never falls back to the worker preset)
         // and when deterministic verify fails (never spend review budget on
-        // thin files). v1 covers research and explore cards.
+        // thin files). Research and explore review the card deliverable;
+        // --artifact reviews one registered manifest document (any card,
+        // including build documents like spec-product or spec-tech).
         const args = argv.slice(1);
         let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        let artifactArg: string | null = null;
         for (let i = 0; i < args.length; i++) {
           if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
-          return { exitCode: 2, stderr: "Usage: bb stelow review [--card <card_id>]" };
+          if (args[i] === "--artifact") { artifactArg = args[i + 1] ?? null; i++; continue; }
+          return { exitCode: 2, stderr: "Usage: bb stelow review [--card <card_id>] [--artifact <path>]" };
         }
         if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
         const card = getCard(cardId);
         if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
         if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
-        if (card.kind === "build") return { exitCode: 2, stderr: "Review covers research and explore cards in v1; build document review is not yet supported." };
-        if (card.kind !== "research" && card.kind !== "explore") return { exitCode: 2, stderr: `Unknown card kind "${card.kind}". Archive this card and start a new one.` };
+        if (!artifactArg && card.kind === "build") return { exitCode: 2, stderr: "Card review covers research and explore cards; for build documents pass --artifact <registered path> (e.g. a spec-product or spec-tech file)." };
+        if (card.kind !== "research" && card.kind !== "explore" && card.kind !== "build") return { exitCode: 2, stderr: `Unknown card kind "${card.kind}". Archive this card and start a new one.` };
         const designated = db.prepare("SELECT preset_id FROM review_preset WHERE id = 1").get() as { preset_id: string } | undefined;
         const reviewPreset = designated ? getPresetById(designated.preset_id) : null;
         if (!reviewPreset) {
@@ -7316,7 +7450,27 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         let artifactText = "";
         let contractLabel = "";
         let evidence: "verified" | "hypothesis-only" = "verified";
-        if (card.kind === "research") {
+        let reviewFingerprint: string | null = null;
+        if (artifactArg) {
+          const workspace = await cardWorkspace(card);
+          if (!workspace?.path || !card.dir_hash) return { exitCode: 1, stderr: "No workflow state for this card yet." };
+          const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
+          if (!stateDir) return { exitCode: 1, stderr: "No workflow state for this card yet." };
+          const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
+          const registered = stateBlob ? parseArtifactManifest(stateBlob).some((fields) => fields.path === artifactArg) : false;
+          if (!registered) return { exitCode: 2, stderr: `Unknown artifact "${artifactArg}" — review only registered manifest documents (see the card Artifacts).` };
+          const full = resolveArtifactPath(workspace.path, artifactArg);
+          const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
+          if (typeof content !== "string" || !content.trim()) return { exitCode: 1, stderr: `Artifact "${artifactArg}" is missing or empty — write it first, then review.` };
+          const contract = contractForBuildArtifact(artifactArg, content);
+          if (!contract) return { exitCode: 2, stderr: `Artifact "${artifactArg}" matches no known stage contract — review covers spec-product, spec-tech, interfaces, testing-strategy, and critique reports.` };
+          const depth = validateArtifact(content, contract);
+          if (!depth.pass) {
+            return { exitCode: 1, stderr: `Review refused: deterministic depth fails — fix first, then review (review budget is never spent on thin files).\nFAIL ${artifactArg}: ${depth.failures.map((failure) => failure.detail).slice(0, 3).join("; ")}` };
+          }
+          contractLabel = `build document (${contract.id})`;
+          artifactText = content;
+        } else if (card.kind === "research") {
           const readiness = await researchReadiness(card).catch(() => null);
           if (!readiness) return { exitCode: 1, stderr: "Unable to read card state — retry review." };
           if (!readiness.ready || readiness.invalid.length > 0) {
@@ -7325,6 +7479,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             return { exitCode: 1, stderr: `Review refused: deterministic verify fails — fix first, then review (review budget is never spent on thin files).\n${textOut.stderr ?? textOut.stdout ?? ""}` };
           }
           evidence = readiness.evidence;
+          reviewFingerprint = readiness.fingerprint;
           const history = strategyRounds(card);
           const latest = history[history.length - 1];
           const strategyLabel = researchStrategyById(latest?.id ?? "")?.label ?? latest?.id ?? "research";
@@ -7343,6 +7498,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const textOut = exploreVerifyText(report);
             return { exitCode: 1, stderr: `Review refused: deterministic verify fails — fix first, then review (review budget is never spent on thin files).\n${textOut.stderr ?? textOut.stdout ?? ""}` };
           }
+          reviewFingerprint = artifact.fingerprint;
           const techniqueLabel = techniqueById(card.explore_stage ?? "")?.label ?? card.explore_stage ?? "explore";
           contractLabel = `${techniqueLabel} stage deliverable`;
           const workspace = await cardWorkspace(card);
@@ -7398,7 +7554,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             await bb.sdk.files.mkdir({ path: dirname(full), rootPath: reviewWorkspace.path, recursive: true });
             await bb.sdk.files.write({
               path: full,
-              content: `# Review ${stamp}\n\nCard: ${card.display_name ?? card.name}\nReviewer thread: ${reviewThread.id}\nPreset: ${reviewPreset.name}\nStatus: ${parsed.status}\n\n${reviewSummary(parsed)}\n\n## Verdict\n\n\`\`\`json\n${JSON.stringify({ status: parsed.status, findings: parsed.findings }, null, 2)}\n\`\`\`\n`,
+              content: `# Review ${stamp}\n\nCard: ${card.display_name ?? card.name}\nReviewer thread: ${reviewThread.id}\nPreset: ${reviewPreset.name}\nStatus: ${parsed.status}\nFingerprint: ${reviewFingerprint ?? "none"}\n\n${reviewSummary(parsed)}\n\n## Verdict\n\n\`\`\`json\n${JSON.stringify({ status: parsed.status, findings: parsed.findings }, null, 2)}\n\`\`\`\n`,
             });
             reviewPath = workspaceRelative(reviewWorkspace.path, full) ?? `reviews/review-${stamp}.md`;
           } catch { /* verdict still reported via comment + stdout */ }

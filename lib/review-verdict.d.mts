@@ -28,3 +28,4 @@ export declare function buildReviewPrompt(input: {
 export declare function extractJsonBlock(output: unknown): unknown;
 export declare function parseReviewOutput(output: unknown, artifactContent: unknown): ParsedReview;
 export declare function reviewSummary(parsed: ParsedReview): string;
+export declare function reviewCoversFingerprint(reviewFiles: Array<{ name: string; content: unknown }>, fingerprint: string | null): boolean;

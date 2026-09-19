@@ -6,6 +6,7 @@ import {
   fieldBlockCount,
   validateArtifact,
   validateSubstep,
+  sealStatus,
 } from "../lib/artifact-validation.mjs";
 import { contractForSubstep, JTBD_CONTRACTS } from "../lib/artifact-contracts.mjs";
 import { findInvalidSubsteps, researchVerifyReport, researchVerifyText } from "../lib/research-artifacts.mjs";
@@ -105,5 +106,12 @@ const depthText = researchVerifyText(researchVerifyReport("card_1", 1, true, inv
 assert.equal(depthText.exitCode, 1, "depth failure exits 1");
 assert.match(depthText.stderr, /functional-needs/, "depth failure names the slug");
 assert.match(depthText.stderr, /needs depth/, "depth failure states the reason");
+
+// Seal vocabulary: provenance, not truth — unknown shapes and failed
+// validation never render verified.
+assert.equal(sealStatus({ pass: true }, "verified"), "verified", "passing verified evidence seals verified");
+assert.equal(sealStatus({ pass: true }, "hypothesis-only"), "hypothesis-only", "passing hypothesis evidence seals hypothesis");
+assert.equal(sealStatus({ pass: false }, "verified"), "needs-revision", "failing validation seals needs-revision");
+assert.equal(sealStatus(null, "verified"), "unverified", "unknown shape seals unverified");
 
 console.log("artifact validation test ok: helpers, ten JTBD contracts, depth wiring");

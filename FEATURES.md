@@ -599,6 +599,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   restrictive permission — full coerced to accept-edits); deleting the
   preset clears the designation by cascade. The preset modal binds these
   RPCs to show the badge + use-case explainer (UI follow-up).
+- **Review enforcement policy** (`getReviewPolicy`,
+  `setReviewPolicy`, `review_policy` table, default off). When required,
+  research/explore `done` refuses without a passing review stamped with
+  the current fingerprint (`reviewCoversFingerprint`). Mechanism only:
+  enable solely with a calibrated reviewer and measured agreement —
+  the refusal says so.
 - **Portable audit receipt** (`scripts/stelow audit-trail`). After bb's
   stricter checkout-bound `audit.md` gate passes, Build completion invokes the
   upstream helper to build and check the deterministic cross-host lineage
@@ -765,6 +771,12 @@ investigation that feeds the build board.*
   renderer as a clickable chip that opens the file in bb's viewer.
   Directive syntax is stripped before the same message is mirrored into
   card comments (plain Markdown there).
+- **Quality seals in the thread** (`::stelow-quality`,
+  `app.slots.messageDirective`, `qualitySeal` RPC). Workers emit one seal
+  per produced file; the chip revalidates live and renders verified /
+  hypothesis / needs-work / unverified with failure details on hover and
+  click-to-open. Seals state checked provenance, never truth; unknown
+  shapes and unreadable files read as unverified.
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as build. Stage advance and intent editing refuse on
@@ -843,6 +855,11 @@ one input, one artifact.*
   (`LightweightTrackCard`, `LightweightTrackList`,
   `markThreadRunning`, `noteAgentOutput`) — Explore adds only its
   catalog, prompt, and artifact path, never a forked copy.
+- **Quality panel (Research + Explore).** Research cards show per-substep
+  status (ready / missing / thin / needs-depth) from the same predicates
+  `verify` enforces; explore cards resolve their file live through
+  `qualitySeal`. Each panel carries one Repair action: post the failure
+  list as a comment and resume the worker on existing rails.
 
 ## Cross-cutting rules (apply to every feature above)
 

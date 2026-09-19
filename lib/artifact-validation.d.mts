@@ -14,5 +14,6 @@ export declare function fieldBlockCount(text: unknown, marker: string, fields: s
 export declare function validateArtifact(text: unknown, contract: { minWords?: number; checks?: Array<{ kind: string; [key: string]: unknown }> } | null): { pass: boolean; failures: ValidationFailure[] };
 export declare function validateSubstep(slug: string, content: unknown): { pass: boolean; failures: ValidationFailure[] };
 export declare function validateExplore(stageId: string, content: unknown): { pass: boolean; failures: ValidationFailure[] };
+export declare function sealStatus(valid: { pass: boolean } | null, evidence: string): "verified" | "hypothesis-only" | "needs-revision" | "unverified";
 export declare function buildDocDepths(stateBlob: unknown, readContent: (path: string) => string | null): Array<{ path: string; label: string; failures: string[] }>;
 export declare function validateVariant(text: unknown, contract: { variants?: Array<{ minWords?: number; checks?: Array<{ kind: string; [key: string]: unknown }> }> } | null): { pass: boolean; failures: ValidationFailure[] };

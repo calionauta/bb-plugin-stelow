@@ -4923,7 +4923,7 @@ type ResearchIndexState = {
   content: string | null;
   truncated: boolean;
   opportunities: Array<{ id: string; title: string; checked: boolean; group: string | null }>;
-  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
+  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; substeps: Array<{ slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" }>; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
   error: string | null;
 };
 
@@ -5229,6 +5229,99 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
 // Research-track card detail: hero + index + fan-out + artifacts + worker +
 // conversation. Build-only surfaces (stages, timeline, gates, intent)
 // never render here; every leaf below is shared with the build body.
+type SubstepQuality = { slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" };
+
+const SUBSTEP_STATUS_LABEL: Record<SubstepQuality["status"], string> = {
+  ready: "ready",
+  missing: "missing",
+  invalid: "thin or mirrored",
+  "needs-depth": "needs depth",
+};
+
+const SUBSTEP_STATUS_DOT: Record<SubstepQuality["status"], string> = {
+  ready: "bg-emerald-500",
+  missing: "bg-zinc-400",
+  invalid: "bg-orange-500",
+  "needs-depth": "bg-amber-500",
+};
+
+// Quality section for research rounds: per-substep status from the same
+// predicates verify enforces (rounds carry substeps from researchIndex),
+// plus one Repair action that posts the failure list as a comment and
+// resumes the worker. Read-only otherwise — no second lifecycle here.
+function ResearchQualitySection({ rounds, repairing, onRepair }: {
+  rounds: Array<{ n: number; label: string; status: "ready" | "pending" | "missing"; substeps: SubstepQuality[] }>;
+  repairing: boolean;
+  onRepair: (lines: string[]) => void;
+}) {
+  const composite = rounds.filter((round) => round.substeps.length > 0);
+  if (composite.length === 0) return null;
+  const open = composite.flatMap((round) =>
+    round.substeps.filter((sub) => sub.status !== "ready").map((sub) => ({ round, sub })),
+  );
+  const lines = open.map(({ round, sub }) => `Round ${round.n} (${round.label} — ${sub.slug}): ${SUBSTEP_STATUS_LABEL[sub.status]} — rewrite per the playbook completeness contract, then run verify again.`);
+  return (
+    <section aria-label="Artifact quality" className="rounded-lg border p-4">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</h3>
+      {open.length === 0 ? (
+        <p className="pt-1 text-xs text-muted-foreground">All composite substeps meet their contracts. {rounds.length === 1 ? "1 round" : `${rounds.length} rounds`} checked.</p>
+      ) : (
+        <div className="space-y-2 pt-2">
+          <ul className="space-y-1">
+            {open.map(({ round, sub }) => (
+              <li key={`${round.n}-${sub.slug}`} className="flex items-start gap-2 text-xs">
+                <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${SUBSTEP_STATUS_DOT[sub.status]}`} />
+                <span>Round {round.n} ({sub.slug}): {SUBSTEP_STATUS_LABEL[sub.status]}</span>
+              </li>
+            ))}
+          </ul>
+          <Button size="sm" variant="outline" disabled={repairing} onClick={() => onRepair(lines)} title="Post the failure list as a comment and resume the worker to fix it.">{repairing ? "Repairing…" : "Repair this artifact"}</Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Explore quality: one file, one seal, resolved live through qualitySeal.
+function ExploreQualitySection({ cardId, filePath, repairing, onRepair }: {
+  cardId: string;
+  filePath: string | null;
+  repairing: boolean;
+  onRepair: (lines: string[]) => void;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [seal, setSeal] = useState<{ status: string; failures: string[]; label: string | null } | null>(null);
+  useEffect(() => {
+    if (!filePath) return;
+    let cancelled = false;
+    void rpc.call("qualitySeal", { cardId, path: filePath }).then((result) => { if (!cancelled) setSeal(result); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [rpc, cardId, filePath]);
+  if (!filePath) return null;
+  const bad = (seal?.failures ?? []).length > 0;
+  const lines = (seal?.failures ?? []).map((failure) => `${seal?.label ?? filePath}: ${failure} — rewrite it, then run verify again.`);
+  return (
+    <section aria-label="Artifact quality" className="rounded-lg border p-4">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</h3>
+      {!seal ? <p className="pt-1 text-xs text-muted-foreground">Checking…</p> : null}
+      {seal && !bad ? <p className="pt-1 text-xs text-muted-foreground">Stage deliverable meets its contract.</p> : null}
+      {seal && bad ? (
+        <div className="space-y-2 pt-2">
+          <ul className="space-y-1">
+            {seal.failures.map((failure, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <span aria-hidden className="mt-1.5 size-2 shrink-0 rounded-full bg-amber-500" />
+                <span>{failure}</span>
+              </li>
+            ))}
+          </ul>
+          <Button size="sm" variant="outline" disabled={repairing} onClick={() => onRepair(lines)} title="Post the failure list as a comment and resume the worker to fix it.">{repairing ? "Repairing…" : "Repair this artifact"}</Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate, card, detail, onChanged }: {
   cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
   inboxEvent: InboxEventSnapshot | null; card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
@@ -5289,6 +5382,26 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
       onChanged();
     } finally {
       setRetrying(false);
+    }
+  }
+
+  // Quality repair: post the failure list where the worker reads it, then
+  // resume in place. One human action, existing rails only.
+  const [repairing, setRepairing] = useState(false);
+  async function doQualityRepair(lines: string[]) {
+    setRepairing(true);
+    try {
+      const posted = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: `Repair requested — the Quality section names these failures:\n${lines.map((line) => `- ${line}`).join("\n")}` });
+      if (posted.error) {
+        toast.error(posted.error);
+        return;
+      }
+      const retried = await rpc.call("retryWorker", { cardId });
+      if (!retried.ok) toast.error(retried.error ?? "Repair posted, but resume failed.");
+      else toast.success("Repair requested — worker resumed with the failure list.");
+      onChanged();
+    } finally {
+      setRepairing(false);
     }
   }
 
@@ -5461,6 +5574,8 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
 
             <PreviewSection cardId={card.id} />
 
+            <ResearchQualitySection rounds={index?.rounds ?? []} repairing={repairing} onRepair={(lines) => void doQualityRepair(lines)} />
+
             <CardDisclosure title="Artifacts" hint={artifactCount > 0 ? `${artifactCount} ${artifactCount === 1 ? "file" : "files"} · newest round first` : "being prepared"} defaultOpen>
               <ArtifactInventory
                 groups={artifactGroups}
@@ -5566,6 +5681,24 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
       onChanged();
     } finally {
       setRetrying(false);
+    }
+  }
+
+  const [repairing, setRepairing] = useState(false);
+  async function doQualityRepair(lines: string[]) {
+    setRepairing(true);
+    try {
+      const posted = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: `Repair requested — the Quality section names these failures:\n${lines.map((line) => `- ${line}`).join("\n")}` });
+      if (posted.error) {
+        toast.error(posted.error);
+        return;
+      }
+      const retried = await rpc.call("retryWorker", { cardId });
+      if (!retried.ok) toast.error(retried.error ?? "Repair posted, but resume failed.");
+      else toast.success("Repair requested — worker resumed with the failure list.");
+      onChanged();
+    } finally {
+      setRepairing(false);
     }
   }
 
@@ -5694,6 +5827,8 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
             <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
 
             <PreviewSection cardId={card.id} />
+
+            <ExploreQualitySection cardId={card.id} filePath={detail?.artifacts.map((item) => item.path).find((itemPath) => card?.exploreStage != null && itemPath.endsWith(`explore-${card.exploreStage}.md`)) ?? null} repairing={repairing} onRepair={(lines) => void doQualityRepair(lines)} />
 
             <CardDisclosure title="Artifacts" hint={detail ? `${detail.artifacts.length} files` : "being prepared"} defaultOpen>
               {detail ? (
@@ -6983,6 +7118,45 @@ function OpenStelowAction({ threadId }: { threadId: string }) {
   return <Button size="sm" variant="outline" className="shrink-0 self-center" onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this card">Stelow card ↗</Button>;
 }
 
+function StelowQualityDirective({ attributes, message, openWorkspaceFile }: PluginMessageDirectiveProps) {
+  const rpc = useRpc<typeof rpcContract>();
+  const path = (attributes.path ?? "").replace(/^\.\//, "");
+  const threadId = message.threadId;
+  const [seal, setSeal] = useState<{ status: string; failures: string[]; label: string | null } | null>(null);
+  useEffect(() => {
+    if (!path) return;
+    let cancelled = false;
+    void rpc.call("qualitySeal", { threadId, path }).then((result) => { if (!cancelled) setSeal(result); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [rpc, threadId, path]);
+  if (!path) return null;
+  // Provenance, not truth: the RPC revalidates live; unknown shapes and
+  // unreadable files render unverified — a first-class state, not an error.
+  const tone = seal?.status === "verified"
+    ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
+    : seal?.status === "hypothesis-only"
+      ? "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20"
+      : seal?.status === "needs-revision"
+        ? "border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20"
+        : "border-zinc-500/40 bg-zinc-500/10 hover:bg-zinc-500/20";
+  const icon = seal?.status === "verified" ? "✓" : seal?.status === "hypothesis-only" ? "◐" : seal?.status === "needs-revision" ? "!" : "?";
+  const text = !seal ? "quality…" : seal.status === "verified" ? "verified" : seal.status === "hypothesis-only" ? "hypothesis" : seal.status === "needs-revision" ? "needs work" : "unverified";
+  const title = seal?.failures?.length ? `${seal.label ?? path}: ${seal.failures.join("; ")}` : (seal?.label ?? path);
+  const openFile = () => { openWorkspaceFile?.(path); };
+  return (
+    <button
+      onClick={openFile}
+      disabled={!openWorkspaceFile}
+      className={`cursor-pointer inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-60 ${tone}`}
+      title={title}
+    >
+      <span>{icon}</span>
+      <span className="text-muted-foreground">quality</span>
+      <span className="font-medium">{text}</span>
+    </button>
+  );
+}
+
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {
   const rawPath = attributes.path ?? "";
   const display = attributes.display || rawPath.split("/").pop() || "artifact";
@@ -7028,5 +7202,10 @@ export default definePluginApp((app) => {
   app.slots.messageDirective({
     id: "stelow-artifact",
     component: StelowArtifactDirective,
+  });
+
+  app.slots.messageDirective({
+    id: "stelow-quality",
+    component: StelowQualityDirective,
   });
 });
