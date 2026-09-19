@@ -2195,6 +2195,7 @@ function AboutPanel() {
   const [updatingPlugin, setUpdatingPlugin] = useState(false);
   const [checkingPluginUpdate, setCheckingPluginUpdate] = useState(false);
   const [pluginUpdateError, setPluginUpdateError] = useState<string | null>(null);
+  const [pluginUpdateNotice, setPluginUpdateNotice] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     void rpc.call("buildInfo", {}).then((result) => { if (cancelled) return; setBuildInfo(result); setPluginUpdateAvailable(updateAvailableFrom(result)); }).catch(() => undefined);
@@ -2213,7 +2214,7 @@ function AboutPanel() {
     toast.success("Onboarding reset — Build, Research, and Explore open their setup dialogs again on visit.");
   }
   function applyPluginUpdate() {
-    setUpdatingPlugin(true); setPluginUpdateError(null);
+    setUpdatingPlugin(true); setPluginUpdateError(null); setPluginUpdateNotice(null);
     // Applying swaps the server bundle and reloads the plugin. That reload can
     // sever the RPC channel mid-call, leaving the promise pending forever (no
     // resolve, no reject) — so timebox the quiet phase and, if nothing settles,
@@ -2224,7 +2225,7 @@ function AboutPanel() {
     let settled = false;
     const settle = () => { if (settled) return; settled = true; setUpdatingPlugin(false); setConfirmPluginUpdate(false); };
     const timer = window.setTimeout(() => {
-      setPluginUpdateError("Update applied — Stelow is reloading; the new version appears shortly.");
+      setPluginUpdateNotice("Update applied — Stelow is reloading; the new version appears shortly.");
       settle(); // the caller's component may have unmounted with the reload; a late settle is a no-op
     }, APPLY_SETTLE_MS);
     let applied = false;
@@ -2239,19 +2240,18 @@ function AboutPanel() {
       toast.success(`Plugin updated to ${shortRef(result.to, null) ?? "the latest compatible version"}.`);
       return rpc.call("buildInfo", {}).then((info) => {
         if (info) { setBuildInfo(info); setPluginUpdateAvailable(updateAvailableFrom(info)); }
-        else setPluginUpdateError("Update applied — Stelow is reloading; the new version appears shortly.");
+        else setPluginUpdateNotice("Update applied — Stelow is reloading; the new version appears shortly.");
         settle();
       });
     }).catch((error) => {
       window.clearTimeout(timer);
-      setPluginUpdateError(applied
-        ? "Update applied — Stelow is reloading; the new version appears shortly."
-        : error instanceof Error ? error.message : "Plugin update failed.");
+      if (applied) setPluginUpdateNotice("Update applied — Stelow is reloading; the new version appears shortly.");
+      else setPluginUpdateError(error instanceof Error ? error.message : "Plugin update failed.");
       settle();
     });
   }
   function recheckPluginUpdate() {
-    setCheckingPluginUpdate(true); setPluginUpdateError(null); setConfirmPluginUpdate(false);
+    setCheckingPluginUpdate(true); setPluginUpdateError(null); setPluginUpdateNotice(null); setConfirmPluginUpdate(false);
     void rpc.call("checkPluginUpdate", {}).then((update) => {
       setBuildInfo((prev) => prev ? { ...prev, pluginUpdate: update.pluginUpdate, githubRelease: update.githubRelease } : prev);
       // A forced check is the freshest verdict there is: publish it to every
@@ -2327,7 +2327,8 @@ function AboutPanel() {
                   <Button size="sm" variant="outline" onClick={() => setConfirmReset(true)} title="Show the first-visit setup dialogs again">Reset onboarding</Button>
                 )}
                 </div>
-              {pluginUpdateError ? <p className="text-xs text-destructive">{pluginUpdateError}</p> : null}
+              {pluginUpdateError ? <p className="text-xs text-destructive" role="alert">{pluginUpdateError}</p> : null}
+              {pluginUpdateNotice ? <p className="text-xs text-primary" role="status">{pluginUpdateNotice}</p> : null}
               </section>
               <HostToolsSection tools={hostTools} onInstall={installHostTool} installingId={installingToolId} errors={installErrors} />
             </div>
