@@ -10,10 +10,19 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 
+// Deferred start: creating spawns by default, and parks only where a human
+// chose it. The automation path carries the rule's autostart flag (default
+// off) instead of a literal — the human opts in per rule, the server never
+// assumes.
 assert.match(server, /start = true/, "creation spawns by default");
-const forcedParks = server.match(/start: false/g) ?? [];
-assert.equal(forcedParks.length, 1, "exactly one forced park exists — the automation draft path");
-assert.ok(server.indexOf("start: false") > server.indexOf("async function runAutomationRules"), "the forced park lives inside runAutomationRules, never in a creation path");
+assert.ok(!server.includes("start: false"), "no literal forced park anywhere — the automation path carries the rule choice");
+assert.match(server, /start: rule\.autostart === 1/, "the automation path passes the rule flag, never a literal");
+assert.ok(server.indexOf("start: rule.autostart") > server.indexOf("async function runAutomationRules"), "the rule choice lives inside runAutomationRules, never in a creation path");
+// The flag is a real column defaulting to draft-only, a contract member,
+// and an updatable field — not UI-only state that the scheduler ignores.
+assert.match(server, /ADD COLUMN autostart INTEGER NOT NULL DEFAULT 0/, "existing rule rows gain autostart defaulting to draft-only");
+assert.match(server, /autostart: z\.boolean\(\)/, "the rule contract carries autostart");
+assert.match(server, /autostart = excluded\.autostart/, "updating a rule persists autostart");
 assert.match(server, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
 assert.match(server, /startWorker: \{/, "the start trigger is a named RPC");
 assert.match(server, /async startWorker\(\{ cardId \}\)/, "the handler resolves the card");

@@ -42,13 +42,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Automation rules.** The Build header opens one dialog listing rules across
   all projects grouped by project with search, status filter, counts, and
   bulk enable/disable/delete; empty projects stay collapsed until requested.
-  A new rule picks its project inline (defaulting to the active board project)
-  and watches a GitHub label to create one source-linked, unstarted Inbox draft
-  per matching issue.
-  Rules run durably on BB's own scheduler every 5 minutes — the dialog states
-  the cadence and, when the github plugin is missing or unlinked, names that
-  setup in place instead of failing silently. Rules never start workers, move
-  cards, clear labels, merge code, or import work behind the user's back.
+  Each row shows its label, draft/auto-start mode, and enable state with
+  aligned controls; deletion (single and bulk) goes through a confirm dialog
+  stating the blast radius. A new rule picks its project inline (defaulting
+  to the active board project) and watches a GitHub label to create one
+  source-linked Inbox card per matching issue — parked as a draft by
+  default, or auto-started when the rule's Start automatically box is
+  checked (same wording as the New issue composer). Rules run durably on
+  BB's own scheduler every 5 minutes — the dialog states the cadence and,
+  when the github plugin is missing or unlinked, names that setup in place
+  instead of failing silently. Rules never move cards, clear labels, merge
+  code, or import work behind the user's back.
 - **GitHub completion write-back** (`postGithubCompletion`). Completed cards
   imported from an issue offer one explicit Manage action: post a factual
   English summary (scopes/tasks, prompt) as an issue comment via the

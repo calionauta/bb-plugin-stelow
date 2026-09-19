@@ -199,7 +199,7 @@ const reviewModeSchema = z.enum([
 const reviewGateAtomSchema = z.enum(["spec", "interface", "scope", "tech", "diff"]);
 const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGateAtomSchema)]).default("Auto");
 const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewMode: z.string(), reviewGates: z.array(reviewGateAtomSchema).default([]) }).strict();
-const automationRuleSchema = z.object({ id: z.string(), projectId: z.string(), enabled: z.boolean(), label: z.string(), createdAt: z.number(), updatedAt: z.number() });
+const automationRuleSchema = z.object({ id: z.string(), projectId: z.string(), enabled: z.boolean(), autostart: z.boolean(), label: z.string(), createdAt: z.number(), updatedAt: z.number() });
 
 const taskSchema = z.object({
   id: z.string(),
@@ -424,7 +424,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ rules: z.array(automationRuleSchema) }),
   },
   saveAutomationRule: {
-    input: z.object({ id: z.string().nullable().optional(), projectId: z.string(), label: z.string().min(1).max(60), enabled: z.boolean().default(true) }).strict(),
+    input: z.object({ id: z.string().nullable().optional(), projectId: z.string(), label: z.string().min(1).max(60), enabled: z.boolean().default(true), autostart: z.boolean().default(false) }).strict(),
     output: z.object({ rule: automationRuleSchema }),
   },
   deleteAutomationRule: {
@@ -1670,6 +1670,11 @@ export default async function plugin(bb: BbPluginApi) {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   );`);
 
+  const automationColumns = db.prepare("PRAGMA table_info(automation_rules)").all() as Array<{ name: string }>;
+  if (!automationColumns.some((column) => column.name === "autostart")) {
+    db.exec("ALTER TABLE automation_rules ADD COLUMN autostart INTEGER NOT NULL DEFAULT 0");
+  }
+
   // Publication is intentionally separate from a card's Done state. A card is
   // workflow-complete before its owner decides whether and how to publish it.
   db.exec(`CREATE TABLE IF NOT EXISTS publication_events (
@@ -1799,7 +1804,7 @@ export default async function plugin(bb: BbPluginApi) {
   };
 
   async function runAutomationRules(): Promise<void> {
-    const rules = db.prepare("SELECT id, project_id, label FROM automation_rules WHERE enabled = 1").all() as Array<{ id: string; project_id: string; label: string }>;
+    const rules = db.prepare("SELECT id, project_id, label, autostart FROM automation_rules WHERE enabled = 1").all() as Array<{ id: string; project_id: string; label: string; autostart: number }>;
     if (rules.length === 0) return;
     const items = await g.listItems({ kind: "issue", state: "open" }).catch(() => null);
     if (!items) return;
@@ -1816,10 +1821,12 @@ export default async function plugin(bb: BbPluginApi) {
         const sourceKey = match.key;
         try {
           const detail = await g.getIssue({ repo: match.repo, number: match.number });
-          const created = await createCardInternal({ projectId: rule.project_id, prompt: githubIssuePrompt(detail.issue, detail.issue.comments), attachments: [], intent: "investigate", appetite: "Lean", reviewMode: "Auto", start: false });
+          // Draft-only unless the rule opts into auto-start: the flag is
+          // human-set per rule and defaults off, never a server assumption.
+          const created = await createCardInternal({ projectId: rule.project_id, prompt: githubIssuePrompt(detail.issue, detail.issue.comments), attachments: [], intent: "investigate", appetite: "Lean", reviewMode: "Auto", start: rule.autostart === 1 });
           const card = getCard(created.cardId);
           if (!card) continue;
-          logCardComment(card.id, "card", card.id, "agent", `Drafted from GitHub issue #${match.number}: ${detail.issue.url}`);
+          logCardComment(card.id, "card", card.id, "agent", `${rule.autostart === 1 ? "Started" : "Drafted"} from GitHub issue #${match.number}: ${detail.issue.url}`);
           db.prepare("INSERT INTO automation_rule_fires (rule_id, source_key, card_id, fired_at) VALUES (?, ?, ?, ?)").run(rule.id, sourceKey, card.id, now());
           bb.realtime.publish("board-changed", { reason: "automation-draft", cardId: card.id });
         } catch (error) {
@@ -4438,20 +4445,20 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async listAutomationRules({ projectId }) {
       const rows = projectId
-        ? db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Array<{ id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number }>
-        : db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules ORDER BY project_id ASC, created_at DESC").all() as Array<{ id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number }>;
-      return { rules: rows.map((rule) => ({ id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, createdAt: rule.created_at, updatedAt: rule.updated_at })) };
+        ? db.prepare("SELECT id, project_id, label, enabled, autostart, created_at, updated_at FROM automation_rules WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Array<{ id: string; project_id: string; label: string; enabled: number; autostart: number; created_at: number; updated_at: number }>
+        : db.prepare("SELECT id, project_id, label, enabled, autostart, created_at, updated_at FROM automation_rules ORDER BY project_id ASC, created_at DESC").all() as Array<{ id: string; project_id: string; label: string; enabled: number; autostart: number; created_at: number; updated_at: number }>;
+      return { rules: rows.map((rule) => ({ id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, autostart: rule.autostart === 1, createdAt: rule.created_at, updatedAt: rule.updated_at })) };
     },
 
-    async saveAutomationRule({ id, projectId, label, enabled }) {
+    async saveAutomationRule({ id, projectId, label, enabled, autostart }) {
       const cleanLabel = label.trim();
       if (!cleanLabel) throw new Error("Rule label cannot be empty.");
       const ts = now();
       const ruleId = id ?? randomId("rule");
-      db.prepare("INSERT INTO automation_rules (id, project_id, label, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET label = excluded.label, enabled = excluded.enabled, updated_at = excluded.updated_at")
-        .run(ruleId, projectId, cleanLabel, enabled ? 1 : 0, ts, ts);
-      const rule = db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules WHERE id = ?").get(ruleId) as { id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number };
-      return { rule: { id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, createdAt: rule.created_at, updatedAt: rule.updated_at } };
+      db.prepare("INSERT INTO automation_rules (id, project_id, label, enabled, autostart, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET label = excluded.label, enabled = excluded.enabled, autostart = excluded.autostart, updated_at = excluded.updated_at")
+        .run(ruleId, projectId, cleanLabel, enabled ? 1 : 0, autostart ? 1 : 0, ts, ts);
+      const rule = db.prepare("SELECT id, project_id, label, enabled, autostart, created_at, updated_at FROM automation_rules WHERE id = ?").get(ruleId) as { id: string; project_id: string; label: string; enabled: number; autostart: number; created_at: number; updated_at: number };
+      return { rule: { id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, autostart: rule.autostart === 1, createdAt: rule.created_at, updatedAt: rule.updated_at } };
     },
 
     async deleteAutomationRule({ id }) {
