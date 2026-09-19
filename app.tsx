@@ -678,6 +678,7 @@ function BoardPanel({ active }: { active: boolean }) {
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [automationRulesOpen, setAutomationRulesOpen] = useState(false);
+  const [automationProjectId, setAutomationProjectId] = useState<string | null>(null);
   const [automationRules, setAutomationRules] = useState<Array<{ id: string; projectId: string; label: string; enabled: boolean }>>([]);
   const [automationLabel, setAutomationLabel] = useState("stelow-work");
   const [automationBusy, setAutomationBusy] = useState(false);
@@ -745,6 +746,17 @@ function BoardPanel({ active }: { active: boolean }) {
   }, [reviewGates]);
 
   const activeProjectId = boardProjectId ?? routeProjectId;
+  // Dialog-scoped project: lets the user manage rules for any BB project,
+  // not just the active board project. Falls back to the active project.
+  const effectiveAutomationProjectId = automationProjectId ?? activeProjectId;
+  useEffect(() => {
+    if (!automationRulesOpen) return;
+    const pid = automationProjectId ?? activeProjectId;
+    if (!pid) { setAutomationRules([]); return; }
+    void rpc.call("listAutomationRules", { projectId: pid }).then((result) => {
+      setAutomationRules(result.rules);
+    }).catch(() => { /* keep last known list on transient failure */ });
+  }, [automationRulesOpen, automationProjectId, activeProjectId, rpc]);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const defaultWorkerPreset = boardPresets.find((preset) => preset.isDefault) ?? boardPresets[0] ?? null;
   const presetForBand = (band: string) => {
@@ -808,11 +820,12 @@ function BoardPanel({ active }: { active: boolean }) {
   }
 
   async function saveAutomationRule() {
-    if (!activeProjectId || !automationLabel.trim()) return;
+    const pid = effectiveAutomationProjectId;
+    if (!pid || !automationLabel.trim()) return;
     setAutomationBusy(true);
     try {
-      await rpc.call("saveAutomationRule", { projectId: activeProjectId, label: automationLabel.trim(), enabled: true });
-      const result = await rpc.call("listAutomationRules", { projectId: activeProjectId });
+      await rpc.call("saveAutomationRule", { projectId: pid, label: automationLabel.trim(), enabled: true });
+      const result = await rpc.call("listAutomationRules", { projectId: pid });
       setAutomationRules(result.rules);
       toast.success("Automation rule saved. It creates drafts only; workers never start automatically.");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save automation rule."); }
@@ -900,7 +913,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateBuildOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setAutomationRulesOpen(true)} disabled={!activeProjectId} title="Configure draft-only GitHub automation rules"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Automation rules</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setAutomationProjectId(activeProjectId); setAutomationRulesOpen(true); }} title={activeProjectId ? "Configure draft-only GitHub automation rules" : "Open automation rules, then select a BB project"}><Icon name="Settings" className="h-4 w-4" aria-hidden /> Automation rules</Button>
               {githubStatus?.pluginAvailable ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}><Icon name="Github" className="h-4 w-4" aria-hidden /> Import issues</Button>
               ) : null}
@@ -1036,12 +1049,25 @@ function BoardPanel({ active }: { active: boolean }) {
 
           <Dialog open={automationRulesOpen} onOpenChange={setAutomationRulesOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-xl">
-              <DialogHeader><DialogTitle>Automation rules</DialogTitle><DialogDescription>Rules are scoped to this project. A matching GitHub issue creates an unstarted Inbox draft with its source link; rules never start workers or move existing cards.</DialogDescription></DialogHeader>
+              <DialogHeader><DialogTitle>Automation rules</DialogTitle><DialogDescription>Pick a BB project, then watch a GitHub label. A matching issue creates an unstarted Inbox draft with its source link; rules never start workers or move existing cards.</DialogDescription></DialogHeader>
               <div className="space-y-3 py-2">
-                {automationRules.length ? <div className="divide-y rounded-md border">{automationRules.map((rule) => <div key={rule.id} className="flex min-h-11 items-center gap-2 p-2 text-sm"><span className="min-w-0 flex-1 truncate">GitHub label <code>{rule.label}</code> → Inbox draft</span><button className="min-h-11 cursor-pointer rounded px-2 text-xs font-medium text-primary hover:bg-muted" onClick={() => void setAutomationRule(rule, !rule.enabled)}>{rule.enabled ? "Disable" : "Enable"}</button><button className="min-h-11 cursor-pointer rounded px-2 text-xs text-destructive hover:bg-muted" onClick={() => void deleteAutomationRule(rule.id)}>Delete</button></div>)}</div> : <p className="text-sm text-muted-foreground">No rules for this project yet.</p>}
+                <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">Project</span>
+                  <select
+                    className="h-11 w-full cursor-pointer rounded-md border bg-background px-2 text-sm"
+                    value={effectiveAutomationProjectId ?? ""}
+                    onChange={(event) => setAutomationProjectId(event.target.value || null)}
+                    aria-label="BB project for automation rules"
+                  >
+                    <option value="">Select a project…</option>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                  </select>
+                </label>
+                {!effectiveAutomationProjectId ? <p className="text-sm text-muted-foreground">Select a BB project to manage its rules.</p> : null}
+                {effectiveAutomationProjectId && !automationRules.length ? <p className="text-sm text-muted-foreground">No rules for this project yet.</p> : null}
+                {automationRules.length ? <div className="divide-y rounded-md border">{automationRules.map((rule) => <div key={rule.id} className="flex min-h-11 items-center gap-2 p-2 text-sm"><span className="min-w-0 flex-1 truncate">GitHub label <code>{rule.label}</code> → Inbox draft</span><button className="min-h-11 cursor-pointer rounded px-2 text-xs font-medium text-primary hover:bg-muted" onClick={() => void setAutomationRule(rule, !rule.enabled)}>{rule.enabled ? "Disable" : "Enable"}</button><button className="min-h-11 cursor-pointer rounded px-2 text-xs text-destructive hover:bg-muted" onClick={() => void deleteAutomationRule(rule.id)}>Delete</button></div>)}</div> : null}
                 <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">GitHub label</span><Input value={automationLabel} onChange={(event) => setAutomationLabel(event.target.value)} placeholder="stelow-work" /></label>
               </div>
-              <DialogFooter><DialogClose asChild><Button variant="ghost">Close</Button></DialogClose><Button disabled={automationBusy || !automationLabel.trim() || !activeProjectId} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add draft rule"}</Button></DialogFooter>
+              <DialogFooter><DialogClose asChild><Button variant="ghost">Close</Button></DialogClose><Button disabled={automationBusy || !automationLabel.trim() || !effectiveAutomationProjectId} title={!effectiveAutomationProjectId ? "Select a BB project first" : !automationLabel.trim() ? "Type a GitHub label" : "Add draft rule"} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add draft rule"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
 

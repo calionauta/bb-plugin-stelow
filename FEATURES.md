@@ -39,7 +39,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   just labels on open issues); assignee dropdown lists assignable users
   per tracked repo merged with assignees seen on issues. Per-issue
   assignees shown inline.
-- **Automation rules.** Per-project board settings can watch a GitHub label
+- **Automation rules.** The Build header opens a project picker to watch a GitHub label
   and create one source-linked, unstarted Inbox draft per matching issue.
   Rules run durably on BB's scheduler; they never start workers, move cards,
   clear labels, merge code, or import work behind the user's back.
