@@ -41,8 +41,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   assignees shown inline.
 - **Automation rules.** The Build header opens a project picker to watch a GitHub label
   and create one source-linked, unstarted Inbox draft per matching issue.
-  Rules run durably on BB's scheduler; they never start workers, move cards,
-  clear labels, merge code, or import work behind the user's back.
+  Rules run durably on BB's own scheduler every 5 minutes — the dialog states
+  the cadence and, when the github plugin is missing or unlinked, names that
+  setup in place instead of failing silently. Rules never start workers, move
+  cards, clear labels, merge code, or import work behind the user's back.
 - **GitHub completion write-back** (`postGithubCompletion`). Completed cards
   imported from an issue offer one explicit Manage action: post a factual
   English summary (scopes/tasks, prompt) as an issue comment via the

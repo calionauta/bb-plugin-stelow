@@ -707,10 +707,6 @@ function BoardPanel({ active }: { active: boolean }) {
       setBoardPresets(presetsResult.presets);
       setBoardBandPresets(bandPresetsResult.bands);
       if (boardResult?.githubStatus) setGithubStatus(boardResult.githubStatus);
-      if (targetId) {
-        const rules = await rpc.call("listAutomationRules", { projectId: targetId }).catch(() => ({ rules: [] }));
-        setAutomationRules(rules.rules);
-      } else setAutomationRules([]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       if (firstLoadRef.current) {
@@ -1050,7 +1046,20 @@ function BoardPanel({ active }: { active: boolean }) {
           <Dialog open={automationRulesOpen} onOpenChange={setAutomationRulesOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-xl">
               <DialogHeader><DialogTitle>Automation rules</DialogTitle><DialogDescription>Pick a BB project, then watch a GitHub label. A matching issue creates an unstarted Inbox draft with its source link; rules never start workers or move existing cards.</DialogDescription></DialogHeader>
+              {githubStatus && (!githubStatus.pluginAvailable || !githubStatus.ghOk) ? (
+                <div className="flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
+                  <span className="text-amber-700 dark:text-amber-300">
+                    {!githubStatus.pluginAvailable
+                      ? <>Automation rules need the <span className="font-medium">github</span> plugin enabled in BB.</>
+                      : <>Automation rules need a GitHub account linked in the <span className="font-medium">github</span> plugin.</>}
+                  </span>
+                  {githubStatus.pluginAvailable && !githubStatus.ghOk ? (
+                    <a className="text-primary underline underline-offset-2" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">Set up GitHub auth</a>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="space-y-3 py-2">
+                <p className="text-xs text-muted-foreground">Rules run on BB&apos;s scheduler every 5 minutes — a matching issue becomes an Inbox draft, never a running worker.</p>
                 <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">Project</span>
                   <select
                     className="h-11 w-full cursor-pointer rounded-md border bg-background px-2 text-sm"
