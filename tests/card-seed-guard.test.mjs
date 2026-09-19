@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cardWorkerSeedRefusal } from "../lib/card-seed-guard.mjs";
+import { cardWorkerSeedRefusal, withRuntimeIgnoreEntry, RUNTIME_IGNORE_ENTRY } from "../lib/card-seed-guard.mjs";
 
 // Regression: a card worker ran `bb stelow seed` mid-workflow and minted a
 // name-derived owner at the project root — an orphan state dir no card
@@ -34,5 +34,17 @@ assert.match(seedBlock, /workflowStateDir\(bb, seedRoot, seedCard\.id, seedCard\
 // the NEVER_SEED const and every spawn path references it — covered by
 // tests/prompt-contracts.test.mjs; here just pin the single definition.
 assert.match(serverSource, /const NEVER_SEED = "/, "the seed ban is a single-source const");
+
+// Seed-time hygiene: .stelow/ (live runs) stays out of git; the committed
+// record is the exported docs/runs/<card>/ bundle.
+assert.equal(RUNTIME_IGNORE_ENTRY, ".stelow/", "ignore entry names the runtime dir");
+assert.ok(withRuntimeIgnoreEntry(null).endsWith(".stelow/\n"), "missing file gets entry with comment");
+assert.equal(withRuntimeIgnoreEntry(".stelow/\n"), null, "present entry is a no-op");
+assert.equal(withRuntimeIgnoreEntry("/.stelow"), null, "leading-slash variant counts as covered");
+assert.equal(withRuntimeIgnoreEntry("node_modules/"), "node_modules/\n# Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)\n.stelow/\n", "appends after existing content");
+assert.equal(withRuntimeIgnoreEntry("node_modules"), "node_modules\n# Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)\n.stelow/\n", "missing trailing newline handled");
+assert.equal(withRuntimeIgnoreEntry("# stelow stuff\n"), "# stelow stuff\n# Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)\n.stelow/\n", "a mere substring never counts as covered");
+assert.match(serverSource, /withRuntimeIgnoreEntry\(/, "seedWorkflow applies the ignore guard");
+assert.match(serverSource, /existsSync\(join\(rootPath, "\.git"\)\)/, "guard runs in git checkouts only");
 
 console.log("card seed guard test ok: refusal copy, card-worker seed refusal, pre-seeded prompts");

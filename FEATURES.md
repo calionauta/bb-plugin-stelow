@@ -599,6 +599,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   worker commits the directory with the work — git log versions it, no
   per-commit subdirectories; the protocol requires export → commit →
   trailer on every commit.
+- **Runtime dir stays out of git** (`withRuntimeIgnoreEntry`, `lib/card-seed-guard.mjs`).
+  Seeding a git checkout appends `.stelow/` to its `.gitignore` (best-effort,
+  never blocks): live per-card runs must never be swept in by a worker
+  `git add -A` — the committed record is the exported bundle.
 - **Explicit completion** (`bb stelow done [--card]`, `lib/completion.mjs`).
   Done-ness was inferred from `audit` + idle, so narrate-and-stop looked
   identical to stuck. The worker commits; the host verifies in code —

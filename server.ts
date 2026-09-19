@@ -52,7 +52,7 @@ import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents, truncateCause } from "./lib/worker-failure.mjs";
 import { MAX_SPAWN_RETRIES, claimSpawnRetry, isRetryableSpawnError, resetSpawnRetry, spawnRetryDelayMs } from "./lib/spawn-retry.mjs";
 import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session.mjs";
-import { cardWorkerSeedRefusal } from "./lib/card-seed-guard.mjs";
+import { cardWorkerSeedRefusal, withRuntimeIgnoreEntry } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSplitAnswer, splitActionState, splitEligibility, splitOutcome, splitRemainder, validateSplitSlices, withStandardSplitDisclosure } from "./lib/split-proposal.mjs";
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
@@ -840,6 +840,19 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
   try {
     mkdirSync(join(rootPath, ".stelow/approvals"), { recursive: true });
     mkdirSync(join(rootPath, "skills/stelow-workflow-orchestrator/references"), { recursive: true });
+    // Live runs stay out of git: a worker `git add -A` must never sweep
+    // `.stelow/` into the project history — the committed record is the
+    // exported docs/runs/<card>/ bundle. Best-effort, git checkouts only,
+    // never blocks seeding.
+    try {
+      if (existsSync(join(rootPath, ".git"))) {
+        const ignorePath = join(rootPath, ".gitignore");
+        let current = "";
+        try { current = readFileSync(ignorePath, "utf8"); } catch { /* created below */ }
+        const next = withRuntimeIgnoreEntry(current);
+        if (next !== null) writeFileSync(ignorePath, next, "utf8");
+      }
+    } catch { /* hygiene never blocks seeding */ }
 
     let trackingData: LooseRecord = {};
     try { trackingData = JSON.parse(readFileSync(trackingPath, "utf8")) as LooseRecord; } catch { /* create fresh */ }
