@@ -5374,7 +5374,7 @@ function BuildGapsSection({ cardId }: { cardId: string }) {
       ) : null}
       {blocked && !summary.done ? (
         <p className="pt-2 text-xs text-amber-700 dark:text-amber-300">
-          {summary.unscoped > 0 ? `Done waits on ${summary.unscoped} escalated gap${summary.unscoped === 1 ? "" : "s"} without a rework scope — the worker runs gap-scopes, then executes the new scopes. ` : ""}
+          {summary.unscoped > 0 ? `Done waits on ${summary.unscoped} escalated gap${summary.unscoped === 1 ? "" : "s"} without a rework scope — this card loops back: the worker runs gap-scopes, advances to execution, executes the new scopes, and re-runs the critique. ` : ""}
           {summary.pendingScopes > 0 ? `${summary.pendingScopes} rework scope${summary.pendingScopes === 1 ? "" : "s"} still open.` : ""}
         </p>
       ) : null}

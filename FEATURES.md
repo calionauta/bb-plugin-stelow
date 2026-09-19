@@ -850,12 +850,19 @@ one input, one artifact.*
 - **Gap-to-scope loop** (`bb stelow gap-scopes`, `critiqueGapState`).
   Escalated gaps become `audit-gap` rework scopes in the card's own
   `stelow.json` entry — created by code (idempotent, trail comment),
-  never by prose. `done` refuses while escalations lack scopes or
-  linked scopes stay open. The mother card shows the loop in Gaps &
+  never by prose, never as new cards: a card with open gaps is not
+  done, it loops back with `bb stelow advance execution` (the
+  methodology's audit-rejects-to-execution transition), executes the
+  rework, re-runs the critique, and only then returns to audit for
+  `done`. `done` refuses while escalations lack scopes or linked
+  scopes stay open. The mother card shows the loop in Gaps &
   rework (counts, per-escalation scope status, lead/cycle time via
   `gapSummary`); rework scopes carry a rework pill naming their gap.
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
-  gap counts and escalated rate, read-only.
+  gap counts and escalated rate, read-only. Done means every gap has
+  a disposition and every escalation is executed — documented gaps
+  are accepted debt for next cycle by definition, fixed gaps are
+  auditable through the Decision section and trail.
 - **Build document depth** (`buildDocDepths`, `contractForBuildArtifact`).
   At `done`, recognized workflow documents registered in `state.md`
   (spec-product, spec-tech, interfaces, testing-strategy, critique
