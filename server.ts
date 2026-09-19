@@ -38,6 +38,7 @@ import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, subste
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, substepQuality, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
 import { validateArtifact, validateSubstep, validateVariant, validateExplore, buildDocDepths, sealStatus } from "./lib/artifact-validation.mjs";
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
+import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -663,6 +664,14 @@ export const rpcContract = defineRpcContract({
     input: z.object({ presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
+  getGenerationPreset: {
+    input: z.object({}).strict(),
+    output: z.object({ preset: z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string() }).nullable() }),
+  },
+  assignGenerationPreset: {
+    input: z.object({ presetId: z.string().nullable() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
   getReviewPolicy: {
     input: z.object({}).strict(),
     output: z.object({ mode: z.enum(["off", "required"]) }),
@@ -1267,6 +1276,7 @@ export default async function plugin(bb: BbPluginApi) {
   // only sees structurally valid artifacts; `review` refuses thin files and
   // cards without a designated reviewer preset.
   const REVIEW_PROTOCOL = "Optional paid review: after `bb stelow verify` passes, you may OFFER `bb stelow review` via `bb stelow ask` — never run it unasked, never auto-run it. Review spends reviewer budget and only accepts structurally valid artifacts.";
+  const DRAFT_PROTOCOL = "Cheap drafts: for disposable prose bursts (alternative wordings, expansions, taglines — never protocol work, never anything needing tools or exact shapes), run `bb stelow draft --prompt <brief>` — a hidden thread on the generation preset returns text you must judge 100% before using. If no generation preset is set it runs on your band preset; an empty or failed draft means do it yourself, never retry in a loop.";
   const db = bb.storage.database();
   // BB is the source of truth for the installed plugin and its update range.
   // This read-only check never changes the helper or an active workflow.
@@ -1550,6 +1560,16 @@ export default async function plugin(bb: BbPluginApi) {
   // spends. Explicit only — no default, no band fallback, never inherited.
   // Deleting the preset clears the designation via cascade.
   db.exec(`CREATE TABLE IF NOT EXISTS review_preset (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    preset_id TEXT NOT NULL,
+    assigned_at INTEGER NOT NULL,
+    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+  )`);
+  // Singleton generation preset (id = 1): the cheap model for disposable
+  // Tier G draft bursts. Explicit only — no default, no worker fallback at
+  // this layer (the cascade in lib/draft-burst.mjs decides the fallback at
+  // spawn time). Deleting the preset clears the designation via cascade.
+  db.exec(`CREATE TABLE IF NOT EXISTS generation_preset (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     preset_id TEXT NOT NULL,
     assigned_at INTEGER NOT NULL,
@@ -1935,6 +1955,8 @@ ${DONE_PROTOCOL}
 
 ${REVIEW_PROTOCOL}
 
+${DRAFT_PROTOCOL}
+
 ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
@@ -1978,6 +2000,8 @@ On timeout ("No response after Ns"), STOP and wait — the question stays answer
 ${DONE_PROTOCOL}
 
 ${REVIEW_PROTOCOL}
+
+${DRAFT_PROTOCOL}
 
 ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
@@ -2140,7 +2164,7 @@ Step 1 — classify intent first: this card starts as intent=\`unknown\` (no int
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
-Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL}
+Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
 
 ${TURN_DISCIPLINE}
 
@@ -2344,7 +2368,7 @@ ${prompt}` }, ...workerAttachments],
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL}
+        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
 
 ${TURN_DISCIPLINE}
 
@@ -5498,7 +5522,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
         permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
         executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL}
+        input: [{ type: "text", mentions: [], text: researchReseed ?? exploreReseed ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
 
 ${TURN_DISCIPLINE}
 
@@ -6432,6 +6456,25 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { ok: true, error: null };
     },
 
+    async getGenerationPreset() {
+      const row = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+      const preset = row ? getPresetById(row.preset_id) : null;
+      return {
+        preset: preset ? { id: preset.id, name: preset.name, providerId: preset.provider_id, modelId: preset.model_id, reasoningLevel: preset.reasoning_level, permissionMode: preset.permission_mode } : null,
+      };
+    },
+
+    async assignGenerationPreset({ presetId }) {
+      if (presetId) {
+        if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
+        db.prepare("INSERT OR REPLACE INTO generation_preset (id, preset_id, assigned_at) VALUES (1, ?, ?)").run(presetId, now());
+      } else {
+        db.prepare("DELETE FROM generation_preset WHERE id = 1").run();
+      }
+      bb.realtime.publish("board-changed", { presetId });
+      return { ok: true, error: null };
+    },
+
     async getReviewPolicy() {
       const row = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
       return { mode: row?.mode === "required" ? "required" as const : "off" as const };
@@ -6665,6 +6708,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "metrics", summary: "Lead/cycle time and gap rates per card, or fleet-wide without --card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
       { name: "manifest", summary: "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)", usage: "bb stelow manifest [--json] [--card <card_id>]" },
       { name: "export", summary: "Copy registered artifacts into docs/runs/<card> plus manifest.md (idempotent)", usage: "bb stelow export [--json] [--card <card_id>] [--dir <relpath>]" },
+      { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
@@ -8060,6 +8104,100 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         logCardComment(cardId, "card", cardId, "agent", summary);
         return { exitCode: 0, stdout: `${summary}\nReviewer thread: ${reviewThread.id}` };
       }
+      if (argv[0] === "draft") {
+        // Disposable Tier G burst: text-in/text-out on the generation
+        // preset, judged 100% by the caller. The draft thread writes
+        // nothing, asks nothing, advances nothing — a cheap model is safe
+        // exactly because the leash is short. Anything needing tools,
+        // exact shapes, or multi-step work stays Tier R (do it yourself
+        // on your band preset, never here).
+        const args = argv.slice(1);
+        const json = args.includes("--json");
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        let brief: string | null = null;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--prompt") { brief = args[i + 1] ?? null; i++; continue; }
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow draft --prompt <brief> [--json] [--card <card_id>]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        if (!brief || !brief.trim()) return { exitCode: 2, stderr: "Pass --prompt <brief>: one disposable draft request (prose only, never protocol work)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
+        const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
+        const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+        const boardDefault = designated ? getPresetById(designated.preset_id) : null;
+        const bandPreset = getPresetForBand(band, cardId);
+        const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
+        const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
+        if (!draftPreset) return { exitCode: 1, stderr: "No preset available for the draft burst (no generation preset, no band preset). Assign presets first." };
+        const params = presetAttachmentParams(draftPreset);
+        const permissionNote = params.permissionMode === "full"
+          ? " (preset permission coerced full → accept-edits: drafts read, never write)"
+          : "";
+        const fallbackNote = resolved.source === "band" ? " (generation preset unset — ran on the band preset)" : "";
+        const draftWorkspace = await cardWorkspace(card);
+        if (!draftWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
+        const draftSource = draftWorkspace.hostId ? { path: draftWorkspace.path, hostId: draftWorkspace.hostId } : null;
+        const draftEnvironment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+        const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
+        let draftThread: { id: string };
+        try {
+          draftThread = await bb.sdk.threads.spawn({
+            projectId: card.project_id,
+            environment: draftEnvironment,
+            visibility: "hidden",
+            title: `Stelow draft: ${card.display_name ?? card.name}`,
+            providerId: params.providerId,
+            model: params.modelId,
+            reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+            permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
+            executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+            prompt,
+          });
+        } catch (error) {
+          return { exitCode: 1, stderr: `Draft spawn failed: ${error instanceof Error ? error.message : "unknown error"}.${permissionNote}` };
+        }
+        const DRAFT_POLL_MS = 5000;
+        const DRAFT_POLLS = 36;
+        for (let poll = 0; poll < DRAFT_POLLS; poll++) {
+          await new Promise((resolve) => setTimeout(resolve, DRAFT_POLL_MS));
+          const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
+          const status = (thread as { status?: unknown } | null)?.status;
+          if (status === "idle" || status === "stopping") break;
+          if (status === "failed" || status === "error") {
+            await stopWorkerThread(draftThread.id).catch(() => undefined);
+            return { exitCode: 1, stderr: `Draft thread ${draftThread.id} ended with status ${String(status)} — do the draft yourself.` };
+          }
+          if (poll === DRAFT_POLLS - 1) {
+            await stopWorkerThread(draftThread.id).catch(() => undefined);
+            return { exitCode: 1, stderr: `Draft thread ${draftThread.id} still running after 3 minutes — stopped; do the draft yourself.` };
+          }
+        }
+        const output = await bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => "");
+        await stopWorkerThread(draftThread.id).catch(() => undefined);
+        const validated = validateDraftOutput(output);
+        if (!validated.ok) return { exitCode: 1, stderr: validated.error ?? "Empty draft." };
+        const stamp = roundTimestamp();
+        const draftStateDir = card.dir_hash ? await workflowStateDir(bb, draftWorkspace.path, card.id, card.dir_hash).catch(() => null) : null;
+        let draftPath: string | null = null;
+        if (draftStateDir) {
+          const full = join(draftStateDir, `drafts/draft-${stamp}.md`);
+          try {
+            await bb.sdk.files.mkdir({ path: dirname(full), rootPath: draftWorkspace.path, recursive: true });
+            await bb.sdk.files.write({
+              path: full,
+              content: `# Draft ${stamp} (${resolved.source})\n\nCard: ${card.display_name ?? card.name}\nThread: ${draftThread.id}\nPreset: ${draftPreset.name}\n\n${validated.text}\n`,
+            });
+            draftPath = workspaceRelative(draftWorkspace.path, full) ?? `drafts/draft-${stamp}.md`;
+          } catch { /* draft still returned via stdout */ }
+        }
+        logCardComment(cardId, "card", cardId, "agent", `Draft burst (${draftPreset.name}${fallbackNote}) — judge every word before using it.${draftPath ? ` Record: ${draftPath}.` : ""}${permissionNote}`);
+        if (json) return { exitCode: 0, stdout: JSON.stringify({ draft: validated.text, truncated: validated.truncated ?? false, threadId: draftThread.id, path: draftPath, source: resolved.source }, null, 2) };
+        return { exitCode: 0, stdout: validated.text };
+      }
       if (argv[0] === "preset") {
         const sub = argv[1];
         // Preset mutation is a host/UI concern (card Agent preset section,
@@ -8109,7 +8247,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|done|playbook|split|doctor|sync-scopes|lock|config|schema|fan-out|verify|review|preset|manifest|export" };
+      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|done|playbook|split|doctor|sync-scopes|lock|config|schema|fan-out|verify|review|preset|manifest|export|draft" };
     },
   });
 

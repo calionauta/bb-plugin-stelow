@@ -4071,8 +4071,12 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   // Editing always expands (startEdit opens); closing the dialog resets.
   const [formOpen, setFormOpen] = useState(false);
   const [bandPresets, setBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
+  const [generationPreset, setGenerationPreset] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const reloadGeneration = useCallback(() => {
+    void rpc.call("getGenerationPreset", {}).then((result) => setGenerationPreset(result.preset)).catch(() => setGenerationPreset(null));
+  }, [rpc]);
 
   useEffect(() => {
     if (!open) {
@@ -4084,7 +4088,8 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
     setForm(defaultPreset ? { id: null, name: "", providerId: defaultPreset.providerId, modelId: defaultPreset.modelId, reasoningLevel: defaultPreset.reasoningLevel, permissionMode: defaultPreset.permissionMode as "accept-edits" | "auto" | "full", environmentKind: defaultPreset.environmentKind as "project-default" | "new-worktree" } : EMPTY_PRESET_FORM);
     setMessage(null);
     void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([]));
-  }, [open, rpc]);
+    reloadGeneration();
+  }, [open, rpc, reloadGeneration]);
 
   const newPresetForm = () => {
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
@@ -4221,6 +4226,32 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
               );
             })()}
           </div>
+        </DisclosureSection>
+        <DisclosureSection title="Delegated work" hint="subagent tiers" defaultOpen={false}>
+          <p className="mb-2 text-xs text-muted-foreground">Subagents come in two tiers. Reliable uses the band preset and needs no configuration — tools, web, exact file shapes, multi-step work. Generation is the cheap preset for disposable text-only bursts (`bb stelow draft`); the worker judges every word before using it. Empty means the band preset (today&apos;s behavior).</p>
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-24 shrink-0">✓ Reliable</span>
+              <span className="min-h-9 flex-1 rounded-md border bg-muted/30 px-2 py-2 text-sm text-muted-foreground">Band preset — no configuration</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-24 shrink-0">⚡ Generation</span>
+              <select
+                className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                value={generationPreset?.id ?? ""}
+                onChange={(event) => {
+                  const value = event.target.value || null;
+                  setBusy(true);
+                  void rpc.call("assignGenerationPreset", { presetId: value }).then(() => { void onChanged(); reloadGeneration(); }).catch(() => setMessage("Failed to set generation preset.")).finally(() => setBusy(false));
+                }}
+              >
+                <option value="">Use band preset</option>
+                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              </select>
+              <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Disposable text-only bursts judged by the worker">draft bursts</span>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">Rule of thumb: when the worker rewrites over 20% of a burst&apos;s output, that call site belongs back on Reliable.</p>
         </DisclosureSection>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
