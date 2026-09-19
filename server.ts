@@ -15,12 +15,13 @@ import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { ensureInboxResolvedReasonColumn, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, refreshStalledPaused, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
-import { isClaimTerminal } from "./lib/card-terminal.mjs";
+import { isClaimTerminal, errorNeedsAttention } from "./lib/card-terminal.mjs";
 import { resolveClaimKey } from "./lib/card-claim-key.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "./lib/card-question-state.mjs";
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "./lib/question-batch.mjs";
 import { decideAskGate } from "./lib/ask-gate.mjs";
+import { cleanAnswerList } from "./lib/expired-question-answers.mjs";
 import { matchAutomationIssues } from "./lib/automation-rules.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "./lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
@@ -4770,7 +4771,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const questionPending = activity === "awaiting-answer";
         // A stale last_error on a terminal card is residue, not a request:
         // Done never asks for attention because of it.
-        const errorPending = !termStatus && (Boolean(row.last_error) || activity === "error");
+        const errorPending = errorNeedsAttention(row.status, row.last_error, activity);
         const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
         const needsAttention = attentionKind !== null;
         const preset = getPresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
@@ -5122,7 +5123,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const idleStuck = idleCandidate;
       const attentionKind = (idleStuck ? "idle"
         : effectiveActivity === "awaiting-answer" ? "question"
-        : !termStatus && (Boolean(card.last_error) || effectiveActivity === "error") ? "error"
+        : errorNeedsAttention(card.status, card.last_error, effectiveActivity) ? "error"
         : null) as "question" | "error" | "idle" | null;
       const pendingFirst = pending[0] ?? null;
       // Worker ledger, newest first. The open row (endedAt null) is the live
@@ -6284,7 +6285,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const rows = new Map<string, { thread_id: string; question: string; answers: string[] }>();
       for (const item of answers) {
         const row = openRows.find((entry) => entry.id === item.questionId);
-        const cleanAnswers = item.answers.map((answer) => answer.trim()).filter(Boolean);
+        const cleanAnswers = cleanAnswerList(item.answers);
         if (row && !rows.has(item.questionId) && cleanAnswers.length > 0) rows.set(item.questionId, { thread_id: row.thread_id, question: row.question, answers: cleanAnswers });
       }
       if (openIds.size === 0) return { ok: false as const, answered: 0, error: "Questions not found or already answered." };

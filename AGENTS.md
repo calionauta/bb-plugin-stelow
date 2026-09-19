@@ -79,6 +79,25 @@ before writing or reviewing code. If the skill is not installed, install it
 with `npx skills add calionauta/stelow@stelow-workflow-coding-standards`
 (same standard, public source) and continue.
 
+## Test value (no bullshit tests)
+
+Every test must fail if its guarded behavior breaks — verify by removing or
+inverting the behavior before trusting it green.
+
+- **Behavior first:** logic that matters lives in `lib/` with a node test
+  asserting outputs (`run-bundle`, `artifact-manifest` precedent).
+  `server.ts`/`app.tsx` regex pins only for wiring that cannot be extracted.
+- **Regex pins must constrain topology, counts, or refusals** (spawn sites,
+  terminal guards, RPC refusal shapes) and say which regression they'd catch.
+  Copy/CSS/existence pins are banned — they pass on broken logic and break
+  on refactors. `doesNotMatch` regression pins for removed content are allowed.
+- **No circular validation on critical paths:** the agent that wrote the code
+  may not be its test's only author — spawn a fresh subagent with the
+  requirement alone to write or red-team the test
+  (see `stelow-product-testing-ai-code`, anti-patterns).
+- **Batch triage via subagents:** contract-file cleanup is mechanical
+  keep/convert/delete classification — delegate per file, decide on the table.
+
 ## State honesty (product principles, not preferences)
 
 - Any user-facing wait needs a live question behind it. Phantom waits

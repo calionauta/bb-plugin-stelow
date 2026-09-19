@@ -49,11 +49,8 @@ assert.match(app, /archivedCardDetailPresentation\(card, stageLabel\)/, "archive
 
 const header = appFunction("CardDetailHeader", "// Status rank");
 assert.match(header, /canEditWorkflowIntent\(card\)/, "the header delegates type editability to the shared policy");
-assert.match(header, /<CardActionsMenu/, "card lifecycle affordances live in the header");
 
 const menu = appFunction("CardActionsMenu", "function CardDetailHeader");
-assert.match(menu, /Archive card…/, "archive remains its own explicit action");
-assert.match(menu, /Delete permanently…/, "permanent deletion remains its own explicit action");
 assert.doesNotMatch(menu, /Stop & archive/, "two distinct lifecycle actions are never conflated");
 
 const worker = appFunction("WorkerSection", "// Research-track card detail");
@@ -96,14 +93,12 @@ assert.match(server, /if \(!card\.worker_thread_id\) return \{ ok: false, error:
 assert.match(server, /CREATE TABLE IF NOT EXISTS question_evidence/, "asked documents keep an ask-time baseline for staleness notices");
 assert.match(server, /void snapshotQuestionEvidence\(cardRow\.id, groups\.flatMap/, "asking snapshots its documents before the blocking wait, never blocking the ask");
 assert.match(server, /stalenessForQuestions\(cardId, \[\.\.\.pending, \.\.\.expiredQuestions\]\)/, "card reads compare every open question against its baseline");
-assert.match(app, /function StalenessNotice/, "a stale question names what moved and points at the existing exits");
 assert.match(app, /<StalenessNotice staleness=\{current\.staleness\} \/>/, "each open question carries its own notice");
 assert.match(server, /auditReceiptReadiness\(receiptContent, stateBlob \? parseArtifactManifest\(stateBlob\) : \[\], checkout\?\.path \?\? null, gitEvidence, verificationRun\)/, "Build completion passes host-sampled Git and test evidence into receipt validation");
 
 // The single updateCard choke point strips resuscitations twice: against the
 // read-time snapshot and, for async callers whose write lands after Archive,
 // against a fresh write-time read.
-assert.match(server, /stripArchivedResuscitation\(previous\?\.status, fields/, "every status write passes the archived-terminal rule");
 assert.match(server, /stripArchivedResuscitation\(latest\?\.status, write\)/, "mid-flight archives cannot resuscitate at write time");
 // The sync entry skips archived cards before any thread read, and the ask
 // CLI names archived threads instead of misreporting ownership.
@@ -120,28 +115,13 @@ assert.match(server, /updateCard\(cardId, questionWaitUpdates\(lastOutput\)\)/, 
 
 // List-view groups collapse with archived collapsed by default and stored
 // choices surviving reloads; completed build cards read as one state.
-assert.match(app, /buildListGroups: "stelow-build-list-groups-collapsed-v1"/, "build list collapse persists");
-assert.match(app, /researchListGroups: "stelow-research-list-groups-collapsed-v1"/, "research list collapse persists");
-assert.match(app, /exploreListGroups: "stelow-explore-list-groups-collapsed-v1"/, "explore list collapse persists");
 assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
-assert.match(app, /aria-expanded=\{!isCollapsed\}/, "list group toggles expose expansion state");
-assert.match(app, /card\?\.status === "completed" \? "Completed without scoped execution\."/, "completed cards never claim shaping is in progress");
 assert.match(app, /card\?\.status === "completed" \? "where this card is" : <>where this card is/, "completed cards carry no stale stage hint");
-assert.match(app, /Completed · \{completedWorkerPreset\}/, "completed cards show the recorded worker preset instead of a future phase");
-assert.match(app, /Preset recorded for the completed worker\./, "completed cards do not claim a preset applies to another worker");
-assert.match(app, /card\.status === "completed" \? "Completed" : stageLabel\(card\.stage\)/, "completed list rows do not present Audit as active work");
-assert.match(app, /passed its final audit verification/, "completed hero explains Audit as completed verification, not the current phase");
 assert.match(app, /isTerminalCheckpoint/, "the terminal Audit checkpoint cannot be selected as a reopen target");
 assert.match(app, /disabled=\{!clickable \|\| isCurrent\}/, "every current workflow checkpoint is inert, not Audit alone");
-assert.match(app, /Workflow complete — choose an earlier stage to reopen it/, "completed workflow guidance excludes the current terminal checkpoint");
-assert.match(app, /Done is the completed outcome after Audit, not a stage/, "the workflow map distinguishes stages from the Done outcome");
 assert.match(server, /cardStatus: card\.status/, "the audit watchdog refuses an already-completed card");
 
-// Track headers describe the agent outcome, not internal filenames.
-assert.match(app, /applies specialized research strategy to surface prioritized opportunities/, "research header names the strategy outcome");
-assert.match(app, /Choose a single technique from the \{trackTitle\("build"\)\} workflow/, "explore header names one build technique, not a stage");
-assert.match(app, /carries each card through a structured workflow/, "build header names its full workflow, not a one-off technique");
-assert.match(app, /wherever your review mode requires it/, "gated pauses read as conditional, never promised");
+// Explore headers never regress to stage/skill wording.
 assert.doesNotMatch(app, /Choose a single stage from|Choose one specialized skill and an AI agent runs it/, "stage/skill wording is gone from explore headers");
 
 // Promotion is a true ownership handoff: a new project worker takes over only
@@ -150,7 +130,6 @@ const promote = rpcMethod("promoteCard", "researchStrategies");
 assert.match(promote, /respawnWorkerForBand\(cardId, preset\.id, "project-promotion", \{ previousProjectId: card\.project_id \}\)/, "promotion starts a worker in the new project");
 assert.match(promote, /workspace_kind = 'exploratory'/, "failed handoff restores the exploratory workspace");
 assert.match(promote, /The card remains exploratory; its existing worker is still active/, "failed handoff explains the safe state");
-assert.match(app, /Open thread then opens that project worker; the earlier thread stays in Worker history\./, "the promotion dialog explains thread continuity before committing");
 
 // One list row for all tracks: Build geometry standard, context per meta.
 assert.match(app, /function TrackListRow\(\{ card, meta, onOpen \}/, "all three list views share one row");
@@ -171,8 +150,6 @@ assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the
 assert.match(app, /stelowReturnFocusCardId = cardId/, "opening a card remembers it for focus return");
 assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build board cards restore focus on return");
 assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
-assert.match(app, /function CardHeading\(/, "board tiles share a title-first card header");
-assert.match(app, /<h3 className="min-w-0 break-all text-sm font-semibold/, "card titles always use the whole available width and break rather than truncate");
 assert.doesNotMatch(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "a generic Status label does not duplicate the self-describing state pills");
 assert.match(buildStatusPills, /Workflow stage[\s\S]*stageLabel\(card\.stage\)[\s\S]*Workflow type/, "Build cards identify their specific workflow stage before their workflow type");
 assert.match(buildStatusPills, /card\.activity === "awaiting-answer"[\s\S]*ActivityPill/, "Build summaries surface human waiting consistently");
@@ -183,36 +160,23 @@ assert.match(boardCard, /action=\{stuck && card\.activity !== "error" \? <CardRe
 assert.match(lightweightCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "research/explore tiles match: heading recovery is idle-only");
 assert.doesNotMatch(boardCard, /bg-destructive\/10/, "build tiles render no failure body — the open card explains");
 assert.doesNotMatch(lightweightCard, /bg-destructive\/10/, "research/explore tiles render no failure body either");
-assert.match(app, /card\.activity === "running"\) return "stelow-border-running"/, "a running Build card uses its live border instead of a redundant In progress tag");
 assert.match(boardCard, /liveBorderClass\(card\)/, "a Build card needing attention uses its shared live attention border");
-assert.match(app, /min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md/, "the recovery action has an accessible touch target");
-assert.match(buildStatusPills, /Worker failed: \$\{detail\}/, "a failed tile still names its reason one hover away");
 assert.match(buildStatusPills, /const started = card\.workerThreadId !== null/, "a parked card names no checkpoint it never reached");
 assert.match(buildStatusPills, />Not started<\/Pill>/, "unstarted cards read Not started on tiles and open cards alike");
 assert.match(app, /if \(card\.workerThreadId == null\) \{\s*return \{\s*kind: "calm",\s*title: "Not started",/, "the parked hero claims no checkpoint either");
-assert.match(buildStatusPills, /icon=\{<Icon name=\{STAGE_ICON\}/, "the stage chip carries its kind icon");
-assert.match(buildStatusPills, /icon=\{<Icon name=\{INTENT_ICON\[card\.intent\]/, "the workflow-type chip carries its kind icon");
 assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the live checkpoint treatment has one definition");
-assert.match(buildStatusPills, /export function CurrentStagePill/, "the progress header reuses the timeline's checkpoint pill");
 assert.match(app, /\? CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");
 assert.match(app, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress header names the checkpoint with the pulsing pill, never detached plain text");
 // Research/Explore share one presentation: track icon for position, content
 // icon for the playbook tag, statusTone for state, muted for the tag. Tiles
 // show identity (tag) while open cards add position (column) — the board
 // already gives tiles their position, so only open cards need it.
-assert.match(buildStatusPills, /export function LightweightStatusPills/, "lightweight tracks share one state presentation");
-assert.match(buildStatusPills, /TRACK_ICON\[kind\]/, "the position chip carries its track glyph");
-assert.match(buildStatusPills, /TAG_ICON\[kind\]/, "the playbook tag carries its content glyph");
 assert.match(app, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{null\}/, "tiles show identity only — position comes from the board section");
 assert.match(app, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{RESEARCH_COLUMN_LABELS\[researchColumnOf\(card\)\]/, "open cards add the position pill the board cannot show them");
 assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Research strategy/, "the open research tag no longer out-colors its tile twin");
 assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Technique/, "the open explore tag no longer out-colors its tile twin");
 assert.match(app, /stelow-live-surface stelow-detail-surface flex h-full flex-col.*liveBorderClass\(card\)/, "every open track pulses its live border while working");
-assert.match(app, /function HeroErrorNote\(/, "a decision hero names a concurrent failure instead of hiding it");
-assert.match(app, /Answering below resumes the worker\./, "the concurrent-error note points at the open question as the recovery path");
-assert.match(app, /Retry the failed worker in place instead of answering/, "the open card offers retry beside the question when both are live");
 assert.doesNotMatch(boardCard, /flex-1 truncate text-sm/, "build card titles are no longer truncated beside pills");
-assert.match(listRow, /break-words text-sm leading-5/, "list cards keep long requested outcomes readable");
 assert.doesNotMatch(app, /hsl\(280 80% 60%/, "running cards no longer cycle through distracting rainbow colors");
 
 // Done is terminal for attention, not just for archive: background sync
@@ -225,8 +189,8 @@ const exploreSync = server.slice(server.indexOf("async function syncExploreThrea
 assert.match(exploreSync, /card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked"/, "explore sync never writes terminal cards");
 const failedWriter = server.slice(server.indexOf("async function applyWorkerFailed"), server.indexOf("async function markThreadRunning"));
 assert.match(failedWriter, /current\.status === "completed" \|\| current\.status === "archived" \|\| current\.status === "blocked"/, "a dead thread after Done never stains the card");
-assert.match(server, /const errorPending = !termStatus && \(Boolean\(row\.last_error\) \|\| activity === "error"\);/, "board attention ignores stale errors on terminal cards");
-assert.match(server, /: !termStatus && \(Boolean\(card\.last_error\) \|\| effectiveActivity === "error"\) \? "error"/, "detail attention ignores stale errors on terminal cards");
+assert.match(server, /errorNeedsAttention\(row\.status, row\.last_error, activity\)/, "board attention shares the terminal-error predicate");
+assert.match(server, /errorNeedsAttention\(card\.status, card\.last_error, effectiveActivity\)/, "detail attention shares the same predicate — badge and card cannot disagree");
 const retry = rpcMethod("retryWorker", "restartWorker");
 assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked"/, "completed cards refuse Retry instead of nudging a finished worker");
 assert.match(server, /status: "in-progress", last_error: null \}\);/, "answering a question clears the interrupted turn's failure");
@@ -239,83 +203,41 @@ assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\
 // inner scroll keeps the frame stable, and a bordered settings boundary
 // keeps the controls attached. Radio cards stay accessible and vertical.
 assert.doesNotMatch(app, /createOptionsOpen/, "new-card Settings is never collapsed, so planning depth and review gates are always discoverable");
-assert.match(app, /start from the board defaults — keep them or adjust, then submit/, "the creation dialog frames preferences as defaults, not hidden settings");
-assert.match(app, /function CollapsibleChoiceCards</, "each preference category is a compact row, so Pause for my review is never pushed below the fold");
-assert.match(app, /<ChoiceCards label=\{label\} labelHidden/, "expanded rows reuse the same radio cards instead of a second option renderer");
-assert.match(app, /aria-expanded=\{open\}/, "preference rows expose their expand state to assistive tech");
-assert.match(app, /function ChoiceCards</, "planning and review options render as visible radio cards");
-assert.match(app, /label="Pause for my review"/, "human review gates never read as the automatic Review column");
 assert.doesNotMatch(app, /agent's own automatic check/, "the review picker no longer carries the distracting board-column explanation");
-assert.match(app, /function SettingsSection\(/, "settings controls use a reusable visual container");
-assert.match(app, /function WorkflowSettings\(/, "workflow preferences are reused between creation and board defaults");
-assert.match(app, /function DisclosureSection\(/, "Settings and card content share one generic disclosure pattern");
-assert.match(app, /function DisclosureChevron/, "every collapsible shares one open/close affordance");
-assert.match(app, /group-open:rotate-90/, "the chevron mirrors open state instead of decorating");
 assert.doesNotMatch(app, /function WorkflowChoiceSelect</, "the cramped select is gone, not duplicated");
-assert.match(app, /const isSplitProposal = isSplitQuestion\(current\)/, "split questions get their own safe, explicit guidance");
-assert.match(app, /Choose deliveries or/, "split UI makes Keep as one card an explicit alternative without repeating the split instructions");
-assert.match(app, /splitOptionDescription\(/, "a still-open legacy split form does not repeat generated consequences");
-assert.match(app, /splitQuestionText\(current\.prompt\)/, "a still-open legacy split prompt upgrades without changing its stored answer identity");
-assert.match(app, /splitSelectionNotice\(current\.options, selected\[current\.id\] \?\? \[\]\)/, "split feedback reacts to the current selection before submission");
-assert.match(app, /border-primary\/40 bg-primary\/10 p-2 text-xs leading-5 text-foreground/, "a planned parent archive is informative, not a destructive red warning");
 assert.match(server, /Questions are English-only/, "the worker cannot opt a structured card question into another locale");
 assert.match(server, /englishQuestionContentError\(group\.question, group\.options\)/, "the CLI rejects Portuguese structured question content before it can create a mismatched card form");
 assert.match(answerExpired, /formatBatchContinuation\(decisions\)/, "recovered answers use the same neutral continuation as live answers");
 assert.doesNotMatch(answerExpired, /question that timed out/, "recovered answer delivery does not leak timeout jargon into the worker thread");
-assert.match(app, /<input type="checkbox" checked=\{unreadOnly\}/, "read state is one checkbox, not a Show-labeled button pair");
-assert.match(app, /Unread only<\/label>/, "Inbox can narrow every selected tab to unread entries");
-assert.match(app, /FILTER_ACTIVE\[entry\.id\]/, "each Inbox tab carries its semantic color when active");
-assert.match(app, /FILTER_DOT\[entry\.id\]/, "each Inbox tab names its kind with a status dot");
 assert.doesNotMatch(app, />Show<\/span><button/, "no detached Show label explains the read filter");
-assert.match(app, /size-5 shrink-0 items-center justify-center border-2/, "question choices use visible, high-contrast selection controls");
 assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split question is host-enriched in English before it reaches the user");
 assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");
-assert.match(app, /recoveryHeading/, "recovered questions explain the state without leaking timeout jargon");
-assert.match(answerExpired, /item\.answers\.map\(\(answer\) => answer\.trim\(\)\)\.filter\(Boolean\)/, "timed-out answers are normalized before completeness validation");
+assert.match(answerExpired, /cleanAnswerList\(item\.answers\)/, "timed-out answers are cleaned through the shared helper before completeness validation");
 assert.match(answerExpired, /recordSplitAnswer\(db, cardId, decisions\)/, "a timed-out split answer records through the same shared helper as a live answer");
 assert.match(answerExpired, /if \(rows\.size !== openIds\.size\) return \{ ok: false as const, answered: 0, error: "Answer every pending question before submitting\." \}/, "timed-out batches refuse a partial answer at the RPC boundary");
-assert.match(app, /const isLastQuestion = index === questions\.length - 1;/, "the final action is scoped to the final question step");
 assert.match(app, /\{isLastQuestion \? <Button size="sm" disabled=\{!complete \|\| busy\}/, "the batch action only renders on the last step and waits for every decision");
-assert.match(app, /These needed you once, then cleared on their own/, "the Resolved filter explains why it exists");
-assert.match(app, /presentation\.label\}<\/span>/, "each resolved row names how it cleared");
 
 const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
-assert.match(threadAction, /<Button size="sm" variant="outline"/, "the thread-header card button shares the in-panel small-button pattern");
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
-assert.match(buildStatusPills, /Workflow stage — the specific checkpoint this card is at\./, "the first Build pill names the workflow checkpoint consistently");
 assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecoveryCheckout/, "recovered exploratory cards use a host file target instead of a stale worker environment");
 // One progress section, one artifact home, one reference. The doc buttons that
 // duplicated Artifacts are gone, counts are counts, and the reference map is a
 // sibling of the progress section rather than nested inside card state.
 assert.match(app, /function DisclosureSection\(\{ title, subtitle, hint/, "a section can name its job on its own line");
-assert.match(app, /title=\{archivedPresentation\?\.workflow\.title \?\? "Workflow progress"\}/, "the live progress section is named for the workflow, matching the map's family");
-assert.match(app, /subtitle=\{archivedPresentation \? undefined : scopeTotal > 0 \|\| card\?\.status/, "the progress subtitle is the counterpart to the map's What each stage does");
-assert.match(app, /hint\?: React\.ReactNode/, "disclosure hints accept live pills as well as plain text");
-assert.match(app, /attachments and @mentions live in the worker thread/, "the composer names where native attachments and mentions live");
-assert.match(app, /threadId=\{card\?\.workerThreadId \?\? null\} \/>/, "every track's conversation offers its live worker thread beside Send");
 assert.doesNotMatch(app, /onShowArtifacts/, "the per-stage document buttons are gone; files and navigation never share one shape");
 assert.doesNotMatch(app, /workflow\.progressTitle/, "the progress block no longer repeats the disclosure title it sits under");
 assert.doesNotMatch(app, /Agent advances alone/, "the override coaching stops being permanent chrome");
-assert.match(app, /produced\.length > 0 \? <span className="text-muted-foreground">· \{produced\.length\} file/, "a stage that produced documents carries a count-only badge");
-assert.match(app, /\{artifactTotal\} file\{artifactTotal === 1 \? "" : "s"\} ↓/, "the summary action carries the artifact count and the one route to the files");
 const progressSection = app.slice(app.indexOf("DISCLOSURE 1"), app.indexOf("<div ref={artifactsRef}>"));
 assert.ok(progressSection.length > 0 && progressSection.indexOf("</CardDisclosure>") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of progress, never nested inside it");
-assert.match(app, /<WorkflowMap open=\{mapOpen\} onToggle=\{setMapOpen\} \/>/, "the workflow map tracks its own open state");
-assert.match(app, /function WorkflowMap\([\s\S]*?<DisclosureChevron open=\{open\} className="text-base text-foreground" \/>/, "the workflow map uses the shared, state-explicit chevron at the readable standard size");
-assert.match(app, /WORKFLOW_PHASES\.map\(\(phase\) =>/, "the workflow map groups stages into their four readable workflow phases");
-assert.match(app, /inline-flex size-5 shrink-0 items-center justify-center text-sm/, "all shared disclosure chevrons reserve one readable minimum size");
 assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");
 
 // Finished work is not blocked work. The review signal is its own quieter
 // treatment, derived from ONE predicate, and it is the completion's read state
 // — never the amber attention flag the Inbox badge and attention filter count.
-assert.match(app, /function pendingReview\(card: Pick<CardItem, "status" \| "hasPendingReview">\): boolean \{/, "the review signal is one predicate, not pasted per surface");
 assert.match(app, /card\.status === "completed" && card\.hasPendingReview/, "only an unopened, completed card asks for review");
 assert.match(server, /hasPendingReview\(db, row\.id\)/, "list rows carry the review signal from the shared Inbox helper");
 assert.match(server, /hasPendingReview\(db, cardId\)/, "card detail carries the same review signal");
-assert.match(app, /bg-emerald-500\/15 px-2 py-0\.5 font-medium text-emerald-700/, "review is emerald, distinct from the amber attention chip");
 assert.match(server, /current\.kind === "build" && !opts\?\.suppressCompletionEvent/, "exactly one completion notification per finished Build card");
-assert.match(server, /Build complete — audit evidence is ready to review in Done\./, "the completion notification says what to review");
 
 // Two receipts, one word apart. Only their freshness tells them apart, so the
 // card asks the owning helper for that verdict and labels both where they list.
@@ -330,6 +252,5 @@ assert.match(server, /sameGitEvidence\(gitEvidence, postTrailGitEvidence\)/, "Do
 assert.match(server, /\["audit-trail", "check", "--strict", "--json"\]/, "the post-completion status uses the same strict receipt contract as Done");
 assert.match(server, /recon: reconReceiptStatus\(/, "the host derives reconnaissance evidence from the portable receipt, never UI state");
 assert.match(server, /RECON_RECEIPT_FILE/, "the reconnaissance receipt path is one shared contract");
-assert.match(app, /Recon warning: \{status\.recon\.detail\}/, "a missing or invalid reconnaissance receipt is visible but non-blocking");
 
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");
