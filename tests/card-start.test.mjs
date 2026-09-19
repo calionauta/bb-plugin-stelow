@@ -43,6 +43,16 @@ assert.ok(!splitCall.includes("start"), "split children inherit start-by-default
 // Build included, so no track can only be created running.
 assert.match(app, /function StartImmediatelyCheck/, "one checkbox component serves every creation dialog");
 assert.equal((app.match(/<StartImmediatelyCheck/g) ?? []).length, 3, "build, research, and explore dialogs all offer it");
+// Automation rules carry the same choice per rule (default off): an aligned
+// row component, an explicit opt-in checkbox, and deletion behind the shared
+// confirm dialog — never a bare immediate delete.
+assert.match(app, /function AutomationRuleRow\(/, "automation rows render through one aligned component");
+assert.match(app, /Start automatically/, "the new-rule form offers auto-start in the composer's wording");
+assert.match(app, /unchecked parks in Inbox\./, "the default-off choice states where matches go");
+assert.match(app, /Auto-start rule \$\{rule\.label\}/, "each row toggles auto-start with an accessible name");
+assert.match(app, /setAutomationDeleteIds\(\[rule\.id\]\)/, "single delete opens the confirm instead of deleting");
+assert.match(app, /Delete this automation rule\?/, "the confirm names the destructive rule action");
+assert.equal((app.match(/<StartImmediatelyCheck/g) ?? []).length, 3, "build, research, and explore dialogs all offer it");
 assert.match(app, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
 assert.match(app, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
 assert.match(app, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");

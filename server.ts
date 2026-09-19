@@ -1828,7 +1828,7 @@ export default async function plugin(bb: BbPluginApi) {
           if (!card) continue;
           logCardComment(card.id, "card", card.id, "agent", `${rule.autostart === 1 ? "Started" : "Drafted"} from GitHub issue #${match.number}: ${detail.issue.url}`);
           db.prepare("INSERT INTO automation_rule_fires (rule_id, source_key, card_id, fired_at) VALUES (?, ?, ?, ?)").run(rule.id, sourceKey, card.id, now());
-          bb.realtime.publish("board-changed", { reason: "automation-draft", cardId: card.id });
+          bb.realtime.publish("board-changed", { reason: rule.autostart === 1 ? "automation-started" : "automation-draft", cardId: card.id });
         } catch (error) {
           bb.log.warn(`automation rule ${rule.id} skipped ${sourceKey}: ${error instanceof Error ? error.message : String(error)}`);
         }
