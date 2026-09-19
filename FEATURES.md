@@ -580,6 +580,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`table-columns`, `lib/artifact-validation.mjs`): the tech plan must
   carry a task table with a Done Criterion column — a passing prose
   mention no longer satisfies per-scope acceptance.
+- **Live scope refresh** (`bb stelow sync-scopes`). Tracking edits are file
+  writes the host cannot watch, so the sync doubles as the refresh signal:
+  the executor runs it after appending discovered tasks or flipping task
+  status, and the host publishes `card-state`/`board-changed` — progress,
+  list, and counts reload instead of waiting for the next lifecycle event.
+  Re-syncs preserve host/worker overlay (audit-gap scopes, discovered
+  tasks) instead of replacing it.
 - **Commit trailer manifest** (`bb stelow manifest [--json] [--card]`, `lib/artifact-manifest.mjs`).
   Commits cannot carry file attachments, so the durable audit link is a
   paste-ready `Stelow-Artifacts:` trailer block (card id, registered

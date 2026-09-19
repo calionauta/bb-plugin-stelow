@@ -7557,6 +7557,15 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (guard) return { exitCode: 1, stderr: guard };
         const result = await runHelper(["sync-scopes", ...passthrough], rootPath, stateDir ?? undefined);
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "sync-scopes failed", stdout: result.stdout };
+        // Tracking edits are file writes the host cannot watch, so the
+        // sync doubles as the refresh signal: the executor runs it after
+        // appending discovered tasks or flipping task status, and this
+        // publish makes the card reload (ScopeProgress, list, counts)
+        // instead of waiting for the next lifecycle event.
+        if (cliCard) {
+          bb.realtime.publish("card-state", { cardId: cliCard.id });
+          bb.realtime.publish("board-changed", { cardId: cliCard.id });
+        }
         return { exitCode: 0, stdout: result.stdout };
       }
       if (argv[0] === "lock") {
