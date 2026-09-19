@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   wordCount,
   tableRowCount,
+  tableHeaders,
   sectionItemCount,
   fieldBlockCount,
   validateArtifact,
@@ -23,6 +24,16 @@ assert.equal(sectionItemCount("## A\nnothing\n", "A"), 0, "no bullets means no i
 assert.equal(sectionItemCount("nothing", "A"), 0, "missing section means no items");
 assert.equal(fieldBlockCount("#### 1\n- A: x\n- B: y\n#### 2\n- A: x\n", "#### ", ["A:", "B:"]), 1, "only complete blocks count");
 assert.equal(wordCount("  a b\nc "), 3, "word count");
+
+// Table columns: a passing mention in prose is not a per-item criterion column.
+const TASK_TABLE = "| # | Task | Components | Risk | Done Criterion | Order Rationale |\n|---|---|---|---|---|---|\n| 1.1 | Login | api | LOW | Works | P0 |\n";
+assert.deepEqual(tableHeaders(TASK_TABLE).filter((h) => h === "task" || h === "done criterion"), ["task", "done criterion"], "headers parsed case-insensitively");
+assert.deepEqual(tableHeaders("no tables here"), [], "no tables means no headers");
+const colContract = { minWords: 0, checks: [{ kind: "table-columns", names: ["Task", "Done Criterion"] }] };
+assert.equal(validateArtifact(TASK_TABLE + pad(10), colContract).pass, true, "task table with Done Criterion passes");
+// Mentions "Done Criterion" in prose + has rows, but no criterion column → fails.
+const proseMention = `# Plan\n\nDone Criterion matters.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n`;
+assert.ok(hasCode(validateArtifact(proseMention + pad(10), colContract), "missing-table-columns"), "prose mention without the column fails");
 
 // Every migrated slug has a contract citing its upstream reference.
 assert.equal(JTBD_CONTRACTS.length, 10, "ten JTBD depth contracts");

@@ -571,7 +571,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (`lib/audit-verification.mjs`); `done` accepts only a passing run at the
   audited HEAD. Prompts require it; the
   sync stays the backstop — prompt, CLI, and gate share one definition
-  of PASS (`lib/research-artifacts.mjs`).
+  of PASS (`lib/research-artifacts.mjs`). Table-column checks
+  (`table-columns`, `lib/artifact-validation.mjs`): the tech plan must
+  carry a task table with a Done Criterion column — a passing prose
+  mention no longer satisfies per-scope acceptance.
 - **Explicit completion** (`bb stelow done [--card]`, `lib/completion.mjs`).
   Done-ness was inferred from `audit` + idle, so narrate-and-stop looked
   identical to stuck. The worker commits; the host verifies in code —
