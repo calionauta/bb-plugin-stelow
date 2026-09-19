@@ -844,8 +844,11 @@ one input, one artifact.*
   critique registry + decision) — failures surface as `verify` FAIL
   lines and inbox errors naming the missing depth. The critique's
   `gaps:` frontmatter is machine-checked (`lib/gap-registry.mjs`):
-  every row needs a known impact + resolution, and high/critical
-  impact must resolve as escalate — a misclassified gap fails
+  every row needs a known impact + resolution, high/critical impact
+  must resolve as escalate, and a stated moderate-or-heavier effort on
+  a medium gap must not resolve as an inline fix (`gap-underfixed`) —
+  effort checks are fail-open when absent so legacy registries never
+  retro-fail. A misclassified gap fails
   deterministically instead of passing silently.
 - **Gap-to-scope loop** (`bb stelow gap-scopes`, `critiqueGapState`).
   Escalated gaps become `audit-gap` rework scopes in the card's own
@@ -859,7 +862,9 @@ one input, one artifact.*
   rework (counts, per-escalation scope status, lead/cycle time via
   `gapSummary`); rework scopes carry a rework pill naming their gap.
   `bb stelow metrics [--json]` reports lead/cycle time per stage plus
-  gap counts and escalated rate, read-only. Done means every gap has
+  gap counts and escalated rate, read-only — without `--card` it
+  aggregates the whole Build fleet (avg lead/cycle, totals, per-card
+  breakdown). Done means every gap has
   a disposition and every escalation is executed — documented gaps
   are accepted debt for next cycle by definition, fixed gaps are
   auditable through the Decision section and trail. `verify --tests`

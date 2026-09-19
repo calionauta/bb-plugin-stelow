@@ -4,6 +4,7 @@ export interface GapEntry {
   area: string | null;
   description: string | null;
   impact: string | null;
+  effort: string | null;
   resolution: string | null;
 }
 

@@ -59,6 +59,17 @@ assert.equal(fail(validateGapRegistry(incomplete), "gap-incomplete-row").length,
 const aliased = head(`${row("quality", "low", "fixed", "A")}\n  - type: debt\n    area: "x"\n    description: "B"\n    impact: medium\n    resolution: documented`);
 assert.deepEqual(validateGapRegistry(aliased), [], "aliases pass");
 
+// Effort is fail-open when absent, checked when present.
+const effortRow = (impact, effort, resolution) =>
+  `---\ngaps:\n  - type: quality\n    area: "auth"\n    description: "Effort case"\n    impact: ${impact}\n${effort === null ? "" : `    effort: ${effort}\n`}    resolution: ${resolution}\n---\n`;
+assert.deepEqual(validateGapRegistry(effortRow("medium", null, "fixed")), [], "absent effort skips effort checks");
+assert.deepEqual(validateGapRegistry(effortRow("medium", "trivial", "fixed")), [], "medium trivial fixed passes");
+assert.deepEqual(validateGapRegistry(effortRow("medium", "moderate", "documented")), [], "medium moderate documented passes");
+assert.equal(fail(validateGapRegistry(effortRow("medium", "moderate", "fixed")), "gap-underfixed").length, 1, "medium moderate fixed fails as underfixed");
+assert.equal(fail(validateGapRegistry(effortRow("medium", "significant", "fixed")), "gap-underfixed").length, 1, "medium significant fixed fails as underfixed");
+assert.equal(fail(validateGapRegistry(effortRow("low", "huge", "fixed")), "gap-incomplete-row").length, 1, "unknown effort fails as incomplete");
+assert.deepEqual(validateGapRegistry(effortRow("low", "significant", "escalate")), [], "over-disposition stays allowed");
+
 // The execution-critique contract enforces the registry end to end.
 const contract = contractForBuildArtifact("critiques/Execution Critique Report_v1.md", clean);
 assert.ok(contract?.id === "execution-critique", "title routes to the critique contract");

@@ -6637,7 +6637,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
       { name: "verify", summary: "Verify artifacts, or run the Build card's host-recorded tests", usage: "bb stelow verify [--card <card_id>] [--tests] [--json]" },
       { name: "gap-scopes", summary: "Convert escalated gaps into rework scopes (idempotent)", usage: "bb stelow gap-scopes [--card <card_id>]" },
-      { name: "metrics", summary: "Lead/cycle time and gap rates for a card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
+      { name: "metrics", summary: "Lead/cycle time and gap rates per card, or fleet-wide without --card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
@@ -7051,6 +7051,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (argv[0] === "metrics") {
         // Lead/cycle-time and gap-rate readout from the stage-event ledger
         // plus the live gap registry. Read-only: never writes, never blocks.
+        // No --card means the fleet: every non-archived Build card aggregated.
         const args = argv.slice(1);
         const json = args.includes("--json");
         let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
@@ -7058,6 +7059,57 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
           if (args[i] === "--json") continue;
           return { exitCode: 2, stderr: "Usage: bb stelow metrics [--json] [--card <card_id>]" };
+        }
+        if (!cardId && !args.includes("--card")) {
+          const rows = db.prepare("SELECT * FROM cards WHERE kind = 'build' AND status != 'archived'").all() as CardRow[];
+          if (rows.length === 0) return { exitCode: 0, stdout: "No Build cards to aggregate." };
+          let gaps = 0;
+          let escalated = 0;
+          let leadSum = 0;
+          let leadCount = 0;
+          let cycleSum = 0;
+          let cycleCount = 0;
+          let doneCount = 0;
+          const perCard: Array<{ card: string; name: string; done: boolean; gaps: number; escalated: number }> = [];
+          for (const row of rows) {
+            try {
+              const events = stageEvents(row.id);
+              const doneEvent = [...events].reverse().find((event) => event.stage === "done") ?? null;
+              const timeline = summarizeTimeline(events, { createdAt: row.created_at, endAt: doneEvent ? doneEvent.entered_at : now() });
+              leadSum += timeline.leadMs;
+              leadCount++;
+              if (timeline.cycleMs !== null) {
+                cycleSum += timeline.cycleMs;
+                cycleCount++;
+              }
+              if (row.status === "completed") doneCount++;
+              const gapState = await critiqueGapState(row).catch(() => null);
+              const cardGaps = gapState?.matched ? gapState.totals.total : 0;
+              const cardEscalated = gapState?.matched ? gapState.totals.escalated : 0;
+              gaps += cardGaps;
+              escalated += cardEscalated;
+              perCard.push({ card: row.id, name: row.name, done: row.status === "completed", gaps: cardGaps, escalated: cardEscalated });
+            } catch { /* one unreadable card never breaks the fleet readout */ }
+          }
+          const payload = {
+            cards: rows.length,
+            done: doneCount,
+            avgLeadMs: leadCount > 0 ? Math.round(leadSum / leadCount) : null,
+            avgCycleMs: cycleCount > 0 ? Math.round(cycleSum / cycleCount) : null,
+            gaps,
+            escalated,
+            escalatedRate: gaps > 0 ? escalated / gaps : null,
+            perCard,
+          };
+          if (json) return { exitCode: 0, stdout: JSON.stringify(payload, null, 2) };
+          const rate = payload.escalatedRate === null ? "n/a" : `${Math.round(payload.escalatedRate * 100)}%`;
+          const lines = [
+            `Fleet: ${rows.length} Build cards (${doneCount} done)`,
+            `Avg lead time: ${payload.avgLeadMs === null ? "n/a" : formatDuration(payload.avgLeadMs)} · avg cycle time: ${payload.avgCycleMs === null ? "n/a" : formatDuration(payload.avgCycleMs)}`,
+            `Gaps: ${gaps} total · ${escalated} escalated (${rate} escalated)`,
+            ...perCard.map((entry) => `- ${entry.name}: ${entry.gaps} gaps · ${entry.escalated} escalated${entry.done ? " · done" : ""}`),
+          ];
+          return { exitCode: 0, stdout: lines.join("\n") };
         }
         if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
         const card = getCard(cardId);
