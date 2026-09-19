@@ -6964,13 +6964,28 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // workspace, so the host performs the same call here. Explicit worker
         // calls remain canonical; failures never block the advance.
         if (stage === "execution") {
+          // Loop-back transparency: audit → execution is the rework loop,
+          // so the advance names the open rework it picks up (or its
+          // absence) instead of moving silently. cliCard is a pre-write
+          // snapshot, so its stage is still the stage we came from.
+          let loopNote = "";
+          if (cliCard && cliCard.stage === "audit") {
+            const gapState = await critiqueGapState(cliCard).catch(() => null);
+            if (gapState?.matched) {
+              const open = gapState.auditGapScopes.filter((scope) => !["done", "completed"].includes(scope.status));
+              loopNote = open.length > 0
+                ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`
+                : "\n(rework loop: back to execution from audit — no open audit-gap scopes)";
+            }
+          }
           try {
             const sync = await runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
             const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
             if (typeof parsed.synced === "number" && parsed.synced > 0) {
-              return { exitCode: 0, stdout: result.stdout + `\n(sync-scopes: synced ${parsed.synced} scopes)` };
+              return { exitCode: 0, stdout: result.stdout + `\n(sync-scopes: synced ${parsed.synced} scopes)` + loopNote };
             }
           } catch { /* best-effort only */ }
+          if (loopNote) return { exitCode: 0, stdout: result.stdout + loopNote };
         }
         return { exitCode: 0, stdout: result.stdout };
       }
@@ -7664,10 +7679,20 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const docWarning = docDepths.length > 0
             ? `\nWARNING: workflow documents need depth (done will refuse):\n${docDepths.map((doc) => `FAIL ${doc.label} (${doc.path}): ${doc.failures.join("; ")}`).join("\n")}`
             : "";
-          if (asJson) return { exitCode: result.exitCode, stdout: JSON.stringify({ ...report, docDepths }, null, 2) };
+          // Same rework loop done enforces, surfaced early: escalations
+          // without scopes and open rework warn here instead of ambushing
+          // at done. Read-only — creating scopes stays a gap-scopes call.
+          const gapState = await critiqueGapState(card).catch(() => null);
+          const unscoped = gapState?.matched ? gapState.escalated.filter((gap) => !gapState.auditGapScopes.some((scope) => scope.gap === gap.description)) : [];
+          const openRework = (gapState?.auditGapScopes ?? []).filter((scope) => !["done", "completed"].includes(scope.status));
+          const gapLoop = { unscoped: unscoped.map((gap) => gap.description), openRework: openRework.map((scope) => `${scope.id} (${scope.status})`) };
+          const gapWarning = unscoped.length > 0 || openRework.length > 0
+            ? `\nWARNING: rework loop open (done will refuse):\n${[...unscoped.map((gap) => `UNSCOPED ${gap.description} — run bb stelow gap-scopes`), ...openRework.map((scope) => `OPEN ${scope.id} (${scope.status}) — finish it, then re-run the critique`)].join("\n")}`
+            : "";
+          if (asJson) return { exitCode: result.exitCode, stdout: JSON.stringify({ ...report, docDepths, gapLoop }, null, 2) };
           return result.exitCode === 0
-            ? { exitCode: 0, stdout: `PASS: ${command.display} recorded at ${evidence.headSha}.\n${report.output}${docWarning}` }
-            : { exitCode: result.exitCode, stderr: `FAIL: ${command.display} recorded at ${evidence.headSha}.\n${report.output}${docWarning}` };
+            ? { exitCode: 0, stdout: `PASS: ${command.display} recorded at ${evidence.headSha}.\n${report.output}${docWarning}${gapWarning}` }
+            : { exitCode: result.exitCode, stderr: `FAIL: ${command.display} recorded at ${evidence.headSha}.\n${report.output}${docWarning}${gapWarning}` };
         }
         if (card.kind === "research") {
           const readiness = await researchReadiness(card).catch(() => null);

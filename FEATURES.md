@@ -862,7 +862,12 @@ one input, one artifact.*
   gap counts and escalated rate, read-only. Done means every gap has
   a disposition and every escalation is executed — documented gaps
   are accepted debt for next cycle by definition, fixed gaps are
-  auditable through the Decision section and trail.
+  auditable through the Decision section and trail. `verify --tests`
+  warns the loop state early (UNSCOPED / OPEN lines) so it never
+  ambushes at `done`; advancing audit → execution names the open
+  rework it picks up. Re-critique overwrites the same file: every
+  matched critique is validated (a lingering superseded file still
+  claims), and every refusal names file + expected-vs-found.
 - **Build document depth** (`buildDocDepths`, `contractForBuildArtifact`).
   At `done`, recognized workflow documents registered in `state.md`
   (spec-product, spec-tech, interfaces, testing-strategy, critique
