@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.30.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.29.0...v0.30.0) (2026-09-19)
+
+
+### Features
+
+* commit-aware bundle check with empty-skip ([f3cf4aa](https://github.com/calionauta/bb-plugin-stelow/commit/f3cf4aa5135672fc852be71a6e4626370ee33268))
+* refresh run bundle on every done with drift check ([d97ebe6](https://github.com/calionauta/bb-plugin-stelow/commit/d97ebe6115ff0c61397760805e5e4260e004baea))
+
+
+### Bug Fixes
+
+* keep live checkpoint pill on the progress subtitle line without ring clipping ([33c87af](https://github.com/calionauta/bb-plugin-stelow/commit/33c87af1f76e1d856e9759166093c9f91b79cb3f))
+
 ## [0.29.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.28.0...v0.29.0) (2026-09-19)
 
 
