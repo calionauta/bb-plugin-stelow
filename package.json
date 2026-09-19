@@ -47,7 +47,7 @@
     "build": "bb plugin build && node scripts/postbuild.mjs",
     "reload": "bb plugin reload stelow",
     "build:reload": "npm run build && npm run reload",
-    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:ask-gate && npm run test:ask-contracts && npm run test:composer-execution && npm run test:preset-ui && npm run test:question-batch && npm run test:question-presence && npm run test:question-presentation && npm run test:question-state && npm run test:question-staleness && npm run test:github-lists && npm run test:automation && npm run test:promote && npm run test:research && npm run test:kanban-layout && npm run test:worker-ledger && npm run test:worker-failure && npm run test:worker-actions && npm run test:workflow-intent && npm run test:card-details && npm run test:workflow-lineage && npm run test:preview && npm run test:skills-sync && npm run test:skills-verify && npm run test:skills-tables && npm run test:spawn-retry && npm run test:skills-atomic && npm run test:github-release && npm run test:discard && npm run test:contracts && npm run test:bands && npm run test:paths && npm run test:about && npm run test:fresh && npm run test:helper-sync && npm run test:draft",
+    "test": "npm run test:artifacts && npm run test:inbox && npm run test:ask-cancel && npm run test:ask-gate && npm run test:ask-contracts && npm run test:composer-execution && npm run test:preset-ui && npm run test:question-batch && npm run test:question-presence && npm run test:question-presentation && npm run test:question-state && npm run test:question-staleness && npm run test:github-lists && npm run test:automation && npm run test:promote && npm run test:research && npm run test:kanban-layout && npm run test:worker-ledger && npm run test:worker-failure && npm run test:worker-actions && npm run test:workflow-intent && npm run test:card-details && npm run test:workflow-lineage && npm run test:preview && npm run test:skills-sync && npm run test:skills-verify && npm run test:skills-tables && npm run test:spawn-retry && npm run test:skills-atomic && npm run test:github-release && npm run test:discard && npm run test:contracts && npm run test:bands && npm run test:paths && npm run test:about && npm run test:fresh && npm run test:helper-sync && npm run test:draft && npm run test:spawn-freshness",
     "test:artifacts": "node tests/artifact-manifest.test.mjs && node tests/artifact-validation.test.mjs && node tests/strategy-contracts.test.mjs && node tests/explore-build-contracts.test.mjs && node tests/review-verdict.test.mjs && node tests/diff-split.test.mjs && node tests/sem-summary.test.mjs && node tests/cymbal-changed.test.mjs && node tests/vcs-publication.test.mjs && node tests/workspace-recovery.test.mjs",
     "test:ask-cancel": "node tests/ask-cancel.test.mjs",
     "test:ask-gate": "node tests/ask-gate.test.mjs",
@@ -94,7 +94,8 @@
     "security:production": "npm audit --omit=dev --audit-level=high",
     "security:full": "npm audit --audit-level=high",
     "test:question-staleness": "node tests/question-staleness.test.mjs",
-    "test:draft": "node tests/draft-burst.test.mjs"
+    "test:draft": "node tests/draft-burst.test.mjs",
+    "test:spawn-freshness": "node tests/spawn-freshness.test.mjs"
   },
   "files": [
     "dist",

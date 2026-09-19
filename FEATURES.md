@@ -609,6 +609,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on research, explore, and build cards. Draft records live under
   `drafts/` — disposable scratch, exempt from the unregistered list and
   the strict audit gate, so a burst never blocks `done`.
+- **Fresh-context spawn contract** (`tests/spawn-freshness.test.mjs`).
+  Six spawn sites pinned; no fork/history inheritance in any spawn block
+  (`previousThreadId` travels only as a reference string beside an
+  explicit `bb thread output` retrieval, never as spawn identity);
+  disposable spawns build prompts through the leashed lib builders and
+  stay hidden; `CARD_OWNER_RULES` teaches fresh delegation (full task in
+  the call, never a fork, never sibling chatter).
 - **Runtime dir stays out of git** (`withRuntimeIgnoreEntry`, `lib/card-seed-guard.mjs`).
   Seeding a git checkout appends `.stelow/` to its `.gitignore` (best-effort,
   never blocks): live per-card runs must never be swept in by a worker
