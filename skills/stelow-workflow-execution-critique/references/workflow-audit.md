@@ -110,6 +110,8 @@ Flag as gap if any of:
 - `record.verified !== true` → **warning**: Verification checklist incomplete.
 - `record.commands_count === 0` → **warning**: "verified via vibes" pattern.
 - `record.suggested_commit` is empty → **minor**: no commit guidance for next PR.
+- `record.commands_count > 0` but `record.baseline` is empty/missing → **warning**: no pre-change baseline, regressions undetectable (legitimate only when Limitations says the commands cannot run pre-change).
+- `record.duration_s` is null on a `completed` scope → **minor**: no timing, parallel payoff unmeasurable.
 - `iteration-state-{SCOPE-ID}.md` lacks a `## Record` section even when
   `stelow.json` has the mirror fields → **warning**: mirror may be hallucinated.
 
@@ -118,7 +120,8 @@ Severity ladder:
 - **warning**: incomplete verification or zero commands. document in gap registry.
 - **minor**: cosmetic (suggested_commit missing). Note in lessons learned.
 
-Note: `record` field uses snake_case (`completed_at`, `files_count`,
+Note: `record` field uses snake_case (`completed_at`, `started_at`,
+`finished_at`, `duration_s`, `baseline`, `cost`, `files_count`,
 `commands_count`, `suggested_commit`) to match the rest of `stelow.json`
 schema (target_files, actual_files, start_sha, lock_ttl_seconds).
 
@@ -137,15 +140,17 @@ gaps:
   - type: missing-tests          # missing-tests | incomplete | quality | new-scope | debt
     area: "Scope or module affected"
     description: "What's missing or incomplete"
-    impact: medium               # low | medium | high
+    impact: medium               # low | medium | high | critical
+    effort: moderate             # trivial | moderate | significant — drives fixed vs documented
     resolution: escalate         # fixed | documented | escalate
     scope_candidate: false       # true if this gap should become a new scope
   - type: incomplete
     area: "Another area"
     description: "..."
     impact: high
-    resolution: fixed
-    scope_candidate: false
+    effort: moderate
+    resolution: escalate
+    scope_candidate: true
 lessons_learned:
   - "What went well"
   - "What could improve"
@@ -204,6 +209,12 @@ automatically, then re-audits until clean.
 | medium | moderate | 📝 **DOCUMENTED** — note for next cycle |
 | high | any | 🔄 **ESCALATED** — becomes new scope |
 | critical | any | 🔄 **ESCALATED** — becomes new scope |
+
+Findings judged invalid on re-check ride 📝 **DOCUMENTED** with the
+reason in the description (e.g. "not a gap because X") — every finding
+needs a disposition; there is no fourth resolution. Record `effort`
+in the frontmatter whenever it is known: hosts enforce
+medium-plus-moderate-effort as DOCUMENTED-or-ESCALATED, never FIXED.
 
 **What to fix inline (FIXED):**
 - Missing imports, unused imports, typo in identifiers
