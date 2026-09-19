@@ -3492,6 +3492,56 @@ function orderScopes(scopes: Extract<CardDetailResponse, { scopes: unknown }>["s
   return { ordered, waitingOn };
 }
 
+// Scope progress hero: one glanceable readout above the per-scope list.
+// Presentation only — same scopes/tasks contract, no new data. Shows
+// overall scope + task bars, what is actively doing now, and what waits.
+function ScopeProgress({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"] }) {
+  const isDone = (status: string | undefined) => status === "done" || status === "completed";
+  const scopesDone = scopes.filter((scope) => isDone(scope.status)).length;
+  const tasksAll = scopes.flatMap((scope) => scope.tasks);
+  const tasksDone = tasksAll.filter((task) => isDone(task.status)).length;
+  const doingScopes = scopes.filter((scope) => scope.status === "in-progress");
+  const doingTasks = tasksAll.filter((task) => task.status === "in-progress");
+  const blockedScopes = scopes.filter((scope) => ["blocked", "failed", "escalated"].includes(scope.status ?? ""));
+  const scopePct = scopes.length > 0 ? Math.round((scopesDone / scopes.length) * 100) : 0;
+  const taskPct = tasksAll.length > 0 ? Math.round((tasksDone / tasksAll.length) * 100) : 0;
+  const bar = (pct: number, tone: string) => (
+    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+      <div className={`h-full rounded-full transition-all ${tone}`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="font-semibold">✓ {scopesDone}/{scopes.length} scopes</span>
+        {bar(scopePct, "bg-emerald-500")}
+        <span className="tabular-nums text-muted-foreground">{scopePct}%</span>
+      </div>
+      {tasksAll.length > 0 ? (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-semibold">✓ {tasksDone}/{tasksAll.length} tasks</span>
+          {bar(taskPct, "bg-primary")}
+          <span className="tabular-nums text-muted-foreground">{taskPct}%</span>
+        </div>
+      ) : null}
+      {doingScopes.length > 0 || doingTasks.length > 0 ? (
+        <p className="text-xs">
+          <span className="font-semibold text-primary">● Doing now: </span>
+          <span className="text-muted-foreground">
+            {[...doingScopes.map((scope) => scope.name), ...doingTasks.filter((task) => !doingScopes.some((scope) => scope.tasks.includes(task))).map((task) => task.name)].slice(0, 3).join(" · ")}
+            {doingScopes.length + doingTasks.length > 3 ? ` +${doingScopes.length + doingTasks.length - 3} more` : ""}
+          </span>
+        </p>
+      ) : scopesDone === scopes.length && scopes.length > 0 ? (
+        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">✓ All scopes complete</p>
+      ) : null}
+      {blockedScopes.length > 0 ? (
+        <p className="text-xs"><span className="font-semibold text-destructive">⚠ Blocked: </span><span className="text-muted-foreground">{blockedScopes.map((scope) => scope.name).slice(0, 3).join(" · ")}</span></p>
+      ) : null}
+    </div>
+  );
+}
+
 function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"] }) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set(scopes.filter((scope) => scope.status === "in-progress").map((scope) => scope.id)));
   const { ordered, waitingOn } = orderScopes(scopes);
@@ -6590,7 +6640,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
-              {detail && detail.scopes.length > 0 ? <ScopesList scopes={detail.scopes} /> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
+              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <StageTimeline

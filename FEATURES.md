@@ -334,9 +334,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the question for the failure itself. Answering any question clears the
   interrupted turn's failure; an error arriving while a question is open is
   superseded at birth, so one card counts once.
-- **Workflow progress** (`ScopesList`, `StageTimeline`) sits beside the
+- **Workflow progress** (`ScopeProgress`, `ScopesList`, `StageTimeline`) sits beside the
   **Workflow map** as two sibling sections that never pretend to be each
   other: progress is where this card is, the map is what each stage does.
+  A progress hero shows scope/task bars with percentages, what is doing
+  now, and what is blocked — above the per-scope detail.
   Scopes in dependency order with task counts, blockers, 17-stage timeline with
   position/next stages, manual advance/return behind a preview dialog
   (what the target stage produces). The timeline never paints everything
