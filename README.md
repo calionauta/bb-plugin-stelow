@@ -10,7 +10,8 @@ One board, one quiet inbox.
 
 - **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyze, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself.
 - **Explore runs:** pick one technique (Shape Up, interface alternatives, critiques, tech planning…), supply the input, get one artifact — no triage, no pipeline, no gates.
-- **Deterministic artifacts:** research round files and explore artifacts are pre-created by the plugin and validated in code; `bb stelow verify` lets the worker self-check before finishing.
+- **Deterministic artifacts:** research round files and explore artifacts are pre-created by the plugin and validated in code — per-skill depth contracts (sections, counts, tables), not just file presence; `bb stelow verify` lets the worker self-check before finishing, and cards show per-artifact quality with one-click repair.
+- **Opt-in independent review:** `bb stelow review` spends a designated cross-lineage reviewer preset (never the worker's), only on structurally valid artifacts; chat seals and completion records carry verified / hypothesis-only provenance instead of claiming complete research.
 - **Auditable Build completion:** a Build card can become Done only at Audit, after the host records test evidence, validates its `audit.md` receipt against the exact checkout and Git HEAD, and builds/checks Stelow's portable `audit-trail.md` receipt under `--strict`. The trail must attest that same repository and commit — a checkout that moved while it was written blocks completion instead of leaving two receipts for two different trees — and the card shows a compact verified / changed-since-completion state you can re-check.
 - **About tab:** what Stelow is vs what the plugin adds, with each repo link and each version side by side.
 - **Workflow actions:** start a Stelow agent thread, open generated artifacts, approve gates, advance stages, repair a stuck workflow, or archive a card.
@@ -19,7 +20,7 @@ One board, one quiet inbox.
 - **Blocking questions:** single-choice and multi-choice forms replace the composer through `bb ui.requestInput` and the `bb stelow ask` CLI. The card stays in its column and signals it is waiting for an answer while a question is open.
 - **Agent presets:** assign a provider/model reasoning/permission profile to any card (schema mirrors the bb Tasks plugin). The worker thread is started with the preset's execution options.
 - **Sidebar badge:** the Stelow menu row shows a live count of unresolved inbox action items, and nothing else — a finished card is not blocked work. Finished cards carry their own emerald **Review** marker until you open them.
-- **CLI:** inspect workflows, request structured input, advance stages, verify artifacts, fan out research, and manage presets.
+- **CLI:** inspect workflows, request structured input, advance stages, verify artifacts, request independent artifact review, fan out research, and manage presets.
 
 The plugin keeps its own board store (cards, questions, presets, publication
 history). `stelow.json` and `.stelow/` remain the source of truth for the
