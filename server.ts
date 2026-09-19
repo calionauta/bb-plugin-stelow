@@ -4436,8 +4436,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async listAutomationRules({ projectId }) {
-      if (!projectId) return { rules: [] };
-      const rows = db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Array<{ id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number }>;
+      const rows = projectId
+        ? db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Array<{ id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number }>
+        : db.prepare("SELECT id, project_id, label, enabled, created_at, updated_at FROM automation_rules ORDER BY project_id ASC, created_at DESC").all() as Array<{ id: string; project_id: string; label: string; enabled: number; created_at: number; updated_at: number }>;
       return { rules: rows.map((rule) => ({ id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, createdAt: rule.created_at, updatedAt: rule.updated_at })) };
     },
 

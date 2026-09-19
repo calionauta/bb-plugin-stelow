@@ -39,8 +39,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   just labels on open issues); assignee dropdown lists assignable users
   per tracked repo merged with assignees seen on issues. Per-issue
   assignees shown inline.
-- **Automation rules.** The Build header opens a project picker to watch a GitHub label
-  and create one source-linked, unstarted Inbox draft per matching issue.
+- **Automation rules.** The Build header opens one dialog listing rules across
+  all projects grouped by project with search, status filter, counts, and
+  bulk enable/disable/delete; empty projects stay collapsed until requested.
+  A new rule picks its project inline (defaulting to the active board project)
+  and watches a GitHub label to create one source-linked, unstarted Inbox draft
+  per matching issue.
   Rules run durably on BB's own scheduler every 5 minutes — the dialog states
   the cadence and, when the github plugin is missing or unlinked, names that
   setup in place instead of failing silently. Rules never start workers, move

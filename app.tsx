@@ -696,10 +696,14 @@ function BoardPanel({ active }: { active: boolean }) {
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [automationRulesOpen, setAutomationRulesOpen] = useState(false);
-  const [automationProjectId, setAutomationProjectId] = useState<string | null>(null);
   const [automationRules, setAutomationRules] = useState<Array<{ id: string; projectId: string; label: string; enabled: boolean }>>([]);
   const [automationLabel, setAutomationLabel] = useState("stelow-work");
+  const [automationNewProjectId, setAutomationNewProjectId] = useState<string | null>(null);
   const [automationBusy, setAutomationBusy] = useState(false);
+  const [automationSearch, setAutomationSearch] = useState("");
+  const [automationStatus, setAutomationStatus] = useState<"all" | "enabled" | "disabled">("all");
+  const [automationSelected, setAutomationSelected] = useState<Record<string, boolean>>({});
+  const [automationShowEmpty, setAutomationShowEmpty] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importLabel, setImportLabel] = useState("stelow-work");
   const [importCandidates, setImportCandidates] = useState<GithubCandidate[]>([]);
@@ -760,17 +764,51 @@ function BoardPanel({ active }: { active: boolean }) {
   }, [reviewGates]);
 
   const activeProjectId = boardProjectId ?? routeProjectId;
-  // Dialog-scoped project: lets the user manage rules for any BB project,
-  // not just the active board project. Falls back to the active project.
-  const effectiveAutomationProjectId = automationProjectId ?? activeProjectId;
+  // Hybrid: dialog lists rules across all projects. The new-rule picker
+  // defaults to the active board project, never blocks the list.
+  const automationCreateProjectId = automationNewProjectId ?? activeProjectId;
   useEffect(() => {
     if (!automationRulesOpen) return;
-    const pid = automationProjectId ?? activeProjectId;
-    if (!pid) { setAutomationRules([]); return; }
-    void rpc.call("listAutomationRules", { projectId: pid }).then((result) => {
+    setAutomationSelected({});
+    void rpc.call("listAutomationRules", { projectId: null }).then((result) => {
       setAutomationRules(result.rules);
     }).catch(() => { /* keep last known list on transient failure */ });
-  }, [automationRulesOpen, automationProjectId, activeProjectId, rpc]);
+  }, [automationRulesOpen, rpc]);
+  const automationVisible = useMemo(() => {
+    const query = automationSearch.trim().toLowerCase();
+    return automationRules.filter((rule) => {
+      if (automationStatus === "enabled" && !rule.enabled) return false;
+      if (automationStatus === "disabled" && rule.enabled) return false;
+      if (!query) return true;
+      const projectName = projects.find((project) => project.id === rule.projectId)?.name ?? rule.projectId;
+      return rule.label.toLowerCase().includes(query) || projectName.toLowerCase().includes(query);
+    });
+  }, [automationRules, automationSearch, automationStatus, projects]);
+  const automationGrouped = useMemo(() => {
+    const groups = new Map<string, typeof automationVisible>();
+    for (const rule of automationVisible) {
+      const list = groups.get(rule.projectId) ?? [];
+      list.push(rule);
+      groups.set(rule.projectId, list);
+    }
+    return [...groups.entries()].sort(([a], [b]) => {
+      const nameA = projects.find((project) => project.id === a)?.name ?? a;
+      const nameB = projects.find((project) => project.id === b)?.name ?? b;
+      return nameA.localeCompare(nameB);
+    });
+  }, [automationVisible, projects]);
+  const automationEmptyProjects = useMemo(() => {
+    if (!automationShowEmpty) return [];
+    const withRules = new Set(automationRules.map((rule) => rule.projectId));
+    const query = automationSearch.trim().toLowerCase();
+    return projects.filter((project) => {
+      if (withRules.has(project.id)) return false;
+      if (automationStatus !== "all") return false;
+      if (query && !project.name.toLowerCase().includes(query)) return false;
+      return true;
+    });
+  }, [automationRules, automationShowEmpty, automationSearch, automationStatus, projects]);
+  const automationEnabledCount = automationRules.filter((rule) => rule.enabled).length;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const defaultWorkerPreset = boardPresets.find((preset) => preset.isDefault) ?? boardPresets[0] ?? null;
   const presetForBand = (band: string) => {
@@ -834,13 +872,14 @@ function BoardPanel({ active }: { active: boolean }) {
   }
 
   async function saveAutomationRule() {
-    const pid = effectiveAutomationProjectId;
+    const pid = automationCreateProjectId;
     if (!pid || !automationLabel.trim()) return;
     setAutomationBusy(true);
     try {
       await rpc.call("saveAutomationRule", { projectId: pid, label: automationLabel.trim(), enabled: true });
-      const result = await rpc.call("listAutomationRules", { projectId: pid });
+      const result = await rpc.call("listAutomationRules", { projectId: null });
       setAutomationRules(result.rules);
+      setAutomationLabel("");
       toast.success("Automation rule saved. It creates drafts only; workers never start automatically.");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save automation rule."); }
     finally { setAutomationBusy(false); }
@@ -859,7 +898,42 @@ function BoardPanel({ active }: { active: boolean }) {
     try {
       await rpc.call("deleteAutomationRule", { id: ruleId });
       setAutomationRules((rules) => rules.filter((entry) => entry.id !== ruleId));
+      setAutomationSelected((prev) => {
+        if (!prev[ruleId]) return prev;
+        const next = { ...prev };
+        delete next[ruleId];
+        return next;
+      });
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to delete automation rule."); }
+  }
+
+  async function bulkSetAutomationRules(enabled: boolean) {
+    const ids = automationVisible.filter((rule) => automationSelected[rule.id]).map((rule) => rule.id);
+    if (ids.length === 0) return;
+    setAutomationBusy(true);
+    try {
+      for (const id of ids) {
+        const current = automationRules.find((entry) => entry.id === id);
+        if (!current || current.enabled === enabled) continue;
+        await rpc.call("saveAutomationRule", { id: current.id, projectId: current.projectId, label: current.label, enabled });
+      }
+      const result = await rpc.call("listAutomationRules", { projectId: null });
+      setAutomationRules(result.rules);
+      setAutomationSelected({});
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update automation rules."); }
+    finally { setAutomationBusy(false); }
+  }
+
+  async function bulkDeleteAutomationRules() {
+    const ids = automationVisible.filter((rule) => automationSelected[rule.id]).map((rule) => rule.id);
+    if (ids.length === 0) return;
+    setAutomationBusy(true);
+    try {
+      for (const id of ids) await rpc.call("deleteAutomationRule", { id });
+      setAutomationRules((rules) => rules.filter((entry) => !ids.includes(entry.id)));
+      setAutomationSelected({});
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to delete automation rules."); }
+    finally { setAutomationBusy(false); }
   }
 
   async function listGithubIssues() {
@@ -927,7 +1001,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateBuildOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setAutomationProjectId(activeProjectId); setAutomationRulesOpen(true); }} title={activeProjectId ? "Configure draft-only GitHub automation rules" : "Open automation rules, then select a BB project"}><Icon name="Settings" className="h-4 w-4" aria-hidden /> Automation rules</Button>
+              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setAutomationNewProjectId(null); setAutomationSearch(""); setAutomationStatus("all"); setAutomationRulesOpen(true); }} title="Configure draft-only GitHub automation rules across all projects"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Automation rules</Button>
               {githubStatus?.pluginAvailable ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}><Icon name="Github" className="h-4 w-4" aria-hidden /> Import issues</Button>
               ) : null}
@@ -1063,7 +1137,7 @@ function BoardPanel({ active }: { active: boolean }) {
 
           <Dialog open={automationRulesOpen} onOpenChange={setAutomationRulesOpen}>
             <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-xl">
-              <DialogHeader><DialogTitle>Automation rules</DialogTitle><DialogDescription>Pick a BB project, then watch a GitHub label. A matching issue creates an unstarted Inbox draft with its source link; rules never start workers or move existing cards.</DialogDescription></DialogHeader>
+              <DialogHeader><DialogTitle>Automation rules</DialogTitle><DialogDescription>Watch a GitHub label in any project. A matching issue creates an unstarted Inbox draft with its source link; rules never start workers or move existing cards.</DialogDescription></DialogHeader>
               {githubStatus && (!githubStatus.pluginAvailable || !githubStatus.ghOk) ? (
                 <div className="flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
                   <span className="text-amber-700 dark:text-amber-300">
@@ -1078,27 +1152,86 @@ function BoardPanel({ active }: { active: boolean }) {
               ) : null}
               <div className="space-y-3 py-2">
                 <p className="text-xs text-muted-foreground">Rules run on BB&apos;s scheduler every 5 minutes — a matching issue becomes an Inbox draft, never a running worker.</p>
-                <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">Project</span>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input value={automationSearch} onChange={(event) => setAutomationSearch(event.target.value)} placeholder="Search labels or projects…" aria-label="Search automation rules" className="sm:flex-1" />
                   <select
-                    className="h-11 w-full cursor-pointer rounded-md border bg-background px-2 text-sm"
-                    value={effectiveAutomationProjectId ?? ""}
-                    onChange={(event) => setAutomationProjectId(event.target.value || null)}
-                    aria-label="BB project for automation rules"
+                    className="h-11 cursor-pointer rounded-md border bg-background px-2 text-sm"
+                    value={automationStatus}
+                    onChange={(event) => setAutomationStatus(event.target.value as "all" | "enabled" | "disabled")}
+                    aria-label="Filter automation rules by status"
                   >
-                    <option value="">Select a project…</option>
-                    {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                    <option value="all">All</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
                   </select>
-                </label>
-                {!effectiveAutomationProjectId ? <p className="text-sm text-muted-foreground">Select a BB project to manage its rules.</p> : null}
-                {effectiveAutomationProjectId && !automationRules.length ? <p className="text-sm text-muted-foreground">No rules for this project yet.</p> : null}
-                {automationRules.length ? <div className="divide-y rounded-md border">{automationRules.map((rule) => <div key={rule.id} className="flex min-h-11 items-center gap-2 p-2 text-sm"><span className="min-w-0 flex-1 truncate">GitHub label <code>{rule.label}</code> → Inbox draft</span><button className="min-h-11 cursor-pointer rounded px-2 text-xs font-medium text-primary hover:bg-muted" onClick={() => void setAutomationRule(rule, !rule.enabled)}>{rule.enabled ? "Disable" : "Enable"}</button><button className="min-h-11 cursor-pointer rounded px-2 text-xs text-destructive hover:bg-muted" onClick={() => void deleteAutomationRule(rule.id)}>Delete</button></div>)}</div> : null}
-                <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">GitHub label</span><Input value={automationLabel} onChange={(event) => setAutomationLabel(event.target.value)} placeholder="stelow-work" aria-describedby="automation-add-rule-hint" /></label>
+                </div>
+                <p className="text-xs text-muted-foreground" role="status">{automationRules.length === 0 ? "No automation rules yet." : `${automationRules.length} rule${automationRules.length === 1 ? "" : "s"} · ${automationEnabledCount} enabled · ${automationRules.length - automationEnabledCount} disabled`}</p>
+                {automationRules.length === 0 ? <p className="text-sm text-muted-foreground">Watch a GitHub label below to create the first rule.</p> : null}
+                {automationRules.length > 0 && automationVisible.length === 0 ? <p className="text-sm text-muted-foreground">No rules match this search.</p> : null}
+                {automationGrouped.map(([projectId, rules]) => {
+                  const projectName = projects.find((project) => project.id === projectId)?.name ?? projectId;
+                  return (
+                    <section key={projectId} aria-label={`Automation rules for ${projectName}`}>
+                      <h3 className="mb-1 text-xs font-semibold text-muted-foreground">{projectName} ({rules.length})</h3>
+                      <div className="divide-y rounded-md border">{rules.map((rule) => (
+                        <div key={rule.id} className="flex min-h-11 items-center gap-2 p-2 text-sm">
+                          <input
+                            className="h-4 w-4 shrink-0 cursor-pointer"
+                            type="checkbox"
+                            checked={Boolean(automationSelected[rule.id])}
+                            onChange={() => setAutomationSelected((prev) => ({ ...prev, [rule.id]: !prev[rule.id] }))}
+                            aria-label={`Select rule ${rule.label} in ${projectName}`}
+                          />
+                          <span className="min-w-0 flex-1 truncate">GitHub label <code>{rule.label}</code> → Inbox draft</span>
+                          <button className="min-h-11 cursor-pointer rounded px-2 text-xs font-medium text-primary hover:bg-muted" onClick={() => void setAutomationRule(rule, !rule.enabled)}>{rule.enabled ? "Disable" : "Enable"}</button>
+                          <button className="min-h-11 cursor-pointer rounded px-2 text-xs text-destructive hover:bg-muted" onClick={() => void deleteAutomationRule(rule.id)}>Delete</button>
+                        </div>
+                      ))}</div>
+                    </section>
+                  );
+                })}
+                {automationEmptyProjects.length > 0 ? (
+                  <section aria-label="Projects without automation rules">
+                    <h3 className="mb-1 text-xs font-semibold text-muted-foreground">Projects without rules ({automationEmptyProjects.length})</h3>
+                    <div className="divide-y rounded-md border border-dashed">{automationEmptyProjects.map((project) => (
+                      <div key={project.id} className="flex min-h-11 items-center gap-2 p-2 text-sm text-muted-foreground">
+                        <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                        <button className="min-h-11 cursor-pointer rounded px-2 text-xs font-medium text-primary hover:bg-muted" onClick={() => { setAutomationNewProjectId(project.id); setAutomationLabel("stelow-work"); }}>Add rule</button>
+                      </div>
+                    ))}</div>
+                  </section>
+                ) : null}
+                {!automationShowEmpty && automationRules.length > 0 ? (
+                  <button type="button" className="min-h-11 cursor-pointer text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" onClick={() => setAutomationShowEmpty(true)}>Show projects without rules</button>
+                ) : null}
+                {automationVisible.some((rule) => automationSelected[rule.id]) ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs" role="toolbar" aria-label="Bulk rule actions">
+                    <span className="text-muted-foreground">{automationVisible.filter((rule) => automationSelected[rule.id]).length} selected</span>
+                    <button className="min-h-11 cursor-pointer rounded px-2 font-medium text-primary hover:bg-muted" onClick={() => void bulkSetAutomationRules(true)} disabled={automationBusy}>Enable</button>
+                    <button className="min-h-11 cursor-pointer rounded px-2 font-medium text-primary hover:bg-muted" onClick={() => void bulkSetAutomationRules(false)} disabled={automationBusy}>Disable</button>
+                    <button className="min-h-11 cursor-pointer rounded px-2 text-destructive hover:bg-muted" onClick={() => void bulkDeleteAutomationRules()} disabled={automationBusy}>Delete</button>
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-2 rounded-md border p-2 sm:flex-row sm:items-end">
+                  <label className="block min-w-0 flex-1 space-y-1"><span className="text-xs font-medium text-muted-foreground">Project</span>
+                    <select
+                      className="h-11 w-full cursor-pointer rounded-md border bg-background px-2 text-sm"
+                      value={automationCreateProjectId ?? ""}
+                      onChange={(event) => setAutomationNewProjectId(event.target.value || null)}
+                      aria-label="BB project for the new automation rule"
+                    >
+                      <option value="">Select a project…</option>
+                      {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="block min-w-0 flex-1 space-y-1"><span className="text-xs font-medium text-muted-foreground">GitHub label</span><Input value={automationLabel} onChange={(event) => setAutomationLabel(event.target.value)} placeholder="stelow-work" aria-describedby="automation-add-rule-hint" /></label>
+                </div>
                 {/* The reason a disabled control is unavailable is real content,
                     not a hover tooltip: a disabled button cannot be focused and
                     `title` is not announced, so the exit is stated in place. */}
-                <p id="automation-add-rule-hint" className="text-xs text-muted-foreground">{!effectiveAutomationProjectId ? "Select a BB project first, then type the GitHub label to watch." : !automationLabel.trim() ? "Type the GitHub label to watch." : "Add draft rule creates it now — a rule drafts, it never starts workers."}</p>
+                <p id="automation-add-rule-hint" className="text-xs text-muted-foreground">{!automationCreateProjectId ? "Select a BB project for the new rule, then type the GitHub label to watch." : !automationLabel.trim() ? "Type the GitHub label to watch." : "Add draft rule creates it now — a rule drafts, it never starts workers."}</p>
               </div>
-              <DialogFooter><DialogClose asChild><Button variant="ghost">Close</Button></DialogClose><Button disabled={automationBusy || !automationLabel.trim() || !effectiveAutomationProjectId} title={!effectiveAutomationProjectId ? "Select a BB project first" : !automationLabel.trim() ? "Type a GitHub label" : "Add draft rule"} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add draft rule"}</Button></DialogFooter>
+              <DialogFooter><DialogClose asChild><Button variant="ghost">Close</Button></DialogClose><Button disabled={automationBusy || !automationLabel.trim() || !automationCreateProjectId} title={!automationCreateProjectId ? "Select a BB project first" : !automationLabel.trim() ? "Type a GitHub label" : "Add draft rule"} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add draft rule"}</Button></DialogFooter>
             </DialogContent>
           </Dialog>
 
