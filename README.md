@@ -1,6 +1,6 @@
 # Stelow for bb
 
-Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows inside bb. 🚀 Created by the original author of Stelow.
+Visualize and control [Stelow](https://github.com/calionauta/stelow) workflows inside bb. 🚀 Created by the original [author of Stelow](https://github.com/calionauta).
 
 Turn humans and AI agents into a cross-functional product team: research opportunity spaces with 14 strategy playbooks, run single-stage explorations, then build through an orchestrated workflow — Shape Up proposals, interface trade-offs before code, typed scopes with spikes up front, gated reviews, and agent workers. 
 
