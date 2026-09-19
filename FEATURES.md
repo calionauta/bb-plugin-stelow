@@ -606,7 +606,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   stopped afterwards, record in `drafts/`. Anything needing tools, exact
   shapes, or multi-step work stays Tier R (band preset) — the draft
   prompt forbids files, commands, questions, and advances. Same command
-  on research, explore, and build cards.
+  on research, explore, and build cards. Draft records live under
+  `drafts/` — disposable scratch, exempt from the unregistered list and
+  the strict audit gate, so a burst never blocks `done`.
 - **Runtime dir stays out of git** (`withRuntimeIgnoreEntry`, `lib/card-seed-guard.mjs`).
   Seeding a git checkout appends `.stelow/` to its `.gitignore` (best-effort,
   never blocks): live per-card runs must never be swept in by a worker

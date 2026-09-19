@@ -44,6 +44,7 @@ assert.deepEqual(unregisteredArtifactPaths(stateDirPaths, ["/w/.stelow/2026-09-1
 assert.deepEqual(unregisteredArtifactPaths(stateDirPaths, []), ["/w/.stelow/2026-09-15/sw-x/audit.md", "/w/.stelow/2026-09-15/sw-x/plans/spec-tech_v1.md"], "state.md, its backups, logs, and json bookkeeping are never artifacts");
 assert.deepEqual(unregisteredArtifactPaths(["/w/a.md", "/w/a.md"], []), ["/w/a.md"], "duplicates collapse");
 assert.deepEqual(unregisteredArtifactPaths(null, null), [], "off-shape input is an empty list, never a throw");
+assert.deepEqual(unregisteredArtifactPaths(["/w/.stelow/x/drafts/draft-1.md"], []), [], "disposable drafts never surface as unregistered");
 
 // Commit trailer: the audit link between a commit and the run that produced it.
 assert.deepEqual(
