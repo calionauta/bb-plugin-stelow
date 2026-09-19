@@ -842,7 +842,20 @@ one input, one artifact.*
   four sections, interface 8 sections, tech-plan scopes + task table,
   critiques five sections, testing-strategy tables + gates, execution
   critique registry + decision) — failures surface as `verify` FAIL
-  lines and inbox errors naming the missing depth.
+  lines and inbox errors naming the missing depth. The critique's
+  `gaps:` frontmatter is machine-checked (`lib/gap-registry.mjs`):
+  every row needs a known impact + resolution, and high/critical
+  impact must resolve as escalate — a misclassified gap fails
+  deterministically instead of passing silently.
+- **Gap-to-scope loop** (`bb stelow gap-scopes`, `critiqueGapState`).
+  Escalated gaps become `audit-gap` rework scopes in the card's own
+  `stelow.json` entry — created by code (idempotent, trail comment),
+  never by prose. `done` refuses while escalations lack scopes or
+  linked scopes stay open. The mother card shows the loop in Gaps &
+  rework (counts, per-escalation scope status, lead/cycle time via
+  `gapSummary`); rework scopes carry a rework pill naming their gap.
+  `bb stelow metrics [--json]` reports lead/cycle time per stage plus
+  gap counts and escalated rate, read-only.
 - **Build document depth** (`buildDocDepths`, `contractForBuildArtifact`).
   At `done`, recognized workflow documents registered in `state.md`
   (spec-product, spec-tech, interfaces, testing-strategy, critique

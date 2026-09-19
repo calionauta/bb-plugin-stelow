@@ -138,7 +138,20 @@ assert.equal(validateExplore("testing-ai-code", testingPass).pass, true, "testin
 assert.ok(hasCode(validateExplore("testing-ai-code", `## Notes\n${pad(700)}`), "missing-table-rows"), "testing strategy without tables fails");
 
 // Execution critique: summary + 8 criteria + registry + lessons + decision.
-const execPass = `## Summary
+const execPass = `---
+gaps:
+  - type: scope
+    area: "auth"
+    description: "Missing rate limiter"
+    impact: high
+    resolution: escalate
+  - type: docs
+    area: "readme"
+    description: "Update install docs"
+    impact: low
+    resolution: documented
+---
+## Summary
 | Metric | Value |
 |---|---|
 | Items evaluated | 5 |
@@ -147,8 +160,8 @@ ${["Completeness", "Quality", "Invisible", "Edge", "Docs", "Registry", "Lessons"
 ## Gap Registry
 | Gap Type | Description | Impact | Effort | Action | Status |
 |---|---|---|---|---|---|
-| scope | gap | high | low | FIX | FIXED |
-| docs | gap | low | low | DOC | DOCUMENTED |
+| scope | Missing rate limiter | high | low | ESCALATE | ESCALATED |
+| docs | Update install docs | low | low | DOC | DOCUMENTED |
 ## Lessons Learned
 Lessons ${pad(80)}
 ## Decision

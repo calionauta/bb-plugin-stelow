@@ -3515,6 +3515,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
                 <span className="font-mono text-xs text-muted-foreground">{scope.id}</span>
                 <span className="font-medium">{scope.name}</span>
                 {scope.type ? <Pill>{scope.type}</Pill> : null}
+                {scope.source === "audit-gap" ? <Pill tone="bg-amber-500/15 text-amber-700 dark:text-amber-300" title={scope.gap ? `Rework for escalated gap: ${scope.gap}` : "Rework scope from an escalated gap"}>↻ rework</Pill> : null}
                 <Pill tone={statusTone(scope.status)}><span className="mr-1">{statusGlyph(scope.status)}</span>{statusLabel(scope.status)}</Pill>
                 {scope.tasks.length > 0 ? <span className="text-[11px] text-muted-foreground" title={`${tasksDone} of ${scope.tasks.length} tasks done`}>{tasksDone}/{scope.tasks.length} tasks</span> : null}
                 {blockedNow ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={wait.join(", ")}>⛔ waiting on {wait.length}</span> : null}
@@ -5322,6 +5323,66 @@ function ExploreQualitySection({ cardId, filePath, repairing, onRepair }: {
   );
 }
 
+function fmtGapMs(ms: number | null): string | null {
+  if (ms === null || !Number.isFinite(ms) || ms < 0) return null;
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return hours % 24 === 0 ? `${hours / 24}d` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+// Build gaps: the ESCALATED → rework-scope loop surfaced on the mother
+// card. Resolved live through gapSummary — counts by resolution, each
+// escalation linked to its audit-gap scope status, plus lead/cycle time.
+// Read-only: workers advance the loop through gap-scopes and done, whose
+// refusals name the fix. Renders nothing before the first critique.
+function BuildGapsSection({ cardId }: { cardId: string }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [summary, setSummary] = useState<{
+    matched: boolean; total: number; fixed: number; documented: number; escalated: number;
+    items: Array<{ description: string; scopeStatus: string | null }>;
+    pendingScopes: number; unscoped: number;
+    leadMs: number | null; cycleMs: number | null; done: boolean;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.call("gapSummary", { cardId }).then((result) => { if (!cancelled) setSummary(result); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [rpc, cardId]);
+  if (!summary?.matched) return null;
+  const blocked = summary.unscoped > 0 || summary.pendingScopes > 0;
+  const lead = fmtGapMs(summary.leadMs);
+  const cycle = fmtGapMs(summary.cycleMs);
+  return (
+    <section aria-label="Gaps and rework" className="rounded-lg border p-4">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Gaps &amp; rework</h3>
+      <p className="pt-1 text-xs text-muted-foreground" title="From the execution critique Gap Registry">
+        {summary.total} gap{summary.total === 1 ? "" : "s"} · {summary.fixed} fixed · {summary.documented} documented · {summary.escalated} escalated
+        {lead ? ` · lead ${lead}` : ""}{cycle ? ` · cycle ${cycle}` : ""}
+      </p>
+      {summary.escalated > 0 ? (
+        <ul className="space-y-1 pt-2">
+          {summary.items.map((item) => (
+            <li key={item.description} className="flex items-start gap-2 text-xs">
+              <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${item.scopeStatus && ["done", "completed"].includes(item.scopeStatus) ? "bg-emerald-500" : "bg-amber-500"}`} />
+              <span className="flex-1">{item.description}</span>
+              {item.scopeStatus ? <Pill tone={statusTone(item.scopeStatus)}><span className="mr-1">{statusGlyph(item.scopeStatus)}</span>{statusLabel(item.scopeStatus)}</Pill> : <span className="text-amber-700 dark:text-amber-300">no scope yet</span>}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {blocked && !summary.done ? (
+        <p className="pt-2 text-xs text-amber-700 dark:text-amber-300">
+          {summary.unscoped > 0 ? `Done waits on ${summary.unscoped} escalated gap${summary.unscoped === 1 ? "" : "s"} without a rework scope — the worker runs gap-scopes, then executes the new scopes. ` : ""}
+          {summary.pendingScopes > 0 ? `${summary.pendingScopes} rework scope${summary.pendingScopes === 1 ? "" : "s"} still open.` : ""}
+        </p>
+      ) : null}
+      {summary.escalated > 0 && !blocked ? <p className="pt-2 text-xs text-muted-foreground">Every escalation links a finished rework scope.</p> : null}
+    </section>
+  );
+}
+
 function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate, card, detail, onChanged }: {
   cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
   inboxEvent: InboxEventSnapshot | null; card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
@@ -6569,6 +6630,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </div>
               ) : null}
             </CardDisclosure>
+
+            {/* Gaps live on the mother card: every escalation names its
+                audit-gap scope status, and blocked done states name the fix.
+                Renders nothing before the first execution critique. */}
+            <BuildGapsSection cardId={card.id} />
 
             {/* The map is a reference, not card state: it sits beside the
                 progress section (same heading shape, same stage names) so
