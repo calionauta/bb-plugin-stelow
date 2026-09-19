@@ -1,4 +1,4 @@
-import { Children, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Children, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Markdown,
   experimental_SourceCode as SourceCode,
@@ -33,7 +33,7 @@ import { questionCopy } from "./lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
 import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
-import { shortRef, isPathInstall } from "./lib/plugin-update.mjs";
+import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
@@ -410,17 +410,35 @@ function StelowInboxSidebarAccessory() {
   return <span className="inline-flex items-center gap-1"><SidebarCount count={count} tone={tone} label={`${count} Stelow Inbox items need attention`} />{updateAvailable ? <UpdateBadge label="Stelow plugin update available" /> : null}</span>;
 }
 
-// Update signal shared by the sidebar accessory and the About tab badge: a
-// BB-managed candidate, or a newer GitHub release behind an unmanaged
-// install. BB pushes no update events, so every surface polls buildInfo on
-// mount (the server coalesces reads in a one-minute window).
+// The update signal every surface shares: sidebar accessory, About tab
+// badge, About header, and the status box. BB pushes no update events, so a
+// module-level store (filled by the first buildInfo read, refreshed by a
+// forced check and by the post-apply read) keeps them in lockstep — the
+// per-component mount poll this replaced lit only the surface that checked,
+// so a "Check update" inside About never reached the sidebar or the tab.
+let pluginUpdateAvailable = false;
+let pluginUpdateLoaded = false;
+const pluginUpdateListeners = new Set<() => void>();
+function setPluginUpdateAvailable(next: boolean): void {
+  if (pluginUpdateAvailable === next) return;
+  pluginUpdateAvailable = next;
+  for (const listener of pluginUpdateListeners) listener();
+}
+function subscribePluginUpdate(listener: () => void): () => void {
+  pluginUpdateListeners.add(listener);
+  return () => { pluginUpdateListeners.delete(listener); };
+}
+function pluginUpdateSnapshot(): boolean { return pluginUpdateAvailable; }
+
 function usePluginUpdateSignal(): boolean {
   const rpc = useRpc<typeof rpcContract>();
-  const [available, setAvailable] = useState(false);
+  const available = useSyncExternalStore(subscribePluginUpdate, pluginUpdateSnapshot, pluginUpdateSnapshot);
   useEffect(() => {
+    if (pluginUpdateLoaded) return;
+    pluginUpdateLoaded = true;
     void rpc.call("buildInfo", {}).then((info) => {
-      setAvailable(info.pluginUpdate.outcome === "update-available" || info.githubRelease?.newer === true);
-    }).catch(() => undefined);
+      setPluginUpdateAvailable(updateAvailableFrom(info));
+    }).catch(() => { pluginUpdateLoaded = false; });
   }, [rpc]);
   return available;
 }
@@ -1074,7 +1092,11 @@ function BoardPanel({ active }: { active: boolean }) {
                 {!effectiveAutomationProjectId ? <p className="text-sm text-muted-foreground">Select a BB project to manage its rules.</p> : null}
                 {effectiveAutomationProjectId && !automationRules.length ? <p className="text-sm text-muted-foreground">No rules for this project yet.</p> : null}
                 {automationRules.length ? <div className="divide-y rounded-md border">{automationRules.map((rule) => <div key={rule.id} className="flex min-h-11 items-center gap-2 p-2 text-sm"><span className="min-w-0 flex-1 truncate">GitHub label <code>{rule.label}</code> → Inbox draft</span><button className="min-h-11 cursor-pointer rounded px-2 text-xs font-medium text-primary hover:bg-muted" onClick={() => void setAutomationRule(rule, !rule.enabled)}>{rule.enabled ? "Disable" : "Enable"}</button><button className="min-h-11 cursor-pointer rounded px-2 text-xs text-destructive hover:bg-muted" onClick={() => void deleteAutomationRule(rule.id)}>Delete</button></div>)}</div> : null}
-                <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">GitHub label</span><Input value={automationLabel} onChange={(event) => setAutomationLabel(event.target.value)} placeholder="stelow-work" /></label>
+                <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">GitHub label</span><Input value={automationLabel} onChange={(event) => setAutomationLabel(event.target.value)} placeholder="stelow-work" aria-describedby="automation-add-rule-hint" /></label>
+                {/* The reason a disabled control is unavailable is real content,
+                    not a hover tooltip: a disabled button cannot be focused and
+                    `title` is not announced, so the exit is stated in place. */}
+                <p id="automation-add-rule-hint" className="text-xs text-muted-foreground">{!effectiveAutomationProjectId ? "Select a BB project first, then type the GitHub label to watch." : !automationLabel.trim() ? "Type the GitHub label to watch." : "Add draft rule creates it now — a rule drafts, it never starts workers."}</p>
               </div>
               <DialogFooter><DialogClose asChild><Button variant="ghost">Close</Button></DialogClose><Button disabled={automationBusy || !automationLabel.trim() || !effectiveAutomationProjectId} title={!effectiveAutomationProjectId ? "Select a BB project first" : !automationLabel.trim() ? "Type a GitHub label" : "Add draft rule"} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add draft rule"}</Button></DialogFooter>
             </DialogContent>
@@ -2010,7 +2032,7 @@ function AboutPanel() {
   const [pluginUpdateError, setPluginUpdateError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void rpc.call("buildInfo", {}).then((result) => { if (!cancelled) setBuildInfo(result); }).catch(() => undefined);
+    void rpc.call("buildInfo", {}).then((result) => { if (cancelled) return; setBuildInfo(result); setPluginUpdateAvailable(updateAvailableFrom(result)); }).catch(() => undefined);
     void rpc.call("aboutLogo", {}).then((result) => { if (!cancelled && result.dataUri) setAboutLogo(result.dataUri); }).catch(() => undefined);
     void rpc.call("toolStatus", {}).then((result) => { if (!cancelled) setHostTools(result.tools); }).catch(() => undefined);
     return () => { cancelled = true; };
@@ -2051,7 +2073,7 @@ function AboutPanel() {
       }
       toast.success(`Plugin updated to ${shortRef(result.to, null) ?? "the latest compatible version"}.`);
       return rpc.call("buildInfo", {}).then((info) => {
-        if (info) setBuildInfo(info);
+        if (info) { setBuildInfo(info); setPluginUpdateAvailable(updateAvailableFrom(info)); }
         else setPluginUpdateError("Update applied — Stelow is reloading; the new version appears shortly.");
         settle();
       });
@@ -2067,6 +2089,9 @@ function AboutPanel() {
     setCheckingPluginUpdate(true); setPluginUpdateError(null); setConfirmPluginUpdate(false);
     void rpc.call("checkPluginUpdate", {}).then((update) => {
       setBuildInfo((prev) => prev ? { ...prev, pluginUpdate: update.pluginUpdate, githubRelease: update.githubRelease } : prev);
+      // A forced check is the freshest verdict there is: publish it to every
+      // surface at once instead of letting one component own the news.
+      setPluginUpdateAvailable(updateAvailableFrom(update));
     }).catch((error) => {
       setPluginUpdateError(error instanceof Error ? error.message : "Update check failed.");
     }).finally(() => setCheckingPluginUpdate(false));
@@ -2079,7 +2104,7 @@ function AboutPanel() {
           <header>
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
               <h1 className="text-xl font-semibold tracking-tight">About</h1>
-              {buildInfo && (buildInfo.pluginUpdate.outcome === "update-available" || buildInfo.githubRelease?.newer === true) ? <UpdateBadge /> : null}
+              {buildInfo && updateAvailableFrom(buildInfo) ? <UpdateBadge /> : null}
             </div>
           </header>
           <div className="grid max-w-2xl gap-5">
