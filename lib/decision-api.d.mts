@@ -4,7 +4,21 @@ export declare const DECISION_API_TIMEOUT_MS: number;
 export declare const DECISION_STATE_MAX_CHARS: number;
 export declare const DECISION_API_KEY_ENV_VARS: string[];
 
-export declare const DECISION_PROVIDERS: string[];
+export interface DecisionProvider {
+  id: string;
+  label: string;
+  schema: "jev" | "labels";
+  defaultEndpoint: string;
+  defaultModel: string;
+  needsKey: boolean;
+  takesModel: boolean;
+}
+
+export declare const DECISION_PROVIDERS: DecisionProvider[];
+
+export declare function providerById(id: unknown): DecisionProvider | null;
+
+export declare function providerSchema(provider: unknown): "jev" | "labels";
 export declare const CLASSIFIER_DEFAULT_ENDPOINT: string;
 
 export declare function normalizeDecisionProvider(value: unknown, fallback?: string): string;
@@ -12,6 +26,10 @@ export declare function normalizeDecisionProvider(value: unknown, fallback?: str
 export declare function providerRequiresKey(provider: unknown): boolean;
 
 export declare function defaultEndpointFor(provider: unknown): string;
+
+export declare function defaultModelFor(provider: unknown): string;
+
+export declare function providerTakesModel(provider: unknown): boolean;
 
 export declare function isDecisionApiDisabled(env?: Record<string, string | undefined> | null): boolean;
 

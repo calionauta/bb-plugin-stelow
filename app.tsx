@@ -21,7 +21,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
-import { CLASSIFIER_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_ENDPOINT } from "./lib/decision-api.mjs";
+import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
 import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxFilterEntries, isOpenInboxAction, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
@@ -3905,8 +3905,13 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
     setProvider(next);
     // Follow the provider switch with its default endpoint, unless the
     // endpoint was customized (a custom URL survives provider flips).
-    const otherDefault = next === "classifier" ? DECISION_API_DEFAULT_ENDPOINT : CLASSIFIER_DEFAULT_ENDPOINT;
-    if (endpoint === otherDefault) setEndpoint(next === "classifier" ? CLASSIFIER_DEFAULT_ENDPOINT : DECISION_API_DEFAULT_ENDPOINT);
+    const knownDefaults = DECISION_PROVIDERS.map((entry) => entry.defaultEndpoint);
+    if (endpoint === "" || knownDefaults.includes(endpoint)) {
+      setEndpoint(DECISION_PROVIDERS.find((entry) => entry.id === next)?.defaultEndpoint ?? endpoint);
+    }
+    if (model === "" || DECISION_PROVIDERS.some((entry) => entry.defaultModel !== "" && entry.defaultModel === model)) {
+      setModel(DECISION_PROVIDERS.find((entry) => entry.id === next)?.defaultModel ?? model);
+    }
   }
   async function save(clearKey: boolean) {
     setBusy(true); setMessage(null);
@@ -3932,7 +3937,10 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
       setBusy(false);
     }
   }
-  const keyHint = !status ? "Loading…" : status.disabled ? "Disabled on this host (STELOW_DECISION_API=0)." : provider === "classifier" ? "No key needed (free tier, rate-limited per IP)." : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
+  const providerEntry = DECISION_PROVIDERS.find((entry) => entry.id === provider) ?? null;
+  const providerNeedsKey = providerEntry ? providerEntry.needsKey : true;
+  const providerTakesModel = providerEntry ? providerEntry.takesModel : true;
+  const keyHint = !status ? "Loading…" : status.disabled ? "Disabled on this host (STELOW_DECISION_API=0)." : !providerNeedsKey ? "No key needed (free tier, rate-limited)." : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
   return (
     <div className="grid gap-2">
       <p className="text-xs text-muted-foreground">One decision endpoint for every router below. Set the provider first — the rest follows its schema.</p>
@@ -3946,13 +3954,15 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
           onChange={(event) => pickProvider(event.target.value)}
         >
           <option value="jev">TypeSafe AI&apos;s Jev-compatible</option>
-          <option value="classifier">classifier.dev (labels, keyless)</option>
+          {DECISION_PROVIDERS.filter((entry) => entry.id !== "jev").map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
         </select>
       </label>
-      {provider === "classifier" ? null : <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + key + model required.</p>}
+      {providerEntry && providerEntry.schema === "jev" && providerNeedsKey ? <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + key + model required.</p> : null}
+      {providerEntry && providerEntry.schema === "jev" && !providerNeedsKey ? <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + model, no key.</p> : null}
+      {providerEntry && providerEntry.schema === "labels" ? <p className="text-[11px] text-muted-foreground">Labels schema — endpoint only, no key; Choice questions only.</p> : null}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Endpoint</span><Input value={endpoint} disabled={status?.disabled} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.typesafe.ai/v1/systemone" /></label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} disabled={status?.disabled || provider === "classifier"} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
-      {provider === "classifier" ? <p className="text-[11px] text-muted-foreground">classifier.dev answers on its fast tier; model does not apply.</p> : null}
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} disabled={status?.disabled || !providerTakesModel} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
+      {!providerTakesModel ? <p className="text-[11px] text-muted-foreground">This provider answers on its own tier; model does not apply.</p> : null}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>API key</span><Input type="password" value={key} disabled={status?.disabled} onChange={(event) => setKey(event.target.value)} placeholder={keyHint} autoComplete="off" /></label>
       {message ? <p className="text-xs text-muted-foreground" role="status">{message}</p> : null}
       <div className="flex justify-end gap-2">

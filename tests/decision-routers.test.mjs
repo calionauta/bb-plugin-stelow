@@ -75,7 +75,7 @@ assert.ok(configBody.includes("configured: row !== undefined"), "reads report wh
 assert.match(server, /ADD COLUMN provider TEXT NOT NULL DEFAULT 'jev'/, "pre-adapter installs migrate with the jev default");
 assert.match(server, /provider: z\.string\(\)\.max\(20\)\.nullable\(\)\.optional\(\)/, "the setter input carries the provider (strict would drop it otherwise)");
 assert.ok(setterBody.includes("Unknown provider"), "unknown providers refuse");
-assert.ok(setterBody.includes("DECISION_PROVIDERS.join"), "provider refusals name the valid set");
+assert.ok(setterBody.includes("DECISION_PROVIDERS.map((entry) => entry.id).join"), "provider refusals name the valid set");
 
 // Point writes refuse unknown ids and modes with the valid set named;
 // reads degrade to registry defaults instead of refusing.
@@ -134,6 +134,25 @@ assert.ok(server.slice(seamVetoAt, sendAt).includes("if (!vetted)"), "a veto fal
 assert.match(server, /const autoDecision = shouldAutoContinue\(\{/, "the heuristic gate still owns the resume decision");
 assert.match(server, /const doneDecision = shouldDoneNudge\(\{/, "the audit done-nudge path is untouched");
 assert.ok(!vetBody.includes("updateCard("), "the veto writes nothing itself — the paused path below owns all writes");
+
+// Severity bump wiring: bounded, gated, promotion-only, idempotent. A
+// sweep that demotes, resolves, re-judges checked items, or spends
+// unboundedly fails here.
+const bumpAt = server.indexOf("async function maybeBumpSeverity(): Promise<void> {");
+assert.ok(bumpAt >= 0, "the bump helper exists");
+const bumpEnd = server.indexOf("\n  }\n", bumpAt);
+assert.ok(bumpEnd > bumpAt, "the bump helper body is bounded");
+const bumpBody = server.slice(bumpAt, bumpEnd);
+assert.ok(bumpBody.includes("LIMIT 3"), "at most three judgments per tick");
+assert.ok(bumpBody.includes("SEVERITY_BUMP_MIN_AGE_MS"), "fresh items settle before any judgment");
+assert.ok(bumpBody.includes("NOT LIKE '%model-judged%'"), "checked items never re-judge");
+assert.ok(bumpBody.includes('normalizePointMode(point?.mode, "rules") !== "api"'), "rules mode never calls out");
+assert.ok(bumpBody.includes("isDecisionApiDisabled(process.env)"), "the kill switch covers the bump");
+assert.ok(bumpBody.includes("severityBumpQuestions()"), "the bump asks the single blocking Noul");
+assert.ok(bumpBody.includes("SET severity = 2"), "promotion only ever escalates");
+assert.ok(!bumpBody.includes("resolved_at ="), "the bump never resolves anything");
+assert.ok(bumpBody.includes('inbox-changed", { bumped:'), "promotion publishes for reload");
+assert.match(server, /void maybeBumpSeverity\(\);/, "the reconcile tick runs the bump");
 assert.match(app, /Showing defaults — nothing saved yet/, "fresh installs state that defaults are in effect");
 assert.match(app, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
 assert.match(app, /has no key — api routers answer with built-in rules/, "keyless api routers state why they degrade");
@@ -155,10 +174,10 @@ assert.match(app, /Needs: \{point\.requires\}/, "provider requirements render pe
 assert.match(app, /point\.mode === "api"/, "threshold controls render only for api-mode points");
 assert.match(app, /Act at confidence/, "thresholds read as confidence floors");
 assert.match(app, /<span>Model<\/span><Input/, "the Decision API model field is a free-text input (external ids live outside BB's catalog)");
-assert.match(app, /<option value="classifier">classifier\.dev \(labels, keyless\)<\/option>/, "the provider select offers classifier");
+assert.match(app, /\{DECISION_PROVIDERS\.filter\(\(entry\) => entry\.id !== "jev"\)\.map\(\(entry\) => <option/, "non-default providers render from the registry (adding one is UI-free)");
 assert.match(app, /<option value="jev">TypeSafe AI(&apos;|')s Jev-compatible<\/option>/, "the provider select keeps jev (no one-way door)");
 assert.match(app, /State \+ questions schema — endpoint \+ key \+ model required/, "the jev hint states the schema requirement in one line");
-assert.match(app, /if \(endpoint === otherDefault\)/, "custom endpoint URLs survive provider flips (only pristine defaults swap)");
+assert.match(app, /knownDefaults\.includes\(endpoint\)/, "custom endpoint URLs survive provider flips (only pristine defaults swap)");
 assert.ok(seamBody.includes("endpoint: cfg?.endpoint ?? defaultEndpointFor(provider)"), "the seam sends the stored endpoint, defaulting only when blank");
 assert.doesNotMatch(app, /preset-thread/i, "no thread jargon survives in the UI");
 

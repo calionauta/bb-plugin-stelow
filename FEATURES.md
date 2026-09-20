@@ -268,6 +268,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   every open action, resolved history stays chronological, and nothing is
   ever filtered or suppressed. Scored at event write, re-scored on the
   reconcile sweep; thresholds live in one file, no migration to retune.
+- **Severity bump** (`maybeBumpSeverity`, Inbox severity router). With the
+  router in Decision API mode, the reconcile sweep judges up to 3
+  unjudged routine items per tick (older than 5 minutes) with one yes/no
+  — confident blockers promote to escalating with a `model-judged` chip.
+  Never demotes, resolves, or re-judges; failures keep deterministic
+  tiers standing.
 - **Question recovery.** A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask
@@ -736,7 +742,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   judgments + artifact body); the judge scores the same files and Cohen's
   kappa per criterion decides keep (≥0.6), repair, or drop (under 5 labels
   always repairs). Read-only like `criteria`; abstentions never enter
-  kappa. This is the calibration loop semantic enforcement waits on.
+  kappa. This is the calibration loop semantic enforcement waits on —
+  procedure in [docs/golden-calibration.md](./docs/golden-calibration.md).
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,

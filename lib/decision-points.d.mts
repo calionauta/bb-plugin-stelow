@@ -1,6 +1,7 @@
 export declare const DECISION_POINT_TRIAGE_INTENT: string;
 export declare const DECISION_POINT_ARTIFACT_CRITERIA: string;
 export declare const DECISION_POINT_AUTO_CONTINUE: string;
+export declare const DECISION_POINT_INBOX_SEVERITY: string;
 export declare const DECISION_POINT_MODES: string[];
 
 export interface DecisionPoint {
@@ -26,19 +27,6 @@ export declare function defaultThresholdsFor(id: string): Record<string, number>
 
 export declare function normalizeThresholds(input: unknown, fallback?: Record<string, number> | null): Record<string, number>;
 
-export declare function autoContinueQuestions(): Record<string, unknown>;
-
-export interface AutoContinueResolution {
-  proceed: boolean;
-  source: "api" | "rules";
-  confidence?: number | null;
-}
-
-export declare function resolveAutoContinue(options: {
-  apiNoul?: number | null;
-  routeAt?: number | null;
-}): AutoContinueResolution;
-
 export declare const TRIAGE_INTENT_CRITERIA: Record<string, string>;
 
 export declare function triageIntentQuestions(): Record<string, unknown>;
@@ -53,3 +41,18 @@ export declare function resolveSeedIntent(options: {
   apiAnswers?: Record<string, { type?: string; choice?: string; confidence?: number | null } | null> | null;
   routeAt?: number | null;
 }): SeedIntentResolution;
+
+export declare function autoContinueQuestions(): Record<string, unknown>;
+
+export declare function severityBumpQuestions(): Record<string, unknown>;
+
+export interface AutoContinueResolution {
+  proceed: boolean;
+  source: "api" | "rules";
+  confidence?: number | null;
+}
+
+export declare function resolveAutoContinue(options: {
+  apiNoul?: number | null;
+  routeAt?: number | null;
+}): AutoContinueResolution;

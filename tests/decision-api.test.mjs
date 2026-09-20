@@ -33,6 +33,8 @@ import {
   DECISION_POINT_AUTO_CONTINUE,
   autoContinueQuestions,
   resolveAutoContinue,
+  DECISION_POINT_INBOX_SEVERITY,
+  severityBumpQuestions,
 } from "../lib/decision-points.mjs";
 
 // Decision API client + triage point: every failure degrades to built-in
@@ -151,7 +153,14 @@ assert.deepEqual(
 // Providers: jev speaks state+questions (key required), classifier speaks
 // labels (keyless). Unknown providers degrade to jev — never to an
 // unintended wire shape.
-assert.deepEqual(DECISION_PROVIDERS, ["jev", "classifier"], "two providers, jev first");
+assert.deepEqual(DECISION_PROVIDERS.map((entry) => entry.id), ["jev", "classifier", "simplejev", "openjev"], "four providers, jev first");
+for (const entry of DECISION_PROVIDERS) {
+  assert.ok(typeof entry.label === "string" && entry.label.length > 0, `${entry.id} names itself for the select`);
+  assert.ok(["jev", "labels"].includes(entry.schema), `${entry.id} declares a known wire schema`);
+  assert.ok(isDecisionApiEndpointValid(entry.defaultEndpoint), `${entry.id} ships a valid default endpoint`);
+  assert.equal(typeof entry.needsKey, "boolean", `${entry.id} declares its key need`);
+  assert.equal(typeof entry.takesModel, "boolean", `${entry.id} declares its model need`);
+}
 assert.equal(normalizeDecisionProvider("classifier"), "classifier", "classifier survives");
 assert.equal(normalizeDecisionProvider("mystery"), "jev", "unknown providers degrade to jev");
 assert.equal(providerRequiresKey("jev"), true, "jev requires a key");
@@ -191,6 +200,15 @@ assert.equal(routed.ok, true, "classifier resolves without a key");
 assert.equal(routed.answers.intent.choice, "feature", "classifier answers normalize through the dispatcher");
 assert.ok(!("Authorization" in (seenHeaders ?? {})), "keyless calls send no auth header");
 assert.equal((await evaluateDecisionCall({ provider: "mystery", endpoint: "https://x.test/v1", apiKey: "", model: "m", state: "s", questions: {}, fetchImpl: classifierFetch })).error.includes("no key"), true, "unknown providers fall back to the keyed jev path");
+// Keyless jev-schema providers send no auth header and still resolve.
+let keylessHeaders = null;
+const keylessFetch = async (url, opts) => {
+  keylessHeaders = opts.headers;
+  return { status: 200, json: async () => ({ answers: { intent: { type: "choice", choice: "feature", confidence: 0.8 } } }) };
+};
+const keyless = await evaluateDecisionCall({ provider: "simplejev", endpoint: "https://x.test/v1", apiKey: "", model: "m", state: "s", questions: triageIntentQuestions(), fetchImpl: keylessFetch });
+assert.equal(keyless.ok, true, "keyless jev-schema providers resolve without a key");
+assert.ok(!("Authorization" in (keylessHeaders ?? {})), "empty keys send no auth header");
 
 // Probe builder speaks the provider's native shape.
 assert.equal(buildProbeCall("classifier").questions.defect.type, "choice", "classifier probes use Choice");
@@ -209,10 +227,18 @@ assert.deepEqual(resolveAutoContinue({ apiNoul: 0.2, routeAt: 0.7 }), { proceed:
 assert.deepEqual(resolveAutoContinue({ apiNoul: null, routeAt: 0.7 }), { proceed: true, source: "rules" }, "missing answers keep the heuristic standing");
 assert.deepEqual(resolveAutoContinue({ apiNoul: "high", routeAt: 0.7 }), { proceed: true, source: "rules" }, "non-numeric answers keep the heuristic standing");
 
+// Severity bump: one Noul per open routine item, asked against the summary.
+assert.equal(DECISION_POINT_INBOX_SEVERITY, "inbox-severity", "the bump point id is pinned");
+const bumpQuestions = severityBumpQuestions();
+assert.equal(bumpQuestions.blocking.type, "noul", "the bump asks one yes/no");
+assert.ok(bumpQuestions.blocking.instructions.includes("blocked"), "the question names blocking, not importance");
+
 // Provider requirements ride the registry so the UI states them: triage
 // Choice works on both providers; Score/Noul need the Jev schema.
 assert.equal(getDecisionPoint(DECISION_POINT_TRIAGE_INTENT).requires ?? null, null, "triage runs on any provider");
 assert.ok(getDecisionPoint("artifact-criteria").requires.includes("Jev-compatible"), "criteria judging names its provider need");
 assert.ok(getDecisionPoint(DECISION_POINT_AUTO_CONTINUE).requires.includes("Jev-compatible"), "the veto names its provider need");
+assert.ok(getDecisionPoint(DECISION_POINT_INBOX_SEVERITY).requires.includes("Jev-compatible"), "the bump names its provider need");
+assert.deepEqual(defaultThresholdsFor(DECISION_POINT_INBOX_SEVERITY), { routeAt: 0.6 }, "the bump defaults to a 0.6 floor");
 
 console.log("decision api test ok: key resolution, validation, fail-soft calls, thresholds, triage seed");

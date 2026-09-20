@@ -45,8 +45,8 @@ import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria } from "./lib/skill-criteria.mjs";
 import { parseGoldenFile, cohenKappa, goldenVerdict } from "./lib/skill-goldens.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
-import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, DECISION_PROVIDERS, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
-import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue } from "./lib/decision-points.mjs";
+import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, meetsDecisionThreshold, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, defaultModelFor, DECISION_PROVIDERS } from "./lib/decision-api.mjs";
+import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, DECISION_POINT_INBOX_SEVERITY, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue, severityBumpQuestions } from "./lib/decision-points.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -1917,7 +1917,7 @@ ${prompt}`;
         provider,
         endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
         apiKey: key ?? "",
-        model: normalizeDecisionApiModel(cfg?.model, DECISION_API_DEFAULT_MODEL),
+        model: normalizeDecisionApiModel(cfg?.model, defaultModelFor(provider)),
         state: promptText,
         questions: triageIntentQuestions(),
       });
@@ -1956,7 +1956,7 @@ ${prompt}`;
         provider,
         endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
         apiKey: key ?? "",
-        model: normalizeDecisionApiModel(cfg?.model, DECISION_API_DEFAULT_MODEL),
+        model: normalizeDecisionApiModel(cfg?.model, defaultModelFor(provider)),
         state: stateText,
         questions: autoContinueQuestions(),
       });
@@ -4339,12 +4339,62 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // this long (two reconcile cycles). A worker that just finished a turn is
   // idle for a few seconds before being resumed — not an attention item.
   const IDLE_ATTENTION_MS = 90_000;
+  // Semantic severity bump (inbox-severity point): at most a few unjudged
+  // routine items per tick get one yes/no — "does this block the worker?" —
+  // and confident yeses promote to escalating with a model-judged chip.
+  // Never demotes, never resolves, never re-judges a checked item; items
+  // too fresh to have settled (under 5 minutes) wait for a later tick.
+  // Everything else (mode, key, kill switch, failures) keeps deterministic
+  // tiers standing. Advisory ordering only — the badge never moves on it.
+  const SEVERITY_BUMP_PER_TICK = 3;
+  const SEVERITY_BUMP_MIN_AGE_MS = 5 * 60 * 1000;
+  async function maybeBumpSeverity(): Promise<void> {
+    try {
+      const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_INBOX_SEVERITY) as { mode: string; thresholds: string } | undefined;
+      if (normalizePointMode(point?.mode, "rules") !== "api") return;
+      if (isDecisionApiDisabled(process.env)) return;
+      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+      const provider = normalizeDecisionProvider(cfg?.provider ?? "jev");
+      const { key } = resolveDecisionApiKey({ storedKey: cfg?.api_key ?? null, env: process.env });
+      if (!key && providerRequiresKey(provider)) return;
+      let stored: unknown = null;
+      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
+      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_INBOX_SEVERITY));
+      const cutoff = now() - SEVERITY_BUMP_MIN_AGE_MS;
+      const rows = db.prepare(
+        "SELECT id, summary, severity_reasons FROM inbox_events WHERE resolved_at IS NULL AND archived_at IS NULL AND severity = 1 AND occurred_at <= ? AND severity_reasons NOT LIKE '%model-judged%' ORDER BY occurred_at ASC LIMIT 3",
+      ).all(cutoff) as Array<{ id: string; summary: string; severity_reasons: string | null }>;
+      const candidates = rows.slice(0, SEVERITY_BUMP_PER_TICK);
+      let changed = 0;
+      for (const row of candidates) {
+        const result = await evaluateDecisionCall({
+          provider,
+          endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
+          apiKey: key ?? "",
+          model: normalizeDecisionApiModel(cfg?.model, defaultModelFor(provider)),
+          state: row.summary,
+          questions: severityBumpQuestions(),
+        }).catch(() => null);
+        if (!result || !result.ok) continue;
+        const answer = result.answers?.blocking ?? null;
+        if (!answer || answer.type !== "noul" || typeof answer.noul !== "number") continue;
+        const reasons = [...parseSeverityReasons(row.severity_reasons), "model-judged"];
+        if (meetsDecisionThreshold(answer.noul, thresholds.routeAt)) {
+          changed += db.prepare("UPDATE inbox_events SET severity = 2, severity_reasons = ? WHERE id = ? AND resolved_at IS NULL").run(JSON.stringify(reasons), row.id).changes;
+        } else {
+          changed += db.prepare("UPDATE inbox_events SET severity_reasons = ? WHERE id = ? AND resolved_at IS NULL").run(JSON.stringify(reasons), row.id).changes;
+        }
+      }
+      if (changed > 0) bb.realtime.publish("inbox-changed", { bumped: changed });
+    } catch { /* advisory only — tiers stand without the bump */ }
+  }
   const reconcileTimer = setInterval(() => {
     if (!(db as unknown as { open?: boolean }).open) return;
     try {
       const rows = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
       for (const row of rows) void syncThreadState(row.id);
     } catch { /* db closed during reload; next tick retries */ }
+    void maybeBumpSeverity();
     // Expired workspace claims are crashed workers that never released:
     // reap them here and wake exactly the cards that waited on each file.
     // Claims held by terminal-status cards are dead weight too (a terminal
@@ -6406,7 +6456,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const provider = normalizeDecisionProvider(row?.provider ?? "jev");
       return {
         endpoint: row?.endpoint ?? defaultEndpointFor(provider),
-        model: normalizeDecisionApiModel(row?.model, DECISION_API_DEFAULT_MODEL),
+        model: normalizeDecisionApiModel(row?.model, defaultModelFor(provider)),
         hasKey: key !== null,
         keySource: source,
         keyRequired: providerRequiresKey(provider),
@@ -6419,10 +6469,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async setDecisionApiConfig({ endpoint, apiKey, model, provider }) {
       const current = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
       const nextProvider = provider === undefined ? normalizeDecisionProvider(current?.provider ?? "jev") : normalizeDecisionProvider(provider, "");
-      if (!nextProvider) return { ok: false, error: `Unknown provider "${provider}". Available: ${DECISION_PROVIDERS.join(", ")}.` };
+      if (!nextProvider) return { ok: false, error: `Unknown provider "${provider}". Available: ${DECISION_PROVIDERS.map((entry) => entry.id).join(", ")}.` };
       const nextEndpoint = endpoint === undefined ? (current?.endpoint ?? defaultEndpointFor(nextProvider)) : (endpoint ?? defaultEndpointFor(nextProvider));
       if (!isDecisionApiEndpointValid(nextEndpoint)) return { ok: false, error: "Endpoint must be an http(s) URL (e.g. https://api.typesafe.ai/v1/systemone)." };
-      const nextModel = model === undefined ? (current?.model ?? DECISION_API_DEFAULT_MODEL) : normalizeDecisionApiModel(model, DECISION_API_DEFAULT_MODEL);
+      const nextModel = model === undefined ? (current?.model ?? defaultModelFor(nextProvider)) : normalizeDecisionApiModel(model, defaultModelFor(nextProvider));
       if (!nextModel) return { ok: false, error: "Model must name a version (e.g. jev-latest)." };
       const nextKey = apiKey === undefined ? (current?.api_key ?? "") : (apiKey ?? "");
       db.prepare("INSERT OR REPLACE INTO decision_api_config (id, endpoint, api_key, model, provider, updated_at) VALUES (1, ?, ?, ?, ?, ?)").run(nextEndpoint.trim(), nextKey, nextModel, nextProvider, now());
@@ -6443,7 +6493,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         provider,
         endpoint: row?.endpoint ?? defaultEndpointFor(provider),
         apiKey: key ?? "",
-        model: normalizeDecisionApiModel(row?.model, DECISION_API_DEFAULT_MODEL),
+        model: normalizeDecisionApiModel(row?.model, defaultModelFor(provider)),
         state: probe.state,
         questions: probe.questions,
       });
@@ -8252,7 +8302,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           provider: criteriaProvider,
           endpoint: criteriaCfg?.endpoint ?? defaultEndpointFor(criteriaProvider),
           apiKey: criteriaKey ?? "",
-          model: normalizeDecisionApiModel(criteriaCfg?.model, DECISION_API_DEFAULT_MODEL),
+          model: normalizeDecisionApiModel(criteriaCfg?.model, defaultModelFor(criteriaProvider)),
           skillText,
           artifactText: content,
           routeAt: criteriaThresholds.routeAt,
@@ -8324,7 +8374,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             provider: goldensProvider,
             endpoint: goldensCfg?.endpoint ?? defaultEndpointFor(goldensProvider),
             apiKey: goldensKey ?? "",
-            model: normalizeDecisionApiModel(goldensCfg?.model, DECISION_API_DEFAULT_MODEL),
+            model: normalizeDecisionApiModel(goldensCfg?.model, defaultModelFor(goldensProvider)),
             skillText,
             artifactText: golden.artifact ?? "",
             routeAt: goldensThresholds.routeAt,
