@@ -12,7 +12,9 @@ for (const method of ["publicationStatus", "publicationCommitDiff", "publication
 }
 assert.match(server, /bb\.sdk\.environments\.status/, "publication status is owned by BB");
 assert.match(server, /bb\.sdk\.environments\.commit/, "commit is routed to BB's environment host");
-assert.match(server, /bb\.sdk\.environments\.squashMerge/, "local squash merge is routed to BB");
+assert.match(server, /buildSquashScript\(\{ base, branch/, "local squash merge runs git merge --squash in the card's own shell (BB exposes no local squash action)");
+assert.match(server, /parseSquashOutput\(tail\)/, "the squash verdict is parsed from terminal output, never assumed");
+assert.match(server, /verdict\.finished/, "the squash shell is only closed after the branch restore runs");
 assert.match(server, /bb\.sdk\.environments\.markPullRequestReady/, "PR ready transition is routed to BB");
 assert.match(server, /bb\.sdk\.environments\.markPullRequestDraft/, "PR draft transition is routed to BB");
 assert.match(server, /bb\.sdk\.environments\.mergePullRequest/, "PR merge is routed to BB");
@@ -63,7 +65,7 @@ assert.match(app, /Waiting — git push typed but NOT sent/, "legacy typed-only 
 assert.match(server, /stelow commit diff: diffPatch (unavailable|failed)/, "patch fetch failures are logged for diagnosis instead of swallowed");
 assert.match(server, /initialPatches is empty even/, "commit targets fetch every missing patch, not just on-demand ones");
 assert.match(app, /file\.loadMode === "too_large"/, "the commit viewer distinguishes too-large files from missing patches");
-assert.match(server, /if \(result\.merged\) recordPublication/, "only completed local merges enter publication history");
+assert.match(server, /recordPublication\(cardId, "squash_merge", message, verdict\.sha\)/, "only a verified squash SHA enters publication history");
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
 assert.match(server, /selectedCardEnvironment\(environment, workerEnvironment/, "a card forwards the BB composer environment instead of replacing it with a preset");

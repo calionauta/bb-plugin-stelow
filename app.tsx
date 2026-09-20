@@ -15,6 +15,7 @@ import {
   useRealtime,
   useRpc,
   type NewThreadRequest,
+  type PluginCommandRegistration,
   type PluginMessageDirectiveProps,
   type PluginPendingInteractionProps,
   type PluginThreadPanelProps,
@@ -3072,9 +3073,34 @@ function InputFiles({ card, detail, onView }: { card: CardItem; detail: CardDeta
 
 function CardDrawerAdapter(props: PluginThreadPanelProps) {
   const params = props.params;
-  const cardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
+  const directCardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
+  const threadId = typeof params === "object" && params && "threadId" in params && typeof params.threadId === "string" ? params.threadId : "";
+  const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  if (!cardId) return <p className="p-4 text-sm text-muted-foreground">Pick a card from Stelow {trackTitle("build")} to see its details here.</p>;
+  // Palette commands open this drawer with a threadId (no card context at
+  // the palette); resolve it to the owning card like the header action does.
+  const [resolvedCardId, setResolvedCardId] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
+  useEffect(() => {
+    if (directCardId || !threadId) return;
+    let cancelled = false;
+    setResolving(true);
+    void rpc.call("cardByWorkerThread", { threadId }).then((result) => {
+      if (!cancelled) {
+        setResolvedCardId(result.cardId);
+        setResolving(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setResolving(false);
+    });
+    return () => { cancelled = true; };
+  }, [rpc, directCardId, threadId]);
+  const cardId = directCardId || resolvedCardId || "";
+  if (!cardId) {
+    if (resolving) return <p className="p-4 text-sm text-muted-foreground">Finding this thread&apos;s Stelow card…</p>;
+    if (threadId) return <p className="p-4 text-sm text-muted-foreground">This thread is not a Stelow worker thread.</p>;
+    return <p className="p-4 text-sm text-muted-foreground">Pick a card from Stelow {trackTitle("build")} to see its details here.</p>;
+  }
   return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
@@ -7383,6 +7409,22 @@ export default definePluginApp((app) => {
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
   app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns2", component: CardDrawerAdapter });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow", title: "Open Stelow", component: OpenStelowAction });
+
+  // Quick-palette command (BB 0.43 `app.commands.register`): from any worker
+  // thread, open its Stelow card. The palette context carries no card id, so
+  // the drawer resolves threadId itself. Hosts predating `app.commands`
+  // keep the deprecated `commandPaletteAction` alias with the same shape.
+  const openCardCommand: PluginCommandRegistration = {
+    id: "open-card-for-thread",
+    title: "Stelow: open card for this thread",
+    isAvailable: (context) => context.threadId !== null,
+    run: (context) => {
+      if (context.threadId) context.openPanel({ actionId: "stelow-card-detail", params: { threadId: context.threadId } });
+    },
+  };
+  const appCommands = (app as unknown as { commands?: { register: (registration: PluginCommandRegistration) => void } }).commands;
+  if (appCommands?.register) appCommands.register(openCardCommand);
+  else app.slots.commandPaletteAction(openCardCommand);
 
   app.slots.messageDirective({
     id: "stelow-artifact",

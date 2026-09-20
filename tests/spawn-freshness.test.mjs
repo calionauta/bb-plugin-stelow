@@ -13,12 +13,19 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 
 // Six spawn sites, no more, no fewer: initial worker, restart, automation
-// draft, reseed, reviewer, draft burst. A new threads.spawn is a new brain
-// with its own lifecycle — it must arrive with a tier decision here.
+// draft, reseed, reviewer, draft burst. The two disposables (reviewer, draft
+// burst) spawn through the lifecycle helper, so the count below separates
+// direct worker spawns from helper-routed disposables. A new spawn site is a
+// new brain with its own lifecycle — it must arrive with a tier decision here.
 assert.equal(
   (server.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length,
-  6,
-  "six spawn sites pinned; a seventh updates this contract deliberately",
+  4,
+  "four direct worker spawns pinned; a fifth updates this contract deliberately",
+);
+assert.equal(
+  (server.match(/await spawnDisposable\(\{/g) ?? []).length,
+  2,
+  "two disposable spawns pinned; a third updates this contract deliberately",
 );
 
 // The SDK surface has no history inheritance today — keep it that way. If a
@@ -33,6 +40,15 @@ for (const match of server.matchAll(/bb\.sdk\.threads\.spawn\(\{/g)) {
   const block = server.slice(match.index, match.index + 1500);
   for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {
     assert.ok(!block.includes(token), `spawn block inherits no history (${token})`);
+  }
+}
+// Disposable blocks route through the helper: same history bans. The helper
+// itself owns the only other spawn calls (with-owner, then the strict-host
+// fallback without) — lifecycle ownership travels there, never history.
+for (const match of server.matchAll(/await spawnDisposable\(\{/g)) {
+  const block = server.slice(match.index, match.index + 900);
+  for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {
+    assert.ok(!block.includes(token), `disposable spawn block inherits no history (${token})`);
   }
 }
 
@@ -60,11 +76,18 @@ for (const line of server.split("\n")) {
 // and this pins the wiring: no hand-rolled draft/review prompt may bypass it.
 assert.match(server, /buildReviewPrompt\(\{ cardName:/, "review prompts go through the lib builder");
 assert.match(server, /buildDraftPrompt\(\{ cardName:/, "draft prompts go through the lib builder");
-for (const name of ["reviewThread = await bb.sdk.threads.spawn({", "draftThread = await bb.sdk.threads.spawn({"]) {
+for (const name of ["reviewThread = await spawnDisposable({", "draftThread = await spawnDisposable({"]) {
   const at = server.indexOf(name);
   assert.ok(at >= 0, `${name} exists`);
   assert.ok(server.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
+  assert.ok(server.slice(at, at + 900).includes("lifecycleOwnerThreadId: card.worker_thread_id"), "disposable spawns die with their worker (dependent lifecycle)");
 }
+// lifecycleOwnerThreadId is lifecycle, never history: the bans above (parent,
+// fork, resume inside spawn blocks) still stand untouched.
+// Older daemons that reject the field instead of stripping it get one retry
+// without it, so disposables never break on strict hosts.
+assert.match(server, /async function spawnDisposable\(args: SpawnArgs\)/, "disposable spawns go through the lifecycle helper");
+assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-field rejection retries once without the owner");
 
 // The owner rule teaches fresh delegation: full task in the call, never a
 // fork, never sibling chatter.

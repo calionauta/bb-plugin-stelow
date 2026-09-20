@@ -66,6 +66,7 @@ const automationRuleSchema = z.object({ id: z.string(), projectId: z.string(), e
 
 export const githubRpcContract = defineRpcContract({
   listGithubCandidates: {
+    experimental_description: "GitHub issues matching watcher labels, with import state",
     input: z.object({ labels: z.array(z.string().min(1).max(60)).min(1).max(10).optional(), label: z.string().min(1).max(60).optional() }).strict(),
     output: z.object({
       issues: z.array(z.object({
@@ -76,18 +77,22 @@ export const githubRpcContract = defineRpcContract({
     }),
   },
   importGithubIssue: {
+    experimental_description: "Import one GitHub issue as a parked or started card",
     input: z.object({ projectId: z.string().nullable().optional(), repo: z.string(), number: z.number().int().positive(), labels: z.array(z.string().min(1).max(60)).max(10).optional(), label: z.string().min(1).max(60).optional(), start: z.boolean().default(true), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).optional() }).strict(),
     output: z.object({ ok: z.boolean(), cardId: z.string().nullable(), skipped: z.string().nullable(), error: z.string().nullable() }),
   },
   listAutomationRules: {
+    experimental_description: "Per-project GitHub label watchers with recent run outcomes",
     input: z.object({ projectId: z.string().nullable() }).strict(),
     output: z.object({ rules: z.array(automationRuleSchema) }),
   },
   saveAutomationRule: {
+    experimental_description: "Create or update a label watcher; fails closed without isolation",
     input: z.object({ id: z.string().nullable().optional(), projectId: z.string(), labels: z.array(z.string().min(1).max(60)).min(1).max(10).optional(), label: z.string().min(1).max(60).optional(), trustedAuthors: z.union([z.array(z.string().min(1).max(40)).max(20), z.string().max(800)]).optional(), promptTemplate: z.string().max(2_000).optional(), enabled: z.boolean().default(true), startImmediate: z.boolean().default(false) }).strict(),
     output: z.object({ rule: automationRuleSchema, primed: z.number().int().nonnegative() }),
   },
   previewAutomationRule: {
+    experimental_description: "Dry-run a label watcher: what would match now, and why not",
     input: z.object({ projectId: z.string(), labels: z.array(z.string().min(1).max(60)).min(1).max(10).optional(), label: z.string().min(1).max(60).optional(), trustedAuthors: z.union([z.array(z.string().min(1).max(40)).max(20), z.string().max(800)]).optional() }).strict(),
     output: z.object({
       matches: z.array(z.object({ repo: z.string(), number: z.number().int().positive(), title: z.string(), url: z.string(), author: z.string() })),
@@ -96,14 +101,17 @@ export const githubRpcContract = defineRpcContract({
     }),
   },
   listAutomationRuleRuns: {
+    experimental_description: "Recent scheduler runs for one watcher rule",
     input: z.object({ ruleId: z.string(), limit: z.number().int().min(1).max(100).default(20) }).strict(),
     output: z.object({ runs: z.array(z.object({ sourceKey: z.string(), repo: z.string(), number: z.number().int().positive(), cardId: z.string(), cardName: z.string().nullable(), cardStatus: z.string().nullable(), outcome: z.string().nullable(), firedAt: z.number() })) }),
   },
   deleteAutomationRule: {
+    experimental_description: "Delete a label watcher rule",
     input: z.object({ id: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
   },
   postGithubCompletion: {
+    experimental_description: "Post a card completion summary back to its GitHub issue",
     input: z.object({ cardId: z.string(), closeIssue: z.boolean().default(false) }).strict(),
     output: z.object({ ok: z.boolean(), issueUrl: z.string().nullable(), error: z.string().nullable() }),
   },

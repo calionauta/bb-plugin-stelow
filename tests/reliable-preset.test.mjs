@@ -60,8 +60,8 @@ assert.ok(assignBody.includes("refreshRestartPending(db, card.id,"), "live worke
 // Both the zod contract and the handler must exist — a handler without a
 // contract entry fails typecheck, a contract entry without a handler fails
 // at runtime.
-assert.match(server, /  getReliablePreset: \{\s*\n\s*input: z\.object\(\{\}\)\.strict\(\),/, "the reliable getter is in the RPC contract");
-assert.match(server, /  assignReliablePreset: \{\s*\n\s*input: z\.object\(\{ presetId: z\.string\(\)\.nullable\(\) \}\)\.strict\(\),/, "the reliable setter is in the RPC contract");
+assert.match(server, /  getReliablePreset: \{\s*\n\s*(?:experimental_description: "[^"]+",\n\s*)?input: z\.object\(\{\}\)\.strict\(\),/, "the reliable getter is in the RPC contract");
+assert.match(server, /  assignReliablePreset: \{\s*\n\s*(?:experimental_description: "[^"]+",\n\s*)?input: z\.object\(\{ presetId: z\.string\(\)\.nullable\(\) \}\)\.strict\(\),/, "the reliable setter is in the RPC contract");
 assert.match(server, /async getReliablePreset\(\) \{/, "the reliable getter RPC exists");
 assert.match(server, /async assignReliablePreset\(\{ presetId \}\) \{/, "the reliable setter RPC exists");
 assert.match(server, /INSERT OR REPLACE INTO reliable_preset \(id, preset_id, assigned_at\) VALUES \(1, \?, \?\)/, "the setter upserts the singleton row");

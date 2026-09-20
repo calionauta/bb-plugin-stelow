@@ -55,7 +55,9 @@ import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/resear
 import { evidenceStatus } from "./lib/research-evidence.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
+import { cliHelpText, cliUsageLine, nearestCommand } from "./lib/cli-suggest.mjs";
 import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
+import { buildSquashScript, parseSquashOutput, squashExitMessage } from "./lib/squash-merge.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, normalizeBuildSeedIntent, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents, truncateCause } from "./lib/worker-failure.mjs";
@@ -65,7 +67,7 @@ import { cardWorkerSeedRefusal, withRuntimeIgnoreEntry } from "./lib/card-seed-g
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSplitAnswer, splitActionState, splitEligibility, splitOutcome, splitRemainder, validateSplitSlices, withStandardSplitDisclosure } from "./lib/split-proposal.mjs";
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
-import { englishQuestionContentError } from "./lib/question-presentation.mjs";
+import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
@@ -344,6 +346,7 @@ const githubReleaseSchema = z.object({ tag: z.string(), url: z.string(), checked
 
 export const rpcContract = defineRpcContract({
   board: {
+    experimental_description: "Board workflows, stages, and GitHub status for one project",
     input: z.object({ projectId: z.string().nullable() }).strict(),
     output: z.object({
       rootPath: z.string().nullable(),
@@ -354,55 +357,68 @@ export const rpcContract = defineRpcContract({
     }),
   },
   projects: {
+    experimental_description: "Projects BB knows, for board and card pickers",
     input: z.object({}).strict(),
     output: z.object({ projects: z.array(z.object({ id: z.string(), name: z.string() })) }),
   },
   answerQuestions: {
+    experimental_description: "Answer a card's live structured questions in one atomic submit",
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().max(2_000)).max(10) })).min(1).max(12) }).strict(),
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
   },
   ...githubRpcContract,
   listCards: {
+    experimental_description: "Cards with status, worker state, and scope progress, optionally by track",
     input: z.object({ projectId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable().optional() }).strict(),
     output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
   },
   listNotifications: {
+    experimental_description: "Inbox events: needs-attention first, then completions, history, archived",
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
     output: z.object({ notifications: z.array(inboxEventSnapshotSchema.extend({ cardId: z.string(), cardName: z.string(), projectName: z.string(), cardKind: z.enum(["build", "research", "explore"]), readAt: z.number().nullable() })) }),
   },
   markNotificationRead: {
+    experimental_description: "Mark one inbox event read",
     input: z.object({ notificationId: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
   },
   markCardNotificationsRead: {
+    experimental_description: "Mark a card's events of one kind read",
     input: z.object({ cardId: z.string(), kind: z.enum(["question", "error", "paused", "completed"]) }).strict(),
     output: z.object({ marked: z.boolean() }),
   },
   archiveNotification: {
+    experimental_description: "Archive one inbox event",
     input: z.object({ notificationId: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
   },
   restoreNotification: {
+    experimental_description: "Restore an archived inbox event to history",
     input: z.object({ notificationId: z.string() }).strict(),
     output: z.object({ ok: z.boolean() }),
   },
   cardByWorkerThread: {
+    experimental_description: "Find the card that owns a worker thread",
     input: z.object({ threadId: z.string() }).strict(),
     output: z.object({ cardId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable() }),
   },
   getNotification: {
+    experimental_description: "One inbox event for a card",
     input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
     output: z.object({ notification: inboxEventSnapshotSchema.nullable() }),
   },
   readCardFile: {
+    experimental_description: "Read a workspace file through the card's checkout",
     input: z.object({ cardId: z.string(), path: z.string().min(1).max(4_000) }).strict(),
     output: z.object({ content: z.string().nullable(), truncated: z.boolean(), error: z.string().nullable() }),
   },
   qualitySeal: {
+    experimental_description: "Verification seal for an artifact path",
     input: z.object({ cardId: z.string().nullable().optional(), threadId: z.string().nullable().optional(), path: z.string().min(1).max(4_000) }).strict(),
     output: z.object({ status: z.enum(["verified", "hypothesis-only", "needs-revision", "unverified"]), failures: z.array(z.string()), evidence: z.string().nullable(), label: z.string().nullable() }),
   },
   gapSummary: {
+    experimental_description: "Execution-critique gaps: totals, pending scopes, lead and cycle time",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
       matched: z.boolean(),
@@ -413,18 +429,22 @@ export const rpcContract = defineRpcContract({
     }),
   },
   boardWorkflowDefaults: {
+    experimental_description: "Board defaults: planning depth and review gates for new cards",
     input: z.object({}).strict(),
     output: boardWorkflowDefaultsSchema,
   },
   createCard: {
+    experimental_description: "Create a build card and optionally start its triage worker",
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeInputSchema, presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   updateCardIntent: {
+    experimental_description: "Correct a build card's workflow type while it is still in triage",
     input: z.object({ cardId: z.string(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   cardDetail: {
+    experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
@@ -449,78 +469,97 @@ export const rpcContract = defineRpcContract({
     }),
   },
   addCardComment: {
+    experimental_description: "Comment on a card, scope, or task; the worker sees it",
     input: z.object({ cardId: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), body: z.string().min(1).max(10_000) }).strict(),
     output: z.object({ commentId: z.string(), error: z.string().nullable() }),
   },
   cancelCard: {
+    experimental_description: "Stop the worker and archive the card; history preserved",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ archived: z.boolean() }),
   },
   deleteCard: {
+    experimental_description: "Hard-delete an archived card, its rows, and its run files",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
   },
   discardPreview: {
+    experimental_description: "Preview destroying unpushed work before archiving, blast radius first",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ eligible: z.boolean(), action: z.enum(["worktree-drop", "branch-reset", "dir-delete"]).nullable(), reason: z.string().nullable(), branch: z.string().nullable(), files: z.array(z.string()), fileCount: z.number(), commitCount: z.number(), sharedWith: z.number(), confirmTitle: z.string().nullable(), confirmBody: z.string().nullable(), error: z.string().nullable() }),
   },
   discardCardChanges: {
+    experimental_description: "Destroy unpushed work, then archive; leaves an audit trail",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), summary: z.string().nullable(), error: z.string().nullable() }),
   },
   reseedCard: {
+    experimental_description: "Restart a card fresh from triage; scopes and comments kept",
     input: z.object({ cardId: z.string(), presetId: z.string().nullable().optional(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).optional() }).strict(),
     output: z.object({ reseeded: z.boolean(), error: z.string().nullable(), reclassified: z.boolean() }),
   },
   retryWorker: {
+    experimental_description: "Nudge the same worker in place; nothing resets",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   restartWorker: {
+    experimental_description: "Fresh worker thread on the current preset from the current stage",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   startWorker: {
+    experimental_description: "Start a parked inbox card's worker",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   requestSplitProposal: {
+    experimental_description: "Ask the worker for a one-time card-split proposal",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   moveCard: {
+    experimental_description: "Move a card between board columns, Inbox rules enforced",
     input: z.object({ cardId: z.string(), status: z.enum(BOARD_MOVE_COLUMNS as [string, ...string[]]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   researchStrategies: {
+    experimental_description: "Research strategy catalog: labels, skills, keywords",
     input: z.object({}).strict(),
     output: z.object({ strategies: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), blurb: z.string(), emoji: z.string(), keywords: z.array(z.string()) })) }),
   },
   createResearchCard: {
+    experimental_description: "Create a research card and optionally start its worker",
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), strategy: z.string().min(1).max(60), presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   createExploreCard: {
+    experimental_description: "Create an explore card for one technique and optionally start it",
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), stageId: z.string().min(1).max(60), presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
   },
   stageCatalog: {
+    experimental_description: "Explore technique catalog: labels, skills, keywords",
     input: z.object({}).strict(),
     output: z.object({ stages: z.array(z.object({ id: z.string(), label: z.string(), skill: z.string(), emoji: z.string(), blurb: z.string(), keywords: z.array(z.string()) })) }),
   },
   researchIndex: {
+    experimental_description: "Research index with ranked opportunities and round readiness",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ found: z.boolean(), indexPath: z.string().nullable(), content: z.string().nullable(), truncated: z.boolean(), opportunities: z.array(z.object({ id: z.string(), title: z.string(), checked: z.boolean(), group: z.string().nullable() })), rounds: z.array(z.object({ n: z.number(), strategyId: z.string(), label: z.string(), emoji: z.string(), at: z.string(), status: z.enum(["ready", "pending", "missing"]), missing: z.array(z.string()), substeps: z.array(z.object({ slug: z.string(), status: z.enum(["ready", "missing", "invalid", "needs-depth"]) })), files: z.array(z.object({ display: z.string(), path: z.string(), absolutePath: z.string(), hostId: z.string(), generatedAt: z.string() })) })), error: z.string().nullable() }),
   },
   fanOutResearch: {
+    experimental_description: "Fan checked index opportunities out into build cards",
     input: z.object({ cardId: z.string(), opportunityIds: z.array(z.string().min(1).max(120)).min(1).max(20) }).strict(),
     output: z.object({ ok: z.boolean(), created: z.array(z.object({ cardId: z.string(), title: z.string() })), error: z.string().nullable() }),
   },
   cardDiff: {
+    experimental_description: "Working-tree diff vs HEAD with entity and symbol summaries",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ found: z.boolean(), isRepo: z.boolean(), files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), isNew: z.boolean(), absolutePath: z.string(), hostId: z.string() })), truncated: z.boolean(), entitySummary: z.object({ total: z.number(), fileCount: z.number(), added: z.number(), modified: z.number(), deleted: z.number(), renamed: z.number(), moved: z.number(), cosmeticOnly: z.boolean() }).nullable(), changedSymbols: z.array(z.object({ symbol: z.string(), files: z.array(z.string()), callers: z.number(), testCallers: z.number() })).nullable(), error: z.string().nullable() }),
   },
   auditTrailStatus: {
+    experimental_description: "Audit-trail verification state for a build card",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
       state: z.enum(["verified", "changed", "missing", "refused", "unsupported", "unavailable"]),
@@ -532,86 +571,107 @@ export const rpcContract = defineRpcContract({
     }),
   },
   publicationStatus: {
+    experimental_description: "Git publication snapshot: branch, tree, merge-base, PR, capabilities",
     input: z.object({ cardId: z.string() }).strict(),
     output: publicationSnapshotSchema,
   },
   publicationCommitDiff: {
+    experimental_description: "Read-only diff of one recorded publication commit",
     input: z.object({ cardId: z.string(), commitSha: z.string().regex(/^[0-9a-f]{7,64}$/i) }).strict(),
     output: publicationCommitDiffSchema,
   },
   publicationCommit: {
+    experimental_description: "Save a local commit in the card's checkout through BB",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
   },
   publicationSquashMerge: {
+    experimental_description: "Squash branch commits into one local commit on the base branch",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
   },
   publicationPushTerminal: {
+    experimental_description: "Push the branch in the card's own terminal and stream the result",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
   },
   publicationPullPush: {
+    experimental_description: "Pull with rebase then push in the card's checkout, the rejected-push fix",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
   },
   publicationPushTerminals: {
+    experimental_description: "Live push shells for a card with readable output tails",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable(), remote: z.object({ owner: z.string(), repo: z.string(), webUrl: z.string() }).nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), pushState: z.enum(["waiting", "running", "succeeded", "failed"]), pushExit: z.number().nullable(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
   },
   publicationPullRequestAction: {
+    experimental_description: "Mark a PR ready or draft, or merge it; checks stay authoritative",
     input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
     output: z.object({ ok: z.boolean(), message: z.string(), pullRequestUrl: z.string().nullable() }),
   },
   runResearchStrategy: {
+    experimental_description: "Run one more research strategy round on a card",
     input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
     output: z.object({ ok: z.boolean(), strategy: z.string().nullable(), error: z.string().nullable() }),
   },
   promoteCard: {
+    experimental_description: "Turn an exploratory card into a real BB project, files in place",
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
     output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), threadId: z.string().nullable(), error: z.string().nullable() }),
   },
   workspaceRecovery: {
+    experimental_description: "One evidenced next step for work that happened elsewhere",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ kind: z.enum(["attached", "promote", "external-project", "ambiguous", "documents-only"]), message: z.string(), workspace: z.object({ path: z.string().nullable(), isGit: z.boolean(), hasSource: z.boolean() }), candidates: z.array(z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), branch: z.string().nullable(), headSha: z.string().nullable(), changedFiles: z.number(), evidence: z.string() })), looseEvidence: z.array(z.object({ path: z.string(), kind: z.enum(["folder", "patch"]) })), recovery: z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), attachedAt: z.number() }).nullable(), audit: z.object({ cardId: z.string(), cardName: z.string(), createdAt: z.number() }).nullable(), error: z.string().nullable() }),
   },
   attachRecoveryCheckout: {
+    experimental_description: "Attach a reviewed registered checkout to an exploratory card",
     input: z.object({ cardId: z.string(), projectId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   createRecoveryAudit: {
+    experimental_description: "Create a build card auditing an attached recovery checkout",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), auditCardId: z.string().nullable(), auditCardName: z.string().nullable(), error: z.string().nullable() }),
   },
   answerExpiredQuestions: {
+    experimental_description: "Answer timed-out questions from the card, all-or-nothing like live",
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().min(1).max(10_000)).min(1).max(20) })).min(1).max(12) }).strict(),
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
   },
   advanceCard: {
+    experimental_description: "Advance a card to a stage preview under upstream transition rules",
     input: z.object({ cardId: z.string(), stage: z.string().min(1).max(40) }).strict(),
     output: z.object({ ok: z.boolean(), stdout: z.string(), error: z.string().nullable() }),
   },
   approveGate: {
+    experimental_description: "Approve a review gate and write its receipt file",
     input: z.object({ projectId: z.string().nullable(), workflowId: z.string(), gate: z.enum(["gate", "int-gate", "plan-gate", "diff-gate"]) }).strict(),
     output: z.object({ approved: z.boolean(), receiptPath: z.string().nullable(), error: z.string().nullable() }),
   },
   startWorkflow: {
+    experimental_description: "Start a cardless workflow thread (legacy entry)",
     input: z.object({ projectId: z.string(), prompt: z.string().min(1).max(20_000) }).strict(),
     output: z.object({ threadId: z.string() }),
   },
   advance: {
+    experimental_description: "Advance a cardless workflow (legacy entry)",
     input: z.object({ projectId: z.string().nullable(), stage: z.string().min(1).max(40) }).strict(),
     output: z.object({ stage: z.string(), stdout: z.string(), error: z.string().nullable() }),
   },
   ensureWorkflow: {
+    experimental_description: "Seed state files for a cardless workflow (legacy entry)",
     input: z.object({ projectId: z.string().nullable(), name: z.string().min(1).max(120), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate"]) }).strict(),
     output: z.object({ rootPath: z.string().nullable(), statePath: z.string().nullable(), error: z.string().nullable() }),
   },
   listPresets: {
+    experimental_description: "Agent presets: provider, model, reasoning, permission, environment",
     input: z.object({}).strict(),
     output: z.object({ presets: z.array(z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string(), environmentKind: z.string(), baseBranch: z.string().nullable(), machineId: z.string().nullable(), instructions: z.string(), isDefault: z.boolean(), builtIn: z.boolean() })) }),
   },
   upsertPreset: {
+    experimental_description: "Create or update an agent preset; built-ins protected",
     input: z.object({
       id: z.string().min(1).nullable().optional(),
       name: z.string().min(1).max(60),
@@ -627,82 +687,102 @@ export const rpcContract = defineRpcContract({
     output: z.object({ preset: z.object({ id: z.string(), name: z.string() }) }),
   },
   deletePreset: {
+    experimental_description: "Delete a custom agent preset",
     input: z.object({ id: z.string() }).strict(),
     output: z.object({ deleted: z.boolean(), error: z.string().nullable() }),
   },
   listBandPresets: {
+    experimental_description: "Per-phase worker preset routing with stage lists",
     input: z.object({}).strict(),
     output: z.object({ bands: z.array(z.object({ band: z.string(), presetId: z.string().nullable(), stages: z.array(z.string()) })) }),
   },
   setBandPreset: {
+    experimental_description: "Pin a preset to a workflow band; null inherits",
     input: z.object({ band: z.string(), presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   getReviewPreset: {
+    experimental_description: "Designated independent reviewer preset, if any",
     input: z.object({}).strict(),
     output: z.object({ preset: z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string() }).nullable() }),
   },
   assignReviewPreset: {
+    experimental_description: "Designate the reviewer preset; null clears",
     input: z.object({ presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   getGenerationPreset: {
+    experimental_description: "Designated draft-generation preset, if any",
     input: z.object({}).strict(),
     output: z.object({ preset: z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string() }).nullable() }),
   },
   assignGenerationPreset: {
+    experimental_description: "Designate the draft-generation preset; null clears",
     input: z.object({ presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   getReliablePreset: {
+    experimental_description: "Board-level reliable-tier preset override, if any",
     input: z.object({}).strict(),
     output: z.object({ preset: z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string() }).nullable() }),
   },
   assignReliablePreset: {
+    experimental_description: "Set the reliable-tier preset override; null clears",
     input: z.object({ presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   getDecisionApiConfig: {
+    experimental_description: "Decision API endpoint, model, and key presence, never the key",
     input: z.object({}).strict(),
     output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), keyRequired: z.boolean(), disabled: z.boolean(), provider: z.string(), configured: z.boolean() }),
   },
   setDecisionApiConfig: {
+    experimental_description: "Configure the shared decision endpoint: endpoint, key, model",
     input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional(), provider: z.string().max(20).nullable().optional() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   testDecisionApi: {
+    experimental_description: "Probe the decision endpoint with one fixed call and latency",
     input: z.object({}).strict(),
     output: z.object({ ok: z.boolean(), latencyMs: z.number().nullable(), model: z.string().nullable(), error: z.string().nullable() }),
   },
   getDecisionPoint: {
+    experimental_description: "One decision router's mode and confidence thresholds",
     input: z.object({ point: z.string() }).strict(),
     output: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()) }),
   },
   listDecisionPoints: {
+    experimental_description: "Every decision router with rules, modes, and current settings",
     input: z.object({}).strict(),
     output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), rules: z.string(), requires: z.string().nullable(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()) })) }),
   },
   setDecisionPoint: {
+    experimental_description: "Set a decision router's mode and thresholds",
     input: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()).optional() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   getReviewPolicy: {
+    experimental_description: "Independent-review gate policy: off or required",
     input: z.object({}).strict(),
     output: z.object({ mode: z.enum(["off", "required"]) }),
   },
   setReviewPolicy: {
+    experimental_description: "Set the independent-review gate policy",
     input: z.object({ mode: z.enum(["off", "required"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   assignPreset: {
+    experimental_description: "Pin a preset to one card; takes effect on restart",
     input: z.object({ cardId: z.string(), presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   setDefaultPreset: {
+    experimental_description: "Set the board default agent preset",
     input: z.object({ id: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   listProviderModels: {
+    experimental_description: "BB provider catalog with model availability for preset pickers",
     input: z.object({}).strict(),
     output: z.object({
       providers: z.array(z.object({ id: z.string(), displayName: z.string(), modelsAvailable: z.boolean() })),
@@ -710,30 +790,37 @@ export const rpcContract = defineRpcContract({
     }),
   },
   buildInfo: {
+    experimental_description: "Plugin and upstream versions, skills, and update verdicts",
     input: z.object({}).strict(),
     output: z.object({ version: z.string(), builtAt: z.string().nullable(), stelowVersion: z.string().nullable(), skills: z.array(z.string()), pluginUpdate: pluginUpdateSchema, githubRelease: githubReleaseSchema.nullable() }),
   },
   applyPluginUpdate: {
+    experimental_description: "Apply a BB-offered plugin update behind explicit confirmation",
     input: z.object({}).strict(),
     output: z.object({ applied: z.boolean(), outcome: z.enum(["rolled-back", "current", "updated", "unavailable"]), detail: z.string().nullable(), from: z.string().nullable(), to: z.string().nullable() }),
   },
   checkPluginUpdate: {
+    experimental_description: "Force a fresh plugin update check: BB plus GitHub release",
     input: z.object({}).strict(),
     output: z.object({ pluginUpdate: pluginUpdateSchema, githubRelease: githubReleaseSchema.nullable() }),
   },
   aboutLogo: {
+    experimental_description: "Product identity mark as a data URI; BB serves no static files",
     input: z.object({}).strict(),
     output: z.object({ dataUri: z.string().nullable() }),
   },
   toolStatus: {
+    experimental_description: "Host binaries the workflow can use: sem, cymbal, ripwire, ast-grep",
     input: z.object({}).strict(),
     output: z.object({ tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })) }),
   },
   installTool: {
+    experimental_description: "Install one optional host tool with the official installer",
     input: z.object({ id: z.enum(["sem", "ast-grep", "cymbal", "ripwire"]) }).strict(),
     output: z.object({ ok: z.boolean(), version: z.string().nullable(), log: z.string() }),
   },
   previewState: {
+    experimental_description: "Dev-server preview state: address, command, log, share hints",
     input: z.object({ cardId: z.string(), appOrigin: z.string().nullable().optional() }).strict(),
     output: z.object({
       available: z.boolean(),
@@ -757,14 +844,17 @@ export const rpcContract = defineRpcContract({
     }),
   },
   previewStart: {
+    experimental_description: "Start the card workspace's dev server on loopback",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   previewStop: {
+    experimental_description: "Stop the card workspace's dev server",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   previewShare: {
+    experimental_description: "Retry the Connect share URL for a live preview",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
@@ -3935,6 +4025,25 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     try { await bb.sdk.threads.stop({ threadId }); } catch { /* already gone */ }
   }
 
+  // Disposable spawns (draft bursts, independent reviews) die with their
+  // worker through lifecycleOwnerThreadId (BB 0.43 dependent threads).
+  // Hosts predating the field strip unknown keys and honor the spawn; a host
+  // that rejects it instead gets one retry without the field, so drafts and
+  // reviews never break on older daemons.
+  type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
+  async function spawnDisposable(args: SpawnArgs): Promise<{ id: string }> {
+    try {
+      return await bb.sdk.threads.spawn(args);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if ("lifecycleOwnerThreadId" in args && /lifecycleOwnerThreadId|unrecognized key/i.test(message)) {
+        const { lifecycleOwnerThreadId: _dropped, ...rest } = args as SpawnArgs & Record<string, unknown>;
+        return await bb.sdk.threads.spawn(rest as SpawnArgs);
+      }
+      throw error;
+    }
+  }
+
   // Resolution is per-kind, never blanket: a worker moving again clears
   // failure/pause signals, but a question stays until it is answered.
   // The reason travels with the timestamp so the Resolved filter can name
@@ -6021,11 +6130,61 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
       if (!prepared.snapshot.capabilities.squashMerge.available) return { ok: false, message: prepared.snapshot.capabilities.squashMerge.reason ?? "Local squash merge is unavailable.", commitSha: null };
       const base = prepared.snapshot.mergeBase?.branch;
+      const branch = prepared.snapshot.branch?.current;
       if (!base) return { ok: false, message: "BB could not determine the merge-base branch.", commitSha: null };
+      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", commitSha: null };
+      // BB exposes no local squash action (only PR squash-merge), so the
+      // panel runs `git merge --squash` in the card's own environment shell —
+      // the same visible-terminal pattern as push/sync. The script
+      // aborts/resets before restoring the branch, so a conflict never
+      // strands the checkout mid-merge (lib/squash-merge.mjs).
+      let script: string;
       try {
-        const result = await bb.sdk.environments.squashMerge({ environmentId: prepared.environmentId, mergeBaseBranch: base });
-        if (result.merged) recordPublication(cardId, "squash_merge", result.message, result.commitSha);
-        return { ok: result.merged, message: result.message, commitSha: result.commitSha };
+        script = buildSquashScript({ base, branch, message: `Squash merge ${branch} into ${base} (Stelow)` });
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "Squash refused the branch names.", commitSha: null };
+      }
+      try {
+        const terminal = await bb.sdk.terminals.create({
+          cols: 120,
+          rows: 30,
+          scope: { kind: "environment", environmentId: prepared.environmentId },
+          start: { mode: "shell" },
+          title: `Stelow squash ${branch}`,
+        });
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const live = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
+          if (live?.status === "running") break;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        try {
+          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from(`${script}\r`).toString("base64") });
+        } catch (error) {
+          await bb.sdk.terminals.close({ terminalId: terminal.id, mode: "force" }).catch(() => null);
+          return { ok: false, message: error instanceof Error ? `Squash shell opened (${terminal.id}) but the command could not be sent: ${error.message}` : `Squash shell opened (${terminal.id}) but the command could not be sent.`, commitSha: null };
+        }
+        const deadline = Date.now() + 60_000;
+        for (;;) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const out = await bb.sdk.terminals.output({ terminalId: terminal.id, tailBytes: 8000 }).catch(() => null);
+          const tail = ((out?.chunks ?? []) as Array<{ dataBase64: string }>)
+            .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
+            .join("")
+            .slice(-4000);
+          const verdict = parseSquashOutput(tail);
+          if (verdict.finished) {
+            await bb.sdk.terminals.close({ terminalId: terminal.id, mode: "force" }).catch(() => null);
+            if (verdict.exit === 0 && verdict.sha) {
+              const message = `Squashed ${branch} into ${base} as ${verdict.sha}.`;
+              recordPublication(cardId, "squash_merge", message, verdict.sha);
+              return { ok: true, message, commitSha: verdict.sha };
+            }
+            return { ok: false, message: squashExitMessage(verdict.exit, branch, base), commitSha: null };
+          }
+          if (Date.now() > deadline) {
+            return { ok: false, message: `Squash is still running in shell ${terminal.id} — finish it in BB's terminal panel, then squash again.`, commitSha: null };
+          }
+        }
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : "BB could not squash merge this workspace.", commitSha: null };
       }
@@ -6765,10 +6924,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
   });
 
-  bb.cli.register({
-    name: "stelow",
-    summary: "Inspect and interact with Stelow workflows",
-    commands: [
+  // One command table feeds registration, fallthrough usage, and help text:
+  // a new subcommand updates all three by editing this list only.
+  const STELOW_CLI_COMMANDS = [
       { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
       { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]... (repeat --question groups to ask several at once; write all content in English)" },
       { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
@@ -6793,8 +6951,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "criteria", summary: "Score an artifact against its skill's semantic criteria (advisory, read-only)", usage: "bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" },
       { name: "goldens", summary: "Measure judge agreement on labeled golden artifacts (read-only)", usage: "bb stelow goldens --skill <skill-id> --file <path> [--file ...] [--card <card_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
-    ],
+      { name: "help", summary: "Show help for a subcommand", usage: "bb stelow help [command]" },
+    ];
+  bb.cli.register({
+    name: "stelow",
+    summary: "Inspect and interact with Stelow workflows",
+    commands: STELOW_CLI_COMMANDS,
     async run(argv, ctx) {
+      if (argv[0] === "help") {
+        const text = cliHelpText(STELOW_CLI_COMMANDS, argv[1]);
+        if (text === null) {
+          const suggestion = argv[1] ? nearestCommand(argv[1], STELOW_CLI_COMMANDS.map((entry) => entry.name)) : null;
+          return { exitCode: 2, stderr: `Unknown command "${argv[1] ?? ""}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}\n${cliUsageLine(STELOW_CLI_COMMANDS)}` };
+        }
+        return { exitCode: 0, stdout: text };
+      }
       if (argv[0] === "status") {
         const projectFlag = argv.indexOf("--project");
         const projectId = projectFlag >= 0 ? argv[projectFlag + 1] : ctx.projectId;
@@ -6944,6 +7115,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           rendererId: "stelow-question",
           title: batched ? `Stelow questions (${groups.length})` : "Stelow question",
           timeoutMs: Number(process.env.STELOW_ASK_TIMEOUT_MS ?? 60 * 60 * 1000),
+          // BB 0.43 timeline rows: the pending label names the wait while the
+          // form is open, and describeSubmission decides what the transcript
+          // keeps (decisions only — BB never stores the payload or raw value).
+          // Hosts that predate the fields ignore them; the wait is unchanged.
+          presentation: { label: askTimelineLabels({ batched, count: groups.length }) },
+          describeSubmission: (value: unknown) => describeAskSubmission(value),
         } as const;
         const first = groups[0]!;
         try {
@@ -8211,10 +8388,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const prompt = buildReviewPrompt({ cardName: card.display_name ?? card.name, request: card.prompt, contractLabel, artifactContent: artifactText, deterministicFailures: [], evidence });
         let reviewThread: { id: string };
         try {
-          reviewThread = await bb.sdk.threads.spawn({
+          reviewThread = await spawnDisposable({
             projectId: card.project_id,
             environment: reviewEnvironment,
             visibility: "hidden",
+            // Disposable reviewer: archiving the worker archives the review
+            // with it (BB 0.43 dependent threads). Lifecycle only — the
+            // verdict still travels through files, never thread history.
+            ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
             title: `Stelow review: ${card.display_name ?? card.name}`,
             providerId: params.providerId,
             model: params.modelId,
@@ -8234,6 +8415,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const thread = await bb.sdk.threads.get({ threadId: reviewThread.id }).catch(() => null);
           const status = (thread as { status?: unknown } | null)?.status;
           if (status === "idle" || status === "stopping") break;
+          // The worker may be archived mid-review (dependent lifecycle above):
+          // stop polling and let the verdict read below report the miss.
+          if (status === "archived" || status === "deleted") break;
           if (status === "failed" || status === "error") {
             return { exitCode: 1, stderr: `Reviewer thread ${reviewThread.id} ended with status ${String(status)} — open it to inspect, then rerun review.` };
           }
@@ -8446,10 +8630,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
         let draftThread: { id: string };
         try {
-          draftThread = await bb.sdk.threads.spawn({
+          draftThread = await spawnDisposable({
             projectId: card.project_id,
             environment: draftEnvironment,
             visibility: "hidden",
+            // Disposable draft: archiving the worker archives the draft with
+            // it (BB 0.43 dependent threads). Lifecycle only — the text still
+            // travels through the draft record, never thread history.
+            ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
             title: `Stelow draft: ${card.display_name ?? card.name}`,
             providerId: params.providerId,
             model: params.modelId,
@@ -8468,6 +8656,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
           const status = (thread as { status?: unknown } | null)?.status;
           if (status === "idle" || status === "stopping") break;
+          // The worker may be archived mid-draft (dependent lifecycle above):
+          // stop polling and fall through to the empty-draft path below.
+          if (status === "archived" || status === "deleted") break;
           if (status === "failed" || status === "error") {
             await stopWorkerThread(draftThread.id).catch(() => undefined);
             return { exitCode: 1, stderr: `Draft thread ${draftThread.id} ended with status ${String(status)} — do the draft yourself.` };
@@ -8548,7 +8739,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      return { exitCode: 2, stderr: "Usage: bb stelow status|ask|seed|advance|done|playbook|split|doctor|sync-scopes|lock|config|schema|fan-out|verify|review|preset|manifest|export|draft" };
+      const suggestion = typeof argv[0] === "string" && argv[0] ? nearestCommand(argv[0], STELOW_CLI_COMMANDS.map((entry) => entry.name)) : null;
+      return { exitCode: 2, stderr: `Unknown command "${argv[0] ?? ""}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}\n${cliUsageLine(STELOW_CLI_COMMANDS)}` };
     },
   });
 

@@ -103,7 +103,9 @@ for (const [site, { anchor, end }] of Object.entries(doneSites)) {
 // preset mutation refuses card workers with the Manage redirect.
 assert.match(serverSource, /if \(argv\[0\] === "done"\) \{/, "the done handler exists");
 assert.match(serverSource, /if \(argv\[0\] === "playbook"\) \{/, "the playbook handler exists");
-assert.match(serverSource, /status\|ask\|seed\|advance\|done\|playbook\|split\|doctor/, "the CLI usage lists done, playbook, and split");
+assert.match(serverSource, /\{ name: "done", summary: "[^"]+", usage: "bb stelow done/, "the CLI registers done with its contract");
+assert.match(serverSource, /\{ name: "playbook", summary: "[^"]+", usage: "bb stelow playbook/, "the CLI registers playbook with its contract");
+assert.match(serverSource, /\{ name: "split", summary: "[^"]+", usage: "bb stelow split/, "the CLI registers split with its contract");
 assert.match(serverSource, /doneEligibility\(\{ kind: "build", stage: currentStage/, "build completion is gated in code, not prose");
 assert.match(serverSource, /runHelper\(\["audit-trail", "build", "--strict", "--json"\]/, "build completion creates the upstream portable audit trail behind the strict gate");
 assert.match(serverSource, /runHelper\(\["audit-trail", "check", "--strict", "--json"\]/, "build completion re-validates the portable audit trail it just wrote");

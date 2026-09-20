@@ -207,6 +207,12 @@ assert.doesNotMatch(app, /agent's own automatic check/, "the review picker no lo
 assert.doesNotMatch(app, /function WorkflowChoiceSelect</, "the cramped select is gone, not duplicated");
 assert.match(server, /Questions are English-only/, "the worker cannot opt a structured card question into another locale");
 assert.match(server, /englishQuestionContentError\(group\.question, group\.options\)/, "the CLI rejects Portuguese structured question content before it can create a mismatched card form");
+assert.match(server, /presentation: \{ label: askTimelineLabels\(\{ batched, count: groups\.length \}\) \}/, "the blocking ask names its wait on BB's timeline row instead of a generic label");
+assert.match(server, /describeSubmission: \(value: unknown\) => describeAskSubmission\(value\)/, "the settled row keeps decisions only — BB never stores the payload or raw value");
+assert.match(app, /id: "open-card-for-thread"/, "the palette opens the current thread's card without leaving BB");
+assert.match(app, /params: \{ threadId: context\.threadId \}/, "the palette command hands the drawer a thread, never a guessed card");
+assert.match(app, /cardByWorkerThread/, "the card drawer resolves palette threads through the owning card");
+assert.match(app, /This thread is not a Stelow worker thread/, "a palette open from a foreign thread says so instead of an empty card");
 assert.match(answerExpired, /formatBatchContinuation\(decisions\)/, "recovered answers use the same neutral continuation as live answers");
 assert.doesNotMatch(answerExpired, /question that timed out/, "recovered answer delivery does not leak timeout jargon into the worker thread");
 assert.doesNotMatch(app, />Show<\/span><button/, "no detached Show label explains the read filter");

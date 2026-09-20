@@ -21,3 +21,11 @@ export declare function questionCopy(): {
   recoveryHeading: string;
 };
 export declare function englishQuestionContentError(question: unknown, options?: Array<{ label?: unknown; description?: unknown }> | null): string | null;
+export declare function askTimelineLabels(options: { batched?: unknown; count?: unknown }): {
+  pending: string;
+  completed: string;
+};
+export declare function describeAskSubmission(value: unknown): {
+  title?: string;
+  detail?: string;
+};
