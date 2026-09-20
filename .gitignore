@@ -6,3 +6,7 @@ data/*.db
 data/.skills-sync-state.json
 # Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)
 .stelow/
+# Stelow board tracking (per-install runtime state)
+stelow.json
+# One-shot 0.3 migration backup
+.stelow-0.3-backup/
