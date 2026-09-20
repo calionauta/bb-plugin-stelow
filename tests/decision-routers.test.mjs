@@ -69,6 +69,7 @@ assert.ok(probeBody.includes("latencyMs"), "probes report latency");
 assert.ok(probeBody.includes("STELOW_DECISION_API=0"), "probes refuse naming the variable");
 assert.match(server, /disabled: z\.boolean\(\)/, "the config contract carries the disabled flag");
 assert.ok(configBody.includes("disabled: isDecisionApiDisabled(process.env)"), "reads report the disabled flag");
+assert.ok(configBody.includes("configured: row !== undefined"), "reads report whether anything was ever saved (defaults vs configured)");
 // Provider adapters: the config row carries a provider with a jev default
 // for pre-adapter installs; unknown names refuse with the valid set.
 assert.match(server, /ADD COLUMN provider TEXT NOT NULL DEFAULT 'jev'/, "pre-adapter installs migrate with the jev default");
@@ -105,6 +106,7 @@ assert.ok(seamBody.includes("triage intent router fell back to built-in rules"),
 assert.ok(seamBody.includes("isDecisionApiDisabled(process.env)"), "the seam consults the kill switch first");
 assert.ok(seamBody.includes("provider,"), "the seam forwards the configured provider");
 assert.ok(probeBody.includes("buildProbeCall(provider)"), "the probe speaks the provider's native shape");
+assert.match(app, /Showing defaults — nothing saved yet/, "fresh installs state that defaults are in effect");
 assert.match(app, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
 assert.match(app, /has no key — api routers answer with built-in rules/, "keyless api routers state why they degrade");
 assert.match(app, /disabled={busy \|\| !dirty \|\| !valid}/, "threshold saves stay disabled until the value is a 0–1 number");

@@ -659,7 +659,7 @@ export const rpcContract = defineRpcContract({
   },
   getDecisionApiConfig: {
     input: z.object({}).strict(),
-    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), keyRequired: z.boolean(), disabled: z.boolean(), provider: z.string() }),
+    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), keyRequired: z.boolean(), disabled: z.boolean(), provider: z.string(), configured: z.boolean() }),
   },
   setDecisionApiConfig: {
     input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional(), provider: z.string().max(20).nullable().optional() }).strict(),
@@ -6356,6 +6356,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         keyRequired: providerRequiresKey(provider),
         disabled: isDecisionApiDisabled(process.env),
         provider,
+        configured: row !== undefined,
       };
     },
 

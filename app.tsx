@@ -3874,7 +3874,7 @@ function PresetExecutionPicker({ value, onChange }: {
   );
 }
 
-type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; keyRequired: boolean; disabled: boolean; provider: string };
+type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; keyRequired: boolean; disabled: boolean; provider: string; configured: boolean };
 type DecisionRouterPoint = { id: string; label: string; description: string; modes: string[]; mode: string; thresholds: Record<string, number> };
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
@@ -3935,6 +3935,7 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
   return (
     <div className="grid gap-2">
       <p className="text-xs text-muted-foreground">One decision endpoint for every router below. TypeSafe AI&apos;s Jev-compatible APIs (state + questions schema) take endpoint + key + model — any provider speaking that schema works here; classifier.dev (labels schema) takes endpoint only, no key.</p>
+      {status && !status.configured ? <p className="text-xs text-muted-foreground" role="status">Showing defaults — nothing saved yet. Save to make these yours.</p> : null}
       {status?.disabled ? <p className="text-xs text-muted-foreground" role="status">Decision API is disabled on this host (STELOW_DECISION_API=0). Routers answer with built-in rules.</p> : null}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
         <select
