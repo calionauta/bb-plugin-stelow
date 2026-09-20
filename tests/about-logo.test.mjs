@@ -54,6 +54,15 @@ assert.match(server, /bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: bb\.pluginId 
 assert.match(server, /bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the explicit update operation");
 assert.match(server, /async buildInfo\(\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*await refreshPluginUpdate\(\);/, "each UI read obtains a fresh BB-owned update status");
 assert.match(app, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
+// Version story reads top-down: update verdict, its notices, the skills
+// pin, then the description. A notice below the description would read as
+// unrelated; a pin far from the verdict hides what the build carries.
+const aboutUpdateAt = app.indexOf("{pluginUpdateNotice");
+const aboutDescAt = app.indexOf("This plugin hosts Stelow inside bb");
+assert.ok(aboutUpdateAt >= 0 && aboutDescAt >= 0 && aboutUpdateAt < aboutDescAt, "update notices sit with the update verdict, above the description");
+const aboutPinAt = app.indexOf("pinned to Stelow {buildInfo.stelowVersion");
+assert.ok(aboutPinAt >= 0 && aboutPinAt < aboutDescAt, "the methodology pin reads with the version story, above the description");
+assert.match(app, /\? "Up to date"\n/, "the current verdict names no version — the heading beside it already does");
 assert.match(app, /Update plugin…/, "About offers an explicit, confirmed plugin update");
 assert.match(app, /APPLY_SETTLE_MS/, "applying timeboxes the quiet phase so “Updating…” can’t spin forever when the reload severs the RPC channel");
 assert.match(app, /showing the last known verdict/, "a failed fresh check keeps the last verdict visible instead of erasing it");

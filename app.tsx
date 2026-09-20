@@ -1689,7 +1689,7 @@ function PluginUpdateStatus({ version, update, github, confirming, updating, che
       ? `Update from ${shortRef(update.installed, update.installedDisplay) ?? "the installed version"} to ${shortRef(update.candidate, update.candidateDisplay) ?? "the latest version"}?`
       : `Update available — ${shortRef(update.candidate, update.candidateDisplay) ?? "a new version"}`)
     : update.outcome === "current"
-      ? `Up to date${shortRef(update.installed, update.installedDisplay) ? ` (${shortRef(update.installed, update.installedDisplay)})` : ""}`
+      ? "Up to date"
       : update.outcome === "checking"
         ? "Checking BB for a compatible plugin update…"
         : update.outcome === "pinned" || update.outcome === "incompatible"
@@ -1907,7 +1907,8 @@ function AboutPanel() {
                   onApply={applyPluginUpdate}
                 />
               ) : null}
-              <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
+              {pluginUpdateError ? <p className="text-xs text-destructive" role="alert">{pluginUpdateError}</p> : null}
+              {pluginUpdateNotice ? <p className="text-xs text-primary" role="status">{pluginUpdateNotice}</p> : null}
               {buildInfo ? (
                 <div className="space-y-1 text-xs text-muted-foreground">
                   <p className="flex items-center gap-1.5">
@@ -1916,8 +1917,10 @@ function AboutPanel() {
                       {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
                     </button>
                   </p>
+                  <p>Skills refresh with plugin updates — the pin above names the methodology this build carries.</p>
                 </div>
               ) : null}
+              <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               <div className="flex flex-wrap items-center gap-2">
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
                 {confirmReset ? (
@@ -1929,8 +1932,6 @@ function AboutPanel() {
                   <Button size="sm" variant="outline" onClick={() => setConfirmReset(true)} title="Show the first-visit setup dialogs again">Reset onboarding</Button>
                 )}
                 </div>
-              {pluginUpdateError ? <p className="text-xs text-destructive" role="alert">{pluginUpdateError}</p> : null}
-              {pluginUpdateNotice ? <p className="text-xs text-primary" role="status">{pluginUpdateNotice}</p> : null}
               </section>
               <HostToolsSection tools={hostTools} onInstall={installHostTool} installingId={installingToolId} errors={installErrors} />
             </div>
