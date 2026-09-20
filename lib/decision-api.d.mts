@@ -4,6 +4,8 @@ export declare const DECISION_API_TIMEOUT_MS: number;
 export declare const DECISION_STATE_MAX_CHARS: number;
 export declare const DECISION_API_KEY_ENV_VARS: string[];
 
+export declare function isDecisionApiDisabled(env?: Record<string, string | undefined> | null): boolean;
+
 export interface DecisionApiKeyResolution {
   key: string | null;
   source: "settings" | "env" | null;
