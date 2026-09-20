@@ -630,14 +630,16 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
   Per-judgment modes — Built-in rules (no extra calls, default), Decision
   API with a confidence floor, or Preset judge — plus the shared typed client
-  (`lib/decision-api.mjs`, fail-soft result objects, never throws). Each
-  router may override the shared endpoint field by field (provider, endpoint,
-  key, model) or judge through any provider preset — including one no stage
-  uses — via one hidden thread with a strict-JSON verdict contract
-  (`lib/preset-judge.mjs`); failures fall back to built-in rules. Preset
-  judging is offered only on low-frequency points (triage intent, artifact
-  criteria); hot paths stay on rules/api so judgments never burn worker
-  turns. Triage intent seeds a build card's intent before triage when
+  (`lib/decision-api.mjs`, fail-soft result objects, never throws). The
+  endpoint, key, and model live once in the Decision API section above;
+  routers only pick a mode, a confidence floor, or a judge preset — any
+  provider preset, including one no stage uses — via one hidden thread with
+  a strict-JSON verdict contract (`lib/preset-judge.mjs`); failures fall
+  back to built-in rules. Preset judging is offered only on low-frequency
+  points (triage intent, artifact criteria); hot paths stay on rules/api
+  so judgments never burn worker turns. Mode selection stages locally and
+  saves explicitly; saves refresh only the routers section, never the
+  board. Triage intent seeds a build card's intent before triage when
   confident; the worker always re-settles it, so the seed is advisory.
   Unknown modes degrade to rules; refusals name the valid set.
 - **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).

@@ -209,6 +209,16 @@ assert.match(app, /knownDefaults\.includes\(endpoint\)/, "custom endpoint URLs s
 assert.ok(seamBody.includes("endpoint: route.endpoint ?? defaultEndpointFor(provider)"), "the seam sends the point route endpoint, defaulting only when blank");
 assert.doesNotMatch(app, /preset-thread/i, "no thread jargon survives in the UI");
 
+// Router rows save explicitly and refresh locally: flipping the mode select
+// stores nothing by itself (preset mode must explain itself first), and a
+// save never pays for a board reload — point state lives nowhere else.
+assert.match(app, /const \[modeDraft, setModeDraft\] = useState\(point\.mode\)/, "mode selection stages locally before saving");
+assert.match(app, /\{modeDirty && modeDraft !== "preset" \? <Button/, "mode flips save through one explicit button");
+assert.doesNotMatch(app, /void setMode\(event\.target\.value\)/, "no immediate save rides the select anymore");
+assert.match(app, /role=\{isError \? "alert" : "status"\}/, "failures announce as alerts, confirmations stay status");
+assert.match(app, /refresh: \(\) => Promise<void>/, "rows refresh their own section after saving");
+assert.match(app, /function DecisionRoutersSection\(\{ rpc \}/, "the section takes no board reload — router saves stay local");
+
 // Criteria command wiring: read-only advisory judging through the router.
 // A branch that writes card state or publishes realtime would fail here.
 assert.match(server, /name: "criteria", summary: "Score an artifact against its skill's semantic criteria/, "the command is listed");

@@ -4004,101 +4004,69 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
   );
 }
 
-function DecisionRouterRow({ rpc, point, presets, onChanged }: { rpc: ManagerRpc; point: DecisionRouterPoint; presets: RouterPresetOption[]; onChanged: () => Promise<void> }) {
+function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; point: DecisionRouterPoint; presets: RouterPresetOption[]; refresh: () => Promise<void> }) {
+  // Mode selection is a local draft until saved: flipping the select never
+  // fires a request by itself, so preset mode can explain itself and ask
+  // for a preset before anything is stored.
+  const [modeDraft, setModeDraft] = useState(point.mode);
   const [routeAt, setRouteAt] = useState(String(point.thresholds.routeAt ?? 0.6));
-  const [routeProvider, setRouteProvider] = useState(point.route?.provider ?? "");
-  const [routeEndpoint, setRouteEndpoint] = useState(point.route?.endpoint ?? "");
-  const [routeModel, setRouteModel] = useState(point.route?.model ?? "");
-  const [routeKey, setRouteKey] = useState(point.route?.apiKey ?? "");
   const [presetId, setPresetId] = useState(point.presetId ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  async function setMode(mode: string) {
-    setBusy(true); setMessage(null);
+  const [isError, setIsError] = useState(false);
+  useEffect(() => {
+    setModeDraft(point.mode);
+    setRouteAt(String(point.thresholds.routeAt ?? 0.6));
+    setPresetId(point.presetId ?? "");
+  }, [point]);
+  function note(text: string, error: boolean) {
+    setMessage(text);
+    setIsError(error);
+  }
+  async function save(input: { mode?: string; thresholds?: Record<string, number>; presetId?: string | null }) {
+    setBusy(true); note("", false);
     try {
-      // Switching modes preserves the stored route and preset (the RPC
-      // keeps absent params) — flipping back never loses configuration.
-      const result = await rpc.call("setDecisionPoint", { point: point.id, mode });
-      if (result.error) setMessage(result.error); else await onChanged();
+      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: input.mode ?? point.mode, ...(input.thresholds ? { thresholds: input.thresholds } : {}), ...(input.presetId !== undefined ? { presetId: input.presetId } : {}) });
+      if (result.error) note(result.error, true); else await refresh();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed.");
+      note(err instanceof Error ? err.message : "Save failed.", true);
     } finally {
       setBusy(false);
     }
   }
   async function saveThreshold() {
-    setBusy(true); setMessage(null);
+    setBusy(true); note("", false);
     try {
       const result = await rpc.call("setDecisionPoint", { point: point.id, mode: point.mode, thresholds: { routeAt: Number(routeAt) } });
-      if (result.error) setMessage(result.error); else await onChanged();
+      if (result.error) note(result.error, true); else await refresh();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed.");
+      note(err instanceof Error ? err.message : "Save failed.", true);
     } finally {
       setBusy(false);
     }
   }
   const dirty = Number(routeAt) !== (point.thresholds.routeAt ?? 0.6);
   const valid = routeAt.trim() !== "" && Number.isFinite(Number(routeAt)) && Number(routeAt) >= 0 && Number(routeAt) <= 1;
-  async function saveRoute() {
-    setBusy(true); setMessage(null);
-    try {
-      const result = await rpc.call("setDecisionPoint", {
-        point: point.id,
-        mode: point.mode,
-        route: {
-          provider: routeProvider.trim() === "" ? null : routeProvider.trim(),
-          endpoint: routeEndpoint.trim() === "" ? null : routeEndpoint.trim(),
-          apiKey: routeKey.trim() === "" ? null : routeKey.trim(),
-          model: routeModel.trim() === "" ? null : routeModel.trim(),
-        },
-      });
-      if (result.error) setMessage(result.error); else await onChanged();
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function clearRoute() {
-    setBusy(true); setMessage(null);
-    try {
-      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: point.mode, route: null });
-      if (result.error) setMessage(result.error); else { setRouteProvider(""); setRouteEndpoint(""); setRouteModel(""); setRouteKey(""); await onChanged(); }
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function savePreset() {
-    setBusy(true); setMessage(null);
-    try {
-      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: "preset", presetId: presetId.trim() === "" ? null : presetId.trim() });
-      if (result.error) setMessage(result.error); else await onChanged();
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-  const routeDirty = (point.route?.provider ?? "") !== routeProvider || (point.route?.endpoint ?? "") !== routeEndpoint || (point.route?.model ?? "") !== routeModel || (point.route?.apiKey ?? "") !== routeKey;
+  const modeDirty = modeDraft !== point.mode;
   return (
     <div className="space-y-1 rounded-md border bg-muted/30 px-3 py-2">
       <div className="flex items-center gap-2 text-sm">
         <span className="min-w-0 flex-1 truncate" title={point.description}><span className="font-medium">{point.label}</span></span>
         <select
+          aria-label={`${point.label} mode`}
           className="cursor-pointer h-9 shrink-0 rounded-md border bg-background px-2 text-sm"
-          value={point.mode}
+          value={modeDraft}
           disabled={busy}
-          onChange={(event) => void setMode(event.target.value)}
+          onChange={(event) => { setModeDraft(event.target.value); note("", false); }}
         >
           {point.modes.map((mode) => <option key={mode} value={mode}>{modeLabel(mode)}</option>)}
         </select>
+        {modeDirty && modeDraft !== "preset" ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void save({ mode: modeDraft })}>Save</Button> : null}
       </div>
       <p className="text-[11px] text-muted-foreground">{point.description}</p>
-      {point.mode === "rules" ? <p className="text-[11px] text-muted-foreground">Built-in rules: {point.rules}</p> : null}
+      {point.mode === "rules" && modeDraft === "rules" ? <p className="text-[11px] text-muted-foreground">Built-in rules: {point.rules}</p> : null}
       {point.requires ? <p className="text-[11px] text-muted-foreground">Needs: {point.requires}</p> : null}
-      {point.mode === "api" ? (
+      {modeDraft === "api" ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <label className="flex flex-1 items-center gap-2"><span className="shrink-0">Act at confidence ≥</span>
             <Input type="number" min="0" max="1" step="0.05" className="h-9" value={routeAt} onChange={(event) => setRouteAt(event.target.value)} />
@@ -4106,45 +4074,25 @@ function DecisionRouterRow({ rpc, point, presets, onChanged }: { rpc: ManagerRpc
           <Button size="sm" variant="outline" disabled={busy || !dirty || !valid} onClick={() => void saveThreshold()}>Save</Button>
         </div>
       ) : null}
-      {point.mode === "api" ? (
+      {modeDraft === "preset" ? (
         <div className="space-y-1 text-xs text-muted-foreground">
-          <p className="text-[11px]">Route override — blank fields use the shared endpoint above.</p>
-          <div className="grid grid-cols-2 gap-1">
-            <label className="flex flex-col gap-1"><span>Provider</span>
-              <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={routeProvider} disabled={busy} onChange={(event) => setRouteProvider(event.target.value)}>
-                <option value="">Shared ({DECISION_PROVIDERS.find((entry) => entry.id === "jev")?.label ?? "default"})</option>
-                {DECISION_PROVIDERS.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1"><span>Model</span><Input className="h-9" value={routeModel} disabled={busy} onChange={(event) => setRouteModel(event.target.value)} placeholder="Shared" /></label>
-            <label className="flex flex-col gap-1 col-span-2"><span>Endpoint</span><Input className="h-9" value={routeEndpoint} disabled={busy} onChange={(event) => setRouteEndpoint(event.target.value)} placeholder="Shared" /></label>
-            <label className="flex flex-col gap-1 col-span-2"><span>API key</span><Input type="password" className="h-9" value={routeKey} disabled={busy} onChange={(event) => setRouteKey(event.target.value)} placeholder="Shared" autoComplete="off" /></label>
-          </div>
-          <div className="flex justify-end gap-2">
-            {point.route ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => void clearRoute()}>Use shared</Button> : null}
-            <Button size="sm" variant="outline" disabled={busy || !routeDirty} onClick={() => void saveRoute()}>Save route</Button>
-          </div>
-        </div>
-      ) : null}
-      {point.mode === "preset" ? (
-        <div className="space-y-1 text-xs text-muted-foreground">
-          <p className="text-[11px]">Judge preset — one hidden thread answers per judgment. Any preset works, including one no stage uses.</p>
+          <p className="text-[11px]">Preset judge asks one of your provider presets to answer this judgment in a hidden thread — one thread per judgment, archived right after. Pick this when you trust one of your own models more than the shared endpoint above. Any preset works, including one no workflow stage uses. Each judgment costs a provider turn; failures fall back to built-in rules.</p>
           <div className="flex items-center gap-2">
-            <select className="cursor-pointer h-9 flex-1 rounded-md border bg-background px-2 text-sm" value={presetId} disabled={busy} onChange={(event) => setPresetId(event.target.value)}>
+            <select aria-label={`${point.label} judge preset`} className="cursor-pointer h-9 flex-1 rounded-md border bg-background px-2 text-sm text-foreground" value={presetId} disabled={busy} onChange={(event) => { setPresetId(event.target.value); note("", false); }}>
               <option value="">Pick a preset…</option>
               {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
             </select>
-            <Button size="sm" variant="outline" disabled={busy || presetId.trim() === ""} onClick={() => void savePreset()}>Save preset</Button>
+            <Button size="sm" variant="outline" disabled={busy || presetId.trim() === ""} onClick={() => void save({ mode: "preset", presetId: presetId.trim() })}>Save preset</Button>
           </div>
-          {point.presetId ? <p className="text-[11px]">Judging on {presets.find((preset) => preset.id === point.presetId)?.name ?? point.presetId}.</p> : null}
+          {point.mode === "preset" && point.presetId ? <p className="text-[11px]">Judging on {presets.find((preset) => preset.id === point.presetId)?.name ?? point.presetId}.</p> : null}
         </div>
       ) : null}
-      {message ? <p className="text-[11px] text-muted-foreground" role="status">{message}</p> : null}
+      {message ? <p className="text-[11px] text-destructive" role={isError ? "alert" : "status"}>{message}</p> : null}
     </div>
   );
 }
 
-function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged: () => Promise<void> }) {
+function DecisionRoutersSection({ rpc }: { rpc: ManagerRpc }) {
   const [points, setPoints] = useState<DecisionRouterPoint[]>([]);
   const [presets, setPresets] = useState<RouterPresetOption[]>([]);
   const [keyMissing, setKeyMissing] = useState(false);
@@ -4155,11 +4103,14 @@ function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged
   }, [rpc]);
   useEffect(() => { reload(); }, [reload]);
   const keylessApi = keyMissing && points.some((point) => point.mode === "api");
+  // Router saves refresh only this section: point state lives nowhere else,
+  // so flipping a mode never pays for a board reload.
+  const refresh = useCallback(async () => { reload(); }, [reload]);
   return (
     <div className="grid gap-2">
       <p className="text-xs text-muted-foreground">Each router picks how one judgment runs. Built-in rules run inside existing workers and host code — no extra calls, no keys. Decision API needs the section above. Anything unconfigured answers with built-in rules.</p>
       {keylessApi ? <p className="text-xs text-muted-foreground" role="status">Decision API has no key — api routers answer with built-in rules until one is set.</p> : null}
-      {points.map((point) => <DecisionRouterRow key={point.id} rpc={rpc} point={point} presets={presets} onChanged={async () => { await onChanged(); reload(); }} />)}
+      {points.map((point) => <DecisionRouterRow key={point.id} rpc={rpc} point={point} presets={presets} refresh={refresh} />)}
     </div>
   );
 }
@@ -4380,7 +4331,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           <DecisionApiSection rpc={rpc} />
         </DisclosureSection>
         <DisclosureSection title="Decision routers" hint="per-judgment modes" defaultOpen={false}>
-          <DecisionRoutersSection rpc={rpc} onChanged={onChanged} />
+          <DecisionRoutersSection rpc={rpc} />
         </DisclosureSection>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
