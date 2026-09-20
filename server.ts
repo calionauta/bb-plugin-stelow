@@ -42,7 +42,7 @@ import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFinger
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
-import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
+import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, DECISION_PROVIDERS, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
 import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent } from "./lib/decision-points.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
@@ -53,7 +53,7 @@ import { evidenceStatus } from "./lib/research-evidence.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
 import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
-import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
+import { canEditWorkflowIntent, freshStatusForReseed, normalizeBuildSeedIntent, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents, truncateCause } from "./lib/worker-failure.mjs";
 import { MAX_SPAWN_RETRIES, claimSpawnRetry, isRetryableSpawnError, resetSpawnRetry, spawnRetryDelayMs } from "./lib/spawn-retry.mjs";
@@ -659,10 +659,10 @@ export const rpcContract = defineRpcContract({
   },
   getDecisionApiConfig: {
     input: z.object({}).strict(),
-    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), disabled: z.boolean() }),
+    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), keyRequired: z.boolean(), disabled: z.boolean(), provider: z.string() }),
   },
   setDecisionApiConfig: {
-    input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional() }).strict(),
+    input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional(), provider: z.string().max(20).nullable().optional() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   testDecisionApi: {
@@ -1022,7 +1022,7 @@ function parseNextStages(rootPath: string | null, currentStage: string): string[
       // hides a real target (the whole token contains "(" and is dropped).
       const value = match[1].split("(")[0];
       for (const token of value.split(",")) {
-        const stage = token.replace(/[\[\]\s"']/g, "");
+        const stage = token.replace(/[[\]\s"']/g, "");
         if (stage && /^[a-z][a-z0-9-]*$/.test(stage)) stages.add(stage);
       }
     }
@@ -1610,6 +1610,12 @@ export default async function plugin(bb: BbPluginApi) {
     model TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
+  // Provider column for installs created before provider adapters: jev is
+  // the wire-compatible default, so old rows keep working unchanged.
+  const decisionApiColumns = db.prepare("PRAGMA table_info(decision_api_config)").all() as Array<{ name: string }>;
+  if (!decisionApiColumns.some((column) => column.name === "provider")) {
+    db.exec("ALTER TABLE decision_api_config ADD COLUMN provider TEXT NOT NULL DEFAULT 'jev'");
+  }
   // Per-point router modes + thresholds as free-form JSON. Absent rows mean
   // registry defaults (built-in rules), so new points need no migration.
   db.exec(`CREATE TABLE IF NOT EXISTS decision_points (
@@ -1894,15 +1900,17 @@ ${prompt}`;
       if (isDecisionApiDisabled(process.env)) return "unknown";
       const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_TRIAGE_INTENT) as { mode: string; thresholds: string } | undefined;
       if (normalizePointMode(point?.mode, "rules") !== "api") return "unknown";
-      const cfg = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
+      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+      const provider = normalizeDecisionProvider(cfg?.provider ?? "jev");
       const { key } = resolveDecisionApiKey({ storedKey: cfg?.api_key ?? null, env: process.env });
-      if (!key) return "unknown";
+      if (!key && providerRequiresKey(provider)) return "unknown";
       let stored: unknown = null;
       try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
       const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_TRIAGE_INTENT));
       const result = await evaluateDecisionCall({
-        endpoint: cfg?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT,
-        apiKey: key,
+        provider,
+        endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
+        apiKey: key ?? "",
         model: normalizeDecisionApiModel(cfg?.model, DECISION_API_DEFAULT_MODEL),
         state: promptText,
         questions: triageIntentQuestions(),
@@ -1969,7 +1977,11 @@ ${prompt}`;
     if (isExplore && !exploreStage) {
       throw new Error(`Unknown explore technique "${stageId ?? ""}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
     }
-    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : await seedBuildIntentFromRouter(prompt);
+    // Explicit intent wins (import heuristic, reseed reclassification);
+    // otherwise the triage router may seed from the Decision API, else the
+    // worker settles "unknown" in triage as before.
+    const explicitIntent = normalizeBuildSeedIntent(intent);
+    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : explicitIntent !== "unknown" ? explicitIntent : await seedBuildIntentFromRouter(prompt);
     // Canonical gates: legacy ladder strings normalize through the compat
     // map, so the composer, board defaults, and reseed all carry the set.
     const reviewGates = normalizeReviewGates(reviewMode);
@@ -2020,7 +2032,6 @@ ${prompt}`;
       : selectedCardEnvironment(environment, workerEnvironment(workspaceSource, params));
     const selectedManagedWorktree = isManagedWorktreeEnvironment(selectedEnvironment);
     const creationStamp = roundTimestamp();
-    const creationAt = new Date().toISOString();
     const creationRoundFile = isResearch && researchStrategy && seed.stateDir
       ? roundRelPath(seed.stateDir, rootPath, roundFileName(researchStrategy.id, 1, creationStamp))
       : "";
@@ -2076,7 +2087,7 @@ ${prompt}`;
 
 ${selectedManagedWorktree ? "BB provisioned the managed worktree selected by the user. Treat your current working directory as the code root; never redirect code changes to the project source path used for Stelow's workflow metadata." : ""}
 
-Step 1 — classify intent first: this card starts as intent=\`unknown\` (no intent picker exists at creation, so every card starts here). Read the request, pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review gates=\`${formatReviewGates(reviewGates)}\` (${reviewRung}) are already recorded in state.md — use them, never re-ask.
+Step 1 — verify intent first: this card starts as intent=\`${initialIntent}\` in state.md (pre-seeded when the request already carried one, else \`unknown\`). Read the request, confirm or pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review gates=\`${formatReviewGates(reviewGates)}\` (${reviewRung}) are already recorded in state.md — use them, never re-ask.
 
 Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
 
@@ -4931,7 +4942,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : effectiveActivity === "awaiting-answer" ? "question"
         : errorNeedsAttention(card.status, card.last_error, effectiveActivity) ? "error"
         : null) as "question" | "error" | "idle" | null;
-      const pendingFirst = pending[0] ?? null;
       // Worker ledger, newest first. The open row (endedAt null) is the live
       // worker; older rows are archived threads replaced along the way.
       const workerRows = db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>;
@@ -6335,25 +6345,30 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // The key itself never leaves the host: reads report presence + source
     // only, so panels and logs cannot leak it.
     async getDecisionApiConfig() {
-      const row = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
+      const row = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
       const { key, source } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
+      const provider = normalizeDecisionProvider(row?.provider ?? "jev");
       return {
-        endpoint: row?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT,
+        endpoint: row?.endpoint ?? defaultEndpointFor(provider),
         model: normalizeDecisionApiModel(row?.model, DECISION_API_DEFAULT_MODEL),
         hasKey: key !== null,
         keySource: source,
+        keyRequired: providerRequiresKey(provider),
         disabled: isDecisionApiDisabled(process.env),
+        provider,
       };
     },
 
-    async setDecisionApiConfig({ endpoint, apiKey, model }) {
-      const current = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
-      const nextEndpoint = endpoint === undefined ? (current?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT) : (endpoint ?? DECISION_API_DEFAULT_ENDPOINT);
+    async setDecisionApiConfig({ endpoint, apiKey, model, provider }) {
+      const current = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+      const nextProvider = provider === undefined ? normalizeDecisionProvider(current?.provider ?? "jev") : normalizeDecisionProvider(provider, "");
+      if (!nextProvider) return { ok: false, error: `Unknown provider "${provider}". Available: ${DECISION_PROVIDERS.join(", ")}.` };
+      const nextEndpoint = endpoint === undefined ? (current?.endpoint ?? defaultEndpointFor(nextProvider)) : (endpoint ?? defaultEndpointFor(nextProvider));
       if (!isDecisionApiEndpointValid(nextEndpoint)) return { ok: false, error: "Endpoint must be an http(s) URL (e.g. https://api.typesafe.ai/v1/systemone)." };
       const nextModel = model === undefined ? (current?.model ?? DECISION_API_DEFAULT_MODEL) : normalizeDecisionApiModel(model, DECISION_API_DEFAULT_MODEL);
       if (!nextModel) return { ok: false, error: "Model must name a version (e.g. jev-latest)." };
       const nextKey = apiKey === undefined ? (current?.api_key ?? "") : (apiKey ?? "");
-      db.prepare("INSERT OR REPLACE INTO decision_api_config (id, endpoint, api_key, model, updated_at) VALUES (1, ?, ?, ?, ?)").run(nextEndpoint.trim(), nextKey, nextModel, now());
+      db.prepare("INSERT OR REPLACE INTO decision_api_config (id, endpoint, api_key, model, provider, updated_at) VALUES (1, ?, ?, ?, ?, ?)").run(nextEndpoint.trim(), nextKey, nextModel, nextProvider, now());
       return { ok: true, error: null };
     },
 
@@ -6362,15 +6377,18 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // paths fail soft to built-in rules instead.
     async testDecisionApi() {
       if (isDecisionApiDisabled(process.env)) return { ok: false, latencyMs: null, model: null, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
-      const row = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
+      const row = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+      const provider = normalizeDecisionProvider(row?.provider ?? "jev");
       const { key } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
-      if (!key) return { ok: false, latencyMs: null, model: null, error: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+      if (!key && providerRequiresKey(provider)) return { ok: false, latencyMs: null, model: null, error: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+      const probe = buildProbeCall(provider);
       const result = await evaluateDecisionCall({
-        endpoint: row?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT,
-        apiKey: key,
+        provider,
+        endpoint: row?.endpoint ?? defaultEndpointFor(provider),
+        apiKey: key ?? "",
         model: normalizeDecisionApiModel(row?.model, DECISION_API_DEFAULT_MODEL),
-        state: "The login button does nothing when clicked.",
-        questions: { defect: { type: "noul", instructions: "Does this message report a defect?" } },
+        state: probe.state,
+        questions: probe.questions,
       });
       if (!result.ok) return { ok: false, latencyMs: null, model: null, error: result.error ?? "the Decision API call failed" };
       return { ok: true, latencyMs: result.latencyMs ?? null, model: result.model ?? null, error: null };

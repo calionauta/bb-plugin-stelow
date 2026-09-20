@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { canEditWorkflowIntent, canReclassifyWorkflow, freshStatusForReseed, resolveReseedIntent } from "../lib/workflow-intent-policy.mjs";
+import { canEditWorkflowIntent, canReclassifyWorkflow, freshStatusForReseed, normalizeBuildSeedIntent, resolveReseedIntent } from "../lib/workflow-intent-policy.mjs";
 
 assert.equal(canEditWorkflowIntent({ kind: "build", stage: "triage", status: "draft" }), true, "Build type is editable only during triage");
 assert.equal(canEditWorkflowIntent({ kind: "build", stage: "triage", status: "archived" }), false, "an archived triage card is immutable");
@@ -16,5 +16,11 @@ assert.deepEqual(resolveReseedIntent({ kind: "research", intent: "investigate" }
 assert.equal(resolveReseedIntent({ kind: "research", intent: "investigate" }, "feature"), null, "lightweight cards cannot receive a Build route while reseeding");
 assert.equal(freshStatusForReseed({ kind: "build", status: "completed" }, true), "draft", "reclassifying a completed Build card reopens it at triage");
 assert.equal(freshStatusForReseed({ kind: "explore", status: "completed" }, false), "pending", "lightweight fresh runs return to their pending board state");
+
+assert.equal(normalizeBuildSeedIntent("bugfix"), "bugfix", "an explicit caller choice seeds the card");
+assert.equal(normalizeBuildSeedIntent("unknown"), "unknown", "unknown settles in triage");
+assert.equal(normalizeBuildSeedIntent("explore"), "unknown", "the explore-only route never seeds a build card");
+assert.equal(normalizeBuildSeedIntent("nonsense"), "unknown", "garbage settles in triage instead of routing anywhere");
+assert.equal(normalizeBuildSeedIntent(null), "unknown", "missing intent settles in triage");
 
 console.log("workflow intent policy test ok: direct edits, reclassification, and terminal cards stay distinct");

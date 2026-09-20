@@ -4,6 +4,15 @@ export declare const DECISION_API_TIMEOUT_MS: number;
 export declare const DECISION_STATE_MAX_CHARS: number;
 export declare const DECISION_API_KEY_ENV_VARS: string[];
 
+export declare const DECISION_PROVIDERS: string[];
+export declare const CLASSIFIER_DEFAULT_ENDPOINT: string;
+
+export declare function normalizeDecisionProvider(value: unknown, fallback?: string): string;
+
+export declare function providerRequiresKey(provider: unknown): boolean;
+
+export declare function defaultEndpointFor(provider: unknown): string;
+
 export declare function isDecisionApiDisabled(env?: Record<string, string | undefined> | null): boolean;
 
 export interface DecisionApiKeyResolution {
@@ -54,6 +63,27 @@ export declare function parseDecisionResponse(body: unknown): DecisionApiParsed;
 
 export declare function meetsDecisionThreshold(confidence: unknown, threshold: unknown): boolean;
 
+export interface ClassifierRequest {
+  ok: boolean;
+  id?: string;
+  body?: Record<string, unknown>;
+  error?: string;
+}
+
+export declare function buildClassifierRequest(options: {
+  state: unknown;
+  questions?: Record<string, unknown> | null;
+}): ClassifierRequest;
+
+export declare function parseClassifierResponse(body: unknown, id: string, criteria: unknown): DecisionApiParsed;
+
+export interface ProbeCall {
+  state: string;
+  questions: Record<string, unknown>;
+}
+
+export declare function buildProbeCall(provider: unknown): ProbeCall;
+
 export interface DecisionApiResult {
   ok: boolean;
   answers?: Record<string, DecisionApiAnswer | null>;
@@ -63,6 +93,7 @@ export interface DecisionApiResult {
 }
 
 export declare function evaluateDecisionCall(options: {
+  provider?: string | null;
   endpoint: string;
   apiKey: string;
   model?: string | null;

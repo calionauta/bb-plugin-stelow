@@ -21,6 +21,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
+import { CLASSIFIER_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_ENDPOINT } from "./lib/decision-api.mjs";
 import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxFilterEntries, isOpenInboxAction, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
@@ -3873,7 +3874,7 @@ function PresetExecutionPicker({ value, onChange }: {
   );
 }
 
-type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; disabled: boolean };
+type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; keyRequired: boolean; disabled: boolean; provider: string };
 type DecisionRouterPoint = { id: string; label: string; description: string; modes: string[]; mode: string; thresholds: Record<string, number> };
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
@@ -3888,20 +3889,28 @@ function modeLabel(mode: string): string {
 function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
   const [endpoint, setEndpoint] = useState("");
   const [model, setModel] = useState("");
+  const [provider, setProvider] = useState("jev");
   const [key, setKey] = useState("");
   const [status, setStatus] = useState<DecisionApiConfig | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const reload = useCallback(() => {
     void rpc.call("getDecisionApiConfig", {}).then((result) => {
-      setStatus(result); setEndpoint(result.endpoint); setModel(result.model); setKey(""); setMessage(null);
+      setStatus(result); setEndpoint(result.endpoint); setModel(result.model); setProvider(result.provider); setKey(""); setMessage(null);
     }).catch(() => setMessage("Could not load the Decision API settings."));
   }, [rpc]);
   useEffect(() => { reload(); }, [reload]);
+  function pickProvider(next: string) {
+    setProvider(next);
+    // Follow the provider switch with its default endpoint, unless the
+    // endpoint was customized (a custom URL survives provider flips).
+    const otherDefault = next === "classifier" ? DECISION_API_DEFAULT_ENDPOINT : CLASSIFIER_DEFAULT_ENDPOINT;
+    if (endpoint === otherDefault) setEndpoint(next === "classifier" ? CLASSIFIER_DEFAULT_ENDPOINT : DECISION_API_DEFAULT_ENDPOINT);
+  }
   async function save(clearKey: boolean) {
     setBusy(true); setMessage(null);
     try {
-      const result = await rpc.call("setDecisionApiConfig", { endpoint: endpoint.trim() || null, model: model.trim() || null, apiKey: clearKey ? null : (key ? key : undefined) });
+      const result = await rpc.call("setDecisionApiConfig", { endpoint: endpoint.trim() || null, model: model.trim() || null, provider, apiKey: clearKey ? null : (key ? key : undefined) });
       setMessage(result.error ?? "Saved.");
       setKey("");
       reload();
@@ -3922,13 +3931,25 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
       setBusy(false);
     }
   }
-  const keyHint = !status ? "Loading…" : status.disabled ? "Disabled on this host (STELOW_DECISION_API=0)." : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
+  const keyHint = !status ? "Loading…" : status.disabled ? "Disabled on this host (STELOW_DECISION_API=0)." : provider === "classifier" ? "No key needed (free tier, rate-limited per IP)." : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
   return (
     <div className="grid gap-2">
-      <p className="text-xs text-muted-foreground">One Jev-compatible endpoint for every router below. Any provider speaking the state + questions schema works — change endpoint and model, nothing else.</p>
+      <p className="text-xs text-muted-foreground">One decision endpoint for every router below. Jev-compatible APIs take endpoint + key + model; classifier.dev takes endpoint only, no key.</p>
       {status?.disabled ? <p className="text-xs text-muted-foreground" role="status">Decision API is disabled on this host (STELOW_DECISION_API=0). Routers answer with built-in rules.</p> : null}
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
+        <select
+          className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm"
+          value={provider}
+          disabled={status?.disabled}
+          onChange={(event) => pickProvider(event.target.value)}
+        >
+          <option value="jev">Jev-compatible (state + questions)</option>
+          <option value="classifier">classifier.dev (labels, keyless)</option>
+        </select>
+      </label>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Endpoint</span><Input value={endpoint} disabled={status?.disabled} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.typesafe.ai/v1/systemone" /></label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} disabled={status?.disabled} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} disabled={status?.disabled || provider === "classifier"} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
+      {provider === "classifier" ? <p className="text-[11px] text-muted-foreground">classifier.dev answers on its fast tier; model does not apply.</p> : null}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>API key</span><Input type="password" value={key} disabled={status?.disabled} onChange={(event) => setKey(event.target.value)} placeholder={keyHint} autoComplete="off" /></label>
       {message ? <p className="text-xs text-muted-foreground" role="status">{message}</p> : null}
       <div className="flex justify-end gap-2">
@@ -3997,13 +4018,13 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
 
 function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged: () => Promise<void> }) {
   const [points, setPoints] = useState<DecisionRouterPoint[]>([]);
-  const [hasKey, setHasKey] = useState(true);
+  const [keyMissing, setKeyMissing] = useState(false);
   const reload = useCallback(() => {
     void rpc.call("listDecisionPoints", {}).then((result) => setPoints(result.points)).catch(() => setPoints([]));
-    void rpc.call("getDecisionApiConfig", {}).then((result) => setHasKey(result.hasKey)).catch(() => setHasKey(true));
+    void rpc.call("getDecisionApiConfig", {}).then((result) => setKeyMissing(result.keyRequired && !result.hasKey)).catch(() => setKeyMissing(false));
   }, [rpc]);
   useEffect(() => { reload(); }, [reload]);
-  const keylessApi = !hasKey && points.some((point) => point.mode === "api");
+  const keylessApi = keyMissing && points.some((point) => point.mode === "api");
   return (
     <div className="grid gap-2">
       <p className="text-xs text-muted-foreground">Each router picks how one judgment runs. Built-in rules are offline and free; Decision API needs the section above. Anything unconfigured answers with built-in rules.</p>

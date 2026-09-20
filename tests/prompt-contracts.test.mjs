@@ -30,7 +30,7 @@ assert.equal((serverSource.match(/const RECON_PROTOCOL = "/g) ?? []).length, 1, 
 // single giant lines, so fixed char windows either miss or bleed: bound
 // each site by the next anchor instead.
 const sites = {
-  spawn: "Step 1 — classify intent first",
+  spawn: "Step 1 — verify intent first",
   // The restart template opens with the same re-seed sentence as the reseed
   // template; indexOf lands on this earlier occurrence, and the end marker
   // closes before the reseed template starts.
@@ -76,7 +76,7 @@ const doneSites = {
   // single giant lines, so fixed char windows either miss or bleed, and
   // next-anchor bounding breaks where a template closes after the next
   // anchor opens (research closes past explore's first line).
-  spawn: { anchor: "Step 1 — classify intent first", end: "const ts = now();" },
+  spawn: { anchor: "Step 1 — verify intent first", end: "const ts = now();" },
   restart: { anchor: "You are being restarted mid-workflow at a stage boundary", end: "only now retire the old one" },
   reseed: { anchor: "in the re-seeded state.md", end: "recordWorkerThread(db, cardId, newThread.id, preset.id, \"reseed\")" },
   research: { anchor: "NEVER check a box yourself", end: "function exploreWorkerPrompt" },
@@ -130,7 +130,7 @@ const splitDefs = serverSource.match(/const SPLIT_PROTOCOL = "/g) ?? [];
 assert.equal(splitDefs.length, 1, "SPLIT_PROTOCOL is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/run `bb stelow split` \(no args/g) ?? []).length, 1, "the split invocation prose lives in the const only");
 const splitSites = {
-  spawn: "Step 1 — classify intent first",
+  spawn: "Step 1 — verify intent first",
   restart: "The host re-seeded your per-workflow state, transitions.md, and stelow.json",
   reseed: "researchReseed ?? exploreReseed ??",
 };

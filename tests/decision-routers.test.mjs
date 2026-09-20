@@ -52,7 +52,7 @@ assert.ok(!configBody.slice(configReturnAt).includes("api_key"), "the getter ret
 
 // Setter validates the endpoint at the boundary and distinguishes keep
 // (absent) from clear (null) for the key.
-const setterBody = handlerBody("async setDecisionApiConfig({ endpoint, apiKey, model }) {");
+const setterBody = handlerBody("async setDecisionApiConfig({ endpoint, apiKey, model, provider }) {");
 assert.ok(setterBody.includes("must be an http(s) URL"), "bad endpoints refuse with the fix named");
 assert.ok(setterBody.includes("apiKey === undefined"), "an absent key keeps the stored one");
 assert.ok(setterBody.includes("(apiKey ??"), "an explicit null clears the stored one");
@@ -69,6 +69,12 @@ assert.ok(probeBody.includes("latencyMs"), "probes report latency");
 assert.ok(probeBody.includes("STELOW_DECISION_API=0"), "probes refuse naming the variable");
 assert.match(server, /disabled: z\.boolean\(\)/, "the config contract carries the disabled flag");
 assert.ok(configBody.includes("disabled: isDecisionApiDisabled(process.env)"), "reads report the disabled flag");
+// Provider adapters: the config row carries a provider with a jev default
+// for pre-adapter installs; unknown names refuse with the valid set.
+assert.match(server, /ADD COLUMN provider TEXT NOT NULL DEFAULT 'jev'/, "pre-adapter installs migrate with the jev default");
+assert.match(server, /provider: z\.string\(\)\.max\(20\)\.nullable\(\)\.optional\(\)/, "the setter input carries the provider (strict would drop it otherwise)");
+assert.ok(setterBody.includes("Unknown provider"), "unknown providers refuse");
+assert.ok(setterBody.includes("DECISION_PROVIDERS.join"), "provider refusals name the valid set");
 
 // Point writes refuse unknown ids and modes with the valid set named;
 // reads degrade to registry defaults instead of refusing.
@@ -85,7 +91,7 @@ assert.ok(listBody.includes("DECISION_POINTS.map("), "the list derives from the 
 // Execution seam: build creations consult the router exactly once, and the
 // router fails soft to "unknown" on every path (mode gate, missing key,
 // catch-all) so creation never breaks for a misconfigured point.
-assert.match(server, /const initialIntent = isResearch \? "investigate" : isExplore \? "explore" : await seedBuildIntentFromRouter\(prompt\);/, "build creations seed intent through the router");
+assert.match(server, /explicitIntent !== "unknown" \? explicitIntent : await seedBuildIntentFromRouter\(prompt\)/, "explicit caller intent wins; otherwise the router seeds, else triage settles");
 const seamAt = server.indexOf("async function seedBuildIntentFromRouter(promptText: string): Promise<string> {");
 assert.ok(seamAt >= 0, "the router helper exists");
 const seamEnd = server.indexOf("\n  }\n", seamAt);
@@ -97,6 +103,8 @@ assert.ok(seamBody.includes('normalizePointMode(point?.mode, "rules")'), "unconf
 assert.ok(seamBody.includes("triage intent seeded from Decision API"), "api seeds leave a log trail with the outcome");
 assert.ok(seamBody.includes("triage intent router fell back to built-in rules"), "api failures log the fallback instead of failing silently");
 assert.ok(seamBody.includes("isDecisionApiDisabled(process.env)"), "the seam consults the kill switch first");
+assert.ok(seamBody.includes("provider,"), "the seam forwards the configured provider");
+assert.ok(probeBody.includes("buildProbeCall(provider)"), "the probe speaks the provider's native shape");
 assert.match(app, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
 assert.match(app, /has no key — api routers answer with built-in rules/, "keyless api routers state why they degrade");
 assert.match(app, /disabled={busy \|\| !dirty \|\| !valid}/, "threshold saves stay disabled until the value is a 0–1 number");
@@ -113,6 +121,8 @@ assert.match(app, /Built-in rules \(default\)/, "rules read as the default outco
 assert.match(app, /point\.mode === "api"/, "threshold controls render only for api-mode points");
 assert.match(app, /Act at confidence/, "thresholds read as confidence floors");
 assert.match(app, /<span>Model<\/span><Input/, "the Decision API model field is a free-text input (external ids live outside BB's catalog)");
+assert.match(app, /<option value="classifier">classifier\.dev \(labels, keyless\)<\/option>/, "the provider select offers classifier");
+assert.match(app, /<option value="jev">Jev-compatible \(state \+ questions\)<\/option>/, "the provider select keeps jev (no one-way door)");
 assert.doesNotMatch(app, /preset-thread/i, "no thread jargon survives in the UI");
 
 console.log("decision routers test ok: settings discipline, refusals, seam fail-soft, UI disclosure");

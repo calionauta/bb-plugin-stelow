@@ -11,6 +11,14 @@ import {
   meetsDecisionThreshold,
   evaluateDecisionCall,
   isDecisionApiDisabled,
+  DECISION_PROVIDERS,
+  CLASSIFIER_DEFAULT_ENDPOINT,
+  normalizeDecisionProvider,
+  providerRequiresKey,
+  defaultEndpointFor,
+  buildClassifierRequest,
+  parseClassifierResponse,
+  buildProbeCall,
 } from "../lib/decision-api.mjs";
 import {
   DECISION_POINT_TRIAGE_INTENT,
@@ -136,5 +144,53 @@ assert.deepEqual(
   { intent: "unknown", source: "rules", confidence: null },
   "wrong answer types never seed",
 );
+
+// Providers: jev speaks state+questions (key required), classifier speaks
+// labels (keyless). Unknown providers degrade to jev — never to an
+// unintended wire shape.
+assert.deepEqual(DECISION_PROVIDERS, ["jev", "classifier"], "two providers, jev first");
+assert.equal(normalizeDecisionProvider("classifier"), "classifier", "classifier survives");
+assert.equal(normalizeDecisionProvider("mystery"), "jev", "unknown providers degrade to jev");
+assert.equal(providerRequiresKey("jev"), true, "jev requires a key");
+assert.equal(providerRequiresKey("classifier"), false, "classifier is keyless");
+assert.equal(defaultEndpointFor("classifier"), CLASSIFIER_DEFAULT_ENDPOINT, "classifier defaults to its own endpoint");
+assert.equal(defaultEndpointFor("mystery").includes("typesafe"), true, "unknown providers default to the jev endpoint");
+
+// Classifier request: one Choice maps to labels + composed instructions.
+const triage = triageIntentQuestions();
+const built = buildClassifierRequest({ state: "the checkout button does nothing", questions: triage });
+assert.equal(built.ok, true, "triage Choice maps to a classifier call");
+assert.deepEqual(built.body.labels, ["bugfix", "refactor", "feature", "new-product", "investigate"], "criteria keys become labels");
+assert.ok(built.body.instructions.includes("bugfix:"), "criteria copy rides the instructions");
+assert.equal(buildClassifierRequest({ state: "x", questions: {} }).ok, false, "zero questions refuse");
+assert.equal(buildClassifierRequest({ state: "x", questions: { a: { type: "noul" }, b: { type: "noul" } } }).ok, false, "two questions refuse (one call, one decision)");
+assert.equal(buildClassifierRequest({ state: "x", questions: { a: { type: "noul", instructions: "y?" } } }).ok, false, "Noul has no labels equivalent");
+assert.equal(buildClassifierRequest({ state: "x", questions: { a: { type: "noul", instructions: "y?", criteria: { yes: "Y", no: "N" } } } }).ok, false, "even a criteria-carrying Noul refuses (labels decide between congeners, never yes/no)");
+
+// Classifier response: results[0] normalizes to a Choice; out-of-schema
+// labels null the answer instead of routing.
+const parsed = parseClassifierResponse({ model: "jev-1.13.0", results: [{ label: "bugfix", confidence: 0.99, scores: { bugfix: 0.99 } }] }, "intent", TRIAGE_INTENT_CRITERIA);
+assert.equal(parsed.ok, true, "classifier answers parse");
+assert.deepEqual(parsed.answers.intent, { type: "choice", choice: "bugfix", probabilities: { bugfix: 0.99 }, confidence: 0.99 }, "scores become probabilities");
+assert.deepEqual(parseClassifierResponse({ results: [{ label: "nope", confidence: 1 }] }, "intent", TRIAGE_INTENT_CRITERIA).answers.intent, null, "out-of-schema labels null");
+assert.equal(parseClassifierResponse({ results: [] }, "intent", TRIAGE_INTENT_CRITERIA).ok, false, "empty results fail soft");
+assert.equal(parseClassifierResponse({}, "intent", TRIAGE_INTENT_CRITERIA).ok, false, "answer-less bodies fail soft");
+
+// Classifier end-to-end through the dispatcher, no key, no auth header.
+let seenHeaders = null;
+const classifierFetch = async (url, opts) => {
+  seenHeaders = opts.headers;
+  assert.ok(String(url).includes("classifier.dev"), "classifier calls hit the classifier endpoint");
+  return { status: 200, json: async () => ({ model: "jev-1.13.0", results: [{ label: "feature", confidence: 0.8, scores: { feature: 0.8 } }] }) };
+};
+const routed = await evaluateDecisionCall({ provider: "classifier", endpoint: "", apiKey: "", model: "", state: "add dark mode", questions: triage, fetchImpl: classifierFetch });
+assert.equal(routed.ok, true, "classifier resolves without a key");
+assert.equal(routed.answers.intent.choice, "feature", "classifier answers normalize through the dispatcher");
+assert.ok(!("Authorization" in (seenHeaders ?? {})), "keyless calls send no auth header");
+assert.equal((await evaluateDecisionCall({ provider: "mystery", endpoint: "https://x.test/v1", apiKey: "", model: "m", state: "s", questions: {}, fetchImpl: classifierFetch })).error.includes("no key"), true, "unknown providers fall back to the keyed jev path");
+
+// Probe builder speaks the provider's native shape.
+assert.equal(buildProbeCall("classifier").questions.defect.type, "choice", "classifier probes use Choice");
+assert.equal(buildProbeCall("jev").questions.defect.type, "noul", "jev probes use Noul");
 
 console.log("decision api test ok: key resolution, validation, fail-soft calls, thresholds, triage seed");

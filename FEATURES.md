@@ -595,9 +595,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   your review gates remembered across cards. Legacy ladder rungs migrate
   to their gate sets explicitly — a saved default never degrades to Auto.
 - **Decision API** (`getDecisionApiConfig`, `setDecisionApiConfig`,
-  `testDecisionApi`, `decision_api_config` table). One Jev-compatible
-  endpoint (endpoint + key + model) for every decision router, configured
-  once in Manage agent presets. Reads report key presence and source, never
+  `testDecisionApi`, `decision_api_config` table). One decision endpoint
+  for every decision router, configured once in Manage agent presets.
+  Two providers: `jev` (state + questions schema, key required) and
+  `classifier` (classifier.dev labels schema, keyless, Choice only).
+  Reads report key presence and source, never
   the key; `DECISION_API_KEY` (or `TYPESAFE_API_KEY`) overrides the stored
   value. Test connection sends one fixed probe with latency. Unconfigured
   means built-in rules everywhere. `STELOW_DECISION_API=0` on the host
