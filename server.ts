@@ -6922,7 +6922,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async previewShare({ cardId }) {
       return await previewShare(cardId);
     },
-  });
+  },
+  // Opt into BB 0.43 RPC discovery so the described methods are listed.
+  { experimental_discoverable: true });
 
   // One command table feeds registration, fallthrough usage, and help text:
   // a new subcommand updates all three by editing this list only.
