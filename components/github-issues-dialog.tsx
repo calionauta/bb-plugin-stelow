@@ -91,10 +91,14 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   const [importProject, setImportProject] = useState<string>("all");
   const [importStart, setImportStart] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
-  async function refreshAutomationRules() {
-    if (!activeProjectId) { setAutomationRules([]); return; }
+  // Rules live on one project. The board's active project is only the
+  // default — the picker below lets automation cover any project, including
+  // when the dialog opens from a board with none active.
+  const [ruleProjectId, setRuleProjectId] = useState<string | null>(activeProjectId);
+  async function refreshAutomationRules(projectId: string | null = ruleProjectId) {
+    if (!projectId) { setAutomationRules([]); return; }
     try {
-      const result = await rpc.call("listAutomationRules", { projectId: activeProjectId });
+      const result = await rpc.call("listAutomationRules", { projectId });
       setAutomationRules(result.rules);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to load automation rules."); }
   }
@@ -110,14 +114,14 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   }
 
   async function saveAutomationRule() {
-    if (!activeProjectId) return;
+    if (!ruleProjectId) return;
     const labels = parseAutomationForm();
     if (labels.length === 0) return;
     const authors = automationAuthorsInput.split(",").map((entry) => entry.trim().replace(/^@/, "")).filter(Boolean);
     setAutomationBusy(true);
     try {
-      const saved = await rpc.call("saveAutomationRule", { projectId: activeProjectId, labels, trustedAuthors: authors, promptTemplate: automationPromptInput.trim(), enabled: true, startImmediate: automationStart });
-      const result = await rpc.call("listAutomationRules", { projectId: activeProjectId });
+      const saved = await rpc.call("saveAutomationRule", { projectId: ruleProjectId, labels, trustedAuthors: authors, promptTemplate: automationPromptInput.trim(), enabled: true, startImmediate: automationStart });
+      const result = await rpc.call("listAutomationRules", { projectId: ruleProjectId });
       setAutomationRules(result.rules);
       toast.success(saved.primed > 0
         ? `Rule saved. ${saved.primed} already-tagged issue${saved.primed === 1 ? " is" : "s are"} marked as seen — only new ones will draft.`
@@ -138,10 +142,10 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   }
 
   async function previewRule(labels: string[], authors: string[] = []) {
-    if (!activeProjectId || labels.length === 0) return toast.error("Pick at least one label to preview.");
+    if (!ruleProjectId || labels.length === 0) return toast.error("Pick a project and at least one label to preview.");
     setRulePreviewBusy(true);
     try {
-      const result = await rpc.call("previewAutomationRule", { projectId: activeProjectId, labels, trustedAuthors: authors });
+      const result = await rpc.call("previewAutomationRule", { projectId: ruleProjectId, labels, trustedAuthors: authors });
       setRulePreview({ labels, matches: result.matches, skipped: result.skipped });
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to preview rule matches."); }
     finally { setRulePreviewBusy(false); }
@@ -234,8 +238,12 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
 
   useEffect(() => {
     if (!open) return;
+    // The board project is the default, not the scope: re-anchor on every
+    // open so a stale pick never writes rules to the wrong project.
+    const target = activeProjectId ?? projects[0]?.id ?? null;
+    setRuleProjectId(target);
     if (githubTab === "import") void listGithubIssues();
-    else void refreshAutomationRules();
+    else void refreshAutomationRules(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -322,7 +330,19 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
         </div>
         ) : (
         <div className="space-y-3 py-2">
-          <p className="text-xs text-muted-foreground">Rules are scoped to {activeProjectName ?? "this project"}. A matching issue needs every watched label (exact, case-sensitive). Unchecked parks an Inbox draft; checked starts the worker in an isolated worktree (needs a New-worktree preset in Agent Presets). Saving marks already-tagged issues as seen — only new ones draft. An empty author filter means anyone; issue text is untrusted input either way.</p>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span className="font-medium">Project for new rules</span>
+            <select
+              aria-label="Project for automation rules"
+              className="h-11 cursor-pointer rounded-md border bg-background px-2 text-sm text-foreground"
+              value={ruleProjectId ?? ""}
+              onChange={(event) => { const next = event.target.value === "" ? null : event.target.value; setRuleProjectId(next); void refreshAutomationRules(next); }}
+            >
+              {projects.length === 0 ? <option value="">No projects</option> : null}
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </label>
+          <p className="text-xs text-muted-foreground">Rules are scoped to {projects.find((project) => project.id === ruleProjectId)?.name ?? activeProjectName ?? "the picked project"}. A matching issue needs every watched label (exact, case-sensitive). Unchecked parks an Inbox draft; checked starts the worker in an isolated worktree (needs a New-worktree preset in Agent Presets). Saving marks already-tagged issues as seen — only new ones draft. An empty author filter means anyone; issue text is untrusted input either way.</p>
+          {ruleProjectId === null ? <p className="text-xs text-muted-foreground" role="status">Pick a project above — rules live on a project, and there is none to scope to yet.</p> : null}
           {automationRules.length ? <div className="divide-y rounded-md border">{automationRules.map((rule) => (
             <div key={rule.id} className="space-y-1 p-2 text-sm">
               <div className="flex min-h-11 items-center gap-2">
@@ -370,7 +390,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
           </DialogClose>
           {githubTab === "import"
             ? <Button onClick={() => void importSelectedIssues()} disabled={importBusy}>{importStart ? "Import and start" : "Park in Inbox"}</Button>
-            : <Button disabled={automationBusy || !automationLabelInput.trim() || !activeProjectId} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add rule"}</Button>}
+            : <Button disabled={automationBusy || !automationLabelInput.trim() || !ruleProjectId} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add rule"}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

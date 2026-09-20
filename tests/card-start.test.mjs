@@ -98,4 +98,15 @@ assert.match(server, /Build cards require a project workspace with a Git source/
 assert.match(server, /Cannot split a Build workflow from an exploratory workspace/, "split cannot recreate an unverifiable Build child");
 assert.match(server, /auditReceiptReadiness\(receiptContent/, "Build done checks the durable audit receipt before becoming Done");
 
+// Automation rules live on the picker's project, not the board's: the Auto
+// tab offers every project (the dialog opens from boards with none active),
+// re-anchors on every open, and every rule RPC carries the picked id.
+assert.match(githubApp, /aria-label="Project for automation rules"/, "the Auto tab offers a project picker");
+assert.match(githubApp, /setRuleProjectId\(next\); void refreshAutomationRules\(next\)/, "picking a project reloads its rules at once");
+assert.match(githubApp, /const target = activeProjectId \?\? projects\[0\]\?\.id \?\? null;/, "opening re-anchors to the board project, else the first");
+assert.match(githubApp, /rpc\.call\("saveAutomationRule", \{ projectId: ruleProjectId/, "saves carry the picked project");
+assert.match(githubApp, /rpc\.call\("previewAutomationRule", \{ projectId: ruleProjectId/, "previews carry the picked project");
+assert.match(githubApp, /rpc\.call\("listAutomationRules", \{ projectId \}/, "refresh carries its explicit project");
+assert.doesNotMatch(githubApp, /projectId: activeProjectId/, "no rule RPC rides the ambient board project anymore");
+
 console.log("card start test ok: deferred start, shared spawn, split always starts");
