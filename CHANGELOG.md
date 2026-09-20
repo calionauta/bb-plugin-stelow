@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.36.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.36.0...v0.36.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* hot paths no longer advertise preset judge mode ([10ce6c9](https://github.com/calionauta/bb-plugin-stelow/commit/10ce6c9f176f5261af3ee55957c025363077d135))
+
 ## [0.36.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.35.2...v0.36.0) (2026-09-20)
 
 
