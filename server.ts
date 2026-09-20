@@ -4243,15 +4243,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             transitioningIntoIdle, progressed: autoProgressed || autoAdvanced,
             autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
           });
+          let vetoedResume = false;
           if (autoDecision.proceed) {
             // Decision-API veto (auto-continue point): a confident "no real
             // progress" cancels the resume and the card falls through to the
             // paused path below. Every other outcome keeps the heuristic
             // standing — the veto spends nothing, it only saves turns.
+            // Vetoes are named in the paused event (vetoedResume) so a pause
+            // after fresh-looking output explains itself.
             const vetted = await vetAutoContinueNudge(lastOutput != null ? `Stage ${currentStage}. Worker output:\n${lastOutput}` : null);
             if (!vetted) {
-              // Vetoed: fall through to the standard paused path below with
-              // no writes of our own — identical to a heuristic refusal.
+              vetoedResume = true;
+              // Fall through to the standard paused path below with no
+              // writes of our own — identical to a heuristic refusal.
             } else {
             // Automatic continuations are private orchestration, unlike a
             // user-selected Retry or a card comment that deliberately resumes
@@ -4299,7 +4303,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           // period, producing exactly one durable event per idle period.
           const current = getCard(cardId);
           if (current && current.status !== "archived" && current.status !== "completed" && idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
-            recordInboxEvent(current, "paused", "Idle with unfinished work — retry continues in place, restart begins fresh.", `paused:${cardId}:${idleAt}`, idleAt);
+            recordInboxEvent(current, "paused", `Idle with unfinished work — retry continues in place, restart begins fresh.${vetoedResume ? " Auto-continue vetoed the resume: the last output showed no real progress." : ""}`, `paused:${cardId}:${idleAt}`, idleAt);
           }
         }
         if (lastOutput && lastOutput !== card.last_assistant_text) {
@@ -4361,18 +4365,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
       const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_INBOX_SEVERITY));
       const cutoff = now() - SEVERITY_BUMP_MIN_AGE_MS;
+      // Card context rides the state — a bare summary ("Idle…", "Round 3
+      // failed…") judges poorly alone; name, kind, and stage disambiguate
+      // without extra calls.
       const rows = db.prepare(
-        "SELECT id, summary, severity_reasons FROM inbox_events WHERE resolved_at IS NULL AND archived_at IS NULL AND severity = 1 AND occurred_at <= ? AND severity_reasons NOT LIKE '%model-judged%' ORDER BY occurred_at ASC LIMIT 3",
-      ).all(cutoff) as Array<{ id: string; summary: string; severity_reasons: string | null }>;
+        "SELECT inbox_events.id, inbox_events.summary, inbox_events.severity_reasons, cards.display_name, cards.name, cards.kind AS card_kind, cards.stage FROM inbox_events JOIN cards ON cards.id = inbox_events.card_id WHERE inbox_events.resolved_at IS NULL AND inbox_events.archived_at IS NULL AND inbox_events.severity = 1 AND inbox_events.occurred_at <= ? AND inbox_events.severity_reasons NOT LIKE '%model-judged%' ORDER BY inbox_events.occurred_at ASC LIMIT 3",
+      ).all(cutoff) as Array<{ id: string; summary: string; severity_reasons: string | null; display_name: string | null; name: string; card_kind: string | null; stage: string }>;
       const candidates = rows.slice(0, SEVERITY_BUMP_PER_TICK);
       let changed = 0;
       for (const row of candidates) {
+        const state = `Card "${row.display_name ?? row.name}" (${row.card_kind ?? "build"}, stage ${row.stage}): ${row.summary}`;
         const result = await evaluateDecisionCall({
           provider,
           endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
           apiKey: key ?? "",
           model: normalizeDecisionApiModel(cfg?.model, defaultModelFor(provider)),
-          state: row.summary,
+          state,
           questions: severityBumpQuestions(),
         }).catch(() => null);
         if (!result || !result.ok) continue;

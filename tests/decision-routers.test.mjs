@@ -134,6 +134,7 @@ assert.ok(server.slice(seamVetoAt, sendAt).includes("if (!vetted)"), "a veto fal
 assert.match(server, /const autoDecision = shouldAutoContinue\(\{/, "the heuristic gate still owns the resume decision");
 assert.match(server, /const doneDecision = shouldDoneNudge\(\{/, "the audit done-nudge path is untouched");
 assert.ok(!vetBody.includes("updateCard("), "the veto writes nothing itself — the paused path below owns all writes");
+assert.match(server, /Auto-continue vetoed the resume: the last output showed no real progress\./, "vetoed pauses name the veto in the event trail");
 
 // Severity bump wiring: bounded, gated, promotion-only, idempotent. A
 // sweep that demotes, resolves, re-judges checked items, or spends
@@ -144,6 +145,7 @@ const bumpEnd = server.indexOf("\n  }\n", bumpAt);
 assert.ok(bumpEnd > bumpAt, "the bump helper body is bounded");
 const bumpBody = server.slice(bumpAt, bumpEnd);
 assert.ok(bumpBody.includes("LIMIT 3"), "at most three judgments per tick");
+assert.ok(bumpBody.includes("JOIN cards ON cards.id = inbox_events.card_id"), "bump states carry card context, not bare summaries");
 assert.ok(bumpBody.includes("SEVERITY_BUMP_MIN_AGE_MS"), "fresh items settle before any judgment");
 assert.ok(bumpBody.includes("NOT LIKE '%model-judged%'"), "checked items never re-judge");
 assert.ok(bumpBody.includes('normalizePointMode(point?.mode, "rules") !== "api"'), "rules mode never calls out");
