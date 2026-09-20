@@ -3934,7 +3934,7 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
   const keyHint = !status ? "Loading…" : status.disabled ? "Disabled on this host (STELOW_DECISION_API=0)." : provider === "classifier" ? "No key needed (free tier, rate-limited per IP)." : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
   return (
     <div className="grid gap-2">
-      <p className="text-xs text-muted-foreground">One decision endpoint for every router below. TypeSafe AI&apos;s Jev-compatible APIs (state + questions schema) take endpoint + key + model — any provider speaking that schema works here; classifier.dev (labels schema) takes endpoint only, no key.</p>
+      <p className="text-xs text-muted-foreground">One decision endpoint for every router below. Set the provider first — the rest follows its schema.</p>
       {status && !status.configured ? <p className="text-xs text-muted-foreground" role="status">Showing defaults — nothing saved yet. Save to make these yours.</p> : null}
       {status?.disabled ? <p className="text-xs text-muted-foreground" role="status">Decision API is disabled on this host (STELOW_DECISION_API=0). Routers answer with built-in rules.</p> : null}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
@@ -3944,10 +3944,11 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
           disabled={status?.disabled}
           onChange={(event) => pickProvider(event.target.value)}
         >
-          <option value="jev">Jev-compatible (state + questions)</option>
+          <option value="jev">TypeSafe AI&apos;s Jev (state + questions)</option>
           <option value="classifier">classifier.dev (labels, keyless)</option>
         </select>
       </label>
+      {provider === "classifier" ? null : <p className="text-[11px] text-muted-foreground">Any endpoint speaking the Jev schema works — key + model required.</p>}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Endpoint</span><Input value={endpoint} disabled={status?.disabled} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.typesafe.ai/v1/systemone" /></label>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} disabled={status?.disabled || provider === "classifier"} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
       {provider === "classifier" ? <p className="text-[11px] text-muted-foreground">classifier.dev answers on its fast tier; model does not apply.</p> : null}
