@@ -23,12 +23,11 @@ const uses = app.match(/<PresetExecutionPicker/g) ?? [];
 assert.ok(uses.length >= 2, "manager form and assign custom row share the picker block");
 assert.match(app, /same host pickers as the new-card composer/, "the shared block names its BB source");
 
-// The hand-rolled controls are gone everywhere.
-assert.doesNotMatch(app, /function CustomModelCombobox\(/, "the hand-rolled model combobox is removed");
-assert.doesNotMatch(app, /<span>Provider<\/span>/, "no hand-rolled provider select label survives");
-assert.doesNotMatch(app, /<span>Model<\/span>/, "no hand-rolled model select label survives");
-assert.doesNotMatch(app, /aria-label="Custom provider"/, "no hand-rolled custom provider select survives");
-assert.doesNotMatch(app, /aria-label="Custom model id"/, "no hand-rolled custom model input survives");
+// The hand-rolled controls are gone from the preset surfaces (manager
+// New/Edit form, assign dialog custom row) — scoped, not app-wide: the
+// Decision API section owns a free-text model-id field on purpose (external
+// API model ids live outside BB's provider catalog, so the host picker
+// would be wrong there; see decision-routers.test.mjs for its shape pin).
 
 // Manager dialog: bounded frame + disclosed band routing + picker form.
 const managerAt = app.indexOf("function PresetManagerDialog(");
@@ -47,5 +46,13 @@ assert.ok(assignAt >= 0, "the assign dialog exists");
 const assignWindow = app.slice(assignAt);
 assert.match(assignWindow, /<PresetExecutionPicker/, "the custom row uses the shared picker block");
 assert.match(assignWindow, /radioRow\(`model:\$\{provider\.id\}\/\$\{model\.model\}`/, "one-click model rows survive below the picker");
+
+for (const [window, name] of [[managerWindow, "manager"], [assignWindow, "assign"]]) {
+  assert.doesNotMatch(window, /function CustomModelCombobox\(/, `the hand-rolled model combobox is removed (${name})`);
+  assert.doesNotMatch(window, /<span>Provider<\/span>/, `no hand-rolled provider select label survives (${name})`);
+  assert.doesNotMatch(window, /<span>Model<\/span>/, `no hand-rolled model select label survives (${name})`);
+  assert.doesNotMatch(window, /aria-label="Custom provider"/, `no hand-rolled custom provider select survives (${name})`);
+  assert.doesNotMatch(window, /aria-label="Custom model id"/, `no hand-rolled custom model input survives (${name})`);
+}
 
 console.log("preset ui test ok: BB pickers shared, hand-rolled selects gone, manager disclosed and bounded");

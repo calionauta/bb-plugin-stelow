@@ -42,6 +42,8 @@ import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFinger
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
+import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
+import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent } from "./lib/decision-points.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -653,6 +655,30 @@ export const rpcContract = defineRpcContract({
   },
   assignReliablePreset: {
     input: z.object({ presetId: z.string().nullable() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  getDecisionApiConfig: {
+    input: z.object({}).strict(),
+    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable() }),
+  },
+  setDecisionApiConfig: {
+    input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  testDecisionApi: {
+    input: z.object({}).strict(),
+    output: z.object({ ok: z.boolean(), latencyMs: z.number().nullable(), model: z.string().nullable(), error: z.string().nullable() }),
+  },
+  getDecisionPoint: {
+    input: z.object({ point: z.string() }).strict(),
+    output: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()) }),
+  },
+  listDecisionPoints: {
+    input: z.object({}).strict(),
+    output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()) })) }),
+  },
+  setDecisionPoint: {
+    input: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()).optional() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   getReviewPolicy: {
@@ -1574,6 +1600,24 @@ export default async function plugin(bb: BbPluginApi) {
     assigned_at INTEGER NOT NULL,
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
   )`);
+  // Decision API: one Jev-compatible endpoint for every decision point.
+  // Endpoint + key + model live here once, never per point. An absent row
+  // means unconfigured — points fall back to built-in rules.
+  db.exec(`CREATE TABLE IF NOT EXISTS decision_api_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    endpoint TEXT NOT NULL,
+    api_key TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
+  // Per-point router modes + thresholds as free-form JSON. Absent rows mean
+  // registry defaults (built-in rules), so new points need no migration.
+  db.exec(`CREATE TABLE IF NOT EXISTS decision_points (
+    point TEXT PRIMARY KEY,
+    mode TEXT NOT NULL CHECK (mode IN ('rules', 'api')),
+    thresholds TEXT NOT NULL DEFAULT '{}',
+    updated_at INTEGER NOT NULL
+  )`);
   // Review enforcement policy (default off): when required, research/explore
   // done refuses without a passing review stamped with the current
   // fingerprint. Mechanism only — calibration stays a documented prerequisite.
@@ -1841,6 +1885,35 @@ ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
 
+  // Triage-intent router: seed a build card's intent from the Decision API
+  // when the point runs in api mode. Advisory only — the worker always
+  // re-settles intent in triage — and fail-soft: any missing config, key,
+  // error, or low-confidence answer leaves "unknown", exactly as today.
+  async function seedBuildIntentFromRouter(promptText: string): Promise<string> {
+    try {
+      const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_TRIAGE_INTENT) as { mode: string; thresholds: string } | undefined;
+      if (normalizePointMode(point?.mode, "rules") !== "api") return "unknown";
+      const cfg = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
+      const { key } = resolveDecisionApiKey({ storedKey: cfg?.api_key ?? null, env: process.env });
+      if (!key) return "unknown";
+      let stored: unknown = null;
+      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
+      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_TRIAGE_INTENT));
+      const result = await evaluateDecisionCall({
+        endpoint: cfg?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT,
+        apiKey: key,
+        model: normalizeDecisionApiModel(cfg?.model, DECISION_API_DEFAULT_MODEL),
+        state: promptText,
+        questions: triageIntentQuestions(),
+      });
+      const resolved = resolveSeedIntent({ apiAnswers: result.ok ? result.answers : null, routeAt: thresholds.routeAt });
+      if (resolved.source === "api") bb.log.info(`triage intent seeded from Decision API: ${resolved.intent} (confidence ${resolved.confidence})`);
+      return resolved.intent;
+    } catch {
+      return "unknown";
+    }
+  }
+
   async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, start = true, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string | string[]; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; start?: boolean; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string | null }> {
     const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
     // The composer submits the Personal project id for “Don't work in a
@@ -1891,7 +1964,7 @@ ${prompt}`;
     if (isExplore && !exploreStage) {
       throw new Error(`Unknown explore technique "${stageId ?? ""}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
     }
-    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : "unknown";
+    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : await seedBuildIntentFromRouter(prompt);
     // Canonical gates: legacy ladder strings normalize through the compat
     // map, so the composer, board defaults, and reseed all carry the set.
     const reviewGates = normalizeReviewGates(reviewMode);
@@ -6251,6 +6324,91 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
       }
       bb.realtime.publish("board-changed", { presetId });
+      return { ok: true, error: null };
+    },
+
+    // The key itself never leaves the host: reads report presence + source
+    // only, so panels and logs cannot leak it.
+    async getDecisionApiConfig() {
+      const row = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
+      const { key, source } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
+      return {
+        endpoint: row?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT,
+        model: normalizeDecisionApiModel(row?.model, DECISION_API_DEFAULT_MODEL),
+        hasKey: key !== null,
+        keySource: source,
+      };
+    },
+
+    async setDecisionApiConfig({ endpoint, apiKey, model }) {
+      const current = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
+      const nextEndpoint = endpoint === undefined ? (current?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT) : (endpoint ?? DECISION_API_DEFAULT_ENDPOINT);
+      if (!isDecisionApiEndpointValid(nextEndpoint)) return { ok: false, error: "Endpoint must be an http(s) URL (e.g. https://api.typesafe.ai/v1/systemone)." };
+      const nextModel = model === undefined ? (current?.model ?? DECISION_API_DEFAULT_MODEL) : normalizeDecisionApiModel(model, DECISION_API_DEFAULT_MODEL);
+      if (!nextModel) return { ok: false, error: "Model must name a version (e.g. jev-latest)." };
+      const nextKey = apiKey === undefined ? (current?.api_key ?? "") : (apiKey ?? "");
+      db.prepare("INSERT OR REPLACE INTO decision_api_config (id, endpoint, api_key, model, updated_at) VALUES (1, ?, ?, ?, ?)").run(nextEndpoint.trim(), nextKey, nextModel, now());
+      return { ok: true, error: null };
+    },
+
+    // Explicit probe: one fixed Noul question, reported with latency. The
+    // only place the host spends Decision API budget on demand — background
+    // paths fail soft to built-in rules instead.
+    async testDecisionApi() {
+      const row = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
+      const { key } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
+      if (!key) return { ok: false, latencyMs: null, model: null, error: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+      const result = await evaluateDecisionCall({
+        endpoint: row?.endpoint ?? DECISION_API_DEFAULT_ENDPOINT,
+        apiKey: key,
+        model: normalizeDecisionApiModel(row?.model, DECISION_API_DEFAULT_MODEL),
+        state: "The login button does nothing when clicked.",
+        questions: { defect: { type: "noul", instructions: "Does this message report a defect?" } },
+      });
+      if (!result.ok) return { ok: false, latencyMs: null, model: null, error: result.error ?? "the Decision API call failed" };
+      return { ok: true, latencyMs: result.latencyMs ?? null, model: result.model ?? null, error: null };
+    },
+
+    async getDecisionPoint({ point }) {
+      const def = getDecisionPointDef(point);
+      const row = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(point) as { mode: string; thresholds: string } | undefined;
+      const fallback = def?.defaultThresholds ?? { routeAt: 0.6 };
+      let stored: unknown = null;
+      try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
+      return {
+        point,
+        mode: normalizePointMode(row?.mode, def?.defaultMode ?? "rules"),
+        thresholds: normalizeThresholds(stored, fallback),
+      };
+    },
+
+    async listDecisionPoints() {
+      const rows = db.prepare("SELECT point, mode, thresholds FROM decision_points").all() as Array<{ point: string; mode: string; thresholds: string }>;
+      const byId = new Map(rows.map((row) => [row.point, row]));
+      return {
+        points: DECISION_POINTS.map((def) => {
+          const row = byId.get(def.id);
+          let stored: unknown = null;
+          try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
+          return {
+            id: def.id,
+            label: def.label,
+            description: def.description,
+            modes: [...def.modes],
+            mode: normalizePointMode(row?.mode, def.defaultMode),
+            thresholds: normalizeThresholds(stored, def.defaultThresholds),
+          };
+        }),
+      };
+    },
+
+    async setDecisionPoint({ point, mode, thresholds }) {
+      const def = getDecisionPointDef(point);
+      if (!def) return { ok: false, error: `Unknown decision point "${point}". Available: ${DECISION_POINTS.map((entry) => entry.id).join(", ")}.` };
+      if (!def.modes.includes(mode)) return { ok: false, error: `Unknown mode "${mode}" for ${point}. Available: ${def.modes.join(", ")}.` };
+      const next = normalizeThresholds(thresholds ?? null, def.defaultThresholds);
+      db.prepare("INSERT OR REPLACE INTO decision_points (point, mode, thresholds, updated_at) VALUES (?, ?, ?, ?)").run(point, mode, JSON.stringify(next), now());
+      bb.realtime.publish("board-changed", { point });
       return { ok: true, error: null };
     },
 

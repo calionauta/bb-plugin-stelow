@@ -594,6 +594,21 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
   your review gates remembered across cards. Legacy ladder rungs migrate
   to their gate sets explicitly — a saved default never degrades to Auto.
+- **Decision API** (`getDecisionApiConfig`, `setDecisionApiConfig`,
+  `testDecisionApi`, `decision_api_config` table). One Jev-compatible
+  endpoint (endpoint + key + model) for every decision router, configured
+  once in Manage agent presets. Reads report key presence and source, never
+  the key; `DECISION_API_KEY` (or `TYPESAFE_API_KEY`) overrides the stored
+  value. Test connection sends one fixed probe with latency. Unconfigured
+  means built-in rules everywhere.
+- **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,
+  `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
+  Per-judgment modes — Built-in rules (offline, free, default) or Decision
+  API with a confidence floor — plus the shared typed client
+  (`lib/decision-api.mjs`, fail-soft result objects, never throws). Triage
+  intent seeds a build card's intent before triage when confident; the worker
+  always re-settles it, so the seed is advisory. Unknown modes degrade to
+  rules; refusals name the valid set.
 - **One disclosure affordance** (`DisclosureSection`, `DisclosureChevron`).
   Every collapsible shares one bordered disclosure (right chevron when
   closed, rotates down when open); native details/summary keeps the

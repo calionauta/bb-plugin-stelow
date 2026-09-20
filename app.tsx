@@ -3873,6 +3873,140 @@ function PresetExecutionPicker({ value, onChange }: {
   );
 }
 
+type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null };
+type DecisionRouterPoint = { id: string; label: string; description: string; modes: string[]; mode: string; thresholds: Record<string, number> };
+type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
+
+function modeLabel(mode: string): string {
+  if (mode === "api") return "Decision API";
+  return "Built-in rules (default)";
+}
+
+// One Jev-compatible endpoint for every router below. Endpoint, key, and
+// model live here once — points only pick a mode and thresholds, so a key
+// rotation touches exactly one field.
+function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
+  const [endpoint, setEndpoint] = useState("");
+  const [model, setModel] = useState("");
+  const [key, setKey] = useState("");
+  const [status, setStatus] = useState<DecisionApiConfig | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const reload = useCallback(() => {
+    void rpc.call("getDecisionApiConfig", {}).then((result) => {
+      setStatus(result); setEndpoint(result.endpoint); setModel(result.model); setKey(""); setMessage(null);
+    }).catch(() => setMessage("Could not load the Decision API settings."));
+  }, [rpc]);
+  useEffect(() => { reload(); }, [reload]);
+  async function save(clearKey: boolean) {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await rpc.call("setDecisionApiConfig", { endpoint: endpoint.trim() || null, model: model.trim() || null, apiKey: clearKey ? null : (key ? key : undefined) });
+      setMessage(result.error ?? "Saved.");
+      setKey("");
+      reload();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function probe() {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await rpc.call("testDecisionApi", {});
+      setMessage(result.ok ? `Probe ok · ${result.latencyMs ?? "?"}ms · ${result.model ?? "unknown model"}` : (result.error ?? "Probe failed."));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Probe failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const keyHint = !status ? "Loading…" : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs text-muted-foreground">One Jev-compatible endpoint for every router below. Any provider speaking the state + questions schema works — change endpoint and model, nothing else.</p>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Endpoint</span><Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.typesafe.ai/v1/systemone" /></label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>API key</span><Input type="password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={keyHint} autoComplete="off" /></label>
+      {message ? <p className="text-xs text-muted-foreground" role="status">{message}</p> : null}
+      <div className="flex justify-end gap-2">
+        {status?.hasKey && status.keySource !== "env" ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => void save(true)}>Clear key</Button> : null}
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void probe()}>{busy ? "Working…" : "Test connection"}</Button>
+        <Button size="sm" disabled={busy} onClick={() => void save(false)}>{busy ? "Working…" : "Save"}</Button>
+      </div>
+    </div>
+  );
+}
+
+function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: DecisionRouterPoint; onChanged: () => Promise<void> }) {
+  const [routeAt, setRouteAt] = useState(String(point.thresholds.routeAt ?? 0.6));
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  async function setMode(mode: string) {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await rpc.call("setDecisionPoint", { point: point.id, mode });
+      if (result.error) setMessage(result.error); else await onChanged();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveThreshold() {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: point.mode, thresholds: { routeAt: Number(routeAt) } });
+      if (result.error) setMessage(result.error); else await onChanged();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const dirty = Number(routeAt) !== (point.thresholds.routeAt ?? 0.6);
+  return (
+    <div className="space-y-1 rounded-md border bg-muted/30 px-3 py-2">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="min-w-0 flex-1 truncate" title={point.description}><span className="font-medium">{point.label}</span></span>
+        <select
+          className="cursor-pointer h-9 shrink-0 rounded-md border bg-background px-2 text-sm"
+          value={point.mode}
+          disabled={busy}
+          onChange={(event) => void setMode(event.target.value)}
+        >
+          {point.modes.map((mode) => <option key={mode} value={mode}>{modeLabel(mode)}</option>)}
+        </select>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{point.description}</p>
+      {point.mode === "api" ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex flex-1 items-center gap-2"><span className="shrink-0">Act at confidence ≥</span>
+            <Input type="number" min="0" max="1" step="0.05" className="h-9" value={routeAt} onChange={(event) => setRouteAt(event.target.value)} />
+          </label>
+          <Button size="sm" variant="outline" disabled={busy || !dirty} onClick={() => void saveThreshold()}>Save</Button>
+        </div>
+      ) : null}
+      {message ? <p className="text-[11px] text-muted-foreground" role="status">{message}</p> : null}
+    </div>
+  );
+}
+
+function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged: () => Promise<void> }) {
+  const [points, setPoints] = useState<DecisionRouterPoint[]>([]);
+  const reload = useCallback(() => {
+    void rpc.call("listDecisionPoints", {}).then((result) => setPoints(result.points)).catch(() => setPoints([]));
+  }, [rpc]);
+  useEffect(() => { reload(); }, [reload]);
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs text-muted-foreground">Each router picks how one judgment runs. Built-in rules are offline and free; Decision API needs the section above. Anything unconfigured answers with built-in rules.</p>
+      {points.map((point) => <DecisionRouterRow key={point.id} rpc={rpc} point={point} onChanged={async () => { await onChanged(); reload(); }} />)}
+    </div>
+  );
+}
+
 function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -4084,6 +4218,12 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
             </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">Rule of thumb: when the worker rewrites over 20% of a burst&apos;s output, that call site belongs back on Reliable.</p>
+        </DisclosureSection>
+        <DisclosureSection title="Decision API" hint="Jev-compatible" defaultOpen={false}>
+          <DecisionApiSection rpc={rpc} />
+        </DisclosureSection>
+        <DisclosureSection title="Decision routers" hint="per-judgment modes" defaultOpen={false}>
+          <DecisionRoutersSection rpc={rpc} onChanged={onChanged} />
         </DisclosureSection>
         <div className="mt-3 rounded-md border bg-muted/30 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
