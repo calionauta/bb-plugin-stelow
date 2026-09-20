@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.31.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.31.0...v0.31.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* reloading notice renders info tone instead of error red ([13eb0b0](https://github.com/calionauta/bb-plugin-stelow/commit/13eb0b0b9708b6a7fe15800a6e27654fdd201330))
+
 ## [0.31.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.30.0...v0.31.0) (2026-09-19)
 
 
