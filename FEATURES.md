@@ -56,7 +56,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   already-tagged issues as seen without drafting (backlog guard) — only
   genuinely new issues create cards; if GitHub is unreachable the rule is
   saved disabled instead of firing blind later. A dry-run preview names
-  what would match now and exactly why the rest would not; each rule lists
+  what would match now and exactly why the rest would not — including
+  which project a foreign-repo issue belongs to, so a miss never reads
+  as an empty watcher; each rule lists
   its recent runs with the per-run outcome (Started, Parked, Already
   imported). Auto-start is gated on the effective spawn environment
   (band routing wins over passed presets): without an isolated worktree

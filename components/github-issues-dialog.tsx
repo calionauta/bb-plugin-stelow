@@ -77,7 +77,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   const [automationPromptInput, setAutomationPromptInput] = useState("");
   const [automationStart, setAutomationStart] = useState(false);
   const [automationBusy, setAutomationBusy] = useState(false);
-  const [rulePreview, setRulePreview] = useState<{ labels: string[]; matches: Array<{ repo: string; number: number; title: string; url: string; author: string }>; skipped: Array<{ repo: string; number: number; title: string; reason: string }> } | null>(null);
+  const [rulePreview, setRulePreview] = useState<{ labels: string[]; matches: Array<{ repo: string; number: number; title: string; url: string; author: string }>; skipped: Array<{ repo: string; number: number; title: string; reason: string; owner: string | null }> } | null>(null);
   const [rulePreviewBusy, setRulePreviewBusy] = useState(false);
   const [ruleRuns, setRuleRuns] = useState<Record<string, Array<{ sourceKey: string; repo: string; number: number; cardName: string | null; cardStatus: string | null; outcome: string | null; firedAt: number }>>>({});
   const [runsOpen, setRunsOpen] = useState<Record<string, boolean>>({});
@@ -373,7 +373,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
                   {rulePreview.matches.slice(0, 10).map((issue) => <li key={`${issue.repo}#${issue.number}`} className="truncate">{issue.title} <span className="text-muted-foreground">{issue.repo}#{issue.number}</span></li>)}
                 </ul>
               ) : <p className="text-xs text-muted-foreground">Nothing matches right now.</p>}
-              {rulePreview.skipped.length > 0 ? <p className="text-xs text-muted-foreground">{rulePreview.skipped.slice(0, 5).map((issue) => `${issue.repo}#${issue.number} (${RULE_SKIP_REASON[issue.reason] ?? issue.reason})`).join(" · ")}{rulePreview.skipped.length > 5 ? ` · +${rulePreview.skipped.length - 5} more` : ""}</p> : null}
+              {rulePreview.skipped.length > 0 ? <p className="text-xs text-muted-foreground">{rulePreview.skipped.slice(0, 5).map((issue) => `${issue.repo}#${issue.number} (${issue.reason === "other-project" && issue.owner ? `belongs to project ${projects.find((project) => project.id === issue.owner)?.name ?? issue.owner}` : (RULE_SKIP_REASON[issue.reason] ?? issue.reason)})`).join(" · ")}{rulePreview.skipped.length > 5 ? ` · +${rulePreview.skipped.length - 5} more` : ""}</p> : null}
               <button className="cursor-pointer rounded text-xs font-medium text-primary hover:underline" onClick={() => setRulePreview(null)}>Clear preview</button>
             </div>
           ) : null}

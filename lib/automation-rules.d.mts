@@ -14,7 +14,7 @@ export declare function decideAutomationIssue(
     fired?: Set<string>;
     imported?: Set<string>;
   },
-): { ok: boolean; key: string | null; reason?: string };
+): { ok: boolean; key: string | null; reason?: string; owner?: string | null };
 export declare function matchAutomationIssues(
   issues: unknown,
   options: {
@@ -42,5 +42,5 @@ export declare function previewAutomationMatches(
   },
 ): {
   matches: Array<{ repo: string; number: number; key: string }>;
-  skipped: Array<{ repo: string; number: number; key: string; reason: string }>;
+  skipped: Array<{ repo: string; number: number; key: string; reason: string; owner: string | null }>;
 };

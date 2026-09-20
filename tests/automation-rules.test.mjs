@@ -98,6 +98,16 @@ assert.equal(
   "other-project",
   "foreign project names its reason",
 );
+assert.deepEqual(
+  decideAutomationIssue({ repo: "acme/api", number: 3, labels: ["stelow-work"] }, ctx),
+  { ok: false, key: "acme/api#3", reason: "other-project", owner: "proj_api" },
+  "foreign project names where the issue belongs",
+);
+assert.equal(
+  decideAutomationIssue({ repo: "acme/web", number: 2, labels: ["docs"] }, ctx).owner ?? null,
+  null,
+  "non-project skips carry no owner",
+);
 assert.equal(
   decideAutomationIssue({ repo: "acme/web", number: 1, labels: ["stelow-work"] }, { ...ctx, fired: new Set(["acme/web#1"]) }).reason,
   "already-fired",
@@ -127,6 +137,11 @@ assert.deepEqual(
   preview.skipped.map((entry) => `${entry.key}:${entry.reason}`).sort(),
   ["acme/api#3:other-project", "acme/unmapped#4:other-project", "acme/web#2:missing-labels"],
   "every skip names its reason",
+);
+assert.deepEqual(
+  preview.skipped.filter((entry) => entry.reason === "other-project").map((entry) => `${entry.key}→${entry.owner ?? "none"}`).sort(),
+  ["acme/api#3→proj_api", "acme/unmapped#4→none"],
+  "project skips name the owning project, null when unmapped",
 );
 
 console.log("automation preview test ok: one decision core, named reasons, seen keys");

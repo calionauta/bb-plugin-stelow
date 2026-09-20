@@ -96,7 +96,7 @@ export const githubRpcContract = defineRpcContract({
     input: z.object({ projectId: z.string(), labels: z.array(z.string().min(1).max(60)).min(1).max(10).optional(), label: z.string().min(1).max(60).optional(), trustedAuthors: z.union([z.array(z.string().min(1).max(40)).max(20), z.string().max(800)]).optional() }).strict(),
     output: z.object({
       matches: z.array(z.object({ repo: z.string(), number: z.number().int().positive(), title: z.string(), url: z.string(), author: z.string() })),
-      skipped: z.array(z.object({ repo: z.string(), number: z.number().int().positive(), title: z.string(), reason: z.string() })),
+      skipped: z.array(z.object({ repo: z.string(), number: z.number().int().positive(), title: z.string(), reason: z.string(), owner: z.string().nullable() })),
       checkedAt: z.number(),
     }),
   },
@@ -567,7 +567,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       };
       return {
         matches: matches.slice(0, 50).map((entry) => ({ repo: entry.repo, number: entry.number, ...titleOf(entry.key) })),
-        skipped: skipped.slice(0, 50).map((entry) => ({ repo: entry.repo, number: entry.number, ...titleOf(entry.key), reason: entry.reason })),
+        skipped: skipped.slice(0, 50).map((entry) => ({ repo: entry.repo, number: entry.number, ...titleOf(entry.key), reason: entry.reason, owner: entry.owner ?? null })),
         checkedAt: now(),
       };
     },
