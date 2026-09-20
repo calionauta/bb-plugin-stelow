@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.35.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.35.1...v0.35.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* opt RPC contract into host discovery ([e08b369](https://github.com/calionauta/bb-plugin-stelow/commit/e08b36941cf18f7e8279dc0eadc09ac14e1c9651))
+
 ## [0.35.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.35.0...v0.35.1) (2026-09-20)
 
 
