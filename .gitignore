@@ -4,3 +4,5 @@ data/*.db
 .pi/
 .sync-state.json
 data/.skills-sync-state.json
+# Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)
+.stelow/
