@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { normalizePointRoute, resolvePointRoute, modesForPoint, pointSupportsPresetJudge, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_AUTO_CONTINUE } from "../lib/decision-points.mjs";
+import { normalizePointRoute, resolvePointRoute, modesForPoint, pointSupportsPresetJudge, DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_AUTO_CONTINUE } from "../lib/decision-points.mjs";
 
 // Per-point route overrides fall back to the shared endpoint field by field:
 // a point can pin just a model (or just a key) without redeclaring the route.
@@ -44,5 +44,12 @@ assert.equal(pointSupportsPresetJudge(DECISION_POINT_TRIAGE_INTENT), true, "tria
 assert.equal(pointSupportsPresetJudge(DECISION_POINT_AUTO_CONTINUE), false, "auto-continue may not judge via preset");
 assert.ok(modesForPoint(DECISION_POINT_TRIAGE_INTENT).includes("preset"), "triage advertises preset mode");
 assert.ok(!modesForPoint(DECISION_POINT_AUTO_CONTINUE).includes("preset"), "auto-continue hides preset mode");
+
+// The registry must advertise exactly what the gate allows: an entry that
+// spreads the full mode list would offer preset in the UI and refuse on
+// save. Caught live once on auto-continue — pinned here instead.
+for (const entry of DECISION_POINTS) {
+  assert.deepEqual(entry.modes, modesForPoint(entry.id), `${entry.id} advertises exactly its allowed modes`);
+}
 
 console.log("decision point route test ok: field-level fallback, normalization, preset gating");
