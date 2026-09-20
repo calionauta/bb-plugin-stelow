@@ -1066,6 +1066,13 @@ Engines policy: the runtime floor stays `bbPluginSdk >=0.4.6` because the host
 bundle (0.4.84) must accept the plugin — every new API use is feature-detected
 with a fallback, so 0.4.106 is build-time types only.
 
+Host-version note: the 0.43.3 APIs above (`app.commands`, persistent
+`requestInput` presentation, `experimental_discoverRpc`, dependent threads)
+are dormant until the host upgrades past 0.43.0 — the code paths are live but
+the host ignores the new fields. `bb plugin rpc list` / `bb diagnostics
+cli-errors` likewise appear only with host >=0.43.3. No plugin-side substitute
+is planned (YAGNI): the host CLI covers it after the upgrade.
+
 ## Cross-cutting rules (apply to every feature above)
 
 From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
