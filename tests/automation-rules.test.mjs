@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import Database from "better-sqlite3";
 import { decideAutomationIssue, matchAutomationIssues, previewAutomationMatches, ruleSourceKey } from "../lib/automation-rules.mjs";
 import { applyRulePrompt, findRelatedIssues, githubIntentFor, normalizeGithubAuthors, normalizeGithubLabels } from "../lib/github-intent.mjs";
-import { decideAutomationSpawn, describeParkedReason } from "../lib/github-automation-gate.mjs";
+import { acquireGithubImportClaim, completeGithubImport, liveImportedKeys, releaseGithubClaim } from "../lib/github-claims.mjs";
+import { carriesMarker, markerFor } from "../lib/github-writeback.mjs";
+import { decideAutomationSpawn, describeParkedReason, resolveEffectiveEnvKind } from "../lib/github-automation-gate.mjs";
 
 const projectForRepo = new Map([
   ["acme/web", "proj_web"],
@@ -184,3 +187,70 @@ assert.deepEqual(
 assert.ok(describeParkedReason("no-worktree-preset").includes("New-worktree"), "parked reason names the fix");
 
 console.log("automation gate test ok: intent order, allowlist, prompt, related, spawn gate");
+
+// Effective environment: the band value always decides, even against a
+// present worktree preset; unknowns fail closed to shared, never isolated.
+assert.equal(resolveEffectiveEnvKind({ bandEnvKind: "project-default", worktreePresetId: "preset_x" }), "project-default", "band redirect to shared wins over inventory");
+assert.equal(resolveEffectiveEnvKind({ bandEnvKind: "new-worktree", worktreePresetId: null }), "new-worktree", "band redirect to worktree isolates without inventory");
+assert.equal(resolveEffectiveEnvKind({ bandEnvKind: undefined, worktreePresetId: "preset_x" }), "new-worktree", "no band row falls back to inventory");
+assert.equal(resolveEffectiveEnvKind({}), "project-default", "missing facts fail closed to shared");
+
+// Write-back markers: identity plus remote matching, defensive inputs.
+assert.equal(markerFor("card_1"), "<!-- stelow:card=card_1 -->", "marker names the card");
+assert.equal(carriesMarker([{ body: "done" }, { body: "x <!-- stelow:card=card_1 --> y" }], markerFor("card_1")), true, "marker matches inside a longer body");
+assert.equal(carriesMarker([{ body: "done" }], markerFor("card_1")), false, "absent marker is not success");
+assert.equal(carriesMarker([{ body: "done" }], ""), false, "empty marker never matches");
+assert.equal(carriesMarker(null, markerFor("card_1")), false, "missing comments never match");
+
+// Claim protocol on a real :memory: DB: two interleaved racers, one
+// owner; release re-opens; completion closes with the card attached.
+const claimDb = new Database(":memory:");
+claimDb.exec("CREATE TABLE github_imports (issue_key TEXT PRIMARY KEY, repo TEXT NOT NULL, number INTEGER NOT NULL, label TEXT NOT NULL, card_id TEXT, imported_at INTEGER NOT NULL, claimed_by TEXT)");
+const claimArgs = { key: "acme/web#1", repo: "acme/web", number: 1, label: "stelow-work", token: "claim_a", now: 100 };
+const racerArgs = { ...claimArgs, token: "claim_b" };
+assert.deepEqual(acquireGithubImportClaim(claimDb, claimArgs), { owned: true, cardId: null }, "first racer owns a fresh key");
+assert.deepEqual(acquireGithubImportClaim(claimDb, racerArgs), { owned: false, cardId: null }, "second racer loses on a live claim");
+assert.equal(completeGithubImport(claimDb, { key: claimArgs.key, token: "claim_a", cardId: "card_1", label: "stelow-work", now: 200 }), true, "owner completes");
+assert.deepEqual(acquireGithubImportClaim(claimDb, racerArgs), { owned: false, cardId: "card_1" }, "late arrival sees the card, never a second one");
+releaseGithubClaim(claimDb, { key: "other#9", token: "claim_a" });
+assert.deepEqual(
+  acquireGithubImportClaim(claimDb, { key: "acme/web#2", repo: "acme/web", number: 2, label: "stelow-work", token: "claim_c", now: 300 }),
+  { owned: true, cardId: null },
+  "fresh keys stay ownable after unrelated releases",
+);
+assert.equal(completeGithubImport(claimDb, { key: "acme/web#2", token: "wrong-token", cardId: "card_x", label: "stelow-work", now: 400 }), false, "a foreign token completes nothing");
+releaseGithubClaim(claimDb, { key: "acme/web#2", token: "claim_c" });
+assert.deepEqual(
+  acquireGithubImportClaim(claimDb, { key: "acme/web#2", repo: "acme/web", number: 2, label: "stelow-work", token: "claim_d", now: 500 }),
+  { owned: true, cardId: null },
+  "a released crash claim is re-ownable",
+);
+
+assert.equal(resolveEffectiveEnvKind({ bandEnvKind: "bogus" }), "project-default", "unknown band values fail closed, never pass through");
+assert.equal(carriesMarker("not-an-array", markerFor("card_1")), false, "non-array comments never match and never throw");
+
+console.log("automation claims test ok: race ownership, release, completion, markers, effective env");
+
+// Liveness behind the single dedupe, on the same table shape as migrations.
+const liveDb = new Database(":memory:");
+liveDb.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
+liveDb.exec("CREATE TABLE github_imports (issue_key TEXT PRIMARY KEY, repo TEXT NOT NULL, number INTEGER NOT NULL, label TEXT NOT NULL, card_id TEXT, imported_at INTEGER NOT NULL, claimed_by TEXT)");
+assert.deepEqual([...liveImportedKeys(liveDb)], [], "empty table imports nothing");
+acquireGithubImportClaim(liveDb, { key: "acme/web#1", repo: "acme/web", number: 1, label: "stelow-work", token: "claim_a", now: 100 });
+assert.deepEqual([...liveImportedKeys(liveDb)], ["acme/web#1"], "in-flight claims suppress re-fire");
+completeGithubImport(liveDb, { key: "acme/web#1", token: "claim_a", cardId: "card_1", label: "stelow-work", now: 200 });
+liveDb.prepare("INSERT INTO cards (id) VALUES (?)").run("card_1");
+assert.deepEqual([...liveImportedKeys(liveDb)], ["acme/web#1"], "completed imports with a live card stay imported");
+liveDb.prepare("INSERT INTO github_imports (issue_key, repo, number, label, card_id, imported_at, claimed_by) VALUES (?, ?, ?, ?, ?, ?, NULL)").run("acme/web#9", "acme/web", 9, "stelow-work", "ghost", 50);
+assert.deepEqual([...liveImportedKeys(liveDb)], ["acme/web#1"], "a dangling card_id (FKs off, card gone) reads as not-imported");
+liveDb.prepare("UPDATE github_imports SET card_id = NULL WHERE issue_key = ?").run("acme/web#1");
+assert.deepEqual([...liveImportedKeys(liveDb)], [], "a deleted card (FK nulled the link) reads as not-imported");
+releaseGithubClaim(liveDb, { key: "acme/web#1", token: "nope" });
+assert.deepEqual([...liveImportedKeys(liveDb)], [], "a foreign token releases nothing");
+completeGithubImport(liveDb, { key: "acme/web#1", token: "claim_b", cardId: "card_2", label: "stelow-work", now: 300 });
+releaseGithubClaim(liveDb, { key: "acme/web#1", token: "claim_b" });
+assert.deepEqual([...liveImportedKeys(liveDb)], [], "release after completion is a no-op on the liveness set");
+acquireGithubImportClaim(liveDb, { key: "acme/web#1", repo: "acme/web", number: 1, label: "stelow-work", token: "claim_c", now: 400 });
+assert.deepEqual([...liveImportedKeys(liveDb)], ["acme/web#1"], "re-import re-arms the guard");
+
+console.log("automation liveness test ok: in-flight, completed, deleted, released");

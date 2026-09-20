@@ -50,24 +50,26 @@ assert.match(githubApp, /rpc\.call\("importGithubIssue", \{[^}]*start: importSta
 assert.match(githubApp, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
 assert.match(githubApp, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
 assert.match(githubApp, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");
-assert.match(githubServer, /automation_rule_seen/, "backlog guard has its own table");
-assert.match(githubServer, /primeAutomationRule/, "enabling a rule primes the backlog without drafting");
-assert.match(githubServer, /resolveWorktreePreset/, "auto-start resolves an isolated preset first");
-assert.match(githubServer, /decideAutomationSpawn/, "start policy decides from the effective spawn environment");
-assert.match(githubServer, /claimed_by/, "concurrent imports claim before working");
-assert.match(githubServer, /liveImportedKeys/, "cardless imports read as not-imported");
-assert.match(githubServer, /stelow:card=/, "write-back carries a verifiable marker");
-assert.match(githubServer, /commentCarriesMarker/, "write-back verifies instead of trusting the send");
-assert.match(githubServer, /applyRulePrompt/, "rule templates thread into the issue prompt");
-assert.match(githubServer, /findRelatedIssues/, "candidates warn about possibly-related issues");
-assert.match(githubServer, /githubIssuesEnabled/, "the feature carries its own kill switch");
+assert.match(githubServer, /seenKeys: seenAutomationKeys\(row\.id\)/, "the tick consults the backlog guard before matching");
+assert.match(githubServer, /primed = await primeAutomationRule\(ruleId, projectId, clean, authors\)/, "enabling a rule primes the backlog without drafting");
+assert.match(githubServer, /Rule saved disabled \(/, "a prime failure refuses live rules with the retry path named");
+assert.equal((githubServer.match(/decideAutomationSpawn\(/g) ?? []).length, 2, "save and tick decide through one start-policy gate");
+assert.match(githubServer, /acquireGithubImportClaim\(db,/, "creation goes through the claim protocol, never check-then-insert");
+assert.doesNotMatch(githubServer, /INSERT OR REPLACE INTO github_imports/, "the racing upsert shape is gone");
+assert.equal((githubServer.match(/liveImportedKeys\(db\)/g) ?? []).length, 3, "tick, prime, and preview delegate liveness to lib");
+assert.match(githubServer, /claimed_by = NULL WHERE issue_key = \?/, "a lost claim links our card unconditionally instead of orphaning a second one");
+assert.match(githubServer, /carriesMarker\(before\.issue\.comments, marker\)/, "a pre-existing marker is adopted, never re-posted");
+assert.doesNotMatch(githubServer, /alreadyImported: Boolean\(link\)/, "the cardless-counts-as-imported shape is gone");
+assert.match(githubServer, /const marker = markerFor\(cardId\)/, "write-back markers come from lib, never an inline literal");
+assert.match(githubServer, /carriesMarker\(after\.issue\.comments, marker\)/, "posted output is verified back on the remote");
+assert.match(githubServer, /GitHub issues are disabled on this host \(STELOW_GITHUB_ISSUES=0\)/, "disabled RPCs name the variable");
 assert.match(server, /STELOW_GITHUB_ISSUES/, "server.ts only names the switch, never its logic");
 assert.match(server, /\.\.\.github\.handlers/, "server.ts only spreads the feature handlers");
 assert.match(server, /runGithubMigrations\(db\)/, "server.ts delegates the feature migrations in one call");
-assert.match(server, /environment_label/, "cards record their spawn environment in one word");
-assert.match(server, /outcome/, "automation runs record their outcome");
-assert.match(app, /checkoutNoteFor/, "open cards name their checkout and branch");
-assert.match(githubApp, /RULE_RUN_OUTCOME/, "run history names each outcome in plain words");
+assert.doesNotMatch(githubServer, /card_id, fired_at\) VALUES/, "fires rows always carry their outcome");
+// environment_label is pinned by count in card-insert-contract (25
+// columns); checkout and outcome copy render from contract-typed data,
+// so no copy pins here.
 // Same checkbox, per-dialog default: creation dialogs start checked,
 // GitHub flows park unchecked.
 assert.match(app, /const \[startImmediately, setStartImmediately\] = useState\(true\)/, "new-issue dialogs default to started");

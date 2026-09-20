@@ -6,4 +6,8 @@ export declare function decideAutomationSpawn(options: {
   startImmediate?: unknown;
   effectiveEnvKind?: unknown;
 }): { start: boolean; parkedReason: string | null };
+export declare function resolveEffectiveEnvKind(options: {
+  bandEnvKind?: unknown;
+  worktreePresetId?: unknown;
+}): string;
 export declare function describeParkedReason(reason: unknown): string;

@@ -12,8 +12,10 @@
 
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { decideAutomationSpawn, describeParkedReason } from "../lib/github-automation-gate.mjs";
+import { decideAutomationSpawn, describeParkedReason, resolveEffectiveEnvKind } from "../lib/github-automation-gate.mjs";
+import { acquireGithubImportClaim, completeGithubImport, liveImportedKeys, releaseGithubClaim } from "../lib/github-claims.mjs";
 import { applyRulePrompt, findRelatedIssues, githubIntentFor, normalizeGithubAuthors, normalizeGithubLabels } from "../lib/github-intent.mjs";
+import { carriesMarker, markerFor } from "../lib/github-writeback.mjs";
 import { matchAutomationIssues, previewAutomationMatches } from "../lib/automation-rules.mjs";
 import { sortedUnion } from "../lib/github-lists.mjs";
 import { bandForKind } from "../lib/tracks.mjs";
@@ -293,13 +295,6 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
     return lines.join("\n");
   }
 
-  // SlopCop-style verification: never trust the send — match our hidden
-  // marker back on the issue. Makes retries safe (no double-post) and
-  // turns "posted but invisible" into a named state instead of a lie.
-  function commentCarriesMarker(comments: Array<{ body: string }>, marker: string): boolean {
-    return comments.some((comment) => comment.body.includes(marker));
-  }
-
   function ruleLabelsOf(row: Record<string, unknown>): string[] {
     const fromJson = (() => {
       if (typeof row.labels !== "string" || !row.labels) return null;
@@ -353,25 +348,22 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
     );
   }
 
-  // Imports with a live card behind them, plus in-flight claims (a NULL
-  // card WITH a claim token means someone is creating it right now).
-  // Cardless, claimless rows (deleted cards, released crashes) read as
-  // not-imported so the issue can come back.
-  function liveImportedKeys(): Set<string> {
-    return new Set(
-      (db.prepare("SELECT issue_key FROM github_imports WHERE card_id IN (SELECT id FROM cards) OR (card_id IS NULL AND claimed_by IS NOT NULL)").all() as Array<{ issue_key: string }>).map((row) => row.issue_key),
-    );
-  }
+  // Liveness behind the single dedupe lives in lib/github-claims.mjs
+  // (tested): cardless, claimless rows read as not-imported so a deleted
+  // card's issue can come back.
 
   // Effective spawn environment for GitHub-created build cards: the
   // band-routed preset wins over any passed preset at spawn time, so the
-  // gate must check this — never mere preset existence.
+  // gate must check this — never mere preset existence. The resolution
+  // itself is pure and tested (lib/github-automation-gate.mjs); only the
+  // two lookups stay here.
   function effectiveGithubSpawnEnvKind(): string {
     const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(bandForKind("build")) as { preset_id: string } | undefined;
     const bandEnv = bandRow
       ? (db.prepare("SELECT environment_kind FROM presets WHERE id = ?").get(bandRow.preset_id) as { environment_kind: string } | undefined)?.environment_kind
       : undefined;
-    return bandEnv ?? (resolveWorktreePreset() ? "new-worktree" : "project-default");
+    const worktreePreset = db.prepare("SELECT id FROM presets WHERE environment_kind = 'new-worktree' ORDER BY is_default DESC, name ASC LIMIT 1").get() as { id: string } | undefined;
+    return resolveEffectiveEnvKind({ bandEnvKind: bandEnv, worktreePresetId: worktreePreset?.id });
   }
 
   // Backlog guard: record currently-matching issues as seen without
@@ -385,7 +377,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
     const firedKeys = new Set(
       (db.prepare("SELECT source_key FROM automation_rule_fires WHERE rule_id = ?").all(ruleId) as Array<{ source_key: string }>).map((row) => row.source_key),
     );
-    const matches = matchAutomationIssues(items.items, { labels, trustedAuthors, projectId, projectForRepo, firedKeys, seenKeys: seenAutomationKeys(ruleId), importedKeys: liveImportedKeys() });
+    const matches = matchAutomationIssues(items.items, { labels, trustedAuthors, projectId, projectForRepo, firedKeys, seenKeys: seenAutomationKeys(ruleId), importedKeys: liveImportedKeys(db) });
     const ts = now();
     for (const match of matches) {
       db.prepare("INSERT OR IGNORE INTO automation_rule_seen (rule_id, source_key, seen_at) VALUES (?, ?, ?)").run(ruleId, match.key, ts);
@@ -394,19 +386,17 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
   }
 
   // Shared GitHub issue → card path (manual import + automation rules).
-  // Claim-first with an owner token: concurrent flows (manual click vs
-  // scheduler tick) cannot both pass the dedupe check — the loser sees
+  // Claim-first with an owner token (lib/github-claims.mjs, tested):
+  // concurrent flows cannot both pass the dedupe check — the loser sees
   // already-imported or in-flight instead of orphaning a second card.
   async function createCardFromGithub({ projectId, repo, number: numberValue, triggerLabels, start, presetId, rulePrompt }: { projectId: string; repo: string; number: number; triggerLabels: string[]; start: boolean; presetId?: string | null; rulePrompt?: string | null }): Promise<{ cardId: string | null; skipped: string | null }> {
     const key = `${repo}#${numberValue}`;
     const fast = db.prepare("SELECT card_id FROM github_imports WHERE issue_key = ?").get(key) as { card_id: string | null } | undefined;
     if (fast?.card_id && ctx.cards.get(fast.card_id)) return { cardId: fast.card_id, skipped: "already-imported" };
     const token = ctx.randomId("claim");
-    db.prepare("INSERT OR IGNORE INTO github_imports (issue_key, repo, number, label, card_id, imported_at, claimed_by) VALUES (?, ?, ?, ?, NULL, ?, NULL)").run(key, repo, numberValue, triggerLabels[0] ?? "", now());
-    const claimed = db.prepare("UPDATE github_imports SET claimed_by = ? WHERE issue_key = ? AND card_id IS NULL AND claimed_by IS NULL").run(token, key);
-    if (claimed.changes === 0) {
-      const row = db.prepare("SELECT card_id FROM github_imports WHERE issue_key = ?").get(key) as { card_id: string | null } | undefined;
-      if (row?.card_id && ctx.cards.get(row.card_id)) return { cardId: row.card_id, skipped: "already-imported" };
+    const claim = acquireGithubImportClaim(db, { key, repo, number: numberValue, label: triggerLabels[0] ?? "", token, now: now() });
+    if (!claim.owned) {
+      if (claim.cardId && ctx.cards.get(claim.cardId)) return { cardId: claim.cardId, skipped: "already-imported" };
       return { cardId: null, skipped: "in-flight" };
     }
     try {
@@ -417,12 +407,19 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       const prompt = applyRulePrompt(githubIssuePrompt(issue, issue.comments), rulePrompt);
       const intent = githubIntentFor({ labels: issue.labels, title: issue.title });
       const card = await ctx.cards.create({ projectId, prompt, attachments: [], intent, appetite: "Lean", reviewMode: "Auto", presetId: presetId ?? null, start });
-      const ts = now();
-      db.prepare("UPDATE github_imports SET card_id = ?, label = ?, imported_at = ?, claimed_by = NULL WHERE issue_key = ? AND claimed_by = ?").run(card.cardId, triggerLabels[0] ?? "", ts, key, token);
+      if (!completeGithubImport(db, { key, token, cardId: card.cardId, label: triggerLabels[0] ?? "", now: now() })) {
+        // Defensive convergence only (unreachable while the claim holds:
+        // link OUR card without the token guard so any retry finds a live
+        // card and converges to already-imported instead of orphaning a
+        // second one. Overwriting a rival link is impossible here — a rival
+        // could only complete with its own token, which the claim excludes.
+        db.prepare("UPDATE github_imports SET card_id = ?, label = ?, imported_at = ?, claimed_by = NULL WHERE issue_key = ?").run(card.cardId, triggerLabels[0] ?? "", now(), key);
+        bb.log.warn(`github import ${key} completed without its claim; linked defensively`);
+      }
       await g.setLabels({ repo, number: numberValue, labels: issue.labels.filter((item) => !triggerLabels.includes(item)) }).catch(() => {});
       return { cardId: card.cardId, skipped: null };
     } finally {
-      db.prepare("UPDATE github_imports SET claimed_by = NULL WHERE issue_key = ? AND claimed_by = ? AND card_id IS NULL").run(key, token);
+      releaseGithubClaim(db, { key, token });
     }
   }
 
@@ -488,7 +485,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
     if (!items) return;
     const github = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
     const projectForRepo = new Map(github.repos.map((entry) => [entry.repo, entry.projectId]));
-    const importedKeys = liveImportedKeys();
+    const importedKeys = liveImportedKeys(db);
     for (const row of rows) {
       await runSingleAutomationRule(row, items.items, projectForRepo, importedKeys);
     }
@@ -560,7 +557,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
         for (const key of db.prepare("SELECT source_key FROM automation_rule_fires WHERE rule_id = ?").all(row.id) as Array<{ source_key: string }>) firedKeys.add(key.source_key);
         for (const key of seenAutomationKeys(row.id)) seenKeys.add(key);
       }
-      const { matches, skipped } = previewAutomationMatches(items.items, { labels: clean, trustedAuthors: authors, projectId, projectForRepo, firedKeys, seenKeys, importedKeys: liveImportedKeys() });
+      const { matches, skipped } = previewAutomationMatches(items.items, { labels: clean, trustedAuthors: authors, projectId, projectForRepo, firedKeys, seenKeys, importedKeys: liveImportedKeys(db) });
       const titleOf = (key: string): { title: string; url: string; author: string } => {
         const item = byKey.get(key);
         return { title: item?.title ?? key, url: item?.url ?? "", author: item?.author ?? "" };
@@ -686,7 +683,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       const tasksTotal = scopes.reduce((total, scope) => total + scope.tasks.length, 0);
       const tasksDone = scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0);
       const scopeLines = scopes.map((scope) => `- ${scope.name} (${ctx.cards.statusLabel(scope.status)}${scope.tasks.length > 0 ? `, ${scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length}/${scope.tasks.length} tasks` : ""})`);
-      const marker = `<!-- stelow:card=${cardId} -->`;
+      const marker = markerFor(cardId);
       const body = [
         `Stelow completed "${card.display_name ?? card.name}" (intent: ${card.intent}, final stage: ${card.stage}).`,
         ``,
@@ -701,7 +698,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       // recording. If the marker is already there, adopt it — retrying
       // must never double-post.
       const before = await g.getIssue({ repo: link.repo, number: link.number }).catch(() => null);
-      if (before && commentCarriesMarker(before.issue.comments, marker)) {
+      if (before && carriesMarker(before.issue.comments, marker)) {
         db.prepare("UPDATE github_imports SET commented_at = ? WHERE card_id = ?").run(now(), cardId);
         return { ok: true, issueUrl, error: null };
       }
@@ -711,7 +708,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
         return { ok: false, issueUrl: null, error: error instanceof Error ? error.message : "Could not comment on the GitHub issue." };
       }
       const after = await g.getIssue({ repo: link.repo, number: link.number }).catch(() => null);
-      if (!after || !commentCarriesMarker(after.issue.comments, marker)) {
+      if (!after || !carriesMarker(after.issue.comments, marker)) {
         return { ok: false, issueUrl, error: "Comment sent but not found back on the issue — check it on GitHub before retrying (retrying never double-posts)." };
       }
       // Record before the optional close: a close failure must never
