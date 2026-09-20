@@ -11,7 +11,9 @@ manual and automatic can never draft the same `repo#number` twice.
 - **Single dedupe.** `github_imports(issue_key → card_id)` is the one
   source of truth, claimed with an owner token *before* any work starts.
   A concurrent manual click and scheduler tick cannot both pass the
-  check — the loser reads `already-imported` or `in-flight`.
+  check — the loser reads `already-imported` or `in-flight`. Liveness
+  is verified by existence, never by a bare non-null: a deleted card's
+  issue reads as not-imported and can come back.
 - **Parked by default.** Both flows ship with Start unchecked. Creation
   dialogs default to started; GitHub flows default to parked Inbox
   drafts. Presence decides the default.
@@ -30,6 +32,11 @@ manual and automatic can never draft the same `repo#number` twice.
 - **Bounded blast radius.** 10 drafts per rule per tick; rules never
   move cards, merge code, or clear labels behind the user's back
   (the import clears its own trigger labels so the loop is pull-once).
+- **Named checkout.** Every card records its spawn environment in one
+  stored word (isolated worktree, shared checkout, BB-managed,
+  exploratory) and the open card shows it plus the live branch —
+  decided once at spawn from the resolved environment, read back
+  afterwards, never guessed from paths.
 
 ## Configuration
 
