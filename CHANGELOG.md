@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.31.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.30.0...v0.31.0) (2026-09-19)
+
+
+### Features
+
+* per-rule auto-start with aligned automation dialog and delete confirm ([80d98ed](https://github.com/calionauta/bb-plugin-stelow/commit/80d98edd74b1d965e9338f643c5f208b4f9807d4))
+
+
+### Bug Fixes
+
+* automation realtime reason and UI contract pins ([5711c11](https://github.com/calionauta/bb-plugin-stelow/commit/5711c11cc01abe387ab76c908193b03a4f9dabea))
+
 ## [0.30.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.29.0...v0.30.0) (2026-09-19)
 
 
