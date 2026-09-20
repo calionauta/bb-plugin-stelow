@@ -42,6 +42,7 @@ import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFinger
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria } from "./lib/skill-criteria.mjs";
+import { parseGoldenFile, cohenKappa, goldenVerdict } from "./lib/skill-goldens.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
 import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, DECISION_PROVIDERS, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
 import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent } from "./lib/decision-points.mjs";
@@ -676,7 +677,7 @@ export const rpcContract = defineRpcContract({
   },
   listDecisionPoints: {
     input: z.object({}).strict(),
-    output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()) })) }),
+    output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), rules: z.string(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()) })) }),
   },
   setDecisionPoint: {
     input: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()).optional() }).strict(),
@@ -6421,6 +6422,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             id: def.id,
             label: def.label,
             description: def.description,
+            rules: def.rules,
             modes: [...def.modes],
             mode: normalizePointMode(row?.mode, def.defaultMode),
             thresholds: normalizeThresholds(stored, def.defaultThresholds),
@@ -6676,6 +6678,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "criteria", summary: "Score an artifact against its skill's semantic criteria (advisory, read-only)", usage: "bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" },
+      { name: "goldens", summary: "Measure judge agreement on labeled golden artifacts (read-only)", usage: "bb stelow goldens --skill <skill-id> --file <path> [--file ...] [--card <card_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -8209,6 +8212,85 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const mark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
         const lines = judgment.findings.map((finding) => `${mark(finding.verdict)} ${finding.id} — ${finding.verdict}${finding.score !== null ? ` (score ${finding.score}, confidence ${finding.confidence ?? "n/a"})` : ""}: ${finding.text}`);
         return { exitCode: 0, stdout: [`Artifact criteria: ${skillArg} × ${artifactArg} (${criteriaProvider}, ${judgment.findings.length} criteria)`, ...lines, `Summary: ${met} met, ${unmet} unmet, ${unverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
+      }
+      if (argv[0] === "goldens") {
+        // Golden-set agreement: humans label artifacts met/unmet per
+        // criterion, the judge scores the same files, kappa per criterion
+        // decides keep/repair/drop. Measurement only — read-only, never a
+        // gate. Files live in the card workspace; judgments ride a header.
+        const args = argv.slice(1);
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        let skillArg: string | null = null;
+        const fileArgs: string[] = [];
+        const asJson = args.includes("--json");
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--skill") { skillArg = args[i + 1] ?? null; i++; continue; }
+          if (args[i] === "--file") { if (args[i + 1]) fileArgs.push(args[i + 1]); i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow goldens --skill <skill-id> --file <path> [--file ...] [--card <card_id>] [--json]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        if (!skillArg) return { exitCode: 2, stderr: "Pass --skill <skill-id> matching the goldens' skill: header." };
+        if (fileArgs.length === 0) return { exitCode: 2, stderr: "Pass at least one --file <workspace-relative golden path>." };
+        if (isDecisionApiDisabled(process.env)) return { exitCode: 1, stderr: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
+        const goldensPoint = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string } | undefined;
+        if (normalizePointMode(goldensPoint?.mode, "rules") !== "api") {
+          return { exitCode: 1, stderr: "Golden agreement needs the Artifact criteria router in Decision API mode. Set it in Manage agent presets → Decision routers." };
+        }
+        const workspace = await cardWorkspace(card);
+        if (!workspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
+        const skillRel = skillArg.includes("/") ? skillArg : `${skillArg}/SKILL.md`;
+        const skillFull = resolveArtifactPath(PLUGIN_SKILLS_DIR, skillRel);
+        let skillText: string | null = null;
+        try { skillText = skillFull ? readFileSync(skillFull, "utf8") : null; } catch { skillText = null; }
+        if (!skillText) return { exitCode: 2, stderr: `Unknown skill "${skillArg}" — skills live under the plugin's skills/ directory (stelow-*).` };
+        const goldensCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+        const goldensProvider = normalizeDecisionProvider(goldensCfg?.provider ?? "jev");
+        const { key: goldensKey } = resolveDecisionApiKey({ storedKey: goldensCfg?.api_key ?? null, env: process.env });
+        if (!goldensKey && providerRequiresKey(goldensProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+        let goldensStored: unknown = null;
+        try { goldensStored = goldensPoint ? JSON.parse(goldensPoint.thresholds) : null; } catch { goldensStored = null; }
+        const goldensThresholds = normalizeThresholds(goldensStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
+        const perCriterion: Record<string, Array<{ human: string; model: string }>> = {};
+        const skipped: Array<{ file: string; reason: string }> = [];
+        let abstained = 0;
+        let failedFiles = 0;
+        for (const rel of fileArgs) {
+          const full = resolveArtifactPath(workspace.path, rel);
+          const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
+          if (typeof content !== "string" || !content) { skipped.push({ file: rel, reason: "unreadable" }); continue; }
+          const golden = parseGoldenFile(content);
+          if (!golden.ok) { skipped.push({ file: rel, reason: golden.reason ?? "malformed" }); continue; }
+          if (golden.skill !== skillArg && golden.skill !== skillRel) { skipped.push({ file: rel, reason: `skill header "${golden.skill}" does not match --skill` }); continue; }
+          const judgment = await judgeArtifactCriteria({
+            provider: goldensProvider,
+            endpoint: goldensCfg?.endpoint ?? defaultEndpointFor(goldensProvider),
+            apiKey: goldensKey ?? "",
+            model: normalizeDecisionApiModel(goldensCfg?.model, DECISION_API_DEFAULT_MODEL),
+            skillText,
+            artifactText: golden.artifact ?? "",
+            routeAt: goldensThresholds.routeAt,
+          });
+          if (!judgment.ok) { failedFiles += 1; continue; }
+          const byId = new Map(judgment.findings.map((finding) => [finding.id, finding]));
+          for (const [id, human] of Object.entries(golden.judgments ?? {})) {
+            const finding = byId.get(id);
+            if (!finding || finding.verdict === "unverifiable") { abstained += 1; continue; }
+            (perCriterion[id] ??= []).push({ human, model: finding.verdict });
+          }
+        }
+        const criteria = Object.entries(perCriterion).map(([id, pairs]) => {
+          const report = cohenKappa(pairs);
+          return { id, ...report, verdict: goldenVerdict(report) };
+        });
+        if (asJson) {
+          return { exitCode: 0, stdout: JSON.stringify({ skill: skillArg, files: fileArgs.length, skipped, failedFiles, abstained, criteria }, null, 2) };
+        }
+        const rows = criteria.map((entry) => `${entry.id}: n=${entry.n} agreement=${entry.agreement === null ? "n/a" : entry.agreement.toFixed(2)} κ=${entry.kappa === null ? "n/a" : entry.kappa.toFixed(2)} → ${entry.verdict}`);
+        return { exitCode: 0, stdout: [`Golden agreement: ${skillArg} (${fileArgs.length} files, ${skipped.length} skipped, ${failedFiles} failed, ${abstained} abstentions)`, ...rows, "keep ≥ 0.6 · repair below · drop near chance · under 5 labels always repairs."].join("\n") };
       }
       if (argv[0] === "draft") {
         // Disposable Tier G burst: text-in/text-out on the generation

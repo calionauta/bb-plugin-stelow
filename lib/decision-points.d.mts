@@ -6,6 +6,7 @@ export interface DecisionPoint {
   id: string;
   label: string;
   description: string;
+  rules: string;
   modes: string[];
   defaultMode: string;
   defaultThresholds: Record<string, number>;

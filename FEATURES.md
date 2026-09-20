@@ -721,6 +721,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   unverifiable report, never blocking. Runs only with the Artifact
   criteria router in Decision API mode and a configured provider;
   everything else refuses with the fix named.
+- **`bb stelow goldens` (measurement, `lib/skill-goldens.mjs`).** Humans
+  label artifacts met/unmet per criterion in golden files (skill header +
+  judgments + artifact body); the judge scores the same files and Cohen's
+  kappa per criterion decides keep (≥0.6), repair, or drop (under 5 labels
+  always repairs). Read-only like `criteria`; abstentions never enter
+  kappa. This is the calibration loop semantic enforcement waits on.
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,

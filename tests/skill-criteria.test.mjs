@@ -96,6 +96,24 @@ for (const file of markdownFiles(join(root, "skills"))) {
 }
 assert.ok(swept.length >= 25, `the rollout covers the playbooks (swept ${swept.length} files)`);
 
+// Anti-drift: every block lives next to the contract it mirrors, and every
+// contract has a block. A moved contract orphans its block (adjacency
+// fails); a new contract without a block breaks coverage (reciprocity
+// fails with the offenders named).
+const CONTRACT_PATTERN = /completeness contract/i;
+const withoutBlock = [];
+const farFromContract = [];
+for (const file of markdownFiles(join(root, "skills"))) {
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const contractAt = lines.findIndex((line) => CONTRACT_PATTERN.test(line));
+  const blockAt = lines.findIndex((line) => line.trim() === "criteria:");
+  if (contractAt >= 0 && blockAt < 0) withoutBlock.push(file);
+  if (blockAt >= 0 && (contractAt < 0 || blockAt - contractAt > 40)) farFromContract.push(file);
+}
+assert.deepEqual(withoutBlock, [], `every contract has a mirrored block: ${withoutBlock.join(", ")}`);
+assert.deepEqual(farFromContract, [], `every block sits within 40 lines after its contract: ${farFromContract.join(", ")}`);
+
 // Judge verdicts: confident extremes decide, anything else abstains. One
 // stubbed provider answers two criteria to prove atomic fan-out.
 const judgeSkill = `criteria:

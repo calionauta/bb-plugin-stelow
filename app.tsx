@@ -3875,7 +3875,7 @@ function PresetExecutionPicker({ value, onChange }: {
 }
 
 type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; keyRequired: boolean; disabled: boolean; provider: string; configured: boolean };
-type DecisionRouterPoint = { id: string; label: string; description: string; modes: string[]; mode: string; thresholds: Record<string, number> };
+type DecisionRouterPoint = { id: string; label: string; description: string; rules: string; modes: string[]; mode: string; thresholds: Record<string, number> };
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
 function modeLabel(mode: string): string {
@@ -4005,6 +4005,7 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
         </select>
       </div>
       <p className="text-[11px] text-muted-foreground">{point.description}</p>
+      {point.mode === "rules" ? <p className="text-[11px] text-muted-foreground">Built-in rules: {point.rules}</p> : null}
       {point.mode === "api" ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <label className="flex flex-1 items-center gap-2"><span className="shrink-0">Act at confidence ≥</span>
