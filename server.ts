@@ -41,6 +41,7 @@ import { validateArtifact, validateSubstep, validateVariant, validateExplore, bu
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
+import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -5203,7 +5204,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         preset = found;
         db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, now());
       } else {
-        preset = getPresetForCard(cardId);
+        // No explicit preset: reseed resolves the reliable-tier preset like
+        // any fresh start (card pin, reliable override, band, default) —
+        // never the bare card default under an active band policy.
+        preset = getReliablePresetForBand(bandForCardKindStage(card.kind, card.stage), cardId);
       }
       const previousThreadId = card.worker_thread_id;
       const params = presetAttachmentParams(preset);
@@ -6153,6 +6157,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const inUse = db.prepare("SELECT COUNT(*) AS count FROM card_presets WHERE preset_id = ?").get(id) as { count: number };
       if (inUse.count > 0) return { deleted: false, error: `Preset is assigned to ${inUse.count} card(s). Unassign first.` };
       db.prepare("DELETE FROM presets WHERE id = ?").run(id);
+      // Band/reliable/reviewer rows cascade silently, so live workers running
+      // under the deleted preset re-evaluate against their new fallback.
+      for (const card of liveWorkerCards(db, null)) {
+        const band = bandForCardKindStage(card.kind, card.stage);
+        refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
+      }
       return { deleted: true, error: null };
     },
 
@@ -6170,6 +6180,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         db.prepare("INSERT OR REPLACE INTO stage_presets (band, preset_id, assigned_at) VALUES (?, ?, ?)").run(band, presetId, now());
       } else {
         db.prepare("DELETE FROM stage_presets WHERE band = ?").run(band);
+      }
+      // Provider/model are fixed at spawn: only this band's live workers can
+      // run stale after the change, so only they re-evaluate restart-pending.
+      for (const card of liveWorkerCards(db, [band])) {
+        refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
       }
       return { ok: true, error: null };
     },
@@ -6231,9 +6246,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // preset changed under it offers Restart instead of a Resume that
       // changes nothing. Cards with a per-card pin are unaffected (the pin
       // still wins) — refreshRestartPending recomputes their flag harmlessly.
-      const live = db.prepare("SELECT id, kind, stage, worker_thread_id, worker_preset_id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string; kind: string; stage: string; worker_thread_id: string; worker_preset_id: string | null }>;
-      for (const card of live) {
-        const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
+      for (const card of liveWorkerCards(db, null)) {
+        const band = bandForCardKindStage(card.kind, card.stage);
         refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
       }
       bb.realtime.publish("board-changed", { presetId });

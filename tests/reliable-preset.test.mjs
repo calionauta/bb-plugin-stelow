@@ -55,7 +55,7 @@ assert.ok(assignAt >= 0, "the reliable setter body is found");
 const assignEnd = server.indexOf("\n    },\n", assignAt);
 assert.ok(assignEnd > assignAt, "the reliable setter body is bounded");
 const assignBody = server.slice(assignAt, assignEnd);
-assert.ok(assignBody.includes("WHERE worker_thread_id IS NOT NULL"), "only live workers are re-evaluated — workerless cards keep their state");
+assert.ok(assignBody.includes("liveWorkerCards(db, null)"), "all live workers are re-evaluated through the shared fan-out helper");
 assert.ok(assignBody.includes("refreshRestartPending(db, card.id,"), "live workers recompute restart-pending against the new effective preset");
 // Both the zod contract and the handler must exist — a handler without a
 // contract entry fails typecheck, a contract entry without a handler fails

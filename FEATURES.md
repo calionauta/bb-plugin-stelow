@@ -509,8 +509,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preset from the current stage; applies preset changes. Predecessor
   archived with an inline mention for context.
 - **Restart fresh** (`reseedCard`). New worker from triage; scopes and
-  comments kept. A reseed restarts the workflow, not the human's review
-  choices: the card's current appetite and gate set carry over.
+  comments kept. Resolves the reliable-tier preset like any fresh start
+  (card pin, reliable override, band, default). A reseed restarts the
+  workflow, not the human's review choices: the card's current appetite
+  and gate set carry over.
 - **Worker ledger + lineage** (`worker-ledger`, `workflow-lineage`).
   Every worker thread recorded; mirrored into the workflow's own
   `stelow.json` so history survives plugin DB loss.
