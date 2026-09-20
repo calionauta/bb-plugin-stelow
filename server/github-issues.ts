@@ -151,14 +151,9 @@ export function runGithubMigrations(db: Db): void {
       } catch { /* best-effort backfill */ }
     }
   }
-  // Continuity for 0.31.x rules: the previous `autostart` flag maps onto
-  // start_immediate. The worktree gate still applies at save and every
-  // tick, so a migrated rule without an isolated destination parks
-  // visibly instead of silently changing behavior.
-  try {
-    const hasAutostart = (db.prepare("PRAGMA table_info(automation_rules)").all() as Array<{ name: string }>).some((column) => column.name === "autostart");
-    if (hasAutostart) db.prepare("UPDATE automation_rules SET start_immediate = 1 WHERE autostart = 1 AND (start_immediate IS NULL OR start_immediate = 0)").run();
-  } catch { /* column never existed — nothing to carry over */ }
+  // No continuity shims for pre-module rule shapes: rules carry labels,
+  // authors, template, and start policy in their current columns, period.
+  // Anything older re-saves through the dialog (parked drafts by default).
   const automationFireColumns = db.prepare("PRAGMA table_info(automation_rule_fires)").all() as Array<{ name: string }>;
   if (!automationFireColumns.some((column) => column.name === "outcome")) {
     db.exec("ALTER TABLE automation_rule_fires ADD COLUMN outcome TEXT");
