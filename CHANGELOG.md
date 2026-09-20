@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.37.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.36.1...v0.37.0) (2026-09-20)
+
+
+### Features
+
+* project picker for GitHub automation rules ([e1a40e5](https://github.com/calionauta/bb-plugin-stelow/commit/e1a40e52f3503730a30b08db1b363404c534eecf))
+
+
+### Bug Fixes
+
+* confirm router saves and never wipe drafts ([b1556a9](https://github.com/calionauta/bb-plugin-stelow/commit/b1556a9082cc7f363be346f0baa44e7c3d2b7dc0))
+* decision router rows save explicitly without board reloads ([dcd36f6](https://github.com/calionauta/bb-plugin-stelow/commit/dcd36f69b0372bfcf19b7091efce8bd65f8759c8))
+
 ## [0.36.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.36.0...v0.36.1) (2026-09-20)
 
 
