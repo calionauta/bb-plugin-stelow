@@ -3873,7 +3873,7 @@ function PresetExecutionPicker({ value, onChange }: {
   );
 }
 
-type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null };
+type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; disabled: boolean };
 type DecisionRouterPoint = { id: string; label: string; description: string; modes: string[]; mode: string; thresholds: Record<string, number> };
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
@@ -3922,18 +3922,19 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
       setBusy(false);
     }
   }
-  const keyHint = !status ? "Loading…" : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
+  const keyHint = !status ? "Loading…" : status.disabled ? "Disabled on this host (STELOW_DECISION_API=0)." : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
   return (
     <div className="grid gap-2">
       <p className="text-xs text-muted-foreground">One Jev-compatible endpoint for every router below. Any provider speaking the state + questions schema works — change endpoint and model, nothing else.</p>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Endpoint</span><Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.typesafe.ai/v1/systemone" /></label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>API key</span><Input type="password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={keyHint} autoComplete="off" /></label>
+      {status?.disabled ? <p className="text-xs text-muted-foreground" role="status">Decision API is disabled on this host (STELOW_DECISION_API=0). Routers answer with built-in rules.</p> : null}
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Endpoint</span><Input value={endpoint} disabled={status?.disabled} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.typesafe.ai/v1/systemone" /></label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} disabled={status?.disabled} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>API key</span><Input type="password" value={key} disabled={status?.disabled} onChange={(event) => setKey(event.target.value)} placeholder={keyHint} autoComplete="off" /></label>
       {message ? <p className="text-xs text-muted-foreground" role="status">{message}</p> : null}
       <div className="flex justify-end gap-2">
-        {status?.hasKey && status.keySource !== "env" ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => void save(true)}>Clear key</Button> : null}
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void probe()}>{busy ? "Working…" : "Test connection"}</Button>
-        <Button size="sm" disabled={busy} onClick={() => void save(false)}>{busy ? "Working…" : "Save"}</Button>
+        {status?.hasKey && status.keySource !== "env" && !status.disabled ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => void save(true)}>Clear key</Button> : null}
+        <Button size="sm" variant="outline" disabled={busy || status?.disabled} onClick={() => void probe()}>{busy ? "Working…" : "Test connection"}</Button>
+        <Button size="sm" disabled={busy || status?.disabled} onClick={() => void save(false)}>{busy ? "Working…" : "Save"}</Button>
       </div>
     </div>
   );
@@ -3966,6 +3967,7 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
     }
   }
   const dirty = Number(routeAt) !== (point.thresholds.routeAt ?? 0.6);
+  const valid = routeAt.trim() !== "" && Number.isFinite(Number(routeAt)) && Number(routeAt) >= 0 && Number(routeAt) <= 1;
   return (
     <div className="space-y-1 rounded-md border bg-muted/30 px-3 py-2">
       <div className="flex items-center gap-2 text-sm">
@@ -3985,7 +3987,7 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
           <label className="flex flex-1 items-center gap-2"><span className="shrink-0">Act at confidence ≥</span>
             <Input type="number" min="0" max="1" step="0.05" className="h-9" value={routeAt} onChange={(event) => setRouteAt(event.target.value)} />
           </label>
-          <Button size="sm" variant="outline" disabled={busy || !dirty} onClick={() => void saveThreshold()}>Save</Button>
+          <Button size="sm" variant="outline" disabled={busy || !dirty || !valid} onClick={() => void saveThreshold()}>Save</Button>
         </div>
       ) : null}
       {message ? <p className="text-[11px] text-muted-foreground" role="status">{message}</p> : null}
@@ -3995,13 +3997,17 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
 
 function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged: () => Promise<void> }) {
   const [points, setPoints] = useState<DecisionRouterPoint[]>([]);
+  const [hasKey, setHasKey] = useState(true);
   const reload = useCallback(() => {
     void rpc.call("listDecisionPoints", {}).then((result) => setPoints(result.points)).catch(() => setPoints([]));
+    void rpc.call("getDecisionApiConfig", {}).then((result) => setHasKey(result.hasKey)).catch(() => setHasKey(true));
   }, [rpc]);
   useEffect(() => { reload(); }, [reload]);
+  const keylessApi = !hasKey && points.some((point) => point.mode === "api");
   return (
     <div className="grid gap-2">
       <p className="text-xs text-muted-foreground">Each router picks how one judgment runs. Built-in rules are offline and free; Decision API needs the section above. Anything unconfigured answers with built-in rules.</p>
+      {keylessApi ? <p className="text-xs text-muted-foreground" role="status">Decision API has no key — api routers answer with built-in rules until one is set.</p> : null}
       {points.map((point) => <DecisionRouterRow key={point.id} rpc={rpc} point={point} onChanged={async () => { await onChanged(); reload(); }} />)}
     </div>
   );

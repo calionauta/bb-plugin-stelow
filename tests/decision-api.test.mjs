@@ -10,6 +10,7 @@ import {
   parseDecisionResponse,
   meetsDecisionThreshold,
   evaluateDecisionCall,
+  isDecisionApiDisabled,
 } from "../lib/decision-api.mjs";
 import {
   DECISION_POINT_TRIAGE_INTENT,
@@ -33,6 +34,11 @@ assert.deepEqual(resolveDecisionApiKey({ storedKey: "k", env: { DECISION_API_KEY
 assert.deepEqual(resolveDecisionApiKey({ storedKey: "", env: { DECISION_API_KEY: "e" } }), { key: "e", source: "env" }, "empty settings fall through to env");
 assert.deepEqual(resolveDecisionApiKey({ storedKey: null, env: { TYPESAFE_API_KEY: "t" } }), { key: "t", source: "env" }, "the vendor env alias works");
 assert.deepEqual(resolveDecisionApiKey({ storedKey: null, env: {} }), { key: null, source: null }, "no key resolves to nothing, never to a throw");
+
+// Kill switch: STELOW_DECISION_API=0 blocks every outbound call.
+assert.equal(isDecisionApiDisabled({ STELOW_DECISION_API: "0" }), true, "explicit 0 disables");
+assert.equal(isDecisionApiDisabled({}), false, "absent flag leaves the API on");
+assert.equal(isDecisionApiDisabled(null), false, "missing env leaves the API on");
 
 // Endpoint validation refuses non-URL and non-http(s) values at the boundary.
 assert.equal(isDecisionApiEndpointValid(DECISION_API_DEFAULT_ENDPOINT), true, "the default endpoint validates");

@@ -42,7 +42,7 @@ import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFinger
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
-import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
+import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
 import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent } from "./lib/decision-points.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
@@ -659,7 +659,7 @@ export const rpcContract = defineRpcContract({
   },
   getDecisionApiConfig: {
     input: z.object({}).strict(),
-    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable() }),
+    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), disabled: z.boolean() }),
   },
   setDecisionApiConfig: {
     input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional() }).strict(),
@@ -1891,6 +1891,7 @@ ${prompt}`;
   // error, or low-confidence answer leaves "unknown", exactly as today.
   async function seedBuildIntentFromRouter(promptText: string): Promise<string> {
     try {
+      if (isDecisionApiDisabled(process.env)) return "unknown";
       const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_TRIAGE_INTENT) as { mode: string; thresholds: string } | undefined;
       if (normalizePointMode(point?.mode, "rules") !== "api") return "unknown";
       const cfg = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
@@ -1906,7 +1907,11 @@ ${prompt}`;
         state: promptText,
         questions: triageIntentQuestions(),
       });
-      const resolved = resolveSeedIntent({ apiAnswers: result.ok ? result.answers : null, routeAt: thresholds.routeAt });
+      if (!result.ok) {
+        bb.log.warn(`triage intent router fell back to built-in rules: ${result.error ?? "call failed"}`);
+        return "unknown";
+      }
+      const resolved = resolveSeedIntent({ apiAnswers: result.answers, routeAt: thresholds.routeAt });
       if (resolved.source === "api") bb.log.info(`triage intent seeded from Decision API: ${resolved.intent} (confidence ${resolved.confidence})`);
       return resolved.intent;
     } catch {
@@ -6337,6 +6342,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         model: normalizeDecisionApiModel(row?.model, DECISION_API_DEFAULT_MODEL),
         hasKey: key !== null,
         keySource: source,
+        disabled: isDecisionApiDisabled(process.env),
       };
     },
 
@@ -6355,6 +6361,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     // only place the host spends Decision API budget on demand — background
     // paths fail soft to built-in rules instead.
     async testDecisionApi() {
+      if (isDecisionApiDisabled(process.env)) return { ok: false, latencyMs: null, model: null, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
       const row = db.prepare("SELECT endpoint, api_key, model FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string } | undefined;
       const { key } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
       if (!key) return { ok: false, latencyMs: null, model: null, error: "No key: set one in Decision API settings or export DECISION_API_KEY." };
@@ -6406,6 +6413,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const def = getDecisionPointDef(point);
       if (!def) return { ok: false, error: `Unknown decision point "${point}". Available: ${DECISION_POINTS.map((entry) => entry.id).join(", ")}.` };
       if (!def.modes.includes(mode)) return { ok: false, error: `Unknown mode "${mode}" for ${point}. Available: ${def.modes.join(", ")}.` };
+      if (mode === "api" && isDecisionApiDisabled(process.env)) return { ok: false, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
       const next = normalizeThresholds(thresholds ?? null, def.defaultThresholds);
       db.prepare("INSERT OR REPLACE INTO decision_points (point, mode, thresholds, updated_at) VALUES (?, ?, ?, ?)").run(point, mode, JSON.stringify(next), now());
       bb.realtime.publish("board-changed", { point });

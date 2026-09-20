@@ -600,7 +600,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   once in Manage agent presets. Reads report key presence and source, never
   the key; `DECISION_API_KEY` (or `TYPESAFE_API_KEY`) overrides the stored
   value. Test connection sends one fixed probe with latency. Unconfigured
-  means built-in rules everywhere.
+  means built-in rules everywhere. `STELOW_DECISION_API=0` on the host
+  blocks every outbound call: reads degrade, api writes and probes refuse
+  naming the variable.
 - **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,
   `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
   Per-judgment modes — Built-in rules (offline, free, default) or Decision

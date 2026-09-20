@@ -63,12 +63,20 @@ assert.ok(probeBody.includes("evaluateDecisionCall({"), "the probe calls through
 assert.ok(probeBody.includes("No key: set one in Decision API settings or export DECISION_API_KEY."), "a keyless probe refuses with the setup named");
 assert.ok(probeBody.includes("latencyMs"), "probes report latency");
 
+// Kill switch (STELOW_DECISION_API=0, blueprint §7): reads degrade, api
+// writes and probes refuse naming the variable, and the seam short-circuits
+// before any config read — operators block outbound calls host-wide.
+assert.ok(probeBody.includes("STELOW_DECISION_API=0"), "probes refuse naming the variable");
+assert.match(server, /disabled: z\.boolean\(\)/, "the config contract carries the disabled flag");
+assert.ok(configBody.includes("disabled: isDecisionApiDisabled(process.env)"), "reads report the disabled flag");
+
 // Point writes refuse unknown ids and modes with the valid set named;
 // reads degrade to registry defaults instead of refusing.
 const pointSetter = handlerBody("async setDecisionPoint({ point, mode, thresholds }) {");
 assert.ok(pointSetter.includes("Unknown decision point"), "unknown points refuse");
 assert.ok(pointSetter.includes("Available: ${DECISION_POINTS"), "point refusals name the valid set");
 assert.ok(pointSetter.includes("Unknown mode"), "unknown modes refuse");
+assert.ok(pointSetter.includes("STELOW_DECISION_API=0"), "api-mode writes refuse naming the variable");
 const pointGetter = handlerBody("async getDecisionPoint({ point }) {");
 assert.ok(pointGetter.includes("normalizePointMode("), "reads normalize unknown modes to rules");
 const listBody = handlerBody("async listDecisionPoints() {");
@@ -87,7 +95,11 @@ assert.ok((seamBody.match(/return "unknown"/g) ?? []).length >= 3, "mode gate, m
 assert.ok(seamBody.includes("resolveSeedIntent({"), "seeding resolves through the lib cascade");
 assert.ok(seamBody.includes('normalizePointMode(point?.mode, "rules")'), "unconfigured points default to rules — a fallback flip to api fails here");
 assert.ok(seamBody.includes("triage intent seeded from Decision API"), "api seeds leave a log trail with the outcome");
-assert.ok(seamBody.includes("normalizePointMode(point?.mode"), "unconfigured points run built-in rules without a row");
+assert.ok(seamBody.includes("triage intent router fell back to built-in rules"), "api failures log the fallback instead of failing silently");
+assert.ok(seamBody.includes("isDecisionApiDisabled(process.env)"), "the seam consults the kill switch first");
+assert.match(app, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
+assert.match(app, /has no key — api routers answer with built-in rules/, "keyless api routers state why they degrade");
+assert.match(app, /disabled={busy \|\| !dirty \|\| !valid}/, "threshold saves stay disabled until the value is a 0–1 number");
 
 // UI: two progressive disclosures in the preset manager — one settings
 // block, one router list. Modes read as outcomes, never mechanisms.
