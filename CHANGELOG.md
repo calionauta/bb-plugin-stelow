@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.33.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.32.0...v0.33.0) (2026-09-20)
+
+
+### Features
+
+* add classifier provider adapter and honor explicit intent seeds ([51fd9cc](https://github.com/calionauta/bb-plugin-stelow/commit/51fd9cc78853cb53d55f8c3c1838ccfe9b7497b7))
+* add Decision API kill switch, failure trail, and config honesty ([b1b324c](https://github.com/calionauta/bb-plugin-stelow/commit/b1b324c75859b1e8302856606e8a8026576a7c3e))
+* add Decision API settings and triage-intent router ([aef9b3f](https://github.com/calionauta/bb-plugin-stelow/commit/aef9b3f96ca0fcd203e6338d136b3e05029b2480))
+* add reliable-tier preset override ([1cc7049](https://github.com/calionauta/bb-plugin-stelow/commit/1cc7049b2f42750ea8a64a287a3f735db849e519))
+* name TypeSafe AI's Jev schema in Decision API settings ([984a320](https://github.com/calionauta/bb-plugin-stelow/commit/984a32060748cc0cd617335536a9d19d1c8a3622))
+* report Decision API configured state in settings ([6194f33](https://github.com/calionauta/bb-plugin-stelow/commit/6194f33ffcdf05c32fae5047c696b33875d8a973))
+
+
+### Bug Fixes
+
+* Decision API kill-switch helper and threshold loop cleanup ([12d1b1d](https://github.com/calionauta/bb-plugin-stelow/commit/12d1b1d5f004d42fdc60c9f16ccedcb733df20a7))
+* fan out preset staleness and resolve reseed through the reliable tier ([bcd2e58](https://github.com/calionauta/bb-plugin-stelow/commit/bcd2e58be1eb7cdc9bf443cadabf2252e666fd5e))
+
 ## [0.32.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.31.1...v0.32.0) (2026-09-20)
 
 
