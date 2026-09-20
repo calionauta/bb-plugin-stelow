@@ -8,6 +8,7 @@ export interface DecisionPoint {
   label: string;
   description: string;
   rules: string;
+  requires?: string | null;
   modes: string[];
   defaultMode: string;
   defaultThresholds: Record<string, number>;

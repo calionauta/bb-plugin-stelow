@@ -261,6 +261,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   The toolbar is one row: four tabs with semantic status dots (amber waits,
   emerald resolved, zinc archived, primary all) and a single Unread-only
   checkbox — no detached Show label.
+- **Severity tiers** (`lib/inbox-severity.mjs`). Needs attention sorts
+  escalating first: stalls past 72h, repeated errors, and week-old actions
+  outrank fresh items, each with reason chips (`stalled 3d`, `error ×2`)
+  and an escalating mark. Tiers reorder only — the badge still counts
+  every open action, resolved history stays chronological, and nothing is
+  ever filtered or suppressed. Scored at event write, re-scored on the
+  reconcile sweep; thresholds live in one file, no migration to retune.
 - **Question recovery.** A worker may wait only for a real card form: a live
   structured ask or the durable interrupted-request recovery form. A stale chat message
   or split proposal cannot hide progress; it is safe to submit the same ask

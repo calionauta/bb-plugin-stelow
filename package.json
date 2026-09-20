@@ -84,7 +84,7 @@
     "test:about": "node tests/about-logo.test.mjs && node tests/plugin-update.test.mjs",
     "test:fresh": "node tests/fresh-install.test.mjs",
     "test:helper-sync": "node tests/workflow-helper-sync.test.mjs",
-    "test:inbox": "node tests/inbox-flows.test.mjs && node tests/inbox-event-presentation.test.mjs && node tests/card-claims.test.mjs && node tests/card-terminal.test.mjs && node tests/card-claim-key.test.mjs && node tests/claims-lifecycle.test.mjs && node tests/lock-protocol-contract.test.mjs",
+    "test:inbox": "node tests/inbox-flows.test.mjs && node tests/inbox-severity.test.mjs && node tests/inbox-event-presentation.test.mjs && node tests/card-claims.test.mjs && node tests/card-terminal.test.mjs && node tests/card-claim-key.test.mjs && node tests/claims-lifecycle.test.mjs && node tests/lock-protocol-contract.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint app.tsx server.ts components hooks lib tests",
     "deadcode": "knip --no-exit-code --include files,dependencies,unlisted,unresolved",

@@ -451,6 +451,7 @@ type InboxNotification = {
   id: string; cardId: string; cardName: string; projectName: string; cardKind: "build" | "research" | "explore";
   kind: "question" | "error" | "paused" | "completed";
   summary: string; occurredAt: number; readAt: number | null; resolvedAt: number | null; archivedAt: number | null;
+  severity: number; severityReasons: string[];
 };
 
 type InboxEventSnapshot = Pick<InboxNotification, "kind" | "summary" | "occurredAt" | "resolvedAt" | "archivedAt">;
@@ -561,7 +562,7 @@ function InboxPanel() {
           return <div key={entry.id} className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
             <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
               <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${presentation.tone ?? copy.tone}`}>{copy.icon}</span>
-              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{presentation.stateLabel ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{presentation.label}</span> : null}{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span><span className="mt-1 block text-xs text-muted-foreground" title={new Date(inboxEventPresentation(entry).stateAt).toLocaleString()}>{entry.projectName} · {inboxEventTime(entry)}</span></span>
+              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{presentation.stateLabel ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{presentation.label}</span> : null}{entry.severity >= 2 && entry.resolvedAt == null ? <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={entry.severityReasons.join(" · ")}>escalating</span> : null}{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>{entry.severityReasons.length > 0 && entry.resolvedAt == null ? <span className="mt-1 block text-xs text-muted-foreground">{entry.severityReasons.slice(0, 3).join(" · ")}</span> : null}<span className="mt-1 block text-xs text-muted-foreground" title={new Date(inboxEventPresentation(entry).stateAt).toLocaleString()}>{entry.projectName} · {inboxEventTime(entry)}</span></span>
             </button>
             <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
           </div>;
@@ -3875,7 +3876,7 @@ function PresetExecutionPicker({ value, onChange }: {
 }
 
 type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; keyRequired: boolean; disabled: boolean; provider: string; configured: boolean };
-type DecisionRouterPoint = { id: string; label: string; description: string; rules: string; modes: string[]; mode: string; thresholds: Record<string, number> };
+type DecisionRouterPoint = { id: string; label: string; description: string; rules: string; requires: string | null; modes: string[]; mode: string; thresholds: Record<string, number> };
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
 function modeLabel(mode: string): string {
@@ -4006,6 +4007,7 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
       </div>
       <p className="text-[11px] text-muted-foreground">{point.description}</p>
       {point.mode === "rules" ? <p className="text-[11px] text-muted-foreground">Built-in rules: {point.rules}</p> : null}
+      {point.requires ? <p className="text-[11px] text-muted-foreground">Needs: {point.requires}</p> : null}
       {point.mode === "api" ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <label className="flex flex-1 items-center gap-2"><span className="shrink-0">Act at confidence ≥</span>

@@ -89,6 +89,7 @@ assert.ok(pointGetter.includes("normalizePointMode("), "reads normalize unknown 
 const listBody = handlerBody("async listDecisionPoints() {");
 assert.ok(listBody.includes("DECISION_POINTS.map("), "the list derives from the registry — never a pasted copy");
 assert.ok(listBody.includes("rules: def.rules"), "the list exposes what built-in rules do per point");
+assert.ok(listBody.includes("requires: def.requires ?? null"), "the list exposes provider requirements");
 
 // Execution seam: build creations consult the router exactly once, and the
 // router fails soft to "unknown" on every path (mode gate, missing key,
@@ -150,6 +151,7 @@ assert.match(app, /type="password"/, "the key field masks input");
 assert.match(app, /Test connection/, "the section offers an explicit probe");
 assert.match(app, /Built-in rules \(default\)/, "rules read as the default outcome");
 assert.match(app, /Built-in rules: \{point\.rules\}/, "rules-mode rows explain what built-in means for that point");
+assert.match(app, /Needs: \{point\.requires\}/, "provider requirements render per row");
 assert.match(app, /point\.mode === "api"/, "threshold controls render only for api-mode points");
 assert.match(app, /Act at confidence/, "thresholds read as confidence floors");
 assert.match(app, /<span>Model<\/span><Input/, "the Decision API model field is a free-text input (external ids live outside BB's catalog)");

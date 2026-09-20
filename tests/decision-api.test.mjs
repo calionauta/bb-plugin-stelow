@@ -209,4 +209,10 @@ assert.deepEqual(resolveAutoContinue({ apiNoul: 0.2, routeAt: 0.7 }), { proceed:
 assert.deepEqual(resolveAutoContinue({ apiNoul: null, routeAt: 0.7 }), { proceed: true, source: "rules" }, "missing answers keep the heuristic standing");
 assert.deepEqual(resolveAutoContinue({ apiNoul: "high", routeAt: 0.7 }), { proceed: true, source: "rules" }, "non-numeric answers keep the heuristic standing");
 
+// Provider requirements ride the registry so the UI states them: triage
+// Choice works on both providers; Score/Noul need the Jev schema.
+assert.equal(getDecisionPoint(DECISION_POINT_TRIAGE_INTENT).requires ?? null, null, "triage runs on any provider");
+assert.ok(getDecisionPoint("artifact-criteria").requires.includes("Jev-compatible"), "criteria judging names its provider need");
+assert.ok(getDecisionPoint(DECISION_POINT_AUTO_CONTINUE).requires.includes("Jev-compatible"), "the veto names its provider need");
+
 console.log("decision api test ok: key resolution, validation, fail-soft calls, thresholds, triage seed");
