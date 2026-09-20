@@ -3934,7 +3934,7 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
   const keyHint = !status ? "Loading…" : status.disabled ? "Disabled on this host (STELOW_DECISION_API=0)." : provider === "classifier" ? "No key needed (free tier, rate-limited per IP)." : status.keySource === "env" ? "Key from environment (env wins over stored)." : status.hasKey ? "Key stored — leave blank to keep it." : "No key yet. Routers fall back to built-in rules.";
   return (
     <div className="grid gap-2">
-      <p className="text-xs text-muted-foreground">One decision endpoint for every router below. Jev-compatible APIs take endpoint + key + model; classifier.dev takes endpoint only, no key.</p>
+      <p className="text-xs text-muted-foreground">One decision endpoint for every router below. TypeSafe AI&apos;s Jev-compatible APIs (state + questions schema) take endpoint + key + model — any provider speaking that schema works here; classifier.dev (labels schema) takes endpoint only, no key.</p>
       {status?.disabled ? <p className="text-xs text-muted-foreground" role="status">Decision API is disabled on this host (STELOW_DECISION_API=0). Routers answer with built-in rules.</p> : null}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Provider</span>
         <select

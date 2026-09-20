@@ -123,6 +123,9 @@ assert.match(app, /Act at confidence/, "thresholds read as confidence floors");
 assert.match(app, /<span>Model<\/span><Input/, "the Decision API model field is a free-text input (external ids live outside BB's catalog)");
 assert.match(app, /<option value="classifier">classifier\.dev \(labels, keyless\)<\/option>/, "the provider select offers classifier");
 assert.match(app, /<option value="jev">Jev-compatible \(state \+ questions\)<\/option>/, "the provider select keeps jev (no one-way door)");
+assert.match(app, /TypeSafe AI(&apos;|')s Jev-compatible APIs \(state \+ questions schema\)/, "the settings state the compatible wire schema by name");
+assert.match(app, /if \(endpoint === otherDefault\)/, "custom endpoint URLs survive provider flips (only pristine defaults swap)");
+assert.ok(seamBody.includes("endpoint: cfg?.endpoint ?? defaultEndpointFor(provider)"), "the seam sends the stored endpoint, defaulting only when blank");
 assert.doesNotMatch(app, /preset-thread/i, "no thread jargon survives in the UI");
 
 console.log("decision routers test ok: settings discipline, refusals, seam fail-soft, UI disclosure");
