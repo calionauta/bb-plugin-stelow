@@ -4023,11 +4023,11 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
     setMessage(text);
     setIsError(error);
   }
-  async function save(input: { mode?: string; thresholds?: Record<string, number>; presetId?: string | null }) {
+  async function save(input: { mode?: string; presetId?: string | null }) {
     setBusy(true); note("", false);
     try {
-      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: input.mode ?? point.mode, ...(input.thresholds ? { thresholds: input.thresholds } : {}), ...(input.presetId !== undefined ? { presetId: input.presetId } : {}) });
-      if (result.error) note(result.error, true); else await refresh();
+      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: input.mode ?? point.mode, ...(input.presetId !== undefined ? { presetId: input.presetId } : {}) });
+      if (result.error) note(result.error, true); else { note("Saved.", false); await refresh(); }
     } catch (err) {
       note(err instanceof Error ? err.message : "Save failed.", true);
     } finally {
@@ -4037,8 +4037,10 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
   async function saveThreshold() {
     setBusy(true); note("", false);
     try {
-      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: point.mode, thresholds: { routeAt: Number(routeAt) } });
-      if (result.error) note(result.error, true); else await refresh();
+      // A pending mode flip rides along: saving the threshold never wipes
+      // an unsaved mode draft on the subsequent refresh.
+      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: modeDraft, thresholds: { routeAt: Number(routeAt) } });
+      if (result.error) note(result.error, true); else { note("Saved.", false); await refresh(); }
     } catch (err) {
       note(err instanceof Error ? err.message : "Save failed.", true);
     } finally {
@@ -4050,7 +4052,7 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
   const modeDirty = modeDraft !== point.mode;
   return (
     <div className="space-y-1 rounded-md border bg-muted/30 px-3 py-2">
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="min-w-0 flex-1 truncate" title={point.description}><span className="font-medium">{point.label}</span></span>
         <select
           aria-label={`${point.label} mode`}
@@ -4077,6 +4079,7 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
       {modeDraft === "preset" ? (
         <div className="space-y-1 text-xs text-muted-foreground">
           <p className="text-[11px]">Preset judge asks one of your provider presets to answer this judgment in a hidden thread — one thread per judgment, archived right after. Pick this when you trust one of your own models more than the shared endpoint above. Any preset works, including one no workflow stage uses. Each judgment costs a provider turn; failures fall back to built-in rules.</p>
+          {presets.length === 0 ? <p className="text-[11px]" role="status">No presets yet — create one under Agent Presets, then pick it here.</p> : null}
           <div className="flex items-center gap-2">
             <select aria-label={`${point.label} judge preset`} className="cursor-pointer h-9 flex-1 rounded-md border bg-background px-2 text-sm text-foreground" value={presetId} disabled={busy} onChange={(event) => { setPresetId(event.target.value); note("", false); }}>
               <option value="">Pick a preset…</option>

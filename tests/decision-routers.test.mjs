@@ -218,6 +218,9 @@ assert.doesNotMatch(app, /void setMode\(event\.target\.value\)/, "no immediate s
 assert.match(app, /role=\{isError \? "alert" : "status"\}/, "failures announce as alerts, confirmations stay status");
 assert.match(app, /refresh: \(\) => Promise<void>/, "rows refresh their own section after saving");
 assert.match(app, /function DecisionRoutersSection\(\{ rpc \}/, "the section takes no board reload — router saves stay local");
+assert.match(app, /note\("Saved\.", false\)/, "successful saves confirm instead of going silent");
+assert.match(app, /mode: modeDraft, thresholds: \{ routeAt: Number\(routeAt\) \}/, "threshold saves carry a pending mode flip so refresh never wipes it");
+assert.match(app, /No presets yet — create one under Agent Presets/, "an empty preset catalog guides instead of stranding");
 
 // Criteria command wiring: read-only advisory judging through the router.
 // A branch that writes card state or publishes realtime would fail here.
