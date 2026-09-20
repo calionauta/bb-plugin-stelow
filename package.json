@@ -4,7 +4,7 @@
   "type": "module",
   "engines": {
     "bb": ">=0.43",
-    "bbPluginSdk": ">=0.4.106"
+    "bbPluginSdk": ">=0.4.6"
   },
   "bb": {
     "name": "Stelow",

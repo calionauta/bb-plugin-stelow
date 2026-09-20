@@ -1047,6 +1047,25 @@ one input, one artifact.*
   `qualitySeal`. Each panel carries one Repair action: post the failure
   list as a comment and resume the worker on existing rails.
 
+## BB 0.43 adoption notes (deliberate scope)
+
+Adopted where it pays: shared CLI help/suggestion table (`lib/cli-suggest.mjs`),
+ask timeline labels + submission descriptions (`presentation`/`describeSubmission`),
+dependent-thread ownership (`lifecycleOwnerThreadId` with strict-schema retry
+fallback), `experimental_description` on all RPCs, palette command via
+`app.commands.register` with `commandPaletteAction` fallback, and local squash
+merge in the card shell (`lib/squash-merge.mjs`) — BB exposes no local squash
+action. Dev types come from `@get-bb/plugin-sdk` 0.4.106.
+
+Deliberately NOT adopted: preview core unchanged (native open-in-tab + iframe
+already cover the Browser-control overlap; detect/spawn/port/log/share stays),
+no project env vars for doctor (singleton design + audit trail), no full
+`defineCli` migration (order-dependent grouping breaks with repeatable arrays).
+
+Engines policy: the runtime floor stays `bbPluginSdk >=0.4.6` because the host
+bundle (0.4.84) must accept the plugin — every new API use is feature-detected
+with a fallback, so 0.4.106 is build-time types only.
+
 ## Cross-cutting rules (apply to every feature above)
 
 From `AGENTS.md` (State honesty): no phantom waits, per-kind inbox
