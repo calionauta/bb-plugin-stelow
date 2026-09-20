@@ -236,7 +236,8 @@ assert.ok(bumpQuestions.blocking.instructions.includes("blocked"), "the question
 // Provider requirements ride the registry so the UI states them: triage
 // Choice works on both providers; Score/Noul need the Jev schema.
 assert.equal(getDecisionPoint(DECISION_POINT_TRIAGE_INTENT).requires ?? null, null, "triage runs on any provider");
-assert.ok(getDecisionPoint(DECISION_POINT_TRIAGE_INTENT).rules.includes("band preset"), "triage rules name who judges (card worker, not the host)");
+assert.ok(getDecisionPoint(DECISION_POINT_TRIAGE_INTENT).rules.includes("card worker"), "triage rules name who judges (card worker, not the host)");
+assert.ok(getDecisionPoint(DECISION_POINT_TRIAGE_INTENT).rules.includes("card pin, reliable override"), "triage rules name the full preset precedence");
 assert.ok(getDecisionPoint("artifact-criteria").requires.includes("Jev-compatible"), "criteria judging names its provider need");
 assert.ok(getDecisionPoint(DECISION_POINT_AUTO_CONTINUE).requires.includes("Jev-compatible"), "the veto names its provider need");
 assert.ok(getDecisionPoint(DECISION_POINT_INBOX_SEVERITY).requires.includes("Jev-compatible"), "the bump names its provider need");
