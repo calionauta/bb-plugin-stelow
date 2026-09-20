@@ -3944,11 +3944,11 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
           disabled={status?.disabled}
           onChange={(event) => pickProvider(event.target.value)}
         >
-          <option value="jev">TypeSafe AI&apos;s Jev (state + questions)</option>
+          <option value="jev">TypeSafe AI&apos;s Jev-compatible</option>
           <option value="classifier">classifier.dev (labels, keyless)</option>
         </select>
       </label>
-      {provider === "classifier" ? null : <p className="text-[11px] text-muted-foreground">Any endpoint speaking the Jev schema works — key + model required.</p>}
+      {provider === "classifier" ? null : <p className="text-[11px] text-muted-foreground">State + questions schema — endpoint + key + model required.</p>}
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Endpoint</span><Input value={endpoint} disabled={status?.disabled} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.typesafe.ai/v1/systemone" /></label>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Model</span><Input value={model} disabled={status?.disabled || provider === "classifier"} onChange={(event) => setModel(event.target.value)} placeholder="jev-latest" /></label>
       {provider === "classifier" ? <p className="text-[11px] text-muted-foreground">classifier.dev answers on its fast tier; model does not apply.</p> : null}

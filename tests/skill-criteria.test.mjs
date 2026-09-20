@@ -71,4 +71,29 @@ assert.ok(scored[key].instructions.includes("Dangers name concrete failure modes
 assert.ok(scored[key].instructions.includes("Judge ONLY this criterion"), "atomicity is explicit in the prompt");
 assert.deepEqual(scored[key].criteria, ["Not met", "Partially met", "Clearly met"], "fixed 3-level anchors until calibration refines them");
 
+// Rollout sweep: every criteria block in the vendored copy parses with
+// at least one semantic criterion (the layer only a judge can check).
+// Files without a block are out of scope for this sweep, never failures —
+// coverage grows as upstream adds blocks, and the sync carries them here.
+import { readdirSync, statSync } from "node:fs";
+function markdownFiles(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...markdownFiles(full));
+    else if (entry.endsWith(".md")) out.push(full);
+  }
+  return out;
+}
+const swept = [];
+for (const file of markdownFiles(join(root, "skills"))) {
+  const items = parseCriteriaBlock(readFileSync(file, "utf8"));
+  if (items.length === 0) continue;
+  const groups = groupCriteriaByKind(items);
+  assert.ok(groups.semantic.length >= 1, `${file} carries at least one semantic criterion`);
+  assert.ok(items.every((item) => item.id && item.text), `${file} has no hollow criteria`);
+  swept.push(file);
+}
+assert.ok(swept.length >= 25, `the rollout covers the playbooks (swept ${swept.length} files)`);
+
 console.log("skill criteria test ok: block parsing, kind routing, atomic Score translation");
