@@ -132,4 +132,21 @@ assert.match(app, /if \(endpoint === otherDefault\)/, "custom endpoint URLs surv
 assert.ok(seamBody.includes("endpoint: cfg?.endpoint ?? defaultEndpointFor(provider)"), "the seam sends the stored endpoint, defaulting only when blank");
 assert.doesNotMatch(app, /preset-thread/i, "no thread jargon survives in the UI");
 
+// Criteria command wiring: read-only advisory judging through the router.
+// A branch that writes card state or publishes realtime would fail here.
+assert.match(server, /name: "criteria", summary: "Score an artifact against its skill's semantic criteria/, "the command is listed");
+const criteriaAt = server.indexOf('if (argv[0] === "criteria") {');
+assert.ok(criteriaAt >= 0, "the criteria branch exists");
+const criteriaEnd = server.indexOf('if (argv[0] === "draft") {', criteriaAt);
+assert.ok(criteriaEnd > criteriaAt, "the criteria branch is bounded");
+const criteriaBody = server.slice(criteriaAt, criteriaEnd);
+assert.ok(criteriaBody.includes("judgeArtifactCriteria({"), "the branch judges through the lib cascade");
+assert.ok(criteriaBody.includes("resolveArtifactPath(PLUGIN_SKILLS_DIR, skillRel)"), "skill reads stay inside the vendored skills dir");
+assert.ok(criteriaBody.includes("resolveArtifactPath(workspace.path, artifactArg)"), "artifact reads stay inside the card workspace");
+assert.ok(criteriaBody.includes("Set it to Decision API in Manage agent presets"), "rules-mode refuses with the UI path named");
+assert.ok(criteriaBody.includes("advisory only, never blocking"), "reports state their advisory nature");
+assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(criteriaBody), "the branch makes zero database writes (reads only)");
+assert.ok(!criteriaBody.includes("realtime.publish"), "the branch publishes no realtime events");
+assert.ok(!criteriaBody.includes("logCardComment"), "the branch leaves no card comments");
+
 console.log("decision routers test ok: settings discipline, refusals, seam fail-soft, UI disclosure");

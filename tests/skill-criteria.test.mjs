@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SKILL_CRITERION_KINDS, parseCriteriaBlock, groupCriteriaByKind, semanticCriterionToScore } from "../lib/skill-criteria.mjs";
+import { SKILL_CRITERION_KINDS, parseCriteriaBlock, groupCriteriaByKind, semanticCriterionToScore, judgeArtifactCriteria, CRITERIA_MET_SCORE, CRITERIA_UNMET_SCORE } from "../lib/skill-criteria.mjs";
 
 // Skill criteria blocks: the structured mirror of Completeness contracts.
 // Parsing is strict about shape (id/kind/text, known kinds) and fail-soft
@@ -95,5 +95,47 @@ for (const file of markdownFiles(join(root, "skills"))) {
   swept.push(file);
 }
 assert.ok(swept.length >= 25, `the rollout covers the playbooks (swept ${swept.length} files)`);
+
+// Judge verdicts: confident extremes decide, anything else abstains. One
+// stubbed provider answers two criteria to prove atomic fan-out.
+const judgeSkill = `criteria:
+  - id: dangers-quality
+    kind: semantic
+    text: "Dangers name concrete failure modes"
+  - id: tradeoff-quality
+    kind: semantic
+    text: "Trade-offs state sacrifices"`;
+const seenBodies = [];
+const judgeFetch = async (url, opts) => {
+  const body = JSON.parse(opts.body);
+  seenBodies.push(body);
+  const id = Object.keys(body.questions)[0];
+  const instructions = body.questions[id]?.instructions ?? "";
+  const score = instructions.includes("failure modes") ? 1.8 : 0.2;
+  return { status: 200, json: async () => ({ answers: { [id]: { type: "score", score, confidence: 0.9 } } }) };
+};
+const judged = await judgeArtifactCriteria({ provider: "jev", endpoint: "https://x.test/v1", apiKey: "k", model: "m", skillText: judgeSkill, artifactText: "concrete failure modes with triggers", routeAt: 0.6, fetchImpl: judgeFetch });
+assert.equal(judged.ok, true, "judging resolves");
+assert.equal(judged.evaluated, 2, "both semantic criteria evaluate");
+assert.deepEqual(judged.findings.map((finding) => finding.verdict), ["met", "unmet"], "confident extremes decide per criterion");
+assert.equal(seenBodies.length, 2, "one atomic call per criterion, never batched");
+assert.ok(seenBodies.every((body) => Object.keys(body.questions).length === 1), "each call carries exactly one question");
+assert.equal(CRITERIA_MET_SCORE, 1.5, "met floor is pinned");
+assert.equal(CRITERIA_UNMET_SCORE, 0.5, "unmet ceiling is pinned");
+
+// Low confidence abstains even on extreme scores; provider failure degrades
+// the whole call; skills without semantic criteria resolve empty.
+const shyFetch = async (url, opts) => {
+  const id = Object.keys(JSON.parse(opts.body).questions)[0];
+  return { status: 200, json: async () => ({ answers: { [id]: { type: "score", score: 2.0, confidence: 0.3 } } }) };
+};
+const shy = await judgeArtifactCriteria({ provider: "jev", endpoint: "https://x.test/v1", apiKey: "k", model: "m", skillText: judgeSkill, artifactText: "whatever", routeAt: 0.6, fetchImpl: shyFetch });
+assert.ok(shy.findings.every((finding) => finding.verdict === "unverifiable"), "low confidence abstains on every criterion");
+const deadFetch = async () => { throw new Error("down"); };
+const dead = await judgeArtifactCriteria({ provider: "jev", endpoint: "https://x.test/v1", apiKey: "k", model: "m", skillText: judgeSkill, artifactText: "whatever", fetchImpl: deadFetch });
+assert.equal(dead.ok, false, "total provider failure degrades the call");
+assert.equal(dead.findings.length, 2, "failed findings still list every criterion");
+const empty = await judgeArtifactCriteria({ provider: "jev", endpoint: "https://x.test/v1", apiKey: "k", model: "m", skillText: "no block", artifactText: "whatever", fetchImpl: judgeFetch });
+assert.deepEqual(empty, { ok: true, findings: [], evaluated: 0 }, "skills without semantic criteria resolve empty");
 
 console.log("skill criteria test ok: block parsing, kind routing, atomic Score translation");

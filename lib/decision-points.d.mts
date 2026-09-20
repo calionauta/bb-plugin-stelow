@@ -1,4 +1,5 @@
 export declare const DECISION_POINT_TRIAGE_INTENT: string;
+export declare const DECISION_POINT_ARTIFACT_CRITERIA: string;
 export declare const DECISION_POINT_MODES: string[];
 
 export interface DecisionPoint {

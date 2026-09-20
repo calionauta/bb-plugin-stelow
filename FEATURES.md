@@ -713,6 +713,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a card comment with the summary. v1 covers research + explore; build
   document review is refused as unsupported. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
+- **`bb stelow criteria` (opt-in, `lib/skill-criteria.mjs`).** Advisory
+  semantic check: scores an artifact against its skill's structured
+  `criteria:` block (one atomic Score per semantic criterion,
+  presence/count left to deterministic validators). Read-only — no card
+  writes, comments, or realtime events; exit 0 with a met/unmet/
+  unverifiable report, never blocking. Runs only with the Artifact
+  criteria router in Decision API mode and a configured provider;
+  everything else refuses with the fix named.
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,

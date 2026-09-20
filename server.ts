@@ -41,9 +41,10 @@ import { validateArtifact, validateSubstep, validateVariant, validateExplore, bu
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
+import { judgeArtifactCriteria } from "./lib/skill-criteria.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
 import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, DECISION_PROVIDERS, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
-import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent } from "./lib/decision-points.mjs";
+import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent } from "./lib/decision-points.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -6674,6 +6675,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "export", summary: "Refresh docs/runs/<card> plus manifest.md (idempotent, also automatic at done); --check reports content drift and uncommitted state without writing", usage: "bb stelow export [--json] [--check] [--card <card_id>] [--dir <relpath>]" },
       { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
+      { name: "criteria", summary: "Score an artifact against its skill's semantic criteria (advisory, read-only)", usage: "bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
     ],
     async run(argv, ctx) {
@@ -8142,6 +8144,71 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const summary = `${reviewSummary(parsed)}${reviewPath ? ` Record: ${reviewPath}.` : ""}${permissionNote}`;
         logCardComment(cardId, "card", cardId, "agent", summary);
         return { exitCode: 0, stdout: `${summary}\nReviewer thread: ${reviewThread.id}` };
+      }
+      if (argv[0] === "criteria") {
+        // Advisory semantic criteria check: score an artifact against its
+        // skill's semantic criteria through the Decision API. Read-only —
+        // writes no rows, publishes nothing, blocks nothing. Runs only in
+        // api mode with a configured provider; everything else refuses
+        // with the fix named.
+        const args = argv.slice(1);
+        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        let skillArg: string | null = null;
+        let artifactArg: string | null = null;
+        const asJson = args.includes("--json");
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--skill") { skillArg = args[i + 1] ?? null; i++; continue; }
+          if (args[i] === "--artifact") { artifactArg = args[i + 1] ?? null; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" };
+        }
+        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const card = getCard(cardId);
+        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
+        if (!skillArg) return { exitCode: 2, stderr: "Pass --skill <skill-id> (e.g. stelow-workflow-shape-up) or a path under skills/." };
+        if (!artifactArg) return { exitCode: 2, stderr: "Pass --artifact <workspace-relative path>." };
+        if (isDecisionApiDisabled(process.env)) return { exitCode: 1, stderr: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
+        const criteriaPoint = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string } | undefined;
+        if (normalizePointMode(criteriaPoint?.mode, "rules") !== "api") {
+          return { exitCode: 1, stderr: "Artifact criteria runs in Built-in rules mode. Set it to Decision API in Manage agent presets → Decision routers." };
+        }
+        const skillRel = skillArg.includes("/") ? skillArg : `${skillArg}/SKILL.md`;
+        const skillFull = resolveArtifactPath(PLUGIN_SKILLS_DIR, skillRel);
+        let skillText: string | null = null;
+        try { skillText = skillFull ? readFileSync(skillFull, "utf8") : null; } catch { skillText = null; }
+        if (!skillText) return { exitCode: 2, stderr: `Unknown skill "${skillArg}" — skills live under the plugin's skills/ directory (stelow-*).` };
+        const workspace = await cardWorkspace(card);
+        if (!workspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
+        const full = resolveArtifactPath(workspace.path, artifactArg);
+        const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
+        if (typeof content !== "string" || !content.trim()) return { exitCode: 1, stderr: `Artifact "${artifactArg}" is missing or empty — write it first, then judge.` };
+        const criteriaCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+        const criteriaProvider = normalizeDecisionProvider(criteriaCfg?.provider ?? "jev");
+        const { key: criteriaKey } = resolveDecisionApiKey({ storedKey: criteriaCfg?.api_key ?? null, env: process.env });
+        if (!criteriaKey && providerRequiresKey(criteriaProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+        let criteriaStored: unknown = null;
+        try { criteriaStored = criteriaPoint ? JSON.parse(criteriaPoint.thresholds) : null; } catch { criteriaStored = null; }
+        const criteriaThresholds = normalizeThresholds(criteriaStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
+        const judgment = await judgeArtifactCriteria({
+          provider: criteriaProvider,
+          endpoint: criteriaCfg?.endpoint ?? defaultEndpointFor(criteriaProvider),
+          apiKey: criteriaKey ?? "",
+          model: normalizeDecisionApiModel(criteriaCfg?.model, DECISION_API_DEFAULT_MODEL),
+          skillText,
+          artifactText: content,
+          routeAt: criteriaThresholds.routeAt,
+        });
+        if (!judgment.ok) return { exitCode: 1, stderr: `Criteria judging failed: ${judgment.error ?? "call failed"} — built-in rules still apply; retry or check the provider.` };
+        const met = judgment.findings.filter((finding) => finding.verdict === "met").length;
+        const unmet = judgment.findings.filter((finding) => finding.verdict === "unmet").length;
+        const unverifiable = judgment.findings.length - met - unmet;
+        if (asJson) {
+          return { exitCode: 0, stdout: JSON.stringify({ skill: skillArg, artifact: artifactArg, provider: criteriaProvider, findings: judgment.findings, summary: { met, unmet, unverifiable } }, null, 2) };
+        }
+        const mark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
+        const lines = judgment.findings.map((finding) => `${mark(finding.verdict)} ${finding.id} — ${finding.verdict}${finding.score !== null ? ` (score ${finding.score}, confidence ${finding.confidence ?? "n/a"})` : ""}: ${finding.text}`);
+        return { exitCode: 0, stdout: [`Artifact criteria: ${skillArg} × ${artifactArg} (${criteriaProvider}, ${judgment.findings.length} criteria)`, ...lines, `Summary: ${met} met, ${unmet} unmet, ${unverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
       }
       if (argv[0] === "draft") {
         // Disposable Tier G burst: text-in/text-out on the generation
