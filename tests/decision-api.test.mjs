@@ -30,6 +30,9 @@ import {
   TRIAGE_INTENT_CRITERIA,
   triageIntentQuestions,
   resolveSeedIntent,
+  DECISION_POINT_AUTO_CONTINUE,
+  autoContinueQuestions,
+  resolveAutoContinue,
 } from "../lib/decision-points.mjs";
 
 // Decision API client + triage point: every failure degrades to built-in
@@ -192,5 +195,18 @@ assert.equal((await evaluateDecisionCall({ provider: "mystery", endpoint: "https
 // Probe builder speaks the provider's native shape.
 assert.equal(buildProbeCall("classifier").questions.defect.type, "choice", "classifier probes use Choice");
 assert.equal(buildProbeCall("jev").questions.defect.type, "noul", "jev probes use Noul");
+
+// Auto-continue veto: one Noul on the finished turn; only a confident
+// "no progress" vetoes, everything else keeps the heuristic standing.
+// The veto spends nothing — it only saves worker turns.
+assert.equal(DECISION_POINT_AUTO_CONTINUE, "auto-continue", "the point id is pinned");
+const autoQuestions = autoContinueQuestions();
+assert.equal(autoQuestions.progress.type, "noul", "auto-continue asks one Noul");
+assert.ok(autoQuestions.progress.instructions.includes("Chatter"), "the question names what does not count");
+assert.deepEqual(resolveAutoContinue({ apiNoul: 0.9, routeAt: 0.7 }), { proceed: true, source: "api", confidence: 0.9 }, "confident progress keeps the resume");
+assert.deepEqual(resolveAutoContinue({ apiNoul: 0.7, routeAt: 0.7 }), { proceed: true, source: "api", confidence: 0.7 }, "floor is inclusive");
+assert.deepEqual(resolveAutoContinue({ apiNoul: 0.2, routeAt: 0.7 }), { proceed: false, source: "api", confidence: 0.2 }, "confident chatter vetoes");
+assert.deepEqual(resolveAutoContinue({ apiNoul: null, routeAt: 0.7 }), { proceed: true, source: "rules" }, "missing answers keep the heuristic standing");
+assert.deepEqual(resolveAutoContinue({ apiNoul: "high", routeAt: 0.7 }), { proceed: true, source: "rules" }, "non-numeric answers keep the heuristic standing");
 
 console.log("decision api test ok: key resolution, validation, fail-soft calls, thresholds, triage seed");

@@ -495,7 +495,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   host resumes the worker in place with the same nudge a manual Retry
   sends — no human click per stage. A silent stop or an exhausted budget
   still surfaces as paused with exactly one inbox event per idle period;
-  manual Retry/Restart reseeds the budget.
+  manual Retry/Restart reseeds the budget. With the Auto-continue router
+  in Decision API mode, a confident "no real progress" judgment vetoes the
+  resume (the card pauses instead); every other outcome keeps the
+  heuristic standing — the veto saves turns, never spends them.
 - **Automatic spawn retry** (`applyWorkerFailed`, `lib/spawn-retry.mjs`).
   A worker that dies before producing any output from a transient
   start-phase cause (skill-tree fetch race, thread.start failure, 502/503,

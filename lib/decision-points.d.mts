@@ -1,5 +1,6 @@
 export declare const DECISION_POINT_TRIAGE_INTENT: string;
 export declare const DECISION_POINT_ARTIFACT_CRITERIA: string;
+export declare const DECISION_POINT_AUTO_CONTINUE: string;
 export declare const DECISION_POINT_MODES: string[];
 
 export interface DecisionPoint {
@@ -23,6 +24,19 @@ export declare function normalizePointMode(mode: unknown, fallback?: string): st
 export declare function defaultThresholdsFor(id: string): Record<string, number>;
 
 export declare function normalizeThresholds(input: unknown, fallback?: Record<string, number> | null): Record<string, number>;
+
+export declare function autoContinueQuestions(): Record<string, unknown>;
+
+export interface AutoContinueResolution {
+  proceed: boolean;
+  source: "api" | "rules";
+  confidence?: number | null;
+}
+
+export declare function resolveAutoContinue(options: {
+  apiNoul?: number | null;
+  routeAt?: number | null;
+}): AutoContinueResolution;
 
 export declare const TRIAGE_INTENT_CRITERIA: Record<string, string>;
 

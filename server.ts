@@ -45,7 +45,7 @@ import { judgeArtifactCriteria } from "./lib/skill-criteria.mjs";
 import { parseGoldenFile, cohenKappa, goldenVerdict } from "./lib/skill-goldens.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
 import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, DECISION_PROVIDERS, DECISION_API_DEFAULT_ENDPOINT, DECISION_API_DEFAULT_MODEL } from "./lib/decision-api.mjs";
-import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent } from "./lib/decision-points.mjs";
+import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue } from "./lib/decision-points.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -1926,6 +1926,46 @@ ${prompt}`;
       return resolved.intent;
     } catch {
       return "unknown";
+    }
+  }
+
+  // Auto-continue veto: when the point runs in api mode and the heuristic
+  // already cleared a resume, ask one Noul whether the last output shows
+  // real progress. A confident "no" vetoes the resume (the card falls
+  // through to the paused path); everything else keeps the heuristic
+  // standing. Tool-only turns carry no output text — the advance scan
+  // already proved them, so they skip the call entirely.
+  async function vetAutoContinueNudge(stateText: string | null): Promise<boolean> {
+    try {
+      if (!stateText || !stateText.trim()) return true;
+      const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_AUTO_CONTINUE) as { mode: string; thresholds: string } | undefined;
+      if (normalizePointMode(point?.mode, "rules") !== "api") return true;
+      if (isDecisionApiDisabled(process.env)) return true;
+      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+      const provider = normalizeDecisionProvider(cfg?.provider ?? "jev");
+      const { key } = resolveDecisionApiKey({ storedKey: cfg?.api_key ?? null, env: process.env });
+      if (!key && providerRequiresKey(provider)) return true;
+      let stored: unknown = null;
+      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
+      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_AUTO_CONTINUE));
+      const result = await evaluateDecisionCall({
+        provider,
+        endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
+        apiKey: key ?? "",
+        model: normalizeDecisionApiModel(cfg?.model, DECISION_API_DEFAULT_MODEL),
+        state: stateText,
+        questions: autoContinueQuestions(),
+      });
+      if (!result.ok) {
+        bb.log.warn(`auto-continue veto skipped, heuristic stands: ${result.error ?? "call failed"}`);
+        return true;
+      }
+      const answer = result.answers?.progress ?? null;
+      const resolved = resolveAutoContinue({ apiNoul: answer && answer.type === "noul" ? answer.noul : null, routeAt: thresholds.routeAt });
+      if (!resolved.proceed) bb.log.info(`auto-continue vetoed by Decision API (progress ${answer && answer.type === "noul" ? answer.noul : "n/a"})`);
+      return resolved.proceed;
+    } catch {
+      return true;
     }
   }
 
@@ -4200,6 +4240,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             autoCount: card.auto_continue_count ?? 0, autoStage: card.auto_continue_stage ?? null,
           });
           if (autoDecision.proceed) {
+            // Decision-API veto (auto-continue point): a confident "no real
+            // progress" cancels the resume and the card falls through to the
+            // paused path below. Every other outcome keeps the heuristic
+            // standing — the veto spends nothing, it only saves turns.
+            const vetted = await vetAutoContinueNudge(lastOutput != null ? `Stage ${currentStage}. Worker output:\n${lastOutput}` : null);
+            if (!vetted) {
+              // Vetoed: fall through to the standard paused path below with
+              // no writes of our own — identical to a heuristic refusal.
+            } else {
             // Automatic continuations are private orchestration, unlike a
             // user-selected Retry or a card comment that deliberately resumes
             // the worker.
@@ -4213,6 +4262,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
               if (lastOutput != null) autoFields.last_assistant_text = lastOutput;
               updateCard(cardId, autoFields);
               return;
+            }
             }
           }
           // Backfill last_idle_at on the first poll that observes an already-idle

@@ -107,6 +107,32 @@ assert.ok(seamBody.includes("triage intent router fell back to built-in rules"),
 assert.ok(seamBody.includes("isDecisionApiDisabled(process.env)"), "the seam consults the kill switch first");
 assert.ok(seamBody.includes("provider,"), "the seam forwards the configured provider");
 assert.ok(probeBody.includes("buildProbeCall(provider)"), "the probe speaks the provider's native shape");
+
+// Auto-continue veto wiring: the heuristic still owns the resume decision;
+// the router only vetoes confident chatter. Guards that disappear here
+// would silently spend worker turns — each is pinned.
+const pointsLib = readFileSync(join(root, "lib", "decision-points.mjs"), "utf8");
+assert.match(pointsLib, /id: DECISION_POINT_AUTO_CONTINUE,/, "the auto-continue point is registered");
+assert.ok(pointsLib.includes('defaultThresholds: { routeAt: 0.7 }'), "the veto floor prices worker turns above the free triage seed");
+const vetAt = server.indexOf("async function vetAutoContinueNudge(stateText: string | null): Promise<boolean> {");
+assert.ok(vetAt >= 0, "the veto helper exists");
+assert.ok(server.includes(".get(DECISION_POINT_AUTO_CONTINUE)"), "the veto reads its own point row");
+const vetEnd = server.indexOf("\n  }\n", vetAt);
+assert.ok(vetEnd > vetAt, "the veto helper body is bounded");
+const vetBody = server.slice(vetAt, vetEnd);
+assert.ok((vetBody.match(/return true;/g) ?? []).length >= 5, "every fallback path keeps the heuristic standing (empty output, rules mode, disabled, missing key, call failure, catch-all)");
+assert.ok(vetBody.includes('normalizePointMode(point?.mode, "rules") !== "api"'), "rules mode never calls out");
+assert.ok(vetBody.includes("isDecisionApiDisabled(process.env)"), "the kill switch covers the veto");
+assert.ok(vetBody.includes("autoContinueQuestions()"), "the veto asks the single progress Noul");
+assert.ok(vetBody.includes("resolveAutoContinue({"), "the veto resolves through the lib cascade");
+const seamVetoAt = server.indexOf("const vetted = await vetAutoContinueNudge(");
+assert.ok(seamVetoAt >= 0, "the resume path consults the veto");
+const sendAt = server.indexOf("buildContinueNudge()", seamVetoAt);
+assert.ok(sendAt > seamVetoAt, "the veto runs before any resume is sent");
+assert.ok(server.slice(seamVetoAt, sendAt).includes("if (!vetted)"), "a veto falls through to the paused path");
+assert.match(server, /const autoDecision = shouldAutoContinue\(\{/, "the heuristic gate still owns the resume decision");
+assert.match(server, /const doneDecision = shouldDoneNudge\(\{/, "the audit done-nudge path is untouched");
+assert.ok(!vetBody.includes("updateCard("), "the veto writes nothing itself — the paused path below owns all writes");
 assert.match(app, /Showing defaults — nothing saved yet/, "fresh installs state that defaults are in effect");
 assert.match(app, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
 assert.match(app, /has no key — api routers answer with built-in rules/, "keyless api routers state why they degrade");
