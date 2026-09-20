@@ -101,12 +101,37 @@ assert.match(server, /auditReceiptReadiness\(receiptContent/, "Build done checks
 // Automation rules live on the picker's project, not the board's: the Auto
 // tab offers every project (the dialog opens from boards with none active),
 // re-anchors on every open, and every rule RPC carries the picked id.
-assert.match(githubApp, /aria-label="Project for automation rules"/, "the Auto tab offers a project picker");
-assert.match(githubApp, /setRuleProjectId\(next\); void refreshAutomationRules\(next\)/, "picking a project reloads its rules at once");
+assert.match(githubApp, /label="Project for new rules"/, "the Auto tab offers a project picker");
+assert.match(githubApp, /setRuleProjectId\(id\); setRulePreview\(null\); void refreshAutomationRules\(id\)/, "picking a project reloads its rules at once");
 assert.match(githubApp, /const target = activeProjectId \?\? projects\[0\]\?\.id \?\? null;/, "opening re-anchors to the board project, else the first");
 assert.match(githubApp, /rpc\.call\("saveAutomationRule", \{ projectId: ruleProjectId/, "saves carry the picked project");
 assert.match(githubApp, /rpc\.call\("previewAutomationRule", \{ projectId: ruleProjectId/, "previews carry the picked project");
 assert.match(githubApp, /rpc\.call\("listAutomationRules", \{ projectId \}/, "refresh carries its explicit project");
 assert.doesNotMatch(githubApp, /projectId: activeProjectId/, "no rule RPC rides the ambient board project anymore");
+
+// Shared filter fields: both tabs filter the same issue universe through
+// one visual language (visible labels, h-11 controls, chips for label
+// sets) instead of two dialects. A tab that grows its own filter copy
+// fails here.
+const githubFilters = readFileSync(join(root, "components", "github-filter-fields.tsx"), "utf8");
+assert.match(githubApp, /from "\.\/github-filter-fields"/, "the dialog imports the shared fields");
+assert.equal((githubApp.match(/<LabelChipsField/g) ?? []).length, 2, "import and auto tabs share the chips field");
+assert.equal((githubApp.match(/<ProjectFilterSelect/g) ?? []).length, 2, "import and auto tabs share the project select");
+assert.ok((githubFilters.match(/h-11/g) ?? []).length >= 3, "shared inputs, selects, and buttons share one control height");
+
+// Label chips are the server query, not a client filter: editing them
+// re-searches at once, so the list can never freeze on a removed label.
+// An emptied set clears instead of erroring; the field explains the next
+// step.
+assert.match(githubApp, /onChange=\{\(next\) => \{ setImportLabels\(next\); void listGithubIssues\(next\); \}\}/, "import chip edits re-search with the new set");
+assert.match(githubApp, /async function listGithubIssues\(explicit\?: string\[\]\)/, "the search accepts the explicit set, not just state");
+assert.match(githubApp, /setImportCandidates\(\[\]\);\n\s*setImportSelected\(\{\}\);\n\s*return;/, "emptying the chips clears stale results without a fetch");
+assert.match(githubApp, /onChange=\{\(next\) => \{ setAutomationLabels\(next\); setRulePreview\(null\); \}\}/, "auto chip edits invalidate the stale preview");
+
+// The auto tab's scope picker is the same shared select in required mode:
+// no "all", no ambient default, and switching projects reloads + clears
+// the preview built for the previous scope.
+assert.match(githubApp, /allowAll=\{false\}/, "rule scope never offers an all-projects escape");
+assert.match(githubApp, /setRulePreview\(null\); void refreshAutomationRules\(id\)/, "switching rule project reloads and drops the old preview");
 
 console.log("card start test ok: deferred start, shared spawn, split always starts");

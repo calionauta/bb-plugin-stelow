@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StartImmediatelyCheck } from "./start-immediately-check";
+import { LabelChipsField, ProjectFilterSelect } from "./github-filter-fields";
 
 export type GithubStatus = {
   ok: boolean;
@@ -72,7 +73,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   const rpc = useRpc<typeof rpcContract>();
   const [githubTab, setGithubTab] = useState<"import" | "auto">("import");
   const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
-  const [automationLabelInput, setAutomationLabelInput] = useState("stelow-work");
+  const [automationLabels, setAutomationLabels] = useState<string[]>(["stelow-work"]);
   const [automationAuthorsInput, setAutomationAuthorsInput] = useState("");
   const [automationPromptInput, setAutomationPromptInput] = useState("");
   const [automationStart, setAutomationStart] = useState(false);
@@ -82,7 +83,6 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   const [ruleRuns, setRuleRuns] = useState<Record<string, Array<{ sourceKey: string; repo: string; number: number; cardName: string | null; cardStatus: string | null; outcome: string | null; firedAt: number }>>>({});
   const [runsOpen, setRunsOpen] = useState<Record<string, boolean>>({});
   const [importLabels, setImportLabels] = useState<string[]>(["stelow-work"]);
-  const [importLabelInput, setImportLabelInput] = useState("stelow-work");
   const [importCandidates, setImportCandidates] = useState<GithubCandidate[]>([]);
   const [importSelected, setImportSelected] = useState<Record<string, boolean>>({});
   const [importAllLabels, setImportAllLabels] = useState<string[]>([]);
@@ -103,14 +103,8 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to load automation rules."); }
   }
 
-  function addImportLabel(raw: string) {
-    const clean = raw.trim();
-    if (!clean || importLabels.includes(clean)) return;
-    setImportLabels((prev) => [...prev, clean].slice(0, 10));
-  }
-
   function parseAutomationForm(): string[] {
-    return automationLabelInput.split(",").map((entry) => entry.trim()).filter(Boolean).slice(0, 10);
+    return automationLabels;
   }
 
   async function saveAutomationRule() {
@@ -169,9 +163,15 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to delete automation rule."); }
   }
 
-  async function listGithubIssues() {
-    const labels = importLabels.map((entry) => entry.trim()).filter(Boolean);
-    if (labels.length === 0) return toast.error("Pick at least one label.");
+  async function listGithubIssues(explicit?: string[]) {
+    const labels = (explicit ?? importLabels).map((entry) => entry.trim()).filter(Boolean);
+    if (labels.length === 0) {
+      // No query without labels: clear stale results instead of erroring on
+      // every chip removal — the field below explains what to do.
+      setImportCandidates([]);
+      setImportSelected({});
+      return;
+    }
     setImportBusy(true);
     setImportCandidates([]);
     setImportSelected({});
@@ -267,31 +267,32 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
           {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
             <p className="rounded-md border p-2 text-xs text-amber-700 dark:text-amber-300">Import needs a GitHub account linked in the <span className="font-medium">github</span> plugin.</p>
           ) : null}
-          <div className="flex flex-wrap gap-1.5" aria-label="Watched labels">
-            {importLabels.map((entry) => (
-              <span key={entry} className="inline-flex min-h-8 items-center gap-1 rounded-full bg-primary/10 px-2.5 text-xs font-medium text-primary">{entry}<button onClick={() => setImportLabels((prev) => prev.filter((item) => item !== entry))} className="cursor-pointer rounded-full px-1 hover:bg-primary/20" aria-label={`Remove label ${entry}`}>×</button></span>
-            ))}
-          </div>
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <Input value={importLabelInput} onChange={(event) => setImportLabelInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addImportLabel(importLabelInput); setImportLabelInput(""); } }} placeholder="stelow-work" aria-label="Add GitHub label" className="sm:w-52" list="stelow-import-labels" autoComplete="off" />
-              <datalist id="stelow-import-labels">
-                {importAllLabels.map((label) => <option key={label} value={label} />)}
-              </datalist>
-              <Button size="sm" variant="outline" onClick={() => { addImportLabel(importLabelInput); setImportLabelInput(""); }}>Add</Button>
-            </div>
-            <select aria-label="Project" className="h-11 cursor-pointer rounded-md border bg-background px-2 text-sm" value={importProject} onChange={(event) => setImportProject(event.target.value)}>
-              <option value="all">All projects</option>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              <option value="unmapped">Unmapped repos</option>
-            </select>
+          <LabelChipsField
+            labels={importLabels}
+            onChange={(next) => { setImportLabels(next); void listGithubIssues(next); }}
+            suggestions={importAllLabels}
+            listId="stelow-import-labels"
+            label="Labels to watch"
+            hint="An issue matches when it carries every label above. Changing labels re-searches at once."
+          />
+          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-end sm:gap-2">
+            <ProjectFilterSelect
+              projects={projects}
+              value={importProject}
+              onChange={setImportProject}
+              label="Project"
+              allowAll
+              extraOptions={[{ value: "unmapped", label: "Unmapped repos" }]}
+            />
             {importAllAssignees.length > 0 ? (
-              <select aria-label="Assignee" className="h-11 cursor-pointer rounded-md border bg-background px-2 text-sm" value={importAssignee} onChange={(event) => setImportAssignee(event.target.value)}>
-                <option value="all">Everyone</option>
-                {importAllAssignees.map((login) => <option key={login} value={login}>{login}</option>)}
-              </select>
+              <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-muted-foreground"><span>Assignee</span>
+                <select aria-label="Assignee" className="h-11 w-full cursor-pointer rounded-md border bg-background px-2 text-sm font-normal text-foreground" value={importAssignee} onChange={(event) => setImportAssignee(event.target.value)}>
+                  <option value="all">Everyone</option>
+                  {importAllAssignees.map((login) => <option key={login} value={login}>{login}</option>)}
+                </select>
+              </label>
             ) : null}
-            <Button size="sm" variant="outline" onClick={() => void listGithubIssues()} disabled={importBusy}>Refresh</Button>
+            <Button variant="outline" className="h-11 sm:w-auto" onClick={() => void listGithubIssues()} disabled={importBusy}>Refresh</Button>
           </div>
           <p className="text-xs text-muted-foreground">An issue matches when it carries every label above. Each match lands in the bb project that owns its repository.</p>
           {importBusy ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
@@ -330,17 +331,13 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
         </div>
         ) : (
         <div className="space-y-3 py-2">
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span className="font-medium">Project for new rules</span>
-            <select
-              aria-label="Project for automation rules"
-              className="h-11 cursor-pointer rounded-md border bg-background px-2 text-sm text-foreground"
-              value={ruleProjectId ?? ""}
-              onChange={(event) => { const next = event.target.value === "" ? null : event.target.value; setRuleProjectId(next); void refreshAutomationRules(next); }}
-            >
-              {projects.length === 0 ? <option value="">No projects</option> : null}
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-            </select>
-          </label>
+          <ProjectFilterSelect
+            projects={projects}
+            value={ruleProjectId ?? ""}
+            onChange={(next) => { const id = next === "" ? null : next; setRuleProjectId(id); setRulePreview(null); void refreshAutomationRules(id); }}
+            label="Project for new rules"
+            allowAll={false}
+          />
           <p className="text-xs text-muted-foreground">Rules are scoped to {projects.find((project) => project.id === ruleProjectId)?.name ?? activeProjectName ?? "the picked project"}. A matching issue needs every watched label (exact, case-sensitive). Unchecked parks an Inbox draft; checked starts the worker in an isolated worktree (needs a New-worktree preset in Agent Presets). Saving marks already-tagged issues as seen — only new ones draft. An empty author filter means anyone; issue text is untrusted input either way.</p>
           {ruleProjectId === null ? <p className="text-xs text-muted-foreground" role="status">Pick a project above — rules live on a project, and there is none to scope to yet.</p> : null}
           {automationRules.length ? <div className="divide-y rounded-md border">{automationRules.map((rule) => (
@@ -377,11 +374,18 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
               <button className="cursor-pointer rounded text-xs font-medium text-primary hover:underline" onClick={() => setRulePreview(null)}>Clear preview</button>
             </div>
           ) : null}
-          <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">GitHub labels (comma-separated, all required, exact case)</span><Input value={automationLabelInput} onChange={(event) => setAutomationLabelInput(event.target.value)} placeholder="stelow-work, bug" /></label>
+          <LabelChipsField
+            labels={automationLabels}
+            onChange={(next) => { setAutomationLabels(next); setRulePreview(null); }}
+            suggestions={importAllLabels}
+            listId="stelow-automation-labels"
+            label="GitHub labels"
+            hint="All required, exact case. Editing clears the preview below — re-check before saving."
+          />
           <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">Only these authors (comma-separated, empty means anyone)</span><Input value={automationAuthorsInput} onChange={(event) => setAutomationAuthorsInput(event.target.value)} placeholder="octocat" autoComplete="off" /></label>
           <label className="block space-y-1"><span className="text-xs font-medium text-muted-foreground">Worker instructions (optional, appended to the issue prompt)</span><Input value={automationPromptInput} onChange={(event) => setAutomationPromptInput(event.target.value)} placeholder="Reproduce first and write a report before fixing." autoComplete="off" /></label>
           <StartImmediatelyCheck checked={automationStart} onChange={setAutomationStart} />
-          <div><Button size="sm" variant="outline" onClick={() => void previewRule(parseAutomationForm(), automationAuthorsInput.split(",").map((entry) => entry.trim().replace(/^@/, "")).filter(Boolean))} disabled={rulePreviewBusy || !automationLabelInput.trim()}>{rulePreviewBusy ? "Checking…" : "Preview matches"}</Button></div>
+          <div><Button size="sm" variant="outline" onClick={() => void previewRule(parseAutomationForm(), automationAuthorsInput.split(",").map((entry) => entry.trim().replace(/^@/, "")).filter(Boolean))} disabled={rulePreviewBusy || automationLabels.length === 0}>{rulePreviewBusy ? "Checking…" : "Preview matches"}</Button></div>
         </div>
         )}
         <DialogFooter>
@@ -390,7 +394,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
           </DialogClose>
           {githubTab === "import"
             ? <Button onClick={() => void importSelectedIssues()} disabled={importBusy}>{importStart ? "Import and start" : "Park in Inbox"}</Button>
-            : <Button disabled={automationBusy || !automationLabelInput.trim() || !ruleProjectId} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add rule"}</Button>}
+            : <Button disabled={automationBusy || automationLabels.length === 0 || !ruleProjectId} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add rule"}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

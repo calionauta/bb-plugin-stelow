@@ -45,8 +45,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Rules cap at 10 drafts per tick. The list filters by every watched label
   plus project and assignee, and imported rows name the author, the card
   status, whether the completion was posted back, and possibly-related
-  open issues by title overlap. The Auto tab scopes rules through its own
-  project picker (defaulting to the board project, re-anchored on every
+  open issues by title overlap. Both tabs filter through one shared field
+  set (`components/github-filter-fields.tsx`): label chips are the server
+  query and re-search on every edit (emptying them clears instead of
+  erroring), project and assignee narrow client-side, and every control
+  shares one height with a visible label. The Auto tab scopes rules through
+  its own project picker (defaulting to the board project, re-anchored on every
   open) — the dialog works from boards with no active project too.
 - **Automation rules.** Per-project watchers from the GitHub tab above:
   labels (comma-separated, all required, exact case), an optional author
