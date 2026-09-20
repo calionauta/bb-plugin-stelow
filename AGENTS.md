@@ -58,7 +58,9 @@ change committed under the wrong type ships in no release.
 `FEATURES.md` lists every user-facing feature grouped by job-to-be-done.
 Any commit that adds, changes, or removes a user-facing feature must
 update `FEATURES.md` in the same commit — a feature without an entry
-does not exist.
+does not exist. Deep operator/maintainer guides live in `docs/`
+(e.g. `docs/github-issues.md`) and must be linked from README or
+FEATURES — an unlinked doc does not exist either.
 
 ## Upstream blueprint
 

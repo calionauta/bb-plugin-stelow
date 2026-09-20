@@ -29,7 +29,6 @@ import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
 import { discardConfirm, discardEligibility, discardTrail } from "./lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "./lib/github-release.mjs";
-import { sortedUnion } from "./lib/github-lists.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
@@ -42,7 +41,7 @@ import { validateArtifact, validateSubstep, validateVariant, validateExplore, bu
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
-import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
+import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
@@ -79,6 +78,7 @@ import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents } from "./lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry } from "./lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline } from "./lib/card-metrics.mjs";
+import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { attachChildTokenUsage, shapeChildThreads } from "./lib/thread-children.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
@@ -200,7 +200,6 @@ const reviewModeSchema = z.enum([
 const reviewGateAtomSchema = z.enum(["spec", "interface", "scope", "tech", "diff"]);
 const reviewModeInputSchema = z.union([reviewModeSchema, z.array(reviewGateAtomSchema)]).default("Auto");
 const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewMode: z.string(), reviewGates: z.array(reviewGateAtomSchema).default([]) }).strict();
-const automationRuleSchema = z.object({ id: z.string(), projectId: z.string(), enabled: z.boolean(), autostart: z.boolean(), label: z.string(), createdAt: z.number(), updatedAt: z.number() });
 
 const taskSchema = z.object({
   id: z.string(),
@@ -342,6 +341,7 @@ export const rpcContract = defineRpcContract({
       workflows: z.array(workflowSchema),
       error: z.string().nullable(),
       githubStatus: z.object({ ok: z.boolean(), pluginAvailable: z.boolean(), ghOk: z.boolean(), repos: z.array(z.object({ repo: z.string(), projectId: z.string().nullable() })) }),
+      githubAutomationEnabled: z.boolean(),
     }),
   },
   projects: {
@@ -352,23 +352,10 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().max(2_000)).max(10) })).min(1).max(12) }).strict(),
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
   },
-  listGithubCandidates: {
-    input: z.object({ label: z.string().min(1).max(60) }).strict(),
-    output: z.object({
-      issues: z.array(z.object({
-        repo: z.string(), number: z.number().int().positive(), title: z.string(), labels: z.array(z.string()), author: z.string(), assignees: z.array(z.string()), url: z.string(), body: z.string(), updatedAt: z.string(), projectId: z.string().nullable(), alreadyImported: z.boolean(), cardId: z.string().nullable(), cardName: z.string().nullable(),
-      })),
-      allLabels: z.array(z.string()),
-      allAssignees: z.array(z.string()),
-    }),
-  },
-  importGithubIssue: {
-    input: z.object({ projectId: z.string().nullable().optional(), repo: z.string(), number: z.number().int().positive(), label: z.string().min(1).max(60), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("investigate") }).strict(),
-    output: z.object({ ok: z.boolean(), cardId: z.string().nullable(), skipped: z.string().nullable(), error: z.string().nullable() }),
-  },
+  ...githubRpcContract,
   listCards: {
     input: z.object({ projectId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable().optional() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }) })) }),
   },
   listNotifications: {
     input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
@@ -420,18 +407,6 @@ export const rpcContract = defineRpcContract({
     input: z.object({}).strict(),
     output: boardWorkflowDefaultsSchema,
   },
-  listAutomationRules: {
-    input: z.object({ projectId: z.string().nullable() }).strict(),
-    output: z.object({ rules: z.array(automationRuleSchema) }),
-  },
-  saveAutomationRule: {
-    input: z.object({ id: z.string().nullable().optional(), projectId: z.string(), label: z.string().min(1).max(60), enabled: z.boolean().default(true), autostart: z.boolean().default(false) }).strict(),
-    output: z.object({ rule: automationRuleSchema }),
-  },
-  deleteAutomationRule: {
-    input: z.object({ id: z.string() }).strict(),
-    output: z.object({ ok: z.boolean() }),
-  },
   createCard: {
     input: z.object({ projectId: z.string(), environment: z.unknown(), prompt: z.string().min(1).max(20_000), attachments: z.array(attachmentSchema).max(20).default([]), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).default("unknown"), appetite: appetiteSchema.default("Lean"), reviewMode: reviewModeInputSchema, presetId: z.string().nullable().optional(), start: z.boolean().default(true), execution: composerExecutionSchema.optional() }).strict(),
     output: z.object({ cardId: z.string(), threadId: z.string().nullable() }),
@@ -443,7 +418,7 @@ export const rpcContract = defineRpcContract({
   cardDetail: {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
@@ -602,10 +577,6 @@ export const rpcContract = defineRpcContract({
   answerExpiredQuestions: {
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().min(1).max(10_000)).min(1).max(20) })).min(1).max(12) }).strict(),
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
-  },
-  postGithubCompletion: {
-    input: z.object({ cardId: z.string(), closeIssue: z.boolean().default(false) }).strict(),
-    output: z.object({ ok: z.boolean(), commentUrl: z.string().nullable(), error: z.string().nullable() }),
   },
   advanceCard: {
     input: z.object({ cardId: z.string(), stage: z.string().min(1).max(40) }).strict(),
@@ -1457,6 +1428,11 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "spawn_retry_thread")) {
     db.exec("ALTER TABLE cards ADD COLUMN spawn_retry_thread TEXT");
   }
+  // Spawn environment in one stored word (lib/tracks): the open card reads
+  // it instead of guessing shared-vs-worktree from paths.
+  if (!cardColumns.some((column) => column.name === "environment_label")) {
+    db.exec("ALTER TABLE cards ADD COLUMN environment_label TEXT");
+  }
   const expiredQuestionColumns = db.prepare("PRAGMA table_info(expired_questions)").all() as Array<{ name: string }>;
   if (!expiredQuestionColumns.some((column) => column.name === "kind")) {
     db.exec("ALTER TABLE expired_questions ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard'");
@@ -1643,33 +1619,9 @@ export default async function plugin(bb: BbPluginApi) {
   );
   CREATE INDEX IF NOT EXISTS idx_card_threads_card ON card_threads(card_id, started_at DESC);`);
 
-  // github_imports tracks which tagged GitHub issues have been pulled into
-  // cards. Created outside the migration array (an older installation records
-  // a different migration count), matching the stage_presets / inbox_events
-  // pattern.
-  db.exec(`CREATE TABLE IF NOT EXISTS github_imports (
-    issue_key TEXT PRIMARY KEY,
-    repo TEXT NOT NULL,
-    number INTEGER NOT NULL,
-    label TEXT NOT NULL,
-    card_id TEXT,
-    imported_at INTEGER NOT NULL,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE SET NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_github_imports_label ON github_imports(label);`);
-  const githubImportColumns = db.prepare("PRAGMA table_info(github_imports)").all() as Array<{ name: string }>;
-  if (!githubImportColumns.some((column) => column.name === "commented_at")) db.exec("ALTER TABLE github_imports ADD COLUMN commented_at INTEGER");
-
-  db.exec(`CREATE TABLE IF NOT EXISTS automation_rules (
-    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, label TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS automation_rule_fires (
-    rule_id TEXT NOT NULL, source_key TEXT NOT NULL, card_id TEXT NOT NULL, fired_at INTEGER NOT NULL,
-    PRIMARY KEY (rule_id, source_key),
-    FOREIGN KEY (rule_id) REFERENCES automation_rules(id) ON DELETE CASCADE,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  );`);
+  // GitHub issues live decoupled in server/github-issues.ts: tables,
+  // backfills, matcher wiring, scheduler, and RPCs. One call owns it all.
+  runGithubMigrations(db);
 
   const automationColumns = db.prepare("PRAGMA table_info(automation_rules)").all() as Array<{ name: string }>;
   if (!automationColumns.some((column) => column.name === "autostart")) {
@@ -1739,154 +1691,6 @@ export default async function plugin(bb: BbPluginApi) {
     }
   }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
-
-  // Thin typed wrapper over the builtin `github` plugin's RPC. The github
-  // plugin owns its auth/sync/cache; Stelow only reads tagged issues and
-  // (optionally) clears the tag after import. Requires the github plugin to be
-  // running (bb plugin list shows it); if absent, calls reject and we surface
-  // that as a clear error rather than a silent no-op.
-  const g = {
-    status: () =>
-      bb.sdk.plugins.callRpc<{ ghOk: boolean; ghState: string; repos: Array<{ repo: string; projectId: string | null }>; lastSyncedAt: string | null }>({
-        pluginId: "github",
-        method: "status",
-        input: null,
-        outputSchema: z.any(),
-      }),
-    listItems: (input: { kind?: "issue" | "pr"; state?: "open" | "closed"; repo?: string }) =>
-      bb.sdk.plugins.callRpc<{ items: Array<{ repo: string; number: number; kind: string; title: string; state: string; author: string; labels: string[]; url: string; body: string; updatedAt: string }> }>({
-        pluginId: "github",
-        method: "listItems",
-        input: { state: "open", ...input },
-        outputSchema: z.any(),
-      }),
-    getIssue: (input: { repo: string; number: number }) =>
-      bb.sdk.plugins.callRpc<{ issue: { repo: string; number: number; title: string; state: string; author: string; body: string; labels: string[]; url: string; updatedAt: string; comments: Array<{ author: string; body: string; createdAt: string }> } }>({
-        pluginId: "github",
-        method: "getIssue",
-        input,
-        outputSchema: z.any(),
-      }),
-    setLabels: (input: { repo: string; number: number; labels: string[] }) =>
-      bb.sdk.plugins.callRpc<{ ok: boolean; labels: string[] }>({
-        pluginId: "github",
-        method: "setLabels",
-        input,
-        outputSchema: z.any(),
-      }),
-    assignableUsers: (input: { repo: string }) =>
-      bb.sdk.plugins.callRpc<{ users: string[] }>({
-        pluginId: "github",
-        method: "assignableUsers",
-        input,
-        outputSchema: z.any(),
-      }),
-    repositoryLabels: (input: { repo: string }) =>
-      bb.sdk.plugins.callRpc<{ labels: string[] }>({
-        pluginId: "github",
-        method: "repositoryLabels",
-        input,
-        outputSchema: z.any(),
-      }),
-    commentIssue: (input: { repo: string; number: number; body: string }) =>
-      bb.sdk.plugins.callRpc<{ ok: boolean }>({
-        pluginId: "github",
-        method: "commentIssue",
-        input,
-        outputSchema: z.any(),
-      }),
-    setIssueState: (input: { repo: string; number: number; state: "open" | "closed" }) =>
-      bb.sdk.plugins.callRpc<{ ok: boolean }>({
-        pluginId: "github",
-        method: "setIssueState",
-        input,
-        outputSchema: z.any(),
-      }),
-  };
-
-  async function runAutomationRules(): Promise<void> {
-    const rules = db.prepare("SELECT id, project_id, label, autostart FROM automation_rules WHERE enabled = 1").all() as Array<{ id: string; project_id: string; label: string; autostart: number }>;
-    if (rules.length === 0) return;
-    const items = await g.listItems({ kind: "issue", state: "open" }).catch(() => null);
-    if (!items) return;
-    const github = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
-    const projectForRepo = new Map(github.repos.map((entry) => [entry.repo, entry.projectId]));
-    for (const rule of rules) {
-      // One read for already-fired issues: the matcher stays pure (lib/),
-      // the database stays in the handler.
-      const firedKeys = new Set(
-        (db.prepare("SELECT source_key FROM automation_rule_fires WHERE rule_id = ?").all(rule.id) as Array<{ source_key: string }>).map((row) => row.source_key),
-      );
-      const matches = matchAutomationIssues(items.items, { label: rule.label, projectId: rule.project_id, projectForRepo, firedKeys });
-      for (const match of matches) {
-        const sourceKey = match.key;
-        try {
-          const detail = await g.getIssue({ repo: match.repo, number: match.number });
-          // Draft-only unless the rule opts into auto-start: the flag is
-          // human-set per rule and defaults off, never a server assumption.
-          const created = await createCardInternal({ projectId: rule.project_id, prompt: githubIssuePrompt(detail.issue, detail.issue.comments), attachments: [], intent: "investigate", appetite: "Lean", reviewMode: "Auto", start: rule.autostart === 1 });
-          const card = getCard(created.cardId);
-          if (!card) continue;
-          logCardComment(card.id, "card", card.id, "agent", `${rule.autostart === 1 ? "Started" : "Drafted"} from GitHub issue #${match.number}: ${detail.issue.url}`);
-          db.prepare("INSERT INTO automation_rule_fires (rule_id, source_key, card_id, fired_at) VALUES (?, ?, ?, ?)").run(rule.id, sourceKey, card.id, now());
-          bb.realtime.publish("board-changed", { reason: rule.autostart === 1 ? "automation-started" : "automation-draft", cardId: card.id });
-        } catch (error) {
-          bb.log.warn(`automation rule ${rule.id} skipped ${sourceKey}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    }
-  }
-  bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => runAutomationRules());
-
-  // A curated issue reference for the card prompt, so the worker reads the
-  // issue without re-fetching GitHub. Body + comments give the triage context.
-  function githubIssuePrompt(issue: { repo: string; number: number; title: string; author: string; body: string; url: string; labels: string[] }, comments: Array<{ author: string; body: string; createdAt: string }> = []): string {
-    const lines = [
-      `GitHub issue ${issue.repo}#${issue.number}: ${issue.title}`,
-      `Author: ${issue.author}`,
-      `Labels: ${issue.labels.join(", ") || "none"}`,
-      `URL: ${issue.url}`,
-      "",
-      issue.body.trim() ? `Description:\n${issue.body.trim()}` : "(no description)",
-    ];
-    if (comments.length > 0) {
-      lines.push("", "Comments:");
-      for (const comment of comments) lines.push(`- ${comment.author}: ${comment.body.trim()}`);
-    }
-    return lines.join("\n");
-  }
-
-  // Per-repo picker data (assignable users, repo labels) for the import
-  // dialog. Fail-soft per repo: one rejection never empties the pickers.
-  async function githubPickers(repos: string[]): Promise<{ labels: string[]; assignees: string[] }> {
-    const labelLists: unknown[] = [];
-    const userLists: unknown[] = [];
-    await Promise.all(repos.map(async (repo) => {
-      try {
-        const result = await g.repositoryLabels({ repo });
-        labelLists.push(result.labels);
-      } catch { /* repo unreachable — derived lists still cover it */ }
-      try {
-        const result = await g.assignableUsers({ repo });
-        userLists.push(result.users);
-      } catch { /* same */ }
-    }));
-    return { labels: sortedUnion(labelLists), assignees: sortedUnion(userLists) };
-  }
-
-  // Availability + auth of the builtin `github` plugin. Distinguishes the three
-  // cases the UI cares about: plugin not installed (callRpc rejects), installed
-  // but not authenticated (ghOk false), or ready. Never throws.
-  async function githubStatusResolved() {
-    try {
-      const status = await g.status();
-      return { ok: true, pluginAvailable: true, ghOk: Boolean(status.ghOk), repos: status.repos ?? [] };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      const pluginMissing = /plugin.*(not.*found|missing|unavailable)|github.*not/i.test(message);
-      return { ok: pluginMissing, pluginAvailable: false, ghOk: false, repos: [] };
-    }
-  }
 
   // Shared card-creation path for both the UI "start card" handler and the
   // GitHub import. A Personal-project request gets an isolated persistent
@@ -2208,8 +2012,11 @@ ${prompt}` }, ...workerAttachments],
     const createdAt = new Date(ts).toISOString();
     // Columns are the single source of truth: placeholders derive from this
     // list, so adding a column cannot leave the SQL with a stray "?".
-    const CARD_COLUMNS = ["id", "project_id", "name", "display_name", "prompt", "intent", "status", "stage", "activity", "worker_thread_id", "worker_preset_id", "dir_hash", "attachments", "workspace_kind", "workspace_path", "workspace_host_id", "kind", "research_strategy", "research_strategies", "explore_stage", "last_error", "last_assistant_text", "created_at", "updated_at"];
-    const cardValues = [cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch || isExplore ? "pending" : "draft", isResearch ? "research" : isExplore ? "explore" : "triage", start ? "running" : "idle", thread?.id ?? null, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : isExplore ? "explore" : "build", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([{ id: researchStrategy.id, at: createdAt, file: creationRoundFile }]) : null, exploreStage?.id ?? null, null, null, ts, ts];
+    const CARD_COLUMNS = ["id", "project_id", "name", "display_name", "prompt", "intent", "status", "stage", "activity", "worker_thread_id", "worker_preset_id", "dir_hash", "attachments", "workspace_kind", "workspace_path", "workspace_host_id", "kind", "research_strategy", "research_strategies", "explore_stage", "last_error", "last_assistant_text", "environment_label", "created_at", "updated_at"];
+    const selectedEnvRecord = selectedEnvironment && typeof selectedEnvironment === "object" ? selectedEnvironment as Record<string, unknown> : {};
+    const selectedEnvWorkspace = selectedEnvRecord.workspace && typeof selectedEnvRecord.workspace === "object" && !Array.isArray(selectedEnvRecord.workspace) ? selectedEnvRecord.workspace as Record<string, unknown> : {};
+    const environmentLabel = describeCardEnvironment({ exploratory: isExploratory, envType: selectedEnvRecord.type, workspaceType: selectedEnvWorkspace.type });
+    const cardValues = [cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch || isExplore ? "pending" : "draft", isResearch ? "research" : isExplore ? "explore" : "triage", start ? "running" : "idle", thread?.id ?? null, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : isExplore ? "explore" : "build", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([{ id: researchStrategy.id, at: createdAt, file: creationRoundFile }]) : null, exploreStage?.id ?? null, null, null, environmentLabel, ts, ts];
     if (cardValues.length !== CARD_COLUMNS.length) {
       throw new Error(`Card insert mismatch: ${cardValues.length} values for ${CARD_COLUMNS.length} columns.`);
     }
@@ -2235,7 +2042,7 @@ ${prompt}` }, ...workerAttachments],
     return { cardId, threadId: thread?.id ?? null };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; spawn_retry_count: number | null; spawn_retry_thread: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; created_at: number; updated_at: number };
+  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; spawn_retry_count: number | null; spawn_retry_thread: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; environment_label: string | null; created_at: number; updated_at: number };
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null; resolved_reason: string | null };
   type PresetRow = {
@@ -4422,11 +4229,34 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. Only a visible structured form on the card counts as a pending question — a prior chat message or split-proposal record does not. If the user cannot see a form and the stage needs input, submit the same bb stelow ask once; the host refuses duplicates when a real form is open. Never claim to be waiting based on memory alone. ${INTERFACE_PICK} Unselected gates approve and advance themselves; selected gates use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
   }
 
+  // GitHub issues live decoupled in server/github-issues.ts: tables,
+  // backfills, matcher wiring, scheduler, and RPCs. One seam in, one out.
+  const github = createGithubAutomation({
+    db,
+    bb,
+    now,
+    randomId,
+    cards: {
+      get: (cardId) => getCard(cardId),
+      create: (args) => createCardInternal(args),
+      comment: (cardId, target, targetId, author, body) => logCardComment(cardId, target, targetId, author, body),
+      workspace: (card) => cardWorkspace(card as CardRow),
+      scopes: (card, rootPath) => (rootPath ? loadCardScopes(rootPath, card.id) : []),
+      normalizeStatus: (value) => normalizeStatus(value),
+      statusLabel: (status) => statusLabelForSummary(status),
+    },
+  });
+
+  // The scheduler lives with the feature it drives: disabling the module
+  // (STELOW_GITHUB_ISSUES=0) stops the ticks along with the RPCs.
+  bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => github.runAutomationRules());
+
   bb.rpc.register(rpcContract, {
+    ...github.handlers,
     board: async ({ projectId }) => {
       const board = await loadBoard(bb, projectId);
-      const githubStatus = await githubStatusResolved().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] }));
-      return { ...board, githubStatus };
+      const githubStatus = await github.githubStatus().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] }));
+      return { ...board, githubStatus, githubAutomationEnabled: githubIssuesEnabled() };
     },
     projects: async () => {
       const list = await bb.sdk.projects.list();
@@ -4442,29 +4272,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const record = stored as { reviewMode?: unknown; reviewGates?: unknown };
       const reviewGates = normalizeReviewGates(record.reviewGates ?? record.reviewMode ?? []) as Array<"spec" | "interface" | "scope" | "tech" | "diff">;
       return { appetite: parsed.data.appetite, reviewMode: legacyLabelForGates(reviewGates) ?? "Auto", reviewGates };
-    },
-
-    async listAutomationRules({ projectId }) {
-      const rows = projectId
-        ? db.prepare("SELECT id, project_id, label, enabled, autostart, created_at, updated_at FROM automation_rules WHERE project_id = ? ORDER BY created_at DESC").all(projectId) as Array<{ id: string; project_id: string; label: string; enabled: number; autostart: number; created_at: number; updated_at: number }>
-        : db.prepare("SELECT id, project_id, label, enabled, autostart, created_at, updated_at FROM automation_rules ORDER BY project_id ASC, created_at DESC").all() as Array<{ id: string; project_id: string; label: string; enabled: number; autostart: number; created_at: number; updated_at: number }>;
-      return { rules: rows.map((rule) => ({ id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, autostart: rule.autostart === 1, createdAt: rule.created_at, updatedAt: rule.updated_at })) };
-    },
-
-    async saveAutomationRule({ id, projectId, label, enabled, autostart }) {
-      const cleanLabel = label.trim();
-      if (!cleanLabel) throw new Error("Rule label cannot be empty.");
-      const ts = now();
-      const ruleId = id ?? randomId("rule");
-      db.prepare("INSERT INTO automation_rules (id, project_id, label, enabled, autostart, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET label = excluded.label, enabled = excluded.enabled, autostart = excluded.autostart, updated_at = excluded.updated_at")
-        .run(ruleId, projectId, cleanLabel, enabled ? 1 : 0, autostart ? 1 : 0, ts, ts);
-      const rule = db.prepare("SELECT id, project_id, label, enabled, autostart, created_at, updated_at FROM automation_rules WHERE id = ?").get(ruleId) as { id: string; project_id: string; label: string; enabled: number; autostart: number; created_at: number; updated_at: number };
-      return { rule: { id: rule.id, projectId: rule.project_id, label: rule.label, enabled: rule.enabled === 1, autostart: rule.autostart === 1, createdAt: rule.created_at, updatedAt: rule.updated_at } };
-    },
-
-    async deleteAutomationRule({ id }) {
-      db.prepare("DELETE FROM automation_rules WHERE id = ?").run(id);
-      return { ok: true };
     },
 
     async approveGate({ projectId, workflowId, gate }) {
@@ -4582,134 +4389,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { rootPath, statePath: result.statePath, error: null };
     },
 
-    async listGithubCandidates({ label }) {
-      // Safely reject when the github plugin is not available so the UI can
-      // show a real reason instead of an empty list. The wrapper's rejection
-      // message carries the pluginId/method for the user.
-      const items = await g.listItems({ kind: "issue", state: "open" }).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "GitHub plugin unavailable";
-        throw new Error(`GitHub import unavailable: ${message}`);
-      });
-      // Resolve each issue to the bb project that owns its repo (GitHub plugin
-      // maps repo -> projectId from git remotes), so the UI needs no project
-      // picker. Unmapped repos fall back to the caller's active project.
-      const status = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
-      const repoToProject = new Map(status.repos.map((entry) => [entry.repo, entry.projectId]));
-      const strList = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
-      // Alphabetical pickers over EXISTING things, not just what's on open
-      // issues: assignable users and repo labels per tracked repo (fail-soft
-      // per repo), merged with whatever the cached issues already carry so
-      // the pickers stay useful even when no open issue has an assignee.
-      const pickerLists = await githubPickers(status.repos.map((entry) => entry.repo));
-      const allLabels = sortedUnion([pickerLists.labels, items.items.flatMap((item) => strList(item.labels))]);
-      const allAssignees = sortedUnion([pickerLists.assignees, items.items.flatMap((item) => strList((item as { assignees?: unknown }).assignees))]);
-      const issues = items.items
-        .filter((item) => item.labels.includes(label))
-        .sort((a, b) => Number(b.number) - Number(a.number));
-      return {
-        allLabels,
-        allAssignees,
-        issues: issues.map((issue) => {
-          const key = `${issue.repo}#${issue.number}`;
-          const link = db.prepare("SELECT card_id, imported_at FROM github_imports WHERE issue_key = ?").get(key) as { card_id: string | null; imported_at: number } | undefined;
-          const card = link?.card_id ? (getCard(link.card_id) ?? null) : null;
-          return {
-            repo: issue.repo,
-            number: issue.number,
-            title: issue.title,
-            labels: issue.labels,
-            author: issue.author,
-            assignees: strList((issue as { assignees?: unknown }).assignees),
-            url: issue.url,
-            body: issue.body,
-            updatedAt: issue.updatedAt,
-            projectId: repoToProject.get(issue.repo) ?? null,
-            alreadyImported: Boolean(link),
-            cardId: card?.id ?? null,
-            cardName: card ? (card.display_name ?? card.name) : null,
-          };
-        }),
-      };
-    },
-
-    async importGithubIssue({ projectId, repo, number: numberValue, label, intent }) {
-      const key = `${repo}#${numberValue}`;
-      const existing = db.prepare("SELECT card_id, imported_at FROM github_imports WHERE issue_key = ?").get(key) as { card_id: string | null; imported_at: number } | undefined;
-      if (existing?.card_id) {
-        const card = getCard(existing.card_id);
-        if (card) return { ok: true, cardId: card.id, skipped: "already-imported", error: null };
-      }
-      // Resolve the owning project from the repo (fall back to the caller's
-      // active project) when the caller didn't pass one explicitly.
-      let resolvedProjectId = projectId;
-      if (!resolvedProjectId) {
-        const status = await githubStatusResolved().catch(() => ({ repos: [] as Array<{ repo: string; projectId: string | null }> }));
-        const match = status.repos.find((entry) => entry.repo === repo);
-        resolvedProjectId = match?.projectId ?? null;
-      }
-      if (!resolvedProjectId) throw new Error(`Cannot determine the bb project for repo ${repo}; open it as a project in bb first.`);
-      // Pull live detail (body + comments) to seed the card prompt.
-      const { issue } = await g.getIssue({ repo, number: numberValue }).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : "GitHub plugin unavailable";
-        throw new Error(`GitHub import unavailable: ${message}`);
-      });
-      const prompt = githubIssuePrompt(issue, issue.comments);
-      const card = await createCardInternal({ projectId: resolvedProjectId, prompt, attachments: [], intent, appetite: "Lean", reviewMode: "Auto" });
-      const cardId = card.cardId;
-      const ts = now();
-      db.prepare("INSERT OR REPLACE INTO github_imports (issue_key, repo, number, label, card_id, imported_at) VALUES (?, ?, ?, ?, ?, ?)").run(key, repo, numberValue, label, cardId, ts);
-      // Clear the stelow tag after import so the loop is pull-once: the issue is
-      // now tracked by its card, and re-importing would just find the card.
-      // Best-effort: a failure to clear the label is not fatal to the import.
-      await g.setLabels({ repo, number: numberValue, labels: issue.labels.filter((item) => item !== label) }).catch(() => {});
-      bb.realtime.publish("card-state", { cardId });
-      return { ok: true, cardId, skipped: null, error: null };
-    },
-
-    async postGithubCompletion({ cardId, closeIssue }) {
-      // Explicit, user-triggered write-back for imported issues: posts a
-      // factual English completion summary as an issue comment, optionally
-      // closing the issue. Never automatic — Done in Stelow is not
-      // merged/deployed, so auto-close would lie. Uses the github plugin's
-      // own RPCs (same auth it syncs with), never shelling out.
-      const card = getCard(cardId);
-      if (!card) return { ok: false, commentUrl: null, error: ERR_CARD_NOT_FOUND };
-      const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
-      if (!link) return { ok: false, commentUrl: null, error: "This card was not imported from a GitHub issue." };
-      if (normalizeStatus(card.status) !== "completed") return { ok: false, commentUrl: null, error: "Only completed cards can report back to GitHub." };
-      const workspace = await cardWorkspace(card).catch(() => null);
-      const scopes = workspace?.path ? loadCardScopes(workspace.path, card.id) : [];
-      const doneScopes = scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length;
-      const tasksTotal = scopes.reduce((total, scope) => total + scope.tasks.length, 0);
-      const tasksDone = scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0);
-      const scopeLines = scopes.map((scope) => `- ${scope.name} (${statusLabelForSummary(scope.status)}${scope.tasks.length > 0 ? `, ${scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length}/${scope.tasks.length} tasks` : ""})`);
-      const body = [
-        `Stelow completed "${card.display_name ?? card.name}" (intent: ${card.intent}, final stage: ${card.stage}).`,
-        ``,
-        scopes.length > 0 ? `Scopes: ${doneScopes}/${scopes.length} done; tasks: ${tasksDone}/${tasksTotal} done.` : `No scopes tracked.`,
-        ...scopeLines,
-        ``,
-        `Prompt: ${card.prompt.length > 500 ? `${card.prompt.slice(0, 500)}…` : card.prompt}`,
-      ].join("\n");
-      try {
-        await g.commentIssue({ repo: link.repo, number: link.number, body });
-      } catch (error) {
-        return { ok: false, commentUrl: null, error: error instanceof Error ? error.message : "Could not comment on the GitHub issue." };
-      }
-      // Record before the optional close: a close failure must never
-      // invite a retry that posts the comment twice.
-      db.prepare("UPDATE github_imports SET commented_at = ? WHERE card_id = ?").run(now(), cardId);
-      if (closeIssue) {
-        try {
-          await g.setIssueState({ repo: link.repo, number: link.number, state: "closed" });
-        } catch {
-          return { ok: false, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: "Comment posted, but the automatic close failed — close the issue manually on GitHub." };
-        }
-      }
-      bb.realtime.publish("card-state", { cardId });
-      return { ok: true, commentUrl: `https://github.com/${link.repo}/issues/${link.number}`, error: null };
-    },
-
     async listCards({ projectId, kind }) {
       const stmt = projectId && kind
         ? db.prepare("SELECT * FROM cards WHERE project_id = ? AND kind = ? ORDER BY updated_at DESC")
@@ -4785,6 +4464,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           projectName: row.workspace_kind === "exploratory" ? "Exploratory work" : (projectMap.get(row.project_id) ?? row.project_id),
           workspaceKind: row.workspace_kind,
           workspacePath: row.workspace_path,
+          environmentLabel: row.environment_label ?? null,
           kind: normalizeKind(row.kind),
           researchStrategy: row.research_strategy,
           researchStrategies: strategyList(row),
@@ -5178,7 +4858,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
         questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
         attachments,
         mentionedFiles,
         scopes,

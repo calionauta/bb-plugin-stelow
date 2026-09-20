@@ -22,6 +22,7 @@ One board, one quiet inbox.
 - **Agent presets:** assign a provider/model reasoning/permission profile to any card (schema mirrors the bb Tasks plugin). The worker thread is started with the preset's execution options.
 - **Sidebar badge:** the Stelow menu row shows a live count of unresolved inbox action items, and nothing else — a finished card is not blocked work. Finished cards carry their own emerald **Review** marker until you open them.
 - **CLI:** inspect workflows, request structured input, advance stages, verify artifacts, request independent artifact review, fan out research, and manage presets.
+- **GitHub issues:** import tagged issues as cards right now, or watch labels per project with automation rules — one dialog, shared dedupe, parked drafts by default, isolated worktrees for auto-start. Operator and trust model in [docs/github-issues.md](./docs/github-issues.md); inventory in [FEATURES.md](./FEATURES.md).
 
 The plugin keeps its own board store (cards, questions, presets, publication
 history). `stelow.json` and `.stelow/` remain the source of truth for the

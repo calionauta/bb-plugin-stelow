@@ -32,32 +32,48 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   The creation modal stays a real modal on phones (full-viewport with an
   explicit close, `fullscreenOnMobile`) instead of collapsing into a
   bottom sheet.
-- **GitHub issue import** (`listGithubCandidates`, `importGithubIssue`).
-  Tagged issues land in Triage; fresh issues preselected; owning project
-  resolved per repo; intent guessed from labels/title (user-correctable).
-  Label field offers the alphabetical label picker (every repo label, not
-  just labels on open issues); assignee dropdown lists assignable users
-  per tracked repo merged with assignees seen on issues. Per-issue
-  assignees shown inline.
-- **Automation rules.** The Build header opens one dialog listing rules across
-  all projects grouped by project with search, status filter, counts, and
-  bulk enable/disable/delete; empty projects stay collapsed until requested.
-  Each row shows its label, draft/auto-start mode, and enable state with
-  aligned controls; deletion (single and bulk) goes through a confirm dialog
-  stating the blast radius. A new rule picks its project inline (defaulting
-  to the active board project) and watches a GitHub label to create one
-  source-linked Inbox card per matching issue — parked as a draft by
-  default, or auto-started when the rule's Start automatically box is
-  checked (same wording as the New issue composer). Rules run durably on
-  BB's own scheduler every 5 minutes — the dialog states the cadence and,
-  when the github plugin is missing or unlinked, names that setup in place
-  instead of failing silently. Rules never move cards, clear labels, merge
-  code, or import work behind the user's back.
+- **GitHub issues** (`listGithubCandidates`, `importGithubIssue`,
+  `listAutomationRules`, `saveAutomationRule`). One Build entry point with
+  two tabs: Import now (manual pull while you watch) and Auto-import
+  (per-project label watchers on BB's scheduler). Both share one matcher
+  (`lib/automation-rules.mjs`, exact labels with AND semantics), one intent
+  heuristic (`lib/github-intent.mjs`), and one creation path with a single
+  `github_imports` dedupe claimed before any work starts — manual and
+  automatic never draft the same `repo#number` twice, even racing. Each
+  flow carries its own explicit Start immediately checkbox, both defaulting
+  to parked Inbox drafts (creation dialogs default to started instead).
+  Rules cap at 10 drafts per tick. The list filters by every watched label
+  plus project and assignee, and imported rows name the author, the card
+  status, whether the completion was posted back, and possibly-related
+  open issues by title overlap.
+- **Automation rules.** Per-project watchers from the GitHub tab above:
+  labels (comma-separated, all required, exact case), an optional author
+  allowlist (empty means anyone; the plugin cannot see GitHub roles, so
+  this is explicit logins only), an optional worker-instructions template
+  appended to the issue prompt, plus start policy. Enabling a rule marks
+  already-tagged issues as seen without drafting (backlog guard) — only
+  genuinely new issues create cards; if GitHub is unreachable the rule is
+  saved disabled instead of firing blind later. A dry-run preview names
+  what would match now and exactly why the rest would not; each rule lists
+  its recent runs with the per-run outcome (Started, Parked, Already
+  imported). Auto-start is gated on the effective spawn environment
+  (band routing wins over passed presets): without an isolated worktree
+  destination it fails closed (save refuses, ticks park with the fix
+  named). Rules never move cards, merge code, or import behind the user's
+  back. The whole feature is one decoupled module (`server/github-issues.ts`
+  + `components/github-issues-dialog.tsx`, pure core in `lib/`): evolve it
+  there, and `STELOW_GITHUB_ISSUES=0` on the host switches off its
+  scheduler, RPCs, and panel button without touching anything else.
+  Operator guide (flows, trust model, kill switch, module map):
+  [docs/github-issues.md](./docs/github-issues.md).
 - **GitHub completion write-back** (`postGithubCompletion`). Completed cards
   imported from an issue offer one explicit Manage action: post a factual
   English summary (scopes/tasks, prompt) as an issue comment via the
   github plugin's own RPCs, optionally closing the issue behind the same
-  confirm. Never automatic — Done in Stelow is not merged/deployed.
+  confirm. Never automatic — Done in Stelow is not merged/deployed. The
+  comment carries a hidden card marker that is verified back on the issue
+  before counting as posted, so retries never double-post and a send
+  without a visible comment reports itself instead of succeeding silently.
 - **Manual Git changes from Done** (`publicationStatus`, `CardDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
@@ -442,7 +458,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   archive, delete archived cards behind confirms — all real outline
   buttons, archive/delete in destructive tone. Worker history collapses
   inside the same section; GitHub import/completion lives here too
-  (build only).
+  (build only). Every card names its checkout in one stored word
+  (`environment_label`: isolated worktree, shared checkout, BB-managed,
+  exploratory) plus the live branch on build cards — no guessing from
+  paths. Branch choice at creation stays BB's composer (project,
+  environment, branch forwarded unchanged); Stelow never re-picks it.
 - **Conversation.** Card/agent comment thread + composer that routes to
   the worker.
 - **Thread embeds.** Card drawer inside threads

@@ -7,6 +7,7 @@ import {
   LIGHTWEIGHT_COLUMN_LABELS,
   LIGHTWEIGHT_STATUS_BY_COLUMN,
   bandForKind,
+  describeCardEnvironment,
   isLightweightKind,
   isValidKind,
   normalizeKind,
@@ -40,5 +41,14 @@ assert.equal(bandForKind("build"), "analysis", "build band");
 assert.equal(bandForKind("research"), "research", "research band");
 assert.equal(bandForKind("explore"), "explore", "explore band");
 assert.equal(bandForKind("bogus"), "analysis", "an unrecognized kind takes the build band");
+
+// Spawn environment in one stored word: the open card reads it instead of
+// guessing shared-vs-worktree from paths.
+assert.equal(describeCardEnvironment({ exploratory: true }), "exploratory", "exploratory wins");
+assert.equal(describeCardEnvironment({ exploratory: false, envType: "project-default" }), "managed", "BB-managed checkout");
+assert.equal(describeCardEnvironment({ exploratory: false, envType: "host", workspaceType: "managed-worktree" }), "worktree", "managed worktree");
+assert.equal(describeCardEnvironment({ exploratory: false, envType: "host", workspaceType: "unmanaged" }), "shared", "shared project checkout");
+assert.equal(describeCardEnvironment({ exploratory: false, envType: "host", workspaceType: "personal" }), "personal", "personal workspace");
+assert.equal(describeCardEnvironment({}), "unknown", "missing facts read as unknown, never a guess");
 
 console.log("tracks test ok: kinds, lightweight lifecycle, bands, kind normalization");

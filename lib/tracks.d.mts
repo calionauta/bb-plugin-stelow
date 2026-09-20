@@ -10,3 +10,8 @@ export declare function isLightweightKind(kind: unknown): kind is "research" | "
 export declare function normalizeKind(kind: unknown): "build" | "research" | "explore";
 export declare function bandForKind(kind: unknown): string;
 export declare function lightweightColumnForStatus(status: unknown): "inbox" | "doing" | "done" | "archived";
+export declare function describeCardEnvironment(options: {
+  exploratory?: unknown;
+  envType?: unknown;
+  workspaceType?: unknown;
+}): "exploratory" | "managed" | "worktree" | "personal" | "shared" | "unknown";

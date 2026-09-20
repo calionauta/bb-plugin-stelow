@@ -11,8 +11,8 @@ const insertBlock = source.match(/const CARD_COLUMNS = \[(?<columns>[^\]]+)\];[\
 
 assert.ok(insertBlock?.groups?.columns, "card INSERT declares one canonical column list");
 const columns = JSON.parse(`[${insertBlock.groups.columns}]`);
-assert.equal(columns.length, 24, "card INSERT has the expected 24 columns");
+assert.equal(columns.length, 25, "card INSERT has the expected 25 columns");
 assert.equal(new Set(columns).size, columns.length, "card INSERT columns are unique");
 assert.match(source, /cardValues\.length !== CARD_COLUMNS\.length/, "card INSERT rejects a values/columns mismatch");
 
-console.log("card insert contract test ok: placeholders derive from 24 unique columns");
+console.log("card insert contract test ok: placeholders derive from 25 unique columns");

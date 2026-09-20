@@ -9,20 +9,20 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+// GitHub issues live decoupled: the feature module owns matching,
+// creation, scheduler, and RPCs; server.ts only wires the seam.
+const githubServer = readFileSync(join(root, "server", "github-issues.ts"), "utf8");
+const githubApp = readFileSync(join(root, "components", "github-issues-dialog.tsx"), "utf8");
+const startCheck = readFileSync(join(root, "components", "start-immediately-check.tsx"), "utf8");
 
 // Deferred start: creating spawns by default, and parks only where a human
 // chose it. The automation path carries the rule's autostart flag (default
 // off) instead of a literal — the human opts in per rule, the server never
 // assumes.
 assert.match(server, /start = true/, "creation spawns by default");
-assert.ok(!server.includes("start: false"), "no literal forced park anywhere — the automation path carries the rule choice");
-assert.match(server, /start: rule\.autostart === 1/, "the automation path passes the rule flag, never a literal");
-assert.ok(server.indexOf("start: rule.autostart") > server.indexOf("async function runAutomationRules"), "the rule choice lives inside runAutomationRules, never in a creation path");
-// The flag is a real column defaulting to draft-only, a contract member,
-// and an updatable field — not UI-only state that the scheduler ignores.
-assert.match(server, /ADD COLUMN autostart INTEGER NOT NULL DEFAULT 0/, "existing rule rows gain autostart defaulting to draft-only");
-assert.match(server, /autostart: z\.boolean\(\)/, "the rule contract carries autostart");
-assert.match(server, /autostart = excluded\.autostart/, "updating a rule persists autostart");
+const forcedParks = server.match(/start: false/g) ?? [];
+assert.equal(forcedParks.length, 0, "no hardcoded park remains — GitHub start policy comes from the human choice");
+assert.match(githubServer, /start: decision\.start/, "automation passes the worktree-gated start policy through the shared GitHub path");
 assert.match(server, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
 assert.match(server, /startWorker: \{/, "the start trigger is a named RPC");
 assert.match(server, /async startWorker\(\{ cardId \}\)/, "the handler resolves the card");
@@ -41,21 +41,38 @@ assert.ok(!splitCall.includes("start"), "split children inherit start-by-default
 // The dialogs offer the choice (checked by default); threadless cards
 // offer Start in place of thread-bound actions. Every track offers it —
 // Build included, so no track can only be created running.
-assert.match(app, /function StartImmediatelyCheck/, "one checkbox component serves every creation dialog");
-assert.equal((app.match(/<StartImmediatelyCheck/g) ?? []).length, 3, "build, research, and explore dialogs all offer it");
-// Automation rules carry the same choice per rule (default off): an aligned
-// row component, an explicit opt-in checkbox, and deletion behind the shared
-// confirm dialog — never a bare immediate delete.
-assert.match(app, /function AutomationRuleRow\(/, "automation rows render through one aligned component");
-assert.match(app, /Start automatically/, "the new-rule form offers auto-start in the composer's wording");
-assert.match(app, /unchecked parks in Inbox\./, "the default-off choice states where matches go");
-assert.match(app, /Auto-start rule \$\{rule\.label\}/, "each row toggles auto-start with an accessible name");
-assert.match(app, /setAutomationDeleteIds\(\[rule\.id\]\)/, "single delete opens the confirm instead of deleting");
-assert.match(app, /Delete this automation rule\?/, "the confirm names the destructive rule action");
-assert.equal((app.match(/<StartImmediatelyCheck/g) ?? []).length, 3, "build, research, and explore dialogs all offer it");
+assert.match(startCheck, /function StartImmediatelyCheck/, "one checkbox component serves every creation dialog");
+assert.equal(((app.match(/<StartImmediatelyCheck/g) ?? []).length + (githubApp.match(/<StartImmediatelyCheck/g) ?? []).length), 5, "build, research, explore, import, and automation dialogs all offer it");
 assert.match(app, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
 assert.match(app, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
 assert.match(app, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");
+assert.match(githubApp, /rpc\.call\("importGithubIssue", \{[^}]*start: importStart/, "import submit passes the choice");
+assert.match(githubApp, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
+assert.match(githubApp, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
+assert.match(githubApp, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");
+assert.match(githubServer, /automation_rule_seen/, "backlog guard has its own table");
+assert.match(githubServer, /primeAutomationRule/, "enabling a rule primes the backlog without drafting");
+assert.match(githubServer, /resolveWorktreePreset/, "auto-start resolves an isolated preset first");
+assert.match(githubServer, /decideAutomationSpawn/, "start policy decides from the effective spawn environment");
+assert.match(githubServer, /claimed_by/, "concurrent imports claim before working");
+assert.match(githubServer, /liveImportedKeys/, "cardless imports read as not-imported");
+assert.match(githubServer, /stelow:card=/, "write-back carries a verifiable marker");
+assert.match(githubServer, /commentCarriesMarker/, "write-back verifies instead of trusting the send");
+assert.match(githubServer, /applyRulePrompt/, "rule templates thread into the issue prompt");
+assert.match(githubServer, /findRelatedIssues/, "candidates warn about possibly-related issues");
+assert.match(githubServer, /githubIssuesEnabled/, "the feature carries its own kill switch");
+assert.match(server, /STELOW_GITHUB_ISSUES/, "server.ts only names the switch, never its logic");
+assert.match(server, /\.\.\.github\.handlers/, "server.ts only spreads the feature handlers");
+assert.match(server, /runGithubMigrations\(db\)/, "server.ts delegates the feature migrations in one call");
+assert.match(server, /environment_label/, "cards record their spawn environment in one word");
+assert.match(server, /outcome/, "automation runs record their outcome");
+assert.match(app, /checkoutNoteFor/, "open cards name their checkout and branch");
+assert.match(githubApp, /RULE_RUN_OUTCOME/, "run history names each outcome in plain words");
+// Same checkbox, per-dialog default: creation dialogs start checked,
+// GitHub flows park unchecked.
+assert.match(app, /const \[startImmediately, setStartImmediately\] = useState\(true\)/, "new-issue dialogs default to started");
+assert.match(githubApp, /const \[importStart, setImportStart\] = useState\(false\)/, "import defaults to parked");
+assert.match(githubApp, /const \[automationStart, setAutomationStart\] = useState\(false\)/, "automation defaults to parked");
 assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 3, "build, research, and explore cards all offer Start");
 assert.match(app, /Not started — parked in Inbox/, "a parked card says plainly that nothing runs");
 // The Inbox is the board's first column on every track, and leaving it is

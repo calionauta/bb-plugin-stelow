@@ -43,6 +43,8 @@ import { formatTokenUsage } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
+import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
+import { StartImmediatelyCheck } from "./components/start-immediately-check";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -65,29 +67,6 @@ type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][numbe
 
 type ProjectsResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R ? Extract<R, { projects?: unknown }> : never;
 
-type GithubStatus = {
-  ok: boolean;
-  pluginAvailable: boolean;
-  ghOk: boolean;
-  repos: Array<{ repo: string; projectId: string | null }>;
-};
-
-type GithubCandidate = {
-  repo: string;
-  number: number;
-  title: string;
-  labels: string[];
-  author: string;
-  assignees: string[];
-  url: string;
-  body: string;
-  updatedAt: string;
-  projectId: string | null;
-  alreadyImported: boolean;
-  cardId: string | null;
-  cardName: string | null;
-};
-
 const INTENT_LABEL: Record<string, string> = {
   "new-product": "New product",
   feature: "Feature",
@@ -96,18 +75,8 @@ const INTENT_LABEL: Record<string, string> = {
   investigate: "Investigate",
 };
 
-// Map a tagged GitHub issue onto a Stelow intent from its labels/title. Falls
-// back to investigate (the permissive triage intent). This is a heuristic the
-// user can correct on the card afterwards via updateCardIntent.
-function githubIntentFor(issue: { labels: string[]; title: string }): "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" {
-  const lower = [...issue.labels, issue.title].join(" ").toLowerCase();
-  if (/\bbugs?\b|\bdefects?\b|\bregression\b/.test(lower)) return "bugfix";
-  if (/\brefactor\b|\bclean(up)?\b|\bdebt\b|\bsimplify\b/.test(lower)) return "refactor";
-  if (/\bfeature\b|\benhancement\b|\bfeat\b|\bnew\b/.test(lower)) return "feature";
-  if (/\bnew\s+product\b|\bproduct\b/.test(lower)) return "new-product";
-  return "investigate";
-}
-
+// Intent mapping lives server-side (lib/github-intent.mjs, single source).
+// The panel no longer guesses intent; the server derives it from live labels.
 const STATUS_LABELS: Record<string, string> = {
   draft: "Draft",
   planning: "Planning",
@@ -695,26 +664,9 @@ function BoardPanel({ active }: { active: boolean }) {
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
-  const [automationRulesOpen, setAutomationRulesOpen] = useState(false);
-  const [automationRules, setAutomationRules] = useState<Array<{ id: string; projectId: string; label: string; enabled: boolean; autostart: boolean }>>([]);
-  const [automationLabel, setAutomationLabel] = useState("stelow-work");
-  const [automationAutostart, setAutomationAutostart] = useState(false);
-  const [automationDeleteIds, setAutomationDeleteIds] = useState<string[] | null>(null);
-  const [automationNewProjectId, setAutomationNewProjectId] = useState<string | null>(null);
-  const [automationBusy, setAutomationBusy] = useState(false);
-  const [automationSearch, setAutomationSearch] = useState("");
-  const [automationStatus, setAutomationStatus] = useState<"all" | "enabled" | "disabled">("all");
-  const [automationSelected, setAutomationSelected] = useState<Record<string, boolean>>({});
-  const [automationShowEmpty, setAutomationShowEmpty] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
-  const [importLabel, setImportLabel] = useState("stelow-work");
-  const [importCandidates, setImportCandidates] = useState<GithubCandidate[]>([]);
-  const [importSelected, setImportSelected] = useState<Record<string, boolean>>({});
-  const [importAllLabels, setImportAllLabels] = useState<string[]>([]);
-  const [importAllAssignees, setImportAllAssignees] = useState<string[]>([]);
-  const [importAssignee, setImportAssignee] = useState<string>("all");
-  const [importBusy, setImportBusy] = useState(false);
+  const [githubOpen, setGithubOpen] = useState(false);
   const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
+  const [githubAutomationEnabled, setGithubAutomationEnabled] = useState(true);
 
   const load = useCallback(async (targetId: string | null) => {
     if (firstLoadRef.current) setLoading(true);
@@ -731,6 +683,7 @@ function BoardPanel({ active }: { active: boolean }) {
       setBoardPresets(presetsResult.presets);
       setBoardBandPresets(bandPresetsResult.bands);
       if (boardResult?.githubStatus) setGithubStatus(boardResult.githubStatus);
+      if (boardResult && "githubAutomationEnabled" in boardResult) setGithubAutomationEnabled(boardResult.githubAutomationEnabled !== false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
       if (firstLoadRef.current) {
@@ -766,52 +719,6 @@ function BoardPanel({ active }: { active: boolean }) {
   }, [reviewGates]);
 
   const activeProjectId = boardProjectId ?? routeProjectId;
-  // Hybrid: dialog lists rules across all projects. The new-rule picker
-  // defaults to the active board project, never blocks the list.
-  const automationCreateProjectId = automationNewProjectId ?? activeProjectId;
-  useEffect(() => {
-    if (!automationRulesOpen) return;
-    setAutomationSelected({});
-    void rpc.call("listAutomationRules", { projectId: null }).then((result) => {
-      setAutomationRules(result.rules);
-    }).catch(() => { /* keep last known list on transient failure */ });
-  }, [automationRulesOpen, rpc]);
-  const automationVisible = useMemo(() => {
-    const query = automationSearch.trim().toLowerCase();
-    return automationRules.filter((rule) => {
-      if (automationStatus === "enabled" && !rule.enabled) return false;
-      if (automationStatus === "disabled" && rule.enabled) return false;
-      if (!query) return true;
-      const projectName = projects.find((project) => project.id === rule.projectId)?.name ?? rule.projectId;
-      return rule.label.toLowerCase().includes(query) || projectName.toLowerCase().includes(query);
-    });
-  }, [automationRules, automationSearch, automationStatus, projects]);
-  const automationGrouped = useMemo(() => {
-    const groups = new Map<string, typeof automationVisible>();
-    for (const rule of automationVisible) {
-      const list = groups.get(rule.projectId) ?? [];
-      list.push(rule);
-      groups.set(rule.projectId, list);
-    }
-    return [...groups.entries()].sort(([a], [b]) => {
-      const nameA = projects.find((project) => project.id === a)?.name ?? a;
-      const nameB = projects.find((project) => project.id === b)?.name ?? b;
-      return nameA.localeCompare(nameB);
-    });
-  }, [automationVisible, projects]);
-  const automationEmptyProjects = useMemo(() => {
-    if (!automationShowEmpty) return [];
-    const withRules = new Set(automationRules.map((rule) => rule.projectId));
-    const query = automationSearch.trim().toLowerCase();
-    return projects.filter((project) => {
-      if (withRules.has(project.id)) return false;
-      if (automationStatus !== "all") return false;
-      if (query && !project.name.toLowerCase().includes(query)) return false;
-      return true;
-    });
-  }, [automationRules, automationShowEmpty, automationSearch, automationStatus, projects]);
-  const automationEnabledCount = automationRules.filter((rule) => rule.enabled).length;
-  const automationDeleteTargets = useMemo(() => (automationDeleteIds ?? []).map((id) => automationRules.find((rule) => rule.id === id)).filter((rule): rule is AutomationRuleItem => rule !== undefined), [automationDeleteIds, automationRules]);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const defaultWorkerPreset = boardPresets.find((preset) => preset.isDefault) ?? boardPresets[0] ?? null;
   const presetForBand = (band: string) => {
@@ -874,122 +781,6 @@ function BoardPanel({ active }: { active: boolean }) {
     if (!result.ok) toast.error(result.error ?? "Move failed");
   }
 
-  async function saveAutomationRule() {
-    const pid = automationCreateProjectId;
-    if (!pid || !automationLabel.trim()) return;
-    setAutomationBusy(true);
-    try {
-      await rpc.call("saveAutomationRule", { projectId: pid, label: automationLabel.trim(), enabled: true, autostart: automationAutostart });
-      const result = await rpc.call("listAutomationRules", { projectId: null });
-      setAutomationRules(result.rules);
-      setAutomationLabel("");
-      setAutomationAutostart(false);
-      toast.success(automationAutostart ? "Automation rule saved. Matching issues start immediately." : "Automation rule saved. Matching issues park in Inbox as drafts.");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save automation rule."); }
-    finally { setAutomationBusy(false); }
-  }
-
-  async function setAutomationRule(ruleId: string, patch: { enabled?: boolean; autostart?: boolean }) {
-    const current = automationRules.find((entry) => entry.id === ruleId);
-    if (!current) return;
-    const next = { ...current, ...patch };
-    try {
-      const result = await rpc.call("saveAutomationRule", { id: next.id, projectId: next.projectId, label: next.label, enabled: next.enabled, autostart: next.autostart });
-      setAutomationRules((rules) => rules.map((entry) => entry.id === ruleId ? result.rule : entry));
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update automation rule."); }
-  }
-
-  async function deleteAutomationRule(ruleId: string) {
-    try {
-      await rpc.call("deleteAutomationRule", { id: ruleId });
-      setAutomationRules((rules) => rules.filter((entry) => entry.id !== ruleId));
-      setAutomationSelected((prev) => {
-        if (!prev[ruleId]) return prev;
-        const next = { ...prev };
-        delete next[ruleId];
-        return next;
-      });
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to delete automation rule."); }
-    finally { setAutomationDeleteIds(null); }
-  }
-
-  async function bulkSetAutomationRules(enabled: boolean) {
-    const ids = automationVisible.filter((rule) => automationSelected[rule.id]).map((rule) => rule.id);
-    if (ids.length === 0) return;
-    setAutomationBusy(true);
-    try {
-      for (const id of ids) {
-        const current = automationRules.find((entry) => entry.id === id);
-        if (!current || current.enabled === enabled) continue;
-        await rpc.call("saveAutomationRule", { id: current.id, projectId: current.projectId, label: current.label, enabled, autostart: current.autostart });
-      }
-      const result = await rpc.call("listAutomationRules", { projectId: null });
-      setAutomationRules(result.rules);
-      setAutomationSelected({});
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update automation rules."); }
-    finally { setAutomationBusy(false); }
-  }
-
-  async function bulkDeleteAutomationRules() {
-    const ids = automationVisible.filter((rule) => automationSelected[rule.id]).map((rule) => rule.id);
-    if (ids.length === 0) return;
-    setAutomationBusy(true);
-    try {
-      for (const id of ids) await rpc.call("deleteAutomationRule", { id });
-      setAutomationRules((rules) => rules.filter((entry) => !ids.includes(entry.id)));
-      setAutomationSelected({});
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to delete automation rules."); }
-    finally { setAutomationBusy(false); setAutomationDeleteIds(null); }
-  }
-
-  async function listGithubIssues() {
-    setImportBusy(true);
-    setImportCandidates([]);
-    setImportSelected({});
-    try {
-      const result = await rpc.call("listGithubCandidates", { label: importLabel.trim() });
-      setImportCandidates(result.issues);
-      setImportAllLabels(result.allLabels);
-      setImportAllAssignees(result.allAssignees);
-      // Preselect only issues not yet imported, so the flow is a one-click
-      // "bring in everything tagged" rather than a long checklist.
-      const fresh: Record<string, boolean> = {};
-      for (const issue of result.issues) if (!issue.alreadyImported) fresh[`${issue.repo}#${issue.number}`] = true;
-      setImportSelected(fresh);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to list GitHub issues.");
-    } finally {
-      setImportBusy(false);
-    }
-  }
-
-  // Client-side assignee narrowing over the label-filtered candidates.
-  const importVisible = importAssignee === "all"
-    ? importCandidates
-    : importCandidates.filter((issue) => (issue.assignees ?? []).includes(importAssignee));
-
-  async function importSelectedIssues() {
-    const chosen = importVisible.filter((issue) => importSelected[`${issue.repo}#${issue.number}`]);
-    if (chosen.length === 0) return toast.error("No issues selected.");
-    setImportBusy(true);
-    let imported = 0;
-    for (const issue of chosen) {
-      try {
-        // The server resolves each issue's owning project from its repo; no
-        // project picker needed. If it cannot, the import reports that per-issue.
-        const result = await rpc.call("importGithubIssue", { repo: issue.repo, number: issue.number, label: importLabel.trim(), intent: githubIntentFor(issue) });
-        if (result.ok) imported += 1;
-      } catch (error) {
-        toast.error(`Issue ${issue.repo}#${issue.number}: ${error instanceof Error ? error.message : "import failed"}`);
-      }
-    }
-    setImportBusy(false);
-    setImportOpen(false);
-    if (imported > 0) {
-      toast.success(`Imported ${imported} issue${imported === 1 ? "" : "s"} into Stelow Triage.`);
-      void load(boardProjectId ?? routeProjectId);
-    }
-  }
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
@@ -1007,9 +798,8 @@ function BoardPanel({ active }: { active: boolean }) {
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateBuildOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setAutomationNewProjectId(null); setAutomationSearch(""); setAutomationStatus("all"); setAutomationAutostart(false); setAutomationDeleteIds(null); setAutomationRulesOpen(true); }} title="Configure GitHub automation rules across all projects"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Automation rules</Button>
-              {githubStatus?.pluginAvailable ? (
-                <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => { setImportOpen(true); void listGithubIssues(); }}><Icon name="Github" className="h-4 w-4" aria-hidden /> Import issues</Button>
+              {githubAutomationEnabled ? (
+                <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setGithubOpen(true)} title="Import GitHub issues now or watch labels automatically"><Icon name="Github" className="h-4 w-4" aria-hidden /> GitHub issues</Button>
               ) : null}
             </div>
           </header>
@@ -1059,212 +849,21 @@ function BoardPanel({ active }: { active: boolean }) {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={importOpen} onOpenChange={(open) => { setImportOpen(open); if (!open) setImportCandidates([]); }}>
-            <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Import GitHub issues</DialogTitle>
-                <DialogDescription>Issues tagged with the Stelow label land in Triage as cards. Tag the issue with the label on GitHub, then import it here — nothing is auto-imported.</DialogDescription>
-              </DialogHeader>
-              <div className="flex flex-col gap-3 py-2">
-                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="import-label">Label</label>
-                    <Input id="import-label" value={importLabel} onChange={(event) => setImportLabel(event.target.value)} placeholder="stelow-work" aria-label="Stelow GitHub label" className="sm:w-52" list="stelow-import-labels" autoComplete="off" />
-                    <datalist id="stelow-import-labels">
-                      {importAllLabels.map((label) => <option key={label} value={label} />)}
-                    </datalist>
-                  </div>
-                  {importAllAssignees.length > 0 ? (
-                    <div className="flex min-w-0 items-center gap-2">
-                      <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="import-assignee">Assignee</label>
-                      <select
-                        id="import-assignee"
-                        className="h-11 cursor-pointer rounded-md border bg-background px-2 text-sm"
-                        value={importAssignee}
-                        onChange={(event) => setImportAssignee(event.target.value)}
-                      >
-                        <option value="all">Everyone</option>
-                        {importAllAssignees.map((login) => <option key={login} value={login}>{login}</option>)}
-                      </select>
-                    </div>
-                  ) : null}
-                  <Button size="sm" variant="outline" onClick={() => void listGithubIssues()} disabled={importBusy}>Refresh</Button>
-                </div>
-                <p className="text-xs text-muted-foreground">Each issue is imported into the bb project that owns its repository — no picker needed. Tag issues with this label on GitHub; nothing is auto-imported.</p>
-                {importBusy ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
-                {!importBusy && importCandidates.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No open issues carry the label “{importLabel}” yet. Tag an issue on GitHub with this label, then Refresh.</p>
-                ) : null}
-                {!importBusy && importCandidates.length > 0 && importVisible.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No issues assigned to {importAssignee} carry this label.</p>
-                ) : null}
-                {importVisible.length > 0 ? (
-                  <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-md border">
-                    {importVisible.map((issue) => {
-                      const key = `${issue.repo}#${issue.number}`;
-                      return (
-                        <li key={key} className="flex items-start gap-2 p-2">
-                          <input
-                            className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
-                            type="checkbox"
-                            checked={Boolean(importSelected[key])}
-                            onChange={() => setImportSelected((prev) => ({ ...prev, [key]: !prev[key] }))}
-                            disabled={issue.alreadyImported}
-                          />
-                          <div className="min-w-0">
-                            <p className="text-sm leading-5">
-                              <span className="font-medium">{issue.title}</span>
-                              <span className="ml-2 text-xs text-muted-foreground">{issue.repo}#{issue.number}</span>
-                            </p>
-                            <p className="text-xs text-muted-foreground">{issue.labels.join(" · ") || "no labels"}{(issue.assignees ?? []).length > 0 ? ` · @${(issue.assignees ?? []).join(" @")}` : ""}{issue.projectId ? ` → ${projects.find((project) => project.id === issue.projectId)?.name ?? issue.projectId}` : ""}{issue.alreadyImported ? " · already imported" : ""}</p>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
-              </div>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="ghost" disabled={importBusy}>Cancel</Button>
-                </DialogClose>
-                <Button onClick={() => void importSelectedIssues()} disabled={importBusy}>Import selected into Triage</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
+          <GithubIssuesDialog
+            open={githubOpen}
+            onOpenChange={setGithubOpen}
+            projects={projects}
+            activeProjectId={activeProjectId ?? null}
+            activeProjectName={activeProject?.name ?? null}
+            githubStatus={githubStatus}
+            onChanged={() => void load(boardProjectId ?? routeProjectId)}
+          />
           <PresetManagerDialog
             open={boardPresetsOpen}
             onOpenChange={setBoardPresetsOpen}
             rpc={rpc}
             presets={boardPresets}
             onChanged={() => load(boardProjectId ?? routeProjectId)}
-          />
-
-          <Dialog open={automationRulesOpen} onOpenChange={setAutomationRulesOpen}>
-            <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-xl">
-              <DialogHeader><DialogTitle>Automation rules</DialogTitle><DialogDescription>Watch a GitHub label in any project. A matching issue parks in Inbox as a draft with its source link; enable auto-start per rule to run the worker immediately. Rules never move existing cards.</DialogDescription></DialogHeader>
-              {githubStatus && (!githubStatus.pluginAvailable || !githubStatus.ghOk) ? (
-                <div className="flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
-                  <span className="text-amber-700 dark:text-amber-300">
-                    {!githubStatus.pluginAvailable
-                      ? <>Automation rules need the <span className="font-medium">github</span> plugin enabled in BB.</>
-                      : <>Automation rules need a GitHub account linked in the <span className="font-medium">github</span> plugin.</>}
-                  </span>
-                  {githubStatus.pluginAvailable && !githubStatus.ghOk ? (
-                    <a className="text-primary underline underline-offset-2" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">Set up GitHub auth</a>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="space-y-3 py-2">
-                <p className="text-xs text-muted-foreground">Rules run on BB&apos;s scheduler every 5 minutes — a match parks in Inbox unless auto-start is on for that rule.</p>
-                <div className="flex items-center gap-2">
-                  <Input value={automationSearch} onChange={(event) => setAutomationSearch(event.target.value)} placeholder="Search labels or projects…" aria-label="Search automation rules" className="flex-1" />
-                  <select
-                    className="h-9 max-md:pointer-coarse:h-10 shrink-0 cursor-pointer rounded-md border bg-background px-2 text-sm"
-                    value={automationStatus}
-                    onChange={(event) => setAutomationStatus(event.target.value as "all" | "enabled" | "disabled")}
-                    aria-label="Filter automation rules by status"
-                  >
-                    <option value="all">All</option>
-                    <option value="enabled">Enabled</option>
-                    <option value="disabled">Disabled</option>
-                  </select>
-                </div>
-                <p className="text-xs text-muted-foreground" role="status">{automationRules.length === 0 ? "No automation rules yet." : `${automationRules.length} rule${automationRules.length === 1 ? "" : "s"} · ${automationEnabledCount} enabled · ${automationRules.length - automationEnabledCount} disabled`}</p>
-                {automationRules.length === 0 ? <p className="text-sm text-muted-foreground">Watch a GitHub label below to create the first rule.</p> : null}
-                {automationRules.length > 0 && automationVisible.length === 0 ? <p className="text-sm text-muted-foreground">No rules match this search.</p> : null}
-                {automationGrouped.map(([projectId, rules]) => {
-                  const projectName = projects.find((project) => project.id === projectId)?.name ?? projectId;
-                  return (
-                    <section key={projectId} aria-label={`Automation rules for ${projectName}`}>
-                      <h3 className="mb-1 text-xs font-semibold text-muted-foreground">{projectName} ({rules.length})</h3>
-                      <div className="divide-y rounded-md border">{rules.map((rule) => (
-                        <AutomationRuleRow
-                          key={rule.id}
-                          rule={rule}
-                          projectName={projectName}
-                          selected={Boolean(automationSelected[rule.id])}
-                          onSelect={(next) => setAutomationSelected((prev) => ({ ...prev, [rule.id]: next }))}
-                          onToggleEnabled={() => void setAutomationRule(rule.id, { enabled: !rule.enabled })}
-                          onToggleAutostart={(next) => void setAutomationRule(rule.id, { autostart: next })}
-                          onDelete={() => setAutomationDeleteIds([rule.id])}
-                        />
-                      ))}</div>
-                    </section>
-                  );
-                })}
-                {automationEmptyProjects.length > 0 ? (
-                  <section aria-label="Projects without automation rules">
-                    <h3 className="mb-1 text-xs font-semibold text-muted-foreground">Projects without rules ({automationEmptyProjects.length})</h3>
-                    <div className="divide-y rounded-md border border-dashed">{automationEmptyProjects.map((project) => (
-                      <div key={project.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
-                        <span className="truncate">{project.name}</span>
-                        <Button size="sm" variant="outline" onClick={() => { setAutomationNewProjectId(project.id); setAutomationLabel("stelow-work"); }}>Add rule</Button>
-                      </div>
-                    ))}</div>
-                  </section>
-                ) : null}
-                {!automationShowEmpty && automationRules.length > 0 ? (
-                  <button type="button" className="min-h-11 cursor-pointer text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground" onClick={() => setAutomationShowEmpty(true)}>Show projects without rules</button>
-                ) : null}
-                {automationVisible.some((rule) => automationSelected[rule.id]) ? (
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs" role="toolbar" aria-label="Bulk rule actions">
-                    <span className="text-muted-foreground">{automationVisible.filter((rule) => automationSelected[rule.id]).length} selected</span>
-                    <span className="flex items-center gap-1">
-                      <Button size="sm" variant="outline" onClick={() => void bulkSetAutomationRules(true)} disabled={automationBusy}>Enable</Button>
-                      <Button size="sm" variant="outline" onClick={() => void bulkSetAutomationRules(false)} disabled={automationBusy}>Disable</Button>
-                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setAutomationDeleteIds(automationVisible.filter((rule) => automationSelected[rule.id]).map((rule) => rule.id))} disabled={automationBusy}>Delete</Button>
-                    </span>
-                  </div>
-                ) : null}
-                <section aria-label="New automation rule" className="space-y-2 rounded-md border p-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground">New rule</h3>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="block min-w-0 space-y-1"><span className="text-xs font-medium text-muted-foreground">Project</span>
-                      <select
-                        className="h-9 max-md:pointer-coarse:h-10 w-full cursor-pointer rounded-md border bg-background px-2 text-sm"
-                        value={automationCreateProjectId ?? ""}
-                        onChange={(event) => setAutomationNewProjectId(event.target.value || null)}
-                        aria-label="BB project for the new automation rule"
-                      >
-                        <option value="">Select a project…</option>
-                        {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="block min-w-0 space-y-1"><span className="text-xs font-medium text-muted-foreground">GitHub label</span><Input value={automationLabel} onChange={(event) => setAutomationLabel(event.target.value)} placeholder="stelow-work" aria-describedby="automation-add-rule-hint" /></label>
-                  </div>
-                  <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-                    <input type="checkbox" checked={automationAutostart} onChange={(event) => setAutomationAutostart(event.target.checked)} className="size-4 cursor-pointer" />
-                    <span className="font-medium">Start automatically</span>
-                    <span className="text-xs text-muted-foreground">— check to start the worker on each match; unchecked parks in Inbox.</span>
-                  </label>
-                  {/* The reason a disabled control is unavailable is real content,
-                      not a hover tooltip: a disabled button cannot be focused and
-                      `title` is not announced, so the exit is stated in place. */}
-                  <p id="automation-add-rule-hint" className="text-xs text-muted-foreground">{!automationCreateProjectId ? "Select a BB project for the new rule, then type the GitHub label to watch." : !automationLabel.trim() ? "Type the GitHub label to watch." : automationAutostart ? "Add rule creates it now — matching issues start immediately." : "Add rule creates it now — matching issues park in Inbox as drafts."}</p>
-                </section>
-              </div>
-              <DialogFooter><DialogClose asChild><Button variant="ghost">Close</Button></DialogClose><Button disabled={automationBusy || !automationLabel.trim() || !automationCreateProjectId} title={!automationCreateProjectId ? "Select a BB project first" : !automationLabel.trim() ? "Type a GitHub label" : "Add rule"} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add rule"}</Button></DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <ConfirmActionDialog
-            open={automationDeleteIds !== null}
-            onOpenChange={(open) => { if (!open) setAutomationDeleteIds(null); }}
-            title={automationDeleteTargets.length > 1 ? `Delete ${automationDeleteTargets.length} automation rules?` : "Delete this automation rule?"}
-            description={automationDeleteTargets.length > 1
-              ? `Stops watching ${automationDeleteTargets.length} GitHub labels. Cards already created from them are kept; nothing else changes.`
-              : automationDeleteTargets.length === 1
-                ? `Stops watching GitHub label "${automationDeleteTargets[0].label}" in ${projects.find((project) => project.id === automationDeleteTargets[0].projectId)?.name ?? "its project"}. Cards already created from it are kept; nothing else changes.`
-                : "The selected rule no longer exists."}
-            confirmLabel={automationDeleteTargets.length > 1 ? `Delete ${automationDeleteTargets.length} rules` : "Delete rule"}
-            confirmTone="destructive"
-            onConfirm={() => {
-              const ids = automationDeleteIds ?? [];
-              if (ids.length > 1) void bulkDeleteAutomationRules();
-              else if (ids.length === 1) void deleteAutomationRule(ids[0]);
-              else setAutomationDeleteIds(null);
-            }}
           />
 
           <div className="flex items-start gap-2 border-b pb-3">
@@ -2727,62 +2326,6 @@ function AgentConfigBox({ lines, onConfigure }: { lines: string[]; onConfigure: 
 
 // Deferred start for lightweight creation dialogs: unchecked parks the
 // card in Inbox with no worker. One component, every creation dialog.
-function StartImmediatelyCheck({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
-  return (
-    <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="size-4 cursor-pointer" />
-      <span className="font-medium">Start immediately</span>
-      <span className="text-xs text-muted-foreground">— uncheck to park in Inbox and start later.</span>
-    </label>
-  );
-}
-
-type AutomationRuleItem = { id: string; projectId: string; label: string; enabled: boolean; autostart: boolean };
-
-function AutomationRuleRow({ rule, projectName, selected, onSelect, onToggleEnabled, onToggleAutostart, onDelete }: {
-  rule: AutomationRuleItem;
-  projectName: string;
-  selected: boolean;
-  onSelect: (next: boolean) => void;
-  onToggleEnabled: () => void;
-  onToggleAutostart: (next: boolean) => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2">
-      <input
-        className="size-4 cursor-pointer"
-        type="checkbox"
-        checked={selected}
-        onChange={(event) => onSelect(event.target.checked)}
-        aria-label={`Select rule ${rule.label} in ${projectName}`}
-      />
-      <div className="min-w-0">
-        <p className="truncate text-sm">GitHub label <code className="rounded bg-muted px-1">{rule.label}</code></p>
-        <p className="truncate text-xs text-muted-foreground">
-          {rule.autostart ? "Auto-starts worker on match" : "Parks in Inbox as draft"}{rule.enabled ? "" : " · Disabled"}
-        </p>
-      </div>
-      <div className="flex items-center gap-1">
-        <label className="flex cursor-pointer items-center gap-1.5 px-1 text-xs text-muted-foreground" title="Start the worker immediately on each match instead of parking in Inbox">
-          <input
-            className="size-4 cursor-pointer"
-            type="checkbox"
-            checked={rule.autostart}
-            onChange={(event) => onToggleAutostart(event.target.checked)}
-            aria-label={`Auto-start rule ${rule.label} in ${projectName}`}
-          />
-          Auto-start
-        </label>
-        <Button size="sm" variant="outline" onClick={onToggleEnabled}>{rule.enabled ? "Disable" : "Enable"}</Button>
-        <Button size="sm" variant="ghost" className="px-2" onClick={onDelete} aria-label={`Delete rule ${rule.label} in ${projectName}`} title={`Delete rule ${rule.label}`}>
-          <Icon name="Trash2" className="h-4 w-4" aria-hidden />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function ProjectPill({ value, onChange, projects }: { value: string | null; onChange: (v: string | null) => void; projects: Project[] }) {
   const selected = projects.find((project) => project.id === value);
   return (
@@ -5543,7 +5086,22 @@ function useInboxEventFocus(eventId: string | null, event: InboxEventSnapshot | 
 
 // Shared worker block: preset readout, state-appropriate recovery, and worker
 // history. Card lifecycle actions deliberately live in the card header.
-function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onPreset, presetPill, presetNote, pillTitle, githubLink }: {
+// Checkout identity in plain words: the card reads its stored spawn
+// environment instead of guessing shared-vs-worktree from paths.
+// Exploratory cards already say so elsewhere, so they get no line here.
+const CHECKOUT_LABEL: Record<string, string> = {
+  worktree: "Isolated worktree",
+  shared: "Shared project checkout",
+  managed: "BB-managed checkout",
+  personal: "Personal workspace",
+};
+function checkoutNoteFor(environmentLabel: string | null | undefined, branch?: string | null) {
+  if (!environmentLabel || environmentLabel === "unknown" || environmentLabel === "exploratory") return null;
+  const label = CHECKOUT_LABEL[environmentLabel] ?? environmentLabel;
+  return <>Checkout: {label}{branch ? <> · branch <code>{branch}</code></> : null}</>;
+}
+
+function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onPreset, presetPill, presetNote, pillTitle, githubLink, checkoutNote }: {
   card: CardItem | null;
   detail: CardDetailResponse | null;
   presetStale: boolean;
@@ -5554,6 +5112,7 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
   presetNote: React.ReactNode;
   pillTitle?: string;
   githubLink?: React.ReactNode;
+  checkoutNote?: React.ReactNode;
 }) {
   const hasGithubLink = Boolean(githubLink);
   const hasHistory = Boolean(detail?.workerHistory.length);
@@ -5579,6 +5138,7 @@ function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker,
         </div>
       ) : null}
       {githubLink ? <div className={hasPreset ? "mt-3 border-t pt-3" : ""}>{githubLink}</div> : null}
+      {checkoutNote ? <p className="mt-2 text-xs text-muted-foreground">{checkoutNote}</p> : null}
       {detail && hasHistory ? <WorkerHistoryList history={detail.workerHistory} separated={hasPreset || hasGithubLink} /> : null}
     </section>
   );
@@ -5954,6 +5514,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
               presetPill={<>Research · {detail?.card.presetName ?? "default"}</>}
               presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
               pillTitle="Preset for the next worker"
+              checkoutNote={checkoutNoteFor(detail?.card.environmentLabel)}
             />
 
             <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
@@ -6240,6 +5801,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
               presetPill={<>Explore · {detail?.card.presetName ?? "default"}</>}
               presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
               pillTitle="Preset for the next worker"
+              checkoutNote={checkoutNoteFor(detail?.card.environmentLabel)}
             />
 
             <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
@@ -6913,6 +6475,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   )}
                 </div>
               ) : null}
+              checkoutNote={checkoutNoteFor(detail?.card.environmentLabel, publication?.branch?.current)}
             />
 
             <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
