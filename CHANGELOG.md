@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.32.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.31.1...v0.32.0) (2026-09-20)
+
+
+### Features
+
+* overhaul GitHub issue import and automation ([8229d8c](https://github.com/calionauta/bb-plugin-stelow/commit/8229d8c698c530b53d48af371b05463c1b91cc6e))
+
+
+### Bug Fixes
+
+* drop 0.31.x autostart carry-over; rules save current shape only ([dd1d2a0](https://github.com/calionauta/bb-plugin-stelow/commit/dd1d2a032ebe2213f835301622938aace805ccaa))
+* harden GitHub automation races, liveness, and test value ([04de499](https://github.com/calionauta/bb-plugin-stelow/commit/04de499308aff510c37ce9fe2a6c793e82ef7170))
+
 ## [0.31.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.31.0...v0.31.1) (2026-09-20)
 
 
