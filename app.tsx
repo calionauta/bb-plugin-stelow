@@ -3902,17 +3902,21 @@ function PresetExecutionPicker({ value, onChange }: {
 }
 
 type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; keyRequired: boolean; disabled: boolean; provider: string; configured: boolean };
-type DecisionRouterPoint = { id: string; label: string; description: string; rules: string; requires: string | null; modes: string[]; mode: string; thresholds: Record<string, number> };
+type DecisionPointRoute = { provider: string | null; endpoint: string | null; apiKey: string | null; model: string | null };
+type DecisionRouterPoint = { id: string; label: string; description: string; rules: string; requires: string | null; modes: string[]; mode: string; thresholds: Record<string, number>; route: DecisionPointRoute | null; presetId: string | null };
+type RouterPresetOption = { id: string; name: string };
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 
 function modeLabel(mode: string): string {
   if (mode === "api") return "Decision API";
+  if (mode === "preset") return "Preset judge";
   return "Built-in rules (default)";
 }
 
 // One Jev-compatible endpoint for every router below. Endpoint, key, and
-// model live here once — points only pick a mode and thresholds, so a key
-// rotation touches exactly one field.
+// model live here once as the shared default — points may override fields
+// per router or judge via any provider preset, so a key rotation still
+// touches exactly one field unless a point pins its own.
 function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
   const [endpoint, setEndpoint] = useState("");
   const [model, setModel] = useState("");
@@ -4000,13 +4004,20 @@ function DecisionApiSection({ rpc }: { rpc: ManagerRpc }) {
   );
 }
 
-function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: DecisionRouterPoint; onChanged: () => Promise<void> }) {
+function DecisionRouterRow({ rpc, point, presets, onChanged }: { rpc: ManagerRpc; point: DecisionRouterPoint; presets: RouterPresetOption[]; onChanged: () => Promise<void> }) {
   const [routeAt, setRouteAt] = useState(String(point.thresholds.routeAt ?? 0.6));
+  const [routeProvider, setRouteProvider] = useState(point.route?.provider ?? "");
+  const [routeEndpoint, setRouteEndpoint] = useState(point.route?.endpoint ?? "");
+  const [routeModel, setRouteModel] = useState(point.route?.model ?? "");
+  const [routeKey, setRouteKey] = useState(point.route?.apiKey ?? "");
+  const [presetId, setPresetId] = useState(point.presetId ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   async function setMode(mode: string) {
     setBusy(true); setMessage(null);
     try {
+      // Switching modes preserves the stored route and preset (the RPC
+      // keeps absent params) — flipping back never loses configuration.
       const result = await rpc.call("setDecisionPoint", { point: point.id, mode });
       if (result.error) setMessage(result.error); else await onChanged();
     } catch (err) {
@@ -4028,6 +4039,49 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
   }
   const dirty = Number(routeAt) !== (point.thresholds.routeAt ?? 0.6);
   const valid = routeAt.trim() !== "" && Number.isFinite(Number(routeAt)) && Number(routeAt) >= 0 && Number(routeAt) <= 1;
+  async function saveRoute() {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await rpc.call("setDecisionPoint", {
+        point: point.id,
+        mode: point.mode,
+        route: {
+          provider: routeProvider.trim() === "" ? null : routeProvider.trim(),
+          endpoint: routeEndpoint.trim() === "" ? null : routeEndpoint.trim(),
+          apiKey: routeKey.trim() === "" ? null : routeKey.trim(),
+          model: routeModel.trim() === "" ? null : routeModel.trim(),
+        },
+      });
+      if (result.error) setMessage(result.error); else await onChanged();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function clearRoute() {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: point.mode, route: null });
+      if (result.error) setMessage(result.error); else { setRouteProvider(""); setRouteEndpoint(""); setRouteModel(""); setRouteKey(""); await onChanged(); }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function savePreset() {
+    setBusy(true); setMessage(null);
+    try {
+      const result = await rpc.call("setDecisionPoint", { point: point.id, mode: "preset", presetId: presetId.trim() === "" ? null : presetId.trim() });
+      if (result.error) setMessage(result.error); else await onChanged();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const routeDirty = (point.route?.provider ?? "") !== routeProvider || (point.route?.endpoint ?? "") !== routeEndpoint || (point.route?.model ?? "") !== routeModel || (point.route?.apiKey ?? "") !== routeKey;
   return (
     <div className="space-y-1 rounded-md border bg-muted/30 px-3 py-2">
       <div className="flex items-center gap-2 text-sm">
@@ -4052,6 +4106,39 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
           <Button size="sm" variant="outline" disabled={busy || !dirty || !valid} onClick={() => void saveThreshold()}>Save</Button>
         </div>
       ) : null}
+      {point.mode === "api" ? (
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <p className="text-[11px]">Route override — blank fields use the shared endpoint above.</p>
+          <div className="grid grid-cols-2 gap-1">
+            <label className="flex flex-col gap-1"><span>Provider</span>
+              <select className="cursor-pointer h-9 rounded-md border bg-background px-2 text-sm" value={routeProvider} disabled={busy} onChange={(event) => setRouteProvider(event.target.value)}>
+                <option value="">Shared ({DECISION_PROVIDERS.find((entry) => entry.id === "jev")?.label ?? "default"})</option>
+                {DECISION_PROVIDERS.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1"><span>Model</span><Input className="h-9" value={routeModel} disabled={busy} onChange={(event) => setRouteModel(event.target.value)} placeholder="Shared" /></label>
+            <label className="flex flex-col gap-1 col-span-2"><span>Endpoint</span><Input className="h-9" value={routeEndpoint} disabled={busy} onChange={(event) => setRouteEndpoint(event.target.value)} placeholder="Shared" /></label>
+            <label className="flex flex-col gap-1 col-span-2"><span>API key</span><Input type="password" className="h-9" value={routeKey} disabled={busy} onChange={(event) => setRouteKey(event.target.value)} placeholder="Shared" autoComplete="off" /></label>
+          </div>
+          <div className="flex justify-end gap-2">
+            {point.route ? <Button size="sm" variant="ghost" disabled={busy} onClick={() => void clearRoute()}>Use shared</Button> : null}
+            <Button size="sm" variant="outline" disabled={busy || !routeDirty} onClick={() => void saveRoute()}>Save route</Button>
+          </div>
+        </div>
+      ) : null}
+      {point.mode === "preset" ? (
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <p className="text-[11px]">Judge preset — one hidden thread answers per judgment. Any preset works, including one no stage uses.</p>
+          <div className="flex items-center gap-2">
+            <select className="cursor-pointer h-9 flex-1 rounded-md border bg-background px-2 text-sm" value={presetId} disabled={busy} onChange={(event) => setPresetId(event.target.value)}>
+              <option value="">Pick a preset…</option>
+              {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+            </select>
+            <Button size="sm" variant="outline" disabled={busy || presetId.trim() === ""} onClick={() => void savePreset()}>Save preset</Button>
+          </div>
+          {point.presetId ? <p className="text-[11px]">Judging on {presets.find((preset) => preset.id === point.presetId)?.name ?? point.presetId}.</p> : null}
+        </div>
+      ) : null}
       {message ? <p className="text-[11px] text-muted-foreground" role="status">{message}</p> : null}
     </div>
   );
@@ -4059,9 +4146,11 @@ function DecisionRouterRow({ rpc, point, onChanged }: { rpc: ManagerRpc; point: 
 
 function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged: () => Promise<void> }) {
   const [points, setPoints] = useState<DecisionRouterPoint[]>([]);
+  const [presets, setPresets] = useState<RouterPresetOption[]>([]);
   const [keyMissing, setKeyMissing] = useState(false);
   const reload = useCallback(() => {
     void rpc.call("listDecisionPoints", {}).then((result) => setPoints(result.points)).catch(() => setPoints([]));
+    void rpc.call("listPresets", {}).then((result) => setPresets(result.presets.map((preset) => ({ id: preset.id, name: preset.name })))).catch(() => setPresets([]));
     void rpc.call("getDecisionApiConfig", {}).then((result) => setKeyMissing(result.keyRequired && !result.hasKey)).catch(() => setKeyMissing(false));
   }, [rpc]);
   useEffect(() => { reload(); }, [reload]);
@@ -4070,7 +4159,7 @@ function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged
     <div className="grid gap-2">
       <p className="text-xs text-muted-foreground">Each router picks how one judgment runs. Built-in rules run inside existing workers and host code — no extra calls, no keys. Decision API needs the section above. Anything unconfigured answers with built-in rules.</p>
       {keylessApi ? <p className="text-xs text-muted-foreground" role="status">Decision API has no key — api routers answer with built-in rules until one is set.</p> : null}
-      {points.map((point) => <DecisionRouterRow key={point.id} rpc={rpc} point={point} onChanged={async () => { await onChanged(); reload(); }} />)}
+      {points.map((point) => <DecisionRouterRow key={point.id} rpc={rpc} point={point} presets={presets} onChanged={async () => { await onChanged(); reload(); }} />)}
     </div>
   );
 }

@@ -4,6 +4,26 @@ export declare const DECISION_POINT_AUTO_CONTINUE: string;
 export declare const DECISION_POINT_INBOX_SEVERITY: string;
 export declare const DECISION_POINT_MODES: string[];
 
+export declare const PRESET_JUDGE_POINTS: string[];
+
+export declare function pointSupportsPresetJudge(id: unknown): boolean;
+
+export declare function modesForPoint(id: string): string[];
+
+export interface DecisionPointRoute {
+  provider: string | null;
+  endpoint: string | null;
+  apiKey: string | null;
+  model: string | null;
+}
+
+export declare function normalizePointRoute(input: unknown): DecisionPointRoute;
+
+export declare function resolvePointRoute(options: {
+  override?: Partial<DecisionPointRoute> | null;
+  fallback?: Partial<DecisionPointRoute> | null;
+}): DecisionPointRoute;
+
 export interface DecisionPoint {
   id: string;
   label: string;
@@ -33,7 +53,7 @@ export declare function triageIntentQuestions(): Record<string, unknown>;
 
 export interface SeedIntentResolution {
   intent: string;
-  source: "api" | "rules";
+  source: "api" | "preset" | "rules";
   confidence: number | null;
 }
 

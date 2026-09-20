@@ -12,15 +12,16 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 
-// Six spawn sites, no more, no fewer: initial worker, restart, automation
-// draft, reseed, reviewer, draft burst. The two disposables (reviewer, draft
-// burst) spawn through the lifecycle helper, so the count below separates
-// direct worker spawns from helper-routed disposables. A new spawn site is a
-// new brain with its own lifecycle — it must arrive with a tier decision here.
+// Four direct worker spawns, one judge spawn, two helper-routed disposables:
+// the judge runner (preset decision mode) is the fifth direct site — one
+// hidden thread per judgment, prompt-built in lib, archived after reading.
+// A sixth direct site updates this contract deliberately. A new spawn site
+// is a new brain with its own lifecycle — it must arrive with a tier
+// decision here.
 assert.equal(
   (server.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length,
-  4,
-  "four direct worker spawns pinned; a fifth updates this contract deliberately",
+  5,
+  "four direct worker spawns plus the preset judge pinned; a sixth updates this contract deliberately",
 );
 assert.equal(
   (server.match(/await spawnDisposable\(\{/g) ?? []).length,

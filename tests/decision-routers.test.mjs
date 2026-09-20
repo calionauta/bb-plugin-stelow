@@ -24,7 +24,9 @@ function handlerBody(name) {
 // rows mean unconfigured — new registry points need no migration.
 assert.match(server, /CREATE TABLE IF NOT EXISTS decision_api_config \(\s*\n\s*id INTEGER PRIMARY KEY CHECK \(id = 1\)/, "the API settings are one singleton row");
 assert.match(server, /CREATE TABLE IF NOT EXISTS decision_points \(\s*\n\s*point TEXT PRIMARY KEY,/, "points key by registry id");
-assert.match(server, /mode TEXT NOT NULL CHECK \(mode IN \('rules', 'api'\)\)/, "stored modes are closed to rules/api");
+assert.match(server, /mode TEXT NOT NULL CHECK \(mode IN \('rules', 'api', 'preset'\)\)/, "stored modes are closed to rules/api/preset");
+assert.match(server, /preset_id TEXT,/, "points pin an optional judge preset");
+assert.match(server, /INSERT OR IGNORE INTO decision_points_new \(point, mode, thresholds, updated_at\) SELECT/, "older tables rebuild to widen the mode check without losing rows");
 
 // Contract entries exist for every handler (a handler without one fails
 // typecheck; the getter/setter pair must stay in lockstep).
@@ -78,12 +80,18 @@ assert.ok(setterBody.includes("Unknown provider"), "unknown providers refuse");
 assert.ok(setterBody.includes("DECISION_PROVIDERS.map((entry) => entry.id).join"), "provider refusals name the valid set");
 
 // Point writes refuse unknown ids and modes with the valid set named;
-// reads degrade to registry defaults instead of refusing.
-const pointSetter = handlerBody("async setDecisionPoint({ point, mode, thresholds }) {");
+// preset mode additionally refuses hot paths and unknown presets at save
+// time, so a misconfigured point never silently degrades at use time.
+// Reads degrade to registry defaults instead of refusing.
+const pointSetter = handlerBody("async setDecisionPoint({ point, mode, thresholds, route, presetId }) {");
 assert.ok(pointSetter.includes("Unknown decision point"), "unknown points refuse");
 assert.ok(pointSetter.includes("Available: ${DECISION_POINTS"), "point refusals name the valid set");
 assert.ok(pointSetter.includes("Unknown mode"), "unknown modes refuse");
 assert.ok(pointSetter.includes("STELOW_DECISION_API=0"), "api-mode writes refuse naming the variable");
+assert.ok(pointSetter.includes("cannot judge via preset"), "hot paths refuse preset mode with the cost reason");
+assert.ok(pointSetter.includes("Preset mode needs a presetId"), "preset mode without a preset refuses");
+assert.ok(pointSetter.includes("Unknown preset"), "preset mode with a missing preset refuses");
+assert.ok(pointSetter.includes("Absent params preserve the stored row"), "flipping modes keeps route and preset");
 const pointGetter = handlerBody("async getDecisionPoint({ point }) {");
 assert.ok(pointGetter.includes("normalizePointMode("), "reads normalize unknown modes to rules");
 const listBody = handlerBody("async listDecisionPoints() {");
@@ -94,8 +102,8 @@ assert.ok(listBody.includes("requires: def.requires ?? null"), "the list exposes
 // Execution seam: build creations consult the router exactly once, and the
 // router fails soft to "unknown" on every path (mode gate, missing key,
 // catch-all) so creation never breaks for a misconfigured point.
-assert.match(server, /explicitIntent !== "unknown" \? explicitIntent : await seedBuildIntentFromRouter\(prompt\)/, "explicit caller intent wins; otherwise the router seeds, else triage settles");
-const seamAt = server.indexOf("async function seedBuildIntentFromRouter(promptText: string): Promise<string> {");
+assert.match(server, /explicitIntent !== "unknown" \? explicitIntent : await seedBuildIntentFromRouter\(prompt, workspaceProjectId\)/, "explicit caller intent wins; otherwise the router seeds with the card project, else triage settles");
+const seamAt = server.indexOf("async function seedBuildIntentFromRouter(promptText: string, projectId: string | null): Promise<string> {");
 assert.ok(seamAt >= 0, "the router helper exists");
 const seamEnd = server.indexOf("\n  }\n", seamAt);
 assert.ok(seamEnd > seamAt, "the router helper body is bounded");
@@ -135,6 +143,24 @@ assert.match(server, /const autoDecision = shouldAutoContinue\(\{/, "the heurist
 assert.match(server, /const doneDecision = shouldDoneNudge\(\{/, "the audit done-nudge path is untouched");
 assert.ok(!vetBody.includes("updateCard("), "the veto writes nothing itself — the paused path below owns all writes");
 assert.match(server, /Auto-continue vetoed the resume: the last output showed no real progress\./, "vetoed pauses name the veto in the event trail");
+
+// Per-point routing: every api-mode judgment resolves its route through one
+// helper (stored override wins field by field, shared settings fill the
+// rest), so a point can pin a model without redeclaring endpoint and key.
+// Hot paths log and ignore preset mode instead of spawning judge threads.
+assert.ok(server.includes("pointRouteConfig(point, cfg)"), "api judgments resolve the point route in one place");
+assert.ok(vetBody.includes("ignores preset mode"), "the veto names why preset mode never burns a turn");
+assert.ok(server.includes("ignores preset mode"), "severity names why preset mode never burns a turn");
+assert.ok(server.includes("async function judgeViaPreset({"), "one runner spawns every preset judgment");
+const judgeAt = server.indexOf("async function judgeViaPreset({");
+assert.ok(judgeAt >= 0, "the judge runner exists");
+const judgeEnd = server.indexOf("\n  }\n", judgeAt);
+assert.ok(judgeEnd > judgeAt, "the judge runner body is bounded");
+const judgeBody = server.slice(judgeAt, judgeEnd);
+assert.ok(judgeBody.includes("visibility: \"hidden\""), "judge threads never surface in the sidebar");
+assert.ok(judgeBody.includes("threads.stop({ threadId })"), "timeouts stop the runaway before cleanup");
+assert.ok(judgeBody.includes("threads.archive({ threadId })"), "every judgment thread is archived after reading");
+assert.ok(judgeBody.includes("PRESET_JUDGE_TIMEOUT_MS"), "the wait is bounded by the lib timeout, not an inline magic number");
 
 // Severity bump wiring: bounded, gated, promotion-only, idempotent. A
 // sweep that demotes, resolves, re-judges checked items, or spends
@@ -180,7 +206,7 @@ assert.match(app, /\{DECISION_PROVIDERS\.filter\(\(entry\) => entry\.id !== "jev
 assert.match(app, /<option value="jev">TypeSafe AI(&apos;|')s Jev-compatible<\/option>/, "the provider select keeps jev (no one-way door)");
 assert.match(app, /State \+ questions schema — endpoint \+ key \+ model required/, "the jev hint states the schema requirement in one line");
 assert.match(app, /knownDefaults\.includes\(endpoint\)/, "custom endpoint URLs survive provider flips (only pristine defaults swap)");
-assert.ok(seamBody.includes("endpoint: cfg?.endpoint ?? defaultEndpointFor(provider)"), "the seam sends the stored endpoint, defaulting only when blank");
+assert.ok(seamBody.includes("endpoint: route.endpoint ?? defaultEndpointFor(provider)"), "the seam sends the point route endpoint, defaulting only when blank");
 assert.doesNotMatch(app, /preset-thread/i, "no thread jargon survives in the UI");
 
 // Criteria command wiring: read-only advisory judging through the router.
@@ -194,7 +220,7 @@ const criteriaBody = server.slice(criteriaAt, criteriaEnd);
 assert.ok(criteriaBody.includes("judgeArtifactCriteria({"), "the branch judges through the lib cascade");
 assert.ok(criteriaBody.includes("resolveArtifactPath(PLUGIN_SKILLS_DIR, skillRel)"), "skill reads stay inside the vendored skills dir");
 assert.ok(criteriaBody.includes("resolveArtifactPath(workspace.path, artifactArg)"), "artifact reads stay inside the card workspace");
-assert.ok(criteriaBody.includes("Set it to Decision API in Manage agent presets"), "rules-mode refuses with the UI path named");
+assert.ok(criteriaBody.includes("Set it to Decision API or preset judging in Manage agent presets"), "rules-mode refuses with the UI path named");
 assert.ok(criteriaBody.includes("advisory only, never blocking"), "reports state their advisory nature");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(criteriaBody), "the branch makes zero database writes (reads only)");
 

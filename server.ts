@@ -42,11 +42,12 @@ import { validateArtifact, validateSubstep, validateVariant, validateExplore, bu
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
-import { judgeArtifactCriteria } from "./lib/skill-criteria.mjs";
+import { judgeArtifactCriteria, groupCriteriaByKind, parseCriteriaBlock } from "./lib/skill-criteria.mjs";
 import { parseGoldenFile, cohenKappa, goldenVerdict } from "./lib/skill-goldens.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
 import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, meetsDecisionThreshold, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, defaultModelFor, DECISION_PROVIDERS } from "./lib/decision-api.mjs";
-import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, DECISION_POINT_INBOX_SEVERITY, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue, severityBumpQuestions } from "./lib/decision-points.mjs";
+import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, DECISION_POINT_INBOX_SEVERITY, TRIAGE_INTENT_CRITERIA, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, normalizePointRoute, resolvePointRoute, pointSupportsPresetJudge, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue, severityBumpQuestions } from "./lib/decision-points.mjs";
+import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -747,18 +748,18 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), latencyMs: z.number().nullable(), model: z.string().nullable(), error: z.string().nullable() }),
   },
   getDecisionPoint: {
-    experimental_description: "One decision router's mode and confidence thresholds",
+    experimental_description: "One decision router's mode, thresholds, route override, and judge preset",
     input: z.object({ point: z.string() }).strict(),
-    output: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()) }),
+    output: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()), route: z.object({ provider: z.string().nullable(), endpoint: z.string().nullable(), apiKey: z.string().nullable(), model: z.string().nullable() }).nullable(), presetId: z.string().nullable() }),
   },
   listDecisionPoints: {
     experimental_description: "Every decision router with rules, modes, and current settings",
     input: z.object({}).strict(),
-    output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), rules: z.string(), requires: z.string().nullable(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()) })) }),
+    output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), rules: z.string(), requires: z.string().nullable(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()), route: z.object({ provider: z.string().nullable(), endpoint: z.string().nullable(), apiKey: z.string().nullable(), model: z.string().nullable() }).nullable(), presetId: z.string().nullable() })) }),
   },
   setDecisionPoint: {
-    experimental_description: "Set a decision router's mode and thresholds",
-    input: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()).optional() }).strict(),
+    experimental_description: "Set a decision router's mode, thresholds, route override, and judge preset",
+    input: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()).optional(), route: z.object({ provider: z.string().max(40).nullable().optional(), endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional() }).strict().nullable().optional(), presetId: z.string().max(200).nullable().optional() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   getReviewPolicy: {
@@ -1716,10 +1717,36 @@ export default async function plugin(bb: BbPluginApi) {
   // registry defaults (built-in rules), so new points need no migration.
   db.exec(`CREATE TABLE IF NOT EXISTS decision_points (
     point TEXT PRIMARY KEY,
-    mode TEXT NOT NULL CHECK (mode IN ('rules', 'api')),
+    mode TEXT NOT NULL CHECK (mode IN ('rules', 'api', 'preset')),
     thresholds TEXT NOT NULL DEFAULT '{}',
+    provider TEXT,
+    endpoint TEXT,
+    api_key TEXT,
+    model TEXT,
+    preset_id TEXT,
     updated_at INTEGER NOT NULL
   )`);
+  // Per-point routing (route override columns + preset judge pin) arrived
+  // after the table: older rows also carry CHECK(mode IN ('rules', 'api')),
+  // which would refuse preset mode. Rebuild once to widen it, preserving
+  // rows — guarded by the new column so reruns are no-ops.
+  const pointColumns = db.prepare("PRAGMA table_info(decision_points)").all() as Array<{ name: string }>;
+  if (!pointColumns.some((column) => column.name === "preset_id")) {
+    db.exec(`CREATE TABLE IF NOT EXISTS decision_points_new (
+      point TEXT PRIMARY KEY,
+      mode TEXT NOT NULL CHECK (mode IN ('rules', 'api', 'preset')),
+      thresholds TEXT NOT NULL DEFAULT '{}',
+      provider TEXT,
+      endpoint TEXT,
+      api_key TEXT,
+      model TEXT,
+      preset_id TEXT,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec(`INSERT OR IGNORE INTO decision_points_new (point, mode, thresholds, updated_at) SELECT point, mode, thresholds, updated_at FROM decision_points`);
+    db.exec(`DROP TABLE decision_points`);
+    db.exec(`ALTER TABLE decision_points_new RENAME TO decision_points`);
+  }
   // Review enforcement policy (default off): when required, research/explore
   // done refuses without a passing review stamped with the current
   // fingerprint. Mechanism only — calibration stays a documented prerequisite.
@@ -1987,27 +2014,145 @@ ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
 
+  // One route for every api-mode judgment: the point's stored override wins
+  // field by field, the shared endpoint row fills the rest. An empty
+  // override resolves exactly to today's global behavior.
+  type PointRouteRow = { provider: string | null; endpoint: string | null; api_key: string | null; model: string | null };
+  type GlobalRouteRow = { endpoint: string; api_key: string; model: string; provider: string | null };
+  function pointRouteConfig(point: PointRouteRow | undefined | null, cfg: GlobalRouteRow | undefined) {
+    return resolvePointRoute({
+      override: point ? { provider: point.provider, endpoint: point.endpoint, apiKey: point.api_key, model: point.model } : null,
+      fallback: { provider: cfg?.provider ?? null, endpoint: cfg?.endpoint ?? null, apiKey: cfg?.api_key ?? null, model: cfg?.model ?? null },
+    });
+  }
+
+  // Preset judgment runner: one hidden thread on the pinned preset answers a
+  // strict-JSON question. Always cleans up (stop + archive); every failure
+  // returns ok:false so callers fall back to built-in rules or refuse with
+  // the fix named. Burns a full provider turn — only wired to low-frequency
+  // points (triage seed, explicit criteria calls).
+  async function judgeViaPreset({ presetId, projectId, title, prompt, timeoutMs = PRESET_JUDGE_TIMEOUT_MS }: { presetId: string; projectId: string | null; title: string; prompt: string; timeoutMs?: number }): Promise<{ ok: boolean; text: string | null; error: string | null }> {
+    const fail = (error: string) => ({ ok: false as const, text: null, error });
+    const preset = getPresetById(presetId);
+    if (!preset) return fail(`Unknown preset "${presetId}".`);
+    if (!projectId) return fail("Preset judging needs a project.");
+    let threadId: string | null = null;
+    try {
+      const thread = await bb.sdk.threads.spawn({
+        projectId,
+        environment: { type: "project-default" },
+        visibility: "hidden",
+        title,
+        providerId: preset.provider_id,
+        model: preset.model_id,
+        reasoningLevel: preset.reasoning_level as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+        permissionMode: preset.permission_mode as "accept-edits" | "auto" | "full",
+        input: [{ type: "text", mentions: [], text: prompt }],
+      });
+      threadId = thread.id;
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const live = await bb.sdk.threads.get({ threadId }).catch(() => null);
+        const status = (live as { status?: string } | null)?.status ?? null;
+        if (status === "idle" || status === "error") break;
+        if (Date.now() >= deadline) {
+          await bb.sdk.threads.stop({ threadId }).catch(() => null);
+          return fail("Preset judge timed out.");
+        }
+        await new Promise((resolve) => setTimeout(resolve, PRESET_JUDGE_POLL_MS));
+      }
+      const text = (await bb.sdk.threads.output({ threadId }).catch(() => null))?.output ?? null;
+      if (typeof text !== "string" || text.length === 0) return fail("Preset judge returned no output.");
+      return { ok: true, text, error: null };
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : "Preset judge failed.");
+    } finally {
+      if (threadId) {
+        await bb.sdk.threads.stop({ threadId }).catch(() => null);
+        await bb.sdk.threads.archive({ threadId }).catch(() => null);
+      }
+    }
+  }
+
+  // Map preset criteria verdicts onto the findings shape the Jev path
+  // returns, so criteria/goldens downstream never branches on the judge.
+  // The confidence floor applies like the Jev routeAt: a missing or low
+  // confidence degrades to unverifiable, never to a guessed verdict.
+  function presetCriteriaFindings({ verdicts, semantic, routeAt }: { verdicts: Array<{ id: string; status: string; confidence: number | null }>; semantic: Array<{ id: string; text: string }>; routeAt: number }) {
+    const byId = new Map(semantic.map((criterion) => [criterion.id, criterion.text]));
+    return verdicts
+      .filter((verdict) => byId.has(verdict.id))
+      .map((verdict) => {
+        const confident = typeof verdict.confidence === "number" && verdict.confidence >= routeAt;
+        return {
+          id: verdict.id,
+          kind: "semantic" as const,
+          text: byId.get(verdict.id) ?? verdict.id,
+          score: null as number | null,
+          confidence: verdict.confidence,
+          verdict: (!confident || verdict.status === "unverifiable") ? "unverifiable" as const : (verdict.status as "met" | "unmet"),
+          error: null as string | null,
+        };
+      });
+  }
+
+  // Preset variant of artifact-criteria judging for explicit calls (criteria,
+  // goldens): one spawned judgment per artifact, mapped onto the Jev
+  // findings shape so downstream never branches on the judge.
+  async function judgePresetCriteria({ presetId, projectId, skillText, artifactText, routeAt }: { presetId: string; projectId: string | null; skillText: string; artifactText: string; routeAt: number }) {
+    const semantic = groupCriteriaByKind(parseCriteriaBlock(skillText)).semantic;
+    if (semantic.length === 0) return { ok: true as const, findings: [] as Array<{ id: string; kind: "semantic"; text: string; score: number | null; confidence: number | null; verdict: "met" | "unmet" | "unverifiable"; error: string | null }>, evaluated: 0 };
+    const prompt = buildPresetJudgePrompt({ kind: "criteria", state: artifactText, questions: semantic.map((criterion) => ({ id: criterion.id, text: criterion.text })) });
+    const judged = await judgeViaPreset({ presetId, projectId, title: "Stelow judge: artifact criteria", prompt });
+    if (!judged.ok || !judged.text) return { ok: false as const, findings: [] as Array<{ id: string; kind: "semantic"; text: string; score: number | null; confidence: number | null; verdict: "met" | "unmet" | "unverifiable"; error: string | null }>, evaluated: 0, error: judged.error ?? "judge failed" };
+    const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
+    if (!parsed.ok || !("verdicts" in parsed) || (parsed.verdicts.length === 0 && semantic.length > 0)) return { ok: false as const, findings: [] as Array<{ id: string; kind: "semantic"; text: string; score: number | null; confidence: number | null; verdict: "met" | "unmet" | "unverifiable"; error: string | null }>, evaluated: 0, error: !parsed.ok ? parsed.error : "judge verdicts match no known criteria" };
+    const findings = presetCriteriaFindings({ verdicts: parsed.verdicts, semantic, routeAt });
+    return { ok: true as const, findings, evaluated: findings.length };
+  }
+
   // Triage-intent router: seed a build card's intent from the Decision API
   // when the point runs in api mode. Advisory only — the worker always
   // re-settles intent in triage — and fail-soft: any missing config, key,
   // error, or low-confidence answer leaves "unknown", exactly as today.
-  async function seedBuildIntentFromRouter(promptText: string): Promise<string> {
+  async function seedBuildIntentFromRouter(promptText: string, projectId: string | null): Promise<string> {
     try {
       if (isDecisionApiDisabled(process.env)) return "unknown";
-      const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_TRIAGE_INTENT) as { mode: string; thresholds: string } | undefined;
-      if (normalizePointMode(point?.mode, "rules") !== "api") return "unknown";
+      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_TRIAGE_INTENT) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+      const mode = normalizePointMode(point?.mode, "rules");
+      if (mode !== "api" && mode !== "preset") return "unknown";
       const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const provider = normalizeDecisionProvider(cfg?.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: cfg?.api_key ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return "unknown";
       let stored: unknown = null;
       try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
       const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_TRIAGE_INTENT));
+      if (mode === "preset") {
+        const presetId = point?.preset_id ?? null;
+        if (!presetId) return "unknown";
+        const prompt = buildPresetJudgePrompt({ kind: "choice", state: promptText, questions: triageIntentQuestions() });
+        const judged = await judgeViaPreset({ presetId, projectId, title: "Stelow judge: triage intent", prompt });
+        if (!judged.ok || !judged.text) {
+          bb.log.warn(`triage intent router fell back to built-in rules: ${judged.error ?? "judge failed"}`);
+          return "unknown";
+        }
+        const parsed = parsePresetJudgeOutput({ kind: "choice", text: judged.text, validChoices: Object.keys(TRIAGE_INTENT_CRITERIA) });
+        if (!parsed.ok || !("choice" in parsed)) {
+          bb.log.warn(`triage intent router fell back to built-in rules: ${!parsed.ok ? parsed.error : "verdict shape mismatch"}`);
+          return "unknown";
+        }
+        const resolved = resolveSeedIntent({ apiAnswers: { intent: { type: "choice", choice: parsed.choice, confidence: parsed.confidence } }, routeAt: thresholds.routeAt });
+        if (resolved.source !== "api") return "unknown";
+        bb.log.info(`triage intent seeded from preset judge (${presetId}): ${resolved.intent} (confidence ${resolved.confidence})`);
+        return resolved.intent;
+      }
+      const route = pointRouteConfig(point, cfg);
+      const provider = normalizeDecisionProvider(route.provider ?? "jev");
+      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
+      if (!key && providerRequiresKey(provider)) return "unknown";
       const result = await evaluateDecisionCall({
         provider,
-        endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
+        endpoint: route.endpoint ?? defaultEndpointFor(provider),
         apiKey: key ?? "",
-        model: normalizeDecisionApiModel(cfg?.model, defaultModelFor(provider)),
+        model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
         state: promptText,
         questions: triageIntentQuestions(),
       });
@@ -2032,21 +2177,23 @@ ${prompt}`;
   async function vetAutoContinueNudge(stateText: string | null): Promise<boolean> {
     try {
       if (!stateText || !stateText.trim()) return true;
-      const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_AUTO_CONTINUE) as { mode: string; thresholds: string } | undefined;
+      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_AUTO_CONTINUE) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+      if (normalizePointMode(point?.mode, "rules") === "preset") bb.log.warn("auto-continue ignores preset mode: hot paths stay on rules/api so judgments never burn worker turns.");
       if (normalizePointMode(point?.mode, "rules") !== "api") return true;
       if (isDecisionApiDisabled(process.env)) return true;
       const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const provider = normalizeDecisionProvider(cfg?.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: cfg?.api_key ?? null, env: process.env });
+      const route = pointRouteConfig(point, cfg);
+      const provider = normalizeDecisionProvider(route.provider ?? "jev");
+      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
       if (!key && providerRequiresKey(provider)) return true;
       let stored: unknown = null;
       try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
       const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_AUTO_CONTINUE));
       const result = await evaluateDecisionCall({
         provider,
-        endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
+        endpoint: route.endpoint ?? defaultEndpointFor(provider),
         apiKey: key ?? "",
-        model: normalizeDecisionApiModel(cfg?.model, defaultModelFor(provider)),
+        model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
         state: stateText,
         questions: autoContinueQuestions(),
       });
@@ -2117,7 +2264,7 @@ ${prompt}`;
     // otherwise the triage router may seed from the Decision API, else the
     // worker settles "unknown" in triage as before.
     const explicitIntent = normalizeBuildSeedIntent(intent);
-    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : explicitIntent !== "unknown" ? explicitIntent : await seedBuildIntentFromRouter(prompt);
+    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : explicitIntent !== "unknown" ? explicitIntent : await seedBuildIntentFromRouter(prompt, workspaceProjectId);
     // Canonical gates: legacy ladder strings normalize through the compat
     // map, so the composer, board defaults, and reseed all carry the set.
     const reviewGates = normalizeReviewGates(reviewMode);
@@ -4463,12 +4610,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   const SEVERITY_BUMP_MIN_AGE_MS = 5 * 60 * 1000;
   async function maybeBumpSeverity(): Promise<void> {
     try {
-      const point = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_INBOX_SEVERITY) as { mode: string; thresholds: string } | undefined;
+      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_INBOX_SEVERITY) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+      if (normalizePointMode(point?.mode, "rules") === "preset") bb.log.warn("inbox severity ignores preset mode: hot paths stay on rules/api so judgments never burn worker turns.");
       if (normalizePointMode(point?.mode, "rules") !== "api") return;
       if (isDecisionApiDisabled(process.env)) return;
       const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const provider = normalizeDecisionProvider(cfg?.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: cfg?.api_key ?? null, env: process.env });
+      const route = pointRouteConfig(point, cfg);
+      const provider = normalizeDecisionProvider(route.provider ?? "jev");
+      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
       if (!key && providerRequiresKey(provider)) return;
       let stored: unknown = null;
       try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
@@ -4486,9 +4635,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const state = `Card "${row.display_name ?? row.name}" (${row.card_kind ?? "build"}, stage ${row.stage}): ${row.summary}`;
         const result = await evaluateDecisionCall({
           provider,
-          endpoint: cfg?.endpoint ?? defaultEndpointFor(provider),
+          endpoint: route.endpoint ?? defaultEndpointFor(provider),
           apiKey: key ?? "",
-          model: normalizeDecisionApiModel(cfg?.model, defaultModelFor(provider)),
+          model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
           state,
           questions: severityBumpQuestions(),
         }).catch(() => null);
@@ -6670,25 +6819,29 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     async getDecisionPoint({ point }) {
       const def = getDecisionPointDef(point);
-      const row = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(point) as { mode: string; thresholds: string } | undefined;
+      const row = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(point) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
       const fallback = def?.defaultThresholds ?? { routeAt: 0.6 };
       let stored: unknown = null;
       try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
+      const route = row ? normalizePointRoute({ provider: row.provider, endpoint: row.endpoint, apiKey: row.api_key, model: row.model }) : null;
       return {
         point,
         mode: normalizePointMode(row?.mode, def?.defaultMode ?? "rules"),
         thresholds: normalizeThresholds(stored, fallback),
+        route: route && (route.provider ?? route.endpoint ?? route.apiKey ?? route.model) ? route : null,
+        presetId: row?.preset_id ?? null,
       };
     },
 
     async listDecisionPoints() {
-      const rows = db.prepare("SELECT point, mode, thresholds FROM decision_points").all() as Array<{ point: string; mode: string; thresholds: string }>;
+      const rows = db.prepare("SELECT point, mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points").all() as Array<{ point: string; mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null }>;
       const byId = new Map(rows.map((row) => [row.point, row]));
       return {
         points: DECISION_POINTS.map((def) => {
           const row = byId.get(def.id);
           let stored: unknown = null;
           try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
+          const route = row ? normalizePointRoute({ provider: row.provider, endpoint: row.endpoint, apiKey: row.api_key, model: row.model }) : null;
           return {
             id: def.id,
             label: def.label,
@@ -6698,18 +6851,36 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             modes: [...def.modes],
             mode: normalizePointMode(row?.mode, def.defaultMode),
             thresholds: normalizeThresholds(stored, def.defaultThresholds),
+            route: route && (route.provider ?? route.endpoint ?? route.apiKey ?? route.model) ? route : null,
+            presetId: row?.preset_id ?? null,
           };
         }),
       };
     },
 
-    async setDecisionPoint({ point, mode, thresholds }) {
+    async setDecisionPoint({ point, mode, thresholds, route, presetId }) {
       const def = getDecisionPointDef(point);
       if (!def) return { ok: false, error: `Unknown decision point "${point}". Available: ${DECISION_POINTS.map((entry) => entry.id).join(", ")}.` };
       if (!def.modes.includes(mode)) return { ok: false, error: `Unknown mode "${mode}" for ${point}. Available: ${def.modes.join(", ")}.` };
       if (mode === "api" && isDecisionApiDisabled(process.env)) return { ok: false, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
+      const existing = db.prepare("SELECT provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(point) as { provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+      // Absent params preserve the stored row; explicit null clears. Flipping
+      // modes never silently drops a configured route or preset.
+      const nextRoute = route === undefined
+        ? normalizePointRoute({ provider: existing?.provider ?? null, endpoint: existing?.endpoint ?? null, apiKey: existing?.api_key ?? null, model: existing?.model ?? null })
+        : normalizePointRoute(route);
+      let presetRow: string | null = presetId === undefined ? (existing?.preset_id ?? null) : presetId;
+      // Preset judging burns a full provider turn per judgment: only points
+      // that allow it accept the mode, and only with a preset that exists.
+      // Anything else refuses at save time — a misconfigured point never
+      // silently degrades at use time.
+      if (mode === "preset") {
+        if (!pointSupportsPresetJudge(point)) return { ok: false, error: `"${point}" cannot judge via preset: hot paths stay on rules/api so judgments never burn worker turns.` };
+        if (typeof presetRow !== "string" || presetRow.length === 0) return { ok: false, error: `Preset mode needs a presetId — pick any preset, including one no stage uses.` };
+        if (!getPresetById(presetRow)) return { ok: false, error: `Unknown preset "${presetRow}".` };
+      }
       const next = normalizeThresholds(thresholds ?? null, def.defaultThresholds);
-      db.prepare("INSERT OR REPLACE INTO decision_points (point, mode, thresholds, updated_at) VALUES (?, ?, ?, ?)").run(point, mode, JSON.stringify(next), now());
+      db.prepare("INSERT OR REPLACE INTO decision_points (point, mode, thresholds, provider, endpoint, api_key, model, preset_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(point, mode, JSON.stringify(next), nextRoute.provider, nextRoute.endpoint, nextRoute.apiKey, nextRoute.model, presetRow, now());
       bb.realtime.publish("board-changed", { point });
       return { ok: true, error: null };
     },
@@ -8471,9 +8642,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (!skillArg) return { exitCode: 2, stderr: "Pass --skill <skill-id> (e.g. stelow-workflow-shape-up) or a path under skills/." };
         if (!artifactArg) return { exitCode: 2, stderr: "Pass --artifact <workspace-relative path>." };
         if (isDecisionApiDisabled(process.env)) return { exitCode: 1, stderr: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
-        const criteriaPoint = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string } | undefined;
-        if (normalizePointMode(criteriaPoint?.mode, "rules") !== "api") {
-          return { exitCode: 1, stderr: "Artifact criteria runs in Built-in rules mode. Set it to Decision API in Manage agent presets → Decision routers." };
+        const criteriaPoint = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+        const criteriaMode = normalizePointMode(criteriaPoint?.mode, "rules");
+        if (criteriaMode !== "api" && criteriaMode !== "preset") {
+          return { exitCode: 1, stderr: "Artifact criteria runs in Built-in rules mode. Set it to Decision API or preset judging in Manage agent presets → Decision routers." };
         }
         const skillRel = skillArg.includes("/") ? skillArg : `${skillArg}/SKILL.md`;
         const skillFull = resolveArtifactPath(PLUGIN_SKILLS_DIR, skillRel);
@@ -8486,31 +8658,38 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
         if (typeof content !== "string" || !content.trim()) return { exitCode: 1, stderr: `Artifact "${artifactArg}" is missing or empty — write it first, then judge.` };
         const criteriaCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const criteriaProvider = normalizeDecisionProvider(criteriaCfg?.provider ?? "jev");
-        const { key: criteriaKey } = resolveDecisionApiKey({ storedKey: criteriaCfg?.api_key ?? null, env: process.env });
+        const criteriaRoute = pointRouteConfig(criteriaPoint, criteriaCfg);
+        const criteriaProvider = normalizeDecisionProvider(criteriaRoute.provider ?? "jev");
+        const { key: criteriaKey } = resolveDecisionApiKey({ storedKey: criteriaRoute.apiKey ?? null, env: process.env });
         if (!criteriaKey && providerRequiresKey(criteriaProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
         let criteriaStored: unknown = null;
         try { criteriaStored = criteriaPoint ? JSON.parse(criteriaPoint.thresholds) : null; } catch { criteriaStored = null; }
         const criteriaThresholds = normalizeThresholds(criteriaStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
-        const judgment = await judgeArtifactCriteria({
-          provider: criteriaProvider,
-          endpoint: criteriaCfg?.endpoint ?? defaultEndpointFor(criteriaProvider),
-          apiKey: criteriaKey ?? "",
-          model: normalizeDecisionApiModel(criteriaCfg?.model, defaultModelFor(criteriaProvider)),
-          skillText,
-          artifactText: content,
-          routeAt: criteriaThresholds.routeAt,
-        });
+        const criteriaSemantic = groupCriteriaByKind(parseCriteriaBlock(skillText)).semantic;
+        const criteriaJudge = criteriaMode === "preset" ? (criteriaPoint?.preset_id ?? null) : null;
+        if (criteriaMode === "preset" && !criteriaJudge) return { exitCode: 1, stderr: "Preset judging needs a presetId — pick any preset in Decision routers, including one no stage uses." };
+        const judgment = criteriaMode === "preset" && criteriaJudge
+          ? await judgePresetCriteria({ presetId: criteriaJudge, projectId: card.project_id, skillText, artifactText: content, routeAt: criteriaThresholds.routeAt })
+          : await judgeArtifactCriteria({
+            provider: criteriaProvider,
+            endpoint: criteriaRoute.endpoint ?? defaultEndpointFor(criteriaProvider),
+            apiKey: criteriaKey ?? "",
+            model: normalizeDecisionApiModel(criteriaRoute.model, defaultModelFor(criteriaProvider)),
+            skillText,
+            artifactText: content,
+            routeAt: criteriaThresholds.routeAt,
+          });
         if (!judgment.ok) return { exitCode: 1, stderr: `Criteria judging failed: ${judgment.error ?? "call failed"} — built-in rules still apply; retry or check the provider.` };
+        const criteriaJudgeLabel = criteriaMode === "preset" && criteriaJudge ? `preset ${criteriaJudge}` : criteriaProvider;
         const met = judgment.findings.filter((finding) => finding.verdict === "met").length;
         const unmet = judgment.findings.filter((finding) => finding.verdict === "unmet").length;
         const unverifiable = judgment.findings.length - met - unmet;
         if (asJson) {
-          return { exitCode: 0, stdout: JSON.stringify({ skill: skillArg, artifact: artifactArg, provider: criteriaProvider, findings: judgment.findings, summary: { met, unmet, unverifiable } }, null, 2) };
+          return { exitCode: 0, stdout: JSON.stringify({ skill: skillArg, artifact: artifactArg, provider: criteriaProvider, presetId: criteriaMode === "preset" ? criteriaJudge : null, findings: judgment.findings, summary: { met, unmet, unverifiable } }, null, 2) };
         }
         const mark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
         const lines = judgment.findings.map((finding) => `${mark(finding.verdict)} ${finding.id} — ${finding.verdict}${finding.score !== null ? ` (score ${finding.score}, confidence ${finding.confidence ?? "n/a"})` : ""}: ${finding.text}`);
-        return { exitCode: 0, stdout: [`Artifact criteria: ${skillArg} × ${artifactArg} (${criteriaProvider}, ${judgment.findings.length} criteria)`, ...lines, `Summary: ${met} met, ${unmet} unmet, ${unverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
+        return { exitCode: 0, stdout: [`Artifact criteria: ${skillArg} × ${artifactArg} (${criteriaJudgeLabel}, ${judgment.findings.length} criteria)`, ...lines, `Summary: ${met} met, ${unmet} unmet, ${unverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
       }
       if (argv[0] === "goldens") {
         // Golden-set agreement: humans label artifacts met/unmet per
@@ -8535,9 +8714,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (!skillArg) return { exitCode: 2, stderr: "Pass --skill <skill-id> matching the goldens' skill: header." };
         if (fileArgs.length === 0) return { exitCode: 2, stderr: "Pass at least one --file <workspace-relative golden path>." };
         if (isDecisionApiDisabled(process.env)) return { exitCode: 1, stderr: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
-        const goldensPoint = db.prepare("SELECT mode, thresholds FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string } | undefined;
-        if (normalizePointMode(goldensPoint?.mode, "rules") !== "api") {
-          return { exitCode: 1, stderr: "Golden agreement needs the Artifact criteria router in Decision API mode. Set it in Manage agent presets → Decision routers." };
+        const goldensPoint = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+        const goldensMode = normalizePointMode(goldensPoint?.mode, "rules");
+        if (goldensMode !== "api" && goldensMode !== "preset") {
+          return { exitCode: 1, stderr: "Golden agreement needs the Artifact criteria router in Decision API or preset mode. Set it in Manage agent presets → Decision routers." };
         }
         const workspace = await cardWorkspace(card);
         if (!workspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
@@ -8547,9 +8727,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try { skillText = skillFull ? readFileSync(skillFull, "utf8") : null; } catch { skillText = null; }
         if (!skillText) return { exitCode: 2, stderr: `Unknown skill "${skillArg}" — skills live under the plugin's skills/ directory (stelow-*).` };
         const goldensCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const goldensProvider = normalizeDecisionProvider(goldensCfg?.provider ?? "jev");
-        const { key: goldensKey } = resolveDecisionApiKey({ storedKey: goldensCfg?.api_key ?? null, env: process.env });
+        const goldensRoute = pointRouteConfig(goldensPoint, goldensCfg);
+        const goldensProvider = normalizeDecisionProvider(goldensRoute.provider ?? "jev");
+        const { key: goldensKey } = resolveDecisionApiKey({ storedKey: goldensRoute.apiKey ?? null, env: process.env });
         if (!goldensKey && providerRequiresKey(goldensProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+        const goldensJudge = goldensMode === "preset" ? (goldensPoint?.preset_id ?? null) : null;
+        if (goldensMode === "preset" && !goldensJudge) return { exitCode: 1, stderr: "Preset judging needs a presetId — pick any preset in Decision routers, including one no stage uses." };
         let goldensStored: unknown = null;
         try { goldensStored = goldensPoint ? JSON.parse(goldensPoint.thresholds) : null; } catch { goldensStored = null; }
         const goldensThresholds = normalizeThresholds(goldensStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
@@ -8564,15 +8747,17 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const golden = parseGoldenFile(content);
           if (!golden.ok) { skipped.push({ file: rel, reason: golden.reason ?? "malformed" }); continue; }
           if (golden.skill !== skillArg && golden.skill !== skillRel) { skipped.push({ file: rel, reason: `skill header "${golden.skill}" does not match --skill` }); continue; }
-          const judgment = await judgeArtifactCriteria({
-            provider: goldensProvider,
-            endpoint: goldensCfg?.endpoint ?? defaultEndpointFor(goldensProvider),
-            apiKey: goldensKey ?? "",
-            model: normalizeDecisionApiModel(goldensCfg?.model, defaultModelFor(goldensProvider)),
-            skillText,
-            artifactText: golden.artifact ?? "",
-            routeAt: goldensThresholds.routeAt,
-          });
+          const judgment = goldensMode === "preset" && goldensJudge
+            ? await judgePresetCriteria({ presetId: goldensJudge, projectId: card.project_id, skillText, artifactText: golden.artifact ?? "", routeAt: goldensThresholds.routeAt })
+            : await judgeArtifactCriteria({
+              provider: goldensProvider,
+              endpoint: goldensRoute.endpoint ?? defaultEndpointFor(goldensProvider),
+              apiKey: goldensKey ?? "",
+              model: normalizeDecisionApiModel(goldensRoute.model, defaultModelFor(goldensProvider)),
+              skillText,
+              artifactText: golden.artifact ?? "",
+              routeAt: goldensThresholds.routeAt,
+            });
           if (!judgment.ok) { failedFiles += 1; continue; }
           const byId = new Map(judgment.findings.map((finding) => [finding.id, finding]));
           for (const [id, human] of Object.entries(golden.judgments ?? {})) {

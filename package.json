@@ -79,7 +79,7 @@
     "test:bands": "node test_bands.mjs",
     "test:composer-execution": "node tests/composer-execution.test.mjs",
     "test:preset-ui": "node tests/preset-ui.test.mjs && node tests/reliable-preset.test.mjs && node tests/preset-staleness.test.mjs",
-    "test:decision": "node tests/decision-api.test.mjs && node tests/decision-routers.test.mjs && node tests/skill-goldens.test.mjs",
+    "test:decision": "node tests/decision-api.test.mjs && node tests/decision-routers.test.mjs && node tests/decision-point-route.test.mjs && node tests/preset-judge.test.mjs && node tests/skill-goldens.test.mjs",
     "test:paths": "node tests/plugin-paths.test.mjs",
     "test:about": "node tests/about-logo.test.mjs && node tests/plugin-update.test.mjs",
     "test:fresh": "node tests/fresh-install.test.mjs",
