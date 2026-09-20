@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.34.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.33.0...v0.34.0) (2026-09-20)
+
+
+### Features
+
+* add auto-continue veto router and per-point rules explanations ([8fe3fd5](https://github.com/calionauta/bb-plugin-stelow/commit/8fe3fd500e26451ca34f94a190f945dd0e21050c))
+* add decoupled provider registry and inbox severity bump ([4fdf0c3](https://github.com/calionauta/bb-plugin-stelow/commit/4fdf0c3bf4489c4e0d2ea96a06ddf5b36f7b7d4c))
+* add golden agreement command and per-point rules explanations ([f0f4c4c](https://github.com/calionauta/bb-plugin-stelow/commit/f0f4c4cb8a622db5e916fae1a77131f4fb2c0860))
+* add inbox severity tiers with reason chips ([f854e0d](https://github.com/calionauta/bb-plugin-stelow/commit/f854e0dc84fba3b946a724164878f0eb4e150b7a))
+* add skill criteria parser and shorten Decision API intro ([98aaac7](https://github.com/calionauta/bb-plugin-stelow/commit/98aaac7aad723d0612b74ba4c23dd6d282d7e8d9))
+* name vetoes in pause trail and enrich bump states ([5a5dc74](https://github.com/calionauta/bb-plugin-stelow/commit/5a5dc74a534ee6cc9aebd5a6e365da615b21110d))
+* shorten Decision API intro and sync criteria-bearing skills ([1637f53](https://github.com/calionauta/bb-plugin-stelow/commit/1637f5342daab340feca8cb0dda4ff53e6251c15))
+* wire artifact criteria judging to the Decision API router ([f73d1e1](https://github.com/calionauta/bb-plugin-stelow/commit/f73d1e143e170735fc584c27a1b5118790273421))
+
+
+### Bug Fixes
+
+* name the full preset precedence in triage rules copy ([4767af9](https://github.com/calionauta/bb-plugin-stelow/commit/4767af902b59e3341268f8cf06e34e97f6bd7bc9))
+* state who judges in triage copy and close the severity plan ([4b201ba](https://github.com/calionauta/bb-plugin-stelow/commit/4b201ba4f5f821d3332b380c26ea73579c548090))
+
 ## [0.33.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.32.0...v0.33.0) (2026-09-20)
 
 
