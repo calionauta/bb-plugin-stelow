@@ -40,6 +40,7 @@ import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, 
 import { validateArtifact, validateSubstep, validateVariant, validateExplore, buildDocDepths, sealStatus } from "./lib/artifact-validation.mjs";
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
+import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -642,6 +643,14 @@ export const rpcContract = defineRpcContract({
     output: z.object({ preset: z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string() }).nullable() }),
   },
   assignGenerationPreset: {
+    input: z.object({ presetId: z.string().nullable() }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  getReliablePreset: {
+    input: z.object({}).strict(),
+    output: z.object({ preset: z.object({ id: z.string(), name: z.string(), providerId: z.string(), modelId: z.string(), reasoningLevel: z.string(), permissionMode: z.string() }).nullable() }),
+  },
+  assignReliablePreset: {
     input: z.object({ presetId: z.string().nullable() }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
@@ -1553,6 +1562,17 @@ export default async function plugin(bb: BbPluginApi) {
     assigned_at INTEGER NOT NULL,
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
   )`);
+  // Singleton reliable preset (id = 1): the optional board-level override
+  // for reliable-tier spawns (worker starts, restarts, band swaps,
+  // research fan-out, automation drafts). Explicit only — empty means the
+  // band preset (today's behavior). Deleting the preset clears the
+  // designation via cascade.
+  db.exec(`CREATE TABLE IF NOT EXISTS reliable_preset (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    preset_id TEXT NOT NULL,
+    assigned_at INTEGER NOT NULL,
+    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
+  )`);
   // Review enforcement policy (default off): when required, research/explore
   // done refuses without a passing review stamped with the current
   // fingerprint. Mechanism only — calibration stays a documented prerequisite.
@@ -1879,16 +1899,20 @@ ${prompt}`;
     if (seed.error) throw new Error(seed.error);
     const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
     // Spawn workers on their track's entry band (lib/tracks: each track
-    // owns its band). Falls back to the card/board default when the
-    // band is unconfigured.
+    // owns its band). A board-level reliable override replaces the band
+    // preset when set; otherwise falls back to the card/board default when
+    // the band is unconfigured.
     const spawnBand = bandForKind(kind ?? "build");
     const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(spawnBand) as { preset_id: string } | undefined;
-    const basePreset = bandRow ? (getPresetById(bandRow.preset_id) ?? preset) : preset;
+    const reliableRow = db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+    const bandPreset = bandRow ? getPresetById(bandRow.preset_id) : null;
+    const reliablePreset = reliableRow ? getPresetById(reliableRow.preset_id) : null;
+    const basePreset = reliablePreset ?? bandPreset ?? preset;
     // The composer owns the provider/model pickers: when the submitted
     // choice differs from the resolved base preset, pin it as this card's
     // override (same card-override-* mechanism as the Agent preset dialog)
     // so the spawn — and every later restart/reseed, which resolve through
-    // the override-aware getPresetForBand — runs what the user picked.
+    // the override-aware getReliablePresetForBand — runs what the user picked.
     // A matching choice pins nothing: the card stays on the shared preset.
     const override = composerPresetOverride(basePreset, execution ?? null);
     let spawnPreset = basePreset;
@@ -2088,6 +2112,29 @@ ${prompt}` }, ...workerAttachments],
     if (!row) return getPresetForCard(cardId);
     const preset = getPresetById(row.preset_id);
     return preset ?? getPresetForCard(cardId);
+  }
+
+  // Resolve the preset for reliable-tier spawns (worker starts, restarts,
+  // band swaps, research fan-out, automation drafts). The per-card override
+  // still wins; the board-level reliable override replaces the band preset
+  // when set; empty override means the band preset (today's behavior).
+  // Stays beside getPresetForBand — never inside it — so the draft-burst
+  // band fallback keeps resolving the pure band preset.
+  function getReliablePresetForBand(band: string, cardId: string): PresetRow {
+    const override = db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined;
+    const reliable = db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+    const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(band) as { preset_id: string } | undefined;
+    const resolved = resolveReliablePreset({
+      cardPin: override?.preset_id ?? null,
+      reliableOverride: reliable?.preset_id ?? null,
+      bandPreset: bandRow?.preset_id ?? null,
+      defaultPreset: null,
+    });
+    if (resolved.presetId) {
+      const pinned = getPresetById(resolved.presetId);
+      if (pinned) return pinned;
+    }
+    return getPresetForCard(cardId);
   }
 
   function presetAttachmentParams(preset: PresetRow): { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; baseBranch: string | null; machineId: string | null; instructions: string } {
@@ -3722,7 +3769,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
     if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
     if (reason === "start" && card.worker_thread_id) return { ok: false, error: "This card already has a worker thread." };
-    const effective = getPresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
+    const effective = getReliablePresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
     const previousThreadId = card.worker_thread_id;
     const result = await respawnWorkerForBand(cardId, effective.id, reason);
     if (!result.ok) return { ok: false, error: result.error ?? null };
@@ -4453,7 +4500,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const errorPending = errorNeedsAttention(row.status, row.last_error, activity);
         const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
         const needsAttention = attentionKind !== null;
-        const preset = getPresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
+        const preset = getReliablePresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
         return {
           id: row.id,
           name: row.name,
@@ -4723,7 +4770,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null;
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.id);
-      const preset = getPresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
+      const preset = getReliablePresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
       // The helper owns the typed artifact manifest. Its stage is the durable
       // producer attribution rendered beside the workflow timeline.
       const artifacts = await (async () => {
@@ -5349,7 +5396,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // and the card stays coherent in its exploratory workspace.
       db.prepare("UPDATE cards SET project_id = ?, workspace_kind = 'project', workspace_path = NULL, workspace_host_id = NULL, updated_at = ? WHERE id = ?").run(projectId, now(), cardId);
       const preset = card.kind === "build"
-        ? getPresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId)
+        ? getReliablePresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId)
         : getPresetForCard(cardId);
       const handoff = await respawnWorkerForBand(cardId, preset.id, "project-promotion", { previousProjectId: card.project_id });
       if (!handoff.ok || !handoff.threadId) {
@@ -5934,7 +5981,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       if (!picked) {
         return { ok: false, strategy: null, error: `Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.` };
       }
-      const effective = getPresetForBand("research", cardId);
+      const effective = getReliablePresetForBand("research", cardId);
       const roundNo = strategyList(card).length + 1;
       const roundStamp = roundTimestamp();
       const roundAt = new Date(now()).toISOString();
@@ -6025,7 +6072,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // stage just advanced to defines a preset different from this worker's,
       // respawn with the phase preset on the same state dir.
       const band = STAGE_TO_BAND[stage];
-      const bandPreset = band ? getPresetForBand(band, card.id) : null;
+      const bandPreset = band ? getReliablePresetForBand(band, card.id) : null;
       const currentPresetId = card.worker_preset_id ?? getPresetForCard(card.id).id;
       if (band && bandPreset && bandPreset.id !== currentPresetId) {
         await respawnWorkerForBand(card.id, bandPreset.id);
@@ -6160,6 +6207,34 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         db.prepare("INSERT OR REPLACE INTO generation_preset (id, preset_id, assigned_at) VALUES (1, ?, ?)").run(presetId, now());
       } else {
         db.prepare("DELETE FROM generation_preset WHERE id = 1").run();
+      }
+      bb.realtime.publish("board-changed", { presetId });
+      return { ok: true, error: null };
+    },
+
+    async getReliablePreset() {
+      const row = db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+      const preset = row ? getPresetById(row.preset_id) : null;
+      return {
+        preset: preset ? { id: preset.id, name: preset.name, providerId: preset.provider_id, modelId: preset.model_id, reasoningLevel: preset.reasoning_level, permissionMode: preset.permission_mode } : null,
+      };
+    },
+
+    async assignReliablePreset({ presetId }) {
+      if (presetId) {
+        if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
+        db.prepare("INSERT OR REPLACE INTO reliable_preset (id, preset_id, assigned_at) VALUES (1, ?, ?)").run(presetId, now());
+      } else {
+        db.prepare("DELETE FROM reliable_preset WHERE id = 1").run();
+      }
+      // Provider/model are fixed at spawn: every live worker whose effective
+      // preset changed under it offers Restart instead of a Resume that
+      // changes nothing. Cards with a per-card pin are unaffected (the pin
+      // still wins) — refreshRestartPending recomputes their flag harmlessly.
+      const live = db.prepare("SELECT id, kind, stage, worker_thread_id, worker_preset_id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string; kind: string; stage: string; worker_thread_id: string; worker_preset_id: string | null }>;
+      for (const card of live) {
+        const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
+        refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
       }
       bb.realtime.publish("board-changed", { presetId });
       return { ok: true, error: null };
@@ -6712,7 +6787,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (cliCard) {
           const band = STAGE_TO_BAND[stage];
           if (band) {
-            const bandPreset = getPresetForBand(band, cliCard.id);
+            const bandPreset = getReliablePresetForBand(band, cliCard.id);
             const currentPresetId = cliCard.worker_preset_id ?? getPresetForCard(cliCard.id).id;
             if (bandPreset.id !== currentPresetId) {
               const targetId = cliCard.id;

@@ -3887,10 +3887,14 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   const [formOpen, setFormOpen] = useState(false);
   const [bandPresets, setBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [generationPreset, setGenerationPreset] = useState<{ id: string; name: string } | null>(null);
+  const [reliablePreset, setReliablePreset] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const reloadGeneration = useCallback(() => {
     void rpc.call("getGenerationPreset", {}).then((result) => setGenerationPreset(result.preset)).catch(() => setGenerationPreset(null));
+  }, [rpc]);
+  const reloadReliable = useCallback(() => {
+    void rpc.call("getReliablePreset", {}).then((result) => setReliablePreset(result.preset)).catch(() => setReliablePreset(null));
   }, [rpc]);
 
   useEffect(() => {
@@ -3904,7 +3908,8 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
     setMessage(null);
     void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([]));
     reloadGeneration();
-  }, [open, rpc, reloadGeneration]);
+    reloadReliable();
+  }, [open, rpc, reloadGeneration, reloadReliable]);
 
   const newPresetForm = () => {
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
@@ -4043,11 +4048,23 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           </div>
         </DisclosureSection>
         <DisclosureSection title="Delegated work" hint="subagent tiers" defaultOpen={false}>
-          <p className="mb-2 text-xs text-muted-foreground">Subagents come in two tiers. Reliable uses the band preset and needs no configuration — tools, web, exact file shapes, multi-step work. Generation is the cheap preset for disposable text-only bursts (`bb stelow draft`); the worker judges every word before using it. Empty means the band preset (today&apos;s behavior).</p>
+          <p className="mb-2 text-xs text-muted-foreground">Subagents come in two tiers. Reliable does tools, web, exact file shapes, multi-step work — it runs on the band preset unless a reliable override is set below. Generation is the cheap preset for disposable text-only bursts (`bb stelow draft`); the worker judges every word before using it. Empty means the band preset (today&apos;s behavior).</p>
           <div className="grid gap-2">
             <div className="flex items-center gap-2 text-sm">
               <span className="w-24 shrink-0">✓ Reliable</span>
-              <span className="min-h-9 flex-1 rounded-md border bg-muted/30 px-2 py-2 text-sm text-muted-foreground">Band preset — no configuration</span>
+              <select
+                className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                value={reliablePreset?.id ?? ""}
+                onChange={(event) => {
+                  const value = event.target.value || null;
+                  setBusy(true);
+                  void rpc.call("assignReliablePreset", { presetId: value }).then(() => { void onChanged(); reloadReliable(); }).catch(() => setMessage("Failed to set reliable preset.")).finally(() => setBusy(false));
+                }}
+              >
+                <option value="">Use band preset</option>
+                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              </select>
+              <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Tools, file shapes, multi-step work">reliable tier</span>
             </div>
             <div className="flex items-center gap-2 text-sm">
               <span className="w-24 shrink-0">⚡ Generation</span>

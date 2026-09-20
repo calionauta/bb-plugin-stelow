@@ -583,6 +583,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Presets entry (fall back to the board default when unset).
 - **Per-card override** (`assignPreset`). Pinned preset for one card;
   takes effect on (re)start, with a stale-worker warning until then.
+- **Reliable-tier override** (`getReliablePreset`, `assignReliablePreset`,
+  `reliable_preset` table). One optional board-level preset for reliable-tier
+  spawns (worker starts, restarts, band swaps, research fan-out, automation
+  drafts): card pins still win, a set override replaces the band preset,
+  empty means the band preset. Same singleton discipline as the generation
+  and reviewer designations; the draft-burst band fallback stays pure band.
 - **Board defaults** (`boardWorkflowDefaults`). Planning depth and
   your review gates remembered across cards. Legacy ladder rungs migrate
   to their gate sets explicitly — a saved default never degrades to Auto.

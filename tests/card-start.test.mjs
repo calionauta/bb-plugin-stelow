@@ -87,7 +87,7 @@ assert.match(app, /function boardColumnOf\(card: Pick<CardItem, "status" \| "sta
 // Leaving the Inbox starts through the same starter on every track, and the
 // starter resolves creation-time choices: the pinned preset override
 // (provider/model) and the card's own project workspace — never ambient defaults.
-assert.match(server, /const effective = getPresetForBand\(/, "Inbox exits spawn through the override-aware preset resolution");
+assert.match(server, /const effective = getReliablePresetForBand\(/, "Inbox exits spawn through the override-aware preset resolution");
 assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choice pinned at creation wins over band defaults at spawn");
 assert.match(server, /const workspace = await cardWorkspace\(row\);/, "respawns run in the card's own project workspace");
 assert.match(server, /if \(decision\.move\.status === "in-progress" && !card\.worker_thread_id\)/, "dragging a lightweight card to Doing starts it too");
