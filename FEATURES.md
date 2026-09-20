@@ -623,7 +623,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   naming the variable.
 - **Decision routers** (`getDecisionPoint`, `setDecisionPoint`,
   `listDecisionPoints`, `decision_points` table, `lib/decision-points.mjs`).
-  Per-judgment modes — Built-in rules (offline, free, default) or Decision
+  Per-judgment modes — Built-in rules (no extra calls, default) or Decision
   API with a confidence floor — plus the shared typed client
   (`lib/decision-api.mjs`, fail-soft result objects, never throws). Triage
   intent seeds a build card's intent before triage when confident; the worker

@@ -4042,7 +4042,7 @@ function DecisionRoutersSection({ rpc, onChanged }: { rpc: ManagerRpc; onChanged
   const keylessApi = keyMissing && points.some((point) => point.mode === "api");
   return (
     <div className="grid gap-2">
-      <p className="text-xs text-muted-foreground">Each router picks how one judgment runs. Built-in rules are offline and free; Decision API needs the section above. Anything unconfigured answers with built-in rules.</p>
+      <p className="text-xs text-muted-foreground">Each router picks how one judgment runs. Built-in rules run inside existing workers and host code — no extra calls, no keys. Decision API needs the section above. Anything unconfigured answers with built-in rules.</p>
       {keylessApi ? <p className="text-xs text-muted-foreground" role="status">Decision API has no key — api routers answer with built-in rules until one is set.</p> : null}
       {points.map((point) => <DecisionRouterRow key={point.id} rpc={rpc} point={point} onChanged={async () => { await onChanged(); reload(); }} />)}
     </div>
