@@ -4447,6 +4447,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   const [bandPresets, setBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [generationPreset, setGenerationPreset] = useState<{ id: string; name: string } | null>(null);
   const [reliablePreset, setReliablePreset] = useState<{ id: string; name: string } | null>(null);
+  const [reviewerPreset, setReviewerPreset] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement | null>(null);
@@ -4461,6 +4462,9 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   const reloadReliable = useCallback(() => {
     void rpc.call("getReliablePreset", {}).then((result) => setReliablePreset(result.preset)).catch(() => setReliablePreset(null));
   }, [rpc]);
+  const reloadReviewer = useCallback(() => {
+    void rpc.call("getReviewPreset", {}).then((result) => setReviewerPreset(result.preset)).catch(() => setReviewerPreset(null));
+  }, [rpc]);
 
   useEffect(() => {
     if (!open) {
@@ -4474,7 +4478,8 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
     void rpc.call("listBandPresets", {}).then((result) => setBandPresets(result.bands)).catch(() => setBandPresets([]));
     reloadGeneration();
     reloadReliable();
-  }, [open, rpc, reloadGeneration, reloadReliable]);
+    reloadReviewer();
+  }, [open, rpc, reloadGeneration, reloadReliable, reloadReviewer]);
 
   const newPresetForm = () => {
     const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
@@ -4639,42 +4644,68 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           </div>
         </DisclosureSection>
         <DisclosureSection title="Delegated work" hint="subagent tiers" defaultOpen={false}>
-          <p className="mb-2 text-xs text-muted-foreground">Subagents come in two tiers. Reliable does tools, web, exact file shapes, multi-step work — it runs on the band preset unless a reliable override is set below. Generation is the cheap preset for disposable text-only bursts (`bb stelow draft`); the worker judges every word before using it. Empty means the band preset (today&apos;s behavior).</p>
-          <div className="grid gap-2">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="w-24 shrink-0">✓ Reliable</span>
-              <select
-                className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
-                value={reliablePreset?.id ?? ""}
-                onChange={(event) => {
-                  const value = event.target.value || null;
-                  setBusy(true);
-                  void rpc.call("assignReliablePreset", { presetId: value }).then(() => { void onChanged(); reloadReliable(); }).catch(() => setMessage("Failed to set reliable preset.")).finally(() => setBusy(false));
-                }}
-              >
-                <option value="">Use band preset</option>
-                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-              </select>
-              <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Tools, file shapes, multi-step work">reliable tier</span>
+          <p className="mb-2 text-xs text-muted-foreground">Work the host delegates to subthreads. Empty means the band preset.</p>
+          <div className="grid gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-24 shrink-0">✓ Reliable</span>
+                <select
+                  className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                  value={reliablePreset?.id ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value || null;
+                    setBusy(true);
+                    void rpc.call("assignReliablePreset", { presetId: value }).then(() => { void onChanged(); reloadReliable(); }).catch(() => setMessage("Failed to set reliable preset.")).finally(() => setBusy(false));
+                  }}
+                >
+                  <option value="">Use band preset</option>
+                  {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </select>
+                <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Tools, file shapes, multi-step work">reliable tier</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Demanding delegated work — automation drafts, research fan-out, any burst the worker keeps rewriting. Runs with tools: pick a strong preset.</p>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="w-24 shrink-0">⚡ Generation</span>
-              <select
-                className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
-                value={generationPreset?.id ?? ""}
-                onChange={(event) => {
-                  const value = event.target.value || null;
-                  setBusy(true);
-                  void rpc.call("assignGenerationPreset", { presetId: value }).then(() => { void onChanged(); reloadGeneration(); }).catch(() => setMessage("Failed to set generation preset.")).finally(() => setBusy(false));
-                }}
-              >
-                <option value="">Use band preset</option>
-                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-              </select>
-              <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Disposable text-only bursts judged by the worker">draft bursts</span>
+            <div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-24 shrink-0">⚡ Generation</span>
+                <select
+                  className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                  value={generationPreset?.id ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value || null;
+                    setBusy(true);
+                    void rpc.call("assignGenerationPreset", { presetId: value }).then(() => { void onChanged(); reloadGeneration(); }).catch(() => setMessage("Failed to set generation preset.")).finally(() => setBusy(false));
+                  }}
+                >
+                  <option value="">Use band preset</option>
+                  {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </select>
+                <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Disposable text-only bursts judged by the worker">draft bursts</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Cheap disposable prose via <span className="font-mono">bb stelow draft</span> — e.g. a commit-message draft or a changelog line. Text in, text out; the worker judges every word before using it.</p>
             </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">Rule of thumb: when the worker rewrites over 20% of a burst&apos;s output, that call site belongs back on Reliable.</p>
+          <div className="mt-3 border-t border-border/70 pt-3">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="w-24 shrink-0">◎ Review</span>
+              <select
+                aria-label="Artifact reviewer preset"
+                className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
+                value={reviewerPreset?.id ?? ""}
+                onChange={(event) => {
+                  const value = event.target.value || null;
+                  setBusy(true);
+                  void rpc.call("assignReviewPreset", { presetId: value }).then(() => { void onChanged(); reloadReviewer(); }).catch(() => setMessage("Failed to set reviewer preset.")).finally(() => setBusy(false));
+                }}
+              >
+                <option value="">No reviewer</option>
+                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              </select>
+              <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Independent artifact review, never a worker fallback">independent review</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Not a tier: one preset in a different model family from your workers, read-only. <span className="font-mono">bb stelow review</span> refuses without it — it never falls back to a worker preset.</p>
+          </div>
         </DisclosureSection>
         <DisclosureSection title="Decision API" hint="Jev-compatible" defaultOpen={false}>
           <DecisionApiSection rpc={rpc} />

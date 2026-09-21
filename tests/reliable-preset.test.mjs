@@ -119,4 +119,16 @@ const reliableRow = app.slice(reliableRowAt, generationRowAt);
 assert.ok(reliableRow.includes('<option value="">Use band preset</option>'), "the Reliable row offers the empty-means-band clear option");
 assert.ok(reliableRow.includes("assignReliablePreset"), "the Reliable row wires its select to the override RPC");
 
+// Independent review is not a tier: one designated preset in another model
+// family, read-only, and the review command refuses without it instead of
+// falling back. The row lives below the tiers with its own clear option,
+// so the tiers above can never be mistaken for review configuration.
+const reviewerRowAt = app.indexOf("◎ Review", generationRowAt);
+assert.ok(reviewerRowAt > generationRowAt, "the Review row follows the tiers, visibly separated");
+const reviewerRow = app.slice(reviewerRowAt, reviewerRowAt + 2500);
+assert.ok(reviewerRow.includes('rpc.call("assignReviewPreset", { presetId: value })'), "the Review row assigns through the reviewer RPC");
+assert.ok(reviewerRow.includes("getReviewPreset") || app.includes("reloadReviewer"), "the manager loads the current reviewer designation");
+assert.ok(reviewerRow.includes('<option value="">No reviewer</option>'), "clearing the reviewer is explicit — empty never silently means a worker preset");
+assert.ok(reviewerRow.includes("never falls back"), "the row states the refuse-instead-of-fallback contract");
+
 console.log("reliable preset test ok: cascade order, singleton discipline, spawn wiring, manager override");

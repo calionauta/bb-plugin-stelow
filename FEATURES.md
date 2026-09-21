@@ -818,8 +818,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,
   restrictive permission — full coerced to accept-edits); deleting the
-  preset clears the designation by cascade. The preset modal binds these
-  RPCs to show the badge + use-case explainer (UI follow-up).
+  preset clears the designation by cascade. The Delegated work section
+  carries its row below the tiers (independent review, never a fallback);
+  each tier row now explains itself with examples in place, so the section
+  needs no preamble paragraph.
 - **Review enforcement policy** (`getReviewPolicy`,
   `setReviewPolicy`, `review_policy` table, default off). When required,
   research/explore `done` refuses without a passing review stamped with
