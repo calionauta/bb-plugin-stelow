@@ -40,7 +40,7 @@ assert.ok(hillBody.includes("cards.filter(isOnHill)"), "archived cards are filte
 assert.ok(hillBody.includes("hillTally(cards)"), "the tally comes from the lib rule, not an inline subtraction");
 assert.ok(hillBody.includes("tally.done"), "done cards are counted as done");
 assert.ok(!hillBody.includes("cards.length - uphill"), "no inline tally survives");
-assert.ok(hillBody.includes("archived cards are out of the workflow"), "the line says where the missing cards went");
+assert.ok(hillBody.includes("archived, off the hill"), "the line names the missing cards once, in three words");
 assert.ok(hillBody.includes("hillCurvePoints(41)"), "the drawn curve samples the same formula as the dots");
 assert.ok(hillBody.includes('role="status"'), "the uphill/executing tally announces");
 assert.ok(hillBody.includes("aria-label={`Open card"), "dots name their card for assistive tech, never a number");
