@@ -32,6 +32,15 @@ const hillEnd = app.indexOf("\n}\n", hillAt);
 assert.ok(hillEnd > hillAt, "the hill component body is bounded");
 const hillBody = app.slice(hillAt, hillEnd);
 assert.ok(hillBody.includes("hillPoint(card)"), "dots position through the lib, not inline math");
+// Truthful counting: only cards still in the workflow get dots, and the line
+// separates done from executing. The old inline tally counted every grouped
+// card — archived ones included — and called the right half "executing", so
+// a board with nothing running still read "9 executing".
+assert.ok(hillBody.includes("cards.filter(isOnHill)"), "archived cards are filtered out of the dots");
+assert.ok(hillBody.includes("hillTally(cards)"), "the tally comes from the lib rule, not an inline subtraction");
+assert.ok(hillBody.includes("tally.done"), "done cards are counted as done");
+assert.ok(!hillBody.includes("cards.length - uphill"), "no inline tally survives");
+assert.ok(hillBody.includes("archived cards are out of the workflow"), "the line says where the missing cards went");
 assert.ok(hillBody.includes("hillCurvePoints(41)"), "the drawn curve samples the same formula as the dots");
 assert.ok(hillBody.includes('role="status"'), "the uphill/executing tally announces");
 assert.ok(hillBody.includes("aria-label={`Open card"), "dots name their card for assistive tech, never a number");

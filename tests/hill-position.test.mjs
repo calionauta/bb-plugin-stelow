@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { hillFraction, hillRegion, hillPoint, hillCurveY, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, HILL_CLUSTER_BUCKET } from "../lib/hill-position.mjs";
+import { hillFraction, hillRegion, hillPoint, hillCurveY, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill, HILL_CLUSTER_BUCKET } from "../lib/hill-position.mjs";
 
 // Finest signal wins: tasks over scopes over stage checkpoint. A card that
 // reports nothing sits at the far left; a completed one at the far right.
@@ -16,6 +16,35 @@ assert.equal(hillFraction({ status: "doing", scopeSummary: { tasksTotal: 10, tas
 assert.equal(hillRegion(0.49), "uphill", "left of the peak is figuring out");
 assert.equal(hillRegion(0.5), "downhill", "the peak executes");
 assert.equal(hillRegion(0.9), "downhill", "right of the peak executes");
+
+// Archived cards left the board and the workflow, so they must not sit on
+// the hill at all: with no rule they fell through the fraction math and
+// inherited a position from their old stage, so an archived-at-triage card
+// read as "figuring out" and an archived-at-audit card as "executing".
+// Blocked cards stay — stuck work is still work, and its color says so.
+assert.equal(isOnHill({ status: "archived" }), false, "an archived card is not on the hill");
+assert.equal(isOnHill({ status: "completed" }), true, "a done card still lands at the right edge");
+assert.equal(isOnHill({ status: "blocked" }), true, "stuck work is still work");
+assert.equal(isOnHill({ status: "doing" }), true, "in-flight work is on the hill");
+assert.equal(isOnHill(null), false, "junk is never plotted");
+
+// The status line may never claim execution for a card that landed. This is
+// the board that reported "21 cards on the hill — 12 figuring out, 9
+// executing" with nothing running: 16 archived cards (10 archived at early
+// stages, 6 at late ones), 3 done, 2 unstarted drafts.
+const reported = [
+  ...Array.from({ length: 7 }, () => ({ status: "archived", stage: "triage", scopeSummary: null })),
+  ...Array.from({ length: 2 }, () => ({ status: "archived", stage: "context", scopeSummary: null })),
+  { status: "archived", stage: "select", scopeSummary: null },
+  ...Array.from({ length: 2 }, () => ({ status: "archived", stage: "planning", scopeSummary: null })),
+  { status: "archived", stage: "plan-gate", scopeSummary: null },
+  ...Array.from({ length: 3 }, () => ({ status: "archived", stage: "audit", scopeSummary: null })),
+  ...Array.from({ length: 3 }, () => ({ status: "completed", stage: "audit", scopeSummary: { tasksTotal: 0, tasksDone: 0, scopesTotal: 0, scopesDone: 0 } })),
+  ...Array.from({ length: 2 }, () => ({ status: "draft", stage: "triage", scopeSummary: { tasksTotal: 0, tasksDone: 0, scopesTotal: 0, scopesDone: 0 } })),
+];
+assert.equal(reported.length, 21, "the reported board had 21 cards in the grouping");
+assert.deepEqual(hillTally(reported), { onHill: 5, uphill: 2, executing: 0, done: 3, archived: 16 }, "archived cards are off the hill and done cards are never counted as executing");
+assert.deepEqual(hillTally(null), { onHill: 0, uphill: 0, executing: 0, done: 0, archived: 0 }, "junk tallies to nothing, never throws");
 
 // One formula for line and dots: the curve is the sine, sampled densely;
 // dots use the same y, so nothing floats off the hill.

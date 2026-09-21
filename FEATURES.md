@@ -231,6 +231,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   leftmost card. Click-only: a pile opens the shared card gallery modal
   (same tiles as the board, uniform grid, vertical scroll), and a lone dot
   opens its card directly. Hover never previews anything.
+  The hill holds work only: archived cards are off it (they left the board
+  and the workflow — with no rule they inherited a position from their old
+  stage and read as "figuring out"/"executing"), and the status line counts
+  Done cards as done, never as executing, so a board with nothing running
+  can never read as executing. Only cards still in the workflow split across
+  the two halves (`hillTally`, `isOnHill` in `lib/hill-position.mjs`).
   Progress never reads as a percentage anywhere — counts, bars, and region
   words instead. Curve
   draw, staggered entrances, and attention pulse animate under

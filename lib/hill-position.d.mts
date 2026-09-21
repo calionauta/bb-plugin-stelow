@@ -8,6 +8,16 @@ export declare function hillFraction(card: {
   scopeSummary?: { tasksTotal?: number; tasksDone?: number; scopesTotal?: number; scopesDone?: number } | null;
 } | null | undefined): number;
 export declare function hillRegion(fraction: number): "uphill" | "downhill";
+
+export declare function isOnHill(card: { status?: string | null } | null | undefined): boolean;
+
+export declare function hillTally(cards: Array<{ status?: string | null }> | null | undefined): {
+  onHill: number;
+  uphill: number;
+  executing: number;
+  done: number;
+  archived: number;
+};
 export declare function hillCurveY(x: number): number;
 export declare function hillCurvePoints(samples?: number): Array<{ x: number; y: number }>;
 export declare function hillPoint(card: {

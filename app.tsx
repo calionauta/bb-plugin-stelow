@@ -31,7 +31,7 @@ import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-gr
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { groupCardChecks, groupState, isExecutionUntracked } from "./lib/card-checks.mjs";
-import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots } from "./lib/hill-position.mjs";
+import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
 import { questionCopy } from "./lib/question-presentation.mjs";
@@ -2562,15 +2562,20 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
   // floating panel anchored to the frame edge, not the dot — a modal
   // gallery names its cards instead of floating near them.
   const [openX, setOpenX] = useState<number | null>(null);
-  const dots = useMemo(() => cards.map((card) => ({ card, point: hillPoint(card) })), [cards]);
+  // Archived cards are not work and have no position (see isOnHill): only
+  // cards still in the workflow get dots. The tally counts the same way, so
+  // the line can never claim execution for a card that already landed.
+  const onHill = useMemo(() => cards.filter(isOnHill), [cards]);
+  const tally = useMemo(() => hillTally(cards), [cards]);
+  const dots = useMemo(() => onHill.map((card) => ({ card, point: hillPoint(card) })), [onHill]);
   const clusters = useMemo(() => clusterHillDots(dots), [dots]);
   const curvePath = useMemo(() => hillCurvePoints(41).map((entry, index) => `${index === 0 ? "M" : "L"} ${(entry.x * 100).toFixed(2)} ${(36 - entry.y * 24.8).toFixed(2)}`).join(" "), []);
   if (cards.length === 0) return <p className="text-sm text-muted-foreground">No cards in this view.</p>;
-  const uphill = dots.filter((dot) => dot.point.region === "uphill").length;
+  if (tally.onHill === 0) return <p className="text-sm text-muted-foreground">Nothing is on the hill — {tally.archived} archived {tally.archived === 1 ? "card is" : "cards are"} out of the workflow.</p>;
   const openCluster = openX === null ? null : clusters.find((cluster) => cluster.x === openX) ?? null;
   return (
     <div>
-      <p className="text-xs text-muted-foreground" role="status">{cards.length} cards on the hill — {uphill} figuring out, {cards.length - uphill} executing.</p>
+      <p className="text-xs text-muted-foreground" role="status">{tally.onHill} {tally.onHill === 1 ? "card" : "cards"} on the hill — {tally.uphill} figuring out, {tally.executing} executing, {tally.done} done.{tally.archived > 0 ? ` ${tally.archived} archived ${tally.archived === 1 ? "card left" : "cards left"} the hill — archived cards are out of the workflow.` : ""}</p>
       <div className="relative mt-2 h-64 w-full sm:h-80">
         <svg aria-hidden className="absolute inset-0 h-full w-full text-muted-foreground/40" viewBox="0 0 100 40" preserveAspectRatio="none">
           <path d={curvePath} pathLength={100} className="stelow-hill-draw" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
