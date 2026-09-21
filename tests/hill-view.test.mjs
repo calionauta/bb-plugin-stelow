@@ -22,22 +22,44 @@ assert.equal((app.match(/<HillBoard cards=\{Object\.values\(grouped\)\.flat\(\)\
 
 // Dots sit ON one shared curve (hillCurvePoints draws the path, dots read
 // the same y) and never jitter x: crowding resolves into count pills
-// anchored at their leftmost card. Hover or tap previews one floating
-// panel — a full card for lone dots, compact rows for clusters.
+// anchored at their leftmost card. Click-only: a cluster opens a gallery
+// modal naming its cards; a lone dot opens its card directly. Hover never
+// previews anything — the floating panel anchored to the frame edge, not
+// the dot, and could bleed off-screen.
 const hillAt = app.indexOf("function HillBoard({ cards, navigate }");
 assert.ok(hillAt >= 0, "the hill component exists");
 const hillEnd = app.indexOf("\n}\n", hillAt);
+assert.ok(hillEnd > hillAt, "the hill component body is bounded");
 const hillBody = app.slice(hillAt, hillEnd);
 assert.ok(hillBody.includes("hillPoint(card)"), "dots position through the lib, not inline math");
 assert.ok(hillBody.includes("hillCurvePoints(41)"), "the drawn curve samples the same formula as the dots");
 assert.ok(hillBody.includes('role="status"'), "the uphill/executing tally announces");
-assert.ok(hillBody.includes("aria-label={`Preview card"), "dots name their card and completion for assistive tech");
+assert.ok(hillBody.includes("aria-label={`Open card"), "dots name their card for assistive tech, never a number");
 assert.ok(hillBody.includes("Figuring out") && hillBody.includes("Executing"), "halves read as work states, not coordinates");
 assert.ok(hillBody.includes('aria-label="Hill legend"'), "dot colors decode through a legend, not memory");
 assert.ok(hillBody.includes("activityDotTone(cluster.cards[0])"), "dot tones resolve through one helper, not inline ternaries");
 assert.ok(hillBody.includes("before:-inset-2"), "12px dots carry an invisible 28px hit area for touch");
-assert.ok(app.includes("function HillClusterPanel({"), "one panel serves lone dots and clusters alike");
-assert.ok(app.includes("activityDotTone(card)"), "cluster rows tint through the same helper as dots");
+assert.ok(!hillBody.includes("scheduleOpen") && !hillBody.includes("onMouseEnter") && !hillBody.includes("HillClusterPanel"), "no hover path and no floating panel remain — click is the only opener");
+assert.ok(hillBody.includes("onClick={() => goToCard(navigate, cluster.cards[0]"), "lone dots open their card directly, not a preview");
+assert.ok(hillBody.includes("<HillClusterDialog"), "clusters open the gallery modal");
+
+// Progress never reads as a percentage anywhere on the hill or the card:
+// counts, bars, and region words instead. A reintroduced "% complete"
+// fails here first.
+assert.doesNotMatch(app, /% complete/, "no percent-complete copy survives on dots, labels, or rows");
+assert.doesNotMatch(app, /\{scopePct\}%/, "the scope bar carries no percent readout");
+assert.doesNotMatch(app, /\{taskPct\}%/, "the task bar carries no percent readout");
+assert.ok(app.includes("function hillRegionLabel("), "region words come from one helper, not pasted ternaries");
+
+// The gallery modal: one dialog per open cluster, rows in the tile
+// vocabulary (status dot, name, project, scope counts), choosing a row
+// opens the same card surface as tiles and rows. Escape and overlay
+// dismissal ride the shared Dialog primitive, not a bespoke key handler.
+assert.ok(app.includes("function HillClusterDialog({"), "one dialog serves every open cluster");
+assert.ok(app.includes("<Dialog open onOpenChange="), "dismissal rides the shared Dialog primitive");
+assert.ok(app.includes("{cluster.cards.length} cards · {region}"), "the dialog titles its pile with a count and a region, never a number");
+assert.ok(app.includes("activityDotTone(card)"), "gallery rows tint through the same helper as dots");
+assert.ok(app.includes("✓ ${summary.scopesDone}/${summary.scopesTotal} scopes"), "gallery rows read scope counts, not percentages");
 
 // View persistence: returning from a card restores the picked view per
 // track (board, list, hill) instead of resetting to board. Unknown stored
@@ -52,10 +74,6 @@ assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores
 // bigger than a 1-scope one at the same honest position.
 assert.match(app, /const biggest = Math\.max\(\.\.\.cluster\.cards\.map\(\(card\) => card\.scopeSummary\?\.scopesTotal \?\? 0\)\);/, "size reads slice volume, not position");
 assert.match(app, /biggest >= 8 \? "size-5" : biggest >= 4 \? "size-4" : "size-3"/, "three size tiers, documented thresholds");
-assert.ok(app.includes("<BoardCard card={cluster.cards[0]!}"), "lone dots preview the same card tile as the board");
-assert.ok(app.includes('role="dialog"'), "the floating preview announces as a dialog");
-assert.ok(app.includes('aria-label="Close preview"'), "the preview dismisses through a labelled control");
-assert.ok(hillBody.includes('event.key === "Escape"'), "Escape dismisses the preview from the keyboard");
 
 // Scope strips: one shared bar in tiles and rows, fed by summary counts —
 // never a pasted shape per surface, never rendered for scopeless cards.

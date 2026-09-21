@@ -218,8 +218,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   than a 1-scope one at the same honest position. Dots sit exactly
   on one shared curve formula (line and dots read the same numbers, so
   nothing floats); crowding resolves into count pills anchored at their
-  leftmost card, and hover or tap previews one floating panel — the full
-  card tile for lone dots, scrollable compact rows for clusters. Curve
+  leftmost card. Click-only: a pile opens a gallery modal naming its cards
+  (status dot, name, project, scope counts — choosing a row opens the card),
+  and a lone dot opens its card directly. Hover never previews anything.
+  Progress never reads as a percentage anywhere — counts, bars, and region
+  words instead. Curve
   draw, staggered entrances, and attention pulse animate under
   `prefers-reduced-motion` guards. Scope strips
   (`ScopeStrip`, shared by tiles and rows) and the build detail phase

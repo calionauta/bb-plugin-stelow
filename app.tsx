@@ -2517,42 +2517,25 @@ function ExploreList({ groups, navigate, stageLabelById, collapsed, onToggle }: 
 // (task/scope fractions, stage checkpoint) via lib/hill-position — no new
 // fetch, no layout shift (lanes hash from the card id). Dots are real
 // buttons opening the same card surface as tiles and rows.
+// Hill region in product words: position never reads as a number anywhere
+// on this surface — counts and work states, never percentages.
+function hillRegionLabel(region: string): string {
+  return region === "uphill" ? "Figuring out" : "Executing";
+}
+
 function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnType<typeof useBbNavigate> }) {
   // The open cluster is identified by its x, not its index: board updates
   // re-sort clusters, and an index would silently point at another pile.
+  // Click-only: hover previews fired while sweeping across piles and the
+  // floating panel anchored to the frame edge, not the dot — a modal
+  // gallery names its cards instead of floating near them.
   const [openX, setOpenX] = useState<number | null>(null);
-  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (openTimer.current) clearTimeout(openTimer.current);
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
-  useEffect(() => {
-    if (openX === null) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpenX(null); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [openX]);
   const dots = useMemo(() => cards.map((card) => ({ card, point: hillPoint(card) })), [cards]);
   const clusters = useMemo(() => clusterHillDots(dots), [dots]);
   const curvePath = useMemo(() => hillCurvePoints(41).map((entry, index) => `${index === 0 ? "M" : "L"} ${(entry.x * 100).toFixed(2)} ${(36 - entry.y * 24.8).toFixed(2)}`).join(" "), []);
   if (cards.length === 0) return <p className="text-sm text-muted-foreground">No cards in this view.</p>;
   const uphill = dots.filter((dot) => dot.point.region === "uphill").length;
-  function scheduleOpen(x: number) {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    if (openTimer.current) clearTimeout(openTimer.current);
-    openTimer.current = setTimeout(() => setOpenX(x), 200);
-  }
-  function scheduleClose() {
-    if (openTimer.current) clearTimeout(openTimer.current);
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    closeTimer.current = setTimeout(() => setOpenX(null), 250);
-  }
-  function cancelClose() {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }
   const openCluster = openX === null ? null : clusters.find((cluster) => cluster.x === openX) ?? null;
-  const openAnchor = openCluster ? hillDotPercent({ x: openCluster.x, y: hillPoint(openCluster.cards[0]).y }) : null;
   return (
     <div>
       <p className="text-xs text-muted-foreground" role="status">{cards.length} cards on the hill — {uphill} figuring out, {cards.length - uphill} executing.</p>
@@ -2576,11 +2559,8 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
             <button
               key={`cluster-${cluster.x}`}
               onClick={() => setOpenX(isOpen ? null : cluster.x)}
-              onMouseEnter={() => scheduleOpen(cluster.x)}
-              onMouseLeave={scheduleClose}
-              onFocus={() => setOpenX(cluster.x)}
               title={`${cluster.cards.length} cards here`}
-              aria-label={`${cluster.cards.length} cards near ${Math.round(cluster.x * 100)}% complete. Open the cluster.`}
+              aria-label={`${cluster.cards.length} cards, ${hillRegionLabel(hillPoint(cluster.cards[0]).region)}. Open the list.`}
               aria-expanded={isOpen}
               style={{ left: `${pos.left}%`, bottom: `${pos.bottom}%` }}
               className={`stelow-hill-dot absolute flex size-5 -translate-x-1/2 translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-muted-foreground/30 text-[10px] font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${attention ? "stelow-hill-attn" : ""}`}
@@ -2588,27 +2568,19 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
           ) : (
             <button
               key={cluster.cards[0].id}
-              onClick={() => setOpenX(isOpen ? null : cluster.x)}
-              onMouseEnter={() => scheduleOpen(cluster.x)}
-              onMouseLeave={scheduleClose}
-              onFocus={() => setOpenX(cluster.x)}
-              title={`${cluster.cards[0].displayName} — ${Math.round(cluster.x * 100)}% complete${biggest > 0 ? ` · ${biggest} scopes` : ""}`}
-              aria-label={`Preview card ${cluster.cards[0].displayName}, ${Math.round(cluster.x * 100)}% complete.`}
-              aria-expanded={isOpen}
+              onClick={() => goToCard(navigate, cluster.cards[0], cluster.cards[0].id)}
+              title={biggest > 0 ? `${cluster.cards[0].displayName} · ${biggest} scopes` : cluster.cards[0].displayName}
+              aria-label={`Open card ${cluster.cards[0].displayName}.`}
               style={{ left: `${pos.left}%`, bottom: `${pos.bottom}%`, animationDelay: `${Math.min(Math.round(cluster.x * 900), 900)}ms` }}
               className={`stelow-hill-dot absolute ${dotSize} -translate-x-1/2 translate-y-1/2 cursor-pointer rounded-full before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activityDotTone(cluster.cards[0])}${attention ? " stelow-hill-attn" : ""}`}
             />
           );
         })}
-        {openCluster && openAnchor ? (
-          <HillClusterPanel
+        {openCluster ? (
+          <HillClusterDialog
             cluster={openCluster}
-            anchorLeft={openAnchor.left}
-            above={openAnchor.bottom > 55}
-            onOpen={(card) => { setOpenX(null); goToCard(navigate, card, card.id); }}
             onClose={() => setOpenX(null)}
-            onHover={() => cancelClose()}
-            onLeave={scheduleClose}
+            onOpen={(card) => { setOpenX(null); goToCard(navigate, card, card.id); }}
           />
         ) : null}
       </div>
@@ -2624,46 +2596,41 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
   );
 }
 
-// One floating panel for every hill selection — a lone dot shows its full
-// card, a cluster lists compact rows. Same component either way, so hover
-// and tap never teach two different interactions.
-function HillClusterPanel({ cluster, anchorLeft, above, onOpen, onClose, onHover, onLeave }: {
+// Cluster gallery: a click opens a modal listing the pile's cards — the only
+// surface that names them. Rows reuse the tile vocabulary (status dot,
+// name, project, scope counts) so the modal reads like the board, and
+// choosing a row opens the same card surface as tiles and rows.
+function HillClusterDialog({ cluster, onClose, onOpen }: {
   cluster: { x: number; cards: CardItem[] };
-  anchorLeft: number;
-  above: boolean;
-  onOpen: (card: CardItem) => void;
   onClose: () => void;
-  onHover: () => void;
-  onLeave: () => void;
+  onOpen: (card: CardItem) => void;
 }) {
-  const multi = cluster.cards.length > 1;
-  // Clamped off the edges so the panel never bleeds out of the hill frame.
-  const left = Math.min(82, Math.max(18, anchorLeft));
+  const region = hillRegionLabel(hillPoint(cluster.cards[0]).region);
   return (
-    <div
-      role="dialog"
-      aria-label={multi ? `${cluster.cards.length} cards near ${Math.round(cluster.x * 100)}% complete` : `Card preview`}
-      onMouseEnter={onHover}
-      onMouseLeave={onLeave}
-      style={above ? { left: `${left}%`, bottom: "calc(100% - 8px)", transform: "translateX(-50%)" } : { left: `${left}%`, top: "calc(100% - 8px)", transform: "translateX(-50%)" }}
-      className="stelow-hill-panel absolute z-20 max-h-72 w-72 max-w-[85%] overflow-auto rounded-lg border bg-card p-2 shadow-lg"
-    >
-      <div className="mb-1 flex items-center justify-between gap-2 px-1">
-        <span className="text-xs font-medium text-muted-foreground">{multi ? `${cluster.cards.length} cards · ${Math.round(cluster.x * 100)}%` : "Card preview"}</span>
-        <button onClick={onClose} aria-label="Close preview" className="inline-flex min-h-8 min-w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">×</button>
-      </div>
-      {multi ? null : <BoardCard card={cluster.cards[0]!} />}
-      {multi ? cluster.cards.map((card) => {
-        const pct = Math.round(hillPoint(card).x * 100);
-        return (
-          <button key={card.id} onClick={() => onOpen(card)} aria-label={`Open card ${card.displayName}, ${pct}% complete.`} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-            <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${activityDotTone(card)}`} />
-            <span className="min-w-0 flex-1 truncate text-sm">{card.displayName}</span>
-            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{pct}%</span>
-          </button>
-        );
-      }) : null}
-    </div>
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{cluster.cards.length} cards · {region}</DialogTitle>
+          <DialogDescription>Cards sharing this hill position. Pick one to open it.</DialogDescription>
+        </DialogHeader>
+        <ul className="space-y-1">
+          {cluster.cards.map((card) => {
+            const summary = card.scopeSummary;
+            return (
+              <li key={card.id}>
+                <button onClick={() => onOpen(card)} aria-label={`Open card ${card.displayName}.`} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                  <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${activityDotTone(card)}`} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">{card.displayName}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">{card.projectName}{summary.scopesTotal > 0 ? ` · ✓ ${summary.scopesDone}/${summary.scopesTotal} scopes` : ""}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -3671,13 +3638,11 @@ function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, {
       <div className="flex items-center gap-2 text-xs">
         <span className="font-semibold">✓ {scopesDone}/{scopes.length} scopes</span>
         {bar(scopePct, "bg-emerald-500")}
-        <span className="tabular-nums text-muted-foreground">{scopePct}%</span>
       </div>
       {tasksAll.length > 0 ? (
         <div className="flex items-center gap-2 text-xs">
           <span className="font-semibold">✓ {tasksDone}/{tasksAll.length} tasks</span>
           {bar(taskPct, "bg-primary")}
-          <span className="tabular-nums text-muted-foreground">{taskPct}%</span>
         </div>
       ) : null}
       {doingScopes.length > 0 || doingTasks.length > 0 ? (
