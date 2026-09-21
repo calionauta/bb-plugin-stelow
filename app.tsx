@@ -4775,7 +4775,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
                 </select>
                 <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Disposable text-only bursts judged by the worker">draft bursts</span>
               </div>
-              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Cheap disposable prose via <span className="font-mono">bb stelow draft</span> — e.g. a commit-message draft or a changelog line. Text in, text out; the worker judges every word before using it.</p>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Short disposable texts your card's worker requests mid-work — a commit-message draft, a changelog line for a finished scope. Text in, text out; the worker judges every word before using it.</p>
             </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">Rule of thumb: when the worker rewrites over 20% of a burst&apos;s output, that call site belongs back on Reliable.</p>
