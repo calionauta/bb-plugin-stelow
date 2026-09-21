@@ -2930,7 +2930,7 @@ function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenC
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-[70vw]">
+      <DialogContent fullscreenOnMobile className="h-[85dvh] overflow-y-auto sm:w-[70vw] sm:max-w-[70vw]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

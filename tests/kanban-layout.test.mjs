@@ -34,7 +34,8 @@ assert.equal((app.match(/const bucketGallery = useBucketGallery\(grouped\.inbox 
 assert.equal((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length, 3, "each creation checkbox links to its pile's gallery");
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
 assert.match(app, /auto-rows-fr grid-cols-1 gap-3 sm:\[grid-template-columns:repeat\(auto-fill,minmax\(240px,1fr\)\)\]/, "gallery tiles fill board-width columns, as many per row as fit, wrapping the rest");
-assert.match(app, /sm:max-w-\[70vw\]/, "the gallery takes seventy percent of the viewport width");
+assert.match(app, /sm:w-\[70vw\]/, "the gallery takes seventy percent of the viewport width");
+assert.match(app, /className="h-\[85dvh\] overflow-y-auto sm:w-\[70vw\]/, "the gallery height is fixed at 85dvh with internal scroll, never content-sized");
 assert.match(app, /\[&>\.stelow-board-card\]:h-full/, "gallery tiles stretch to equal row heights");
 assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
 assert.match(app, /function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook without changing default navigation");
