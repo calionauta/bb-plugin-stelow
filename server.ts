@@ -50,6 +50,7 @@ import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_
 import { doingNowNames } from "./lib/doing-now.mjs";
 import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
+import { tasksToScoreQuestions, resolveTaskVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -1380,7 +1381,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, the run bundle is already fresh: `done` refreshes `docs/runs/<card>/` plus `manifest.md` (SHA pins, gap counts) automatically on every completion and prints the paste-ready trailer in its output — a reopened card that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, unreadable, newly registered, and uncommitted sources without writing anything.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. Run `bb stelow verify-tasks` and report any unmet findings honestly in audit.md — advisory only, it never blocks `done`. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, the run bundle is already fresh: `done` refreshes `docs/runs/<card>/` plus `manifest.md` (SHA pins, gap counts) automatically on every completion and prints the paste-ready trailer in its output — a reopened card that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, unreadable, newly registered, and uncommitted sources without writing anything.";
   const RECON_PROTOCOL = "For any codebase reconnaissance, work from the target Git workspace root, never the card-state or skill directory. Run the bundled Stelow `recon.sh` preflight before using optional tools, passing this card's exact <state-dir> as its second argument; it writes `<state-dir>/context/recon-receipt.json`. Do not install tools inside the workflow. Cite that receipt and name missing optional tools in planning or audit output; a missing receipt is currently a warning, not a reason to fabricate or skip recon.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
@@ -7402,6 +7403,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "criteria", summary: "Score an artifact against its skill's semantic criteria (advisory, read-only)", usage: "bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" },
+      { name: "verify-tasks", summary: "Judge completed tasks against the working diff (advisory, read-only)", usage: "bb stelow verify-tasks [--card <card_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
       { name: "help", summary: "Show help for a subcommand", usage: "bb stelow help [command]" },
     ];
@@ -8993,6 +8995,82 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const mark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
         const lines = judgment.findings.map((finding) => `${mark(finding.verdict)} ${finding.id} — ${finding.verdict}${finding.score !== null ? ` (score ${finding.score}, confidence ${finding.confidence ?? "n/a"})` : ""}: ${finding.text}`);
         return { exitCode: 0, stdout: [`Artifact criteria: ${skillArg} × ${artifactArg} (${criteriaJudgeLabel}, ${judgment.findings.length} criteria)`, ...lines, `Summary: ${met} met, ${unmet} unmet, ${unverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
+      }
+      if (argv[0] === "verify-tasks") {
+        // Advisory task-evidence check: completed statuses are worker
+        // assertions — this asks a judge, per task, whether the working
+        // diff shows evidence, through the artifact-criteria point (rules
+        // reports everything unverifiable without calling out). Read-only,
+        // never a gate: findings guide the worker, done decides separately.
+        const args = argv.slice(1);
+        let taskCardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        const asJson = args.includes("--json");
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { taskCardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow verify-tasks [--card <card_id>] [--json]" };
+        }
+        if (!taskCardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const taskCard = getCard(taskCardId);
+        if (!taskCard) return { exitCode: 2, stderr: `Unknown card "${taskCardId}".` };
+        if (isDecisionApiDisabled(process.env)) return { exitCode: 1, stderr: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
+        const taskPoint = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+        const taskMode = normalizePointMode(taskPoint?.mode, "rules");
+        if (taskMode !== "api" && taskMode !== "preset") {
+          return { exitCode: 1, stderr: "Task evidence needs the Artifact criteria router in Decision API or preset mode. Set it in Manage agent presets → Decision routers." };
+        }
+        const taskWorkspace = await cardWorkspace(taskCard).catch(() => null);
+        if (!taskWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
+        const taskScopes = loadCardScopes(taskWorkspace.path, taskCard.id);
+        const doneTasks = taskScopes.flatMap((scope) => (Array.isArray(scope.tasks) ? scope.tasks : []).filter((task) => ["done", "completed"].includes(task.status)).map((task) => ({ id: task.id, name: task.name, scope: scope.name })));
+        if (doneTasks.length === 0) return { exitCode: 0, stdout: "No completed tasks to evidence — pending tasks are openly pending, nothing to judge." };
+        const taskCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+        const taskRoute = pointRouteConfig(taskPoint, taskCfg);
+        const taskProvider = normalizeDecisionProvider(taskRoute.provider ?? "jev");
+        const { key: taskKey } = resolveDecisionApiKey({ storedKey: taskRoute.apiKey ?? null, env: process.env });
+        if (!taskKey && providerRequiresKey(taskProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+        let taskStored: unknown = null;
+        try { taskStored = taskPoint ? JSON.parse(taskPoint.thresholds) : null; } catch { taskStored = null; }
+        const taskThresholds = normalizeThresholds(taskStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
+        // Evidence is the working-tree diff, capped: the cardDiff RPC owns
+        // the rich version; this needs only raw patch text to judge against.
+        const taskDiff = await new Promise<string>((resolveDiff) => {
+          execFile("git", ["diff", "HEAD", "--no-color", "--unified=1", "--", "."], { cwd: taskWorkspace.path, timeout: 15000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+            resolveDiff(!error && typeof stdout === "string" ? stdout.slice(0, TASK_EVIDENCE_DIFF_CHARS) : "");
+          });
+        });
+        const taskQuestions = tasksToScoreQuestions(doneTasks);
+        let taskFindings: Array<{ id: string; name: string; score: number | null; confidence: number | null; verdict: string; error: string | null }>;
+        if (taskMode === "preset") {
+          const taskJudge = taskPoint?.preset_id ?? null;
+          if (!taskJudge) return { exitCode: 1, stderr: "Preset judging needs a judge preset — pick any preset in Decision routers, including one no stage uses." };
+          const judged = await judgeViaPreset({ presetId: taskJudge, projectId: taskCard.project_id, title: "Stelow judge: task evidence", prompt: buildPresetJudgePrompt({ kind: "criteria", state: taskDiff, questions: doneTasks.map((task) => ({ id: task.id, text: `${task.name} (scope: ${task.scope})` })) }) });
+          if (!judged.ok || !judged.text) return { exitCode: 1, stderr: `Task judging failed: ${judged.error ?? "judge failed"} — retry or check the preset.` };
+          const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
+          if (!parsed.ok || !("verdicts" in parsed)) return { exitCode: 1, stderr: `Task judging failed: ${parsed.ok ? "verdict shape mismatch" : parsed.error} — retry or check the preset.` };
+          const byId: Record<string, { status: string; confidence: number | null }> = {};
+          for (const verdict of parsed.verdicts) byId[verdict.id] = { status: verdict.status, confidence: verdict.confidence };
+          taskFindings = resolveTaskVerdicts({ tasks: doneTasks, verdicts: byId, routeAt: taskThresholds.routeAt });
+        } else {
+          const judged = await Promise.all(doneTasks.map(async (task) => {
+            const single: Record<string, unknown> = {};
+            single[`task:${task.id}`] = (taskQuestions as Record<string, unknown>)[`task:${task.id}`];
+            const result = await evaluateDecisionCall({ provider: taskProvider, endpoint: taskRoute.endpoint ?? defaultEndpointFor(taskProvider), apiKey: taskKey ?? "", model: normalizeDecisionApiModel(taskRoute.model, defaultModelFor(taskProvider)), state: taskDiff, questions: single as never });
+            return { task, result };
+          }));
+          const answers: Record<string, { type?: string; score?: number; confidence?: number } | null> = {};
+          for (const { task, result } of judged) answers[`task:${task.id}`] = (result.ok ? result.answers?.[`task:${task.id}`] ?? null : null) as { type?: string; score?: number; confidence?: number } | null;
+          taskFindings = resolveTaskVerdicts({ tasks: doneTasks, answers, routeAt: taskThresholds.routeAt });
+        }
+        const taskMet = taskFindings.filter((finding) => finding.verdict === "met").length;
+        const taskUnmet = taskFindings.filter((finding) => finding.verdict === "unmet").length;
+        const taskUnverifiable = taskFindings.length - taskMet - taskUnmet;
+        if (asJson) {
+          return { exitCode: 0, stdout: JSON.stringify({ card: taskCardId, provider: taskProvider, findings: taskFindings, summary: { met: taskMet, unmet: taskUnmet, unverifiable: taskUnverifiable } }, null, 2) };
+        }
+        const taskMark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
+        const taskLines = taskFindings.map((finding) => `${taskMark(finding.verdict)} ${finding.name} — ${finding.verdict}${finding.confidence !== null ? ` (confidence ${finding.confidence})` : ""}`);
+        return { exitCode: 0, stdout: [`Task evidence (${doneTasks.length} completed tasks judged against the working diff):`, ...taskLines, `Summary: ${taskMet} met, ${taskUnmet} unmet, ${taskUnverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
       }
       if (argv[0] === "draft") {
         // Disposable Tier G burst: text-in/text-out on the generation

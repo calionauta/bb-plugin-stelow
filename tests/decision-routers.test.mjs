@@ -251,4 +251,22 @@ assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(criteriaBody), "t
 assert.ok(!criteriaBody.includes("realtime.publish"), "the branch publishes no realtime events");
 assert.ok(!criteriaBody.includes("logCardComment"), "the branch leaves no card comments");
 
+// Task evidence: completed statuses are worker assertions — the branch
+// asks a judge per completed task whether the working diff shows evidence,
+// through the artifact-criteria point. Advisory only: findings guide the
+// worker, done decides separately. Same read-only contract as criteria.
+assert.match(server, /name: "verify-tasks", summary: "Judge completed tasks against the working diff/, "the command is listed");
+const taskAt = server.indexOf('if (argv[0] === "verify-tasks") {');
+assert.ok(taskAt >= 0, "the verify-tasks branch exists");
+const taskEnd = server.indexOf('if (argv[0] === "draft") {', taskAt);
+assert.ok(taskEnd > taskAt, "the verify-tasks branch is bounded");
+const taskBody = server.slice(taskAt, taskEnd);
+assert.ok(taskBody.includes("resolveTaskVerdicts({"), "verdicts resolve through the lib cascade");
+assert.ok(taskBody.includes("judgeViaPreset({"), "preset mode judges through the shared judge runner");
+assert.ok(taskBody.includes("evaluateDecisionCall({"), "api mode judges through the shared decision call");
+assert.ok(taskBody.includes("advisory only, never blocking"), "the report states its advisory nature");
+assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(taskBody), "verify-tasks makes zero database writes");
+assert.ok(!taskBody.includes("realtime.publish"), "verify-tasks publishes nothing");
+assert.ok(!taskBody.includes("logCardComment"), "verify-tasks leaves no comments");
+
 console.log("decision routers test ok: settings discipline, refusals, seam fail-soft, UI disclosure");

@@ -830,6 +830,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   unverifiable report, never blocking. Runs only with the Artifact
   criteria router in Decision API mode and a configured provider;
   everything else refuses with the fix named.
+- **`bb stelow verify-tasks` (advisory, `lib/task-evidence.mjs`).** Completed
+  statuses are worker assertions — the command asks a judge per completed
+  task whether the working diff shows evidence, through the artifact-criteria
+  point (rules reports everything unverifiable without calling out). One
+  atomic Score per task, resolved against the point floor; findings guide
+  the worker (DONE_PROTOCOL points here before `done`), `done` decides
+  separately. Read-only, never a gate.
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,
