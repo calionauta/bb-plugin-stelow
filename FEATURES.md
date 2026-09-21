@@ -201,8 +201,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preference, not a CTA). Groups collapse per track (persisted; Archived
   starts collapsed). One shared row across tracks (Build geometry
   standard; strategy/technique rides the meta line).
-- **Hill view.** The same filtered cards as dots on a figuring-out /
-  executing curve, for the glanceable question columns can't answer.
+- **Hill view (Build track).** The same filtered cards as dots on a figuring-out /
+  executing curve, for the glanceable question columns can't answer — research
+  and explore cards carry no scopes or workflow stages, so their toggles hide
+  it rather than pile every dot at zero.
   Position derives from board data alone (task, scope, then stage
   fraction via `lib/hill-position.mjs` — deterministic lanes, no layout
   shift); dots are buttons opening the same card surface. Scope strips

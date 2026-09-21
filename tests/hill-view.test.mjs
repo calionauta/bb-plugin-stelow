@@ -11,13 +11,14 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const pills = readFileSync(join(root, "components", "dashboard", "build-status-pills.tsx"), "utf8");
 
-// Third view mode beside board and list, on all three tracks: position
-// over columns for the glanceable question, columns kept for operation.
+// Third view mode on the Build track only: research/explore cards carry
+// no scopes and non-workflow stages, so a hill there would pile every dot
+// at zero and lie. Their toggles offer board and list alone.
 assert.match(app, /\{ value: "hill" as const, title: "Hill view"/, "the view toggle offers Hill view");
-for (const track of ["BuildList", "ResearchList", "ExploreList"]) {
-  assert.match(app, new RegExp(`<HillBoard cards=\\{Object\\.values\\(grouped\\)\\.flat\\(\\)\\} navigate=\\{navigate\\} \\/>`), `${track} hill plots the same filtered set as its board`);
-}
-assert.ok((app.match(/<HillBoard cards=\{Object\.values\(grouped\)\.flat\(\)\} navigate=\{navigate\} \/>/g) ?? []).length >= 3, "all three tracks share one hill component");
+assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label="Build cards view" \/>/, "build offers all three views");
+assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label="Research cards view" views=\{\["board", "list"\]\} \/>/, "research hides the meaningless hill");
+assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label="Explore cards view" views=\{\["board", "list"\]\} \/>/, "explore hides the meaningless hill");
+assert.equal((app.match(/<HillBoard cards=\{Object\.values\(grouped\)\.flat\(\)\} navigate=\{navigate\} \/>/g) ?? []).length, 1, "one hill render, on the build board");
 
 // Dots carry position, curve height, and lane from lib/hill-position —
 // never inline math in the view — and open through the shared navigator.

@@ -1142,7 +1142,7 @@ function ResearchPanel({ active }: { active: boolean }) {
                 onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
               />
             </div>
-            <ViewToggle view={viewMode} onChange={setViewMode} label="Research cards view" />
+            <ViewToggle view={viewMode} onChange={setViewMode} label="Research cards view" views={["board", "list"]} />
           </div>
           {viewMode === "board" ? (
           <p className="text-xs text-muted-foreground">
@@ -1150,7 +1150,7 @@ function ResearchPanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : (
+          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -1381,7 +1381,7 @@ function ExplorePanel({ active }: { active: boolean }) {
                 onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
               />
             </div>
-            <ViewToggle view={viewMode} onChange={setViewMode} label="Explore cards view" />
+            <ViewToggle view={viewMode} onChange={setViewMode} label="Explore cards view" views={["board", "list"]} />
           </div>
           {viewMode === "board" ? (
           <p className="text-xs text-muted-foreground">
@@ -1389,7 +1389,7 @@ function ExplorePanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : (
+          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -2453,12 +2453,12 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 // purpose: changing how the cards below render is a view preference, not an
 // action — so it lives beside the filters, never in the CTA row, and never
 // looks like a primary button.
-function ViewToggle({ view, onChange, label }: { view: "board" | "list" | "hill"; onChange: (view: "board" | "list" | "hill") => void; label: string }) {
+function ViewToggle({ view, onChange, label, views }: { view: "board" | "list" | "hill"; onChange: (view: "board" | "list" | "hill") => void; label: string; views?: Array<"board" | "list" | "hill"> }) {
   const options = [
     { value: "board" as const, title: "Board view", icon: "GridView" as const },
     { value: "list" as const, title: "List view", icon: "ListView" as const },
     { value: "hill" as const, title: "Hill view", icon: "ChartColumn" as const },
-  ];
+  ].filter((option) => (views ?? ["board", "list", "hill"]).includes(option.value));
   return (
     <div role="group" aria-label={label} className="flex shrink-0 items-center">
       {options.map((option) => (
