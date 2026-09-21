@@ -839,6 +839,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   artifacts, worktree snapshot). Freshness is asked for on demand, never on
   every board read, because `check` re-derives the projection. A finished card
   opens its Artifacts section by default: the evidence is the deliverable.
+- **Checks rollup** (`CardChecksSection`, `lib/card-checks.mjs`). Every
+  pending thing grouped by type — questions (live + expired asks),
+  scopes, tasks, gaps, review — with done/pending counts from the same
+  sources the heroes read, never a second truth. A pending-only filter
+  defaults on; all clear reads as one line. Groups with nothing
+  applicable resolve absent instead of rendering empty.
   The run bundle also commits token evidence: provider-reported totals
   across the card's worker threads (bounded, fail-open) with per-leg
   splits, or an explicit unknown line when nothing reported.

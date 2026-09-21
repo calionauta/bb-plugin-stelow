@@ -30,6 +30,7 @@ import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs"
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
+import { groupCardChecks, groupState } from "./lib/card-checks.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
@@ -3601,6 +3602,48 @@ function orderScopes(scopes: Extract<CardDetailResponse, { scopes: unknown }>["s
 // Scope progress hero: one glanceable readout above the per-scope list.
 // Presentation only — same scopes/tasks contract, no new data. Shows
 // overall scope + task bars, what is actively doing now, and what waits.
+// Checks rollup: every pending thing on the card grouped by type with
+// done/pending counts — questions, scopes, tasks, gaps, review. Reads the
+// same sources the heroes read (pending questions, scope states, the gap
+// summary RPC), never a second truth. A pending-only filter hides
+// all-done groups; all clear reads as one line, not an empty box.
+function CardChecksSection({ cardId, card, detail }: { cardId: string; card: CardItem; detail: CardDetailResponse }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [gaps, setGaps] = useState<{ matched: boolean; items: Array<{ description: string }>; fixed: number; documented: number; total: number } | null>(null);
+  const [pendingOnly, setPendingOnly] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.call("gapSummary", { cardId }).then((result) => { if (!cancelled) setGaps(result); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [rpc, cardId]);
+  const groups = groupCardChecks({
+    questions: [...detail.pendingQuestions, ...detail.expiredQuestions],
+    scopes: detail.scopes,
+    gaps,
+    review: card.status === "completed" ? { pending: card.hasPendingReview, done: !card.hasPendingReview } : null,
+  });
+  if (groups.length === 0) return null;
+  const visible = pendingOnly ? groups.filter((group) => groupState(group) === "pending") : groups;
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+      <div className="flex items-center gap-2">
+        <h3 className="text-xs font-semibold text-foreground">Checks</h3>
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label>
+      </div>
+      {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => (
+        <div key={group.id} className="space-y-0.5">
+          <p className="text-xs">
+            <span className="font-medium text-foreground">{group.label}</span>
+            <span className="ml-2 tabular-nums text-muted-foreground">{group.open.length}/{group.total} open</span>
+            {groupState(group) === "done" ? <span className="ml-2 text-emerald-700 dark:text-emerald-300">✓</span> : null}
+          </p>
+          {group.open.length > 0 ? <p className="truncate text-[11px] text-muted-foreground" title={group.open.join(" · ")}>{group.open.slice(0, 3).join(" · ")}{group.open.length > 3 ? ` +${group.open.length - 3} more` : ""}</p> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]; flow?: { leadMs: number | null; cycleMs: number | null } | null }) {
   const isDone = (status: string | undefined) => status === "done" || status === "completed";
   const scopesDone = scopes.filter((scope) => isDone(scope.status)).length;
@@ -7067,6 +7110,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
+              {detail ? <CardChecksSection cardId={card.id} card={card} detail={detail} /> : null}
               {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
