@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { tasksToScoreQuestions, resolveTaskVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "../lib/task-evidence.mjs";
+import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "../lib/task-evidence.mjs";
 
 // Task evidence turns a completed status (a worker assertion) into a
 // checkable question: given the diff, does each completed task show
@@ -35,5 +35,27 @@ assert.deepEqual(
   "preset verdicts map onto the same shape; unknown statuses degrade",
 );
 assert.equal(TASK_EVIDENCE_DIFF_CHARS, 6000, "diff budget is a named constant, not inline magic");
+
+// Scope rollup is deterministic and free: done scopes read from their
+// tasks' verdicts, pending scopes read open, taskless done scopes read
+// unverifiable. No judge is consulted — the tasks above already paid.
+const rollup = resolveScopeVerdicts({
+  scopes: [
+    { id: "s1", name: "All done", status: "done", tasks: [{ id: "t1" }, { id: "t2" }] },
+    { id: "s2", name: "One failed", status: "completed", tasks: [{ id: "t3" }, { id: "t4" }] },
+    { id: "s3", name: "No tasks", status: "done", tasks: [] },
+    { id: "s4", name: "Pending", status: "pending", tasks: [{ id: "t5" }] },
+  ],
+  taskFindings: [
+    { id: "t1", verdict: "met" },
+    { id: "t2", verdict: "met" },
+    { id: "t3", verdict: "met" },
+    { id: "t4", verdict: "unmet" },
+  ],
+});
+assert.deepEqual(rollup.map((scope) => scope.verdict), ["met", "unmet", "unverifiable", "open"], "rollup derives, never judges");
+assert.equal(rollup[2].detail, "no tasks to evidence", "taskless done scopes name their gap");
+assert.equal(rollup[3].detail, "pending work is openly pending", "open scopes never read as verdicts");
+assert.deepEqual(resolveScopeVerdicts({ scopes: null, taskFindings: null }), [], "junk rolls up empty");
 
 console.log("task evidence test ok: atomic questions, floored verdicts, shared anchors");

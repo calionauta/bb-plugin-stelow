@@ -50,7 +50,7 @@ import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_
 import { doingNowNames } from "./lib/doing-now.mjs";
 import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
-import { tasksToScoreQuestions, resolveTaskVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
+import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
 import { countDelegations, summarizeDelegationEvidence } from "./lib/delegation-evidence.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
@@ -9067,12 +9067,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const taskMet = taskFindings.filter((finding) => finding.verdict === "met").length;
         const taskUnmet = taskFindings.filter((finding) => finding.verdict === "unmet").length;
         const taskUnverifiable = taskFindings.length - taskMet - taskUnmet;
+        // Scope rollup is deterministic, never judged: a done scope reads
+        // from its tasks' verdicts, so scopes cost zero extra calls.
+        const scopeRollup = resolveScopeVerdicts({ scopes: taskScopes, taskFindings });
         if (asJson) {
-          return { exitCode: 0, stdout: JSON.stringify({ card: taskCardId, provider: taskProvider, findings: taskFindings, summary: { met: taskMet, unmet: taskUnmet, unverifiable: taskUnverifiable } }, null, 2) };
+          return { exitCode: 0, stdout: JSON.stringify({ card: taskCardId, provider: taskProvider, findings: taskFindings, scopes: scopeRollup, summary: { met: taskMet, unmet: taskUnmet, unverifiable: taskUnverifiable } }, null, 2) };
         }
         const taskMark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
         const taskLines = taskFindings.map((finding) => `${taskMark(finding.verdict)} ${finding.name} — ${finding.verdict}${finding.confidence !== null ? ` (confidence ${finding.confidence})` : ""}`);
-        return { exitCode: 0, stdout: [`Task evidence (${doneTasks.length} completed tasks judged against the working diff):`, ...taskLines, `Summary: ${taskMet} met, ${taskUnmet} unmet, ${taskUnverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
+        const scopeLines = scopeRollup.map((scope) => `${taskMark(scope.verdict)} ${scope.name} — ${scope.verdict} (${scope.detail})`);
+        return { exitCode: 0, stdout: [`Task evidence (${doneTasks.length} completed tasks judged against the working diff):`, ...taskLines, `Scopes (deterministic rollup, no extra calls):`, ...scopeLines, `Summary: ${taskMet} met, ${taskUnmet} unmet, ${taskUnverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
       }
       if (argv[0] === "verify-delegation") {
         // Advisory delegation tripwire: the host cannot see subagent

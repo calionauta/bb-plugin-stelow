@@ -262,6 +262,7 @@ const taskEnd = server.indexOf('if (argv[0] === "draft") {', taskAt);
 assert.ok(taskEnd > taskAt, "the verify-tasks branch is bounded");
 const taskBody = server.slice(taskAt, taskEnd);
 assert.ok(taskBody.includes("resolveTaskVerdicts({"), "verdicts resolve through the lib cascade");
+assert.ok(taskBody.includes("resolveScopeVerdicts({ scopes: taskScopes, taskFindings })"), "scopes roll up deterministically from task verdicts");
 assert.ok(taskBody.includes("judgeViaPreset({"), "preset mode judges through the shared judge runner");
 assert.ok(taskBody.includes("evaluateDecisionCall({"), "api mode judges through the shared decision call");
 assert.ok(taskBody.includes("advisory only, never blocking"), "the report states its advisory nature");

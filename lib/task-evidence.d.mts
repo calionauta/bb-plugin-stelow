@@ -13,6 +13,14 @@ export interface TaskEvidenceFinding {
   error: string | null;
 }
 
+export interface ScopeEvidenceVerdict {
+  id: string;
+  name: string;
+  status: string;
+  verdict: "met" | "unmet" | "unverifiable" | "open";
+  detail: string;
+}
+
 export declare const TASK_EVIDENCE_DIFF_CHARS: number;
 
 export declare function tasksToScoreQuestions(
@@ -25,3 +33,8 @@ export declare function resolveTaskVerdicts(options: {
   verdicts?: Record<string, { status?: string; confidence?: number | null } | null> | null;
   routeAt?: number | null;
 }): TaskEvidenceFinding[];
+
+export declare function resolveScopeVerdicts(options: {
+  scopes?: Array<{ id?: string; name?: string; status?: string; tasks?: Array<{ id?: string }> | null } | null> | null;
+  taskFindings?: Array<{ id?: string; verdict?: string } | null> | null;
+}): ScopeEvidenceVerdict[];
