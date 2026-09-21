@@ -7,6 +7,10 @@ import { doneEligibility } from "../lib/completion.mjs";
 // and every refusal names the fix.
 
 assert.equal(doneEligibility({ kind: "build", stage: "audit", questionPending: false }), null, "a build at audit may complete");
+assert.equal(doneEligibility({ kind: "build", stage: "audit", questionPending: false, scopesOpen: [] }), null, "no scopes is no veto — the parameter defaults the same way");
+assert.match(doneEligibility({ kind: "build", stage: "audit", questionPending: false, scopesOpen: [{ id: "s1", name: "Checkout", status: "pending" }] }), /1 scope\(s\) still open/, "a pending scope blocks completion instead of certifying walked-past work");
+assert.match(doneEligibility({ kind: "build", stage: "audit", questionPending: false, scopesOpen: [{ id: "s1", name: "Checkout", status: "in-progress" }] }), /Checkout \(in-progress\)/, "the refusal names the open scope and its state");
+assert.equal(doneEligibility({ kind: "build", stage: "audit", questionPending: false, scopesOpen: [{ id: "s1", name: "Done work", status: "done" }, { id: "s2", name: "Dropped", status: "skipped" }] }), null, "done, completed, and explicitly skipped scopes pass");
 assert.match(doneEligibility({ kind: "build", stage: "shape", questionPending: false }), /at 'shape', not 'audit'/, "a build off audit is refused with its stage");
 assert.match(doneEligibility({ kind: "build", stage: null, questionPending: false }), /unknown stage/, "a build with no readable stage is refused, not completed blind");
 assert.match(doneEligibility({ kind: "build", stage: "audit", questionPending: true }), /pending/, "a pending question blocks completion or it would be abandoned");

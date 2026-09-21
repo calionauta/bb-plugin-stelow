@@ -770,7 +770,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Explicit completion** (`bb stelow done [--card]`, `lib/completion.mjs`).
   Done-ness was inferred from `audit` + idle, so narrate-and-stop looked
   identical to stuck. The worker commits; the host verifies in code —
-  build only at `audit`, research/explore only with a passing `verify`
+  build only at `audit`, with every scope done, completed, or explicitly
+  skipped (open scopes refuse, naming each one — done certifies finished
+  work, not walked-past work), research/explore only with a passing `verify`
   and no pending question. Every refusal names the fix. The old
   audit-idle auto-complete is gone: an audit-idle worker is resumed with
   the done instruction (budgeted), then pauses with the instruction on

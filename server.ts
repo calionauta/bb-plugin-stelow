@@ -7952,7 +7952,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             if (!stateBlob) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
             currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
           }
-          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0 });
+          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0, scopesOpen: projectPath ? loadCardScopes(projectPath, cardId) : [] });
           if (refusal) return { exitCode: 1, stderr: refusal };
           const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;
           const checkout = await cardCheckout(card);
