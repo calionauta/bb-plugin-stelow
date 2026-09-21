@@ -263,6 +263,12 @@ assert.ok(taskEnd > taskAt, "the verify-tasks branch is bounded");
 const taskBody = server.slice(taskAt, taskEnd);
 assert.ok(taskBody.includes("resolveTaskVerdicts({"), "verdicts resolve through the lib cascade");
 assert.ok(taskBody.includes("resolveScopeVerdicts({ scopes: taskScopes, taskFindings })"), "scopes roll up deterministically from task verdicts");
+// Tasks with their own verify command run deterministically first (exit 0
+// reads met), and when every task verifies, no judge is consulted at all —
+// no preset or key required for a fully-declared board.
+assert.ok(taskBody.includes("taskVerifyCommand(task)"), "verify commands resolve per task");
+assert.ok(taskBody.includes("doneTasks.filter((task) => task.verify !== null)"), "declared tasks partition to the deterministic path");
+assert.ok(taskBody.includes("if (judgedTasks.length === 0) {"), "fully-declared boards skip the judge entirely");
 assert.ok(taskBody.includes("judgeViaPreset({"), "preset mode judges through the shared judge runner");
 assert.ok(taskBody.includes("evaluateDecisionCall({"), "api mode judges through the shared decision call");
 assert.ok(taskBody.includes("advisory only, never blocking"), "the report states its advisory nature");

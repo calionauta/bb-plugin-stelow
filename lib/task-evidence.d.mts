@@ -23,6 +23,8 @@ export interface ScopeEvidenceVerdict {
 
 export declare const TASK_EVIDENCE_DIFF_CHARS: number;
 
+export declare function taskVerifyCommand(task: unknown): string | null;
+
 export declare function tasksToScoreQuestions(
   tasks?: Array<TaskEvidenceInput | null> | null,
 ): Record<string, { type: string; instructions: string; criteria: string[] }>;

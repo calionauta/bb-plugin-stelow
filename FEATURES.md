@@ -836,7 +836,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   point (rules reports everything unverifiable without calling out). One
   atomic Score per task, resolved against the point floor; findings guide
   the worker (DONE_PROTOCOL points here before `done`), `done` decides
-  separately. Read-only, never a gate. Scopes roll up deterministically from
+  separately. Read-only, never a gate. Tasks carrying their own `verify`
+  command run deterministically first (exit 0 reads met) and skip the
+  judge entirely; scopes roll up deterministically from task verdicts at
+  zero extra cost (met iff every task met). Scopes roll up deterministically from
   task verdicts at zero extra cost (met iff every task met); taskless done
   scopes read unverifiable, pending scopes read open.
 - **`bb stelow verify-delegation` (advisory, `lib/delegation-evidence.mjs`).**

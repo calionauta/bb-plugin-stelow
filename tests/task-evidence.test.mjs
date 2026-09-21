@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "../lib/task-evidence.mjs";
+import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "../lib/task-evidence.mjs";
 
 // Task evidence turns a completed status (a worker assertion) into a
 // checkable question: given the diff, does each completed task show
@@ -35,6 +35,14 @@ assert.deepEqual(
   "preset verdicts map onto the same shape; unknown statuses degrade",
 );
 assert.equal(TASK_EVIDENCE_DIFF_CHARS, 6000, "diff budget is a named constant, not inline magic");
+
+// A task carrying its own verify command (Spec-Kit shape) runs
+// deterministically: string commands pass through trimmed, everything
+// else reads absent and falls back to the judge.
+assert.equal(taskVerifyCommand({ verify: "  npm test -- x  " }), "npm test -- x", "string commands trim through");
+assert.equal(taskVerifyCommand({ verify: ["a", "b"] }), null, "arrays read absent");
+assert.equal(taskVerifyCommand({}), null, "missing reads absent");
+assert.equal(taskVerifyCommand(null), null, "junk reads absent");
 
 // Scope rollup is deterministic and free: done scopes read from their
 // tasks' verdicts, pending scopes read open, taskless done scopes read

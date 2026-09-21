@@ -50,7 +50,7 @@ import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_
 import { doingNowNames } from "./lib/doing-now.mjs";
 import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
-import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
+import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
 import { countDelegations, summarizeDelegationEvidence } from "./lib/delegation-evidence.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
@@ -9024,7 +9024,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const taskWorkspace = await cardWorkspace(taskCard).catch(() => null);
         if (!taskWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
         const taskScopes = loadCardScopes(taskWorkspace.path, taskCard.id);
-        const doneTasks = taskScopes.flatMap((scope) => (Array.isArray(scope.tasks) ? scope.tasks : []).filter((task) => ["done", "completed"].includes(task.status)).map((task) => ({ id: task.id, name: task.name, scope: scope.name })));
+        const doneTasks = taskScopes.flatMap((scope) => (Array.isArray(scope.tasks) ? scope.tasks : []).filter((task) => ["done", "completed"].includes(task.status)).map((task) => ({ id: task.id, name: task.name, scope: scope.name, verify: taskVerifyCommand(task) })));
         if (doneTasks.length === 0) return { exitCode: 0, stdout: "No completed tasks to evidence — pending tasks are openly pending, nothing to judge." };
         const taskCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
         const taskRoute = pointRouteConfig(taskPoint, taskCfg);
@@ -9042,19 +9042,48 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           });
         });
         const taskQuestions = tasksToScoreQuestions(doneTasks);
-        let taskFindings: Array<{ id: string; name: string; score: number | null; confidence: number | null; verdict: string; error: string | null }>;
-        if (taskMode === "preset") {
+        type TaskFinding = { id: string; name: string; score: number | null; confidence: number | null; verdict: string; error: string | null; source: "command" | "judge" };
+        // Tasks carrying their own verify command run deterministically
+        // first (authoritative, zero judge cost): exit 0 reads met, any
+        // other exit reads unmet, spawn/timeout failures read unverifiable
+        // with the reason. Checkout-pinned via execFile, no shell — the
+        // worker already owns a shell, so this grants no new privilege.
+        const commandTasks = doneTasks.filter((task) => task.verify !== null);
+        const judgedTasks = doneTasks.filter((task) => task.verify === null);
+        const runVerifyCommand = (cmd: string): Promise<{ ok: boolean; code: number | null; failed: boolean }> => new Promise((resolveRun) => {
+          const [bin, ...rest] = cmd.split(/\s+/);
+          execFile(bin, rest, { cwd: taskWorkspace.path, timeout: 60000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+            if (error && (error as NodeJS.ErrnoException).code !== null && (error as NodeJS.ErrnoException).code !== undefined && typeof (error as { code?: unknown }).code !== "number") {
+              resolveRun({ ok: false, code: null, failed: true });
+              return;
+            }
+            const code = typeof (error as { code?: unknown } | null)?.code === "number" ? (error as { code: number }).code : 0;
+            resolveRun({ ok: code === 0, code, failed: false });
+          });
+        });
+        const commandFindings = await Promise.all(commandTasks.map(async (task) => {
+          const ran = await runVerifyCommand(task.verify as string).catch(() => ({ ok: false, code: null as number | null, failed: true }));
+          const base = { id: task.id, name: task.name, source: "command" as const };
+          if (ran.failed) return { ...base, score: null, confidence: null, verdict: "unverifiable", error: "verify command did not run" };
+          return { ...base, score: ran.ok ? 2 : 0, confidence: 1, verdict: ran.ok ? "met" : "unmet", error: null as string | null };
+        }));
+        let taskFindings: Array<TaskFinding>;
+        if (judgedTasks.length === 0) {
+          // Everything verified deterministically — no judge to consult,
+          // no preset or key required.
+          taskFindings = [...commandFindings];
+        } else if (taskMode === "preset") {
           const taskJudge = taskPoint?.preset_id ?? null;
           if (!taskJudge) return { exitCode: 1, stderr: "Preset judging needs a judge preset — pick any preset in Decision routers, including one no stage uses." };
-          const judged = await judgeViaPreset({ presetId: taskJudge, projectId: taskCard.project_id, title: "Stelow judge: task evidence", prompt: buildPresetJudgePrompt({ kind: "criteria", state: taskDiff, questions: doneTasks.map((task) => ({ id: task.id, text: `${task.name} (scope: ${task.scope})` })) }) });
+          const judged = await judgeViaPreset({ presetId: taskJudge, projectId: taskCard.project_id, title: "Stelow judge: task evidence", prompt: buildPresetJudgePrompt({ kind: "criteria", state: taskDiff, questions: judgedTasks.map((task) => ({ id: task.id, text: `${task.name} (scope: ${task.scope})` })) }) });
           if (!judged.ok || !judged.text) return { exitCode: 1, stderr: `Task judging failed: ${judged.error ?? "judge failed"} — retry or check the preset.` };
           const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
           if (!parsed.ok || !("verdicts" in parsed)) return { exitCode: 1, stderr: `Task judging failed: ${parsed.ok ? "verdict shape mismatch" : parsed.error} — retry or check the preset.` };
           const byId: Record<string, { status: string; confidence: number | null }> = {};
           for (const verdict of parsed.verdicts) byId[verdict.id] = { status: verdict.status, confidence: verdict.confidence };
-          taskFindings = resolveTaskVerdicts({ tasks: doneTasks, verdicts: byId, routeAt: taskThresholds.routeAt });
+          taskFindings = resolveTaskVerdicts({ tasks: judgedTasks, verdicts: byId, routeAt: taskThresholds.routeAt }).map((finding) => ({ ...finding, source: "judge" as const }));
         } else {
-          const judged = await Promise.all(doneTasks.map(async (task) => {
+          const judged = await Promise.all(judgedTasks.map(async (task) => {
             const single: Record<string, unknown> = {};
             single[`task:${task.id}`] = (taskQuestions as Record<string, unknown>)[`task:${task.id}`];
             const result = await evaluateDecisionCall({ provider: taskProvider, endpoint: taskRoute.endpoint ?? defaultEndpointFor(taskProvider), apiKey: taskKey ?? "", model: normalizeDecisionApiModel(taskRoute.model, defaultModelFor(taskProvider)), state: taskDiff, questions: single as never });
@@ -9062,8 +9091,11 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           }));
           const answers: Record<string, { type?: string; score?: number; confidence?: number } | null> = {};
           for (const { task, result } of judged) answers[`task:${task.id}`] = (result.ok ? result.answers?.[`task:${task.id}`] ?? null : null) as { type?: string; score?: number; confidence?: number } | null;
-          taskFindings = resolveTaskVerdicts({ tasks: doneTasks, answers, routeAt: taskThresholds.routeAt });
+          taskFindings = resolveTaskVerdicts({ tasks: judgedTasks, answers, routeAt: taskThresholds.routeAt }).map((finding) => ({ ...finding, source: "judge" as const }));
         }
+        // Deterministic findings first, judged after — both in doneTasks
+        // order inside their group; scope rollup reads the merged set.
+        taskFindings = [...commandFindings, ...taskFindings];
         const taskMet = taskFindings.filter((finding) => finding.verdict === "met").length;
         const taskUnmet = taskFindings.filter((finding) => finding.verdict === "unmet").length;
         const taskUnverifiable = taskFindings.length - taskMet - taskUnmet;
@@ -9074,7 +9106,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { exitCode: 0, stdout: JSON.stringify({ card: taskCardId, provider: taskProvider, findings: taskFindings, scopes: scopeRollup, summary: { met: taskMet, unmet: taskUnmet, unverifiable: taskUnverifiable } }, null, 2) };
         }
         const taskMark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
-        const taskLines = taskFindings.map((finding) => `${taskMark(finding.verdict)} ${finding.name} — ${finding.verdict}${finding.confidence !== null ? ` (confidence ${finding.confidence})` : ""}`);
+        const taskLines = taskFindings.map((finding) => `${taskMark(finding.verdict)} ${finding.name} — ${finding.verdict}${finding.source === "command" ? " (verified)" : finding.confidence !== null ? ` (confidence ${finding.confidence})` : ""}`);
         const scopeLines = scopeRollup.map((scope) => `${taskMark(scope.verdict)} ${scope.name} — ${scope.verdict} (${scope.detail})`);
         return { exitCode: 0, stdout: [`Task evidence (${doneTasks.length} completed tasks judged against the working diff):`, ...taskLines, `Scopes (deterministic rollup, no extra calls):`, ...scopeLines, `Summary: ${taskMet} met, ${taskUnmet} unmet, ${taskUnverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
       }
