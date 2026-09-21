@@ -6,6 +6,9 @@ Turn humans and AI agents into a cross-functional product team: research opportu
 
 One board, one quiet inbox.
 
+> [!TIP]
+> Install now: [https://getbb.app/marketplace/stelow](https://getbb.app/marketplace/stelow)
+
 ## What it adds
 
 - **Stelow board:** a bb navigation panel with Inbox / Build / Research / Explore / About tracks. Build cards flow through Analyze, Plan, Execute and Review to Done; research and explore cards move To-Do → Doing → Done. New cards start in Triage (build) or To-Do (research/explore). While the agent waits on a structured question the card stays in its column and signals it is waiting for an answer, with an inbox item. Every track explains itself.
