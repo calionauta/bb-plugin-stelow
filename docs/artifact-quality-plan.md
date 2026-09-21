@@ -11,7 +11,7 @@
 - [x] Phase 6a — reviewer command (+`--artifact` for build docs): `bb stelow review` opt-in with `review_preset` designation RPCs, shift-left refusal on verify-fail, cross-lineage hidden reviewer thread, quote-verified verdicts persisted to `reviews/` with fingerprint, worker offer via `REVIEW_PROTOCOL` ask-only.
 - [x] Phase 6b — seals: `::stelow-quality` via `app.slots.messageDirective` + `qualitySeal` RPC (live revalidation, provenance vocabulary, unverified as first-class state); workers emit per file in Step 5.
 - [x] Phase 6c — Quality panel: per-substep research section + live explore seal section, each with Repair (comment + resume on existing rails).
-- [x] Phase 6d — enforcement mechanism: `review_policy` table (default off) + `get/setReviewPolicy` RPCs; required mode refuses `done` without a fingerprint-matching passing review. Calibration remains a documented prerequisite — enable only with measured agreement.
+- [x] Phase 6d — enforcement mechanism: `review_policy` table (default off) + `get/setReviewPolicy` RPCs; required mode refuses `done` without a fingerprint-matching passing review. Calibration remains a documented prerequisite — enable only with confidence floors and adversarial spot-checks.
 - [ ] Phase 6 (deferred) — LLM reviewer, chat-response persistence + seals, card Quality panel.
 - [ ] Rollout follow-ups — observe-mode metrics (fail rate, top codes, re-runs, time-to-quality); legacy cards stay `legacy / not contract-validated`.
 
