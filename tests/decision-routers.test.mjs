@@ -89,7 +89,7 @@ assert.ok(pointSetter.includes("Available: ${DECISION_POINTS"), "point refusals 
 assert.ok(pointSetter.includes("Unknown mode"), "unknown modes refuse");
 assert.ok(pointSetter.includes("STELOW_DECISION_API=0"), "api-mode writes refuse naming the variable");
 assert.ok(pointSetter.includes("cannot judge via preset"), "hot paths refuse preset mode with the cost reason");
-assert.ok(pointSetter.includes("Preset mode needs a presetId"), "preset mode without a preset refuses");
+assert.ok(pointSetter.includes("Preset mode needs a judge preset"), "preset mode without a preset refuses in user words, never an id");
 assert.ok(pointSetter.includes("Unknown preset"), "preset mode with a missing preset refuses");
 assert.ok(pointSetter.includes("Absent params preserve the stored row"), "flipping modes keeps route and preset");
 const pointGetter = handlerBody("async getDecisionPoint({ point }) {");

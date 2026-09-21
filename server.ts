@@ -6952,7 +6952,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // silently degrades at use time.
       if (mode === "preset") {
         if (!pointSupportsPresetJudge(point)) return { ok: false, error: `"${point}" cannot judge via preset: hot paths stay on rules/api so judgments never burn worker turns.` };
-        if (typeof presetRow !== "string" || presetRow.length === 0) return { ok: false, error: `Preset mode needs a presetId — pick any preset, including one no stage uses.` };
+        if (typeof presetRow !== "string" || presetRow.length === 0) return { ok: false, error: `Preset mode needs a judge preset — pick any preset, including one no stage uses.` };
         if (!getPresetById(presetRow)) return { ok: false, error: `Unknown preset "${presetRow}".` };
       }
       const next = normalizeThresholds(thresholds ?? null, def.defaultThresholds);
@@ -8757,7 +8757,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const criteriaThresholds = normalizeThresholds(criteriaStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
         const criteriaSemantic = groupCriteriaByKind(parseCriteriaBlock(skillText)).semantic;
         const criteriaJudge = criteriaMode === "preset" ? (criteriaPoint?.preset_id ?? null) : null;
-        if (criteriaMode === "preset" && !criteriaJudge) return { exitCode: 1, stderr: "Preset judging needs a presetId — pick any preset in Decision routers, including one no stage uses." };
+        if (criteriaMode === "preset" && !criteriaJudge) return { exitCode: 1, stderr: "Preset judging needs a judge preset — pick any preset in Decision routers, including one no stage uses." };
         const judgment = criteriaMode === "preset" && criteriaJudge
           ? await judgePresetCriteria({ presetId: criteriaJudge, projectId: card.project_id, skillText, artifactText: content, routeAt: criteriaThresholds.routeAt })
           : await judgeArtifactCriteria({
@@ -8822,7 +8822,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const { key: goldensKey } = resolveDecisionApiKey({ storedKey: goldensRoute.apiKey ?? null, env: process.env });
         if (!goldensKey && providerRequiresKey(goldensProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
         const goldensJudge = goldensMode === "preset" ? (goldensPoint?.preset_id ?? null) : null;
-        if (goldensMode === "preset" && !goldensJudge) return { exitCode: 1, stderr: "Preset judging needs a presetId — pick any preset in Decision routers, including one no stage uses." };
+        if (goldensMode === "preset" && !goldensJudge) return { exitCode: 1, stderr: "Preset judging needs a judge preset — pick any preset in Decision routers, including one no stage uses." };
         let goldensStored: unknown = null;
         try { goldensStored = goldensPoint ? JSON.parse(goldensPoint.thresholds) : null; } catch { goldensStored = null; }
         const goldensThresholds = normalizeThresholds(goldensStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
