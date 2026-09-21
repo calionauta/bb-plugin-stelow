@@ -2127,14 +2127,17 @@ ${prompt}`;
   // Preset variant of artifact-criteria judging for explicit calls (criteria,
   // goldens): one spawned judgment per artifact, mapped onto the Jev
   // findings shape so downstream never branches on the judge.
+  // One findings shape for every judge path (Jev or preset): the verbose
+  // literal lives here once, so the three early returns cannot drift apart.
+  type PresetFinding = { id: string; kind: "semantic"; text: string; score: number | null; confidence: number | null; verdict: "met" | "unmet" | "unverifiable"; error: string | null };
   async function judgePresetCriteria({ presetId, projectId, skillText, artifactText, routeAt }: { presetId: string; projectId: string | null; skillText: string; artifactText: string; routeAt: number }) {
     const semantic = groupCriteriaByKind(parseCriteriaBlock(skillText)).semantic;
-    if (semantic.length === 0) return { ok: true as const, findings: [] as Array<{ id: string; kind: "semantic"; text: string; score: number | null; confidence: number | null; verdict: "met" | "unmet" | "unverifiable"; error: string | null }>, evaluated: 0 };
+    if (semantic.length === 0) return { ok: true as const, findings: [] as Array<PresetFinding>, evaluated: 0 };
     const prompt = buildPresetJudgePrompt({ kind: "criteria", state: artifactText, questions: semantic.map((criterion) => ({ id: criterion.id, text: criterion.text })) });
     const judged = await judgeViaPreset({ presetId, projectId, title: "Stelow judge: artifact criteria", prompt });
-    if (!judged.ok || !judged.text) return { ok: false as const, findings: [] as Array<{ id: string; kind: "semantic"; text: string; score: number | null; confidence: number | null; verdict: "met" | "unmet" | "unverifiable"; error: string | null }>, evaluated: 0, error: judged.error ?? "judge failed" };
+    if (!judged.ok || !judged.text) return { ok: false as const, findings: [] as Array<PresetFinding>, evaluated: 0, error: judged.error ?? "judge failed" };
     const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
-    if (!parsed.ok || !("verdicts" in parsed) || (parsed.verdicts.length === 0 && semantic.length > 0)) return { ok: false as const, findings: [] as Array<{ id: string; kind: "semantic"; text: string; score: number | null; confidence: number | null; verdict: "met" | "unmet" | "unverifiable"; error: string | null }>, evaluated: 0, error: !parsed.ok ? parsed.error : "judge verdicts match no known criteria" };
+    if (!parsed.ok || !("verdicts" in parsed) || (parsed.verdicts.length === 0 && semantic.length > 0)) return { ok: false as const, findings: [] as Array<PresetFinding>, evaluated: 0, error: !parsed.ok ? parsed.error : "judge verdicts match no known criteria" };
     const findings = presetCriteriaFindings({ verdicts: parsed.verdicts, semantic, routeAt });
     return { ok: true as const, findings, evaluated: findings.length };
   }
