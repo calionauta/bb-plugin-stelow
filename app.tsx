@@ -4797,7 +4797,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
               </select>
               <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Independent artifact review, never a worker fallback">independent review</span>
             </div>
-            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Not a tier: one preset in a different model family from your workers, read-only. <span className="font-mono">bb stelow review</span> refuses without it — it never falls back to a worker preset.</p>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">A second pair of eyes from a different model family, read-only. Used when a finished research, exploration, or document gets an independent review before you trust it — later, the same independence can pre-check gates and plans. Without a designation, reviews refuse instead of borrowing a worker preset.</p>
           </div>
         </DisclosureSection>
         <DisclosureSection title="Decision API" hint="Jev-compatible" defaultOpen={false}>

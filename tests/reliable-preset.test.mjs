@@ -129,6 +129,6 @@ const reviewerRow = app.slice(reviewerRowAt, reviewerRowAt + 2500);
 assert.ok(reviewerRow.includes('rpc.call("assignReviewPreset", { presetId: value })'), "the Review row assigns through the reviewer RPC");
 assert.ok(reviewerRow.includes("getReviewPreset") || app.includes("reloadReviewer"), "the manager loads the current reviewer designation");
 assert.ok(reviewerRow.includes('<option value="">No reviewer</option>'), "clearing the reviewer is explicit — empty never silently means a worker preset");
-assert.ok(reviewerRow.includes("never falls back"), "the row states the refuse-instead-of-fallback contract");
+assert.ok(reviewerRow.includes("refuse instead of borrowing a worker preset"), "the row states the refuse-instead-of-fallback contract");
 
 console.log("reliable preset test ok: cascade order, singleton discipline, spawn wiring, manager override");
