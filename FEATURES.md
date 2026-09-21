@@ -439,7 +439,33 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   now, and what is blocked — above the per-scope detail.
   Scopes in dependency order with task counts, blockers, 17-stage timeline with
   position/next stages, manual advance/return behind a preview dialog
-  (what the target stage produces). The timeline never paints everything
+  (what the target stage produces). Entering execution with zero synced
+  scopes while spec-tech carries scope blocks refuses loud instead of
+  running untracked (`executionScopeRefusal`, `doneScopeSyncRefusal` in
+  `lib/spec-scope-reader.mjs` + `lib/completion.mjs`): a spec written with
+  human headings (`### SCOPE-N:`) instead of machine blocks (`[SCOPE-N]`)
+  is refused with the rewrite + `bb stelow sync-scopes` redirect, and
+  `blockedBy` cycles refuse naming the loop instead of stalling. Scopes
+  order contractually (`trackable-relations`): start needs finished
+  dependencies, close needs no open tasks — `done` refuses otherwise with
+  the marking redirect. Planned
+  tasks from the spec's Task/Done Criterion tables enrich synced scopes at
+  read time (`mergePlannedTasks`, tracked tasks win, nothing invented), so
+  acceptance criteria surface as task notes; the card detail also reports
+  scope-sync health (`scopeSync`: spec file, machine/human block counts,
+  synced count) and the panel names an unsynced card instead of rendering
+  it empty. Every scope projects its machine evidence beside the plan:
+  acceptance criteria from `scopes/{scope-id}.json` (expandable per scope),
+  the Record mirror (verified verdict, file/command counts), live file-claim
+  state, and k8s-style conditions (`UnverifiedClose`, `NoRecord`,
+  `ContractMissing`, `OpenChildrenOnClose`, `BlockedByOpen`,
+  `DanglingDependency`, `UnclaimedExecution`, `ClaimLapsed`) derived generically per kind
+  (`trackable-evidence` over a flattened id registry, sidecar paths resolved
+  from the contracts table) — a scope done with an unverified Record blocks `done`
+  with the checklist redirect. All derived paths (plans, scopes, context)
+  resolve through one layout rule (state-dir areas), so `state.md`,
+  `stelow.json`, and every other artifact share the same naming strategy
+  instead of per-callsite joins. The timeline never paints everything
   passed: off-route stages render struck-through (not in this intent's
   route) and mode-skipped stages show ⊘ with the reason — green means
   executed, nothing else does. A completed card keeps Audit as its historical
@@ -470,7 +496,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   output (`unregisteredArtifactPaths`): any other document the workflow wrote
   in its state dir is listed under **Produced but not registered**, so a
   produced artifact cannot be invisible. The workflow's own `state.md`, its
-  backups, logs, and JSON bookkeeping are never artifacts.
+  backups, logs, and JSON bookkeeping are never artifacts. Machine receipts
+  (`audit-trail.md`, `recon-receipt.json`) group apart under **Evidence —
+  machine receipts**: they stay in the run bundle, manifest, and commit
+  trailer for audit, but never inflate the deliverable file count, never
+  serve as the review document, and carry the `evidence` role
+  (`artifactRole`, `splitArtifactsByRole` in `lib/artifact-roles.mjs`) —
+  the host's `audit.md` stays a deliverable beside them.
 - **Diff review** (`cardDiff`, host `experimental_Diff`). The working
   tree vs HEAD, per file, inside the card — on active cards at the
   diff-gate and audit stages, plus completed cards whose tree went dirty

@@ -30,7 +30,8 @@ import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs"
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
-import { groupCardChecks, groupState, isExecutionUntracked } from "./lib/card-checks.mjs";
+import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "./lib/card-checks.mjs";
+import { isDoneStatus } from "./lib/trackables.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
@@ -225,7 +226,7 @@ function statusTone(status: string) {
 }
 
 function statusGlyph(status: string) {
-  if (status === "done" || status === "completed") return "✓";
+  if (isDoneStatus(status)) return "✓";
   if (status === "skipped") return "↷";
   if (status === "blocked") return "⚠";
   if (status === "escalated") return "↑";
@@ -3707,7 +3708,7 @@ const statusRank = (s: string | undefined) => STATUS_RANK[s ?? ""] ?? 3;
 // waiting on (dependencies not yet finished).
 function orderScopes(scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]): { ordered: typeof scopes; waitingOn: Map<string, string[]> } {
   const byId = new Map(scopes.map((s) => [s.id, s]));
-  const done = new Set(scopes.filter((s) => ["done", "completed"].includes(s.status ?? "")).map((s) => s.id));
+  const done = new Set(scopes.filter((s) => isDoneStatus(s.status ?? "")).map((s) => s.id));
   // dependency ids: dependsOn must precede; blockedBy must precede
   const deps = (s: (typeof scopes)[number]) => [
     ...(s.dependsOn ?? []).filter((id) => byId.has(id)),
@@ -3768,6 +3769,7 @@ function CardChecksSection({ cardId, card, detail }: { cardId: string; card: Car
         <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label>
       </div>
       {isExecutionUntracked({ activity: card.activity, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">Executing with no scope marked started — the worker has not marked any scope in-progress or done. Scopes may be going untracked.</p> : null}
+      {isScopeTrackingMissing({ activity: card.activity, stage: card.stage, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">No synced scopes on this card — planning likely used headings instead of machine blocks, so sync-scopes parsed nothing. Rewrite the spec with [SCOPE-N] blocks and resync before executing.</p> : null}
       {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => (
         <div key={group.id} className="space-y-0.5">
           <p className="text-xs">
@@ -3783,7 +3785,7 @@ function CardChecksSection({ cardId, card, detail }: { cardId: string; card: Car
 }
 
 function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]; flow?: { leadMs: number | null; cycleMs: number | null } | null }) {
-  const isDone = (status: string | undefined) => status === "done" || status === "completed";
+  const isDone = (status: string | undefined) => isDoneStatus(status ?? "");
   const scopesDone = scopes.filter((scope) => isDone(scope.status)).length;
   const tasksAll = scopes.flatMap((scope) => scope.tasks);
   const tasksDone = tasksAll.filter((task) => isDone(task.status)).length;
@@ -3838,7 +3840,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
   const [openIds, setOpenIds] = useState<Set<string>>(new Set(scopes.filter((scope) => scope.status === "in-progress").map((scope) => scope.id)));
   const { ordered, waitingOn } = orderScopes(scopes);
   const byId = new Map(scopes.map((s) => [s.id, s]));
-  const finished = (id: string) => ["done", "completed"].includes(byId.get(id)?.status ?? "");
+  const finished = (id: string) => isDoneStatus(byId.get(id)?.status ?? "");
   return (
     <section className="space-y-2">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Scopes ({scopes.length})</h3>
@@ -3870,6 +3872,27 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
                 </div>
               ) : null}
             </summary>
+            {scope.conditions && scope.conditions.length > 0 ? (
+              <div className="mt-2 space-y-1">
+                {scope.conditions.map((condition) => <p key={condition.type} className="text-[11px] text-amber-700 dark:text-amber-300" role="note">{condition.message}</p>)}
+              </div>
+            ) : null}
+            {scope.record || scope.claimed !== null ? (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {scope.record ? (scope.record.verified === true ? "✓ verified" : scope.record.verified === false ? "⚠ record unverified" : "record without verdict") : null}
+                {scope.record && typeof scope.record.filesCount === "number" ? ` · ${scope.record.filesCount} files` : null}
+                {scope.record && typeof scope.record.commandsCount === "number" ? ` · ${scope.record.commandsCount} commands` : null}
+                {scope.claimed === true ? " · ● files claimed" : scope.claimed === false && scope.status === "in-progress" ? " · ○ no live file claim" : null}
+              </p>
+            ) : null}
+            {scope.contract && scope.contract.acceptanceCriteria.length > 0 ? (
+              <details className="mt-2">
+                <summary className="inline-flex min-h-11 cursor-pointer items-center text-[11px] font-medium text-primary hover:underline">Acceptance criteria ({scope.contract.acceptanceCriteria.length})</summary>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+                  {scope.contract.acceptanceCriteria.map((criterion, index) => <li key={index}>{criterion}</li>)}
+                </ul>
+              </details>
+            ) : null}
             <div className="mt-3 space-y-1 border-l pl-3">
               {tasksSorted.length === 0 ? <p className="text-xs text-muted-foreground">No tasks tracked.</p> : tasksSorted.map((task) => (
                 <div key={task.id} className="flex items-start gap-2 text-sm">
@@ -3881,6 +3904,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
                       {task.source ? <Pill>{task.source}</Pill> : null}
                     </div>
                     {task.note ? <div className="text-xs text-muted-foreground">{task.note}</div> : null}
+                    {task.conditions && task.conditions.length > 0 ? task.conditions.map((condition) => <p key={condition.type} className="text-[11px] text-amber-700 dark:text-amber-300" role="note">{condition.message}</p>) : null}
                     {(task.blockedBy?.length || task.dependsOn?.length) ? (
                       <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
                         {task.dependsOn?.map((dep) => <span key={dep} className="rounded-md border border-dashed px-1.5 py-0.5">after {dep}</span>)}
@@ -6049,7 +6073,7 @@ function BuildGapsSection({ cardId }: { cardId: string }) {
         <ul className="space-y-1 pt-2">
           {summary.items.map((item) => (
             <li key={item.description} className="flex items-start gap-2 text-xs">
-              <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${item.scopeStatus && ["done", "completed"].includes(item.scopeStatus) ? "bg-emerald-500" : "bg-amber-500"}`} />
+              <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${item.scopeStatus && isDoneStatus(item.scopeStatus) ? "bg-emerald-500" : "bg-amber-500"}`} />
               <span className="flex-1">{item.description}</span>
               {item.scopeStatus ? <Pill tone={statusTone(item.scopeStatus)}><span className="mr-1">{statusGlyph(item.scopeStatus)}</span>{statusLabel(item.scopeStatus)}</Pill> : <span className="text-amber-700 dark:text-amber-300">no scope yet</span>}
             </li>
@@ -7076,10 +7100,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // Staleness is the explicit restart-pending flag (set on assign, healed by
   // thread-birth comparison) with id-mismatch as backup.
   const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
-  const scopeDone = detail?.scopes.filter((s) => ["done", "completed"].includes(s.status ?? "")).length ?? 0;
+  const scopeDone = detail?.scopes.filter((s) => isDoneStatus(s.status ?? "")).length ?? 0;
   const scopeTotal = detail?.scopes.length ?? 0;
   const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
-  const artifactTotal = detail?.artifacts.length ?? 0;
+  const artifactTotal = detail?.artifacts.filter((artifact) => artifact.role !== "evidence").length ?? 0;
+  const artifactEvidenceTotal = detail?.artifacts.filter((artifact) => artifact.role === "evidence").length ?? 0;
   // Gate review entry: the document the pending decision is actually about.
   // The pending question's own option artifact wins: board position (card.stage)
   // deliberately stays at the last advanced stage while a question waits (see
@@ -7094,7 +7119,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     ? [...detail.pendingQuestions, ...detail.expiredQuestions].flatMap((q) => q.options ?? []).find((o) => o?.artifact)?.artifact ?? null
     : null;
   const reviewArtifact = detail && card && (hero?.kind === "decision" || detail.pendingQuestions.length > 0)
-    ? pendingQuestionArtifact ?? detail.artifacts.find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts[detail.artifacts.length - 1] ?? null
+    ? pendingQuestionArtifact ?? detail.artifacts.filter((artifact) => artifact.role !== "evidence").find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts.filter((artifact) => artifact.role !== "evidence").pop() ?? null
     : null;
   // Viewer-ready shape, narrowed once here (property narrowing does not
   // survive into the onClick closure below). The button only renders when a
@@ -7277,6 +7302,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
+              {detail?.scopeSync && (detail.scopeSync.state === "human-dialect" || detail.scopeSync.state === "unsynced") ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300" role="status">
+                  {detail.scopeSync.state === "human-dialect"
+                    ? `Scope sync parsed 0 of ${detail.scopeSync.humanBlocks} planned scopes — ${detail.scopeSync.specFile ?? "the spec"} uses headings instead of machine blocks. Rewrite openers as [SCOPE-N] Title, resync, then advance.`
+                    : `Scope sync parsed 0 of ${detail.scopeSync.machineBlocks} planned scopes — run bb stelow sync-scopes, then advance again.`}
+                </p>
+              ) : null}
               {detail ? <CardChecksSection cardId={card.id} card={card} detail={detail} /> : null}
               {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
@@ -7332,19 +7364,34 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             <div ref={artifactsRef}>
             <CardDisclosure
               title="Artifacts"
-              hint={detail ? `${detail.artifacts.length} files · audit trail${detail.artifacts.some((artifact) => artifact.stage === "unregistered") ? " · some unregistered" : ""}` : "produced files"}
+              hint={detail ? `${artifactTotal} file${artifactTotal === 1 ? "" : "s"}${artifactEvidenceTotal > 0 ? ` + ${artifactEvidenceTotal} evidence` : ""} · audit trail${detail.artifacts.some((artifact) => artifact.stage === "unregistered") ? " · some unregistered" : ""}` : "produced files"}
               open={artifactsOpen}
               onToggle={setArtifactsOpen}
             >
               {card.status === "completed" ? <AuditTrailStatusRow cardId={card.id} /> : null}
               {detail ? (
-                <ArtifactGroups
-                  artifacts={detail.artifacts}
-                  workspaceKind={card.workspaceKind}
-                  fileEnvironmentId={detail.fileEnvironmentId}
-                  onView={(file) => setViewerFile(file)}
-                  groupTitleForStage={artifactGroupTitle}
-                />
+                <>
+                  <ArtifactGroups
+                    artifacts={detail.artifacts.filter((artifact) => artifact.role !== "evidence")}
+                    workspaceKind={card.workspaceKind}
+                    fileEnvironmentId={detail.fileEnvironmentId}
+                    onView={(file) => setViewerFile(file)}
+                    groupTitleForStage={artifactGroupTitle}
+                  />
+                  {artifactEvidenceTotal > 0 ? (
+                    <section aria-label="Evidence" className="space-y-2 border-t pt-3">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Evidence — machine receipts ({artifactEvidenceTotal})</h3>
+                      <p className="text-[11px] text-muted-foreground">Kept for audit with the run bundle, not counted as deliverables.</p>
+                      <ArtifactGroups
+                        artifacts={detail.artifacts.filter((artifact) => artifact.role === "evidence")}
+                        workspaceKind={card.workspaceKind}
+                        fileEnvironmentId={detail.fileEnvironmentId}
+                        onView={(file) => setViewerFile(file)}
+                        groupTitleForStage={artifactGroupTitle}
+                      />
+                    </section>
+                  ) : null}
+                </>
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
             </CardDisclosure>
             </div>
