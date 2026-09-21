@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.41.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.40.0...v0.41.0) (2026-09-21)
+
+
+### Features
+
+* explain delegated tiers per row, designate reviewer in presets ([97c77e4](https://github.com/calionauta/bb-plugin-stelow/commit/97c77e4b7bcddfef4a5a4e14cc27986096bd947b))
+* gallery at 70vw with board-width tiles, checkbox links to Bucket ([68e4537](https://github.com/calionauta/bb-plugin-stelow/commit/68e45379edc74c9089d3e878930d1ebbe3b2398a))
+
 ## [0.40.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.39.0...v0.40.0) (2026-09-21)
 
 
