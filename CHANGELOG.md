@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.44.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.43.0...v0.44.0) (2026-09-21)
+
+
+### Features
+
+* gap-triage judges escalated gaps; one helper per duplicated rule ([736183d](https://github.com/calionauta/bb-plugin-stelow/commit/736183d8e9631f7f3d1213bee67570c03ceaa1a7))
+* tasks with verify commands run deterministically in verify-tasks ([ee72442](https://github.com/calionauta/bb-plugin-stelow/commit/ee724420d7b94a58dcde0dc54a32a2c31d413da3))
+
+
+### Bug Fixes
+
+* gallery tiles keep the board's own size and flow left to right ([cfdd360](https://github.com/calionauta/bb-plugin-stelow/commit/cfdd360855cf0d03bd1b24c6ecdb208aafccfbbe))
+
 ## [0.43.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.42.0...v0.43.0) (2026-09-21)
 
 
