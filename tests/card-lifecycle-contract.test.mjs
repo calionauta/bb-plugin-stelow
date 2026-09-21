@@ -270,4 +270,11 @@ assert.match(server, /\["audit-trail", "check", "--strict", "--json"\]/, "the po
 assert.match(server, /recon: reconReceiptStatus\(/, "the host derives reconnaissance evidence from the portable receipt, never UI state");
 assert.match(server, /RECON_RECEIPT_FILE/, "the reconnaissance receipt path is one shared contract");
 
+// Every path into completed records the done trail event: the explicit
+// done command, both quiet auto-complete sweeps, and manual moves into
+// Done. A Done-column card without one is invisible to flow metrics —
+// that was the whole "N finished vs N in Done" confusion.
+assert.equal((server.match(/recordStageEvent\(card\.id, "done"\)/g) ?? []).length, 2, "both quiet auto-completions record the done event");
+assert.match(server, /if \(decision\.move\.status === "completed"\) recordStageEvent\(cardId, "done"\)/, "manual moves into Done record the done event");
+
 console.log("card lifecycle contract test ok: UI and RPC keep card lifecycle semantics aligned");

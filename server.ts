@@ -3864,6 +3864,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (readiness.ready) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
+            // Quiet completions record the trail too: a Done-column card
+            // without a done event is invisible to flow metrics.
+            recordStageEvent(card.id, "done");
             resolveInboxEvents(card.id, now(), ["paused"], "completed");
             const readyCurrent = getCard(card.id);
             const hypothesisSuffix = readiness.evidence === "hypothesis-only" ? " Marked hypothesis-only: web research was unavailable — requires human validation." : "";
@@ -3942,6 +3945,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (completing) {
             const readyIdleAt = (card.activity !== "idle" || !card.last_idle_at) ? now() : card.last_idle_at;
             updateCard(card.id, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: readyIdleAt });
+            // Same trail contract as the research sweep above.
+            recordStageEvent(card.id, "done");
             resolveInboxEvents(card.id, now(), ["paused"], "completed");
             const readyCurrent = getCard(card.id);
             if (readyCurrent) recordInboxEvent(readyCurrent, "completed", "Exploration complete — result ready to review in Done.", `explore-completed:${card.id}:${artifact.fingerprint ?? "ready"}`, now());
@@ -5868,6 +5873,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (!started.ok) return { ok: false, error: started.error };
         }
         updateCard(cardId, { status: decision.move.status as "draft" | "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
+        // A manual move into Done is a completion like any other: without
+        // the trail event the card sits in Done invisible to flow metrics.
+        if (decision.move.status === "completed") recordStageEvent(cardId, "done");
         // Terminal columns release workspace claims so parked cards never
         // hold files hostage; waiters are notified on the same path.
         if (isClaimTerminal(decision.move.status)) await releaseCardClaimsAndNotify(cardId);
