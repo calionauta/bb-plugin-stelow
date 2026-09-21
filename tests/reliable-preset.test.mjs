@@ -64,8 +64,16 @@ assert.match(server, /  getReliablePreset: \{\s*\n\s*(?:experimental_description
 assert.match(server, /  assignReliablePreset: \{\s*\n\s*(?:experimental_description: "[^"]+",\n\s*)?input: z\.object\(\{ presetId: z\.string\(\)\.nullable\(\) \}\)\.strict\(\),/, "the reliable setter is in the RPC contract");
 assert.match(server, /async getReliablePreset\(\) \{/, "the reliable getter RPC exists");
 assert.match(server, /async assignReliablePreset\(\{ presetId \}\) \{/, "the reliable setter RPC exists");
-assert.match(server, /INSERT OR REPLACE INTO reliable_preset \(id, preset_id, assigned_at\) VALUES \(1, \?, \?\)/, "the setter upserts the singleton row");
-assert.match(server, /DELETE FROM reliable_preset WHERE id = 1/, "clearing the override deletes the singleton row");
+// The upsert/delete SQL lives in the shared singleton helper now that the
+// three tiers stopped each spelling it out. The invariant is unchanged, so
+// the assertion follows it: the helper owns the SQL, each caller names its
+// own table.
+const singletonAt = server.indexOf("function assignSingletonPreset(");
+assert.ok(singletonAt >= 0, "the shared singleton setter exists");
+const singletonBody = server.slice(singletonAt, server.indexOf("\n  }\n", singletonAt));
+assert.ok(singletonBody.includes("INSERT OR REPLACE INTO ${table} (id, preset_id, assigned_at) VALUES (1, ?, ?)"), "the setter upserts the singleton row");
+assert.ok(singletonBody.includes("DELETE FROM ${table} WHERE id = 1"), "clearing the override deletes the singleton row");
+assert.ok(server.includes('assignSingletonPreset("reliable_preset", presetId)'), "the reliable setter names the reliable table");
 
 // The resolver lives beside getPresetForBand — never inside it — so the
 // draft-burst band fallback keeps resolving the pure band preset.

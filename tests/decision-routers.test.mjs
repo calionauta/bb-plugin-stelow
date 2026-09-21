@@ -261,7 +261,7 @@ assert.ok(taskAt >= 0, "the verify-tasks branch exists");
 const taskEnd = server.indexOf('if (argv[0] === "draft") {', taskAt);
 assert.ok(taskEnd > taskAt, "the verify-tasks branch is bounded");
 const taskBody = server.slice(taskAt, taskEnd);
-assert.ok(taskBody.includes("resolveTaskVerdicts({"), "verdicts resolve through the lib cascade");
+assert.ok(taskBody.includes("judgeScoredBatch({"), "verdicts resolve through the shared Score-batch judge");
 assert.ok(taskBody.includes("resolveScopeVerdicts({ scopes: taskScopes, taskFindings })"), "scopes roll up deterministically from task verdicts");
 // Tasks with their own verify command run deterministically first (exit 0
 // reads met), and when every task verifies, no judge is consulted at all —
@@ -269,11 +269,43 @@ assert.ok(taskBody.includes("resolveScopeVerdicts({ scopes: taskScopes, taskFind
 assert.ok(taskBody.includes("taskVerifyCommand(task)"), "verify commands resolve per task");
 assert.ok(taskBody.includes("doneTasks.filter((task) => task.verify !== null)"), "declared tasks partition to the deterministic path");
 assert.ok(taskBody.includes("if (judgedTasks.length === 0) {"), "fully-declared boards skip the judge entirely");
-assert.ok(taskBody.includes("judgeViaPreset({"), "preset mode judges through the shared judge runner");
-assert.ok(taskBody.includes("evaluateDecisionCall({"), "api mode judges through the shared decision call");
 assert.ok(taskBody.includes("advisory only, never blocking"), "the report states its advisory nature");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(taskBody), "verify-tasks makes zero database writes");
 assert.ok(!taskBody.includes("realtime.publish"), "verify-tasks publishes nothing");
 assert.ok(!taskBody.includes("logCardComment"), "verify-tasks leaves no comments");
+
+// The shared Score-batch judge owns both judge paths once (Jev api and
+// preset), so verify-tasks and gap-triage cannot drift apart.
+const batchAt = server.indexOf("async function judgeScoredBatch(");
+assert.ok(batchAt >= 0, "the shared Score-batch judge exists");
+const batchBody = server.slice(batchAt, server.indexOf("\n  }\n", batchAt));
+assert.ok(batchBody.includes("judgeViaPreset({"), "preset mode judges through the shared judge runner");
+assert.ok(batchBody.includes("evaluateDecisionCall({"), "api mode judges through the shared decision call");
+assert.ok(batchBody.includes("resolveScoredVerdicts({"), "both paths resolve through the shared resolver");
+assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(batchBody), "the shared judge writes nothing");
+
+// One working-diff extractor for both advisory judges: verify-tasks and
+// gap-triage cannot drift into two different notions of "the evidence".
+assert.equal(server.match(/git", \["diff", "HEAD"/g)?.length, 1, "exactly one working-diff extractor exists");
+assert.ok(server.slice(server.indexOf("const workingDiffFor")).includes("workingDiffFor"), "the extractor is shared, not inlined per command");
+assert.match(server, /const taskDiff = await workingDiffFor\(taskWorkspace\.path, TASK_EVIDENCE_DIFF_CHARS\)/, "verify-tasks reads its evidence through the shared helper");
+
+// Gap triage: escalated gaps are the worker's classification; the judge
+// second-opinions genuineness only, never the deterministic routing.
+assert.match(server, /name: "gap-triage", summary: "Second-opinion escalated critique gaps/, "the gap-triage command is listed");
+const gapAt = server.indexOf('if (argv[0] === "gap-triage") {');
+assert.ok(gapAt >= 0, "the gap-triage branch exists");
+const gapBody = server.slice(gapAt, server.indexOf('if (argv[0] === "draft") {', gapAt));
+assert.ok(gapBody.includes("critiqueGapState(gapCard)"), "escalated gaps come from the shared registry reader");
+assert.ok(gapBody.includes("gapsToTriageBatch(gapState.escalated)"), "the batch maps ids and questions once");
+assert.ok(gapBody.includes("judgeScoredBatch({"), "gap triage reuses the shared Score-batch judge");
+assert.ok(/const gapEvidence = buildGapTriageState\(\{ critiqueText: gapState\.critiqueText, diff: gapDiff \}\)/.test(gapBody), "the judge state is exactly the critique plus the diff");
+assert.ok(gapBody.includes("state: gapEvidence,"), "the evidence reaches the judge, not a bare list of gap wordings");
+assert.ok(gapBody.includes("workingDiffFor(gapWorkspace.path"), "genuineness is judged against the working diff");
+assert.ok(gapBody.includes("no working-tree diff"), "a missing diff is named, never silently ignored");
+assert.ok(gapBody.includes("routing stays deterministic"), "the report states routing is untouched");
+assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(gapBody), "gap-triage makes zero database writes");
+assert.ok(!gapBody.includes("realtime.publish"), "gap-triage publishes nothing");
+assert.ok(!gapBody.includes("logCardComment"), "gap-triage leaves no comments");
 
 console.log("decision routers test ok: settings discipline, refusals, seam fail-soft, UI disclosure");

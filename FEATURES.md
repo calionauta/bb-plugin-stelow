@@ -848,6 +848,17 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   in the worker thread timeline (prose matches never count). Zero reads
   as inconclusive ("may be self-review"), never as certain. Read-only,
   never a gate.
+- **`bb stelow gap-triage` (advisory, `lib/gap-registry.mjs`).** The
+  critique's escalated gaps are the worker's own classification; the
+  command asks a judge, per escalated gap, whether it is genuine,  through
+  the artifact-criteria point. One atomic Score per gap (ids and questions
+  synthesized once by `gapsToTriageBatch`, evidence assembled once by
+  `buildGapTriageState`, reused through the shared Score-batch judge).
+  The judge reads the critique that claimed the gaps plus the working
+  diff — never the gap wording alone — and a missing diff is named in the
+  report instead of silently weakening the verdict. The impact×effort
+  matrix and gap→scope conversion stay deterministic; `DONE_PROTOCOL`
+  points the worker here before `done`. Read-only, never a gate.
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,

@@ -50,7 +50,8 @@ import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_
 import { doingNowNames } from "./lib/doing-now.mjs";
 import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
-import { tasksToScoreQuestions, resolveTaskVerdicts, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
+import { tasksToScoreQuestions, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
+import { resolveScoredVerdicts } from "./lib/score-verdicts.mjs";
 import { countDelegations, summarizeDelegationEvidence } from "./lib/delegation-evidence.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
@@ -90,7 +91,7 @@ import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome }
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents, tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
-import { escalatedGaps, summarizeGaps, validateGapRegistry } from "./lib/gap-registry.mjs";
+import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "./lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "./lib/thread-children.mjs";
@@ -1382,7 +1383,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Explicit completion: done-ness was inferred from `audit` + idle, so a
   // narrate-and-stop at audit looked identical to stuck-at-audit. The
   // worker commits with `bb stelow done`; the host verifies in code.
-  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. Run `bb stelow verify-tasks` and report any unmet findings honestly in audit.md — advisory only, it never blocks `done`. If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, the run bundle is already fresh: `done` refreshes `docs/runs/<card>/` plus `manifest.md` (SHA pins, gap counts) automatically on every completion and prints the paste-ready trailer in its output — a reopened card that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, unreadable, newly registered, and uncommitted sources without writing anything.";
+  const DONE_PROTOCOL = "Finish explicitly: run `bb stelow done` to mark the card complete — never just announce completion and stop. Build cards complete only at the `audit` stage; research/explore cards complete only after `bb stelow verify` passes. Before Build `done`, run `bb stelow verify --tests` from the final checkout; it executes the project’s safe conventional test command and records the result against the current Git root and HEAD. Run `bb stelow verify-tasks` and report any unmet findings honestly in audit.md — advisory only, it never blocks `done`. Run `bb stelow gap-triage` and, if it dismisses any escalated gap, say so honestly in audit.md (advisory only; the routing below never changes). If the execution critique escalates gaps, run `bb stelow gap-scopes` and loop back with `bb stelow advance execution` — a card with open gaps is not done, it is back in execution. Execute the new rework scopes, re-run the critique, and only then return to audit for `done`: `done` refuses while escalated gaps lack scopes or rework scopes stay open. Then write `<state-dir>/audit.md` and register it in state.md under `artifacts:` with `stage: audit`. It must contain headings for Acceptance criteria, Verification, Tests (the exact host-run command and result), Git evidence (branch/commit or explicit non-Git reason), and Execution context. Under Execution context, record the absolute path of the checkout you actually wrote to (confirm it with `pwd` / `git rev-parse --show-toplevel`) and state that you did not write outside it; the host refuses `done` when it does not match this card's own workspace, and its error names the exact path to record. `done` refuses otherwise and names the fix — read its stderr and keep working instead of stopping. When you commit this work to the checkout, the run bundle is already fresh: `done` refreshes `docs/runs/<card>/` plus `manifest.md` (SHA pins, gap counts) automatically on every completion and prints the paste-ready trailer in its output — a reopened card that completes again refreshes it again. Commit that directory with the work, then paste the trailer block below the commit subject: a commit cannot carry files, so the bundle plus the trailer is the durable audit link. Between completions, `bb stelow export --check` reports changed, unreadable, newly registered, and uncommitted sources without writing anything.";
   const RECON_PROTOCOL = "For any codebase reconnaissance, work from the target Git workspace root, never the card-state or skill directory. Run the bundled Stelow `recon.sh` preflight before using optional tools, passing this card's exact <state-dir> as its second argument; it writes `<state-dir>/context/recon-receipt.json`. Do not install tools inside the workflow. Cite that receipt and name missing optional tools in planning or audit output; a missing receipt is currently a warning, not a reason to fabricate or skip recon.";
   // Explicit split: one card is one workflow. This is deliberately a
   // high bar, not a "two bullets means two cards" rule: the default is one
@@ -2153,6 +2154,59 @@ ${prompt}`;
     return { ok: true as const, findings, evaluated: findings.length };
   }
 
+  // Shared Score-batch judge for the advisory verify-* commands (tasks,
+  // gap triage): one atomic question per item through the artifact-criteria
+  // point — Jev API or preset judge — resolved onto the shared findings
+  // shape. Both callers differ only in items, questions, and the diff/text
+  // they judge against, so the plumbing lives here once.
+  type ScoredBatchFinding = { id: string; name: string; score: number | null; confidence: number | null; verdict: string; error: string | null };
+  async function judgeScoredBatch({ items, questions, keyPrefix, state, mode, presetId, projectId, title, provider, endpoint, apiKey, model, routeAt }: {
+    items: Array<{ id: string; text: string }>;
+    questions: Record<string, unknown>;
+    keyPrefix: string;
+    state: string;
+    mode: string;
+    presetId: string | null;
+    projectId: string | null;
+    title: string;
+    provider: string;
+    endpoint: string;
+    apiKey: string;
+    model: string;
+    routeAt: number;
+  }): Promise<{ ok: true; findings: Array<ScoredBatchFinding> } | { ok: false; error: string }> {
+    if (mode === "preset") {
+      if (!presetId) return { ok: false, error: "preset mode needs a judge preset" };
+      const judged = await judgeViaPreset({ presetId, projectId, title, prompt: buildPresetJudgePrompt({ kind: "criteria", state, questions: items.map((item) => ({ id: item.id, text: item.text })) }) });
+      if (!judged.ok || !judged.text) return { ok: false, error: judged.error ?? "judge failed" };
+      const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
+      if (!parsed.ok || !("verdicts" in parsed)) return { ok: false, error: parsed.ok ? "judge verdict shape mismatch" : parsed.error };
+      const byId: Record<string, { status: string; confidence: number | null }> = {};
+      for (const verdict of parsed.verdicts) byId[verdict.id] = { status: verdict.status, confidence: verdict.confidence };
+      return { ok: true, findings: resolveScoredVerdicts({ items, verdicts: byId, keyPrefix, routeAt }) };
+    }
+    const judged = await Promise.all(items.map(async (item) => {
+      const single: Record<string, unknown> = {};
+      single[`${keyPrefix}:${item.id}`] = questions[`${keyPrefix}:${item.id}`];
+      const result = await evaluateDecisionCall({ provider, endpoint, apiKey, model, state, questions: single as never });
+      return { item, result };
+    }));
+    const answers: Record<string, { type?: string; score?: number; confidence?: number } | null> = {};
+    for (const { item, result } of judged) answers[`${keyPrefix}:${item.id}`] = (result.ok ? result.answers?.[`${keyPrefix}:${item.id}`] ?? null : null) as { type?: string; score?: number; confidence?: number } | null;
+    return { ok: true, findings: resolveScoredVerdicts({ items, answers, keyPrefix, routeAt }) };
+  }
+
+  // Working-tree patch text for the advisory verify-* judges: raw evidence
+  // to judge against, capped by the caller's own budget. Fail-soft — a
+  // non-Git workspace or a git error reads as no evidence, never as an
+  // error, because these judges report and never block. The cardDiff RPC
+  // owns the rich version; this needs only patch text.
+  const workingDiffFor = async (workspacePath: string, cap: number): Promise<string> => new Promise<string>((resolveDiff) => {
+    execFile("git", ["diff", "HEAD", "--no-color", "--unified=1", "--", "."], { cwd: workspacePath, timeout: 15000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+      resolveDiff(!error && typeof stdout === "string" ? stdout.slice(0, cap) : "");
+    });
+  });
+
   // Fire-and-forget card titling on the Generation tier: a short hidden
   // burst proposes a better title than the prompt-derived heuristic, then
   // the human renames inline. Silent on every failure path — creation
@@ -2630,6 +2684,28 @@ ${prompt}` }, ...workerAttachments],
   function getPresetById(id: string): PresetRow | null {
     const row = db.prepare("SELECT * FROM presets WHERE id = ?").get(id) as PresetRow | undefined;
     return row ?? null;
+  }
+
+  // Reviewer / generation / reliable designations are one singleton row in
+  // one table each, read and written the same way. Written out per tier the
+  // shape drifts; the table name is a literal at every call site here, never
+  // input, so it is interpolated. Returns null when the write succeeded.
+  function readSingletonPreset(table: string): { preset: { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string } | null } {
+    const row = db.prepare(`SELECT preset_id FROM ${table} WHERE id = 1`).get() as { preset_id: string } | undefined;
+    const preset = row ? getPresetById(row.preset_id) : null;
+    return {
+      preset: preset ? { id: preset.id, name: preset.name, providerId: preset.provider_id, modelId: preset.model_id, reasoningLevel: preset.reasoning_level, permissionMode: preset.permission_mode } : null,
+    };
+  }
+
+  function assignSingletonPreset(table: string, presetId: string | null): { ok: false; error: string } | null {
+    if (presetId) {
+      if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
+      db.prepare(`INSERT OR REPLACE INTO ${table} (id, preset_id, assigned_at) VALUES (1, ?, ?)`).run(presetId, now());
+    } else {
+      db.prepare(`DELETE FROM ${table} WHERE id = 1`).run();
+    }
+    return null;
   }
 
   function getPresetForCard(cardId: string): PresetRow {
@@ -3700,8 +3776,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     totals: { total: number; fixed: number; documented: number; escalated: number };
     escalated: Array<{ description: string }>;
     auditGapScopes: Array<{ id: string; name: string; status: string; gap: string | null }>;
+    critiqueText: string;
   }> {
-    const empty = { matched: false, failures: [] as string[], totals: { total: 0, fixed: 0, documented: 0, escalated: 0 }, escalated: [] as Array<{ description: string }>, auditGapScopes: [] as Array<{ id: string; name: string; status: string; gap: string | null }> };
+    const empty = { matched: false, failures: [] as string[], totals: { total: 0, fixed: 0, documented: 0, escalated: 0 }, escalated: [] as Array<{ description: string }>, auditGapScopes: [] as Array<{ id: string; name: string; status: string; gap: string | null }>, critiqueText: "" };
     const workspace = await cardWorkspace(card).catch(() => null);
     if (!workspace?.path || !card.dir_hash) return empty;
     const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
@@ -3711,6 +3788,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const failures: string[] = [];
     const totals = { total: 0, fixed: 0, documented: 0, escalated: 0 };
     const escalated: Array<{ description: string }> = [];
+    const critiqueTexts: string[] = [];
     let matched = false;
     for (const fields of parseArtifactManifest(stateBlob)) {
       if (typeof fields.path !== "string" || !fields.path.endsWith(".md")) continue;
@@ -3719,6 +3797,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (typeof content !== "string" || !content.trim()) continue;
       if (contractForBuildArtifact(fields.path, content)?.id !== "execution-critique") continue;
       matched = true;
+      // The judge that triages these gaps reads the critique itself — the
+      // routing stays deterministic, but the second opinion needs evidence.
+      critiqueTexts.push(content);
       for (const failure of validateGapRegistry(content)) failures.push(`FAIL ${fields.label ?? fields.path}: ${failure.detail}`);
       const summary = summarizeGaps(content);
       if (summary.found) {
@@ -3733,7 +3814,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
     }
     if (!matched) return empty;
-    if (!matched) return empty;
     const auditGapScopes: Array<{ id: string; name: string; status: string; gap: string | null }> = [];
     try {
       for (const scope of loadCardScopes(workspace.path, card.id)) {
@@ -3743,7 +3823,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         auditGapScopes.push({ id: scope.id, name: scope.name, status: scope.status, gap: typeof gap === "string" ? gap : null });
       }
     } catch { /* stelow.json unreadable reads as no scopes; done names the fix */ }
-    return { matched, failures, totals, escalated, auditGapScopes };
+    return { matched, failures, totals, escalated, auditGapScopes, critiqueText: critiqueTexts.join("\n\n") };
   }
 
   // Passing review covering this fingerprint (policy gate). Lists the
@@ -6982,58 +7062,34 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
 
     async getReviewPreset() {
-      const row = db.prepare("SELECT preset_id FROM review_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      const preset = row ? getPresetById(row.preset_id) : null;
-      return {
-        preset: preset ? { id: preset.id, name: preset.name, providerId: preset.provider_id, modelId: preset.model_id, reasoningLevel: preset.reasoning_level, permissionMode: preset.permission_mode } : null,
-      };
+      return readSingletonPreset("review_preset");
     },
 
     async assignReviewPreset({ presetId }) {
-      if (presetId) {
-        if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-        db.prepare("INSERT OR REPLACE INTO review_preset (id, preset_id, assigned_at) VALUES (1, ?, ?)").run(presetId, now());
-      } else {
-        db.prepare("DELETE FROM review_preset WHERE id = 1").run();
-      }
+      const failure = assignSingletonPreset("review_preset", presetId);
+      if (failure) return failure;
       bb.realtime.publish("board-changed", { presetId });
       return { ok: true, error: null };
     },
 
     async getGenerationPreset() {
-      const row = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      const preset = row ? getPresetById(row.preset_id) : null;
-      return {
-        preset: preset ? { id: preset.id, name: preset.name, providerId: preset.provider_id, modelId: preset.model_id, reasoningLevel: preset.reasoning_level, permissionMode: preset.permission_mode } : null,
-      };
+      return readSingletonPreset("generation_preset");
     },
 
     async assignGenerationPreset({ presetId }) {
-      if (presetId) {
-        if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-        db.prepare("INSERT OR REPLACE INTO generation_preset (id, preset_id, assigned_at) VALUES (1, ?, ?)").run(presetId, now());
-      } else {
-        db.prepare("DELETE FROM generation_preset WHERE id = 1").run();
-      }
+      const failure = assignSingletonPreset("generation_preset", presetId);
+      if (failure) return failure;
       bb.realtime.publish("board-changed", { presetId });
       return { ok: true, error: null };
     },
 
     async getReliablePreset() {
-      const row = db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      const preset = row ? getPresetById(row.preset_id) : null;
-      return {
-        preset: preset ? { id: preset.id, name: preset.name, providerId: preset.provider_id, modelId: preset.model_id, reasoningLevel: preset.reasoning_level, permissionMode: preset.permission_mode } : null,
-      };
+      return readSingletonPreset("reliable_preset");
     },
 
     async assignReliablePreset({ presetId }) {
-      if (presetId) {
-        if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-        db.prepare("INSERT OR REPLACE INTO reliable_preset (id, preset_id, assigned_at) VALUES (1, ?, ?)").run(presetId, now());
-      } else {
-        db.prepare("DELETE FROM reliable_preset WHERE id = 1").run();
-      }
+      const failure = assignSingletonPreset("reliable_preset", presetId);
+      if (failure) return failure;
       // Provider/model are fixed at spawn: every live worker whose effective
       // preset changed under it offers Restart instead of a Resume that
       // changes nothing. Cards with a per-card pin are unaffected (the pin
@@ -7406,6 +7462,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "criteria", summary: "Score an artifact against its skill's semantic criteria (advisory, read-only)", usage: "bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" },
       { name: "verify-tasks", summary: "Judge completed tasks against the working diff (advisory, read-only)", usage: "bb stelow verify-tasks [--card <card_id>] [--json]" },
       { name: "verify-delegation", summary: "Count worker subagent delegations in the thread timeline (advisory, read-only)", usage: "bb stelow verify-delegation [--card <card_id>] [--json]" },
+      { name: "gap-triage", summary: "Second-opinion escalated critique gaps via the judge (advisory, read-only)", usage: "bb stelow gap-triage [--card <card_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
       { name: "help", summary: "Show help for a subcommand", usage: "bb stelow help [command]" },
     ];
@@ -9034,13 +9091,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         let taskStored: unknown = null;
         try { taskStored = taskPoint ? JSON.parse(taskPoint.thresholds) : null; } catch { taskStored = null; }
         const taskThresholds = normalizeThresholds(taskStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
-        // Evidence is the working-tree diff, capped: the cardDiff RPC owns
-        // the rich version; this needs only raw patch text to judge against.
-        const taskDiff = await new Promise<string>((resolveDiff) => {
-          execFile("git", ["diff", "HEAD", "--no-color", "--unified=1", "--", "."], { cwd: taskWorkspace.path, timeout: 15000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
-            resolveDiff(!error && typeof stdout === "string" ? stdout.slice(0, TASK_EVIDENCE_DIFF_CHARS) : "");
-          });
-        });
+        const taskDiff = await workingDiffFor(taskWorkspace.path, TASK_EVIDENCE_DIFF_CHARS);
         const taskQuestions = tasksToScoreQuestions(doneTasks);
         type TaskFinding = { id: string; name: string; score: number | null; confidence: number | null; verdict: string; error: string | null; source: "command" | "judge" };
         // Tasks carrying their own verify command run deterministically
@@ -9072,26 +9123,25 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // Everything verified deterministically — no judge to consult,
           // no preset or key required.
           taskFindings = [...commandFindings];
-        } else if (taskMode === "preset") {
-          const taskJudge = taskPoint?.preset_id ?? null;
-          if (!taskJudge) return { exitCode: 1, stderr: "Preset judging needs a judge preset — pick any preset in Decision routers, including one no stage uses." };
-          const judged = await judgeViaPreset({ presetId: taskJudge, projectId: taskCard.project_id, title: "Stelow judge: task evidence", prompt: buildPresetJudgePrompt({ kind: "criteria", state: taskDiff, questions: judgedTasks.map((task) => ({ id: task.id, text: `${task.name} (scope: ${task.scope})` })) }) });
-          if (!judged.ok || !judged.text) return { exitCode: 1, stderr: `Task judging failed: ${judged.error ?? "judge failed"} — retry or check the preset.` };
-          const parsed = parsePresetJudgeOutput({ kind: "criteria", text: judged.text });
-          if (!parsed.ok || !("verdicts" in parsed)) return { exitCode: 1, stderr: `Task judging failed: ${parsed.ok ? "verdict shape mismatch" : parsed.error} — retry or check the preset.` };
-          const byId: Record<string, { status: string; confidence: number | null }> = {};
-          for (const verdict of parsed.verdicts) byId[verdict.id] = { status: verdict.status, confidence: verdict.confidence };
-          taskFindings = resolveTaskVerdicts({ tasks: judgedTasks, verdicts: byId, routeAt: taskThresholds.routeAt }).map((finding) => ({ ...finding, source: "judge" as const }));
         } else {
-          const judged = await Promise.all(judgedTasks.map(async (task) => {
-            const single: Record<string, unknown> = {};
-            single[`task:${task.id}`] = (taskQuestions as Record<string, unknown>)[`task:${task.id}`];
-            const result = await evaluateDecisionCall({ provider: taskProvider, endpoint: taskRoute.endpoint ?? defaultEndpointFor(taskProvider), apiKey: taskKey ?? "", model: normalizeDecisionApiModel(taskRoute.model, defaultModelFor(taskProvider)), state: taskDiff, questions: single as never });
-            return { task, result };
-          }));
-          const answers: Record<string, { type?: string; score?: number; confidence?: number } | null> = {};
-          for (const { task, result } of judged) answers[`task:${task.id}`] = (result.ok ? result.answers?.[`task:${task.id}`] ?? null : null) as { type?: string; score?: number; confidence?: number } | null;
-          taskFindings = resolveTaskVerdicts({ tasks: judgedTasks, answers, routeAt: taskThresholds.routeAt }).map((finding) => ({ ...finding, source: "judge" as const }));
+          if (taskMode === "preset" && !taskPoint?.preset_id) return { exitCode: 1, stderr: "Preset judging needs a judge preset — pick any preset in Decision routers, including one no stage uses." };
+          const judged = await judgeScoredBatch({
+            items: judgedTasks.map((task) => ({ id: task.id, text: `${task.name} (scope: ${task.scope})` })),
+            questions: taskQuestions as Record<string, unknown>,
+            keyPrefix: "task",
+            state: taskDiff,
+            mode: taskMode,
+            presetId: taskPoint?.preset_id ?? null,
+            projectId: taskCard.project_id,
+            title: "Stelow judge: task evidence",
+            provider: taskProvider,
+            endpoint: taskRoute.endpoint ?? defaultEndpointFor(taskProvider),
+            apiKey: taskKey ?? "",
+            model: normalizeDecisionApiModel(taskRoute.model, defaultModelFor(taskProvider)),
+            routeAt: taskThresholds.routeAt,
+          });
+          if (!judged.ok) return { exitCode: 1, stderr: `Task judging failed: ${judged.error} — retry or check the router.` };
+          taskFindings = judged.findings.map((finding) => ({ ...finding, source: "judge" as const }));
         }
         // Deterministic findings first, judged after — both in doneTasks
         // order inside their group; scope rollup reads the merged set.
@@ -9138,6 +9188,80 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { exitCode: 0, stdout: JSON.stringify({ card: delegationCardId, delegations: countDelegations(timeline), observed: evidence.observed }, null, 2) };
         }
         return { exitCode: 0, stdout: evidence.summary };
+      }
+      if (argv[0] === "gap-triage") {
+        // Advisory gap-triage: the worker classified the critique's gaps
+        // (fixed / documented / escalate). This asks a judge, per escalated
+        // gap, whether it is a genuine gap — second-opining the worker's own
+        // classification, never the routing (the impact×effort matrix and
+        // scope conversion stay deterministic). The judge reads the critique
+        // and the working diff, never the gap wording alone. Read-only,
+        // never a gate.
+        const args = argv.slice(1);
+        let gapCardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        const asJson = args.includes("--json");
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { gapCardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow gap-triage [--card <card_id>] [--json]" };
+        }
+        if (!gapCardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const gapCard = getCard(gapCardId);
+        if (!gapCard) return { exitCode: 2, stderr: `Unknown card "${gapCardId}".` };
+        if (gapCard.kind !== "build") return { exitCode: 1, stderr: "gap-triage runs on Build cards — research and explore have no execution critique." };
+        if (isDecisionApiDisabled(process.env)) return { exitCode: 1, stderr: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
+        const gapWorkspace = await cardWorkspace(gapCard).catch(() => null);
+        if (!gapWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
+        const gapState = await critiqueGapState(gapCard).catch(() => null);
+        if (!gapState?.matched) return { exitCode: 1, stderr: "No execution critique found — write it first, then triage its gaps." };
+        if (gapState.failures.length > 0) return { exitCode: 1, stderr: gapState.failures.join("\n") };
+        if (gapState.escalated.length === 0) return { exitCode: 0, stdout: "No escalated gaps to triage — nothing the registry routed to a rework scope." };
+        const gapPoint = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_ARTIFACT_CRITERIA) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
+        const gapMode = normalizePointMode(gapPoint?.mode, "rules");
+        if (gapMode !== "api" && gapMode !== "preset") {
+          return { exitCode: 1, stderr: "Gap triage needs the Artifact criteria router in Decision API or preset mode. Set it in Manage agent presets → Decision routers." };
+        }
+        const gapCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
+        const gapRoute = pointRouteConfig(gapPoint, gapCfg);
+        const gapProvider = normalizeDecisionProvider(gapRoute.provider ?? "jev");
+        const { key: gapKey } = resolveDecisionApiKey({ storedKey: gapRoute.apiKey ?? null, env: process.env });
+        if (!gapKey && providerRequiresKey(gapProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
+        let gapStored: unknown = null;
+        try { gapStored = gapPoint ? JSON.parse(gapPoint.thresholds) : null; } catch { gapStored = null; }
+        const gapThresholds = normalizeThresholds(gapStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
+        const batch = gapsToTriageBatch(gapState.escalated);
+        if (batch.items.length === 0) return { exitCode: 0, stdout: "Escalated gaps carry no descriptions to triage." };
+        // Genuineness cannot be judged from the gap's wording alone: the
+        // judge gets the critique that claimed the gaps plus the working
+        // diff that shows whether the code still has them.
+        const gapDiff = await workingDiffFor(gapWorkspace.path, TASK_EVIDENCE_DIFF_CHARS);
+        const gapEvidence = buildGapTriageState({ critiqueText: gapState.critiqueText, diff: gapDiff });
+        const gapJudged = await judgeScoredBatch({
+          items: batch.items,
+          questions: batch.questions as Record<string, unknown>,
+          keyPrefix: "gap",
+          state: gapEvidence,
+          mode: gapMode,
+          presetId: gapPoint?.preset_id ?? null,
+          projectId: gapCard.project_id,
+          title: "Stelow judge: gap triage",
+          provider: gapProvider,
+          endpoint: gapRoute.endpoint ?? defaultEndpointFor(gapProvider),
+          apiKey: gapKey ?? "",
+          model: normalizeDecisionApiModel(gapRoute.model, defaultModelFor(gapProvider)),
+          routeAt: gapThresholds.routeAt,
+        });
+        if (!gapJudged.ok) return { exitCode: 1, stderr: `Gap triage failed: ${gapJudged.error} — retry or check the router.` };
+        const gapGenuine = gapJudged.findings.filter((finding) => finding.verdict === "met").length;
+        const gapNotReal = gapJudged.findings.filter((finding) => finding.verdict === "unmet").length;
+        const gapUncertain = gapJudged.findings.length - gapGenuine - gapNotReal;
+        if (asJson) {
+          return { exitCode: 0, stdout: JSON.stringify({ card: gapCardId, provider: gapProvider, evidence: { critiqueChars: gapState.critiqueText.length, diffChars: gapDiff.length }, findings: gapJudged.findings, summary: { genuine: gapGenuine, dismissed: gapNotReal, unverifiable: gapUncertain } }, null, 2) };
+        }
+        const gapMark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
+        const gapLines = gapJudged.findings.map((finding) => `${gapMark(finding.verdict)} ${finding.verdict}${finding.confidence !== null ? ` (confidence ${finding.confidence})` : ""}: ${finding.name}`);
+        const gapBlind = gapDiff.length === 0 ? " (no working-tree diff — judgments rest on the critique alone; commit or stage the work and re-run for code-grounded verdicts)" : "";
+        return { exitCode: 0, stdout: [`Gap triage (${gapJudged.findings.length} escalated gaps judged for genuineness against the critique and the working diff):`, ...gapLines, `Summary: ${gapGenuine} genuine, ${gapNotReal} dismissed, ${gapUncertain} unverifiable — advisory only; routing stays deterministic.${gapBlind}`].join("\n") };
       }
       if (argv[0] === "draft") {
         // Disposable Tier G burst: text-in/text-out on the generation
