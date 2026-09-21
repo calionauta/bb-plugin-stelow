@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.38.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.37.0...v0.38.0) (2026-09-21)
+
+
+### Features
+
+* hill board view with shared strips and phase rail ([ae78374](https://github.com/calionauta/bb-plugin-stelow/commit/ae783740c242ae751e287870f3557de594c5bbdb))
+
+
+### Bug Fixes
+
+* about reads top-down, version story grouped ([04d1b4a](https://github.com/calionauta/bb-plugin-stelow/commit/04d1b4a9fa532d55f0fe53bb460459a1b1a28546))
+* hill view is build-only ([fd2c369](https://github.com/calionauta/bb-plugin-stelow/commit/fd2c36902dfad7fbde5cf5c868c4c05a2294d264))
+* preview names the owning project on foreign-repo skips ([0a4e1eb](https://github.com/calionauta/bb-plugin-stelow/commit/0a4e1ebbbcd02637ab26e65a9830a5af33a32931))
+* shared github filters that re-search and match ([c4db199](https://github.com/calionauta/bb-plugin-stelow/commit/c4db1994a2dbc9819db5e0ad59e38d6bf5871b9f))
+* unified tabs, chips, and preset creation placement ([81a890c](https://github.com/calionauta/bb-plugin-stelow/commit/81a890c36096229bed0888e0100fc6dafcc3dc79))
+
 ## [0.37.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.36.1...v0.37.0) (2026-09-20)
 
 
