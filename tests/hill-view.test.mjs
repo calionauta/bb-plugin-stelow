@@ -38,6 +38,20 @@ assert.ok(hillBody.includes("activityDotTone(cluster.cards[0])"), "dot tones res
 assert.ok(hillBody.includes("before:-inset-2"), "12px dots carry an invisible 28px hit area for touch");
 assert.ok(app.includes("function HillClusterPanel({"), "one panel serves lone dots and clusters alike");
 assert.ok(app.includes("activityDotTone(card)"), "cluster rows tint through the same helper as dots");
+
+// View persistence: returning from a card restores the picked view per
+// track (board, list, hill) instead of resetting to board. Unknown stored
+// values degrade — a corrupt key never strands the track.
+assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
+assert.match(app, /function useBoardView\(storageKey: string\)/, "one hook serves all three tracks");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView\)/, "build restores its view");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView\)/, "research restores its view");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores its view");
+
+// Dot area grows with slice size (never x jitter): a 10-scope slice reads
+// bigger than a 1-scope one at the same honest position.
+assert.match(app, /const biggest = Math\.max\(\.\.\.cluster\.cards\.map\(\(card\) => card\.scopeSummary\?\.scopesTotal \?\? 0\)\);/, "size reads slice volume, not position");
+assert.match(app, /biggest >= 8 \? "size-5" : biggest >= 4 \? "size-4" : "size-3"/, "three size tiers, documented thresholds");
 assert.ok(app.includes("<BoardCard card={cluster.cards[0]!}"), "lone dots preview the same card tile as the board");
 assert.ok(app.includes('role="dialog"'), "the floating preview announces as a dialog");
 assert.ok(app.includes('aria-label="Close preview"'), "the preview dismisses through a labelled control");

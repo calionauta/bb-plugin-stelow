@@ -29,6 +29,7 @@ import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
+import { formatDuration } from "./lib/card-metrics.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
@@ -663,7 +664,7 @@ function BoardPanel({ active }: { active: boolean }) {
   const [filterStatus, setFilterStatus] = useState<string | "all">("all");
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
-  const [viewMode, setViewMode] = useState<"board" | "list" | "hill">("board");
+  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.buildView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
@@ -966,7 +967,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   // Deferred start: unchecked parks the card in Inbox with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
-  const [viewMode, setViewMode] = useState<"board" | "list" | "hill">("board");
+  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
@@ -1208,7 +1209,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   // Deferred start: unchecked parks the card in Inbox with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
-  const [viewMode, setViewMode] = useState<"board" | "list" | "hill">("board");
+  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
@@ -1428,11 +1429,34 @@ const STORAGE_KEYS = {
   buildListGroups: "stelow-build-list-groups-collapsed-v1",
   researchListGroups: "stelow-research-list-groups-collapsed-v1",
   exploreListGroups: "stelow-explore-list-groups-collapsed-v1",
+  buildView: "stelow-build-view-v1",
+  researchView: "stelow-research-view-v1",
+  exploreView: "stelow-explore-view-v1",
 } as const;
 
 // Collapsible list-view groups with archived collapsed by default. Stored
 // choices win over the default (spread after), matching the kanban column
 // behavior; unknown keys are inert.
+type BoardView = "board" | "list" | "hill";
+
+// The board forgets nothing: returning from a card restores the view the
+// human picked (board, list, or hill), per track. Unknown stored values
+// degrade to board — a corrupt key must never strand the track.
+function useBoardView(storageKey: string): [BoardView, (view: BoardView) => void] {
+  const [viewMode, setViewMode] = useState<BoardView>(() => {
+    if (typeof window === "undefined") return "board";
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      return raw === "board" || raw === "list" || raw === "hill" ? raw : "board";
+    } catch { return "board"; }
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(storageKey, viewMode); } catch { /* ignore */ }
+  }, [storageKey, viewMode]);
+  return [viewMode, setViewMode];
+}
+
 function useCollapsedGroups(storageKey: string) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return { archived: true };
@@ -2539,6 +2563,12 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
           const multi = cluster.cards.length > 1;
           const attention = cluster.cards.some((card) => card.needsAttention);
           const isOpen = openX === cluster.x;
+          // Fluidity without lying: x stays exact (shared ratios genuinely
+          // coincide — that pile-up IS the bottleneck signal), but dot area
+          // grows with slice size, so a 10-scope slice reads bigger than a
+          // 1-scope one at the same position.
+          const biggest = Math.max(...cluster.cards.map((card) => card.scopeSummary?.scopesTotal ?? 0));
+          const dotSize = biggest >= 8 ? "size-5" : biggest >= 4 ? "size-4" : "size-3";
           return multi ? (
             <button
               key={`cluster-${cluster.x}`}
@@ -2559,11 +2589,11 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
               onMouseEnter={() => scheduleOpen(cluster.x)}
               onMouseLeave={scheduleClose}
               onFocus={() => setOpenX(cluster.x)}
-              title={`${cluster.cards[0].displayName} — ${Math.round(cluster.x * 100)}% complete`}
+              title={`${cluster.cards[0].displayName} — ${Math.round(cluster.x * 100)}% complete${biggest > 0 ? ` · ${biggest} scopes` : ""}`}
               aria-label={`Preview card ${cluster.cards[0].displayName}, ${Math.round(cluster.x * 100)}% complete.`}
               aria-expanded={isOpen}
               style={{ left: `${pos.left}%`, bottom: `${pos.bottom}%`, animationDelay: `${Math.min(Math.round(cluster.x * 900), 900)}ms` }}
-              className={`stelow-hill-dot absolute size-3 -translate-x-1/2 translate-y-1/2 cursor-pointer rounded-full before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activityDotTone(cluster.cards[0])}${attention ? " stelow-hill-attn" : ""}`}
+              className={`stelow-hill-dot absolute ${dotSize} -translate-x-1/2 translate-y-1/2 cursor-pointer rounded-full before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activityDotTone(cluster.cards[0])}${attention ? " stelow-hill-attn" : ""}`}
             />
           );
         })}
@@ -3508,7 +3538,7 @@ function orderScopes(scopes: Extract<CardDetailResponse, { scopes: unknown }>["s
 // Scope progress hero: one glanceable readout above the per-scope list.
 // Presentation only — same scopes/tasks contract, no new data. Shows
 // overall scope + task bars, what is actively doing now, and what waits.
-function ScopeProgress({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"] }) {
+function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]; flow?: { leadMs: number | null; cycleMs: number | null } | null }) {
   const isDone = (status: string | undefined) => status === "done" || status === "completed";
   const scopesDone = scopes.filter((scope) => isDone(scope.status)).length;
   const tasksAll = scopes.flatMap((scope) => scope.tasks);
@@ -3525,6 +3555,13 @@ function ScopeProgress({ scopes }: { scopes: Extract<CardDetailResponse, { scope
   );
   return (
     <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+      {flow && (flow.leadMs !== null || flow.cycleMs !== null) ? (
+        <p className="text-xs text-muted-foreground" title="Lead runs idea to done; cycle runs first real movement to done. Unfinished cards show no times.">
+          <span className="font-semibold text-foreground">Lead {flow.leadMs !== null ? formatDuration(flow.leadMs) : "—"}</span>
+          <span aria-hidden> · </span>
+          <span>Cycle {flow.cycleMs !== null ? formatDuration(flow.cycleMs) : "—"}</span>
+        </p>
+      ) : null}
       <div className="flex items-center gap-2 text-xs">
         <span className="font-semibold">✓ {scopesDone}/{scopes.length} scopes</span>
         {bar(scopePct, "bg-emerald-500")}
@@ -6958,7 +6995,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
                 </p>
               ) : null}
-              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
+              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <StageTimeline

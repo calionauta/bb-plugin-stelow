@@ -198,7 +198,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   orphan the worker) — archive it or move it to a phase instead.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
-  preference, not a CTA). Groups collapse per track (persisted; Archived
+  preference, not a CTA). The picked view (board, list, hill) persists
+  per track in local storage — returning from a card restores it instead
+  of resetting to board. Groups collapse per track (persisted; Archived
   starts collapsed). One shared row across tracks (Build geometry
   standard; strategy/technique rides the meta line).
 - **Hill view (Build track).** The same filtered cards as dots on a figuring-out /
@@ -207,7 +209,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   it rather than pile every dot at zero.
   Position derives from board data alone (task, scope, then stage
   fraction via `lib/hill-position.mjs`); x is exact and never jittered,
-  so no card reads ahead of another. Dots sit exactly
+  so no card reads ahead of another — shared ratios genuinely coincide,
+  and dot area grows with slice size so a 10-scope slice reads bigger
+  than a 1-scope one at the same honest position. Dots sit exactly
   on one shared curve formula (line and dots read the same numbers, so
   nothing floats); crowding resolves into count pills anchored at their
   leftmost card, and hover or tap previews one floating panel — the full
@@ -822,6 +826,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   artifacts, worktree snapshot). Freshness is asked for on demand, never on
   every board read, because `check` re-derives the projection. A finished card
   opens its Artifacts section by default: the evidence is the deliverable.
+- **Flow metrics** (`flowMetrics`, `lib/card-metrics.mjs`). Lead (idea to
+  done) and cycle (first movement to done) per finished card, with p50/p90
+  over a project and done-window filter — one batched pass, no per-card
+  round trips, same math as the gap summary. Active cards carry no times
+  (age is not lead). Each card shows its own Lead/Cycle line in the detail
+  progress block; board-level aggregates ride the same RPC whenever a
+  surface wants them.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
