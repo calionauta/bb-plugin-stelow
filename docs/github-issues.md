@@ -15,7 +15,7 @@ manual and automatic can never draft the same `repo#number` twice.
   is verified by existence, never by a bare non-null: a deleted card's
   issue reads as not-imported and can come back.
 - **Parked by default.** Both flows ship with Start unchecked. Creation
-  dialogs default to started; GitHub flows default to parked Inbox
+  dialogs default to started; GitHub flows default to parked Bucket
   drafts. Presence decides the default.
 - **Isolated auto-start.** A rule starts workers only into an isolated
   worktree, verified against the *effective* spawn environment (band

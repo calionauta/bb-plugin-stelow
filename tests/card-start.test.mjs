@@ -76,18 +76,18 @@ assert.match(app, /const \[startImmediately, setStartImmediately\] = useState\(t
 assert.match(githubApp, /const \[importStart, setImportStart\] = useState\(false\)/, "import defaults to parked");
 assert.match(githubApp, /const \[automationStart, setAutomationStart\] = useState\(false\)/, "automation defaults to parked");
 assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 3, "build, research, and explore cards all offer Start");
-assert.match(app, /Not started — parked in Inbox/, "a parked card says plainly that nothing runs");
-// The Inbox is the board's first column on every track, and leaving it is
+assert.match(app, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
+// The Bucket is the board's first column on every track, and leaving it is
 // what starts a parked card (a build phase move spawns instead of lying).
 assert.match(server, /const decision = resolveCardMove\(card\.kind, status, \{ hasWorker: Boolean\(card\.worker_thread_id\) \}\)/, "the move policy knows whether the card already started");
 assert.match(server, /if \(!card\.worker_thread_id\) \{\s*const started = await spawnFreshWorker\(cardId, "start"\);/, "entering a build phase starts a parked card");
 assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
-assert.match(app, /function boardColumnOf\(card: Pick<CardItem, "status" \| "stage" \| "workerThreadId">\)/, "the board projection keeps thread state, so a parked card reaches the Inbox");
+assert.match(app, /function boardColumnOf\(card: Pick<CardItem, "status" \| "stage" \| "workerThreadId">\)/, "the board projection keeps thread state, so a parked card reaches the Bucket");
 
-// Leaving the Inbox starts through the same starter on every track, and the
+// Leaving the Bucket starts through the same starter on every track, and the
 // starter resolves creation-time choices: the pinned preset override
 // (provider/model) and the card's own project workspace — never ambient defaults.
-assert.match(server, /const effective = getReliablePresetForBand\(/, "Inbox exits spawn through the override-aware preset resolution");
+assert.match(server, /const effective = getReliablePresetForBand\(/, "Bucket exits spawn through the override-aware preset resolution");
 assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choice pinned at creation wins over band defaults at spawn");
 assert.match(server, /const workspace = await cardWorkspace\(row\);/, "respawns run in the card's own project workspace");
 assert.match(server, /if \(decision\.move\.status === "in-progress" && !card\.worker_thread_id\)/, "dragging a lightweight card to Doing starts it too");

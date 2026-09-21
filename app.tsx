@@ -110,19 +110,19 @@ const BAND_LABEL: Record<string, string> = { ...PHASE_LABELS, research: "Researc
 const COLUMNS = BUILD_BOARD_COLUMNS;
 const COLUMN_LABELS: Record<string, string> = BUILD_BOARD_COLUMN_LABELS;
 // workerThreadId is part of the projection (a threadless card waits in the
-// Inbox), so it must survive this pick — dropping it silently returned every
+// Bucket), so it must survive this pick — dropping it silently returned every
 // parked card to the Analysis phase.
 function boardColumnOf(card: Pick<CardItem, "status" | "stage" | "workerThreadId">): string {
   return buildBoardColumnFor(card);
 }
 
 // Lightweight-track columns (Research + Explore share them): a deliberately
-// dumb Inbox / Doing / Done flow. Canonical in lib/tracks (shared with the
+// dumb Bucket / Doing / Done flow. Canonical in lib/tracks (shared with the
 // server via lib/card-move) — these aliases keep existing call sites stable.
 // Statuses reuse the shared enum (pending / in-progress / completed /
 // archived) so no migration or guard changes are needed; the mapping lives
 // in lib/card-question-state (shared with the server) so a waiting question
-// — activity, never status — can never push a Doing card back to Inbox.
+// — activity, never status — can never push a Doing card back to the Bucket.
 const RESEARCH_COLUMNS = LIGHTWEIGHT_COLUMNS as unknown as readonly ["inbox", "doing", "done", "archived"];
 const RESEARCH_COLUMN_LABELS: Record<string, string> = LIGHTWEIGHT_COLUMN_LABELS;
 function researchColumnOf(card: Pick<CardItem, "status">): string {
@@ -638,7 +638,7 @@ function BoardPanel({ active }: { active: boolean }) {
   const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
   const [createBuildError, setCreateBuildError] = useState<string | null>(null);
-  // Deferred start: unchecked parks the card in Inbox with no worker.
+  // Deferred start: unchecked parks the card in Bucket with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
   // Workflow preferences stay visible under the composer: a collapsed
@@ -772,7 +772,7 @@ function BoardPanel({ active }: { active: boolean }) {
       setPrompt("");
       setCreateBuildOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Card started in Triage. Stelow will triage it." : "Card parked in Inbox. Start it from the card when ready.");
+      toast.success(startImmediately ? "Card started in Triage. Stelow will triage it." : "Card parked in Bucket. Start it from the card when ready.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to start the card.";
       setCreateBuildError(message);
@@ -931,7 +931,7 @@ function BoardPanel({ active }: { active: boolean }) {
 
 type ResearchStrategyOption = { id: string; label: string; skill: string; blurb: string; emoji: string; keywords: string[] };
 
-// Second track beside Build: lightweight research (Inbox / Doing / Done)
+// Second track beside Build: lightweight research (Bucket / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
 // the card produces a index, and opportunities fan out into Build cards.
 function ResearchPanel({ active }: { active: boolean }) {
@@ -966,7 +966,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [strategy, setStrategy] = useState<string | null>(null);
   const [strategyAttention, setStrategyAttention] = useState(0);
-  // Deferred start: unchecked parks the card in Inbox with no worker.
+  // Deferred start: unchecked parks the card in Bucket with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView);
@@ -1051,7 +1051,7 @@ function ResearchPanel({ active }: { active: boolean }) {
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Research started. Results will appear on this card when ready." : "Research parked in Inbox. Start it from the card when ready.");
+      toast.success(startImmediately ? "Research started. Results will appear on this card when ready." : "Research parked in Bucket. Start it from the card when ready.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to start research.";
       setCreateError(message);
@@ -1208,7 +1208,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   const [prompt, setPrompt] = useState("");
   const [stage, setStage] = useState<string | null>(null);
   const [stageAttention, setStageAttention] = useState(0);
-  // Deferred start: unchecked parks the card in Inbox with no worker.
+  // Deferred start: unchecked parks the card in Bucket with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView);
@@ -1290,7 +1290,7 @@ function ExplorePanel({ active }: { active: boolean }) {
       setPrompt("");
       setCreateOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Exploration started. The result will appear on this card when ready." : "Exploration parked in Inbox. Start it from the card when ready.");
+      toast.success(startImmediately ? "Exploration started. The result will appear on this card when ready." : "Exploration parked in Bucket. Start it from the card when ready.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to start exploration.";
       setCreateError(message);
@@ -2357,7 +2357,7 @@ function AgentConfigBox({ lines, onConfigure }: { lines: string[]; onConfigure: 
 }
 
 // Deferred start for lightweight creation dialogs: unchecked parks the
-// card in Inbox with no worker. One component, every creation dialog.
+// card in the Bucket with no worker. One component, every creation dialog.
 function ProjectPill({ value, onChange, projects }: { value: string | null; onChange: (v: string | null) => void; projects: Project[] }) {
   const selected = projects.find((project) => project.id === value);
   return (
@@ -6020,7 +6020,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Inbox. Nothing runs until you start it.</span>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Bucket. Nothing runs until you start it.</span>
                           <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
                         </>
                       ) : null}
@@ -6307,7 +6307,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Inbox. Nothing runs until you start it.</span>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Bucket. Nothing runs until you start it.</span>
                           <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
                         </>
                       ) : null}
@@ -6720,7 +6720,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
   }
 
-  // Leaving the Inbox is what starts a parked card: the same start path the
+  // Leaving the Bucket is what starts a parked card: the same start path the
   // board's drag uses, so the card never claims to be running without a
   // worker behind it.
   async function doStart() {
@@ -6728,7 +6728,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     try {
       const result = await rpc.call("startWorker", { cardId });
       if (!result.ok) toast.error(result.error ?? "Start failed.");
-      else toast.success("Worker started — the card moved from Inbox and is triaging.");
+      else toast.success("Worker started — the card moved from Bucket and is triaging.");
       await load();
     } finally {
       setStarting(false);
@@ -6949,7 +6949,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     <div className="flex flex-wrap items-center gap-2 pt-3">
                       {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
                         <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Inbox. Nothing runs until you start it.</span>
+                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Bucket. Nothing runs until you start it.</span>
                           <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
                         </>
                       ) : null}

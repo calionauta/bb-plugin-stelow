@@ -41,7 +41,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `github_imports` dedupe claimed before any work starts — manual and
   automatic never draft the same `repo#number` twice, even racing. Each
   flow carries its own explicit Start immediately checkbox, both defaulting
-  to parked Inbox drafts (creation dialogs default to started instead).
+  to parked Bucket drafts (creation dialogs default to started instead).
   Rules cap at 10 drafts per tick. The list filters by every watched label
   plus project and assignee, and imported rows name the author, the card
   status, whether the completion was posted back, and possibly-related
@@ -177,14 +177,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   through `STELOW_PANEL_ID` / `goToTrack` / `goToCard` / `goToInboxCard`.
   The three card kinds (build / research / explore) are centralized in
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
-  track, and the lightweight lifecycle (Inbox / Doing / Done)
+  track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are Inbox + workflow phases
+- **Board** (`BoardPanel`, `moveCard`). Columns are Bucket + workflow phases
   (Analysis/Planning/Execution/Review) + Done/Archived; cards sit in their
   stage's phase. The complete Build topology (inbox, phases, terminal
   outcomes, entry checkpoints, labels, and stage-to-column projection) is
   derived from one workflow catalog; Research/Explore own their separately
-  derived Inbox/Doing/Done lifecycle. Columns collapse (persisted); cards
+  derived Bucket/Doing/Done lifecycle. Columns collapse (persisted); cards
   move via drag-drop.
 - **One state language.** Build Kanban tiles and the open-card header use the
   same ordered pills: board location, lifecycle state, worker state, then
@@ -193,10 +193,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card reads the same way before and after opening it. Tiles and the
   breadcrumb name the card's project in one muted line — context without
   clutter; list rows already carried it.
-- **Inbox** (one word, every track). The first column means *captured,
+- **Bucket** (one word, every track). The first column means *captured,
   nothing running yet*: a card sits there while it has no worker, and
   leaving it is what starts the card. Moving a card that already has a
-  worker into the Inbox is refused with a named exit (parking it would
+  worker into the Bucket is refused with a named exit (parking it would
   orphan the worker) — archive it or move it to a phase instead.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
@@ -398,7 +398,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   outcome is a full-width, wrapping heading; Build cards name their specific
   workflow stage (`Critique`, `Audit`, etc.) and workflow type below it — never
   the Kanban column or duplicated lifecycle labels such as `In progress` or
-  `Completed`. A parked Inbox card claims no checkpoint it never reached and
+  `Completed`. A parked Bucket card claims no checkpoint it never reached and
   reads Not started instead. The same stage/type summary is reused in the open card. A blue
   live border means a worker is executing; an amber attention border means the
   card is waiting on the user, so neither state needs another tag. Idle

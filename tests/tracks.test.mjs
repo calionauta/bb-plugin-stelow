@@ -16,12 +16,13 @@ import {
 // The three concepts exist exactly once: build, research, explore.
 assert.deepEqual(CARD_KINDS, ["build", "research", "explore"], "card kinds");
 assert.deepEqual(LIGHTWEIGHT_KINDS, ["research", "explore"], "lightweight kinds");
-// Inbox is the one word for "captured, nothing running yet" on every track.
+// Bucket is the one word for "captured, nothing running yet" on every track
+// (the stored key stays "inbox" — only the label changed, so no migration).
 assert.deepEqual(LIGHTWEIGHT_COLUMNS, ["inbox", "doing", "done", "archived"], "lightweight columns");
-assert.equal(LIGHTWEIGHT_COLUMN_LABELS.inbox, "Inbox", "the first column is the Inbox");
+assert.equal(LIGHTWEIGHT_COLUMN_LABELS.inbox, "Bucket", "the first column reads Bucket");
 assert.equal(LIGHTWEIGHT_COLUMN_LABELS.done, "Done", "column labels");
 assert.deepEqual(LIGHTWEIGHT_STATUS_BY_COLUMN, { inbox: "pending", doing: "in-progress", done: "completed", archived: "archived" }, "lightweight move mapping");
-assert.deepEqual(BOARD_MOVE_COLUMNS, ["inbox", "analysis", "planning", "execution", "review", "completed", "archived", "doing", "done"], "all manual targets derive from both board catalogs without duplicate Inbox or Archive");
+assert.deepEqual(BOARD_MOVE_COLUMNS, ["inbox", "analysis", "planning", "execution", "review", "completed", "archived", "doing", "done"], "all manual targets derive from both board catalogs without duplicate Bucket or Archive");
 
 // Membership predicates agree with the catalogs.
 assert.equal(isValidKind("build"), true, "build is valid");

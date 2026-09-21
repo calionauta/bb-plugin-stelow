@@ -529,7 +529,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   moveCard: {
-    experimental_description: "Move a card between board columns, Inbox rules enforced",
+    experimental_description: "Move a card between board columns, Bucket rules enforced",
     input: z.object({ cardId: z.string(), status: z.enum(BOARD_MOVE_COLUMNS as [string, ...string[]]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
@@ -7952,7 +7952,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             if (!stateBlob) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
             currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
           }
-          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0, scopesOpen: projectPath ? loadCardScopes(projectPath, cardId) : [] });
+          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0, scopesOpen: projectPath ? loadCardScopes(projectPath, card.id) : [] });
           if (refusal) return { exitCode: 1, stderr: refusal };
           const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;
           const checkout = await cardCheckout(card);

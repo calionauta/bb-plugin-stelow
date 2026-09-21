@@ -39,9 +39,9 @@ for (const stage of STAGE_SEQUENCE) {
 
 // Board topology is derived from the same phase catalog as the stage map;
 // terminal outcomes and manual phase entry checkpoints live beside it.
-assert.deepEqual(BUILD_BOARD_COLUMNS, [BUILD_BOARD_INBOX, ...WORKFLOW_PHASES.map(({ id }) => id), ...BUILD_BOARD_TERMINALS], "Build board is the Inbox, its phase columns, then the terminal outcomes");
-assert.equal(BUILD_BOARD_COLUMN_LABELS[BUILD_BOARD_INBOX], "Inbox", "the Build board's first column is the Inbox");
-assert.ok(BUILD_BOARD_COLUMNS.indexOf(BUILD_BOARD_INBOX) < BUILD_BOARD_COLUMNS.indexOf("analysis"), "the Inbox sits before the first phase");
+assert.deepEqual(BUILD_BOARD_COLUMNS, [BUILD_BOARD_INBOX, ...WORKFLOW_PHASES.map(({ id }) => id), ...BUILD_BOARD_TERMINALS], "Build board is the Bucket, its phase columns, then the terminal outcomes");
+assert.equal(BUILD_BOARD_COLUMN_LABELS[BUILD_BOARD_INBOX], "Bucket", "the Build board's first column reads Bucket (the stored key stays inbox)");
+assert.ok(BUILD_BOARD_COLUMNS.indexOf(BUILD_BOARD_INBOX) < BUILD_BOARD_COLUMNS.indexOf("analysis"), "the Bucket sits before the first phase");
 assert.deepEqual(BUILD_BOARD_TERMINALS, ["completed", "archived"], "Build terminal outcomes have one catalog");
 for (const phase of WORKFLOW_PHASES) {
   assert.equal(BUILD_BOARD_COLUMN_LABELS[phase.id], phase.label, `${phase.id} board label is its phase label`);
@@ -53,10 +53,10 @@ assert.equal(buildBoardColumnFor({ status: "archived", stage: "execution" }), "a
 // Captured but not started: creation can defer the worker, and a card with no
 // thread has no phase to sit in. An *absent* thread field is not evidence of
 // one — only an explicit null parks the card.
-assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage", workerThreadId: null }), "inbox", "an unstarted Build card waits in the Inbox");
-assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage", workerThreadId: "thr_x" }), "analysis", "a triaging Build card belongs to Analysis, not the Inbox");
+assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage", workerThreadId: null }), "inbox", "an unstarted Build card waits in the Bucket");
+assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage", workerThreadId: "thr_x" }), "analysis", "a triaging Build card belongs to Analysis, not the Bucket");
 assert.equal(buildBoardColumnFor({ status: "draft", stage: "triage" }), "analysis", "an unreported thread state never parks a card");
-assert.equal(buildBoardColumnFor({ status: "completed", stage: "audit", workerThreadId: null }), "completed", "terminal outcomes still win over the Inbox");
+assert.equal(buildBoardColumnFor({ status: "completed", stage: "audit", workerThreadId: null }), "completed", "terminal outcomes still win over the Bucket");
 
 // Upstream transparency: one skill per stage, one URL builder, no drift.
 // Skill-root URLs only — stage docs move, skill dirs are the stable address.

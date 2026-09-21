@@ -35,7 +35,7 @@ with cohesion-aware partitioning), CAID (+26.7% research parallelism).
 - **What**: user-configured rules mapping events to draft actions —
   GitHub label → draft card in Triage; worker-PR CI green → notify
   (never merge); card idle N days → escalate to inbox.
-- **Draft destination (locked)**: a drafted card parks in the **Inbox
+- **Draft destination (locked)**: a drafted card parks in the **Bucket
   column** (board position, no worker, no burn) — never as an inbox feed
   item, and **rules never start workers** (starting unreviewed drafts
   would burn budget behind the human's back). Every rule-drafted card
@@ -45,7 +45,7 @@ with cohesion-aware partitioning), CAID (+26.7% research parallelism).
   column count the tab bar already shows; no new badge path.
 - **Stalled cards (locked semantics)**: a stalled card does NOT move
   columns — board position is never attention (repo doctrine), and
-  relocating it to Inbox would falsify its lifecycle (a 5/8-scopes card
+  relocating it to the Bucket would falsify its lifecycle (a 5/8-scopes card
   is not "captured, not started") while mimicking unstarted drafts next
   to it — inviting restart/archive/delete of mid-flight work, or
   silent neglect as "not started yet". It
