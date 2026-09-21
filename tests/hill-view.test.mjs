@@ -41,7 +41,7 @@ assert.ok(hillBody.includes("activityDotTone(cluster.cards[0])"), "dot tones res
 assert.ok(hillBody.includes("before:-inset-2"), "12px dots carry an invisible 28px hit area for touch");
 assert.ok(!hillBody.includes("scheduleOpen") && !hillBody.includes("onMouseEnter") && !hillBody.includes("HillClusterPanel"), "no hover path and no floating panel remain — click is the only opener");
 assert.ok(hillBody.includes("onClick={() => goToCard(navigate, cluster.cards[0]"), "lone dots open their card directly, not a preview");
-assert.ok(hillBody.includes("<HillClusterDialog"), "clusters open the gallery modal");
+assert.ok(hillBody.includes("<CardGalleryDialog"), "clusters open the shared gallery modal");
 
 // Progress never reads as a percentage anywhere on the hill or the card:
 // counts, bars, and region words instead. A reintroduced "% complete"
@@ -55,11 +55,13 @@ assert.ok(app.includes("function hillRegionLabel("), "region words come from one
 // vocabulary (status dot, name, project, scope counts), choosing a row
 // opens the same card surface as tiles and rows. Escape and overlay
 // dismissal ride the shared Dialog primitive, not a bespoke key handler.
-assert.ok(app.includes("function HillClusterDialog({"), "one dialog serves every open cluster");
-assert.ok(app.includes("<Dialog open onOpenChange="), "dismissal rides the shared Dialog primitive");
-assert.ok(app.includes("{cluster.cards.length} cards · {region}"), "the dialog titles its pile with a count and a region, never a number");
-assert.ok(app.includes("activityDotTone(card)"), "gallery rows tint through the same helper as dots");
-assert.ok(app.includes("✓ ${summary.scopesDone}/${summary.scopesTotal} scopes"), "gallery rows read scope counts, not percentages");
+// Buckets reuse the same dialog through params (see kanban-layout) —
+// never a second modal.
+assert.ok(app.includes("function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }"), "one gallery dialog serves buckets and hill piles through params");
+assert.ok(app.includes("<Dialog open={open} onOpenChange="), "dismissal rides the shared Dialog primitive");
+assert.ok(app.includes("<DialogTitle>{title}</DialogTitle>"), "the dialog titles from params — pile count plus region, never a number");
+assert.ok(app.includes("<BoardCard card={card} onOpen={() => onOpenCard(card)}"), "gallery rows are the board tiles themselves — tint, borders, and activity read identically");
+assert.ok(app.includes("✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes"), "tiles read scope counts, never percentages");
 
 // View persistence: returning from a card restores the picked view per
 // track (board, list, hill) instead of resetting to board. Unknown stored

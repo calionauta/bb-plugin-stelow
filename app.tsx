@@ -804,6 +804,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateBuildOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
+              <BucketGalleryButton cards={grouped.inbox ?? []} />
               {githubAutomationEnabled ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setGithubOpen(true)} title="Import GitHub issues now or watch labels automatically"><Icon name="Github" className="h-4 w-4" aria-hidden /> GitHub issues</Button>
               ) : null}
@@ -1082,6 +1083,7 @@ function ResearchPanel({ active }: { active: boolean }) {
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New research</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the research band default"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
+              <BucketGalleryButton cards={grouped.inbox ?? []} />
             </div>
           </header>
 
@@ -1321,6 +1323,7 @@ function ExplorePanel({ active }: { active: boolean }) {
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New exploration</Button>
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the band default"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
+              <BucketGalleryButton cards={grouped.inbox ?? []} />
             </div>
           </header>
 
@@ -2577,10 +2580,14 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
           );
         })}
         {openCluster ? (
-          <HillClusterDialog
-            cluster={openCluster}
+          <CardGalleryDialog
+            open
+            title={`${openCluster.cards.length} cards · ${hillRegionLabel(hillPoint(openCluster.cards[0]).region)}`}
+            description="Cards sharing this hill position. Pick one to open it."
+            cards={openCluster.cards}
+            emptyText="No cards here."
+            onOpenCard={(card) => { setOpenX(null); goToCard(navigate, card, card.id); }}
             onClose={() => setOpenX(null)}
-            onOpen={(card) => { setOpenX(null); goToCard(navigate, card, card.id); }}
           />
         ) : null}
       </div>
@@ -2593,44 +2600,6 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
         <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-muted-foreground/40" />Resting</li>
       </ul>
     </div>
-  );
-}
-
-// Cluster gallery: a click opens a modal listing the pile's cards — the only
-// surface that names them. Rows reuse the tile vocabulary (status dot,
-// name, project, scope counts) so the modal reads like the board, and
-// choosing a row opens the same card surface as tiles and rows.
-function HillClusterDialog({ cluster, onClose, onOpen }: {
-  cluster: { x: number; cards: CardItem[] };
-  onClose: () => void;
-  onOpen: (card: CardItem) => void;
-}) {
-  const region = hillRegionLabel(hillPoint(cluster.cards[0]).region);
-  return (
-    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent className="overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{cluster.cards.length} cards · {region}</DialogTitle>
-          <DialogDescription>Cards sharing this hill position. Pick one to open it.</DialogDescription>
-        </DialogHeader>
-        <ul className="space-y-1">
-          {cluster.cards.map((card) => {
-            const summary = card.scopeSummary;
-            return (
-              <li key={card.id}>
-                <button onClick={() => onOpen(card)} aria-label={`Open card ${card.displayName}.`} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-                  <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${activityDotTone(card)}`} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">{card.displayName}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">{card.projectName}{summary.scopesTotal > 0 ? ` · ✓ ${summary.scopesDone}/${summary.scopesTotal} scopes` : ""}</span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -2878,7 +2847,7 @@ function CardHeading({ title, status, action }: { title: string; status: React.R
   );
 }
 
-function BoardCard({ card }: { card: CardItem }) {
+function BoardCard({ card, onOpen }: { card: CardItem; onOpen?: () => void }) {
   const navigate = useBbNavigate();
   const attention = card.needsAttention;
   // Retry is for active workers only: a Done card never offers it, even if a
@@ -2886,7 +2855,7 @@ function BoardCard({ card }: { card: CardItem }) {
   const terminal = card.status === "completed" || card.status === "archived" || card.status === "blocked";
   const stuck = !terminal && Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
   const borderClass = liveBorderClass(card) || "border-border hover:border-primary/60";
-  const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
+  const open = useCallback(() => { onOpen?.(); goToCard(navigate, card, card.id); }, [navigate, card, onOpen]);
   const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
   const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
   return (
@@ -2916,6 +2885,64 @@ function BoardCard({ card }: { card: CardItem }) {
       </div> : null}
       <CardMetaRows card={card} />
     </div>
+  );
+}
+
+// Card gallery dialog: one expanded modal listing cards as the same tiles
+// the board shows — uniform grid (equal widths, equal row heights), vertical
+// scroll. Buckets and hill piles share it: callers pass title, description,
+// and cards; choosing a tile opens it through the same surface as the board.
+// Empty renders one line, never a dead modal.
+function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }: {
+  open: boolean;
+  title: string;
+  description: string;
+  cards: CardItem[];
+  emptyText: string;
+  onOpenCard: (card: CardItem) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {cards.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{emptyText}</p>
+        ) : (
+          <ul className="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {cards.map((card) => (
+              <li key={card.id} className="[&>.stelow-board-card]:h-full">
+                <BoardCard card={card} onOpen={() => onOpenCard(card)} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Bucket gallery affordance: one button per track opens its captured pile
+// as the shared gallery modal. Owns its open state — panels pass cards.
+function BucketGalleryButton({ cards }: { cards: CardItem[] }) {
+  const navigate = useBbNavigate();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setOpen(true)} title="Open the Bucket — captured cards waiting to start"><Icon name="PackageReceive" className="h-4 w-4" aria-hidden /> Bucket{cards.length > 0 ? ` (${cards.length})` : ""}</Button>
+      <CardGalleryDialog
+        open={open}
+        title="Bucket"
+        description={cards.length > 0 ? `Captured, nothing running yet — ${cards.length} card${cards.length === 1 ? "" : "s"} waiting to start.` : "Captured, nothing running yet."}
+        cards={cards}
+        emptyText="Bucket's empty — new cards land here until their worker starts."
+        onOpenCard={(card) => { setOpen(false); goToCard(navigate, card, card.id); }}
+        onClose={() => setOpen(false)}
+      />
+    </>
   );
 }
 

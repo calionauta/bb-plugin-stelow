@@ -197,7 +197,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   clutter; list rows already carried it.
 - **Bucket** (one word, every track). The first column means *captured,
   nothing running yet*: a card sits there while it has no worker, and
-  leaving it is what starts the card. Moving a card that already has a
+  leaving it is what starts the card. Each track header offers the Bucket
+  as a button (count included) opening an expanded gallery modal — the same
+  board tiles in a uniform grid with vertical scroll. Moving a card that already has a
   worker into the Bucket is refused with a named exit (parking it would
   orphan the worker) — archive it or move it to a phase instead.
 - **List view.** Same cards grouped by column, for narrow screens —
@@ -222,9 +224,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   than a 1-scope one at the same honest position. Dots sit exactly
   on one shared curve formula (line and dots read the same numbers, so
   nothing floats); crowding resolves into count pills anchored at their
-  leftmost card. Click-only: a pile opens a gallery modal naming its cards
-  (status dot, name, project, scope counts — choosing a row opens the card),
-  and a lone dot opens its card directly. Hover never previews anything.
+  leftmost card. Click-only: a pile opens the shared card gallery modal
+  (same tiles as the board, uniform grid, vertical scroll), and a lone dot
+  opens its card directly. Hover never previews anything.
   Progress never reads as a percentage anywhere — counts, bars, and region
   words instead. Curve
   draw, staggered entrances, and attention pulse animate under

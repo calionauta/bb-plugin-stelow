@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { KANBAN_COLUMN_WIDTHS, kanbanGridColumns } from "../lib/kanban-layout.mjs";
 
 assert.deepEqual(KANBAN_COLUMN_WIDTHS, {
@@ -9,5 +12,20 @@ assert.deepEqual(KANBAN_COLUMN_WIDTHS, {
 const columns = kanbanGridColumns(["inbox", "doing", "archived"], { archived: true });
 assert.equal(columns, "minmax(240px, 320px) minmax(240px, 320px) 56px", "open and collapsed columns retain their own bounds");
 assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanban columns");
+
+// Bucket gallery: one button per track opens its captured pile as an
+// expanded modal — same tiles as the board in a uniform grid (equal
+// widths, equal row heights, vertical scroll). Hill piles reuse the same
+// dialog through params, so a second modal fails here.
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const app = readFileSync(join(root, "app.tsx"), "utf8");
+assert.equal((app.match(/<BucketGalleryButton cards=\{grouped\.inbox \?\? \[\]\} \/>/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
+assert.equal((app.match(/<CardGalleryDialog/g) ?? []).length, 2, "one shared gallery dialog: the Bucket button and the hill pile");
+assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
+assert.match(app, /auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3/, "gallery tiles share one uniform grid");
+assert.match(app, /\[&>\.stelow-board-card\]:h-full/, "gallery tiles stretch to equal row heights");
+assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
+assert.match(app, /function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook without changing default navigation");
+assert.ok(app.includes("onOpen?.()"), "the hook is optional — every existing tile behaves exactly as before");
 
 console.log("kanban layout test ok: bounded open and collapsed columns");
