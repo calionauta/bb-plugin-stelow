@@ -231,6 +231,22 @@ bb stelow lock acquire|release|check --scope <id> [--file ...] [--ttl N] [--json
 bb stelow config get <field> [default]
 ```
 
+## Working as a team (experimental)
+
+bb is single-user — one board, one inbox — so a team does not
+meet inside the plugin. It meets in the GitHub repository: the
+owner labels each issue with a risk tier (`risk:go-alone`,
+`risk:consult`, `risk:approve`), a specialty (`needs:product`,
+`needs:design`, `needs:tech`), and an assignee; each member
+imports their own issues into their own bb and runs them there.
+At marked gates the named specialist consults (🟡, operator
+still decides) or approves (🔴, operator cannot advance alone);
+verdicts land as receipts, and completion writes back to the
+issue. Full proposal — roles, label schema, gate table,
+rituals, limits — in [docs/team-playbook.md](./docs/team-playbook.md);
+the short version lives in the
+[site's team section](https://calionauta.github.io/stelow/#teams).
+
 ## Deploy / hot-reload (CRITICAL)
 
 Use the explicit development reload command after every plugin change:
