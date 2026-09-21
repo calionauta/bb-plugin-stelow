@@ -2647,9 +2647,10 @@ function PhaseRail({ stage }: { stage: string }) {
 }
 
 // Flow strip: finished-work lead/cycle reading on the Build board. One
-// glanceable line when cards finished (count + p50s), expanding to window
-// presets and a per-card table. Reads the flowMetrics RPC — the same math
-// as gap summaries and card detail, never a third implementation. Empty
+// Flow indicators over finished cards: a named header (finished count with
+// a measured trail, typical/median and slow/p90 lead/cycle), expanding to
+// window presets and a per-card table. Reads the flowMetrics RPC — the same
+// math as gap summaries and card detail, never a third implementation. Empty
 // boards render nothing: clean stays clean.
 type FlowWindow = "all" | "30d" | "90d";
 const FLOW_WINDOWS: Array<{ id: FlowWindow; label: string; days: number | null }> = [
@@ -2671,21 +2672,26 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
   }, [rpc, projectId, window]);
   if (!result || result.summary.count === 0) return null;
   const rows = [...result.items].sort((a, b) => (b.leadMs ?? -1) - (a.leadMs ?? -1));
+  const leadTypical = result.summary.leadP50Ms !== null ? formatDuration(result.summary.leadP50Ms) : "—";
+  const cycleTypical = result.summary.cycleP50Ms !== null ? formatDuration(result.summary.cycleP50Ms) : "—";
+  const label = `${result.summary.count} finished · lead typical ${leadTypical} · cycle typical ${cycleTypical}`;
   return (
     <div className="rounded-md border bg-muted/20 px-3 py-2">
-      <button onClick={() => setOpen((value) => !value)} aria-expanded={open} title="Lead runs idea to done; cycle runs first real movement to done." className="flex min-h-9 w-full cursor-pointer items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+      <button onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={`Flow indicators: ${label}. Finished cards with a measured trail in this scope and window.`} title="Finished cards with a measured trail in this scope and window — a Done-column card without one reads here only after its trail records." className="flex min-h-11 w-full cursor-pointer items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <DisclosureChevron open={open} />
-        <span className="font-medium text-foreground">{result.summary.count} done</span>
-        <span className="text-muted-foreground">lead p50 {result.summary.leadP50Ms !== null ? formatDuration(result.summary.leadP50Ms) : "—"}</span>
-        <span className="text-muted-foreground">cycle p50 {result.summary.cycleP50Ms !== null ? formatDuration(result.summary.cycleP50Ms) : "—"}</span>
+        <span className="font-medium text-foreground">Flow</span>
+        <span className="whitespace-nowrap text-muted-foreground">{result.summary.count} finished</span>
+        <span className="whitespace-nowrap text-muted-foreground">lead typical {leadTypical}</span>
+        <span className="whitespace-nowrap text-muted-foreground">cycle typical {cycleTypical}</span>
       </button>
       {open ? (
         <div className="mt-2 space-y-2">
+          <p className="text-xs leading-5 text-muted-foreground">Typical is the median (p50); slow is p90 — 9 of 10 finish within. Lead runs idea to done; cycle runs first real movement to done.</p>
           <div className="flex items-center gap-1" role="group" aria-label="Done window">
             {FLOW_WINDOWS.map((entry) => (
-              <button key={entry.id} onClick={() => setWindow(entry.id)} aria-pressed={window === entry.id} className={`min-h-8 cursor-pointer rounded-md px-2 text-xs font-medium ${window === entry.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{entry.label}</button>
+              <button key={entry.id} onClick={() => setWindow(entry.id)} aria-pressed={window === entry.id} className={`min-h-9 cursor-pointer rounded-md px-2 text-xs font-medium ${window === entry.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{entry.label}</button>
             ))}
-            <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">p90 lead {result.summary.leadP90Ms !== null ? formatDuration(result.summary.leadP90Ms) : "—"} · p90 cycle {result.summary.cycleP90Ms !== null ? formatDuration(result.summary.cycleP90Ms) : "—"}</span>
+            <span className="ml-auto text-xs tabular-nums text-muted-foreground">slow: lead {result.summary.leadP90Ms !== null ? formatDuration(result.summary.leadP90Ms) : "—"} · cycle {result.summary.cycleP90Ms !== null ? formatDuration(result.summary.cycleP90Ms) : "—"}</span>
           </div>
           <ul className="max-h-56 space-y-0.5 overflow-auto">
             {rows.map((item) => (

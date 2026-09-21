@@ -79,6 +79,17 @@ assert.match(app, /if \(!result \|\| result\.summary\.count === 0\) return null/
 assert.match(app, /\["all", "30d", "90d"\]|FLOW_WINDOWS/, "done windows are presets, not free dates");
 assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open through the shared navigator");
 
+// The header names the component and its count honestly: Flow indicators
+// over finished cards with a measured trail — never a bare "N done" that
+// reads as Done-column membership. p50/p90 never stand unexplained.
+assert.match(app, />Flow<\//, "the strip header names the component, not just its numbers");
+assert.match(app, /Finished cards with a measured trail/, "the count explains its own scope in label and title");
+assert.match(app, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
+assert.match(app, /9 of 10 finish within/, "slow names what p90 means in words");
+assert.match(app, /Lead runs idea to done; cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
+assert.doesNotMatch(app, /lead p50 \{/, "no bare p50 readout survives in the header");
+assert.doesNotMatch(app, /p90 lead \{/, "no bare p90 readout survives in the window row");
+
 // Worker-history total: one summed line in the summary, unknowns skipped,
 // all-unknown hidden — the per-thread rows below keep their own numbers.
 assert.match(app, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");

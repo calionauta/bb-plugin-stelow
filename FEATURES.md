@@ -428,7 +428,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   Before scopes exist the live checkpoint pill rides the subtitle line
   (`where this card is · ● Plan gate`), never a detached floating hint —
   element hints render without truncation so the pill ring is never clipped.
-  A progress hero shows scope/task bars with percentages, what is doing
+  A progress hero shows scope/task bars with counts (never percentages), what is doing
   now, and what is blocked — above the per-scope detail.
   Scopes in dependency order with task counts, blockers, 17-stage timeline with
   position/next stages, manual advance/return behind a preview dialog
@@ -872,8 +872,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   over a project and done-window filter — one batched pass, no per-card
   round trips, same math as the gap summary. Active cards carry no times
   (age is not lead). Each card shows its own Lead/Cycle line in the detail
-  progress block; the Build board carries one glanceable Flow strip (count
-  + p50s, expanding to window presets and a per-card table that opens
+  progress block; the Build board carries one glanceable Flow strip naming
+  itself (finished count with a measured trail, typical/median and slow/p90
+  lead/cycle with the jargon glossed inline, expanding to window presets
+  and a per-card table that opens
   cards) fed by the board project filter. Empty boards render no strip.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
