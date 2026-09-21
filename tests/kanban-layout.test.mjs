@@ -20,6 +20,15 @@ assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanb
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 assert.equal((app.match(/<BucketGalleryButton cards=\{grouped\.inbox \?\? \[\]\} \/>/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
+// Order is product: New, then Bucket, then Agent Presets — the pile sits
+// beside creation, before configuration. A drift back fails here.
+for (const label of ["New issue", "New research", "New exploration"]) {
+  const at = app.indexOf(`/> ${label}</Button>`);
+  assert.ok(at >= 0, `${label} button exists`);
+  const window = app.slice(at, at + 400);
+  assert.ok(window.includes("<BucketGalleryButton"), `${label} is followed by the Bucket gallery`);
+  assert.ok(window.indexOf("<BucketGalleryButton") < window.indexOf("Agent Presets</Button>"), "Bucket precedes Agent Presets");
+}
 assert.equal((app.match(/<CardGalleryDialog/g) ?? []).length, 2, "one shared gallery dialog: the Bucket button and the hill pile");
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
 assert.match(app, /auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3/, "gallery tiles share one uniform grid");
