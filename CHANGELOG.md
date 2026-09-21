@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.43.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.42.0...v0.43.0) (2026-09-21)
+
+
+### Features
+
+* Bucket lives in the header gallery, no longer as a board column ([ec88165](https://github.com/calionauta/bb-plugin-stelow/commit/ec8816517367289221d81a808b21e862b755bdac))
+* Checks names untracked execution while running ([0adc063](https://github.com/calionauta/bb-plugin-stelow/commit/0adc063bd20f36abc23c974ab476a8646fb23728))
+* Flow strip gains live stuck and review signals beside tempo ([23b1031](https://github.com/calionauta/bb-plugin-stelow/commit/23b10314301ab37039cc8773d87eec2194324c01))
+* independent pre-review fires on gate entry ([7f6e806](https://github.com/calionauta/bb-plugin-stelow/commit/7f6e8066d1017b87a199c17947a565830ef80006))
+* live delegation registry, automatic card titles ([17265b2](https://github.com/calionauta/bb-plugin-stelow/commit/17265b249f1dc3a5fb3d3d1f040385ab73cc7c75))
+* reconcile watches scope fingerprints, publishes on movement ([fe0d55c](https://github.com/calionauta/bb-plugin-stelow/commit/fe0d55c5b6beae7f365bf09fc4439cf38200ba47))
+* verify-delegation tripwire for worker subagents ([2e0a4f2](https://github.com/calionauta/bb-plugin-stelow/commit/2e0a4f29ac3cdc68093f9265b5532ba651759461))
+* verify-tasks judges completed tasks against the diff ([a48824d](https://github.com/calionauta/bb-plugin-stelow/commit/a48824db7fe6bcb8ea1a5af94f86601f9ff48e58))
+* verify-tasks rolls scopes up deterministically ([51e2bd7](https://github.com/calionauta/bb-plugin-stelow/commit/51e2bd732e3c5fe48001c03ff7a3ab9eabe7b24e))
+
+
+### Bug Fixes
+
+* closed Flow header names its window ([c62db5d](https://github.com/calionauta/bb-plugin-stelow/commit/c62db5deb955cab2f684d28032517a4be1a3ca69))
+* every path into completed records the done trail event ([5e428b9](https://github.com/calionauta/bb-plugin-stelow/commit/5e428b9f44867951fcc76664c927e07d172ffc02))
+* Flow strip names itself, counts finished, glosses p50/p90 ([3a94e67](https://github.com/calionauta/bb-plugin-stelow/commit/3a94e670b7e89c162361dd4beac9773a6b7eb038))
+* gallery dialog uses fixed 70vw by 85dvh dimensions ([93ebfee](https://github.com/calionauta/bb-plugin-stelow/commit/93ebfee6d9c34055fa3ea268129c5b49235bdfed))
+* Generation hint in product words, no commands ([504de80](https://github.com/calionauta/bb-plugin-stelow/commit/504de80008c31cfcaa8e32edf8b2eaf1f3055276))
+* name Independent review, doctrine without goldens ([dd91c66](https://github.com/calionauta/bb-plugin-stelow/commit/dd91c66979495f1aea4a61a3e5335aae7bcef72c))
+* Review hint names real use without commands ([d73c741](https://github.com/calionauta/bb-plugin-stelow/commit/d73c74136cd91a40d6952cb97f79fb5410784ba5))
+* threshold edits in preset mode, routers A-Z, honest empty copy ([66cfd61](https://github.com/calionauta/bb-plugin-stelow/commit/66cfd61de013899bfca4a0c2890bf16bc554136e))
+
 ## [0.42.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.41.0...v0.42.0) (2026-09-21)
 
 
