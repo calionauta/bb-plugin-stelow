@@ -1741,7 +1741,10 @@ export default async function plugin(bb: BbPluginApi) {
   // rows — guarded by the new column so reruns are no-ops.
   const pointColumns = db.prepare("PRAGMA table_info(decision_points)").all() as Array<{ name: string }>;
   if (!pointColumns.some((column) => column.name === "preset_id")) {
-    db.exec(`CREATE TABLE IF NOT EXISTS decision_points_new (
+    // One transaction: a crash between DROP and RENAME must never lose the
+    // four rows — half a migration is worse than none.
+    const rebuildDecisionPoints = db.transaction(() => {
+      db.exec(`CREATE TABLE IF NOT EXISTS decision_points_new (
       point TEXT PRIMARY KEY,
       mode TEXT NOT NULL CHECK (mode IN ('rules', 'api', 'preset')),
       thresholds TEXT NOT NULL DEFAULT '{}',
@@ -1752,9 +1755,11 @@ export default async function plugin(bb: BbPluginApi) {
       preset_id TEXT,
       updated_at INTEGER NOT NULL
     )`);
-    db.exec(`INSERT OR IGNORE INTO decision_points_new (point, mode, thresholds, updated_at) SELECT point, mode, thresholds, updated_at FROM decision_points`);
-    db.exec(`DROP TABLE decision_points`);
-    db.exec(`ALTER TABLE decision_points_new RENAME TO decision_points`);
+      db.exec(`INSERT OR IGNORE INTO decision_points_new (point, mode, thresholds, updated_at) SELECT point, mode, thresholds, updated_at FROM decision_points`);
+      db.exec(`DROP TABLE decision_points`);
+      db.exec(`ALTER TABLE decision_points_new RENAME TO decision_points`);
+    });
+    rebuildDecisionPoints();
   }
   // Review enforcement policy (default off): when required, research/explore
   // done refuses without a passing review stamped with the current

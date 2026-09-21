@@ -217,6 +217,10 @@ assert.match(app, /\{modeDirty && modeDraft !== "preset" \? <Button/, "mode flip
 assert.doesNotMatch(app, /void setMode\(event\.target\.value\)/, "no immediate save rides the select anymore");
 assert.match(app, /role=\{isError \? "alert" : "status"\}/, "failures announce as alerts, confirmations stay status");
 assert.match(app, /refresh: \(\) => Promise<void>/, "rows refresh their own section after saving");
+
+// The decision_points rebuild is one transaction: a crash between DROP and
+// RENAME must never lose the rows. Removing the wrapper fails here.
+assert.match(server, /const rebuildDecisionPoints = db\.transaction\(\(\) => \{/, "the table rebuild is atomic");
 assert.match(app, /function DecisionRoutersSection\(\{ rpc \}/, "the section takes no board reload — router saves stay local");
 assert.match(app, /note\("Saved\.", false\)/, "successful saves confirm instead of going silent");
 assert.match(app, /mode: modeDraft, thresholds: \{ routeAt: Number\(routeAt\) \}/, "threshold saves carry a pending mode flip so refresh never wipes it");
