@@ -59,3 +59,10 @@ export declare function liveClaimsForWorkspace(db: Db, args: {
   workspacePath: string;
   nowMs?: number;
 }): Array<{ file_path: string; card_id: string; scope: string | null; expires_at: number; fencing: number }>;
+export declare function lapsedScopeClaims(db: Db, args: {
+  cardId: string;
+  workspacePath: string;
+  scope?: string | null;
+  files?: string[];
+  nowMs?: number;
+}): boolean;
