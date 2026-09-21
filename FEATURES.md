@@ -198,8 +198,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Bucket** (one word, every track). The first column means *captured,
   nothing running yet*: a card sits there while it has no worker, and
   leaving it is what starts the card. Each track header offers the Bucket
-  as a button (count included) opening an expanded gallery modal — the same
-  board tiles in a uniform grid with vertical scroll. Moving a card that already has a
+  as a button (count included) opening an expanded gallery modal — near-fullscreen
+  (70vw), the same board tiles at board width (240px, auto-fill per row),
+  vertical scroll. Creation dialogs link the same gallery from their
+  "park in Bucket" copy through one shared opener; the checkbox word rides
+  the board label map, never a pasted string. Moving a card that already has a
   worker into the Bucket is refused with a named exit (parking it would
   orphan the worker) — archive it or move it to a phase instead.
 - **List view.** Same cards grouped by column, for narrow screens —

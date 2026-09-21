@@ -753,6 +753,9 @@ function BoardPanel({ active }: { active: boolean }) {
     }
     return groups;
   }, [filteredCards]);
+  // Captured pile for the creation checkbox link: same gallery as the
+  // header Bucket button, opened from the "park in Bucket" copy.
+  const bucketGallery = useBucketGallery(grouped.inbox ?? []);
 
   async function start(request: NewThreadRequest) {
     const targetProjectId = request.projectId || activeProjectId;
@@ -850,7 +853,8 @@ function BoardPanel({ active }: { active: boolean }) {
                   lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
                   onConfigure={() => setBoardPresetsOpen(true)}
                 />
-                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} />
+                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
+                {bucketGallery.bucketGallery}
                 <WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={setAppetite} onReviewGatesChange={setReviewGates} groupNamePrefix="create" />
               </div>
             </DialogContent>
@@ -1028,6 +1032,9 @@ function ResearchPanel({ active }: { active: boolean }) {
     }
     return groups;
   }, [filteredCards]);
+  // Captured pile for the creation checkbox link: same gallery as the
+  // header Bucket button, opened from the "park in Bucket" copy.
+  const bucketGallery = useBucketGallery(grouped.inbox ?? []);
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
 
   async function start(request: NewThreadRequest) {
@@ -1111,7 +1118,8 @@ function ResearchPanel({ active }: { active: boolean }) {
                   lines={[`Research runs on ${effectiveResearchPreset?.name ?? "Default"}${researchBandPreset ? "" : " (board default)"}`]}
                   onConfigure={() => setResearchPresetsOpen(true)}
                 />
-                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} />
+                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
+                {bucketGallery.bucketGallery}
                 <NewThreadComposer
                   defaultProjectId={activeProjectId ?? undefined}
                   defaultProviderId={effectiveResearchPreset?.providerId}
@@ -1268,6 +1276,9 @@ function ExplorePanel({ active }: { active: boolean }) {
     }
     return groups;
   }, [filteredCards]);
+  // Captured pile for the creation checkbox link: same gallery as the
+  // header Bucket button, opened from the "park in Bucket" copy.
+  const bucketGallery = useBucketGallery(grouped.inbox ?? []);
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
 
   async function start(request: NewThreadRequest) {
@@ -1351,7 +1362,8 @@ function ExplorePanel({ active }: { active: boolean }) {
                   lines={[`Explore runs on ${effectiveExplorePreset?.name ?? "Default"}${exploreBandPreset ? "" : " (board default)"}`]}
                   onConfigure={() => setResearchPresetsOpen(true)}
                 />
-                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} />
+                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
+                {bucketGallery.bucketGallery}
                 <NewThreadComposer
                   defaultProjectId={activeProjectId ?? undefined}
                   defaultProviderId={effectiveExplorePreset?.providerId}
@@ -2889,10 +2901,11 @@ function BoardCard({ card, onOpen }: { card: CardItem; onOpen?: () => void }) {
 }
 
 // Card gallery dialog: one expanded modal listing cards as the same tiles
-// the board shows — uniform grid (equal widths, equal row heights), vertical
-// scroll. Buckets and hill piles share it: callers pass title, description,
-// and cards; choosing a tile opens it through the same surface as the board.
-// Empty renders one line, never a dead modal.
+// the board shows — near-fullscreen (70vw), tiles at board width (240px,
+// the kanban column minimum) filling as many per row as fit, equal row
+// heights, vertical scroll. Buckets and hill piles share it: callers pass
+// title, description, and cards; choosing a tile opens it through the same
+// surface as the board. Empty renders one line, never a dead modal.
 function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }: {
   open: boolean;
   title: string;
@@ -2904,7 +2917,7 @@ function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenC
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-5xl">
+      <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-[70vw]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -2912,7 +2925,7 @@ function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenC
         {cards.length === 0 ? (
           <p className="text-sm text-muted-foreground">{emptyText}</p>
         ) : (
-          <ul className="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid auto-rows-fr grid-cols-1 gap-3 sm:[grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
             {cards.map((card) => (
               <li key={card.id} className="[&>.stelow-board-card]:h-full">
                 <BoardCard card={card} onOpen={() => onOpenCard(card)} />
@@ -2925,23 +2938,37 @@ function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenC
   );
 }
 
+// One copy source for the Bucket gallery (header button + creation
+// dialogs): title, description, and empty text derive from the pile,
+// never pasted per call site.
+function bucketGalleryCopy(cards: CardItem[]) {
+  return {
+    title: "Bucket",
+    description: cards.length > 0 ? `Captured, nothing running yet — ${cards.length} card${cards.length === 1 ? "" : "s"} waiting to start.` : "Captured, nothing running yet.",
+    emptyText: "Bucket's empty — new cards land here until their worker starts.",
+  };
+}
+
+// Creation dialogs share one opener for the track's captured pile: the
+// checkbox link calls open, the dialog node renders once beside the form.
+function useBucketGallery(cards: CardItem[]) {
+  const navigate = useBbNavigate();
+  const [open, setOpen] = useState(false);
+  const copy = bucketGalleryCopy(cards);
+  const node = (
+    <CardGalleryDialog open={open} title={copy.title} description={copy.description} cards={cards} emptyText={copy.emptyText} onOpenCard={(card) => { setOpen(false); goToCard(navigate, card, card.id); }} onClose={() => setOpen(false)} />
+  );
+  return { openBucketGallery: () => setOpen(true), bucketGallery: node };
+}
+
 // Bucket gallery affordance: one button per track opens its captured pile
 // as the shared gallery modal. Owns its open state — panels pass cards.
 function BucketGalleryButton({ cards }: { cards: CardItem[] }) {
-  const navigate = useBbNavigate();
-  const [open, setOpen] = useState(false);
+  const gallery = useBucketGallery(cards);
   return (
     <>
-      <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setOpen(true)} title="Open the Bucket — captured cards waiting to start"><Icon name="PackageReceive" className="h-4 w-4" aria-hidden /> Bucket{cards.length > 0 ? ` (${cards.length})` : ""}</Button>
-      <CardGalleryDialog
-        open={open}
-        title="Bucket"
-        description={cards.length > 0 ? `Captured, nothing running yet — ${cards.length} card${cards.length === 1 ? "" : "s"} waiting to start.` : "Captured, nothing running yet."}
-        cards={cards}
-        emptyText="Bucket's empty — new cards land here until their worker starts."
-        onOpenCard={(card) => { setOpen(false); goToCard(navigate, card, card.id); }}
-        onClose={() => setOpen(false)}
-      />
+      <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={gallery.openBucketGallery} title="Open the Bucket — captured cards waiting to start"><Icon name="PackageReceive" className="h-4 w-4" aria-hidden /> Bucket{cards.length > 0 ? ` (${cards.length})` : ""}</Button>
+      {gallery.bucketGallery}
     </>
   );
 }

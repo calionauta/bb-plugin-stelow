@@ -43,6 +43,13 @@ assert.ok(!splitCall.includes("start"), "split children inherit start-by-default
 // Build included, so no track can only be created running.
 assert.match(startCheck, /function StartImmediatelyCheck/, "one checkbox component serves every creation dialog");
 assert.equal(((app.match(/<StartImmediatelyCheck/g) ?? []).length + (githubApp.match(/<StartImmediatelyCheck/g) ?? []).length), 5, "build, research, explore, import, and automation dialogs all offer it");
+// The word rides the board label map, never a pasted string — renaming the
+// concept again is one line. The creation checkboxes link to their pile's
+// gallery; the GitHub dialogs (no pile in scope) render plain text.
+assert.match(startCheck, /BUILD_BOARD_COLUMN_LABELS\[BUILD_BOARD_INBOX\]/, "the checkbox names the column from the label map");
+assert.doesNotMatch(startCheck, /park in Inbox/, "no pasted Inbox survives in the checkbox copy");
+assert.equal((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length, 3, "build, research, and explore checkboxes link to their galleries");
+assert.equal((githubApp.match(/onViewBucket/g) ?? []).length, 0, "import and automation checkboxes render the plain word");
 assert.match(app, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
 assert.match(app, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
 assert.match(app, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");

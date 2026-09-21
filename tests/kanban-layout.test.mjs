@@ -30,8 +30,11 @@ for (const label of ["New issue", "New research", "New exploration"]) {
   assert.ok(window.indexOf("<BucketGalleryButton") < window.indexOf("Agent Presets</Button>"), "Bucket precedes Agent Presets");
 }
 assert.equal((app.match(/<CardGalleryDialog/g) ?? []).length, 2, "one shared gallery dialog: the Bucket button and the hill pile");
+assert.equal((app.match(/const bucketGallery = useBucketGallery\(grouped\.inbox \?\? \[\]\);/g) ?? []).length, 3, "each creation dialog shares one opener for its track's pile");
+assert.equal((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length, 3, "each creation checkbox links to its pile's gallery");
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
-assert.match(app, /auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3/, "gallery tiles share one uniform grid");
+assert.match(app, /auto-rows-fr grid-cols-1 gap-3 sm:\[grid-template-columns:repeat\(auto-fill,minmax\(240px,1fr\)\)\]/, "gallery tiles fill board-width columns, as many per row as fit, wrapping the rest");
+assert.match(app, /sm:max-w-\[70vw\]/, "the gallery takes seventy percent of the viewport width");
 assert.match(app, /\[&>\.stelow-board-card\]:h-full/, "gallery tiles stretch to equal row heights");
 assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
 assert.match(app, /function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook without changing default navigation");

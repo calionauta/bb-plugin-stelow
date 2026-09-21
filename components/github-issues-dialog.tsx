@@ -134,7 +134,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
       setAutomationRules(result.rules);
       toast.success(saved.primed > 0
         ? `Rule saved. ${saved.primed} already-tagged issue${saved.primed === 1 ? " is" : "s are"} marked as seen — only new ones will draft.`
-        : automationStart ? "Rule saved. Matching issues start workers in isolated worktrees." : "Rule saved. Matching issues park as Inbox drafts.");
+        : automationStart ? "Rule saved. Matching issues start workers in isolated worktrees." : "Rule saved. Matching issues park as Bucket drafts.");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save automation rule."); }
     finally { setAutomationBusy(false); }
   }
@@ -371,12 +371,12 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
             label="Project for new rules"
             allowAll={false}
           />
-          <p className="text-xs text-muted-foreground">Rules are scoped to {projects.find((project) => project.id === ruleProjectId)?.name ?? activeProjectName ?? "the picked project"}. A matching issue needs every watched label (exact, case-sensitive). Unchecked parks an Inbox draft; checked starts the worker in an isolated worktree (needs a New-worktree preset in Agent Presets). Saving marks already-tagged issues as seen — only new ones draft. An empty author filter means anyone; issue text is untrusted input either way.</p>
+          <p className="text-xs text-muted-foreground">Rules are scoped to {projects.find((project) => project.id === ruleProjectId)?.name ?? activeProjectName ?? "the picked project"}. A matching issue needs every watched label (exact, case-sensitive). Unchecked parks a Bucket draft; checked starts the worker in an isolated worktree (needs a New-worktree preset in Agent Presets). Saving marks already-tagged issues as seen — only new ones draft. An empty author filter means anyone; issue text is untrusted input either way.</p>
           {ruleProjectId === null ? <p className="text-xs text-muted-foreground" role="status">Pick a project above — rules live on a project, and there is none to scope to yet.</p> : null}
           {automationRules.length ? <div className="divide-y rounded-md border">{automationRules.map((rule) => (
             <div key={rule.id} className="space-y-1 p-2 text-sm">
               <div className="flex min-h-11 items-center gap-2">
-                <span className="min-w-0 flex-1 truncate" title={rule.promptTemplate || undefined}>{rule.labels.join(" + ")}{rule.trustedAuthors.length > 0 ? ` · @${rule.trustedAuthors.join(" @")}` : ""} → {rule.startImmediate ? "Start worker" : "Inbox draft"}{rule.enabled ? "" : " (disabled)"}</span>
+                <span className="min-w-0 flex-1 truncate" title={rule.promptTemplate || undefined}>{rule.labels.join(" + ")}{rule.trustedAuthors.length > 0 ? ` · @${rule.trustedAuthors.join(" @")}` : ""} → {rule.startImmediate ? "Start worker" : "Bucket draft"}{rule.enabled ? "" : " (disabled)"}</span>
                 <button className="min-h-11 cursor-pointer rounded px-2 text-xs font-medium text-primary hover:bg-muted" onClick={() => void setAutomationRule(rule, !rule.enabled)}>{rule.enabled ? "Disable" : "Enable"}</button>
                 <button className="min-h-11 cursor-pointer rounded px-2 text-xs text-destructive hover:bg-muted" onClick={() => void deleteAutomationRule(rule.id)}>Delete</button>
               </div>
