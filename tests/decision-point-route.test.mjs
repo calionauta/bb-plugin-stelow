@@ -45,6 +45,14 @@ assert.equal(pointSupportsPresetJudge(DECISION_POINT_AUTO_CONTINUE), false, "aut
 assert.ok(modesForPoint(DECISION_POINT_TRIAGE_INTENT).includes("preset"), "triage advertises preset mode");
 assert.ok(!modesForPoint(DECISION_POINT_AUTO_CONTINUE).includes("preset"), "auto-continue hides preset mode");
 
+// Registry order is alphabetical by label: the routers section reads
+// A-Z without a sort control, so a new point slotted elsewhere fails here.
+assert.deepEqual(
+  DECISION_POINTS.map((point) => point.label),
+  ["Artifact criteria", "Auto-continue", "Inbox severity", "Triage intent"],
+  "routers list alphabetically",
+);
+
 // The registry must advertise exactly what the gate allows: an entry that
 // spreads the full mode list would offer preset in the UI and refuse on
 // save. Caught live once on auto-continue — pinned here instead.

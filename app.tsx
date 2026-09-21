@@ -4475,7 +4475,7 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
       <p className="text-[11px] text-muted-foreground">{point.description}</p>
       {point.mode === "rules" && modeDraft === "rules" ? <p className="text-[11px] text-muted-foreground">Built-in rules: {point.rules}</p> : null}
       {point.requires ? <p className="text-[11px] text-muted-foreground">Needs: {point.requires}</p> : null}
-      {modeDraft === "api" ? (
+      {modeDraft === "api" || modeDraft === "preset" ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <label className="flex flex-1 items-center gap-2"><span className="shrink-0">Act at confidence ≥</span>
             <Input type="number" min="0" max="1" step="0.05" className="h-11" value={routeAt} onChange={(event) => setRouteAt(event.target.value)} />
@@ -4737,7 +4737,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           </div>
         </DisclosureSection>
         <DisclosureSection title="Delegated work" hint="subagent tiers" defaultOpen={false}>
-          <p className="mb-2 text-xs text-muted-foreground">Work the host delegates to subthreads. Empty means the band preset.</p>
+          <p className="mb-2 text-xs text-muted-foreground">Work the host delegates to subthreads. Empty selects revert to the band preset — except Review, where empty means no reviewer.</p>
           <div className="grid gap-3">
             <div>
               <div className="flex items-center gap-2 text-sm">
