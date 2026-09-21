@@ -107,6 +107,9 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   // default — the picker below lets automation cover any project, including
   // when the dialog opens from a board with none active.
   const [ruleProjectId, setRuleProjectId] = useState<string | null>(activeProjectId);
+  // The save names its project, so carried-over labels can never silently
+  // land a rule on the wrong one — the target reads on the button itself.
+  const ruleProjectName = projects.find((project) => project.id === ruleProjectId)?.name ?? null;
   async function refreshAutomationRules(projectId: string | null = ruleProjectId) {
     if (!projectId) { setAutomationRules([]); return; }
     try {
@@ -425,7 +428,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
           </DialogClose>
           {githubTab === "import"
             ? <Button onClick={() => void importSelectedIssues()} disabled={importBusy}>{importStart ? "Import and start" : "Park in Inbox"}</Button>
-            : <Button disabled={automationBusy || automationLabels.length === 0 || !ruleProjectId} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : "Add rule"}</Button>}
+            : <Button disabled={automationBusy || automationLabels.length === 0 || !ruleProjectId} title={ruleProjectName ? `Save this rule on ${ruleProjectName}` : undefined} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : ruleProjectName ? <>Add rule to <span className="max-w-40 truncate">{ruleProjectName}</span></> : "Add rule"}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

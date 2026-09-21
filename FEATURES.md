@@ -51,7 +51,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   erroring), project and assignee narrow client-side, and every control
   shares one height with a visible label. The Auto tab scopes rules through
   its own project picker (defaulting to the board project, re-anchored on every
-  open) — the dialog works from boards with no active project too.
+  open) — the dialog works from boards with no active project too. The save
+  button names its project, so labels carried over from another project
+  can never land a rule silently.
 - **Automation rules.** Per-project watchers from the GitHub tab above:
   labels (comma-separated, all required, exact case), an optional author
   allowlist (empty means anyone; the plugin cannot see GitHub roles, so

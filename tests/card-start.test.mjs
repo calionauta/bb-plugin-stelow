@@ -108,6 +108,7 @@ assert.match(githubApp, /rpc\.call\("saveAutomationRule", \{ projectId: ruleProj
 assert.match(githubApp, /rpc\.call\("previewAutomationRule", \{ projectId: ruleProjectId/, "previews carry the picked project");
 assert.match(githubApp, /rpc\.call\("listAutomationRules", \{ projectId \}/, "refresh carries its explicit project");
 assert.doesNotMatch(githubApp, /projectId: activeProjectId/, "no rule RPC rides the ambient board project anymore");
+assert.match(githubApp, /Add rule to <span/, "the save names its project — carried-over labels can never land silently");
 
 // Shared filter fields: both tabs filter the same issue universe through
 // one visual language (visible labels, h-11 controls, chips for label
