@@ -12,3 +12,7 @@ export declare function groupCardChecks(options: {
   review?: { pending?: boolean; done?: boolean } | null;
 }): CardCheckGroup[];
 export declare function groupState(group: unknown): "done" | "pending" | "empty";
+export declare function isExecutionUntracked(options: {
+  activity?: string | null;
+  scopes?: Array<{ status?: string } | null> | null;
+}): boolean;

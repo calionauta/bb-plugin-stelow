@@ -30,7 +30,7 @@ import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs"
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
-import { groupCardChecks, groupState } from "./lib/card-checks.mjs";
+import { groupCardChecks, groupState, isExecutionUntracked } from "./lib/card-checks.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
@@ -3725,6 +3725,7 @@ function CardChecksSection({ cardId, card, detail }: { cardId: string; card: Car
         <h3 className="text-xs font-semibold text-foreground">Checks</h3>
         <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label>
       </div>
+      {isExecutionUntracked({ activity: card.activity, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">Executing with no scope marked started — the worker has not marked any scope in-progress or done. Scopes may be going untracked.</p> : null}
       {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => (
         <div key={group.id} className="space-y-0.5">
           <p className="text-xs">

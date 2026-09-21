@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { groupCardChecks, groupState } from "../lib/card-checks.mjs";
+import { groupCardChecks, groupState, isExecutionUntracked } from "../lib/card-checks.mjs";
 
 const scopes = [
   { id: "s1", name: "Checkout", status: "done", tasks: [{ name: "t1", status: "done" }] },
@@ -52,5 +52,17 @@ assert.match(app, /questions: \[\.\.\.detail\.pendingQuestions, \.\.\.detail\.ex
 assert.match(app, /rpc\.call\("gapSummary", \{ cardId \}\)/, "gaps resolve through the same RPC as the gaps section");
 assert.match(app, /review: card\.status === "completed" \? \{ pending: card\.hasPendingReview/, "review resolves from card state, never inferred");
 assert.match(app, /const \[pendingOnly, setPendingOnly\] = useState\(true\)/, "the pending filter defaults on");
+assert.match(app, /isExecutionUntracked\(\{ activity: card\.activity, scopes: detail\.scopes \}\)/, "the rollup names untracked execution from live card state");
+
+// Untracked execution: running with synced scopes but nothing ever marked
+// (neither in-progress nor done) names the silence bands — the exact shape
+// of a done-with-pending-scopes surprise, caught while there is still time.
+assert.equal(isExecutionUntracked({ activity: "running", scopes: [{ status: "pending" }, { status: "pending" }] }), true, "running with all scopes pending warns");
+assert.equal(isExecutionUntracked({ activity: "running", scopes: [{ status: "done" }] }), false, "a finished scope is marking enough");
+assert.equal(isExecutionUntracked({ activity: "running", scopes: [{ status: "in-progress" }] }), false, "an in-progress scope is marking");
+assert.equal(isExecutionUntracked({ activity: "running", scopes: [{ status: "skipped" }] }), true, "all-skipped while running still warns — skipping everything is the same silence");
+assert.equal(isExecutionUntracked({ activity: "idle", scopes }), false, "idle workers are paused, not untracked");
+assert.equal(isExecutionUntracked({ activity: "running", scopes: [] }), false, "no scopes means nothing to track");
+assert.equal(isExecutionUntracked({ activity: "running", scopes: null }), false, "junk never warns");
 
 console.log("card checks test ok: grouped types, done/pending states, absent empties");
