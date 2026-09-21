@@ -54,14 +54,17 @@ assert.match(server, /bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: bb\.pluginId 
 assert.match(server, /bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the explicit update operation");
 assert.match(server, /async buildInfo\(\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*await refreshPluginUpdate\(\);/, "each UI read obtains a fresh BB-owned update status");
 assert.match(app, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
-// Version story reads top-down: update verdict, its notices, the skills
-// pin, then the description. A notice below the description would read as
-// unrelated; a pin far from the verdict hides what the build carries.
+// Version story reads top-down across cards: Status (verdict + notices),
+// then Contents (description with the skills pin beside the content it
+// describes). A notice below the description would read as unrelated.
 const aboutUpdateAt = app.indexOf("{pluginUpdateNotice");
 const aboutDescAt = app.indexOf("This plugin hosts Stelow inside bb");
 assert.ok(aboutUpdateAt >= 0 && aboutDescAt >= 0 && aboutUpdateAt < aboutDescAt, "update notices sit with the update verdict, above the description");
+const statusCardAt = app.indexOf(">Status</h3>");
+const contentsCardAt = app.indexOf("What this plugin gives you");
+assert.ok(statusCardAt >= 0 && contentsCardAt > statusCardAt, "the Status card precedes the Contents card");
 const aboutPinAt = app.indexOf("pinned to Stelow {buildInfo.stelowVersion");
-assert.ok(aboutPinAt >= 0 && aboutPinAt < aboutDescAt, "the methodology pin reads with the version story, above the description");
+assert.ok(aboutPinAt > contentsCardAt, "the methodology pin reads inside Contents, beside the content it describes");
 assert.match(app, /\? "Up to date"\n/, "the current verdict names no version — the heading beside it already does");
 assert.match(app, /Update plugin…/, "About offers an explicit, confirmed plugin update");
 assert.match(app, /APPLY_SETTLE_MS/, "applying timeboxes the quiet phase so “Updating…” can’t spin forever when the reload severs the RPC channel");

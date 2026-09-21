@@ -1931,11 +1931,14 @@ function AboutPanel() {
                 <UrlLink href="https://github.com/calionauta/stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Stelow repo <span aria-hidden="true">↗</span></UrlLink>
               </div>
             </section>
-            <section className="space-y-2">
+            <section className="space-y-3">
               <h2 className="text-base font-semibold text-foreground">
                 bb-plugin-stelow {buildInfo ? <span className="text-[11px] font-normal text-muted-foreground" title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}>v{buildInfo.version}</span> : null}
               </h2>
-              {buildInfo ? (
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <h3 className="text-sm font-semibold text-foreground">Status</h3>
+                {buildInfo ? (
+                <div className="mt-2">
                 <PluginUpdateStatus
                   version={buildInfo.version}
                   update={buildInfo.pluginUpdate}
@@ -1948,23 +1951,32 @@ function AboutPanel() {
                   onCancel={() => setConfirmPluginUpdate(false)}
                   onApply={applyPluginUpdate}
                 />
-              ) : null}
-              {pluginUpdateError ? <p className="text-xs text-destructive" role="alert">{pluginUpdateError}</p> : null}
-              {pluginUpdateNotice ? <p className="text-xs text-primary" role="status">{pluginUpdateNotice}</p> : null}
+                {pluginUpdateError ? <p className="mt-2 text-xs text-destructive" role="alert">{pluginUpdateError}</p> : null}
+                {pluginUpdateNotice ? <p className="mt-2 text-xs text-primary" role="status">{pluginUpdateNotice}</p> : null}
+                </div>
+                ) : (
+                <p className="mt-1 text-xs text-muted-foreground">Checking status…</p>
+                )}
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <h3 className="text-sm font-semibold text-foreground">What this plugin gives you</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
               {buildInfo ? (
-                <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                   <p className="flex items-center gap-1.5">
                     <span aria-hidden className="text-emerald-500">●</span>
                     <button type="button" onClick={() => setSkillsOpen(true)} className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground" title={`Pinned to Stelow ${buildInfo.stelowVersion ?? "at this plugin release"} — click to see which skills shipped`}>
                       {buildInfo.skills.length} skills · pinned to Stelow {buildInfo.stelowVersion ?? "this release"}
                     </button>
                   </p>
-                  <p>Skills refresh with plugin updates — the pin above names the methodology this build carries.</p>
+                  <p>Skills refresh with plugin updates — this pin names the methodology this build carries.</p>
                 </div>
               ) : null}
-              <p className="text-sm leading-6 text-muted-foreground">This plugin hosts Stelow inside bb: Build, Research, and Explore boards, a quiet inbox that only interrupts when the agent needs you, and a worker CLI with deterministic artifact checks.</p>
-              <p className="text-xs leading-5 text-muted-foreground">Working as a team? bb is single-user — <UrlLink href="https://calionauta.github.io/stelow/#teams" className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground">see the experimental team playbook</UrlLink>: one bb per teammate, GitHub as the team room.</p>
-              <div className="flex flex-wrap items-center gap-2">
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">Working as a team? bb is single-user — <UrlLink href="https://calionauta.github.io/stelow/#teams" className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground">see the experimental team playbook</UrlLink>: one bb per teammate, GitHub as the team room.</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <h3 className="text-sm font-semibold text-foreground">Resources & maintenance</h3>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
                 {confirmReset ? (
                   <>
@@ -1975,6 +1987,7 @@ function AboutPanel() {
                   <Button size="sm" variant="outline" onClick={() => setConfirmReset(true)} title="Show the first-visit setup dialogs again">Reset onboarding</Button>
                 )}
                 </div>
+              </div>
               </section>
               <HostToolsSection tools={hostTools} onInstall={installHostTool} installingId={installingToolId} errors={installErrors} />
             </div>
