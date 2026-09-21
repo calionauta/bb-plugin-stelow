@@ -56,7 +56,7 @@ assert.match(server, /WHERE status = 'completed'/, "aggregates read finished car
 assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
 assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
 assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
-assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\) \}\),/, "detail schema carries both times as nullable");
+assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\), doingNow: z\.array\(z\.string\(\)\) \}\),/, "detail schema carries times and doing names as nullable");
 assert.match(app, /flow=\{\{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}\}/, "detail progress reads the card times");
 assert.match(app, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
 
