@@ -952,7 +952,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
 - **Mention providers.** `@` workflows/cards (with context resolve) and
   `@` workspace files in any composer, including the board's.
 - **Realtime.** `card-state`, `board-changed`, `inbox-changed` keep
-  panels, badges, and open cards live (debounced).
+  panels, badges, and open cards live (debounced). The reconcile tick also
+  watches a scope-progress fingerprint per live card and publishes on
+  movement, so silent worker edits surface within one tick (`lib/scope-fingerprint.mjs`).
 - **Background services.** Upstream skills sync from `calionauta/stelow`
   (every stelow-* skill, content-hash verified, retired names pruned;
   state in the stable data dir, one fail-soft pass at boot),

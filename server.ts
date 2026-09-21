@@ -48,6 +48,7 @@ import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mj
 import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, meetsDecisionThreshold, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, defaultModelFor, DECISION_PROVIDERS } from "./lib/decision-api.mjs";
 import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, DECISION_POINT_INBOX_SEVERITY, TRIAGE_INTENT_CRITERIA, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, normalizePointRoute, resolvePointRoute, pointSupportsPresetJudge, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue, severityBumpQuestions } from "./lib/decision-points.mjs";
 import { doingNowNames } from "./lib/doing-now.mjs";
+import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
@@ -4695,11 +4696,34 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (changed > 0) bb.realtime.publish("inbox-changed", { bumped: changed });
     } catch { /* advisory only — tiers stand without the bump */ }
   }
+  // Last-seen scope prints per live card. Module-closure lifetime is
+  // correct: a reload re-baselines silently instead of inheriting stale
+  // hashes across a restart.
+  const scopePrints = new Map<string, string>();
+  async function syncScopeProgress(cardId: string): Promise<void> {
+    try {
+      const card = getCard(cardId);
+      if (!card) { scopePrints.delete(cardId); return; }
+      const workspace = await cardWorkspace(card);
+      const print = workspace?.path ? scopeFingerprint(loadCardScopes(workspace.path, card.id)) : "";
+      const prev = scopePrints.get(cardId);
+      scopePrints.set(cardId, print);
+      if (prev !== undefined && prev !== print) bb.realtime.publish("card-state", { cardId });
+    } catch { /* advisory; next tick retries */ }
+  }
   const reconcileTimer = setInterval(() => {
     if (!(db as unknown as { open?: boolean }).open) return;
     try {
       const rows = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
       for (const row of rows) void syncThreadState(row.id);
+      const liveIds = new Set(rows.map((row) => row.id));
+      // Scope-progress watch: silent worker edits (status flips with no host
+      // action) publish card-state within one tick instead of waiting for
+      // the next host-driven reload. First sight sets the baseline silently
+      // — a restart must not publish-storm every live card — and dead cards
+      // prune out so the map cannot grow past the live set.
+      for (const row of rows) void syncScopeProgress(row.id);
+      for (const id of scopePrints.keys()) if (!liveIds.has(id)) scopePrints.delete(id);
     } catch { /* db closed during reload; next tick retries */ }
     void maybeBumpSeverity();
     // Expired workspace claims are crashed workers that never released:
