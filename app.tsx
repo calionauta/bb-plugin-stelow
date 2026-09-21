@@ -2678,13 +2678,13 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
   const rows = [...result.items].sort((a, b) => (b.leadMs ?? -1) - (a.leadMs ?? -1));
   const leadTypical = result.summary.leadP50Ms !== null ? formatDuration(result.summary.leadP50Ms) : "—";
   const cycleTypical = result.summary.cycleP50Ms !== null ? formatDuration(result.summary.cycleP50Ms) : "—";
-  const label = `${result.summary.count} finished · lead typical ${leadTypical} · cycle typical ${cycleTypical}`;
+  const label = `${result.summary.count} finished · ${preset.label.toLowerCase()} · lead typical ${leadTypical} · cycle typical ${cycleTypical}`;
   return (
     <div className="rounded-md border bg-muted/20 px-3 py-2">
       <button onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={`Flow indicators: ${label}. Finished cards with a measured trail in this scope and window.`} title="Finished cards with a measured trail in this scope and window — a Done-column card without one reads here only after its trail records." className="flex min-h-11 w-full cursor-pointer items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <DisclosureChevron open={open} />
         <span className="font-medium text-foreground">Flow</span>
-        <span className="whitespace-nowrap text-muted-foreground">{result.summary.count} finished</span>
+        <span className="whitespace-nowrap text-muted-foreground">{result.summary.count} finished · {preset.label.toLowerCase()}</span>
         <span className="whitespace-nowrap text-muted-foreground">lead typical {leadTypical}</span>
         <span className="whitespace-nowrap text-muted-foreground">cycle typical {cycleTypical}</span>
       </button>

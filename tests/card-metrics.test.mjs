@@ -84,6 +84,7 @@ assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open thr
 // reads as Done-column membership. p50/p90 never stand unexplained.
 assert.match(app, />Flow<\//, "the strip header names the component, not just its numbers");
 assert.match(app, /Finished cards with a measured trail/, "the count explains its own scope in label and title");
+assert.match(app, /\{result\.summary\.count\} finished · \{preset\.label\.toLowerCase\(\)\}/, "the closed header names its window — a filtered count never reads as the column");
 assert.match(app, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
 assert.match(app, /9 of 10 finish within/, "slow names what p90 means in words");
 assert.match(app, /Lead runs idea to done; cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
