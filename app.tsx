@@ -2665,7 +2665,8 @@ const FLOW_WINDOWS: Array<{ id: FlowWindow; label: string; days: number | null }
 function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: string | null; navigate: ReturnType<typeof useBbNavigate> }) {
   const [open, setOpen] = useState(false);
   const [window, setWindow] = useState<FlowWindow>("all");
-  const [result, setResult] = useState<{ items: Array<{ cardId: string; kind: string; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }>; summary: { count: number; leadP50Ms: number | null; leadP90Ms: number | null; cycleP50Ms: number | null; cycleP90Ms: number | null } } | null>(null);
+  const [tab, setTab] = useState<"tempo" | "atencao">("tempo");
+  const [result, setResult] = useState<{ items: Array<{ cardId: string; kind: string; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }>; summary: { count: number; leadP50Ms: number | null; leadP90Ms: number | null; cycleP50Ms: number | null; cycleP90Ms: number | null }; attention: Array<{ cardId: string; kind: string; name: string; reason: "stuck" | "review" }> } | null>(null);
   const preset = FLOW_WINDOWS.find((entry) => entry.id === window) ?? FLOW_WINDOWS[0]!;
   const since = preset.days === null ? null : Date.now() - preset.days * 86400000;
   useEffect(() => {
@@ -2676,31 +2677,52 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
   }, [rpc, projectId, window]);
   if (!result || result.summary.count === 0) return null;
   const rows = [...result.items].sort((a, b) => (b.leadMs ?? -1) - (a.leadMs ?? -1));
+  const stuck = result.attention.filter((entry) => entry.reason === "stuck");
+  const review = result.attention.filter((entry) => entry.reason === "review");
   const leadTypical = result.summary.leadP50Ms !== null ? formatDuration(result.summary.leadP50Ms) : "—";
   const cycleTypical = result.summary.cycleP50Ms !== null ? formatDuration(result.summary.cycleP50Ms) : "—";
   const label = `${result.summary.count} finished · ${preset.label.toLowerCase()} · lead typical ${leadTypical} · cycle typical ${cycleTypical}`;
   return (
     <div className="rounded-md border bg-muted/20 px-3 py-2">
-      <button onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={`Flow indicators: ${label}. Finished cards with a measured trail in this scope and window.`} title="Finished cards with a measured trail in this scope and window — a Done-column card without one reads here only after its trail records." className="flex min-h-11 w-full cursor-pointer items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+      <button onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={`Flow indicators: ${label}. Finished cards with a measured trail in this scope and window.`} title="Finished cards with a measured trail in this scope and window — a Done-column card without one reads here only after its trail records." className="flex min-h-11 w-full cursor-pointer flex-wrap items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         <DisclosureChevron open={open} />
         <span className="font-medium text-foreground">Flow</span>
         <span className="whitespace-nowrap text-muted-foreground">{result.summary.count} finished · {preset.label.toLowerCase()}</span>
         <span className="whitespace-nowrap text-muted-foreground">lead typical {leadTypical}</span>
         <span className="whitespace-nowrap text-muted-foreground">cycle typical {cycleTypical}</span>
+        {stuck.length > 0 ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300" title="Blocked status or errored worker — needs unblocking, right now">
+            <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+            {stuck.length} stuck
+          </span>
+        ) : null}
+        {review.length > 0 ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300" title="Finished cards awaiting your read">
+            <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
+            {review.length} to review
+          </span>
+        ) : null}
       </button>
       {open ? (
         <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-1" role="group" aria-label="Flow view">
+            {(["tempo", "atencao"] as const).map((entry) => (
+              <button key={entry} onClick={() => setTab(entry)} aria-pressed={tab === entry} className={`min-h-9 cursor-pointer rounded-md px-2 text-xs font-medium ${tab === entry ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{entry === "tempo" ? "Tempo" : `Atenção${stuck.length + review.length > 0 ? ` (${stuck.length + review.length})` : ""}`}</button>
+            ))}
+            <span className="ml-auto text-xs tabular-nums text-muted-foreground">slow: lead {result.summary.leadP90Ms !== null ? formatDuration(result.summary.leadP90Ms) : "—"} · cycle {result.summary.cycleP90Ms !== null ? formatDuration(result.summary.cycleP90Ms) : "—"}</span>
+          </div>
+          {tab === "tempo" ? (
+          <div className="space-y-2">
           <p className="text-xs leading-5 text-muted-foreground">Typical is the median (p50); slow is p90 — 9 of 10 finish within. Lead runs idea to done; cycle runs first real movement to done.</p>
           <div className="flex items-center gap-1" role="group" aria-label="Done window">
             {FLOW_WINDOWS.map((entry) => (
               <button key={entry.id} onClick={() => setWindow(entry.id)} aria-pressed={window === entry.id} className={`min-h-9 cursor-pointer rounded-md px-2 text-xs font-medium ${window === entry.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{entry.label}</button>
             ))}
-            <span className="ml-auto text-xs tabular-nums text-muted-foreground">slow: lead {result.summary.leadP90Ms !== null ? formatDuration(result.summary.leadP90Ms) : "—"} · cycle {result.summary.cycleP90Ms !== null ? formatDuration(result.summary.cycleP90Ms) : "—"}</span>
           </div>
           <ul className="max-h-56 space-y-0.5 overflow-auto">
             {rows.map((item) => (
               <li key={item.cardId}>
-                <button onClick={() => goToCard(navigate, { kind: item.kind as "build" | "research" | "explore" }, item.cardId)} className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                <button onClick={() => goToCard(navigate, { kind: item.kind as "build" | "research" | "explore" }, item.cardId)} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                   <span className="min-w-0 flex-1 truncate">{item.name}</span>
                   <span className="shrink-0 tabular-nums text-muted-foreground">lead {item.leadMs !== null ? formatDuration(item.leadMs) : "—"}</span>
                   <span className="shrink-0 tabular-nums text-muted-foreground">cycle {item.cycleMs !== null ? formatDuration(item.cycleMs) : "—"}</span>
@@ -2708,6 +2730,26 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
               </li>
             ))}
           </ul>
+          </div>
+          ) : (
+          <div className="space-y-2">
+          <p className="text-xs leading-5 text-muted-foreground">Right now — not in the selected window. Stuck means blocked status or an errored worker; review means finished and awaiting your read.</p>
+          {stuck.length + review.length === 0 ? (
+            <p className="text-xs text-muted-foreground">All clear — nothing stuck, nothing awaiting review.</p>
+          ) : (
+          <ul className="max-h-56 space-y-0.5 overflow-auto">
+            {[...stuck.map((entry) => ({ ...entry, tone: "text-amber-700 dark:text-amber-300", mark: "stuck" })), ...review.map((entry) => ({ ...entry, tone: "text-emerald-700 dark:text-emerald-300", mark: "to review" }))].map((entry) => (
+              <li key={entry.cardId}>
+                <button onClick={() => goToCard(navigate, { kind: entry.kind as "build" | "research" | "explore" }, entry.cardId)} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                  <span className={`shrink-0 font-medium ${entry.tone}`}>{entry.mark}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          )}
+          </div>
+          )}
         </div>
       ) : null}
     </div>

@@ -431,11 +431,12 @@ export const rpcContract = defineRpcContract({
     }),
   },
   flowMetrics: {
-    experimental_description: "Lead/cycle time per finished card with p50/p90, optionally scoped to a project and done window",
+    experimental_description: "Lead/cycle per finished card with p50/p90, plus stuck and review-awaiting now",
     input: z.object({ projectId: z.string().nullable().optional(), since: z.number().int().nonnegative().nullable().optional(), until: z.number().int().nonnegative().nullable().optional() }).strict(),
     output: z.object({
       items: z.array(z.object({ cardId: z.string(), kind: z.enum(["build", "research", "explore"]), name: z.string(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doneAt: z.number().nullable() })),
       summary: z.object({ count: z.number(), leadP50Ms: z.number().nullable(), leadP90Ms: z.number().nullable(), cycleP50Ms: z.number().nullable(), cycleP90Ms: z.number().nullable() }),
+      attention: z.array(z.object({ cardId: z.string(), kind: z.enum(["build", "research", "explore"]), name: z.string(), reason: z.enum(["stuck", "review"]) })),
     }),
   },
   boardWorkflowDefaults: {
@@ -4843,9 +4844,26 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       const leads = summarizeDurations(cards.map((card) => card.leadMs));
       const cycles = summarizeDurations(cards.map((card) => card.cycleMs));
+      // Present-state attention rides the same pass: stuck (blocked status
+      // or errored worker — explicit signals, never heuristics) and
+      // review-awaiting dones. Window-independent by design: attention is
+      // about right now, and the UI labels it as such.
+      const openRows = (projectId
+        ? db.prepare("SELECT id, kind, display_name, name, status, activity FROM cards WHERE status != 'archived' AND project_id = ?").all(projectId)
+        : db.prepare("SELECT id, kind, display_name, name, status, activity FROM cards WHERE status != 'archived'").all()) as Array<{ id: string; kind: string; display_name: string | null; name: string; status: string; activity: string }>;
+      const attention: Array<{ cardId: string; kind: "build" | "research" | "explore"; name: string; reason: "stuck" | "review" }> = [];
+      for (const row of openRows) {
+        const name = row.display_name ?? row.name;
+        if (row.status === "blocked" || row.activity === "error") {
+          attention.push({ cardId: row.id, kind: normalizeKind(row.kind), name, reason: "stuck" });
+        } else if (row.status === "completed" && hasPendingReview(db, row.id)) {
+          attention.push({ cardId: row.id, kind: normalizeKind(row.kind), name, reason: "review" });
+        }
+      }
       return {
         items: cards,
         summary: { count: cards.length, leadP50Ms: leads.p50, leadP90Ms: leads.p90, cycleP50Ms: cycles.p50, cycleP90Ms: cycles.p90 },
+        attention,
       };
     },
     async boardWorkflowDefaults() {

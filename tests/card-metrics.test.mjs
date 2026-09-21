@@ -79,6 +79,19 @@ assert.match(app, /if \(!result \|\| result\.summary\.count === 0\) return null/
 assert.match(app, /\["all", "30d", "90d"\]|FLOW_WINDOWS/, "done windows are presets, not free dates");
 assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open through the shared navigator");
 
+// Attention rides the same RPC pass: stuck (blocked status or errored
+// worker — explicit signals, never heuristics) and review-awaiting dones,
+// window-independent and labeled as right-now. Tabs keep tempo apart
+// from attention; empty attention reads one calm line, never an empty box.
+assert.match(server, /attention: z\.array\(z\.object\(\{ cardId: z\.string\(\), kind: z\.enum\(\["build", "research", "explore"\]\), name: z\.string\(\), reason: z\.enum\(\["stuck", "review"\]\) \}\)\)/, "attention items are contracted with a closed reason set");
+assert.match(server, /row\.status === "blocked" \|\| row\.activity === "error"/, "stuck derives from explicit signals only");
+assert.match(server, /hasPendingReview\(db, row\.id\)/, "review-awaiting derives from the shared review signal");
+assert.match(app, /useState<"tempo" \| "atencao">\("tempo"\)/, "tempo and attention are tabs, not stacked sections");
+assert.match(app, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
+assert.match(app, /size-1\.5 animate-pulse rounded-full bg-amber-500/, "the stuck chip pulses — the only motion on the strip");
+assert.match(app, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
+assert.doesNotMatch(app, /velocity|throughput per|per worker/, "no efficiency ranking survives in the strip");
+
 // The header names the component and its count honestly: Flow indicators
 // over finished cards with a measured trail — never a bare "N done" that
 // reads as Done-column membership. p50/p90 never stand unexplained.

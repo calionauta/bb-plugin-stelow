@@ -874,9 +874,13 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   (age is not lead). Each card shows its own Lead/Cycle line in the detail
   progress block; the Build board carries one glanceable Flow strip naming
   itself (finished count with a measured trail, typical/median and slow/p90
-  lead/cycle with the jargon glossed inline, expanding to window presets
-  and a per-card table that opens
-  cards) fed by the board project filter. Empty boards render no strip.
+  lead/cycle with the jargon glossed inline, expanding to Tempo and Atenção
+  tabs and a per-card table that opens
+  cards) fed by the board project filter. Tempo holds windows, legend, and
+  the lead/cycle table; Atenção holds right-now stuck (blocked status or
+  errored worker) and review-awaiting dones with an all-clear empty state —
+  signal chips for both ride the closed header only when nonzero, so a calm
+  board shows no amber. Empty boards render no strip.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.
