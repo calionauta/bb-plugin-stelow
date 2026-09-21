@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { doneEligibility } from "../lib/completion.mjs";
+import { doneEligibility, doneScopeSyncRefusal } from "../lib/completion.mjs";
 
 // Regression: done-ness was inferred from `audit` + idle, so a worker that
 // narrated-and-stopped at audit was indistinguishable from one stuck at

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { groupCardChecks, groupState, isExecutionUntracked } from "../lib/card-checks.mjs";
+import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "../lib/card-checks.mjs";
 
 const scopes = [
   { id: "s1", name: "Checkout", status: "done", tasks: [{ name: "t1", status: "done" }] },
@@ -53,6 +53,7 @@ assert.match(app, /rpc\.call\("gapSummary", \{ cardId \}\)/, "gaps resolve throu
 assert.match(app, /review: card\.status === "completed" \? \{ pending: card\.hasPendingReview/, "review resolves from card state, never inferred");
 assert.match(app, /const \[pendingOnly, setPendingOnly\] = useState\(true\)/, "the pending filter defaults on");
 assert.match(app, /isExecutionUntracked\(\{ activity: card\.activity, scopes: detail\.scopes \}\)/, "the rollup names untracked execution from live card state");
+assert.match(app, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the rollup names missing scope tracking from live card state");
 
 // Untracked execution: running with synced scopes but nothing ever marked
 // (neither in-progress nor done) names the silence bands — the exact shape
