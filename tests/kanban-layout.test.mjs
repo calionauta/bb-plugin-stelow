@@ -14,9 +14,10 @@ assert.equal(columns, "minmax(240px, 320px) minmax(240px, 320px) 56px", "open an
 assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanban columns");
 
 // Bucket gallery: one button per track opens its captured pile as an
-// expanded modal — same tiles as the board in a uniform grid (equal
-// widths, equal row heights, vertical scroll). Hill piles reuse the same
-// dialog through params, so a second modal fails here.
+// expanded modal — the same tiles as the board, at the board's own size
+// (the shared column bounds, natural height) filling left to right and
+// wrapping down with vertical scroll. Hill piles reuse the same dialog
+// through params, so a second modal fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 assert.equal((app.match(/<BucketGalleryButton cards=\{grouped\.inbox \?\? \[\]\} \/>/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
@@ -43,10 +44,24 @@ assert.equal((app.match(/<CardGalleryDialog/g) ?? []).length, 2, "one shared gal
 assert.equal((app.match(/const bucketGallery = useBucketGallery\(grouped\.inbox \?\? \[\]\);/g) ?? []).length, 3, "each creation dialog shares one opener for its track's pile");
 assert.equal((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length, 3, "each creation checkbox links to its pile's gallery");
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
-assert.match(app, /auto-rows-fr grid-cols-1 gap-3 sm:\[grid-template-columns:repeat\(auto-fill,minmax\(240px,1fr\)\)\]/, "gallery tiles fill board-width columns, as many per row as fit, wrapping the rest");
+// Tiles are the board's own tiles at the board's own size. The track bound
+// is derived from KANBAN_COLUMN_WIDTHS.expanded, never a stretched `1fr`,
+// so a wide modal cannot inflate a narrow card; the class text stays
+// literal because Tailwind only emits classes it can read in source, so
+// this assertion is the join between the constant and the markup.
+const [minBound, maxBound] = KANBAN_COLUMN_WIDTHS.expanded.replace(/^minmax\(|\)$/g, "").split(", ").map((value) => value.trim());
+const tilesAt = app.indexOf("data-gallery-tiles");
+assert.ok(tilesAt >= 0, "the gallery grid is addressable");
+const galleryGrid = app.slice(tilesAt, app.indexOf(">", tilesAt));
+assert.ok(galleryGrid.includes(`repeat(auto-fill,minmax(min(${minBound},100%),${maxBound}))`), "gallery tracks take the board column's own bounds");
+assert.ok(galleryGrid.includes("justify-start"), "tiles begin at the left edge and fill rightwards");
+assert.ok(galleryGrid.includes("items-start"), "a tile keeps the board's natural height");
+assert.doesNotMatch(galleryGrid, /\b1fr\b/, "no gallery track stretches to fill the modal");
+assert.doesNotMatch(app, /auto-rows-fr/, "gallery rows are never stretched to equal heights");
+assert.doesNotMatch(app, /\[&>\.stelow-board-card\]:h-full/, "gallery tiles are never stretched vertically");
+assert.doesNotMatch(app, /grid-flow-col/, "gallery flow is row-major: rightwards, then down");
 assert.match(app, /sm:w-\[70vw\]/, "the gallery takes seventy percent of the viewport width");
 assert.match(app, /className="h-\[85dvh\] overflow-y-auto sm:w-\[70vw\]/, "the gallery height is fixed at 85dvh with internal scroll, never content-sized");
-assert.match(app, /\[&>\.stelow-board-card\]:h-full/, "gallery tiles stretch to equal row heights");
 assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
 assert.match(app, /function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook without changing default navigation");
 assert.ok(app.includes("onOpen?.()"), "the hook is optional — every existing tile behaves exactly as before");
