@@ -51,6 +51,7 @@ import { doingNowNames } from "./lib/doing-now.mjs";
 import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
 import { tasksToScoreQuestions, resolveTaskVerdicts, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
+import { countDelegations, summarizeDelegationEvidence } from "./lib/delegation-evidence.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
@@ -7404,6 +7405,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
       { name: "criteria", summary: "Score an artifact against its skill's semantic criteria (advisory, read-only)", usage: "bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" },
       { name: "verify-tasks", summary: "Judge completed tasks against the working diff (advisory, read-only)", usage: "bb stelow verify-tasks [--card <card_id>] [--json]" },
+      { name: "verify-delegation", summary: "Count worker subagent delegations in the thread timeline (advisory, read-only)", usage: "bb stelow verify-delegation [--card <card_id>] [--json]" },
       { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
       { name: "help", summary: "Show help for a subcommand", usage: "bb stelow help [command]" },
     ];
@@ -9071,6 +9073,35 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const taskMark = (verdict: string) => (verdict === "met" ? "✓" : verdict === "unmet" ? "✗" : "?");
         const taskLines = taskFindings.map((finding) => `${taskMark(finding.verdict)} ${finding.name} — ${finding.verdict}${finding.confidence !== null ? ` (confidence ${finding.confidence})` : ""}`);
         return { exitCode: 0, stdout: [`Task evidence (${doneTasks.length} completed tasks judged against the working diff):`, ...taskLines, `Summary: ${taskMet} met, ${taskUnmet} unmet, ${taskUnverifiable} unverifiable — advisory only, never blocking.`].join("\n") };
+      }
+      if (argv[0] === "verify-delegation") {
+        // Advisory delegation tripwire: the host cannot see subagent
+        // freshness — only whether any delegation happened at all. Counts
+        // structural delegation items in the worker thread timeline;
+        // prose matches never count. Zero reads as inconclusive ("may be
+        // self-review"), never as certain. Read-only, never a gate.
+        const args = argv.slice(1);
+        let delegationCardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
+        const asJson = args.includes("--json");
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { delegationCardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow verify-delegation [--card <card_id>] [--json]" };
+        }
+        if (!delegationCardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
+        const delegationCard = getCard(delegationCardId);
+        if (!delegationCard) return { exitCode: 2, stderr: `Unknown card "${delegationCardId}".` };
+        if (!delegationCard.worker_thread_id) return { exitCode: 0, stdout: "No worker thread — nothing to inspect for delegations." };
+        const timeline = await bb.sdk.threads.timeline({ threadId: delegationCard.worker_thread_id, segmentLimit: "100" }).catch(() => null);
+        if (!timeline) return { exitCode: 1, stderr: "Could not read the worker thread timeline — retry later." };
+        // segmentLimit 100 covers realistic worker threads whole; pagination
+        // cursors are not interpreted — a truncated giant thread would
+        // undercount, and the summary discloses observation, not certainty.
+        const evidence = summarizeDelegationEvidence({ delegations: countDelegations(timeline), truncated: false });
+        if (asJson) {
+          return { exitCode: 0, stdout: JSON.stringify({ card: delegationCardId, delegations: countDelegations(timeline), observed: evidence.observed }, null, 2) };
+        }
+        return { exitCode: 0, stdout: evidence.summary };
       }
       if (argv[0] === "draft") {
         // Disposable Tier G burst: text-in/text-out on the generation

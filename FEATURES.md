@@ -837,6 +837,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   atomic Score per task, resolved against the point floor; findings guide
   the worker (DONE_PROTOCOL points here before `done`), `done` decides
   separately. Read-only, never a gate.
+- **`bb stelow verify-delegation` (advisory, `lib/delegation-evidence.mjs`).**
+  Freshness of worker-spawned subagents is unobservable — but whether any
+  delegation happened is: the command counts structural delegation items
+  in the worker thread timeline (prose matches never count). Zero reads
+  as inconclusive ("may be self-review"), never as certain. Read-only,
+  never a gate.
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,
