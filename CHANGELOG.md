@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.44.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.44.1...v0.44.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* hill line names archived cards once, in three words ([cdc4a6a](https://github.com/calionauta/bb-plugin-stelow/commit/cdc4a6aaa78b2c02e44afe92789d496ec241713c))
+
 ## [0.44.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.44.0...v0.44.1) (2026-09-21)
 
 
