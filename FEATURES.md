@@ -200,7 +200,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on both boards, via a quiet icon toggle beside the filters (a view
   preference, not a CTA). The picked view (board, list, hill) persists
   per track in local storage — returning from a card restores it instead
-  of resetting to board. Groups collapse per track (persisted; Archived
+  of resetting to board. Closed tiles and list rows name the executing
+  scope in one shared pill (`DoingNowPill`, truncated with the full
+  doing set one hover away) whenever the worker runs or waits — the same
+  selection the detail "Doing now" line reads, defined once in
+  `lib/doing-now.mjs`. Groups collapse per track (persisted; Archived
   starts collapsed). One shared row across tracks (Build geometry
   standard; strategy/technique rides the meta line).
 - **Hill view (Build track).** The same filtered cards as dots on a figuring-out /
@@ -835,6 +839,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   artifacts, worktree snapshot). Freshness is asked for on demand, never on
   every board read, because `check` re-derives the projection. A finished card
   opens its Artifacts section by default: the evidence is the deliverable.
+  The run bundle also commits token evidence: provider-reported totals
+  across the card's worker threads (bounded, fail-open) with per-leg
+  splits, or an explicit unknown line when nothing reported.
 - **Flow metrics** (`flowMetrics`, `lib/card-metrics.mjs`). Lead (idea to
   done) and cycle (first movement to done) per finished card, with p50/p90
   over a project and done-window filter — one batched pass, no per-card

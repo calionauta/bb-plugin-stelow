@@ -112,6 +112,20 @@ export function activityDotTone(card: { needsAttention?: boolean | null; activit
   return "bg-muted-foreground/40";
 }
 
+// Doing-now pill: the executing scope (or task) name on closed surfaces,
+// truncated to fit with the full list one hover away. Empty renders
+// nothing — a card with nothing running shows no pill, never a placeholder.
+export function DoingNowPill({ names }: { names: string[] }) {
+  if (!Array.isArray(names) || names.length === 0) return null;
+  const [first, ...rest] = names;
+  return (
+    <span title={rest.length > 0 ? `Doing now: ${names.join(" · ")}` : `Doing now: ${first}`} className="inline-flex min-w-0 max-w-full cursor-default items-center gap-1 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />
+      <span className="truncate">{first}{rest.length > 0 ? ` +${rest.length}` : ""}</span>
+    </span>
+  );
+}
+
 // One scope strip for tiles and list rows alike: aggregate fill from the
 // summary counts, so progress reads as shape, not just numbers. Null when
 // the card has no scopes — tracks without scope data show nothing rather
