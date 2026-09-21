@@ -3682,7 +3682,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
           <details key={scope.id} open={isOpen} onToggle={(event) => { const next = new Set(openIds); if ((event.currentTarget as HTMLDetailsElement).open) next.add(scope.id); else next.delete(scope.id); setOpenIds(next); }} className={`group rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
             <summary className="cursor-pointer list-none space-y-1">
               <div className="flex flex-wrap items-center gap-1">
-                <DisclosureChevron />
+                <DisclosureChevron open={isOpen} />
                 <span className="font-mono text-xs text-muted-foreground">{scope.id}</span>
                 <span className="font-medium">{scope.name}</span>
                 {scope.type ? <Pill>{scope.type}</Pill> : null}

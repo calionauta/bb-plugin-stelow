@@ -42,4 +42,9 @@ assert.match(server, /doingNow: summary\.doingNow/, "list rows carry the cached 
 assert.match(app, /<DoingNowPill names=\{card\.doingNow \?\? \[\]\} \/>/, "tiles name the executing scope");
 assert.match(app, /\(card\.activity === "running" \|\| card\.activity === "awaiting-answer"\)/, "the pill marks live execution, never idle");
 
+// Scope rows disclose through the same chevron as every other surface:
+// the explicit open prop drives rotation, never the group-open variant,
+// so the arrow cannot silently stop turning again.
+assert.match(app, /<DisclosureChevron open=\{isOpen\} \/>/, "scope rows rotate through the shared chevron contract");
+
 console.log("doing now test ok: shared selection, dominant headline, done silent");
