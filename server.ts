@@ -2084,7 +2084,8 @@ ${prompt}`;
         const status = (live as { status?: string } | null)?.status ?? null;
         if (status === "idle" || status === "error") break;
         if (Date.now() >= deadline) {
-          await bb.sdk.threads.stop({ threadId }).catch(() => null);
+          // No explicit stop here: the finally below owns all cleanup, so a
+          // timeout archives the runaway through the same path as every exit.
           return fail("Preset judge timed out.");
         }
         await new Promise((resolve) => setTimeout(resolve, PRESET_JUDGE_POLL_MS));
