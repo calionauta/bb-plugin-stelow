@@ -123,7 +123,7 @@ assert.ok(reliableRow.includes("assignReliablePreset"), "the Reliable row wires 
 // family, read-only, and the review command refuses without it instead of
 // falling back. The row lives below the tiers with its own clear option,
 // so the tiers above can never be mistaken for review configuration.
-const reviewerRowAt = app.indexOf("◎ Review", generationRowAt);
+const reviewerRowAt = app.indexOf("◎ Independent review", generationRowAt);
 assert.ok(reviewerRowAt > generationRowAt, "the Review row follows the tiers, visibly separated");
 const reviewerRow = app.slice(reviewerRowAt, reviewerRowAt + 2500);
 assert.ok(reviewerRow.includes('rpc.call("assignReviewPreset", { presetId: value })'), "the Review row assigns through the reviewer RPC");

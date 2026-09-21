@@ -8092,7 +8092,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           }
           const policyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
           if (policyRow?.mode === "required" && !(await passingReviewCovers(card, readiness.fingerprint).catch(() => false))) {
-            return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current index — run `bb stelow review`, then run done again. (Enable only with a calibrated reviewer; see docs/phase6-independent-review-plan.md.)" };
+            return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current index — run `bb stelow review`, then run done again. (Enable only with a reviewer you trust on adversarial spot-checks; see docs/phase6-independent-review-plan.md.)" };
           }
           const researchBundle = await exportRunBundle(card, {});
           if (!researchBundle.ok) return { exitCode: 1, stderr: `Research completion is blocked: run-bundle export failed (${researchBundle.error}) — retry done.` };
@@ -8116,7 +8116,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           }
           const explorePolicyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
           if (explorePolicyRow?.mode === "required" && !(await passingReviewCovers(card, artifact.fingerprint).catch(() => false))) {
-            return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current artifact — run `bb stelow review`, then run done again. (Enable only with a calibrated reviewer; see docs/phase6-independent-review-plan.md.)" };
+            return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current artifact — run `bb stelow review`, then run done again. (Enable only with a reviewer you trust on adversarial spot-checks; see docs/phase6-independent-review-plan.md.)" };
           }
           const exploreBundle = await exportRunBundle(card, {});
           if (!exploreBundle.ok) return { exitCode: 1, stderr: `Exploration completion is blocked: run-bundle export failed (${exploreBundle.error}) — retry done.` };

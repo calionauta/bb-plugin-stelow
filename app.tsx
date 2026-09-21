@@ -4781,7 +4781,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           <p className="mt-2 text-[11px] text-muted-foreground">Rule of thumb: when the worker rewrites over 20% of a burst&apos;s output, that call site belongs back on Reliable.</p>
           <div className="mt-3 border-t border-border/70 pt-3">
             <div className="flex items-center gap-2 text-sm">
-              <span className="w-24 shrink-0">◎ Review</span>
+              <span className="w-24 shrink-0">◎ Independent review</span>
               <select
                 aria-label="Artifact reviewer preset"
                 className="cursor-pointer h-9 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm"
