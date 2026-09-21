@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { formatDuration, summarizeTimeline } from "../lib/card-metrics.mjs";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { formatDuration, summarizeTimeline, summarizeDurations } from "../lib/card-metrics.mjs";
 
 const HOUR = 3_600_000;
 
@@ -33,5 +36,37 @@ assert.equal(formatDuration(3 * 86400000 + 4 * HOUR), "3d 4h", "days");
 assert.equal(formatDuration(5 * HOUR + 12 * 60000), "5h 12m", "hours");
 assert.equal(formatDuration(8 * 60000 + 30000), "8m 30s", "minutes");
 assert.equal(formatDuration(45000), "45s", "seconds");
+
+// Board percentiles rank finished durations only; empties and junk
+// resolve nulls so an empty board never reports a zero p50.
+assert.deepEqual(summarizeDurations([100, 200, 300, 400]), { count: 4, p50: 200, p90: 400, max: 400 }, "p50/p90 rank, max caps");
+assert.deepEqual(summarizeDurations([150]), { count: 1, p50: 150, p90: 150, max: 150 }, "a single value is its own percentile");
+assert.deepEqual(summarizeDurations([]), { count: 0, p50: null, p90: null, max: null }, "empty sets resolve nulls, never zero");
+assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, p90: 100, max: 100 }, "junk never enters the ranking");
+
+// Server wiring: one batched flow RPC (finished cards only, project +
+// done-window filters, p50/p90 summary) plus per-card times on detail.
+// Active cards carry no times — the query scopes completed, the detail
+// degrades to nulls.
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const server = readFileSync(join(root, "server.ts"), "utf8");
+const app = readFileSync(join(root, "app.tsx"), "utf8");
+assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
+assert.match(server, /WHERE status = 'completed'/, "aggregates read finished cards, never actives");
+assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
+assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
+assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
+assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\) \}\),/, "detail schema carries both times as nullable");
+assert.match(app, /flow=\{\{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}\}/, "detail progress reads the card times");
+assert.match(app, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
+
+// View persistence: returning from a card restores the picked view per
+// track (board, list, hill) instead of resetting to board. Unknown stored
+// values degrade — a corrupt key never strands the track.
+assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
+assert.match(app, /function useBoardView\(storageKey: string\)/, "one hook serves all three tracks");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView\)/, "build restores its view");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView\)/, "research restores its view");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores its view");
 
 console.log("card metrics test ok: lead/cycle math, stage split, durations");

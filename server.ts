@@ -87,7 +87,7 @@ import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs"
 import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents } from "./lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry } from "./lib/gap-registry.mjs";
-import { formatDuration, summarizeTimeline } from "./lib/card-metrics.mjs";
+import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { attachChildTokenUsage, shapeChildThreads } from "./lib/thread-children.mjs";
 
@@ -429,6 +429,14 @@ export const rpcContract = defineRpcContract({
       leadMs: z.number().nullable(), cycleMs: z.number().nullable(), done: z.boolean(),
     }),
   },
+  flowMetrics: {
+    experimental_description: "Lead/cycle time per finished card with p50/p90, optionally scoped to a project and done window",
+    input: z.object({ projectId: z.string().nullable().optional(), since: z.number().int().nonnegative().nullable().optional(), until: z.number().int().nonnegative().nullable().optional() }).strict(),
+    output: z.object({
+      items: z.array(z.object({ cardId: z.string(), name: z.string(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doneAt: z.number().nullable() })),
+      summary: z.object({ count: z.number(), leadP50Ms: z.number().nullable(), leadP90Ms: z.number().nullable(), cycleP50Ms: z.number().nullable(), cycleP90Ms: z.number().nullable() }),
+    }),
+  },
   boardWorkflowDefaults: {
     experimental_description: "Board defaults: planning depth and review gates for new cards",
     input: z.object({}).strict(),
@@ -448,7 +456,7 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
@@ -1883,6 +1891,20 @@ export default async function plugin(bb: BbPluginApi) {
     } catch {
       return [];
     }
+  }
+
+  // Lead/cycle times for one card, from the metrics-only trail: the done
+  // stage event ends both clocks; the first worker spawn starts cycle.
+  // Lead/cycle times for one card, mirroring the gap-summary convention:
+  // the done stage event ends both clocks (unfinished cards have age, not
+  // lead — the flow RPC only lists finished ones). One helper so every
+  // surface reports the same numbers.
+  function flowTimesForCard(card: { id: string; created_at: number }): { leadMs: number | null; cycleMs: number | null; doneAt: number | null } {
+    const events = stageEvents(card.id);
+    const doneEvent = [...events].reverse().find((event) => event.stage === "done") ?? null;
+    if (!doneEvent) return { leadMs: null, cycleMs: null, doneAt: null };
+    const timeline = summarizeTimeline(events, { createdAt: card.created_at, endAt: doneEvent.entered_at });
+    return { leadMs: timeline.leadMs, cycleMs: timeline.cycleMs, doneAt: doneEvent.entered_at };
   }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
 
@@ -4771,6 +4793,43 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
     },
+    async flowMetrics({ projectId, since, until }) {
+      // Board-level flow reading over finished cards only: active cards
+      // have age, not lead. One query per dimension (cards, done events),
+      // then pure math — no per-card round trips.
+      const rows = (projectId
+        ? db.prepare("SELECT id, name, created_at FROM cards WHERE status = 'completed' AND project_id = ?").all(projectId)
+        : db.prepare("SELECT id, name, created_at FROM cards WHERE status = 'completed'").all()) as Array<{ id: string; name: string; created_at: number }>;
+      const ids = rows.map((row) => row.id);
+      const doneByCard = new Map<string, number>();
+      const eventsByCard = new Map<string, Array<{ stage: string; entered_at: number }>>();
+      if (ids.length > 0) {
+        const placeholders = ids.map(() => "?").join(",");
+        const doneRows = db.prepare(`SELECT card_id, MAX(entered_at) AS done_at FROM card_stage_events WHERE stage = 'done' AND card_id IN (${placeholders}) GROUP BY card_id`).all(...ids) as Array<{ card_id: string; done_at: number }>;
+        for (const row of doneRows) doneByCard.set(row.card_id, row.done_at);
+        const eventRows = db.prepare(`SELECT card_id, stage, entered_at FROM card_stage_events WHERE card_id IN (${placeholders}) ORDER BY card_id ASC, entered_at ASC, id ASC`).all(...ids) as Array<{ card_id: string; stage: string; entered_at: number }>;
+        for (const row of eventRows) {
+          const list = eventsByCard.get(row.card_id) ?? [];
+          list.push({ stage: row.stage, entered_at: row.entered_at });
+          eventsByCard.set(row.card_id, list);
+        }
+      }
+      const cards: Array<{ cardId: string; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }> = [];
+      for (const row of rows) {
+        const doneAt = doneByCard.get(row.id) ?? null;
+        if (doneAt === null) continue;
+        if (since != null && doneAt < since) continue;
+        if (until != null && doneAt > until) continue;
+        const timeline = summarizeTimeline(eventsByCard.get(row.id) ?? [], { createdAt: row.created_at, endAt: doneAt });
+        cards.push({ cardId: row.id, name: row.name, leadMs: timeline.leadMs, cycleMs: timeline.cycleMs, doneAt });
+      }
+      const leads = summarizeDurations(cards.map((card) => card.leadMs));
+      const cycles = summarizeDurations(cards.map((card) => card.cycleMs));
+      return {
+        items: cards,
+        summary: { count: cards.length, leadP50Ms: leads.p50, leadP90Ms: leads.p90, cycleP50Ms: cycles.p50, cycleP90Ms: cycles.p90 },
+      };
+    },
     async boardWorkflowDefaults() {
       const stored = await bb.storage.kv.get<unknown>("board-workflow-defaults");
       const parsed = boardWorkflowDefaultsSchema.safeParse(stored);
@@ -5366,7 +5425,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
         questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1 },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs },
         attachments,
         mentionedFiles,
         scopes,
