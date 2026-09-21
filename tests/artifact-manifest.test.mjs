@@ -73,4 +73,21 @@ assert.ok(bundle.includes("- .stelow/x/gone.md"), "missing entries listed, never
 assert.ok(bundle.includes("1 fixed / 0 documented / 2 escalated"), "gap counts rendered");
 assert.ok(bundle.includes("Stelow-Card: card-1"), "trailer embedded for pasting");
 
+// Token evidence is optional and honest: omitted entirely reads unknown,
+// never zero; reported legs render exact locale numbers for the audit.
+const withTokens = renderBundleManifest({
+  cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
+  files: [], missing: [], gapTotals: null,
+  tokens: { input: 80000, output: 20000, cached: null, reasoning: 5000, total: 105000 },
+});
+assert.ok(withTokens.includes("## Tokens"), "token evidence gets its own section");
+assert.ok(withTokens.includes("105,000 total"), "totals render exact, never compacted");
+assert.ok(withTokens.includes("input 80,000"), "reported legs render");
+assert.ok(!withTokens.includes("cached"), "unreported legs never render as zero");
+const withoutTokens = renderBundleManifest({
+  cardId: "card-1", cardName: "Login", stage: "audit", generatedAt: "2026-09-19T00:00:00.000Z",
+  files: [], missing: [], gapTotals: null,
+});
+assert.ok(withoutTokens.includes("Unknown — no provider token reports at export time."), "missing evidence reads unknown");
+
 console.log("artifact-manifest test ok: typed manifests parsed and artifact paths stay inside the project");

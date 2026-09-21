@@ -28,6 +28,14 @@ export interface BundleManifestFile {
   sourcePath: string;
 }
 
+export interface BundleManifestTokens {
+  input?: number | null;
+  output?: number | null;
+  cached?: number | null;
+  reasoning?: number | null;
+  total?: number | null;
+}
+
 export interface BundleManifestInput {
   cardId: string;
   cardName: string;
@@ -36,6 +44,7 @@ export interface BundleManifestInput {
   files: BundleManifestFile[];
   missing: string[];
   gapTotals?: ArtifactTrailerGaps | null;
+  tokens?: BundleManifestTokens | null;
 }
 
 export function renderBundleManifest(input: BundleManifestInput): string;
