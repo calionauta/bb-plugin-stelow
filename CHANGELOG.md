@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.39.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.38.0...v0.39.0) (2026-09-21)
+
+
+### Features
+
+* board flow strip with windows and per-card table ([3e465b7](https://github.com/calionauta/bb-plugin-stelow/commit/3e465b71cd5a6dc06f82def358a8f05c289308b5))
+* card token totals in worker history ([1f39678](https://github.com/calionauta/bb-plugin-stelow/commit/1f39678c1ed21f172c66ddb3b8a18df5cab3328f))
+* executing-scope pill on tiles and rows ([7842352](https://github.com/calionauta/bb-plugin-stelow/commit/7842352aba171f6b0d3151064fae69ecc043ad9c))
+* flow lead/cycle metrics per card and board ([cba67c5](https://github.com/calionauta/bb-plugin-stelow/commit/cba67c5549cdc664786ff58ea2198d2b59684727))
+* grouped checks rollup on card detail ([5526b0b](https://github.com/calionauta/bb-plugin-stelow/commit/5526b0b79001f1c8db3f9aaa107ed8ca7befec10))
+* hill clusters, preview panel, and living motion ([8ae8dc3](https://github.com/calionauta/bb-plugin-stelow/commit/8ae8dc35c3b011f4e1f679565221ea4ce0477126))
+* token breakdown per thread with card-level legs ([470089d](https://github.com/calionauta/bb-plugin-stelow/commit/470089dba2bc307340dd88b7832814333a9f8d93))
+* token evidence in run bundle manifest ([793b639](https://github.com/calionauta/bb-plugin-stelow/commit/793b6392ba1f80ee3a9e268ff229faee118d64e0))
+
+
+### Bug Fixes
+
+* persist board view per track; size hill dots by slice ([54bf0be](https://github.com/calionauta/bb-plugin-stelow/commit/54bf0be9dac32b55f1ca5f266faa11005fb09893))
+
 ## [0.38.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.37.0...v0.38.0) (2026-09-21)
 
 
