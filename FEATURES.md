@@ -190,7 +190,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   same ordered pills: board location, lifecycle state, worker state, then
   workflow type. The components and tones are shared; a generic “Status”
   label and the stage-as-status variant are not shown on the board, so a
-  card reads the same way before and after opening it.
+  card reads the same way before and after opening it. Tiles and the
+  breadcrumb name the card's project in one muted line — context without
+  clutter; list rows already carried it.
 - **Inbox** (one word, every track). The first column means *captured,
   nothing running yet*: a card sits there while it has no worker, and
   leaving it is what starts the card. Moving a card that already has a

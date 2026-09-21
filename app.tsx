@@ -2836,6 +2836,7 @@ function CardMetaRows({ card }: { card: CardItem }) {
   const attention = card.needsAttention;
   return (
     <>
+      <div className="mt-1 truncate text-[11px] text-muted-foreground" title={`Project: ${card.projectName}`}>{card.projectName}</div>
       {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
         <div className="mt-2"><AttentionChip label={attentionLabel(card)} /></div>
       ) : null}
@@ -3479,6 +3480,8 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, 
       </button> : null}
       <nav className="min-w-0 flex-1 truncate text-xs text-muted-foreground" aria-label="Breadcrumb">
         <span>Stelow</span>
+        <span aria-hidden className="mx-1 text-border">/</span>
+        <span className="font-medium">{card?.projectName ?? "…"}</span>
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
         {card ? <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills {...buildStatusPillProps(card)} /></span> : null}
