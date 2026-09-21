@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.40.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.39.0...v0.40.0) (2026-09-21)
+
+
+### Features
+
+* first board column reads Bucket, keys unchanged ([5d271b7](https://github.com/calionauta/bb-plugin-stelow/commit/5d271b71a23fa65d0f6ba5373bf24049fefca520))
+* name the card project on tiles and the open-card breadcrumb ([a6d54f1](https://github.com/calionauta/bb-plugin-stelow/commit/a6d54f15dbe4cc1e0a4a441903e52b404f256091))
+* shared card gallery dialog for Bucket piles and hill clusters ([a39797c](https://github.com/calionauta/bb-plugin-stelow/commit/a39797cf07dde59a1f4bc3005d65b6100d9b61e5))
+
+
+### Bug Fixes
+
+* Bucket gallery sits beside New, before Agent Presets ([009c385](https://github.com/calionauta/bb-plugin-stelow/commit/009c38575b79841747f412ebf8ed118533d9a1ff))
+* decision_points rebuild runs in a transaction ([550133a](https://github.com/calionauta/bb-plugin-stelow/commit/550133a1ebfb40ccf96cb49f469f232aa1591667))
+* done refuses with open scopes ([54fd105](https://github.com/calionauta/bb-plugin-stelow/commit/54fd105ee55a91d65903047a1ccf3e809c1fb78d))
+* hill clusters open a gallery modal on click, drop percentages ([0c6392d](https://github.com/calionauta/bb-plugin-stelow/commit/0c6392d92646e98755a31a81d95650c4fa5f63ae))
+* judge timeout relies on finally cleanup ([6349f8b](https://github.com/calionauta/bb-plugin-stelow/commit/6349f8b1786df2c3c492ced89f801917758c2014))
+* preset judging refusals name the judge preset ([84a0415](https://github.com/calionauta/bb-plugin-stelow/commit/84a0415cb87e6aebec31f68fea1b90afd2756500))
+* recon warning reads as advisory with the fix named ([ace771e](https://github.com/calionauta/bb-plugin-stelow/commit/ace771e48acd5dc5da25aad9b3141e45633923f1))
+* router rows meet min-h-11 touch targets ([e6be021](https://github.com/calionauta/bb-plugin-stelow/commit/e6be021dc2ace7538a2580742ba47c76b8c7e384))
+* rule save names its project ([5bdc501](https://github.com/calionauta/bb-plugin-stelow/commit/5bdc501ad089e460c9c16370424c6ae54aec6668))
+* scope rows rotate through the shared chevron contract ([513de9e](https://github.com/calionauta/bb-plugin-stelow/commit/513de9e5a9879c5a10dc022909f49ad3c671d2f3))
+* terminal cards show no stage pill ([6af2fb6](https://github.com/calionauta/bb-plugin-stelow/commit/6af2fb61903a16355e7f63095604e557ddc0b014))
+
 ## [0.39.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.38.0...v0.39.0) (2026-09-21)
 
 
