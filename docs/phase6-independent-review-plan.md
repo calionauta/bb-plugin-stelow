@@ -3,8 +3,8 @@
 ## Status
 
 Accepted design, not yet implemented. Deterministic gates (Phases 1–5) stay
-the blocking layer; everything here is advisory/triage until a golden set
-and measured agreement exist. Open decisions are marked [DECISION].
+the blocking layer; everything here is advisory/triage until confidence floors
+and adversarial spot-checks earn it. Open decisions are marked [DECISION].
 
 ## 0. Evidence base
 
@@ -12,7 +12,7 @@ and measured agreement exist. Open decisions are marked [DECISION].
   swapping models without leaving the family only changes whose style wins.
   What works: different-lineage judge, binary criterion-level rubrics,
   quote-anchoring (verdict cites a verbatim span the harness verifies
-  character-for-character), golden-set calibration with kappa (never raw
+  character-for-character), calibration against human spot-checks (never raw
   agreement), pinned judge version, judge as regression floor — never the
   sole gate where a deterministic check exists (27/27 deterministic vs
   11/27 generic LLM reviewer in the cited study). Format bias dwarfs
@@ -78,8 +78,8 @@ Refusal names the failing check, mirroring `verify` output.
 - Research with web evidence: review recommended (worker prompt suggests).
 - Audits, critiques, tech plans: review recommended before `done`.
 - Simple explore: review optional.
-- Enforcement (blocking) only after: golden set + measured kappa +
-  explicit owner approval. Never silently.
+- Enforcement (blocking) only after: confidence thresholds + adversarial
+  spot-checks + explicit owner approval. Never silently.
 
 ### Cost controls
 
@@ -157,8 +157,8 @@ One dedicated preset, minimal:
    the drawer data shape).
 2. `::stelow-quality` directive + `qualitySeal` RPC.
 3. Quality panel section + Repair action.
-4. Golden set + kappa measurement on reviewer verdicts vs human spot
-   checks; publish the agreement rate with the verdict.
+4. Adversarial spot-checks of reviewer verdicts (including negations)
+   vs human judgment; publish the agreement rate with the verdict.
 5. Only then: discuss blocking policy for high-risk types, with the
    measured agreement as the confidence interval — never before.
 
@@ -169,6 +169,6 @@ One dedicated preset, minimal:
   state; no seal claims truth, only checked provenance.
 - Reviewer findings without exact quotes are rejected by shape.
 - Judge preset pinned and versioned; changing it invalidates trend
-  comparisons until re-baselined on the golden set.
+  comparisons until re-baselined on fresh spot-checks.
 - `npm run typecheck`, `npm test`, `npm run build:reload` green;
   `FEATURES.md` + upstream blueprint updated per user-facing change.

@@ -810,13 +810,6 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   unverifiable report, never blocking. Runs only with the Artifact
   criteria router in Decision API mode and a configured provider;
   everything else refuses with the fix named.
-- **`bb stelow goldens` (measurement, `lib/skill-goldens.mjs`).** Humans
-  label artifacts met/unmet per criterion in golden files (skill header +
-  judgments + artifact body); the judge scores the same files and Cohen's
-  kappa per criterion decides keep (≥0.6), repair, or drop (under 5 labels
-  always repairs). Read-only like `criteria`; abstentions never enter
-  kappa. This is the calibration loop semantic enforcement waits on —
-  procedure in [docs/golden-calibration.md](./docs/golden-calibration.md).
 - **Reviewer preset designation** (`getReviewPreset`,
   `assignReviewPreset`, `review_preset` table). One singleton preset
   marked as artifact reviewer (different model family, low reasoning,
@@ -829,7 +822,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `setReviewPolicy`, `review_policy` table, default off). When required,
   research/explore `done` refuses without a passing review stamped with
   the current fingerprint (`reviewCoversFingerprint`). Mechanism only:
-  enable solely with a calibrated reviewer and measured agreement —
+  enable solely with a reviewer you trust on adversarial spot-checks —
   the refusal says so.
 - **Portable audit receipt** (`scripts/stelow audit-trail`). After bb's
   stricter checkout-bound `audit.md` gate passes, Build completion invokes the

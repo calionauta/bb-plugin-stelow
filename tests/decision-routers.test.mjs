@@ -248,21 +248,6 @@ assert.ok(criteriaBody.includes("Set it to Decision API or preset judging in Man
 assert.ok(criteriaBody.includes("advisory only, never blocking"), "reports state their advisory nature");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(criteriaBody), "the branch makes zero database writes (reads only)");
 
-// Goldens wiring: measurement only — reads goldens, judges, reports kappa.
-// Same read-only contract as criteria, plus skill-header matching so a
-// golden never scores against the wrong skill.
-assert.match(server, /name: "goldens", summary: "Measure judge agreement on labeled golden artifacts/, "the command is listed");
-const goldensAt = server.indexOf('if (argv[0] === "goldens") {');
-assert.ok(goldensAt >= 0, "the goldens branch exists");
-const goldensEnd = server.indexOf('if (argv[0] === "draft") {', goldensAt);
-assert.ok(goldensEnd > goldensAt, "the goldens branch is bounded");
-const goldensBody = server.slice(goldensAt, goldensEnd);
-assert.ok(goldensBody.includes("cohenKappa("), "agreement uses kappa, not raw percent");
-assert.ok(goldensBody.includes("goldenVerdict("), "verdicts follow keep/repair/drop");
-assert.ok(goldensBody.includes("does not match --skill"), "skill-header mismatches skip with the reason");
-assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(goldensBody), "goldens makes zero database writes");
-assert.ok(!goldensBody.includes("realtime.publish"), "goldens publishes nothing");
-assert.ok(!goldensBody.includes("logCardComment"), "goldens leaves no comments");
 assert.ok(!criteriaBody.includes("realtime.publish"), "the branch publishes no realtime events");
 assert.ok(!criteriaBody.includes("logCardComment"), "the branch leaves no card comments");
 
