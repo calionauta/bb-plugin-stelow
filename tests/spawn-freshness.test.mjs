@@ -25,8 +25,8 @@ assert.equal(
 );
 assert.equal(
   (server.match(/await spawnDisposable\(\{/g) ?? []).length,
-  2,
-  "two disposable spawns pinned; a third updates this contract deliberately",
+  3,
+  "three disposable spawns pinned (review, draft, card-title); a fourth updates this contract deliberately",
 );
 
 // The SDK surface has no history inheritance today — keep it that way. If a
@@ -83,11 +83,18 @@ for (const name of ["reviewThread = await spawnDisposable({", "draftThread = awa
   assert.ok(server.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
   assert.ok(server.slice(at, at + 900).includes("lifecycleOwnerThreadId: card.worker_thread_id"), "disposable spawns die with their worker (dependent lifecycle)");
 }
+// Card titles are ownerless by design: they need no worker, and the
+// rename-guard plus silent failure cover every race — an owner link would
+// add lifecycle without meaning.
+const titleAt = server.indexOf("spawnDisposable({", server.indexOf("async function suggestCardName"));
+assert.ok(titleAt >= 0, "titling rides the disposable path as a registered site");
+assert.ok(server.slice(titleAt, titleAt + 600).includes('visibility: "hidden"'), "title spawns stay hidden");
+assert.ok(server.slice(titleAt, titleAt + 1200).includes('"card-title"'), "title spawns name their registry site");
 // lifecycleOwnerThreadId is lifecycle, never history: the bans above (parent,
 // fork, resume inside spawn blocks) still stand untouched.
 // Older daemons that reject the field instead of stripping it get one retry
 // without it, so disposables never break on strict hosts.
-assert.match(server, /async function spawnDisposable\(args: SpawnArgs\)/, "disposable spawns go through the lifecycle helper");
+assert.match(server, /async function spawnDisposable\(args: SpawnArgs, site: string\)/, "disposable spawns go through the registry-validated helper");
 assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-field rejection retries once without the owner");
 
 // The owner rule teaches fresh delegation: full task in the call, never a

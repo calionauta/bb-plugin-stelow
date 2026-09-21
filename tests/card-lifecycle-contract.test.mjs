@@ -28,6 +28,25 @@ const updateIntent = rpcMethod("updateCardIntent", "addCardComment");
 assert.match(updateIntent, /if \(!canEditWorkflowIntent\(card\)\)/, "only triage Build cards can edit their workflow type");
 assert.doesNotMatch(updateIntent, /threads\.send\(/, "editing type never silently redirects an existing worker");
 
+// Inline rename: any card renames to 1-120 chars through one RPC; blank
+// restores the prompt-derived heuristic instead of refusing or blanking,
+// and every surface refreshes through the shared card-state publish.
+assert.match(server, /renameCard: \{\s*\n\s*experimental_description: "Rename a card's display title/, "rename is a contracted RPC");
+const rename = rpcMethod("renameCard", "addCardComment");
+assert.match(rename, /heuristicDisplayName\(card\.prompt, card\.name\)/, "blank restores the heuristic, never a blank title");
+assert.match(rename, /UPDATE cards SET display_name = \?, updated_at = \? WHERE id = \?/, "rename writes display_name, nothing else");
+assert.match(rename, /publish\("card-state", \{ cardId \}\)/, "rename refreshes open card surfaces");
+assert.match(server, /void suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
+assert.match(app, /aria-label="Rename card"/, "the header offers inline rename beside the title");
+assert.match(app, /aria-label="Card title"/, "the rename input is labelled");
+assert.match(app, /rpc\.call\("renameCard", \{ cardId: card\.id, name: draftName \}\)/, "save rides the rename RPC, cancel just closes");
+
+// Fire-and-forget titling: creation keeps the instant heuristic and the
+// Generation burst upgrades it when it lands — never blocking, never
+// overwriting a human rename that landed mid-flight.
+assert.match(server, /void suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
+assert.match(server, /spawnDisposable\(\{[\s\S]*?\}, "card-title"\)/, "titling rides the disposable path as a registered site");
+
 const byThread = rpcMethod("cardByWorkerThread", "getNotification");
 assert.doesNotMatch(byThread, /row\.status === "archived"/, "an archived card's thread still links back to its card");
 

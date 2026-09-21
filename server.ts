@@ -40,7 +40,8 @@ import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, subste
 import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, substepQuality, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "./lib/research-artifacts.mjs";
 import { validateArtifact, validateSubstep, validateVariant, validateExplore, buildDocDepths, sealStatus } from "./lib/artifact-validation.mjs";
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
-import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput } from "./lib/draft-burst.mjs";
+import { assertDisposableSpawn } from "./lib/delegation-map.mjs";
+import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput, buildCardNamePrompt, validateCardName, heuristicDisplayName, CARD_NAME_MAX_CHARS } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria, groupCriteriaByKind, parseCriteriaBlock } from "./lib/skill-criteria.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
@@ -452,6 +453,11 @@ export const rpcContract = defineRpcContract({
   updateCardIntent: {
     experimental_description: "Correct a build card's workflow type while it is still in triage",
     input: z.object({ cardId: z.string(), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  renameCard: {
+    experimental_description: "Rename a card's display title (1-120 chars); blank restores the heuristic",
+    input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   cardDetail: {
@@ -2067,6 +2073,7 @@ ${prompt}`;
     if (!projectId) return fail("Preset judging needs a project.");
     let threadId: string | null = null;
     try {
+      // delegation-site: preset-judge
       const thread = await bb.sdk.threads.spawn({
         projectId,
         environment: { type: "project-default" },
@@ -2142,6 +2149,64 @@ ${prompt}`;
     if (!parsed.ok || !("verdicts" in parsed) || (parsed.verdicts.length === 0 && semantic.length > 0)) return { ok: false as const, findings: [] as Array<PresetFinding>, evaluated: 0, error: !parsed.ok ? parsed.error : "judge verdicts match no known criteria" };
     const findings = presetCriteriaFindings({ verdicts: parsed.verdicts, semantic, routeAt });
     return { ok: true as const, findings, evaluated: findings.length };
+  }
+
+  // Fire-and-forget card titling on the Generation tier: a short hidden
+  // burst proposes a better title than the prompt-derived heuristic, then
+  // the human renames inline. Silent on every failure path — creation
+  // already succeeded with the heuristic, and a title is never worth an
+  // error. Registered as delegation site "card-title".
+  async function suggestCardName(cardId: string): Promise<void> {
+    try {
+      const card = getCard(cardId);
+      if (!card) return;
+      const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
+      const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+      const boardDefault = designated ? getPresetById(designated.preset_id) : null;
+      const bandPreset = getPresetForBand(band, cardId);
+      const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
+      const titlePreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
+      if (!titlePreset) return;
+      const params = presetAttachmentParams(titlePreset);
+      let titleThread: { id: string };
+      try {
+        titleThread = await spawnDisposable({
+          projectId: card.project_id,
+          environment: { type: "project-default" },
+          visibility: "hidden",
+          title: `Stelow title: ${card.display_name ?? card.name}`,
+          providerId: params.providerId,
+          model: params.modelId,
+          reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+          permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
+          input: [{ type: "text", mentions: [], text: buildCardNamePrompt({ prompt: card.prompt, kind: card.kind }) }],
+        }, "card-title");
+      } catch {
+        return;
+      }
+      const TITLE_POLLS = 12;
+      for (let poll = 0; poll < TITLE_POLLS; poll++) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const thread = await bb.sdk.threads.get({ threadId: titleThread.id }).catch(() => null);
+        const status = (thread as { status?: unknown } | null)?.status;
+        if (status === "idle" || status === "stopping" || status === "archived" || status === "deleted") break;
+        if (status === "failed" || status === "error" || poll === TITLE_POLLS - 1) {
+          await stopWorkerThread(titleThread.id).catch(() => undefined);
+          return;
+        }
+      }
+      const output = await bb.sdk.threads.output({ threadId: titleThread.id }).then((result) => result.output ?? "").catch(() => "");
+      await stopWorkerThread(titleThread.id).catch(() => undefined);
+      const validated = validateCardName(output);
+      if (!validated.ok || !validated.name) return;
+      const live = getCard(cardId);
+      // Never overwrite a human rename that landed while judging.
+      if (!live || (live.display_name ?? live.name) !== (card.display_name ?? card.name)) return;
+      db.prepare("UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?").run(validated.name, now(), cardId);
+      bb.realtime.publish("card-state", { cardId });
+    } catch {
+      // Titles never break creation.
+    }
   }
 
   // Triage-intent router: seed a build card's intent from the Decision API
@@ -2282,7 +2347,7 @@ ${prompt}`;
     }
     if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this card.");
     const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
-    const displayName = prompt.replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 8).join(" ").slice(0, 60) || slug;
+    const displayName = heuristicDisplayName(prompt, slug);
     const isResearch = kind === "research";
     const isExplore = kind === "explore";
     const researchStrategy = isResearch ? researchStrategyById(strategy ?? "") : null;
@@ -2385,6 +2450,7 @@ ${prompt}`;
     let thread: Awaited<ReturnType<typeof bb.sdk.threads.spawn>> | null = null;
     if (start) {
     try {
+      // delegation-site: worker-spawn
       thread = await bb.sdk.threads.spawn({
       projectId: workerProjectId,
       environment: selectedEnvironment,
@@ -2469,6 +2535,9 @@ ${prompt}` }, ...workerAttachments],
     // clobber those build defaults.
     if (!isResearch && !isExplore) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode: reviewRung, reviewGates });
     bb.realtime.publish("card-state", { cardId });
+    // Title suggestion rides along, never blocking: creation already
+    // succeeded with the heuristic, the burst upgrades it when it lands.
+    void suggestCardName(cardId).catch(() => undefined);
     return { cardId, threadId: thread?.id ?? null };
   }
 
@@ -2627,6 +2696,7 @@ ${prompt}` }, ...workerAttachments],
     }) : null;
     try {
       const nextEnvironment = await continuingWorkerEnvironment(row, source ? workerEnvironment(source, params, row.workspace_kind === "exploratory") : { type: "project-default" });
+      // delegation-site: worker-spawn
       const newThread = await bb.sdk.threads.spawn({
         projectId: row.project_id,
         environment: nextEnvironment,
@@ -4219,7 +4289,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // that rejects it instead gets one retry without the field, so drafts and
   // reviews never break on older daemons.
   type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
-  async function spawnDisposable(args: SpawnArgs): Promise<{ id: string }> {
+  async function spawnDisposable(args: SpawnArgs, site: string): Promise<{ id: string }> {
+    // Fail fast through the registry before any SDK call: unknown sites,
+    // visible spawns, and full permission refuse here, not mid-flight.
+    assertDisposableSpawn({ site, args });
     try {
       return await bb.sdk.threads.spawn(args);
     } catch (error) {
@@ -4998,6 +5071,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async startWorkflow({ projectId, prompt }) {
+      // delegation-site: worker-spawn
       const thread = await bb.sdk.threads.spawn({
         projectId,
         environment: { type: "project-default" },
@@ -5532,6 +5606,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { ok: true, error: null };
     },
 
+    async renameCard({ cardId, name }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
+      // Blank restores the prompt-derived heuristic instead of refusing —
+      // a title must always resolve to something readable.
+      const next = name.trim().slice(0, 120) || heuristicDisplayName(card.prompt, card.name);
+      const ts = now();
+      db.prepare("UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?").run(next, ts, cardId);
+      bb.realtime.publish("card-state", { cardId });
+      return { ok: true, error: null };
+    },
+
     async addCardComment({ cardId, target, targetId, body }) {
       const card = getCard(cardId);
       if (!card) return { commentId: "", error: ERR_CARD_NOT_FOUND };
@@ -5839,6 +5925,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         previousThreadId,
       }) : null;
       const nextEnvironment = await continuingWorkerEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
+      // delegation-site: worker-spawn
       const newThread = await bb.sdk.threads.spawn({
         projectId: card.project_id,
         environment: nextEnvironment,
@@ -8718,7 +8805,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
             executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
             prompt,
-          });
+          }, "review");
         } catch (error) {
           return { exitCode: 1, stderr: `Review spawn failed: ${error instanceof Error ? error.message : "unknown error"}.${permissionNote}` };
         }
@@ -8889,7 +8976,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
             executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
             prompt,
-          });
+          }, "draft-burst");
         } catch (error) {
           return { exitCode: 1, stderr: `Draft spawn failed: ${error instanceof Error ? error.message : "unknown error"}.${permissionNote}` };
         }

@@ -768,6 +768,18 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   on research, explore, and build cards. Draft records live under
   `drafts/` — disposable scratch, exempt from the unregistered list and
   the strict audit gate, so a burst never blocks `done`.
+- **Delegation registry** (`lib/delegation-map.mjs`). Every LLM/thread
+  contact point registered once (site, tier, preset source, spawn path,
+  writes, judge): draft bursts and card titles on Generation, reviews on
+  the reviewer preset, preset judges direct, worker spawns documented on
+  their own cascade. Disposable spawns validate before any SDK call
+  (known site, hidden, never full permission); a new spawn site without
+  a `delegation-site` marker fails the topology pin.
+- **Automatic card titles + inline rename** (`renameCard`). Creation keeps
+  the instant prompt-derived heuristic, then a Generation burst proposes
+  a ≤60-char title fire-and-forget — silent on failure, never overwriting
+  a human rename that landed mid-flight. The open-card breadcrumb edits
+  inline with explicit Save/Cancel; blank restores the heuristic.
 - **Fresh-context spawn contract** (`tests/spawn-freshness.test.mjs`).
   Six spawn sites pinned; no fork/history inheritance in any spawn block
   (`previousThreadId` travels only as a reference string beside an

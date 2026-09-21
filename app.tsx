@@ -3580,6 +3580,26 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, 
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Inline rename: pencil swaps the breadcrumb title for an input with
+  // explicit Save/Cancel — no silent blur-save, the realtime card-state
+  // publish refreshes every surface after saving.
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [renamingBusy, setRenamingBusy] = useState(false);
+  async function applyRename() {
+    if (!card || renamingBusy) return;
+    setRenamingBusy(true);
+    try {
+      const result = await rpc.call("renameCard", { cardId: card.id, name: draftName });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not rename.");
+        return;
+      }
+      setRenaming(false);
+    } finally {
+      setRenamingBusy(false);
+    }
+  }
   useEffect(() => {
     if (!onBack) return;
     const onKey = (event: KeyboardEvent) => {
@@ -3608,7 +3628,22 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, 
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium">{card?.projectName ?? "…"}</span>
         <span aria-hidden className="mx-1 text-border">/</span>
-        <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
+        {renaming && card ? (
+          <span className="inline-flex min-w-0 flex-1 items-center gap-1 align-middle">
+            <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyRename(); if (event.key === "Escape") setRenaming(false); }} aria-label="Card title" maxLength={120} className="h-7 min-w-0 flex-1 text-xs" autoFocus />
+            <Button size="sm" variant="outline" disabled={renamingBusy || draftName.trim().length === 0} onClick={() => void applyRename()}>Save</Button>
+            <Button size="sm" variant="ghost" disabled={renamingBusy} onClick={() => setRenaming(false)}>Cancel</Button>
+          </span>
+        ) : (
+          <>
+            <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
+            {card ? (
+              <button type="button" onClick={() => { setDraftName(card.displayName ?? card.name); setRenaming(true); }} title="Rename card" aria-label="Rename card" className="ml-1 inline-flex min-h-8 min-w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                <Icon name="Edit" className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            ) : null}
+          </>
+        )}
         {card ? <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills {...buildStatusPillProps(card)} /></span> : null}
         {card && card.kind === "build" ? <span className="ml-2 hidden align-middle md:inline-flex"><PhaseRail stage={card.stage} /></span> : null}
       </nav>
@@ -4775,7 +4810,7 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
                 </select>
                 <span className="w-28 shrink-0 truncate text-right text-[11px] text-muted-foreground" title="Disposable text-only bursts judged by the worker">draft bursts</span>
               </div>
-              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Short disposable texts your card's worker requests mid-work — a commit-message draft, a changelog line for a finished scope. Text in, text out; the worker judges every word before using it.</p>
+              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Short disposable texts your card's worker requests mid-work — a commit-message draft, a changelog line, a fresh card title. Text in, text out; the worker judges every word before using it.</p>
             </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">Rule of thumb: when the worker rewrites over 20% of a burst&apos;s output, that call site belongs back on Reliable.</p>

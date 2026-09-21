@@ -6,6 +6,10 @@ import {
   buildDraftPrompt,
   validateDraftOutput,
   DRAFT_MAX_CHARS,
+  buildCardNamePrompt,
+  validateCardName,
+  heuristicDisplayName,
+  CARD_NAME_MAX_CHARS,
 } from "../lib/draft-burst.mjs";
 
 assert.equal(TIER_RELIABLE, "reliable", "tier names are protocol, not prose");
@@ -54,5 +58,21 @@ const long = validateDraftOutput("x".repeat(DRAFT_MAX_CHARS + 10));
 assert.equal(long.ok, true, "oversize passes truncated, never repaired inline");
 assert.equal(long.truncated, true, "truncation flagged");
 assert.ok(long.text.includes("truncated at"), "truncation named in the text");
+
+// Card titles ride Tier G: a short constrained ask, judged by the human
+// inline rename — the heuristic stays the instant fallback everywhere.
+assert.equal(CARD_NAME_MAX_CHARS, 60, "titles fit tiles, headers, and toasts");
+const titlePrompt = buildCardNamePrompt({ prompt: "Fix the login redirect loop on Safari", kind: "build" });
+assert.ok(titlePrompt.includes("ONLY the title"), "the leash forbids everything but the title");
+assert.ok(titlePrompt.includes("Safari"), "the request reaches the judge");
+assert.deepEqual(validateCardName("```\n```"), { ok: false, name: null, error: "empty title" }, "a fenced empty block fails closed");
+assert.deepEqual(validateCardName('```"Fix Safari login loop"```'), { ok: true, name: "Fix Safari login loop", truncated: false }, "fenced verdicts extract before unquoting");
+const quoted = validateCardName('"Fix Safari login loop"');
+assert.deepEqual(quoted, { ok: true, name: "Fix Safari login loop", truncated: false }, "surrounding quotes strip, content survives");
+const clipped = validateCardName(`{"ok":true,"choice":"${"x".repeat(80)}"}`);
+assert.equal(clipped.name?.length, 60, "long verdicts clip to tile width");
+assert.equal(validateCardName("   ").ok, false, "whitespace is not a title");
+assert.equal(heuristicDisplayName("Fix the login redirect loop on Safari today please ok", "fallback"), "Fix the login redirect loop on Safari today please ok".split(" ").slice(0, 8).join(" "), "heuristic takes the first words");
+assert.equal(heuristicDisplayName("", "fallback"), "fallback", "empty prompt falls back, never blanks");
 
 console.log("draft burst test ok: cascade, leash prompt, presence-only validation");
