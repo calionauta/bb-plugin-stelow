@@ -172,6 +172,8 @@ assert.doesNotMatch(lightweightCard, /bg-destructive\/10/, "research/explore til
 assert.match(boardCard, /liveBorderClass\(card\)/, "a Build card needing attention uses its shared live attention border");
 assert.match(buildStatusPills, /const started = card\.workerThreadId !== null/, "a parked card names no checkpoint it never reached");
 assert.match(buildStatusPills, />Not started<\/Pill>/, "unstarted cards read Not started on tiles and open cards alike");
+assert.match(buildStatusPills, /const terminal = card\.status === "completed" \|\| card\.status === "archived"/, "terminal cards are defined once, not per pill");
+assert.match(buildStatusPills, /\{!terminal \? \(started/, "completed and archived cards show no stage pill — every checkpoint already traversed");
 assert.match(app, /if \(card\.workerThreadId == null\) \{\s*return \{\s*kind: "calm",\s*title: "Not started",/, "the parked hero claims no checkpoint either");
 assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the live checkpoint treatment has one definition");
 assert.match(app, /\? CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");

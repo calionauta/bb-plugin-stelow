@@ -148,10 +148,15 @@ export function BuildStatusPills({ card, statusTone, intentLabel }: {
   intentLabel: (intent: string) => string | undefined;
 }) {
   const started = card.workerThreadId !== null && card.workerThreadId !== undefined;
+  // Terminal cards traversed every checkpoint by definition: the stage pill
+  // would name a position the card no longer occupies, so completed and
+  // archived cards keep identity (intent) without it. Blocked keeps its
+  // stage — that work resumes where it stopped.
+  const terminal = card.status === "completed" || card.status === "archived";
   return <>
-    {started
+    {!terminal ? (started
       ? <Pill tone={statusTone(card.status)} title="Workflow stage — the specific checkpoint this card is at." icon={<Icon name={STAGE_ICON} className="size-3" aria-hidden />}>{card.stage ? stageLabel(card.stage) : "Not started"}</Pill>
-      : <Pill title="Not started — parked in Inbox. Nothing runs until you start it.">Not started</Pill>}
+      : <Pill title="Not started — parked in Bucket. Nothing runs until you start it.">Not started</Pill>) : null}
     {card.intent !== "unknown" ? <Pill title="Workflow type chosen during triage." icon={<Icon name={INTENT_ICON[card.intent] ?? "CircleDashed"} className="size-3" aria-hidden />}>{intentLabel(card.intent) ?? card.intent}</Pill> : null}
     {card.activity === "awaiting-answer" ? <ActivityPill activity={card.activity} /> : null}
   </>;
