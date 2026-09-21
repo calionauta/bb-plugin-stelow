@@ -20,21 +20,28 @@ assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label=
 assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label="Explore cards view" views=\{\["board", "list"\]\} \/>/, "explore hides the meaningless hill");
 assert.equal((app.match(/<HillBoard cards=\{Object\.values\(grouped\)\.flat\(\)\} navigate=\{navigate\} \/>/g) ?? []).length, 1, "one hill render, on the build board");
 
-// Dots carry position, curve height, and lane from lib/hill-position —
-// never inline math in the view — and open through the shared navigator.
+// Dots sit ON one shared curve (hillCurvePoints draws the path, dots read
+// the same y) and never jitter x: crowding resolves into count pills
+// anchored at their leftmost card. Hover or tap previews one floating
+// panel — a full card for lone dots, compact rows for clusters.
 const hillAt = app.indexOf("function HillBoard({ cards, navigate }");
 assert.ok(hillAt >= 0, "the hill component exists");
 const hillEnd = app.indexOf("\n}\n", hillAt);
 const hillBody = app.slice(hillAt, hillEnd);
 assert.ok(hillBody.includes("hillPoint(card)"), "dots position through the lib, not inline math");
-assert.ok(hillBody.includes("goToCard(navigate, card, card.id)"), "dots open the same card surface as tiles and rows");
+assert.ok(hillBody.includes("hillCurvePoints(41)"), "the drawn curve samples the same formula as the dots");
 assert.ok(hillBody.includes('role="status"'), "the uphill/executing tally announces");
-assert.ok(hillBody.includes("aria-label={`Open card"), "dots name their card and completion for assistive tech");
+assert.ok(hillBody.includes("aria-label={`Preview card"), "dots name their card and completion for assistive tech");
 assert.ok(hillBody.includes("Figuring out") && hillBody.includes("Executing"), "halves read as work states, not coordinates");
-assert.ok(hillBody.includes('role="group"'), "dots group under one labelled landmark");
 assert.ok(hillBody.includes('aria-label="Hill legend"'), "dot colors decode through a legend, not memory");
-assert.ok(hillBody.includes("activityDotTone(card)"), "dot tones resolve through one helper, not inline ternaries");
+assert.ok(hillBody.includes("activityDotTone(cluster.cards[0])"), "dot tones resolve through one helper, not inline ternaries");
 assert.ok(hillBody.includes("before:-inset-2"), "12px dots carry an invisible 28px hit area for touch");
+assert.ok(app.includes("function HillClusterPanel({"), "one panel serves lone dots and clusters alike");
+assert.ok(app.includes("activityDotTone(card)"), "cluster rows tint through the same helper as dots");
+assert.ok(app.includes("<BoardCard card={cluster.cards[0]!}"), "lone dots preview the same card tile as the board");
+assert.ok(app.includes('role="dialog"'), "the floating preview announces as a dialog");
+assert.ok(app.includes('aria-label="Close preview"'), "the preview dismisses through a labelled control");
+assert.ok(hillBody.includes('event.key === "Escape"'), "Escape dismisses the preview from the keyboard");
 
 // Scope strips: one shared bar in tiles and rows, fed by summary counts —
 // never a pasted shape per surface, never rendered for scopeless cards.

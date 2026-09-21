@@ -206,8 +206,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   and explore cards carry no scopes or workflow stages, so their toggles hide
   it rather than pile every dot at zero.
   Position derives from board data alone (task, scope, then stage
-  fraction via `lib/hill-position.mjs` — deterministic lanes, no layout
-  shift); dots are buttons opening the same card surface. Scope strips
+  fraction via `lib/hill-position.mjs`); x is exact and never jittered,
+  so no card reads ahead of another. Dots sit exactly
+  on one shared curve formula (line and dots read the same numbers, so
+  nothing floats); crowding resolves into count pills anchored at their
+  leftmost card, and hover or tap previews one floating panel — the full
+  card tile for lone dots, scrollable compact rows for clusters. Curve
+  draw, staggered entrances, and attention pulse animate under
+  `prefers-reduced-motion` guards. Scope strips
   (`ScopeStrip`, shared by tiles and rows) and the build detail phase
   rail reuse the same counts, so progress reads as shape everywhere.
 - **Card keyboard.** Enter/Space on a focused card opens its detail;

@@ -29,7 +29,7 @@ import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
-import { hillPoint } from "./lib/hill-position.mjs";
+import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
 import { questionCopy } from "./lib/question-presentation.mjs";
@@ -2491,30 +2491,93 @@ function ExploreList({ groups, navigate, stageLabelById, collapsed, onToggle }: 
 // fetch, no layout shift (lanes hash from the card id). Dots are real
 // buttons opening the same card surface as tiles and rows.
 function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnType<typeof useBbNavigate> }) {
+  // The open cluster is identified by its x, not its index: board updates
+  // re-sort clusters, and an index would silently point at another pile.
+  const [openX, setOpenX] = useState<number | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (openTimer.current) clearTimeout(openTimer.current);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+  useEffect(() => {
+    if (openX === null) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpenX(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [openX]);
+  const dots = useMemo(() => cards.map((card) => ({ card, point: hillPoint(card) })), [cards]);
+  const clusters = useMemo(() => clusterHillDots(dots), [dots]);
+  const curvePath = useMemo(() => hillCurvePoints(41).map((entry, index) => `${index === 0 ? "M" : "L"} ${(entry.x * 100).toFixed(2)} ${(36 - entry.y * 24.8).toFixed(2)}`).join(" "), []);
   if (cards.length === 0) return <p className="text-sm text-muted-foreground">No cards in this view.</p>;
-  const dots = cards.map((card) => ({ card, point: hillPoint(card) }));
   const uphill = dots.filter((dot) => dot.point.region === "uphill").length;
+  function scheduleOpen(x: number) {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    if (openTimer.current) clearTimeout(openTimer.current);
+    openTimer.current = setTimeout(() => setOpenX(x), 200);
+  }
+  function scheduleClose() {
+    if (openTimer.current) clearTimeout(openTimer.current);
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpenX(null), 250);
+  }
+  function cancelClose() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }
+  const openCluster = openX === null ? null : clusters.find((cluster) => cluster.x === openX) ?? null;
+  const openAnchor = openCluster ? hillDotPercent({ x: openCluster.x, y: hillPoint(openCluster.cards[0]).y }) : null;
   return (
     <div>
       <p className="text-xs text-muted-foreground" role="status">{cards.length} cards on the hill — {uphill} figuring out, {cards.length - uphill} executing.</p>
-      <div role="group" aria-label={`Hill view: ${cards.length} cards positioned by completion`} className="relative mt-2 h-64 w-full sm:h-80">
+      <div className="relative mt-2 h-64 w-full sm:h-80">
         <svg aria-hidden className="absolute inset-0 h-full w-full text-muted-foreground/40" viewBox="0 0 100 40" preserveAspectRatio="none">
-          <path d="M 0 36 C 25 36, 32 6, 50 6 S 75 36, 100 36" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <path d={curvePath} pathLength={100} className="stelow-hill-draw" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
           <line x1="50" y1="2" x2="50" y2="38" stroke="currentColor" strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
         </svg>
-        {dots.map(({ card, point }) => {
-          const pct = Math.round(point.x * 100);
-          return (
+        {clusters.map((cluster) => {
+          const pos = hillDotPercent({ x: cluster.x, y: hillPoint(cluster.cards[0]).y });
+          const multi = cluster.cards.length > 1;
+          const attention = cluster.cards.some((card) => card.needsAttention);
+          const isOpen = openX === cluster.x;
+          return multi ? (
             <button
-              key={card.id}
-              onClick={() => goToCard(navigate, card, card.id)}
-              title={`${card.displayName} — ${pct}% complete`}
-              aria-label={`Open card ${card.displayName}, ${pct}% complete.`}
-              style={{ left: `${2 + point.x * 96}%`, bottom: `${10 + point.y * 62 + point.lane * 5}%` }}
-              className={`absolute size-3 -translate-x-1/2 translate-y-1/2 cursor-pointer rounded-full before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activityDotTone(card)}${card.needsAttention ? " ring-2 ring-amber-500/50" : ""}`}
+              key={`cluster-${cluster.x}`}
+              onClick={() => setOpenX(isOpen ? null : cluster.x)}
+              onMouseEnter={() => scheduleOpen(cluster.x)}
+              onMouseLeave={scheduleClose}
+              onFocus={() => setOpenX(cluster.x)}
+              title={`${cluster.cards.length} cards here`}
+              aria-label={`${cluster.cards.length} cards near ${Math.round(cluster.x * 100)}% complete. Open the cluster.`}
+              aria-expanded={isOpen}
+              style={{ left: `${pos.left}%`, bottom: `${pos.bottom}%` }}
+              className={`stelow-hill-dot absolute flex size-5 -translate-x-1/2 translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-muted-foreground/30 text-[10px] font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${attention ? "stelow-hill-attn" : ""}`}
+            >{cluster.cards.length}</button>
+          ) : (
+            <button
+              key={cluster.cards[0].id}
+              onClick={() => setOpenX(isOpen ? null : cluster.x)}
+              onMouseEnter={() => scheduleOpen(cluster.x)}
+              onMouseLeave={scheduleClose}
+              onFocus={() => setOpenX(cluster.x)}
+              title={`${cluster.cards[0].displayName} — ${Math.round(cluster.x * 100)}% complete`}
+              aria-label={`Preview card ${cluster.cards[0].displayName}, ${Math.round(cluster.x * 100)}% complete.`}
+              aria-expanded={isOpen}
+              style={{ left: `${pos.left}%`, bottom: `${pos.bottom}%`, animationDelay: `${Math.min(Math.round(cluster.x * 900), 900)}ms` }}
+              className={`stelow-hill-dot absolute size-3 -translate-x-1/2 translate-y-1/2 cursor-pointer rounded-full before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activityDotTone(cluster.cards[0])}${attention ? " stelow-hill-attn" : ""}`}
             />
           );
         })}
+        {openCluster && openAnchor ? (
+          <HillClusterPanel
+            cluster={openCluster}
+            anchorLeft={openAnchor.left}
+            above={openAnchor.bottom > 55}
+            onOpen={(card) => { setOpenX(null); goToCard(navigate, card, card.id); }}
+            onClose={() => setOpenX(null)}
+            onHover={() => cancelClose()}
+            onLeave={scheduleClose}
+          />
+        ) : null}
       </div>
       <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground" aria-hidden><span>Figuring out</span><span>Executing</span></div>
       <ul aria-label="Hill legend" className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
@@ -2524,6 +2587,49 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
         <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-destructive" />Failed</li>
         <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-muted-foreground/40" />Resting</li>
       </ul>
+    </div>
+  );
+}
+
+// One floating panel for every hill selection — a lone dot shows its full
+// card, a cluster lists compact rows. Same component either way, so hover
+// and tap never teach two different interactions.
+function HillClusterPanel({ cluster, anchorLeft, above, onOpen, onClose, onHover, onLeave }: {
+  cluster: { x: number; cards: CardItem[] };
+  anchorLeft: number;
+  above: boolean;
+  onOpen: (card: CardItem) => void;
+  onClose: () => void;
+  onHover: () => void;
+  onLeave: () => void;
+}) {
+  const multi = cluster.cards.length > 1;
+  // Clamped off the edges so the panel never bleeds out of the hill frame.
+  const left = Math.min(82, Math.max(18, anchorLeft));
+  return (
+    <div
+      role="dialog"
+      aria-label={multi ? `${cluster.cards.length} cards near ${Math.round(cluster.x * 100)}% complete` : `Card preview`}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      style={above ? { left: `${left}%`, bottom: "calc(100% - 8px)", transform: "translateX(-50%)" } : { left: `${left}%`, top: "calc(100% - 8px)", transform: "translateX(-50%)" }}
+      className="stelow-hill-panel absolute z-20 max-h-72 w-72 max-w-[85%] overflow-auto rounded-lg border bg-card p-2 shadow-lg"
+    >
+      <div className="mb-1 flex items-center justify-between gap-2 px-1">
+        <span className="text-xs font-medium text-muted-foreground">{multi ? `${cluster.cards.length} cards · ${Math.round(cluster.x * 100)}%` : "Card preview"}</span>
+        <button onClick={onClose} aria-label="Close preview" className="inline-flex min-h-8 min-w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">×</button>
+      </div>
+      {multi ? null : <BoardCard card={cluster.cards[0]!} />}
+      {multi ? cluster.cards.map((card) => {
+        const pct = Math.round(hillPoint(card).x * 100);
+        return (
+          <button key={card.id} onClick={() => onOpen(card)} aria-label={`Open card ${card.displayName}, ${pct}% complete.`} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            <span aria-hidden className={`size-2.5 shrink-0 rounded-full ${activityDotTone(card)}`} />
+            <span className="min-w-0 flex-1 truncate text-sm">{card.displayName}</span>
+            <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{pct}%</span>
+          </button>
+        );
+      }) : null}
     </div>
   );
 }
@@ -7361,6 +7467,16 @@ function PillsyStyles() {
     "@media (prefers-reduced-motion: reduce) { .stelow-live-surface.stelow-border-running, .stelow-live-surface.stelow-border-attention, details.stelow-border-running { animation: none; } .stelow-live-surface.stelow-border-running { border-color: hsl(220 90% 60% / 0.7) !important; } .stelow-live-surface.stelow-border-attention { border-color: hsl(38 92% 50% / 0.85) !important; } }",
     ".stelow-pill-working { background: hsl(220 90% 60% / 0.12); animation: stelow-breathe 1.8s ease-in-out infinite; color: hsl(220 90% 40%); }",
     "@keyframes stelow-breathe { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }",
+    "@keyframes stelow-hill-draw { to { stroke-dashoffset: 0; } }",
+    "@keyframes stelow-hill-in { from { opacity: 0; scale: 0.4; } to { opacity: 1; scale: 1; } }",
+    "@keyframes stelow-hill-attn-pulse { 0%, 100% { box-shadow: 0 0 0 0 hsl(38 92% 50% / 0); } 50% { box-shadow: 0 0 0 5px hsl(38 92% 50% / 0.18); } }",
+    "@keyframes stelow-hill-panel-in { from { opacity: 0; translate: 0 4px; } to { opacity: 1; translate: 0 0; } }",
+    ".stelow-hill-draw { stroke-dasharray: 100; stroke-dashoffset: 100; animation: stelow-hill-draw 1.1s ease-out forwards; }",
+    ".stelow-hill-dot { animation: stelow-hill-in 0.45s ease backwards; transition: scale 0.16s ease; }",
+    ".stelow-hill-dot:hover { scale: 1.6; }",
+    ".stelow-hill-attn { animation: stelow-hill-in 0.45s ease backwards, stelow-hill-attn-pulse 2.4s ease-in-out 0.6s infinite; }",
+    ".stelow-hill-panel { animation: stelow-hill-panel-in 0.18s ease-out; }",
+    "@media (prefers-reduced-motion: reduce) { .stelow-hill-draw, .stelow-hill-dot, .stelow-hill-attn, .stelow-hill-panel { animation: none; } .stelow-hill-draw { stroke-dashoffset: 0; } }",
     ".stelow-activity-pill { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 9999px; padding: 0.125rem 0.5rem; font-size: 11px; line-height: 18px; font-weight: 500; border-width: 1px; border-style: dashed; }",
     ".stelow-activity-onhold { border-color: hsl(240 5% 55% / 0.55); color: hsl(240 3% 45%); background: transparent; }",
     ".stelow-activity-waiting { border-color: hsl(38 92% 45% / 0.7); color: hsl(38 80% 28%); background: hsl(38 92% 45% / 0.10); animation: stelow-breathe 1.8s ease-in-out infinite; }",
