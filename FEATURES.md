@@ -814,6 +814,14 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   a card comment with the summary. v1 covers research + explore; build
   document review is refused as unsupported. Workers may only offer
   review via `bb stelow ask` (`REVIEW_PROTOCOL`), never auto-run it.
+- **Gate pre-reviews** (`requestGatePreReview`, `preReviewArtifactKind`).
+  Advancing a build card into gate/int-gate/plan-gate with a reviewer
+  designated fires one hidden review of the gate's registered artifact,
+  posted as a card comment for the human (and worker) before approval.
+  Advisory and fire-and-forget — advance never waits; every miss (no
+  designation, no workflow, no artifact, thin file) stays silent.
+  diff-gate stays out (no single file). Eligibility resolves through the
+  lib map, never inline.
 - **`bb stelow criteria` (opt-in, `lib/skill-criteria.mjs`).** Advisory
   semantic check: scores an artifact against its skill's structured
   `criteria:` block (one atomic Score per semantic criterion,

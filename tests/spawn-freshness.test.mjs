@@ -25,8 +25,8 @@ assert.equal(
 );
 assert.equal(
   (server.match(/await spawnDisposable\(\{/g) ?? []).length,
-  3,
-  "three disposable spawns pinned (review, draft, card-title); a fourth updates this contract deliberately",
+  4,
+  "four disposable spawns pinned (review, draft, card-title, gate pre-review); a fifth updates this contract deliberately",
 );
 
 // The SDK surface has no history inheritance today — keep it that way. If a
@@ -77,7 +77,7 @@ for (const line of server.split("\n")) {
 // and this pins the wiring: no hand-rolled draft/review prompt may bypass it.
 assert.match(server, /buildReviewPrompt\(\{ cardName:/, "review prompts go through the lib builder");
 assert.match(server, /buildDraftPrompt\(\{ cardName:/, "draft prompts go through the lib builder");
-for (const name of ["reviewThread = await spawnDisposable({", "draftThread = await spawnDisposable({"]) {
+for (const name of ["reviewThread = await spawnDisposable({", "draftThread = await spawnDisposable({", "preThread = await spawnDisposable({"]) {
   const at = server.indexOf(name);
   assert.ok(at >= 0, `${name} exists`);
   assert.ok(server.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");

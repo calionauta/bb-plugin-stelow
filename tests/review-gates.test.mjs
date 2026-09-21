@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LEGACY_REVIEW_MODE_TO_GATES, formatReviewGates, legacyLabelForGates, normalizeReviewGates, skipReasonForGate } from "../lib/review-gates.mjs";
+import { LEGACY_REVIEW_MODE_TO_GATES, formatReviewGates, legacyLabelForGates, normalizeReviewGates, preReviewArtifactKind, skipReasonForGate } from "../lib/review-gates.mjs";
 import { parseWorkflowConfig } from "../lib/workflow-config.mjs";
 import { skippedStages } from "../lib/stage-skips.mjs";
 import { requiredForStage } from "../lib/question-contracts.mjs";
@@ -118,5 +118,34 @@ assert.deepEqual(parseWorkflowConfig("---\nintent: refactor\n---\n", { strict: t
 assert.match(skipReasonForGate("selection", []), /interface/, "selection reasons name the interface gate");
 assert.match(skipReasonForGate("plan-gate", []), /tech/, "plan-gate reasons name the tech gate");
 assert.match(skipReasonForGate("diff-gate", []), /diff/, "diff-gate reasons name the diff gate");
+
+// Pre-review eligibility: gate stages resolve their approveGate artifact
+// kind; diff-gate (working tree, no single file) and everything else
+// resolve null, never a guess.
+assert.equal(preReviewArtifactKind("gate"), "product-spec", "product gate reviews the spec");
+assert.equal(preReviewArtifactKind("int-gate"), "interfaces", "interface gate reviews the interfaces");
+assert.equal(preReviewArtifactKind("plan-gate"), "tech-plan", "plan gate reviews the tech plan");
+assert.equal(preReviewArtifactKind("diff-gate"), null, "diff gate has no single artifact to review");
+assert.equal(preReviewArtifactKind("execution"), null, "work stages never pre-review");
+assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
+
+// Advance wiring: entering a gate fires the pre-review without waiting,
+// and the helper fails silent on every miss — designation, workflow,
+// artifact, thin file. Advance never depends on it.
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const server = readFileSync(join(root, "server.ts"), "utf8");
+assert.match(server, /if \(cliCard\) void requestGatePreReview\(cliCard\.id, stage\)\.catch\(\(\) => undefined\);/, "gate entry triggers without waiting");
+assert.match(server, /async function requestGatePreReview\(cardId: string, stage: string\)/, "the trigger is one named helper");
+const preAt = server.indexOf("async function requestGatePreReview(");
+const preEnd = server.indexOf("\n  }\n", preAt);
+assert.ok(preAt >= 0 && preEnd > preAt, "the helper body is bounded");
+const preBody = server.slice(preAt, preEnd);
+assert.ok(preBody.includes("preReviewArtifactKind(stage)"), "eligibility resolves through the lib map, never inline");
+assert.ok(preBody.includes("card.kind !== \"build\""), "research and explore never pre-review");
+assert.ok(preBody.includes("if (!reviewPreset) return;"), "undesignated reviewers stay silent, exactly like review refuses");
+assert.ok(preBody.includes("boardFromRoot(bb, workspace.path, card.dir_hash)"), "artifact resolution mirrors approveGate");
+assert.ok(preBody.includes("if (!depth || !depth.pass) return;"), "thin files never spend review budget");
+assert.ok(preBody.includes('}, "review")'), "pre-reviews ride the registered review site");
+assert.ok(preBody.includes('logCardComment(cardId, "card", cardId, "agent"'), "findings land as a card comment, never a gate file");
 
 console.log("review gates test ok: normalize both directions, legacy no-regression, atom matrix, state.md storage, gate-named reasons");

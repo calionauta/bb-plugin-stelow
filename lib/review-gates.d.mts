@@ -10,3 +10,5 @@ export declare function scopeRequiresHuman(gates: unknown): boolean;
 export declare function planGateWaits(gates: unknown): boolean;
 export declare function diffGateWaits(gates: unknown): boolean;
 export declare function skipReasonForGate(stage: string, gates: unknown): string;
+export declare const PRE_REVIEW_GATE_ARTIFACT: Record<string, string>;
+export declare function preReviewArtifactKind(stage: unknown): string | null;

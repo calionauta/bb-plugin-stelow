@@ -77,7 +77,7 @@ import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
-import { formatReviewGates, legacyLabelForGates, normalizeReviewGates } from "./lib/review-gates.mjs";
+import { formatReviewGates, legacyLabelForGates, normalizeReviewGates, preReviewArtifactKind } from "./lib/review-gates.mjs";
 import { requiredForStage } from "./lib/question-contracts.mjs";
 import { checkAdvanceContracts } from "./lib/advance-contracts.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
@@ -2206,6 +2206,70 @@ ${prompt}`;
       bb.realtime.publish("card-state", { cardId });
     } catch {
       // Titles never break creation.
+    }
+  }
+
+  // Independent pre-review on gate entry (see advance hook): same reviewer
+  // machinery as the review command, but advisory-only — findings land as
+  // a card comment, never a reviews/ file, and every miss is silent.
+  async function requestGatePreReview(cardId: string, stage: string): Promise<void> {
+    try {
+      const kind = preReviewArtifactKind(stage);
+      if (!kind) return;
+      const card = getCard(cardId);
+      if (!card || card.kind !== "build" || isArchivedCard(card)) return;
+      const designated = db.prepare("SELECT preset_id FROM review_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+      const reviewPreset = designated ? getPresetById(designated.preset_id) : null;
+      if (!reviewPreset) return;
+      const workspace = await cardWorkspace(card).catch(() => null);
+      if (!workspace?.path) return;
+      const board = await boardFromRoot(bb, workspace.path, card.dir_hash).catch(() => null);
+      const artifact = board?.workflows.find((item) => item.id === card.dir_hash)?.artifacts.find((entry) => entry.kind === kind) ?? null;
+      if (!artifact) return;
+      const full = resolveArtifactPath(workspace.path, artifact.path);
+      const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
+      if (typeof content !== "string" || !content.trim()) return;
+      const contract = contractForBuildArtifact(artifact.path, content);
+      const depth = contract ? validateArtifact(content, contract) : null;
+      if (!depth || !depth.pass) return;
+      const params = presetAttachmentParams(reviewPreset);
+      const prompt = buildReviewPrompt({ cardName: card.display_name ?? card.name, request: card.prompt, contractLabel: `pre-review for ${stage}`, artifactContent: content, deterministicFailures: [], evidence: "verified" });
+      let preThread: { id: string };
+      try {
+        preThread = await spawnDisposable({
+          projectId: card.project_id,
+          environment: { type: "project-default" },
+          visibility: "hidden",
+          ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
+          title: `Stelow pre-review (${stage}): ${card.display_name ?? card.name}`,
+          providerId: params.providerId,
+          model: params.modelId,
+          reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+          permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
+          executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+          prompt,
+        }, "review");
+      } catch {
+        return;
+      }
+      for (let poll = 0; poll < 60; poll++) {
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+        const thread = await bb.sdk.threads.get({ threadId: preThread.id }).catch(() => null);
+        const status = (thread as { status?: unknown } | null)?.status;
+        if (status === "idle" || status === "stopping" || status === "archived" || status === "deleted") break;
+        if (status === "failed" || status === "error" || poll === 59) {
+          await stopWorkerThread(preThread.id).catch(() => undefined);
+          return;
+        }
+      }
+      const output = await bb.sdk.threads.output({ threadId: preThread.id }).then((result) => result.output ?? "").catch(() => "");
+      await stopWorkerThread(preThread.id).catch(() => undefined);
+      const parsed = parseReviewOutput(output, content);
+      if (!parsed || !Array.isArray(parsed.findings) || parsed.findings.length === 0) return;
+      logCardComment(cardId, "card", cardId, "agent", `Independent pre-review (${stage}, ${reviewPreset.name}):\n\n${reviewSummary(parsed)}`);
+      bb.realtime.publish("card-state", { cardId });
+    } catch {
+      // Advisory path: silence is the status quo ante.
     }
   }
 
@@ -7705,6 +7769,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           } catch { /* best-effort only */ }
           if (loopNote) return { exitCode: 0, stdout: result.stdout + loopNote };
         }
+        // Independent pre-review on gate entry (advisory, never blocking):
+        // when a build card advances into gate/int-gate/plan-gate with a
+        // reviewer designated, a hidden reviewer thread judges the gate's
+        // registered artifact and posts findings as a card comment for the
+        // human (and the worker) to read before approval. Fire-and-forget —
+        // advance never waits (this return is past the dry-run exit).
+        // Silent skip on every miss: no designation, no workflow, no
+        // artifact, thin artifact. diff-gate stays out (no single file;
+        // deterministic diff checks already run there).
+        if (cliCard) void requestGatePreReview(cliCard.id, stage).catch(() => undefined);
         return { exitCode: 0, stdout: result.stdout };
       }
       if (argv[0] === "gap-scopes") {
