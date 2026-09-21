@@ -69,12 +69,17 @@ Default gate → specialist mapping (override per issue):
 3. **Gate.** At each marked gate the operator stops: consult
    (🟡) or request approval (🔴). Specialists review the
    artifact — spec, interface, plan — in the artifact viewer or
-   on disk, never the token stream. Verdicts land as receipts
-   under `.stelow/approvals/`.
+   on disk, never the token stream, and leave the verdict as a
+   comment on the issue. The operator files it by approving the
+   gate, which writes the receipt under `.stelow/approvals/`.
 4. **Merge.** `bb stelow export` refreshes `docs/runs/<card>/`,
    the `Stelow-Artifacts:` trailer goes in the commit, and the
    completion writes back to the issue (`postGithubCompletion`).
    Done is traceable from the issue to the commit to the bundle.
+   Note the trust boundary: gate receipts record that the
+   operator approved the gate in their own bb — they do not
+   prove who authorized it outside. Specialist verdicts arrive
+   as issue comments; the operator files them by approving.
 
 ## Rituals
 
