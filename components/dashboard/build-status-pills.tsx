@@ -98,6 +98,30 @@ export function AttentionChip({ label }: { label: string }) {
   </span>;
 }
 
+// Dot tone for hill dots. List rows keep their own inline mapping on
+// purpose: there, emerald is reserved for pending review (a completed
+// card without review reads muted), while on the hill every completed
+// card reads emerald — position already says where it is, color says
+// what kind of state it is in. Do not "unify" the two without re-deciding
+// that product distinction.
+export function activityDotTone(card: { needsAttention?: boolean | null; activity?: string | null; status?: string | null }): string {
+  if (card.needsAttention) return "bg-amber-500";
+  if (card.activity === "error") return "bg-destructive";
+  if (card.activity === "running") return "bg-primary";
+  if (card.status === "completed") return "bg-emerald-500";
+  return "bg-muted-foreground/40";
+}
+
+// One scope strip for tiles and list rows alike: aggregate fill from the
+// summary counts, so progress reads as shape, not just numbers. Null when
+// the card has no scopes — tracks without scope data show nothing rather
+// than an empty bar.
+export function ScopeStrip({ done, total }: { done: number; total: number }) {
+  if (!(total > 0)) return null;
+  const pct = Math.max(0, Math.min(100, (done / total) * 100));
+  return <span role="img" aria-label={`${done} of ${total} scopes done`} className="inline-block h-1 w-16 overflow-hidden rounded-full bg-muted align-middle"><span style={{ width: `${pct}%` }} className="block h-full rounded-full bg-primary/70" /></span>;
+}
+
 // The same summary is used by a Build tile and its open-card breadcrumb:
 // workflow checkpoint, workflow type, then (only when needed) human input.
 // Column/status and "working" are deliberately excluded: they are board

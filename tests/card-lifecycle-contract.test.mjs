@@ -132,7 +132,7 @@ assert.match(promote, /workspace_kind = 'exploratory'/, "failed handoff restores
 assert.match(promote, /The card remains exploratory; its existing worker is still active/, "failed handoff explains the safe state");
 
 // One list row for all tracks: Build geometry standard, context per meta.
-assert.match(app, /function TrackListRow\(\{ card, meta, onOpen \}/, "all three list views share one row");
+assert.match(app, /function TrackListRow\(\{ card, meta, summary, onOpen \}/, "all three list views share one row");
 assert.match(app, /<TrackListRow key=\{card\.id\} card=\{card\} meta=\{metaFor\(card\)\}/, "lightweight lists render the shared row");
 
 // Attention chip parity: tiles and rows share one component, and the chip

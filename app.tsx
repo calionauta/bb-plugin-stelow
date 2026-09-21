@@ -29,6 +29,7 @@ import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
+import { hillPoint } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
 import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
 import { questionCopy } from "./lib/question-presentation.mjs";
@@ -43,7 +44,7 @@ import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-int
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { formatTokenUsage } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
-import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill } from "./components/dashboard/build-status-pills";
+import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
 import { StartImmediatelyCheck } from "./components/start-immediately-check";
@@ -662,7 +663,7 @@ function BoardPanel({ active }: { active: boolean }) {
   const [filterStatus, setFilterStatus] = useState<string | "all">("all");
   const [filterActivity, setFilterActivity] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
-  const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "hill">("board");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
@@ -906,7 +907,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
-          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(COLUMNS, collapsedColumns) }}>
+          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(COLUMNS, collapsedColumns) }}>
             {COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
@@ -965,7 +966,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   // Deferred start: unchecked parks the card in Inbox with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
-  const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "hill">("board");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
@@ -1149,7 +1150,7 @@ function ResearchPanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
+          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -1207,7 +1208,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   // Deferred start: unchecked parks the card in Inbox with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
-  const [viewMode, setViewMode] = useState<"board" | "list">("board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "hill">("board");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
   const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
   const [filterAttention, setFilterAttention] = useState(false);
@@ -1388,7 +1389,7 @@ function ExplorePanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
+          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
             {RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -2452,10 +2453,11 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 // purpose: changing how the cards below render is a view preference, not an
 // action — so it lives beside the filters, never in the CTA row, and never
 // looks like a primary button.
-function ViewToggle({ view, onChange, label }: { view: "board" | "list"; onChange: (view: "board" | "list") => void; label: string }) {
+function ViewToggle({ view, onChange, label }: { view: "board" | "list" | "hill"; onChange: (view: "board" | "list" | "hill") => void; label: string }) {
   const options = [
     { value: "board" as const, title: "Board view", icon: "GridView" as const },
     { value: "list" as const, title: "List view", icon: "ListView" as const },
+    { value: "hill" as const, title: "Hill view", icon: "ChartColumn" as const },
   ];
   return (
     <div role="group" aria-label={label} className="flex shrink-0 items-center">
@@ -2483,13 +2485,74 @@ function ExploreList({ groups, navigate, stageLabelById, collapsed, onToggle }: 
   return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} metaFor={(card) => (card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null)} />;
 }
 
+// Hill view: one dot per card on a figuring-out/executing curve (Shape Up
+// hill-chart reading). Position comes from data the board already carries
+// (task/scope fractions, stage checkpoint) via lib/hill-position — no new
+// fetch, no layout shift (lanes hash from the card id). Dots are real
+// buttons opening the same card surface as tiles and rows.
+function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnType<typeof useBbNavigate> }) {
+  if (cards.length === 0) return <p className="text-sm text-muted-foreground">No cards in this view.</p>;
+  const dots = cards.map((card) => ({ card, point: hillPoint(card) }));
+  const uphill = dots.filter((dot) => dot.point.region === "uphill").length;
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground" role="status">{cards.length} cards on the hill — {uphill} figuring out, {cards.length - uphill} executing.</p>
+      <div role="group" aria-label={`Hill view: ${cards.length} cards positioned by completion`} className="relative mt-2 h-64 w-full sm:h-80">
+        <svg aria-hidden className="absolute inset-0 h-full w-full text-muted-foreground/40" viewBox="0 0 100 40" preserveAspectRatio="none">
+          <path d="M 0 36 C 25 36, 32 6, 50 6 S 75 36, 100 36" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+          <line x1="50" y1="2" x2="50" y2="38" stroke="currentColor" strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
+        </svg>
+        {dots.map(({ card, point }) => {
+          const pct = Math.round(point.x * 100);
+          return (
+            <button
+              key={card.id}
+              onClick={() => goToCard(navigate, card, card.id)}
+              title={`${card.displayName} — ${pct}% complete`}
+              aria-label={`Open card ${card.displayName}, ${pct}% complete.`}
+              style={{ left: `${2 + point.x * 96}%`, bottom: `${10 + point.y * 62 + point.lane * 5}%` }}
+              className={`absolute size-3 -translate-x-1/2 translate-y-1/2 cursor-pointer rounded-full before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activityDotTone(card)}${card.needsAttention ? " ring-2 ring-amber-500/50" : ""}`}
+            />
+          );
+        })}
+      </div>
+      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground" aria-hidden><span>Figuring out</span><span>Executing</span></div>
+      <ul aria-label="Hill legend" className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-amber-500" />Needs you</li>
+        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-primary" />Working</li>
+        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-emerald-500" />Done</li>
+        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-destructive" />Failed</li>
+        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-muted-foreground/40" />Resting</li>
+      </ul>
+    </div>
+  );
+}
+
+// Phase rail: the four workflow phases with the card's current one filled.
+// A glanceable "you are here" for the open card; research/explore cards
+// (no workflow stage) render no marker rather than a wrong one.
+function PhaseRail({ stage }: { stage: string }) {
+  const current = STAGE_TO_BAND[stage] ?? null;
+  const known = WORKFLOW_PHASES.some((phase) => phase.id === current);
+  return (
+    <div aria-label="Workflow phase" className="flex items-center gap-1">
+      {WORKFLOW_PHASES.map((phase, index) => (
+        <span key={phase.id} className="flex items-center gap-1">
+          {index > 0 ? <span aria-hidden className="h-px w-3 bg-muted-foreground/30" /> : null}
+          <span title={phase.label} className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${known && phase.id === current ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}>{phase.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
   return <div className="space-y-5">{COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
     const isCollapsed = collapsed[column] === true;
     const label = COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} summary={{ scopesDone: card.scopeSummary.scopesDone, scopesTotal: card.scopeSummary.scopesTotal }} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -2497,14 +2560,15 @@ function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<s
 // Build's row geometry is the standard; per-track context rides the meta
 // line (stage + scopes, strategy, technique). Kanban tiles stay rich;
 // list rows stay dense and keyboard-native.
-function TrackListRow({ card, meta, onOpen }: {
+function TrackListRow({ card, meta, summary, onOpen }: {
   card: CardItem;
   meta: string | null;
+  summary?: { scopesDone: number; scopesTotal: number } | null;
   onOpen: () => void;
 }) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
-  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention && card.activity !== "awaiting-answer" && card.activity !== "error" ? <AttentionChip label={attentionLabel(card)} /> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
+  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}{summary && summary.scopesTotal > 0 ? <> · <ScopeStrip done={summary.scopesDone} total={summary.scopesTotal} /></> : null}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention && card.activity !== "awaiting-answer" && card.activity !== "error" ? <AttentionChip label={attentionLabel(card)} /> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -2679,7 +2743,8 @@ function BoardCard({ card }: { card: CardItem }) {
         status={<BuildStatusPills {...buildStatusPillProps(card)} />}
       />
       {card.scopeSummary.scopesTotal > 0 ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        {card.scopeSummary.scopesTotal > 0 ? <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span> : null}
+        <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
+        <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span>
       </div> : null}
       <CardMetaRows card={card} />
     </div>
@@ -3250,6 +3315,7 @@ function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, 
         <span aria-hidden className="mx-1 text-border">/</span>
         <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
         {card ? <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills {...buildStatusPillProps(card)} /></span> : null}
+        {card && card.kind === "build" ? <span className="ml-2 hidden align-middle md:inline-flex"><PhaseRail stage={card.stage} /></span> : null}
       </nav>
       {card ? <>
         {card.kind === "build" && canEditWorkflowIntent(card) ? (
