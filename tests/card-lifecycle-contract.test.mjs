@@ -135,6 +135,14 @@ assert.match(promote, /The card remains exploratory; its existing worker is stil
 assert.match(app, /function TrackListRow\(\{ card, meta, onOpen \}/, "all three list views share one row");
 assert.match(app, /<TrackListRow key=\{card\.id\} card=\{card\} meta=\{metaFor\(card\)\}/, "lightweight lists render the shared row");
 
+// Attention chip parity: tiles and rows share one component, and the chip
+// renders only when the activity pill doesn't already say it — "Waiting
+// for you" plus "Answer required" read as the same state twice.
+assert.match(buildStatusPills, /export function AttentionChip\(\{ label \}/, "one attention chip serves tiles and rows");
+assert.match(app, /<AttentionChip label=\{attentionLabel\(card\)\} \/>/, "both surfaces render the shared chip");
+const metaRows = appFunction("CardMetaRows", "function BoardCard(");
+assert.match(metaRows, /attention && card\.activity !== "error" && card\.activity !== "awaiting-answer"/, "tiles chip only what the pill doesn't already state");
+
 // Focused-card keyboard: Enter/Space opens the card, W opens its worker
 // thread. Guarded to the card surface so typing elsewhere never navigates.
 const boardCard = appFunction("BoardCard", "function LightweightTrackCard(");
@@ -144,6 +152,7 @@ assert.match(boardCard, /navigate\.toThread\(card\.workerThreadId\)/, "W navigat
 const lightweightCard = appFunction("LightweightTrackCard", "function ResearchCard(");
 assert.match(lightweightCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused research/explore card");
 const listRow = appFunction("TrackListRow", "function BoardColumn(");
+assert.match(listRow, /card\.needsAttention && card\.activity !== "awaiting-answer" && card\.activity !== "error" \? <AttentionChip/, "rows follow the same rule — no duplicate state pair");
 assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from list-view rows too");
 // Esc/Back returns to the board with the card focused: opening remembers the
 // card, each card surface restores focus to it on return.

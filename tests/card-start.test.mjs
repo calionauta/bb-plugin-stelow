@@ -134,4 +134,21 @@ assert.match(githubApp, /onChange=\{\(next\) => \{ setAutomationLabels\(next\); 
 assert.match(githubApp, /allowAll=\{false\}/, "rule scope never offers an all-projects escape");
 assert.match(githubApp, /setRulePreview\(null\); void refreshAutomationRules\(id\)/, "switching rule project reloads and drops the old preview");
 
+// Authors allowlist and worker instructions are rule scope, not import
+// filters: they shape what a rule drafts, so they render once, in the
+// Auto tab. The import tab narrows with assignee instead.
+assert.equal((githubApp.match(/Only these authors/g) ?? []).length, 1, "the authors allowlist exists once, in rule scope");
+assert.equal((githubApp.match(/Worker instructions/g) ?? []).length, 1, "worker instructions exist once, in rule scope");
+
+// Dialog tabs are a real tablist (panels switch in place): roles,
+// roving tabindex, arrows/Home/End. The board stays a nav (aria-current,
+// routed views) and inbox filters stay pressed buttons — same look,
+// three different contracts, documented at the component.
+assert.match(githubApp, /role="tablist" aria-label="GitHub sections"/, "dialog tabs announce as a tablist");
+assert.match(githubApp, /role="tab"[\s\S]*?aria-selected=\{githubTab === tab\}/, "tabs expose selection, not pressed state");
+assert.match(githubApp, /tabIndex=\{githubTab === tab \? 0 : -1\}/, "roving tabindex keeps one tab stop");
+assert.match(githubApp, /event\.key === "ArrowRight"/, "arrow keys move between tabs");
+assert.match(githubApp, /role="tabpanel" id=\{`github-panel-\$\{githubTab\}`\}/, "the visible panel is labelled by its tab");
+assert.match(githubApp, /Deliberately NOT the board's nav pattern/, "the three-pattern split is documented, not accidental");
+
 console.log("card start test ok: deferred start, shared spawn, split always starts");

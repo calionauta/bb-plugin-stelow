@@ -53,6 +53,17 @@ for (const [window, name] of [[managerWindow, "manager"], [assignWindow, "assign
   assert.doesNotMatch(window, /<span>Model<\/span>/, `no hand-rolled model select label survives (${name})`);
   assert.doesNotMatch(window, /aria-label="Custom provider"/, `no hand-rolled custom provider select survives (${name})`);
   assert.doesNotMatch(window, /aria-label="Custom model id"/, `no hand-rolled custom model input survives (${name})`);
+// Creation lives with the list: a header row names the count and offers
+// New preset beside it, the form renders directly below the list (never
+// under the routing disclosures), and opening scrolls it into view —
+// authoring stays in the context it extends.
+assert.match(app, /<h3 className="text-sm font-semibold">Presets \(\{\s*presets\.length\s*\}\)<\/h3>/, "the list header names its count");
+assert.match(app, /scrollIntoView\(\{ block: "nearest" \}\)/, "opening creation scrolls it into view instead of stranding");
+const presetsHeaderAt = app.indexOf("Presets ({presets.length})");
+const presetFormAt = app.indexOf('ref={formRef} className="mt-3 rounded-md border');
+const routingAt = app.indexOf('title="Worker preset per track"');
+assert.ok(presetsHeaderAt >= 0 && presetFormAt > presetsHeaderAt && routingAt > presetFormAt, "order reads list, creation, routing — never creation last");
+assert.equal((app.match(/id="preset-form-body"/g) ?? []).length, 1, "one creation form, not a top/bottom pair");
 }
 
 console.log("preset ui test ok: BB pickers shared, hand-rolled selects gone, manager disclosed and bounded");

@@ -604,7 +604,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   preset field. Built-ins protected.
   The New-preset form stays collapsed behind Show/Hide (editing
   auto-expands) and band routing behind its own disclosure; the frame
-  scrolls instead of overflowing the viewport.
+  scrolls instead of overflowing the viewport. Creation sits with the
+  list — count + New preset in one header row, the form directly below,
+  auto-scrolled into view on open — so authoring never strands below
+  the routing disclosures.
 - **Per-phase presets** (`listBandPresets`, `setBandPreset`).
   Analysis/planning/execution/review bands auto-swap workers at
   boundaries; unset bands inherit the card preset. Research and Explore

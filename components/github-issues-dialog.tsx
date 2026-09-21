@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../server";
 import { toast } from "sonner";
@@ -72,6 +72,18 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [githubTab, setGithubTab] = useState<"import" | "auto">("import");
+  // Tabs switch panels inside one dialog (WAI-APG tablist: arrows move and
+  // select, roving tabindex). Deliberately NOT the board's nav pattern
+  // (aria-current, routed views) nor the inbox pressed-filters — same
+  // look, different contract.
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  function selectGithubTab(tab: "import" | "auto", focus = false) {
+    setGithubTab(tab);
+    setRulePreview(null);
+    if (tab === "import") void listGithubIssues();
+    else void refreshAutomationRules();
+    if (focus) tabRefs.current[tab]?.focus();
+  }
   const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
   const [automationLabels, setAutomationLabels] = useState<string[]>(["stelow-work"]);
   const [automationAuthorsInput, setAutomationAuthorsInput] = useState("");
@@ -254,11 +266,29 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
           <DialogTitle>GitHub issues</DialogTitle>
           <DialogDescription>Bring tagged issues into Stelow as cards. Import now while you watch, or watch labels automatically per project.</DialogDescription>
         </DialogHeader>
-        <div className="flex min-h-11 gap-1 rounded-md border p-1" aria-label="GitHub sections">
+        <div role="tablist" aria-label="GitHub sections" className="flex min-h-11 gap-1 rounded-md border p-1" onKeyDown={(event) => {
+          const order = ["import", "auto"] as const;
+          const at = order.indexOf(githubTab);
+          if (event.key === "ArrowRight") { event.preventDefault(); selectGithubTab(order[(at + 1) % order.length]!, true); }
+          else if (event.key === "ArrowLeft") { event.preventDefault(); selectGithubTab(order[(at + order.length - 1) % order.length]!, true); }
+          else if (event.key === "Home") { event.preventDefault(); selectGithubTab(order[0]!, true); }
+          else if (event.key === "End") { event.preventDefault(); selectGithubTab(order[order.length - 1]!, true); }
+        }}>
           {(["import", "auto"] as const).map((tab) => (
-            <button key={tab} onClick={() => { setGithubTab(tab); setRulePreview(null); if (tab === "import") void listGithubIssues(); else void refreshAutomationRules(); }} aria-pressed={githubTab === tab} className={`inline-flex min-h-9 flex-1 cursor-pointer items-center justify-center rounded px-3 text-sm font-medium ${githubTab === tab ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{tab === "import" ? "Import now" : "Auto-import"}</button>
+            <button
+              key={tab}
+              ref={(node) => { tabRefs.current[tab] = node; }}
+              role="tab"
+              id={`github-tab-${tab}`}
+              aria-selected={githubTab === tab}
+              aria-controls={`github-panel-${tab}`}
+              tabIndex={githubTab === tab ? 0 : -1}
+              onClick={() => selectGithubTab(tab)}
+              className={`inline-flex min-h-9 flex-1 cursor-pointer items-center justify-center rounded px-3 text-sm font-medium ${githubTab === tab ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}
+            >{tab === "import" ? "Import now" : "Auto-import"}</button>
           ))}
         </div>
+        <div role="tabpanel" id={`github-panel-${githubTab}`} aria-labelledby={`github-tab-${githubTab}`}>
         {githubTab === "import" ? (
         <div className="flex flex-col gap-3 py-2">
           {githubStatus !== null && !githubStatus.pluginAvailable ? (
@@ -388,6 +418,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
           <div><Button size="sm" variant="outline" onClick={() => void previewRule(parseAutomationForm(), automationAuthorsInput.split(",").map((entry) => entry.trim().replace(/^@/, "")).filter(Boolean))} disabled={rulePreviewBusy || automationLabels.length === 0}>{rulePreviewBusy ? "Checking…" : "Preview matches"}</Button></div>
         </div>
         )}
+        </div>
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="ghost" disabled={importBusy || automationBusy}>Cancel</Button>

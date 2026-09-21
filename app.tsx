@@ -43,7 +43,7 @@ import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-int
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { formatTokenUsage } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
-import { ActivityPill, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill } from "./components/dashboard/build-status-pills";
+import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
 import { StartImmediatelyCheck } from "./components/start-immediately-check";
@@ -2504,7 +2504,7 @@ function TrackListRow({ card, meta, onOpen }: {
 }) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
-  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300">{attentionLabel(card)}</span> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
+  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention && card.activity !== "awaiting-answer" && card.activity !== "error" ? <AttentionChip label={attentionLabel(card)} /> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -2609,10 +2609,7 @@ function CardMetaRows({ card }: { card: CardItem }) {
   return (
     <>
       {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
-        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-          <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
-          <span>{attentionLabel(card)}</span>
-        </div>
+        <div className="mt-2"><AttentionChip label={attentionLabel(card)} /></div>
       ) : null}
       {pendingReview(card) ? (
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
@@ -4136,6 +4133,12 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
   const [reliablePreset, setReliablePreset] = useState<{ id: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  // Creation sits with the list now, but a long list can still push it out
+  // of view — bring it back when it opens instead of stranding the user.
+  useEffect(() => {
+    if (formOpen) formRef.current?.scrollIntoView({ block: "nearest" });
+  }, [formOpen]);
   const reloadGeneration = useCallback(() => {
     void rpc.call("getGenerationPreset", {}).then((result) => setGenerationPreset(result.preset)).catch(() => setGenerationPreset(null));
   }, [rpc]);
@@ -4211,6 +4214,10 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
           <DialogTitle>Manage agent presets</DialogTitle>
           <DialogDescription>Presets set the provider, model, reasoning level, and permission mode used when a card starts its worker thread. Research investigations use the research phase preset.</DialogDescription>
         </DialogHeader>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold">Presets ({presets.length})</h3>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => { startNew(); }}>New preset</Button>
+        </div>
         <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
           {presets.length === 0 ? <p className="text-sm text-muted-foreground">No presets yet. Create one below.</p> : null}
           {presets.map((preset) => (
@@ -4228,6 +4235,28 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
               </div>
             </div>
           ))}
+        </div>
+        <div ref={formRef} className="mt-3 rounded-md border bg-muted/30 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
+            <div className="flex shrink-0 gap-1">
+              {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
+              <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}><DisclosureChevron open={formOpen} />{formOpen ? "Hide" : "Show"}</Button>
+            </div>
+          </div>
+          {formOpen ? (
+            <div id="preset-form-body">
+            <div className="grid gap-2">
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
+              <PresetExecutionPicker value={{ providerId: form.providerId, modelId: form.modelId, reasoningLevel: form.reasoningLevel, permissionMode: form.permissionMode }} onChange={(next) => setForm({ ...form, providerId: next.providerId, modelId: next.modelId, reasoningLevel: next.reasoningLevel, permissionMode: next.permissionMode })} />
+            </div>
+            {message ? <p className="mt-2 text-xs text-muted-foreground">{message}</p> : null}
+            <div className="mt-3 flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+              <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
+            </div>
+            </div>
+          ) : null}
         </div>
         <DisclosureSection title="Worker preset per track" hint="phase routing" defaultOpen={false}>
           <p className="mb-2 text-xs text-muted-foreground">Each track runs on its own preset. Build phases can each override it; the worker switches automatically at phase boundaries. Unset rows fall back to the card preset (or default).</p>
@@ -4337,28 +4366,6 @@ function PresetManagerDialog({ open, onOpenChange, rpc, presets, onChanged }: {
         <DisclosureSection title="Decision routers" hint="per-judgment modes" defaultOpen={false}>
           <DecisionRoutersSection rpc={rpc} />
         </DisclosureSection>
-        <div className="mt-3 rounded-md border bg-muted/30 p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <h4 className="text-sm font-semibold">{form.id ? `Edit ${form.name}` : "New preset"}</h4>
-            <div className="flex shrink-0 gap-1">
-              {form.id ? <Button size="sm" variant="ghost" onClick={startNew}>New preset</Button> : null}
-              <Button size="sm" variant="ghost" aria-expanded={formOpen} aria-controls="preset-form-body" onClick={() => setFormOpen((open) => !open)} title={formOpen ? "Collapse the preset form" : "Expand the preset form"}><DisclosureChevron open={formOpen} />{formOpen ? "Hide" : "Show"}</Button>
-            </div>
-          </div>
-          {formOpen ? (
-            <div id="preset-form-body">
-            <div className="grid gap-2">
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Name</span><Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="e.g. Default" /></label>
-              <PresetExecutionPicker value={{ providerId: form.providerId, modelId: form.modelId, reasoningLevel: form.reasoningLevel, permissionMode: form.permissionMode }} onChange={(next) => setForm({ ...form, providerId: next.providerId, modelId: next.modelId, reasoningLevel: next.reasoningLevel, permissionMode: next.permissionMode })} />
-            </div>
-            {message ? <p className="mt-2 text-xs text-muted-foreground">{message}</p> : null}
-            <div className="mt-3 flex justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-              <Button size="sm" disabled={busy} onClick={() => void save()}>{busy ? "Working…" : form.id ? "Save changes" : "Create preset"}</Button>
-            </div>
-            </div>
-          ) : null}
-        </div>
       </DialogContent>
     </Dialog>
   );

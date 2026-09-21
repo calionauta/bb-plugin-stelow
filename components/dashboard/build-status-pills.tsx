@@ -87,6 +87,17 @@ export function ActivityPill({ activity, detail }: { activity: CardActivity; det
   </span>;
 }
 
+// One attention chip for tiles and list rows alike: amber dot + action
+// label ("Answer required", "Worker failed", "Paused. Resume it."). Callers
+// show it only when the activity pill doesn't already say it — the pair
+// must never read as the same state twice.
+export function AttentionChip({ label }: { label: string }) {
+  return <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+    <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
+    <span>{label}</span>
+  </span>;
+}
+
 // The same summary is used by a Build tile and its open-card breadcrumb:
 // workflow checkpoint, workflow type, then (only when needed) human input.
 // Column/status and "working" are deliberately excluded: they are board
