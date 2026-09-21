@@ -433,7 +433,7 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Lead/cycle time per finished card with p50/p90, optionally scoped to a project and done window",
     input: z.object({ projectId: z.string().nullable().optional(), since: z.number().int().nonnegative().nullable().optional(), until: z.number().int().nonnegative().nullable().optional() }).strict(),
     output: z.object({
-      items: z.array(z.object({ cardId: z.string(), name: z.string(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doneAt: z.number().nullable() })),
+      items: z.array(z.object({ cardId: z.string(), kind: z.enum(["build", "research", "explore"]), name: z.string(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doneAt: z.number().nullable() })),
       summary: z.object({ count: z.number(), leadP50Ms: z.number().nullable(), leadP90Ms: z.number().nullable(), cycleP50Ms: z.number().nullable(), cycleP90Ms: z.number().nullable() }),
     }),
   },
@@ -4798,8 +4798,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // have age, not lead. One query per dimension (cards, done events),
       // then pure math — no per-card round trips.
       const rows = (projectId
-        ? db.prepare("SELECT id, name, created_at FROM cards WHERE status = 'completed' AND project_id = ?").all(projectId)
-        : db.prepare("SELECT id, name, created_at FROM cards WHERE status = 'completed'").all()) as Array<{ id: string; name: string; created_at: number }>;
+        ? db.prepare("SELECT id, kind, name, created_at FROM cards WHERE status = 'completed' AND project_id = ?").all(projectId)
+        : db.prepare("SELECT id, kind, name, created_at FROM cards WHERE status = 'completed'").all()) as Array<{ id: string; kind: string; name: string; created_at: number }>;
       const ids = rows.map((row) => row.id);
       const doneByCard = new Map<string, number>();
       const eventsByCard = new Map<string, Array<{ stage: string; entered_at: number }>>();
@@ -4814,14 +4814,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           eventsByCard.set(row.card_id, list);
         }
       }
-      const cards: Array<{ cardId: string; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }> = [];
+      const cards: Array<{ cardId: string; kind: "build" | "research" | "explore"; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }> = [];
       for (const row of rows) {
         const doneAt = doneByCard.get(row.id) ?? null;
         if (doneAt === null) continue;
         if (since != null && doneAt < since) continue;
         if (until != null && doneAt > until) continue;
         const timeline = summarizeTimeline(eventsByCard.get(row.id) ?? [], { createdAt: row.created_at, endAt: doneAt });
-        cards.push({ cardId: row.id, name: row.name, leadMs: timeline.leadMs, cycleMs: timeline.cycleMs, doneAt });
+        cards.push({ cardId: row.id, kind: normalizeKind(row.kind), name: row.name, leadMs: timeline.leadMs, cycleMs: timeline.cycleMs, doneAt });
       }
       const leads = summarizeDurations(cards.map((card) => card.leadMs));
       const cycles = summarizeDurations(cards.map((card) => card.cycleMs));

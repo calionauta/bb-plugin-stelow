@@ -69,4 +69,19 @@ assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView\)/, "build restores its
 assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView\)/, "research restores its view");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores its view");
 
+// Flow strip: one glanceable line on finished work (count + p50s),
+// expanding to window presets and a per-card table. Empty boards render
+// nothing — clean stays clean. Project comes from the board filter, so
+// no second picker drifts out of sync with it.
+assert.match(app, /function FlowStrip\(\{ rpc, projectId, navigate \}/, "one strip component owns board flow");
+assert.match(app, /<FlowStrip rpc=\{rpc\} projectId=\{filterProjectId === "all" \? null : filterProjectId\} navigate=\{navigate\} \/>/, "the strip follows the board project filter");
+assert.match(app, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
+assert.match(app, /\["all", "30d", "90d"\]|FLOW_WINDOWS/, "done windows are presets, not free dates");
+assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open through the shared navigator");
+
+// Worker-history total: one summed line in the summary, unknowns skipped,
+// all-unknown hidden — the per-thread rows below keep their own numbers.
+assert.match(app, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");
+assert.match(app, /tokens total<\/span>/, "the total reads as a total, not another row");
+
 console.log("card metrics test ok: lead/cycle math, stage split, durations");

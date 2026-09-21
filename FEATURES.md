@@ -567,7 +567,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `stelow.json` so history survives plugin DB loss.
 - **Provider token usage.** Each worker-history row shows BB's latest
   provider-reported token total when available. Missing provider data stays
-  hidden rather than presenting a misleading zero or an estimate.
+  hidden rather than presenting a misleading zero or an estimate. The
+  history summary adds one card total across all workers and children
+  (`totalTokenUsage`, unknowns skipped, all-unknown hidden).
 - **Child threads.** Workers that fan work out to fresh BB child threads
   (same contract as subagents: fresh context, no sibling communication,
   one owned output file each) show each child under its worker row with
@@ -834,8 +836,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   over a project and done-window filter — one batched pass, no per-card
   round trips, same math as the gap summary. Active cards carry no times
   (age is not lead). Each card shows its own Lead/Cycle line in the detail
-  progress block; board-level aggregates ride the same RPC whenever a
-  surface wants them.
+  progress block; the Build board carries one glanceable Flow strip (count
+  + p50s, expanding to window presets and a per-card table that opens
+  cards) fed by the board project filter. Empty boards render no strip.
 - **Stelow identity prefix** (`sw-`). Per-workflow state dirs, cardless
   workflow ids, and both generators (owner-derived here, random upstream)
   share one prefix.

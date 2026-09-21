@@ -43,7 +43,7 @@ import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
-import { formatTokenUsage } from "./lib/token-usage.mjs";
+import { formatTokenUsage, totalTokenUsage } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
@@ -908,6 +908,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
+          <FlowStrip rpc={rpc} projectId={filterProjectId === "all" ? null : filterProjectId} navigate={navigate} />
           {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(COLUMNS, collapsedColumns) }}>
             {COLUMNS.map((column) => (
               <BoardColumn
@@ -2679,6 +2680,64 @@ function PhaseRail({ stage }: { stage: string }) {
           <span title={phase.label} className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${known && phase.id === current ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}>{phase.label}</span>
         </span>
       ))}
+    </div>
+  );
+}
+
+// Flow strip: finished-work lead/cycle reading on the Build board. One
+// glanceable line when cards finished (count + p50s), expanding to window
+// presets and a per-card table. Reads the flowMetrics RPC — the same math
+// as gap summaries and card detail, never a third implementation. Empty
+// boards render nothing: clean stays clean.
+type FlowWindow = "all" | "30d" | "90d";
+const FLOW_WINDOWS: Array<{ id: FlowWindow; label: string; days: number | null }> = [
+  { id: "all", label: "All time", days: null },
+  { id: "30d", label: "30d", days: 30 },
+  { id: "90d", label: "90d", days: 90 },
+];
+function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: string | null; navigate: ReturnType<typeof useBbNavigate> }) {
+  const [open, setOpen] = useState(false);
+  const [window, setWindow] = useState<FlowWindow>("all");
+  const [result, setResult] = useState<{ items: Array<{ cardId: string; kind: string; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }>; summary: { count: number; leadP50Ms: number | null; leadP90Ms: number | null; cycleP50Ms: number | null; cycleP90Ms: number | null } } | null>(null);
+  const preset = FLOW_WINDOWS.find((entry) => entry.id === window) ?? FLOW_WINDOWS[0]!;
+  const since = preset.days === null ? null : Date.now() - preset.days * 86400000;
+  useEffect(() => {
+    let cancelled = false;
+    void rpc.call("flowMetrics", { projectId, since }).then((next) => { if (!cancelled) setResult(next); }).catch(() => { if (!cancelled) setResult(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rpc, projectId, window]);
+  if (!result || result.summary.count === 0) return null;
+  const rows = [...result.items].sort((a, b) => (b.leadMs ?? -1) - (a.leadMs ?? -1));
+  return (
+    <div className="rounded-md border bg-muted/20 px-3 py-2">
+      <button onClick={() => setOpen((value) => !value)} aria-expanded={open} title="Lead runs idea to done; cycle runs first real movement to done." className="flex min-h-9 w-full cursor-pointer items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        <DisclosureChevron open={open} />
+        <span className="font-medium text-foreground">{result.summary.count} done</span>
+        <span className="text-muted-foreground">lead p50 {result.summary.leadP50Ms !== null ? formatDuration(result.summary.leadP50Ms) : "—"}</span>
+        <span className="text-muted-foreground">cycle p50 {result.summary.cycleP50Ms !== null ? formatDuration(result.summary.cycleP50Ms) : "—"}</span>
+      </button>
+      {open ? (
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-1" role="group" aria-label="Done window">
+            {FLOW_WINDOWS.map((entry) => (
+              <button key={entry.id} onClick={() => setWindow(entry.id)} aria-pressed={window === entry.id} className={`min-h-8 cursor-pointer rounded-md px-2 text-xs font-medium ${window === entry.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{entry.label}</button>
+            ))}
+            <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">p90 lead {result.summary.leadP90Ms !== null ? formatDuration(result.summary.leadP90Ms) : "—"} · p90 cycle {result.summary.cycleP90Ms !== null ? formatDuration(result.summary.cycleP90Ms) : "—"}</span>
+          </div>
+          <ul className="max-h-56 space-y-0.5 overflow-auto">
+            {rows.map((item) => (
+              <li key={item.cardId}>
+                <button onClick={() => goToCard(navigate, { kind: item.kind as "build" | "research" | "explore" }, item.cardId)} className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                  <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">lead {item.leadMs !== null ? formatDuration(item.leadMs) : "—"}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">cycle {item.cycleMs !== null ? formatDuration(item.cycleMs) : "—"}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -5466,9 +5525,10 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
 function WorkerHistoryList({ history, separated = false }: { history: CardDetailResponse["workerHistory"]; separated?: boolean }) {
   const navigate = useBbNavigate();
   if (history.length === 0) return null;
+  const total = totalTokenUsage(history);
   return (
     <details className={`group${separated ? " mt-3 border-t pt-2" : ""}`}>
-      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable</summary>
+      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : null}</summary>
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (
           <div key={entry.threadId}>
