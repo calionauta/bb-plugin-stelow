@@ -5,6 +5,7 @@ import {
   LIGHTWEIGHT_KINDS,
   LIGHTWEIGHT_COLUMNS,
   LIGHTWEIGHT_COLUMN_LABELS,
+  LIGHTWEIGHT_VISIBLE_COLUMNS,
   LIGHTWEIGHT_STATUS_BY_COLUMN,
   bandForKind,
   describeCardEnvironment,
@@ -19,6 +20,7 @@ assert.deepEqual(LIGHTWEIGHT_KINDS, ["research", "explore"], "lightweight kinds"
 // Bucket is the one word for "captured, nothing running yet" on every track
 // (the stored key stays "inbox" — only the label changed, so no migration).
 assert.deepEqual(LIGHTWEIGHT_COLUMNS, ["inbox", "doing", "done", "archived"], "lightweight columns");
+assert.deepEqual(LIGHTWEIGHT_VISIBLE_COLUMNS, ["doing", "done", "archived"], "rendered lightweight boards hide the Bucket too");
 assert.equal(LIGHTWEIGHT_COLUMN_LABELS.inbox, "Bucket", "the first column reads Bucket");
 assert.equal(LIGHTWEIGHT_COLUMN_LABELS.done, "Done", "column labels");
 assert.deepEqual(LIGHTWEIGHT_STATUS_BY_COLUMN, { inbox: "pending", doing: "in-progress", done: "completed", archived: "archived" }, "lightweight move mapping");

@@ -28,7 +28,7 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { groupCardChecks, groupState } from "./lib/card-checks.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots } from "./lib/hill-position.mjs";
@@ -37,7 +37,7 @@ import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelect
 import { questionCopy } from "./lib/question-presentation.mjs";
 import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
 import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
-import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS } from "./lib/tracks.mjs";
+import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
@@ -109,6 +109,9 @@ const BAND_LABEL: Record<string, string> = { ...PHASE_LABELS, research: "Researc
 // aliases keep component call sites readable; they do not define columns.
 const COLUMNS = BUILD_BOARD_COLUMNS;
 const COLUMN_LABELS: Record<string, string> = BUILD_BOARD_COLUMN_LABELS;
+// Rendered boards skip the Bucket column (header button + gallery own it);
+// grouping, moves, and the status filter keep the full catalog.
+const VISIBLE_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS;
 // workerThreadId is part of the projection (a threadless card waits in the
 // Bucket), so it must survive this pick — dropping it silently returned every
 // parked card to the Analysis phase.
@@ -125,6 +128,7 @@ function boardColumnOf(card: Pick<CardItem, "status" | "stage" | "workerThreadId
 // — activity, never status — can never push a Doing card back to the Bucket.
 const RESEARCH_COLUMNS = LIGHTWEIGHT_COLUMNS as unknown as readonly ["inbox", "doing", "done", "archived"];
 const RESEARCH_COLUMN_LABELS: Record<string, string> = LIGHTWEIGHT_COLUMN_LABELS;
+const VISIBLE_RESEARCH_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS as unknown as readonly ["doing", "done", "archived"];
 function researchColumnOf(card: Pick<CardItem, "status">): string {
   return researchColumnForStatus(card.status);
 }
@@ -192,7 +196,7 @@ function stageIndex(stage: string) {
 
 
 const FILTER_INTENT_OPTIONS = [{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))];
-const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
+const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...VISIBLE_COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
 const FILTER_ACTIVITY_OPTIONS = [
   { value: "all", label: "Any activity" },
   { value: "idle", label: "idle" },
@@ -915,8 +919,8 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
           <FlowStrip rpc={rpc} projectId={filterProjectId === "all" ? null : filterProjectId} navigate={navigate} />
-          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(COLUMNS, collapsedColumns) }}>
-            {COLUMNS.map((column) => (
+          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns) }}>
+            {VISIBLE_COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
                 column={column}
@@ -1164,8 +1168,8 @@ function ResearchPanel({ active }: { active: boolean }) {
           </p>
           ) : null}
           {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
-          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
-            {RESEARCH_COLUMNS.map((column) => (
+          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns) }}>
+            {VISIBLE_RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
                 column={column}
@@ -1408,8 +1412,8 @@ function ExplorePanel({ active }: { active: boolean }) {
           </p>
           ) : null}
           {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
-          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(RESEARCH_COLUMNS, collapsedColumns) }}>
-            {RESEARCH_COLUMNS.map((column) => (
+          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns) }}>
+            {VISIBLE_RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
                 key={column}
                 column={column}
@@ -2711,7 +2715,7 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
 }
 
 function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <div className="space-y-5">{COLUMNS.map((column) => {
+  return <div className="space-y-5">{VISIBLE_COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (!cards.length) return null;
     const isCollapsed = collapsed[column] === true;
@@ -3051,7 +3055,7 @@ function ExploreCard({ card, stageLabel }: { card: CardItem; stageLabel: string 
 // Lightweight list view (Research + Explore share it): same grouping as the
 // board, one card per row. tagFor resolves the card's tag pill label.
 function LightweightTrackList({ groups, navigate, metaFor, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; metaFor: (card: CardItem) => string | null; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <div className="space-y-5">{RESEARCH_COLUMNS.map((column) => {
+  return <div className="space-y-5">{VISIBLE_RESEARCH_COLUMNS.map((column) => {
     const cards = groups[column] ?? [];
     if (cards.length === 0) return null;
     const isCollapsed = collapsed[column] === true;

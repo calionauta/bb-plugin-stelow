@@ -181,8 +181,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `lib/tracks.mjs` — one `normalizeKind` turns any stored value into a
   track, and the lightweight lifecycle (Bucket / Doing / Done)
   plus worker bands come from the same module, never scattered ternaries.
-- **Board** (`BoardPanel`, `moveCard`). Columns are Bucket + workflow phases
-  (Analysis/Planning/Execution/Review) + Done/Archived; cards sit in their
+- **Board** (`BoardPanel`, `moveCard`). Columns are workflow phases
+  (Analysis/Planning/Execution/Review) + Done/Archived — the Bucket is not
+  rendered as a column (its header button + gallery own it); cards sit in their
   stage's phase. The complete Build topology (inbox, phases, terminal
   outcomes, entry checkpoints, labels, and stage-to-column projection) is
   derived from one workflow catalog; Research/Explore own their separately
@@ -195,9 +196,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   card reads the same way before and after opening it. Tiles and the
   breadcrumb name the card's project in one muted line — context without
   clutter; list rows already carried it.
-- **Bucket** (one word, every track). The first column means *captured,
-  nothing running yet*: a card sits there while it has no worker, and
-  leaving it is what starts the card. Each track header offers the Bucket
+- **Bucket** (one word, every track). Captured, nothing running yet: a card sits there while it has no worker, and
+  leaving it is what starts the card. The Bucket renders nowhere as a column — each track header offers it
   as a button (count included) opening an expanded gallery modal — fixed
   dimensions (70vw wide, 85dvh tall, internal scroll), the same board tiles at board width (240px, auto-fill per row),
   vertical scroll. Creation dialogs link the same gallery from their

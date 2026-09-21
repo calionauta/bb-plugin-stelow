@@ -20,6 +20,16 @@ assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanb
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 assert.equal((app.match(/<BucketGalleryButton cards=\{grouped\.inbox \?\? \[\]\} \/>/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
+// Rendered boards hide the Bucket column (grouping, moves, and filters
+// keep the full catalog): the kanban grids and both list views iterate
+// the visible lists, so no empty Bucket column renders anywhere.
+for (const token of ["VISIBLE_COLUMNS.map((column) => (", "VISIBLE_COLUMNS.map((column) => {", "VISIBLE_RESEARCH_COLUMNS.map((column) => (", "VISIBLE_RESEARCH_COLUMNS.map((column) => {"]) {
+  assert.ok(app.includes(token), `board render iterates ${token.split(".")[0]} lists`);
+}
+assert.doesNotMatch(app, /{COLUMNS\.map\(\(column\) => \(/, "the build kanban renders no Bucket column");
+assert.doesNotMatch(app, /{RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanbans render no Bucket column");
+assert.ok(app.includes("kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns)"), "the build grid template matches its rendered columns");
+assert.ok(app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns)"), "lightweight grid templates match their rendered columns");
 // Order is product: New, then Bucket, then Agent Presets — the pile sits
 // beside creation, before configuration. A drift back fails here.
 for (const label of ["New issue", "New research", "New exploration"]) {

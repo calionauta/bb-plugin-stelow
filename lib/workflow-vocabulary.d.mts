@@ -12,6 +12,7 @@ export declare const PHASE_LABELS: Record<string, string>;
 export declare const BUILD_BOARD_TERMINALS: string[];
 export declare const BUILD_BOARD_INBOX: string;
 export declare const BUILD_BOARD_COLUMNS: string[];
+export declare const BUILD_BOARD_VISIBLE_COLUMNS: string[];
 export declare const BUILD_BOARD_COLUMN_LABELS: Record<string, string>;
 export declare const PHASE_ENTRY_STAGES: Record<WorkflowPhase, string>;
 export declare const STAGE_BANDS: Record<string, string[]>;

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STATE_TEMPLATE, templateStages } from "../lib/state-template.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_INBOX, BUILD_BOARD_TERMINALS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_DOC, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, STELOW_UPSTREAM_BASE, STELOW_UPSTREAM_BLOB, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageInfoUrl, stageLabel, stageSkill, stageSkillUrl } from "../lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_INBOX, BUILD_BOARD_TERMINALS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_ENTRY_STAGES, PHASE_LABELS, STAGE_BANDS, STAGE_DOC, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, STELOW_UPSTREAM_BASE, STELOW_UPSTREAM_BLOB, WORKFLOW_PHASES, WORKFLOW_STAGES, buildBoardColumnFor, stageInfoUrl, stageLabel, stageSkill, stageSkillUrl } from "../lib/workflow-vocabulary.mjs";
 
 // Workflow contracts: one vocabulary powers template, board, and server.
 // Catches stage additions without template cover or a phase/label mapping.
@@ -40,6 +40,7 @@ for (const stage of STAGE_SEQUENCE) {
 // Board topology is derived from the same phase catalog as the stage map;
 // terminal outcomes and manual phase entry checkpoints live beside it.
 assert.deepEqual(BUILD_BOARD_COLUMNS, [BUILD_BOARD_INBOX, ...WORKFLOW_PHASES.map(({ id }) => id), ...BUILD_BOARD_TERMINALS], "Build board is the Bucket, its phase columns, then the terminal outcomes");
+assert.deepEqual(BUILD_BOARD_VISIBLE_COLUMNS, [...WORKFLOW_PHASES.map(({ id }) => id), ...BUILD_BOARD_TERMINALS], "rendered boards hide the Bucket — its button + gallery own it, the column would duplicate them");
 assert.equal(BUILD_BOARD_COLUMN_LABELS[BUILD_BOARD_INBOX], "Bucket", "the Build board's first column reads Bucket (the stored key stays inbox)");
 assert.ok(BUILD_BOARD_COLUMNS.indexOf(BUILD_BOARD_INBOX) < BUILD_BOARD_COLUMNS.indexOf("analysis"), "the Bucket sits before the first phase");
 assert.deepEqual(BUILD_BOARD_TERMINALS, ["completed", "archived"], "Build terminal outcomes have one catalog");
