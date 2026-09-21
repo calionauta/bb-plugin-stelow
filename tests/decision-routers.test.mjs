@@ -218,6 +218,13 @@ assert.doesNotMatch(app, /void setMode\(event\.target\.value\)/, "no immediate s
 assert.match(app, /role=\{isError \? "alert" : "status"\}/, "failures announce as alerts, confirmations stay status");
 assert.match(app, /refresh: \(\) => Promise<void>/, "rows refresh their own section after saving");
 
+// Touch targets meet the repo's min-h-11 rule inside router rows: the mode
+// select, the threshold input, and the judge-preset select all render h-11.
+// A regression to h-9 fails here before a phone user finds it.
+assert.ok(app.includes('className="cursor-pointer h-11 shrink-0'), "the mode select meets min-h-11");
+assert.ok(app.includes('step="0.05" className="h-11"'), "the threshold input meets min-h-11");
+assert.ok(app.includes('judge preset`} className="cursor-pointer h-11 flex-1'), "the judge-preset select meets min-h-11");
+
 // The decision_points rebuild is one transaction: a crash between DROP and
 // RENAME must never lose the rows. Removing the wrapper fails here.
 assert.match(server, /const rebuildDecisionPoints = db\.transaction\(\(\) => \{/, "the table rebuild is atomic");

@@ -4343,7 +4343,7 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
         <span className="min-w-0 flex-1 truncate" title={point.description}><span className="font-medium">{point.label}</span></span>
         <select
           aria-label={`${point.label} mode`}
-          className="cursor-pointer h-9 shrink-0 rounded-md border bg-background px-2 text-sm"
+          className="cursor-pointer h-11 shrink-0 rounded-md border bg-background px-2 text-sm"
           value={modeDraft}
           disabled={busy}
           onChange={(event) => { setModeDraft(event.target.value); note("", false); }}
@@ -4358,7 +4358,7 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
       {modeDraft === "api" ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <label className="flex flex-1 items-center gap-2"><span className="shrink-0">Act at confidence ≥</span>
-            <Input type="number" min="0" max="1" step="0.05" className="h-9" value={routeAt} onChange={(event) => setRouteAt(event.target.value)} />
+            <Input type="number" min="0" max="1" step="0.05" className="h-11" value={routeAt} onChange={(event) => setRouteAt(event.target.value)} />
           </label>
           <Button size="sm" variant="outline" disabled={busy || !dirty || !valid} onClick={() => void saveThreshold()}>Save</Button>
         </div>
@@ -4368,7 +4368,7 @@ function DecisionRouterRow({ rpc, point, presets, refresh }: { rpc: ManagerRpc; 
           <p className="text-[11px]">Preset judge asks one of your provider presets to answer this judgment in a hidden thread — one thread per judgment, archived right after. Pick this when you trust one of your own models more than the shared endpoint above. Any preset works, including one no workflow stage uses. Each judgment costs a provider turn; failures fall back to built-in rules.</p>
           {presets.length === 0 ? <p className="text-[11px]" role="status">No presets yet — create one under Agent Presets, then pick it here.</p> : null}
           <div className="flex items-center gap-2">
-            <select aria-label={`${point.label} judge preset`} className="cursor-pointer h-9 flex-1 rounded-md border bg-background px-2 text-sm text-foreground" value={presetId} disabled={busy} onChange={(event) => { setPresetId(event.target.value); note("", false); }}>
+            <select aria-label={`${point.label} judge preset`} className="cursor-pointer h-11 flex-1 rounded-md border bg-background px-2 text-sm text-foreground" value={presetId} disabled={busy} onChange={(event) => { setPresetId(event.target.value); note("", false); }}>
               <option value="">Pick a preset…</option>
               {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
             </select>
