@@ -85,11 +85,11 @@ import { detectedTestCommand, sameGitEvidence, verificationReadiness } from "./l
 import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
-import { tokenUsageFromEvents } from "./lib/token-usage.mjs";
+import { tokenUsageFromEvents, tokenBreakdownFromEvents } from "./lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry } from "./lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
-import { attachChildTokenUsage, shapeChildThreads } from "./lib/thread-children.mjs";
+import { attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "./lib/thread-children.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -468,7 +468,7 @@ export const rpcContract = defineRpcContract({
       splitAction: z.object({ show: z.boolean(), ok: z.boolean(), reason: z.string().nullable() }),
       stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
-      workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable(), tokenUsage: z.number().nullable() })) })),
+      workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable() })) })),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
       // exploratory workspaces, which live outside provisioned environments.
@@ -3672,14 +3672,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { return null; }
   }
 
-  async function workerTokenUsage(threadId: string): Promise<number | null> {
+  // Total + split from one latest event: two readers of the same event
+  // would double the thread-event calls on every detail load.
+  async function workerTokenReport(threadId: string): Promise<{ total: number | null; breakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null }> {
     try {
       const events = await bb.sdk.threads.events.list({ threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
-      return tokenUsageFromEvents(events);
-    } catch { return null; }
+      return { total: tokenUsageFromEvents(events), breakdown: tokenBreakdownFromEvents(events) };
+    } catch { return { total: null, breakdown: null }; }
   }
 
-  async function workerChildThreads(threadId: string): Promise<Array<{ threadId: string; title: string | null; status: string; providerId: string | null; tokenUsage: number | null }>> {
+  async function workerChildThreads(threadId: string): Promise<Array<{ threadId: string; title: string | null; status: string; providerId: string | null; tokenUsage: number | null; tokenBreakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null }>> {
     try {
       const list = await bb.sdk.threads.list({ parentThreadId: threadId, limit: 10 });
       const children = shapeChildThreads(list);
@@ -3691,10 +3693,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const usages = await Promise.all(children.map(async (child) => {
         try {
           const events = await bb.sdk.threads.events.list({ threadId: child.threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
-          return [child.threadId, tokenUsageFromEvents(events)] as const;
-        } catch { return [child.threadId, null] as const; }
+          return [child.threadId, tokenUsageFromEvents(events), tokenBreakdownFromEvents(events)] as const;
+        } catch { return [child.threadId, null, null] as const; }
       }));
-      return attachChildTokenUsage(children, Object.fromEntries(usages));
+      const withTotals = attachChildTokenUsage(children, Object.fromEntries(usages.map(([id, total]) => [id, total])));
+      return attachChildTokenBreakdown(withTotals, Object.fromEntries(usages.map(([id, , breakdown]) => [id, breakdown])));
     } catch { return []; }
   }
 
@@ -5376,12 +5379,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Worker ledger, newest first. The open row (endedAt null) is the live
       // worker; older rows are archived threads replaced along the way.
       const workerRows = db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>;
-      const workerHistory = await Promise.all(workerRows.map(async (row) => ({
-        threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at,
-        endedAt: row.ended_at, endedReason: row.ended_reason,
-        tokenUsage: await workerTokenUsage(row.thread_id),
-        children: await workerChildThreads(row.thread_id),
-      })));
+      const workerHistory = await Promise.all(workerRows.map(async (row) => {
+        const report = await workerTokenReport(row.thread_id);
+        return {
+          threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at,
+          endedAt: row.ended_at, endedReason: row.ended_reason,
+          tokenUsage: report.total,
+          tokenBreakdown: report.breakdown,
+          children: await workerChildThreads(row.thread_id),
+        };
+      }));
       // Imported-issue link for the Done-card write-back affordance. The URL
       // is deterministic (github.com/<repo>/issues/<number>), so no extra
       // GitHub round-trip is needed to render it.

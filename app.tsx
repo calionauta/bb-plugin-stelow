@@ -43,7 +43,7 @@ import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
-import { formatTokenUsage, totalTokenUsage } from "./lib/token-usage.mjs";
+import { formatTokenUsage, totalTokenUsage, sumTokenBreakdowns } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
@@ -5526,9 +5526,17 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
   const navigate = useBbNavigate();
   if (history.length === 0) return null;
   const total = totalTokenUsage(history);
+  const breakdown = sumTokenBreakdowns(history.flatMap((entry) => [entry.tokenBreakdown, ...(entry.children ?? []).map((child) => child.tokenBreakdown)]));
+  const legs = breakdown ? [
+    breakdown.input !== null ? `in ${formatTokenUsage(breakdown.input)}` : null,
+    breakdown.output !== null ? `out ${formatTokenUsage(breakdown.output)}` : null,
+    breakdown.cached !== null ? `cached ${formatTokenUsage(breakdown.cached)}` : null,
+    breakdown.reasoning !== null ? `reasoning ${formatTokenUsage(breakdown.reasoning)}` : null,
+  ].filter((part): part is string => part !== null) : [];
   return (
     <details className={`group${separated ? " mt-3 border-t pt-2" : ""}`}>
       <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : null}</summary>
+      {legs.length > 0 ? <p className="mt-1 text-[11px] text-muted-foreground" title="Provider-reported split across all workers; legs without reports are omitted, never zeroed.">{legs.join(" · ")}</p> : null}
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (
           <div key={entry.threadId}>

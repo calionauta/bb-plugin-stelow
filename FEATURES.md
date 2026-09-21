@@ -569,7 +569,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   provider-reported token total when available. Missing provider data stays
   hidden rather than presenting a misleading zero or an estimate. The
   history summary adds one card total across all workers and children
-  (`totalTokenUsage`, unknowns skipped, all-unknown hidden).
+  (`totalTokenUsage`, unknowns skipped, all-unknown hidden). Each entry
+  also carries its provider split (input, output, cached, reasoning via
+  `tokenBreakdownFromEvents`, summed per card with `sumTokenBreakdowns`);
+  the history shows reported legs labeled (`in · out · cached ·
+  reasoning`), omitting unreported legs instead of zeroing them.
 - **Child threads.** Workers that fan work out to fresh BB child threads
   (same contract as subagents: fresh context, no sibling communication,
   one owned output file each) show each child under its worker row with
