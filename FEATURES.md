@@ -500,7 +500,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `reconReceiptStatus`). Stelow preflights optional analysis tools from the
   target Git workspace and writes `context/recon-receipt.json`; BB injects the
   portable contract at workflow handoff and shows a non-blocking audit warning
-  when a completed Build card lacks a valid receipt.
+  when a completed Build card lacks a valid receipt. The warning names
+  itself advisory (the audit still verified the tree), says what to do
+  (run the recon preflight before the next audit), and pre-receipt cards
+  always read that way — a missing snapshot is never presented as a failure.
 - **Worker section** (`WorkerSection`, always visible right under the
   hero in both tracks): preset pill + provider/model + inline note
   (applies to the next worker — Resume keeps the current one); completed

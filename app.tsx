@@ -3264,7 +3264,13 @@ function AuditTrailStatusRow({ cardId }: { cardId: string }) {
         </button>
       </div>
       {detail ? <p className="mt-1 text-muted-foreground">{detail}</p> : null}
-      {status.recon && status.recon.state !== "recorded" ? <p className="mt-1 text-amber-700 dark:text-amber-300">Recon warning: {status.recon.detail}</p> : null}
+      {status.recon && status.recon.state !== "recorded" ? (
+        <p className="mt-1 text-amber-700 dark:text-amber-300">
+          {status.recon.state === "missing"
+            ? "No codebase context snapshot — advisory only, not a failure: the audit above still verified the tree. Run the recon preflight before the next audit to attach codebase context; cards completed before the receipt existed always read this way."
+            : `Codebase context snapshot unreadable (${status.recon.detail}) — advisory only, not a failure: the audit above still verified the tree. Re-run the recon preflight, then re-run audit to refresh it.`}
+        </p>
+      ) : null}
     </div>
   );
 }
