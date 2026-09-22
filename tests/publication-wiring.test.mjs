@@ -79,6 +79,8 @@ assert.match(app, /Save local commit to/, "a BB-selected default checkout is des
 assert.match(app, /default checkout selected in BB/, "the publication panel explains that BB's checkout choice is respected");
 assert.match(app, /cannot fetch remote updates, merge incoming changes, push, or create a pull request/, "the publication panel does not promise remote synchronization the BB API does not expose");
 assert.match(app, /Advanced Git operations/, "local squash integration is progressively disclosed");
+assert.match(app, /DisclosureChevron open=\{advancedGitOpen\} \/>Advanced Git operations/, "the disclosure arrow reads explicit open state, never CSS hope");
+assert.match(app, /publication\.pullRequest\.state === "draft" \? \(/, "ready/draft resolves to one contextual action from PR state");
 assert.match(app, /Squash branch locally/, "local squash integration uses plain-language copy");
 assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(app, /publicationSubmitting/, "publication confirmations prevent duplicate write requests");
