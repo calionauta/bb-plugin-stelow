@@ -7487,9 +7487,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       const isCurrentHead = Boolean(savedSha && publication.branch?.headSha === savedSha);
                       if (!savedSha || publication.workingTree?.hasUncommittedChanges) {
                         const files = publication.workingTree?.files ?? 0;
+                        const completedAt = card?.status === "completed" ? detail?.card.verifiedHeadSha ?? null : null;
                         return (
                           <div>
                             <p className="text-emerald-900/80 dark:text-emerald-100/80">{!savedSha && !publication.workingTree?.hasUncommittedChanges ? "Nothing saved yet." : !savedSha ? `${files} uncommitted changes on ${publication.branch?.current ?? "this branch"} — save them first.` : `${files} new changes since ${savedSha.slice(0, 7)}.`}</p>
+                            {completedAt ? <p className="mt-1 text-xs text-muted-foreground">Completed at {completedAt.slice(0, 7)} — current dirt may be later work, not card leftovers.</p> : null}
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Button size="sm" disabled={!publication.capabilities.commit.available} title={publication.capabilities.commit.reason ?? "Commit the BB workspace"} onClick={() => setPublicationAction("commit")}>{publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}…` : "Commit workspace…"}</Button>
                             </div>

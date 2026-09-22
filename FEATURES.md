@@ -1208,6 +1208,11 @@ one input, one artifact.*
   rework it picks up. Re-critique overwrites the same file: every
   matched critique is validated (a lingering superseded file still
   claims), and every refusal names file + expected-vs-found.
+- **Worktree storage** (`bb stelow storage [--json]`,
+  `lib/worktree-storage.mjs`). Worktree disk usage attributed to cards
+  (heaviest first, unattributed rows listed instead of hidden), read-only
+  with per-path timeouts. Completed cards anchor checkout dirt to their
+  verified test HEAD instead of implying leftovers.
 - **Build document depth** (`buildDocDepths`, `contractForBuildArtifact`).
   At `done`, recognized workflow documents registered in `state.md`
   (spec-product, spec-tech, interfaces, testing-strategy, critique

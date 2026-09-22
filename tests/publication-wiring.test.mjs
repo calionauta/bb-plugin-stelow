@@ -104,5 +104,6 @@ assert.match(app, /View branch ↗/, "the branch is one click away after pushing
 assert.match(app, /Open pull request ↗/, "the next step after pushing is a link, not a paragraph");
 assert.match(app, /not pushed yet\./, "a saved commit states its remote truth instead of implying arrival");
 assert.match(app, /pushed to origin\./, "a finished push reads as published in the outcome line");
+assert.match(app, /Completed at \{completedAt\.slice\(0, 7\)\}/, "completed cards anchor dirt to their verified HEAD");
 
 console.log("publication wiring test ok: BB owns writes, Done stays separate, actions are explicit and auditable");
