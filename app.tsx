@@ -51,6 +51,7 @@ import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
 import { StartImmediatelyCheck } from "./components/start-immediately-check";
+import { DisclosureChevron } from "./components/disclosure";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -5049,11 +5050,6 @@ function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAtt
 // <details>/<summary> use the `group-open:` variant; controlled buttons pass
 // `open` directly. Native controls already expose expanded state to assistive
 // tech; this mirrors it visually for sighted, low-vision, and lay users.
-function DisclosureChevron({ className = "", open }: { className?: string; open?: boolean }) {
-  const rotation = open === undefined ? "group-open:rotate-90" : open ? "rotate-90" : "rotate-0";
-  return <span aria-hidden className={`inline-flex size-5 shrink-0 items-center justify-center text-sm leading-none text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${rotation} ${className}`}>▶</span>;
-}
-
 function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
   return (
