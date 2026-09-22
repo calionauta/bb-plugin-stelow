@@ -56,6 +56,7 @@ const galleryGrid = app.slice(tilesAt, app.indexOf(">", tilesAt));
 assert.ok(galleryGrid.includes(`repeat(auto-fill,minmax(min(${minBound},100%),${maxBound}))`), "gallery tracks take the board column's own bounds");
 assert.ok(galleryGrid.includes("justify-start"), "tiles begin at the left edge and fill rightwards");
 assert.ok(galleryGrid.includes("items-start"), "a tile keeps the board's natural height");
+assert.ok(galleryGrid.includes("content-start"), "rows pin to the top: a short pile never centers in the tall modal");
 assert.doesNotMatch(galleryGrid, /\b1fr\b/, "no gallery track stretches to fill the modal");
 assert.doesNotMatch(app, /auto-rows-fr/, "gallery rows are never stretched to equal heights");
 assert.doesNotMatch(app, /\[&>\.stelow-board-card\]:h-full/, "gallery tiles are never stretched vertically");
