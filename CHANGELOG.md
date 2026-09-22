@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.45.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.44.2...v0.45.0) (2026-09-22)
+
+
+### Features
+
+* bb stelow scope start|done wrapper for workers ([e5322fa](https://github.com/calionauta/bb-plugin-stelow/commit/e5322fa17054ae67b8fbeb509d7992748385dd27))
+* central trackable machine for every pendency kind ([c05585e](https://github.com/calionauta/bb-plugin-stelow/commit/c05585e10a23b717c03559032500b56707677297))
+* fail-closed scope-sync guard for invisible scopes ([4e02147](https://github.com/calionauta/bb-plugin-stelow/commit/4e021474e72c6b43fd7edf01a80467ecb03d91e0))
+* forward seed-tasks and start-sha through bb stelow scope ([0d5e8c3](https://github.com/calionauta/bb-plugin-stelow/commit/0d5e8c3441a4f3b123b6945eda74396c6f32e0f0))
+* name unstartable ordering on execution entry ([e71b234](https://github.com/calionauta/bb-plugin-stelow/commit/e71b234fcc428352ab813ba2e57880a2593b8393))
+* realtime refresh on lock and rework-scope writes ([9c585a6](https://github.com/calionauta/bb-plugin-stelow/commit/9c585a629ee7815a875415ed2920da3ac9dff867))
+* refusal lines plus spec content into done gates ([bf76449](https://github.com/calionauta/bb-plugin-stelow/commit/bf76449642172beaefdafaba3e88d5dd7f176aa1))
+* separate machine evidence from deliverables in artifacts ([282ca0a](https://github.com/calionauta/bb-plugin-stelow/commit/282ca0aaa5889f52e8de23460103c265f93bd739))
+* wire trackable evidence through card detail, gates, and panel ([f0d80e5](https://github.com/calionauta/bb-plugin-stelow/commit/f0d80e51a9fa8cb708f0612da41d9e6b0d474a2c))
+
 ## [0.44.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.44.1...v0.44.2) (2026-09-21)
 
 
