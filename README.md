@@ -224,6 +224,7 @@ bb stelow fan-out --opportunity <id> [--card <card_id>]   # index opportunities 
 bb stelow seed --project <proj_id> --name <name> --intent <type>  # seed state files
 bb stelow schema [command]            # machine-readable subcommand contracts
 bb stelow sync-scopes [--json]        # parse spec-tech scopes (auto-runs on advance to execution)
+bb stelow scope <start|done|seed-tasks> --scope <id>  # validated scope transitions (single writer)
 bb stelow gap-scopes [--card <card_id>]   # convert escalated gaps into rework scopes
 bb stelow metrics [--json] [--card <card_id>]  # lead/cycle time and gap rates (fleet-wide without --card)
 bb stelow manifest [--json] [--card <card_id>] # paste-ready Stelow-Artifacts trailer for commits
