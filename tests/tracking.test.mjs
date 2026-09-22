@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import Database from "better-sqlite3";
 import { ensureTrackableEventsTable, recordTrackableEvent, listTrackableEvents } from "../lib/trackable-events.mjs";
 import { acquireWorkspaceClaims, ensureCardClaimsTables, lapsedScopeClaims } from "../lib/card-claims.mjs";
-import { plansRelDir, scopesRelDir, reconReceiptRelPath, isSpecTechFile } from "../lib/tracking-paths.mjs";
+import { plansRelDir, scopesRelDir, areaFileRelPath, reconReceiptRelPath, isSpecTechFile } from "../lib/tracking-paths.mjs";
 
 // Uniform layout: every derived path hangs off the state dir with fixed
 // areas and basenames — one construction rule for plans, scopes, and
@@ -10,6 +10,9 @@ import { plansRelDir, scopesRelDir, reconReceiptRelPath, isSpecTechFile } from "
 assert.equal(plansRelDir(".stelow/2026-01-01/abc"), ".stelow/2026-01-01/abc/plans", "plans area resolves");
 assert.equal(plansRelDir(null), null, "missing dirs refuse");
 assert.equal(scopesRelDir(".stelow/2026-01-01/abc"), ".stelow/2026-01-01/abc/scopes", "scopes area resolves");
+assert.equal(areaFileRelPath(".stelow/2026-01-01/abc", "scopes/scope-1.json"), ".stelow/2026-01-01/abc/scopes/scope-1.json", "area files join");
+assert.equal(areaFileRelPath(".stelow/2026-01-01/abc", "../evil"), null, "traversal refuses");
+assert.equal(areaFileRelPath(null, "scopes/scope-1.json"), null, "missing dirs refuse");
 assert.equal(reconReceiptRelPath(".stelow/2026-01-01/abc"), ".stelow/2026-01-01/abc/context/recon-receipt.json", "receipt path resolves");
 assert.equal(isSpecTechFile("spec-tech_v1.md"), true, "versioned specs match");
 assert.equal(isSpecTechFile("spec-product_v1.md"), false, "other plans do not match");

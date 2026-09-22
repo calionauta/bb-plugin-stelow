@@ -7,7 +7,6 @@ import {
   countScopeDialects,
   parseScopeTasks,
   diagnoseScopeSync,
-  executionScopeRefusal,
   mergePlannedTasks,
 } from "../lib/spec-scope-reader.mjs";
 
@@ -89,23 +88,8 @@ assert.deepEqual(diagnoseScopeSync({ specContent: MACHINE_SPEC, syncedCount: 0 }
 assert.deepEqual(diagnoseScopeSync({ specContent: MACHINE_SPEC, syncedCount: 2 }).state, "ok", "synced scopes read ok");
 assert.deepEqual(diagnoseScopeSync({ specContent: null, syncedCount: 0 }).state, "no-spec", "missing spec reads missing, never broken");
 
-// The execution gate refuses loud with the fix, and stays fail-open where
-// it must: other kinds, other stages, and unreadable specs never deadlock.
-assert.match(
-  executionScopeRefusal({ kind: "build", stage: "execution", specContent: HUMAN_SPEC, syncedCount: 0 }) ?? "",
-  /human headings.*\[SCOPE-N\].*sync-scopes/s,
-  "human dialect refuses with the rewrite + resync redirect",
-);
-assert.match(
-  executionScopeRefusal({ kind: "build", stage: "execution", specContent: MACHINE_SPEC, syncedCount: 0 }) ?? "",
-  /0 synced scopes.*sync-scopes/,
-  "unsynced machine spec refuses with the resync redirect",
-);
-assert.equal(executionScopeRefusal({ kind: "build", stage: "execution", specContent: MACHINE_SPEC, syncedCount: 2 }), null, "synced scopes pass");
-assert.equal(executionScopeRefusal({ kind: "build", stage: "execution", specContent: "a spec with no scope shapes", syncedCount: 0 }), null, "block-free specs fail open — depth gates own thin specs, not the entry gate");
-assert.equal(executionScopeRefusal({ kind: "build", stage: "execution", specContent: null, syncedCount: 0 }), null, "missing spec fails open — not every route plans through spec-tech");
-assert.equal(executionScopeRefusal({ kind: "research", stage: "execution", specContent: HUMAN_SPEC, syncedCount: 0 }), null, "non-build kinds are untouched");
-assert.equal(executionScopeRefusal({ kind: "build", stage: "audit", specContent: HUMAN_SPEC, syncedCount: 0 }), null, "other stages are untouched");
+// Entry/done refusals live in lib/build-gates.mjs (order-tested there);
+// this file pins the reader behavior they build on.
 
 // Planned tasks enrich synced scopes only: tracked tasks win on conflict,
 // blocks without a synced scope invent nothing.
@@ -132,8 +116,8 @@ assert.equal(reseeded[0].tasks[0].status, "done", "seeded status survives the me
 // missing-tracking signal.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-assert.match(server, /executionScopeRefusal\(/, "advance consults the scope-sync guard");
-assert.match(server, /doneScopeSyncRefusal\(/, "done consults the scope-sync guard");
+assert.match(server, /advanceExecutionGates\(/, "advance consults the gates module");
+assert.match(server, /doneBuildGates\(/, "done consults the gates module");
 assert.match(server, /diagnoseScopeSync\(\{ specContent/, "card detail reports scope-sync health from the spec against synced scopes");
 assert.match(server, /scopeSync: z\.object\(\{ state: z\.enum\(/, "the card detail contract carries the sync state");
 const app = readFileSync(join(root, "app.tsx"), "utf8");

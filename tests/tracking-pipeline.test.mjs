@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { countScopeDialects, diagnoseScopeSync, executionScopeRefusal, mergePlannedTasks } from "../lib/spec-scope-reader.mjs";
+import { countScopeDialects, diagnoseScopeSync, mergePlannedTasks } from "../lib/spec-scope-reader.mjs";
+import { advanceExecutionGates, doneBuildGates } from "../lib/build-gates.mjs";
 import { buildRegistry, dependencyCycles, canClose } from "../lib/trackable-relations.mjs";
 import { contractRelPath, parseEvidenceContract, evidenceConditions } from "../lib/trackable-evidence.mjs";
-import { doneScopeSyncRefusal } from "../lib/completion.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 
 // Exploratory pipeline test over real files (not mocks): a tmp project
@@ -30,12 +30,12 @@ try {
   assert.deepEqual(countScopeDialects(specA), { machine: 0, human: 1 }, "real file counts human");
   assert.equal(diagnoseScopeSync({ specContent: specA, syncedCount: trackingA.workflows[0].scopes.length }).state, "human-dialect", "real files diagnose the incident");
   assert.match(
-    executionScopeRefusal({ kind: "build", stage: "execution", specContent: specA, syncedCount: 0 }) ?? "",
+    advanceExecutionGates({ kind: "build", stage: "execution", specContent: specA, syncedCount: 0 }).refusal ?? "",
     /human headings/,
     "real files refuse execution entry",
   );
   assert.match(
-    doneScopeSyncRefusal({ kind: "build", stage: "audit", scopesOpen: [], specMachine: 0, specHuman: 1 }) ?? "",
+    doneBuildGates({ kind: "build", stage: "audit", scopes: [], specMachine: 0, specHuman: 1 }) ?? "",
     /human headings/,
     "real files refuse done",
   );
@@ -56,7 +56,7 @@ try {
   }];
   const specB = readFileSync(join(root, stateRel, "plans", "spec-tech_v2.md"), "utf8");
   assert.equal(diagnoseScopeSync({ specContent: specB, syncedCount: trackedB.length }).state, "ok", "synced real files read ok");
-  assert.equal(executionScopeRefusal({ kind: "build", stage: "execution", specContent: specB, syncedCount: trackedB.length }), null, "healthy entry passes");
+  assert.deepEqual(advanceExecutionGates({ kind: "build", stage: "execution", specContent: specB, syncedCount: trackedB.length }), { refusal: null, note: null }, "healthy entry passes");
   const merged = mergePlannedTasks(trackedB, specB);
   assert.equal(merged[0].tasks.length, 1, "seeded planned task dedupes by name against the table");
   assert.equal(merged[0].tasks[0].status, "in-progress", "tracked progress survives the merge");

@@ -18,6 +18,7 @@ export declare function isDoneStatus(status: unknown): boolean;
 export declare function isSkippedStatus(status: unknown): boolean;
 export declare function isActiveStatus(status: unknown): boolean;
 export declare function isKnownStatus(status: unknown): boolean;
+export declare function cleanTrackableId(value: unknown): string | null;
 export declare function canTransition(from: unknown, to: unknown): boolean;
 export declare function buildCondition(options?: {
   type?: string;

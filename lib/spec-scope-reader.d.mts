@@ -25,12 +25,6 @@ export declare function diagnoseScopeSync(options?: {
   specContent?: unknown;
   syncedCount?: number;
 }): ScopeSyncDiagnosis;
-export declare function executionScopeRefusal(options?: {
-  kind?: string;
-  stage?: string;
-  specContent?: unknown;
-  syncedCount?: number;
-}): string | null;
 export declare function mergePlannedTasks<T extends { id?: unknown; tasks?: unknown }>(
   trackedScopes: T[] | null | undefined,
   specContent: unknown,

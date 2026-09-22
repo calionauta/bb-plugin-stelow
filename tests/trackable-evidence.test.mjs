@@ -7,6 +7,7 @@ import {
   parseEvidenceContract,
   sanitizeEvidenceRecord,
   evidenceConditions,
+  enrichEntriesForDetail,
 } from "../lib/trackable-evidence.mjs";
 import { buildRegistry } from "../lib/trackable-relations.mjs";
 
@@ -107,16 +108,53 @@ assert.deepEqual(
   "task close advises without a spurious contract warning",
 );
 
-// Wiring pins: the detail resolves contracts through the generic resolver,
-// projects record evidence, derives claims read-only, and done refuses
-// unverified Records with the checklist redirect.
+// Composition is behaviorally tested with fakes (no SDK, no DB): contracts
+// attach, claims resolve, tasks inherit the same machine, and missing
+// state dirs resolve bare instead of throwing.
+const fakeEntries = [
+  { id: "scope-1", kind: "scope", name: "A", status: "in-progress", targetFiles: ["src/a.ts"], tasks: [{ id: "t1", name: "T", status: "pending" }] },
+  { id: "scope-2", kind: "scope", name: "B", status: "done", record: { verified: true }, tasks: [] },
+];
+const fakeContracts = {
+  ".stelow/d/abc/scopes/scope-1.json": JSON.stringify({ acceptance_criteria: ["AC1"], verify_commands: [], target_files: [] }),
+};
+const enriched = await enrichEntriesForDetail({
+  entries: fakeEntries,
+  stateRelDir: ".stelow/d/abc",
+  ownerId: "card1",
+  liveClaims: [{ card_id: "card1", scope: null, file_path: "src/a.ts", expires_at: 9_999_999_999_999 }],
+  isLapsed: () => false,
+  readContract: async (rel) => fakeContracts[rel] ?? null,
+  nowMs: 1_000,
+});
+assert.deepEqual(enriched[0].contract.acceptanceCriteria, ["AC1"], "contracts attach from the uniform layout");
+assert.equal(enriched[0].claimed, true, "live claims resolve");
+assert.deepEqual(enriched[0].conditions, [], "claimed in-progress carries nothing");
+assert.deepEqual(enriched[0].tasks[0].conditions, [], "pending tasks carry nothing");
+assert.deepEqual(enriched[1].conditions.map((condition) => condition.type), ["ContractMissing"], "done scope without contract advises");
+const bare = await enrichEntriesForDetail({ entries: fakeEntries, stateRelDir: null, ownerId: "card1" });
+assert.deepEqual(bare[0].conditions, [], "missing state dir resolves bare");
+assert.equal(bare[0].claimed, null, "missing state dir claims unknown");
+assert.equal(bare[0].contract, undefined, "missing state dir attaches nothing");
+const lapsed = await enrichEntriesForDetail({
+  entries: [fakeEntries[0]],
+  stateRelDir: ".stelow/d/abc",
+  ownerId: "card1",
+  liveClaims: [],
+  isLapsed: () => true,
+  readContract: async () => null,
+  nowMs: 1_000,
+});
+assert.deepEqual(lapsed[0].conditions.map((condition) => condition.type), ["ClaimLapsed"], "lapsed leases name the stall");
+assert.deepEqual(await enrichEntriesForDetail({ entries: null }), [], "junk resolves empty");
+// Wiring pins: the detail composes enrichment through one function (lib
+// owns the topology); the handler only injects SDK and DB.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-assert.match(server, /contractRelPath\(/, "contracts resolve through the generic resolver");
-assert.match(server, /parseEvidenceContract\(/, "contracts parse through trackable-evidence");
+assert.match(server, /enrichEntriesForDetail\(/, "card detail enriches through one composition");
 assert.match(server, /liveClaimsForWorkspace\(/, "claims derive read-only, never touching TTL");
-assert.match(server, /evidenceConditions\(\{ entry/, "conditions derive per entry from the registry");
-assert.match(server, /unverified Record — complete every verification checklist/, "done refuses unverified Records with the checklist redirect");
+const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");
+assert.match(gates, /unverified Record — complete every verification checklist/, "done refuses unverified Records with the checklist redirect");
 assert.match(server, /recordTrackableEvent\(/, "decisions trail into the event log");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 assert.match(app, /scope\.conditions/, "scopes render their conditions");

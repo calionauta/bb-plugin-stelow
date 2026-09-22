@@ -30,6 +30,7 @@ assert.deepEqual(registry.get("scope-2").children, ["scope-2-t1"], "containment 
 assert.deepEqual(childrenOf(registry.get("scope-2"), registry).map((task) => task.name), ["b"], "children resolve");
 assert.deepEqual(buildRegistry(null).size, 0, "junk builds empty");
 assert.equal(buildRegistry([{ id: "a", status: "done" }, { id: "a", status: "pending" }]).get("a").status, "done", "duplicate ids keep first, never overwrite");
+assert.ok(buildRegistry([{ id: "scope-1", tasks: [{ id: "3.1", name: "x", status: "pending" }] }]).has("3.1"), "dotted task ids register");
 
 // Edges read blockedBy first, dependsOn second; unknown fields read empty.
 assert.deepEqual(edgesOf(registry.get("scope-3")), ["scope-2", "scope-9", "scope-1"], "edges union both fields");
@@ -64,11 +65,12 @@ assert.equal(canClose(null, registry), false, "junk never closes");
 // closed scopes — both name the fix instead of stalling or certifying.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-assert.match(server, /dependencyCycles\(buildRegistry\(/, "advance checks the registry graph");
-assert.match(server, /blockedBy cycle detected/, "cycles refuse naming the loop");
+assert.match(server, /dependencyCycles\(entryRegistry/, "advance checks the registry graph");
 assert.match(server, /canStart\(entryRegistry/, "advance names unstartable ordering without a cycle");
-assert.match(server, /canClose\(/, "done checks containment through the registry");
-assert.match(server, /a scope closes only when its tasks do/, "containment refuses with the marking redirect");
+assert.match(server, /doneBuildGates\(/, "done consults the gates module");
+const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");
+assert.match(gates, /blockedBy cycle detected/, "cycles refuse naming the loop");
+assert.match(gates, /a scope closes only when its tasks do/, "containment refuses with the marking redirect");
 assert.match(server, /mergePlanned: false/, "done gates read tracked truth — the planned merge is display-only");
 
 console.log("trackable relations test ok: registry, edges, cycles, ordering, containment, wiring");

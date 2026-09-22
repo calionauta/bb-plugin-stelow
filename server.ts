@@ -74,13 +74,14 @@ import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, re
 import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSplitAnswer, splitActionState, splitEligibility, splitOutcome, splitRemainder, validateSplitSlices, withStandardSplitDisclosure } from "./lib/split-proposal.mjs";
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "./lib/question-presentation.mjs";
-import { doneEligibility, doneScopeSyncRefusal } from "./lib/completion.mjs";
+import { doneEligibility } from "./lib/completion.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { ensureTrackableEventsTable, recordTrackableEvent } from "./lib/trackable-events.mjs";
-import { contractRelPath, parseEvidenceContract, sanitizeEvidenceRecord, evidenceConditions } from "./lib/trackable-evidence.mjs";
-import { buildRegistry, canClose, canStart, dependencyCycles, openChildren } from "./lib/trackable-relations.mjs";
+import { enrichEntriesForDetail, sanitizeEvidenceRecord } from "./lib/trackable-evidence.mjs";
+import { buildRegistry, canStart, dependencyCycles } from "./lib/trackable-relations.mjs";
 import { isSpecTechFile, plansRelDir } from "./lib/tracking-paths.mjs";
-import { countScopeDialects, diagnoseScopeSync, executionScopeRefusal, mergePlannedTasks } from "./lib/spec-scope-reader.mjs";
+import { countScopeDialects, diagnoseScopeSync, mergePlannedTasks } from "./lib/spec-scope-reader.mjs";
+import { advanceExecutionGates, doneBuildGates } from "./lib/build-gates.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
@@ -5639,10 +5640,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           return { state: diagnosis.state, syncedScopes: scopes.length, machineBlocks: diagnosis.machine, humanBlocks: diagnosis.human, specFile: spec?.file ?? null };
         })()
         : null;
-      // Per-scope evidence, resolved through the uniform layout: contract
-      // JSON, record mirror (already on the projection), live claims, and
-      // derived conditions. Missing files read as absent evidence with a
-      // condition, never as an error — old specs predate contracts.
+      // Per-entry evidence through one composition (lib/trackable-evidence):
+      // contracts, claims, and conditions for scopes and their tasks.
       // Non-build cards keep the contract shape with empty evidence.
       const bareScopes = scopes.map((scope) => ({ ...scope, conditions: [], claimed: null as boolean | null }));
       const enrichedScopes = (card.kind === "build" && sourcePath)
@@ -5653,34 +5652,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           let live: Array<{ file_path: string; card_id: string; scope: string | null; expires_at: number }> = [];
           try { live = liveClaimsForWorkspace(db, { workspacePath: sourcePath }) as typeof live; } catch { live = []; }
           const at = Date.now();
-          const registry = buildRegistry(scopes);
-          return await Promise.all(scopes.map(async (scope) => {
-            const rel = contractRelPath(stateRel, registry.get(scope.id)?.kind ?? "scope", scope.id);
-            const contract = rel
-              ? parseEvidenceContract(await bb.sdk.files.read({ path: join(sourcePath, rel) }).then((file) => file.content).catch(() => null))
-              : null;
-            const targets = Array.isArray((scope as { targetFiles?: unknown }).targetFiles)
-              ? ((scope as { targetFiles?: unknown }).targetFiles as unknown[]).filter((file): file is string => typeof file === "string")
-              : [];
-            const mine = live.filter((claim) => claim.card_id === card.id && claim.expires_at > at
-              && (claim.scope === scope.id || targets.includes(claim.file_path)));
-            const claimed = targets.length > 0 || mine.length > 0 ? mine.length > 0 : null;
-            let claimLapsed = false;
-            try {
-              claimLapsed = claimed === false && lapsedScopeClaims(db, { cardId: card.id, workspacePath: sourcePath, scope: scope.id, files: targets, nowMs: at });
-            } catch { claimLapsed = false; }
-            const withContract = contract ? { ...scope, contract } : scope;
-            // Tasks are trackables too: same conditions machine, task kind
-            // (no sidecar, so only ordering and honesty signals fire).
-            const withTasks = {
-              ...withContract,
-              tasks: (Array.isArray(withContract.tasks) ? withContract.tasks : []).map((task) => ({
-                ...task,
-                conditions: evidenceConditions({ entry: { ...(task as object), kind: "task" }, registry }),
-              })),
-            };
-            return { ...withTasks, conditions: evidenceConditions({ entry: withTasks, registry, claimed, claimLapsed }), claimed };
-          }));
+          return await enrichEntriesForDetail({
+            entries: scopes,
+            stateRelDir: stateRel,
+            ownerId: card.id,
+            liveClaims: live,
+            isLapsed: (target: { id?: string; targetFiles?: unknown }) => {
+              try {
+                const files = Array.isArray(target.targetFiles)
+                  ? (target.targetFiles as unknown[]).filter((file): file is string => typeof file === "string")
+                  : [];
+                return lapsedScopeClaims(db, { cardId: card.id, workspacePath: sourcePath, scope: target.id ?? null, files, nowMs: at });
+              } catch { return false; }
+            },
+            readContract: (rel: string) => bb.sdk.files.read({ path: join(sourcePath, rel) }).then((file) => file.content).catch(() => null),
+            nowMs: at,
+          });
         })()
         : bareScopes;
       const preset = getReliablePresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
@@ -7931,41 +7918,32 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
                 : "\n(rework loop: back to execution from audit — no open audit-gap scopes)";
             }
           }
+          let syncedCount: number | null = null;
           try {
             const sync = await runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
             const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
-            if (typeof parsed.synced === "number" && parsed.synced > 0) {
-              return { exitCode: 0, stdout: result.stdout + `\n(sync-scopes: synced ${parsed.synced} scopes)` + loopNote };
-            }
+            if (typeof parsed.synced === "number") syncedCount = parsed.synced;
           } catch { /* best-effort only */ }
-          // Fail-closed scope gate (build only): entering execution with zero
-          // synced scopes while spec-tech carries scope blocks is the
-          // invisible-scopes incident. The sync above had its chance; a
-          // silent 0 now refuses loud with the fix instead of running
-          // untracked. Missing/unreadable specs fail open — not every route
-          // plans through spec-tech.
+          // Fail-closed scope gates (build only): the sync above had its
+          // chance — refusals preempt entry, notes compose with its report.
+          // Gate order lives in lib/build-gates (first refusal wins).
           if (cliCard?.kind === "build") {
             const synced = loadCardScopes(rootPath, cliCard.id);
             const spec = latestSpecTech(rootPath, cliCard.id)?.content ?? null;
-            const scopeRefusal = executionScopeRefusal({ kind: cliCard.kind, stage, specContent: spec, syncedCount: synced.length });
-            // Trail the entry decision (fail-open): refused or entered with N.
-            try {
-              recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: "all", transition: scopeRefusal ? "execution-refused" : "execution-entered", actor: "host", evidence: scopeRefusal ?? `${synced.length} synced scope(s)` });
-            } catch { /* trail never blocks */ }
-            if (scopeRefusal) return { exitCode: 1, stderr: scopeRefusal };
-            // Dependency cycles stall silently (each waiter waits forever):
-            // refuse loud naming the cycle instead of entering execution.
-            const cycles = dependencyCycles(buildRegistry(synced));
-            if (cycles.length > 0) {
-              return { exitCode: 1, stderr: `Refused: blockedBy cycle detected (${cycles[0].join(" -> ")}) — fix Dependencies: in the spec-tech file so the graph is acyclic, run \`bb stelow sync-scopes\`, then advance again.` };
-            }
-            // Ordering deadlock without a cycle (e.g. everything waits on a
-            // skipped scope): advisory only — the plan may still re-route.
             const entryRegistry = buildRegistry(synced);
             const pendingScopes = synced.filter((scope) => scope.status === "pending");
-            if (pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus))) {
-              return { exitCode: 0, stdout: result.stdout + "\n(no scope can start — every pending scope waits on unfinished work; check blockedBy before executing)" + loopNote };
-            }
+            const gate = advanceExecutionGates({
+              kind: cliCard.kind, stage, specContent: spec, syncedCount: synced.length,
+              cycles: dependencyCycles(entryRegistry),
+              hasUnstartablePending: pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus)),
+            });
+            const syncedNote = syncedCount !== null && syncedCount > 0 ? `\n(sync-scopes: synced ${syncedCount} scopes)` : "";
+            // Trail the entry decision (fail-open): refused or entered with N.
+            try {
+              recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: "all", transition: gate.refusal ? "execution-refused" : "execution-entered", actor: "host", evidence: gate.refusal ?? `${synced.length} synced scope(s)` });
+            } catch { /* trail never blocks */ }
+            if (gate.refusal) return { exitCode: 1, stderr: gate.refusal };
+            if (gate.note || syncedNote) return { exitCode: 0, stdout: result.stdout + syncedNote + (gate.note ? `\n(${gate.note})` : "") + loopNote };
           }
           if (loopNote) return { exitCode: 0, stdout: result.stdout + loopNote };
         }
@@ -8373,39 +8351,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             if (!stateBlob) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
             currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
           }
-          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0, scopesOpen: projectPath ? loadCardScopes(projectPath, card.id) : [] });
+          // Gates read tracked truth (mergePlanned: false): the read-time
+          // planned-task merge is display-only, so pre-merge cards keep
+          // completing while tracked checklists bind.
+          const trackedScopes = projectPath ? loadCardScopes(projectPath, card.id, { mergePlanned: false }) : [];
+          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0, scopesOpen: trackedScopes });
           if (refusal) return { exitCode: 1, stderr: refusal };
           // Invisible-scopes companion: audit with zero synced scopes but
           // scope blocks in spec-tech means execution ran untracked — done
           // must not certify it. Missing/unreadable specs fail open here;
           // thin specs are owned by the depth gate below.
           if (projectPath) {
-            const syncedScopes = loadCardScopes(projectPath, card.id);
             const specCounts = countScopeDialects(latestSpecTech(projectPath, card.id)?.content ?? null);
-            const syncRefusal = doneScopeSyncRefusal({ kind: "build", stage: currentStage, scopesOpen: syncedScopes, specMachine: specCounts.machine, specHuman: specCounts.human });
-            if (syncRefusal) return { exitCode: 1, stderr: syncRefusal };
-            // Gates below read tracked truth (mergePlanned: false): the
-            // read-time planned-task merge is display-only, so pre-merge
-            // cards keep completing while tracked checklists bind.
-            const trackedScopes = loadCardScopes(projectPath, card.id, { mergePlanned: false });
-            // Claim-proof close (upstream execution-critique criterion 6): a
-            // scope done with a Record that is not verified refuses with the
-            // checklist redirect. Scopes without any Record stay advisory
-            // (the Record predates them) — surfaced as conditions, not gates.
-            const unverified = trackedScopes.filter((scope) => isDoneStatus(scope.status)
-              && scope.record && typeof scope.record === "object" && (scope.record as { verified?: unknown }).verified !== true);
-            if (unverified.length > 0) {
-              return { exitCode: 1, stderr: `Build completion is blocked: ${unverified.length} done scope(s) carry an unverified Record — complete every verification checklist item and re-run the scope's verify commands, then run done again:\n${unverified.map((scope) => `- ${scope.name}`).join("\n")}` };
-            }
-            // Containment is contractual: a trackable cannot close with open
-            // children. Mark each done or skipped (obsolete ones explicitly),
-            // then run done again.
-            const doneRegistry = buildRegistry(trackedScopes);
-            const unclosed = trackedScopes.filter((scope) => isDoneStatus(scope.status) && !canClose(doneRegistry.get(scope.id), doneRegistry));
-            if (unclosed.length > 0) {
-              const openNames = (id: string) => openChildren(doneRegistry.get(id), doneRegistry).map((task) => task.name ?? task.id).join("; ");
-              return { exitCode: 1, stderr: `Build completion is blocked: ${unclosed.length} done scope(s) still hold open tasks — a scope closes only when its tasks do. Mark each done or skipped, then run done again:\n${unclosed.map((scope) => `- ${scope.name}: ${openNames(scope.id)}`).join("\n")}` };
-            }
+            // Gate order lives in lib/build-gates (first refusal wins).
+            const doneRefusal = doneBuildGates({ kind: "build", stage: currentStage, scopes: trackedScopes, specMachine: specCounts.machine, specHuman: specCounts.human });
+            if (doneRefusal) return { exitCode: 1, stderr: doneRefusal };
           }
           const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;
           const checkout = await cardCheckout(card);

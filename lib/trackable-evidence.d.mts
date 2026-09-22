@@ -43,3 +43,18 @@ export declare function evidenceConditions(options?: {
   claimed?: boolean | null;
   claimLapsed?: boolean;
 }): EvidenceCondition[];
+export interface EnrichClaim {
+  card_id?: string;
+  scope?: string | null;
+  file_path?: string;
+  expires_at?: number;
+}
+export declare function enrichEntriesForDetail<T extends { id?: string; tasks?: unknown }>(options?: {
+  entries?: T[] | null;
+  stateRelDir?: string | null;
+  ownerId?: string | null;
+  liveClaims?: EnrichClaim[] | null;
+  isLapsed?: ((entry: T) => boolean) | null;
+  readContract?: ((relPath: string) => Promise<string | null>) | null;
+  nowMs?: number;
+}): Promise<T[]>;

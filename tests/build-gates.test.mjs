@@ -1,0 +1,90 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { advanceExecutionGates, doneBuildGates } from "../lib/build-gates.mjs";
+
+const HUMAN = "## Scopes\n\n### SCOPE-1: Overlay\n";
+const MACHINE = "[SCOPE-1] Overlay\n[TYPE] feature\n";
+
+// Advance order is contractual: untracked first, then cycles, then the
+// ordering note. First refusal wins — a reordered gate breaks this file.
+assert.match(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: HUMAN, syncedCount: 0 }).refusal ?? "",
+  /human headings.*\[SCOPE-N\].*sync-scopes/s,
+  "human dialect refuses with the rewrite redirect",
+);
+assert.match(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 0 }).refusal ?? "",
+  /1 machine scope block\(s\).*sync-scopes/,
+  "unsynced machine spec refuses with the resync redirect",
+);
+assert.deepEqual(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2 }),
+  { refusal: null, note: null },
+  "synced scopes pass silent",
+);
+assert.deepEqual(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2, cycles: [["scope-1", "scope-2", "scope-1"]] }),
+  {
+    refusal: "Refused: blockedBy cycle detected (scope-1 -> scope-2 -> scope-1) — fix Dependencies: in the spec-tech file so the graph is acyclic, run `bb stelow sync-scopes`, then advance again.",
+    note: null,
+  },
+  "cycles refuse naming the loop",
+);
+assert.match(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2, cycles: [["scope-1", "scope-1"]], hasUnstartablePending: true }).refusal ?? "",
+  /cycle detected/,
+  "cycles outrank the ordering note",
+);
+assert.deepEqual(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MACHINE, syncedCount: 2, hasUnstartablePending: true }),
+  { refusal: null, note: "no scope can start — every pending scope waits on unfinished work; check blockedBy before executing" },
+  "unstartable ordering advises without blocking",
+);
+assert.deepEqual(advanceExecutionGates({ kind: "build", stage: "execution", specContent: null, syncedCount: 0 }), { refusal: null, note: null }, "missing spec fails open");
+assert.deepEqual(advanceExecutionGates({ kind: "build", stage: "execution", specContent: "no blocks", syncedCount: 0 }), { refusal: null, note: null }, "block-free specs fail open");
+assert.deepEqual(advanceExecutionGates({ kind: "research", stage: "execution", specContent: HUMAN, syncedCount: 0 }), { refusal: null, note: null }, "non-build kinds pass");
+assert.deepEqual(advanceExecutionGates({ kind: "build", stage: "audit", specContent: HUMAN, syncedCount: 0 }), { refusal: null, note: null }, "other stages pass");
+assert.deepEqual(advanceExecutionGates({}), { refusal: null, note: null }, "junk passes");
+
+// Done order is contractual too: untracked, then unverified Record, then
+// open children. Each names its redirect.
+assert.match(
+  doneBuildGates({ kind: "build", stage: "audit", scopes: [], specMachine: 0, specHuman: 2 }) ?? "",
+  /human headings.*\[SCOPE-N\]/,
+  "human dialect at done refuses with the rewrite loop",
+);
+assert.match(
+  doneBuildGates({ kind: "build", stage: "audit", scopes: [], specMachine: 3, specHuman: 0 }) ?? "",
+  /0 synced scopes.*sync-scopes.*advance execution/,
+  "unsynced machine spec refuses with the resync loop",
+);
+assert.match(
+  doneBuildGates({ kind: "build", stage: "audit", scopes: [{ id: "s1", name: "S", status: "done", record: { verified: false } }] }) ?? "",
+  /unverified Record — complete every verification checklist/,
+  "unverified Records refuse with the checklist redirect",
+);
+assert.match(
+  doneBuildGates({ kind: "build", stage: "audit", scopes: [{ id: "s1", name: "S", status: "done", tasks: [{ id: "t", name: "T", status: "pending" }] }] }) ?? "",
+  /still hold open tasks — a scope closes only when its tasks do/,
+  "open children refuse with the marking redirect",
+);
+assert.match(
+  doneBuildGates({ kind: "build", stage: "audit", scopes: [{ id: "s1", name: "S", status: "done", record: { verified: false }, tasks: [{ id: "t", name: "T", status: "pending" }] }] }) ?? "",
+  /unverified Record/,
+  "unverified outranks containment",
+);
+assert.equal(doneBuildGates({ kind: "build", stage: "audit", scopes: [{ id: "s1", status: "done" }] }), null, "recordless closes stay advisory");
+assert.equal(doneBuildGates({ kind: "build", stage: "audit", scopes: [{ id: "s1", status: "done", record: { verified: true }, tasks: [] }] }), null, "verified closes pass");
+assert.equal(doneBuildGates({ kind: "research", stage: null, scopes: [] }), null, "non-build kinds pass");
+assert.equal(doneBuildGates({ kind: "build", stage: "verification", scopes: [] }), null, "non-audit stages pass");
+
+// Wiring pins: server advance/done consult the gates module, never inline
+// refusals — the order above is the contract.
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const server = readFileSync(join(root, "server.ts"), "utf8");
+assert.match(server, /advanceExecutionGates\(/, "advance consults the gates module");
+assert.match(server, /doneBuildGates\(/, "done consults the gates module");
+
+console.log("build gates test ok: order, redirects, fail-open, wiring");

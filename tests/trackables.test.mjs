@@ -8,6 +8,7 @@ import {
   isSkippedStatus,
   isActiveStatus,
   isKnownStatus,
+  cleanTrackableId,
   canTransition,
   buildCondition,
   hasCondition,
@@ -31,6 +32,15 @@ assert.equal(isActiveStatus("in-progress"), true, "in-progress reads active");
 assert.equal(isActiveStatus("pending"), false, "pending is not active");
 assert.ok(TRACKABLE_STATUSES.includes("escalated") && isKnownStatus("failed"), "the vocabulary covers the workflow's states");
 assert.equal(isKnownStatus("bogus"), false, "junk is unknown");
+
+// One identity shape for every module: dotted upstream task ids pass,
+// traversal and junk refuse — callers never re-implement the regex.
+assert.equal(cleanTrackableId("scope-1"), "scope-1", "scope ids pass");
+assert.equal(cleanTrackableId("3.1"), "3.1", "dotted upstream task ids pass");
+assert.equal(cleanTrackableId("  scope-2  "), "scope-2", "ids trim");
+assert.equal(cleanTrackableId("../../evil"), null, "traversal refuses");
+assert.equal(cleanTrackableId(""), null, "blank refuses");
+assert.equal(cleanTrackableId(null), null, "junk refuses");
 
 // Transitions: loops may resume, history never regresses. A finished
 // trackable never exits done — corrections open a new trackable.
