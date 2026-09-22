@@ -278,7 +278,7 @@ assert.match(server, /current\.kind === "build" && !opts\?\.suppressCompletionEv
 // Two receipts, one word apart. Only their freshness tells them apart, so the
 // card asks the owning helper for that verdict and labels both where they list.
 assert.match(app, /rpc\.call\("auditTrailStatus", \{ cardId \}\)/, "freshness comes from the host, never guessed in the UI");
-assert.match(app, /card\.status === "completed" \? <AuditTrailStatusRow cardId=\{card\.id\} \/> : null/, "the freshness row appears only where a receipt can exist");
+assert.match(app, /card\.status === "completed" \? \(\s*<AuditTrailStatusRow/, "the freshness row appears only where a receipt can exist");
 assert.match(app, /if \(card\?\.status === "completed"\) setArtifactsOpen\(true\)/, "a completed card opens its evidence instead of hiding it");
 assert.match(server, /const isTrail = basename\(absolute\) === AUDIT_TRAIL_FILE;/, "the host recognizes the portable receipt by the name Stelow owns");
 assert.match(server, /stage: isTrail \? "audit" : "unregistered"/, "the portable receipt is attributed to the stage that produced it");

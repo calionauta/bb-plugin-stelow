@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { artifactRole, splitArtifactsByRole } from "../lib/artifact-roles.mjs";
+import { artifactRole, isReconReceiptArtifact, shouldAutoOpenEvidence, splitArtifactsByRole } from "../lib/artifact-roles.mjs";
 
 // Machine receipts are evidence, never deliverables: the portable
 // audit-trail.md and the recon-receipt.json stay in the bundle and the
@@ -18,6 +18,24 @@ assert.equal(artifactRole({ kind: "document", path: "x/spec-tech_v1.md" }), "del
 assert.equal(artifactRole({ kind: "unregistered", path: "x/notes.md" }), "deliverable", "unregistered strays stay visible as deliverables");
 assert.equal(artifactRole(null), "deliverable", "junk never hides");
 assert.equal(artifactRole({ kind: "document", path: null }), "deliverable", "missing path never hides");
+
+// The recon receipt is debug context, never a file row: the card lists it
+// as one line in the audit-trail status row instead of the Evidence group.
+assert.equal(isReconReceiptArtifact({ path: ".stelow/2026-01-01/abc/context/recon-receipt.json" }), true, "recon receipt matches by basename");
+assert.equal(isReconReceiptArtifact({ path: "x\\context\\recon-receipt.json" }), true, "windows separators match too");
+assert.equal(isReconReceiptArtifact({ path: "x/audit-trail.md" }), false, "the audit trail is not the recon receipt");
+assert.equal(isReconReceiptArtifact({ path: "x/spec-tech_v1.md" }), false, "deliverables are not the recon receipt");
+assert.equal(isReconReceiptArtifact(null), false, "junk never matches");
+assert.equal(isReconReceiptArtifact({ path: null }), false, "missing path never matches");
+
+// The collapsed trail file list auto-opens only when the trail needs
+// attention; verified trails (and unknown states) stay collapsed.
+assert.equal(shouldAutoOpenEvidence("verified"), false, "verified stays collapsed");
+assert.equal(shouldAutoOpenEvidence("changed"), true, "stale trails open");
+assert.equal(shouldAutoOpenEvidence("missing"), true, "missing trails open");
+assert.equal(shouldAutoOpenEvidence("unsupported"), true, "unreadable trails open");
+assert.equal(shouldAutoOpenEvidence(null), false, "unknown stays collapsed");
+assert.equal(shouldAutoOpenEvidence(undefined), false, "unknown stays collapsed");
 
 const { deliverables, evidence } = splitArtifactsByRole([
   { kind: "document", path: "spec-tech_v1.md" },
@@ -38,5 +56,10 @@ assert.match(server, /role: z\.enum\(\["deliverable", "evidence"\]\)/, "the card
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 assert.match(app, /\.filter\(\(artifact\) => artifact\.role !== "evidence"\)/, "the file count excludes evidence");
 assert.match(app, /Evidence — machine receipts/, "the Artifacts section groups evidence apart");
+assert.match(app, /isReconReceiptArtifact/, "the recon receipt is partitioned out of the file rows");
+assert.match(app, /Open receipt/, "the recon receipt opens from a context line in the status row");
+assert.match(app, /Audit trail file/, "the audit trail file sits collapsed until it needs attention");
+assert.match(app, /ReconStatusLine/, "active cards surface degraded recon as an alarm-only line");
+assert.match(app, /shouldAutoOpenEvidence/, "the collapsed trail auto-opens on policy, not render luck");
 
 console.log("artifact roles test ok: receipt roles, partition, wiring");

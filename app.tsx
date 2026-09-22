@@ -28,6 +28,8 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
+import { isReconReceiptArtifact, shouldAutoOpenEvidence } from "./lib/artifact-roles.mjs";
+import { isReconActionable } from "./lib/recon-receipt.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "./lib/card-checks.mjs";
@@ -50,6 +52,7 @@ import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
+import { DisclosureChevron } from "./components/disclosure";
 import { StartImmediatelyCheck } from "./components/start-immediately-check";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
@@ -3359,7 +3362,14 @@ const AUDIT_TRAIL_COPY: Record<AuditTrailStatus["state"], { label: string; tone:
   unavailable: { label: "Audit trail unavailable", tone: "bg-muted text-muted-foreground", sub: null },
 };
 
-function AuditTrailStatusRow({ cardId }: { cardId: string }) {
+type EvidenceFile = { display: string; path: string; absolutePath: string; hostId: string };
+
+function AuditTrailStatusRow({ cardId, reconArtifact, onOpenFile, onStatusChange }: {
+  cardId: string;
+  reconArtifact: EvidenceFile | null;
+  onOpenFile: ((file: EvidenceFile) => void) | null;
+  onStatusChange: ((state: AuditTrailStatus["state"] | null) => void) | null;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const [status, setStatus] = useState<AuditTrailStatus | null>(null);
   const [checking, setChecking] = useState(false);
@@ -3374,9 +3384,11 @@ function AuditTrailStatusRow({ cardId }: { cardId: string }) {
     }
   }, [cardId, rpc]);
   useEffect(() => { void check(); }, [check]);
+  useEffect(() => { onStatusChange?.(status?.state ?? null); }, [status?.state, onStatusChange]);
   if (!status) return <p className="text-xs text-muted-foreground">Checking the audit trail…</p>;
   const copy = AUDIT_TRAIL_COPY[status.state];
   const detail = copy.sub ?? (status.state === "verified" ? (status.head ? `Attests HEAD ${status.head.slice(0, 12)}.` : null) : status.detail);
+  const reconBad = status.recon !== null && status.recon.state !== "recorded";
   return (
     <div className="mb-3 rounded-md border p-2 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3391,7 +3403,20 @@ function AuditTrailStatusRow({ cardId }: { cardId: string }) {
         </button>
       </div>
       {detail ? <p className="mt-1 text-muted-foreground">{detail}</p> : null}
-      {status.recon && status.recon.state !== "recorded" ? (
+      {reconArtifact && onOpenFile ? (
+        <p className={reconBad ? "mt-1 text-amber-700 dark:text-amber-300" : "mt-1 text-muted-foreground"}>
+          Codebase context: {status.recon ? status.recon.detail : "snapshot recorded."}
+          {reconBad ? " Advisory only — the audit above still verified the tree." : ""}{" "}
+          <button
+            type="button"
+            onClick={() => onOpenFile(reconArtifact)}
+            className="cursor-pointer font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            Open receipt
+          </button>
+        </p>
+      ) : null}
+      {status.recon && status.recon.state !== "recorded" && !reconArtifact ? (
         <p className="mt-1 text-amber-700 dark:text-amber-300">
           {status.recon.state === "missing"
             ? "No codebase context snapshot — advisory only, not a failure: the audit above still verified the tree. Run the recon preflight before the next audit to attach codebase context; cards completed before the receipt existed always read this way."
@@ -3399,6 +3424,45 @@ function AuditTrailStatusRow({ cardId }: { cardId: string }) {
         </p>
       ) : null}
     </div>
+  );
+}
+
+// Active build cards surface the recon receipt only when actionable: a
+// missing, unreadable, or degraded receipt explains thinner analysis, while
+// an all-available receipt stays silent. Completed cards carry the same line
+// inside AuditTrailStatusRow; archived cards stay history. A missing receipt
+// before the context stage is not yet due, so it stays silent too.
+function ReconStatusLine({ cardId, stage, reconArtifact, onOpenFile }: {
+  cardId: string;
+  stage: string;
+  reconArtifact: EvidenceFile | null;
+  onOpenFile: (file: EvidenceFile) => void;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [recon, setRecon] = useState<AuditTrailStatus["recon"]>(null);
+  useEffect(() => {
+    let live = true;
+    void rpc.call("auditTrailStatus", { cardId }).then((result) => { if (live) setRecon(result.recon); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [cardId, rpc]);
+  if (!recon || !isReconActionable(recon)) return null;
+  if (recon.state === "missing" && !reconArtifact
+    && STAGE_SEQUENCE.indexOf(stage) <= STAGE_SEQUENCE.indexOf("context")) return null;
+  return (
+    <p className="rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-xs text-amber-900 dark:text-amber-200" role="status">
+      {recon.state === "missing"
+        ? "No codebase context snapshot — analysis likely fell back to portable. Run the recon preflight to attach context."
+        : <>Codebase context: {recon.detail}{reconArtifact ? " " : null}
+          {reconArtifact ? (
+            <button
+              type="button"
+              onClick={() => onOpenFile(reconArtifact)}
+              className="cursor-pointer font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              Open receipt
+            </button>
+          ) : null}</>}
+    </p>
   );
 }
 
@@ -5045,14 +5109,11 @@ function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAtt
 // banners, meta grid, timeline, preset, comments — used its own ad-hoc
 // spacing and heading style.
 // One open/close affordance for every collapsible in the panel: a chevron
-// that points right when closed and rotates down when open. Native
-// <details>/<summary> use the `group-open:` variant; controlled buttons pass
-// `open` directly. Native controls already expose expanded state to assistive
+// that points right when closed and rotates down when open. New disclosures
+// use components/disclosure (explicit open state); legacy native
+// <details>/<summary> sites keep the `group-open:` variant until migrated.
+// Native controls already expose expanded state to assistive
 // tech; this mirrors it visually for sighted, low-vision, and lay users.
-function DisclosureChevron({ className = "", open }: { className?: string; open?: boolean }) {
-  const rotation = open === undefined ? "group-open:rotate-90" : open ? "rotate-90" : "rotate-0";
-  return <span aria-hidden className={`inline-flex size-5 shrink-0 items-center justify-center text-sm leading-none text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${rotation} ${className}`}>▶</span>;
-}
 
 function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
   const controlled = open !== undefined;
@@ -7107,7 +7168,22 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const scopeTotal = detail?.scopes.length ?? 0;
   const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
   const artifactTotal = detail?.artifacts.filter((artifact) => artifact.role !== "evidence").length ?? 0;
-  const artifactEvidenceTotal = detail?.artifacts.filter((artifact) => artifact.role === "evidence").length ?? 0;
+  // Machine receipts split by role: the recon capability receipt is debug
+  // context (one line in the status row), never a file row; the portable
+  // audit trail stays listed but collapsed until it needs attention. The
+  // recon receipt is deliberately uncounted — the evidence count names
+  // listed files only. Both stay in docs/runs + manifest + trailer (server).
+  const evidenceArtifacts = detail?.artifacts.filter((artifact) => artifact.role === "evidence") ?? [];
+  const reconArtifact = evidenceArtifacts.find((artifact) => isReconReceiptArtifact(artifact)) ?? null;
+  const trailArtifacts = evidenceArtifacts.filter((artifact) => artifact !== reconArtifact);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const handleTrailStatus = useCallback((state: AuditTrailStatus["state"] | null) => {
+    if (shouldAutoOpenEvidence(state)) setEvidenceOpen(true);
+  }, []);
+  const openEvidenceFile = useCallback((file: EvidenceFile) => {
+    setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card?.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) });
+  }, [card?.workspaceKind, detail?.fileEnvironmentId]);
+  useEffect(() => { setEvidenceOpen(false); }, [cardId]);
   // Gate review entry: the document the pending decision is actually about.
   // The pending question's own option artifact wins: board position (card.stage)
   // deliberately stays at the last advanced stage while a question waits (see
@@ -7369,13 +7445,23 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             <div ref={artifactsRef}>
             <CardDisclosure
               title="Artifacts"
-              hint={detail ? `${artifactTotal} file${artifactTotal === 1 ? "" : "s"}${artifactEvidenceTotal > 0 ? ` + ${artifactEvidenceTotal} evidence` : ""} · audit trail${detail.artifacts.some((artifact) => artifact.stage === "unregistered") ? " · some unregistered" : ""}` : "produced files"}
+              hint={detail ? `${artifactTotal} file${artifactTotal === 1 ? "" : "s"}${trailArtifacts.length > 0 ? ` + ${trailArtifacts.length} evidence` : ""} · audit trail${detail.artifacts.some((artifact) => artifact.stage === "unregistered") ? " · some unregistered" : ""}` : "produced files"}
               open={artifactsOpen}
               onToggle={setArtifactsOpen}
             >
-              {card.status === "completed" ? <AuditTrailStatusRow cardId={card.id} /> : null}
+              {card.status === "completed" ? (
+                <AuditTrailStatusRow
+                  cardId={card.id}
+                  reconArtifact={reconArtifact}
+                  onOpenFile={openEvidenceFile}
+                  onStatusChange={handleTrailStatus}
+                />
+              ) : null}
               {detail ? (
                 <>
+                  {card.status !== "completed" && card.status !== "archived" ? (
+                    <ReconStatusLine cardId={card.id} stage={card.stage} reconArtifact={reconArtifact} onOpenFile={openEvidenceFile} />
+                  ) : null}
                   <ArtifactGroups
                     artifacts={detail.artifacts.filter((artifact) => artifact.role !== "evidence")}
                     workspaceKind={card.workspaceKind}
@@ -7383,17 +7469,31 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     onView={(file) => setViewerFile(file)}
                     groupTitleForStage={artifactGroupTitle}
                   />
-                  {artifactEvidenceTotal > 0 ? (
+                  {trailArtifacts.length > 0 ? (
                     <section aria-label="Evidence" className="space-y-2 border-t pt-3">
-                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Evidence — machine receipts ({artifactEvidenceTotal})</h3>
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Evidence — machine receipts ({trailArtifacts.length})</h3>
                       <p className="text-[11px] text-muted-foreground">Kept for audit with the run bundle, not counted as deliverables.</p>
-                      <ArtifactGroups
-                        artifacts={detail.artifacts.filter((artifact) => artifact.role === "evidence")}
-                        workspaceKind={card.workspaceKind}
-                        fileEnvironmentId={detail.fileEnvironmentId}
-                        onView={(file) => setViewerFile(file)}
-                        groupTitleForStage={artifactGroupTitle}
-                      />
+                      <details
+                        open={evidenceOpen}
+                        onToggle={(event) => setEvidenceOpen((event.currentTarget as HTMLDetailsElement).open)}
+                        className="group rounded-md border p-3"
+                      >
+                        <summary className="cursor-pointer list-none">
+                          <span className="flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                            <DisclosureChevron open={evidenceOpen} />
+                            Audit trail file
+                          </span>
+                        </summary>
+                        <div className="mt-2">
+                          <ArtifactGroups
+                            artifacts={trailArtifacts}
+                            workspaceKind={card.workspaceKind}
+                            fileEnvironmentId={detail.fileEnvironmentId}
+                            onView={(file) => setViewerFile(file)}
+                            groupTitleForStage={artifactGroupTitle}
+                          />
+                        </div>
+                      </details>
                     </section>
                   ) : null}
                 </>
