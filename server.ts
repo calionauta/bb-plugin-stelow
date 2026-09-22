@@ -1069,27 +1069,7 @@ function workerEnvironment(source: { path: string; hostId: string }, params: { e
 
 type ThreadEnvironment = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]["environment"];
 
-/**
- * The BB composer owns the person's environment and branch selection. A
- * preset is only a fallback for older callers that do not provide one; it may
- * never silently replace an explicit BB choice.
- */
-function selectedCardEnvironment(requested: unknown, fallback: ThreadEnvironment): ThreadEnvironment {
-  if (!requested || typeof requested !== "object" || Array.isArray(requested)) return fallback;
-  const value = requested as Record<string, unknown>;
-  if (value.type === "project-default") return value as ThreadEnvironment;
-  if (value.type === "reuse" && typeof value.environmentId === "string") return value as ThreadEnvironment;
-  if (value.type !== "host" || !value.workspace || typeof value.workspace !== "object" || Array.isArray(value.workspace)) return fallback;
-  const workspace = value.workspace as Record<string, unknown>;
-  if (workspace.type === "unmanaged" || workspace.type === "managed-worktree" || workspace.type === "personal") return value as ThreadEnvironment;
-  return fallback;
-}
-
-function isManagedWorktreeEnvironment(value: ThreadEnvironment): boolean {
-  if (!value || typeof value !== "object" || !("type" in value) || value.type !== "host" || !("workspace" in value)) return false;
-  const workspace = value.workspace;
-  return Boolean(workspace && typeof workspace === "object" && "type" in workspace && workspace.type === "managed-worktree");
-}
+import { selectCardEnvironment, isManagedWorktreeEnvironment, environmentFallbackNotice } from "./lib/card-environment.mjs";
 
 function cardAttachments(raw: string | null): Array<z.infer<typeof attachmentSchema>> {
   try { return z.array(attachmentSchema).parse(JSON.parse(raw ?? "[]")); } catch { return []; }
@@ -2592,7 +2572,7 @@ ${prompt}`;
     const workerProjectId = workspaceProjectId;
     const selectedEnvironment = isExploratory
       ? workerEnvironment(workspaceSource, params, true)
-      : selectedCardEnvironment(environment, workerEnvironment(workspaceSource, params));
+      : selectCardEnvironment(environment, workerEnvironment(workspaceSource, params)) as ThreadEnvironment;
     const selectedManagedWorktree = isManagedWorktreeEnvironment(selectedEnvironment);
     const creationStamp = roundTimestamp();
     const creationRoundFile = isResearch && researchStrategy && seed.stateDir
@@ -2716,6 +2696,14 @@ ${prompt}` }, ...workerAttachments],
     // card. Research and Explore carry fixed internals that must never
     // clobber those build defaults.
     if (!isResearch && !isExplore) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode: reviewRung, reviewGates });
+    // An explicitly requested environment that fell back is page-worthy: a
+    // worker in the wrong checkout is a wrong-place work incident, not a
+    // cosmetic mismatch. Creation itself never fails over this.
+    const envNotice = !isExploratory ? environmentFallbackNotice(environment, selectedEnvironment) : null;
+    if (envNotice) {
+      bb.log.warn(`card ${cardId}: ${envNotice}`);
+      logCardComment(cardId, "card", cardId, "agent", envNotice);
+    }
     bb.realtime.publish("card-state", { cardId });
     // Title suggestion rides along, never blocking: creation already
     // succeeded with the heuristic, the burst upgrades it when it lands.
