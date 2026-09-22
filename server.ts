@@ -7559,7 +7559,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
       { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
       { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
-      { name: "scope", summary: "Validated scope transitions (single writer)", usage: "bb stelow scope <start|done> --scope <id> [--project <proj_id>] [--name <workflow>] [--iteration <n>] [--actual-files <a,b>] [--json]" },
+      { name: "scope", summary: "Validated scope transitions (single writer)", usage: "bb stelow scope <start|done|seed-tasks> --scope <id> [--project <proj_id>] [--name <workflow>] [--iteration <n>] [--actual-files <a,b>] [--tasks <json>] [--start-sha <sha>] [--json]" },
       { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
       { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
@@ -8729,10 +8729,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       }
       if (argv[0] === "scope") {
         // Single-writer scope transitions for workers (no scripts/stelow
-        // binary exists in a bb workspace): start|done validate terminality,
-        // containment, and dependency order in the helper and commit
-        // atomically. Like sync-scopes, the write doubles as the refresh
-        // signal so the card reloads, and trails the decision.
+        // binary exists in a bb workspace): start|done|seed-tasks validate
+        // terminality, containment, and dependency order in the helper and
+        // commit atomically. Like sync-scopes, the write doubles as the
+        // refresh signal so the card reloads, and trails the decision.
         const parsed = parseScopeArgs(argv.slice(1));
         if (parsed.error) return { exitCode: 2, stderr: parsed.error };
         const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
@@ -8746,7 +8746,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "scope transition failed", stdout: result.stdout };
         if (cliCard) {
           try {
-            recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: parsed.scopeId!, transition: parsed.op === "start" ? "started" : "completed", actor: "worker", evidence: result.stdout.slice(0, 200) });
+            recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: parsed.scopeId!, transition: parsed.op === "start" ? "started" : parsed.op === "seed-tasks" ? "tasks-seeded" : "completed", actor: "worker", evidence: result.stdout.slice(0, 200) });
           } catch { /* trail never blocks */ }
           bb.realtime.publish("card-state", { cardId: cliCard.id });
           bb.realtime.publish("board-changed", { cardId: cliCard.id });

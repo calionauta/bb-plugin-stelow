@@ -12,6 +12,9 @@ import { parseScopeArgs } from "../lib/scope-command.mjs";
 assert.deepEqual(parseScopeArgs(["start", "--scope", "scope-1"]), {
   op: "start", scopeId: "scope-1", passthrough: ["start", "--scope", "scope-1"], projectId: null,
 }, "minimal start parses");
+assert.deepEqual(parseScopeArgs(["seed-tasks", "--scope", "scope-1", "--tasks", "[]"]), {
+  op: "seed-tasks", scopeId: "scope-1", passthrough: ["seed-tasks", "--scope", "scope-1", "--tasks", "[]"], projectId: null,
+}, "seed-tasks forwards its payload");
 assert.deepEqual(
   parseScopeArgs(["done", "--scope", "scope-2", "--project", "p1", "--name", "w", "--iteration", "3", "--actual-files", "a.ts,b.ts", "--json"]),
   {
@@ -38,7 +41,7 @@ const end = server.indexOf('if (argv[0] === "lock") {', start);
 assert.ok(end > start, "the scope branch sits beside the helper wrappers");
 const branch = server.slice(start, end);
 assert.match(branch, /parseScopeArgs\(/, "the wrapper parses through lib");
-assert.match(branch, /transition: parsed\.op === "start" \? "started" : "completed", actor: "worker"/, "worker transitions trail as worker");
+assert.match(branch, /transition: parsed\.op === "start" \? "started" : parsed\.op === "seed-tasks" \? "tasks-seeded" : "completed", actor: "worker"/, "worker transitions trail as worker");
 assert.match(branch, /bb\.realtime\.publish\("card-state"/, "tracking writes refresh the card");
 assert.match(branch, /bb\.realtime\.publish\("board-changed"/, "tracking writes refresh the board");
 assert.match(server, /\{ name: "scope", summary: "Validated scope transitions/, "the command is registered with its usage");
