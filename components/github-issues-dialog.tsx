@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StartImmediatelyCheck } from "./start-immediately-check";
+import { IsolatedWorktreeCheck } from "./isolated-worktree-check";
 import { LabelChipsField, ProjectFilterSelect } from "./github-filter-fields";
 
 export type GithubStatus = {
@@ -102,6 +103,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
   const [importAssignee, setImportAssignee] = useState<string>("all");
   const [importProject, setImportProject] = useState<string>("all");
   const [importStart, setImportStart] = useState(false);
+  const [importIsolated, setImportIsolated] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   // Rules live on one project. The board's active project is only the
   // default — the picker below lets automation cover any project, including
@@ -225,7 +227,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
       try {
         // The server resolves each issue's owning project from its repo; no
         // per-issue picker needed. Intent is derived server-side.
-        const result = await rpc.call("importGithubIssue", { repo: issue.repo, number: issue.number, labels, start: importStart });
+        const result = await rpc.call("importGithubIssue", { repo: issue.repo, number: issue.number, labels, start: importStart, isolated: importIsolated });
         if (result.ok && !result.skipped) imported += 1;
         else if (result.skipped === "in-flight") inFlight += 1;
       } catch (error) {
@@ -235,7 +237,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
     setImportBusy(false);
     onOpenChange(false);
     if (imported > 0) {
-      toast.success(importStart ? `Imported and started ${imported} issue${imported === 1 ? "" : "s"}.` : `Parked ${imported} issue${imported === 1 ? "" : "s"} in Inbox.`);
+      toast.success(importStart ? (importIsolated ? `Imported and started ${imported} issue${imported === 1 ? "" : "s"} in isolated worktrees.` : `Imported and started ${imported} issue${imported === 1 ? "" : "s"}.`) : `Parked ${imported} issue${imported === 1 ? "" : "s"} in Inbox.`);
       onChanged();
     }
     if (inFlight > 0) toast.success(`${inFlight} already being imported — refresh to see ${inFlight === 1 ? "it" : "them"}.`);
@@ -361,6 +363,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
             </ul>
           ) : null}
           <StartImmediatelyCheck checked={importStart} onChange={setImportStart} />
+          <IsolatedWorktreeCheck checked={importIsolated} onChange={setImportIsolated} />
         </div>
         ) : (
         <div className="space-y-3 py-2">

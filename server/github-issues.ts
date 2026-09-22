@@ -78,7 +78,7 @@ export const githubRpcContract = defineRpcContract({
   },
   importGithubIssue: {
     experimental_description: "Import one GitHub issue as a parked or started card",
-    input: z.object({ projectId: z.string().nullable().optional(), repo: z.string(), number: z.number().int().positive(), labels: z.array(z.string().min(1).max(60)).max(10).optional(), label: z.string().min(1).max(60).optional(), start: z.boolean().default(true), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).optional() }).strict(),
+    input: z.object({ projectId: z.string().nullable().optional(), repo: z.string(), number: z.number().int().positive(), labels: z.array(z.string().min(1).max(60)).max(10).optional(), label: z.string().min(1).max(60).optional(), start: z.boolean().default(true), isolated: z.boolean().default(false), intent: z.enum(["new-product", "feature", "bugfix", "refactor", "investigate", "unknown"]).optional() }).strict(),
     output: z.object({ ok: z.boolean(), cardId: z.string().nullable(), skipped: z.string().nullable(), error: z.string().nullable() }),
   },
   listAutomationRules: {
@@ -651,9 +651,20 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       };
     },
 
-    async importGithubIssue({ projectId, repo, number: numberValue, labels, label, start }: { projectId?: string | null; repo: string; number: number; labels?: string[]; label?: string; start: boolean }) {
+    async importGithubIssue({ projectId, repo, number: numberValue, labels, label, start, isolated }: { projectId?: string | null; repo: string; number: number; labels?: string[]; label?: string; start: boolean; isolated?: boolean }) {
       requireEnabled();
       const triggerLabels = normalizeGithubLabels(labels ?? label);
+      // Isolated start reuses the automation isolation gate (same rule,
+      // same redirect): a worktree preset must effectively win, or the
+      // import refuses instead of silently landing in the checkout.
+      let presetId: string | null = null;
+      if (isolated) {
+        const gate = decideAutomationSpawn({ startImmediate: true, effectiveEnvKind: effectiveGithubSpawnEnvKind() });
+        if (!gate.start) {
+          throw new Error(`Isolated start refused: ${describeParkedReason(gate.parkedReason)}. Create a New-worktree preset in Agent Presets, or uncheck Isolated worktree to import into the project checkout instead.`);
+        }
+        presetId = resolveWorktreePreset();
+      }
       // Resolve the owning project from the repo (fall back to the caller's
       // active project) when the caller didn't pass one explicitly.
       let resolvedProjectId = projectId;
@@ -663,7 +674,13 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
         resolvedProjectId = match?.projectId ?? null;
       }
       if (!resolvedProjectId) throw new Error(`Cannot determine the bb project for repo ${repo}; open it as a project in bb first.`);
-      const created = await createCardFromGithub({ projectId: resolvedProjectId, repo, number: numberValue, triggerLabels, start });
+      const created = await createCardFromGithub({ projectId: resolvedProjectId, repo, number: numberValue, triggerLabels, start, presetId });
+      // An isolated request that parks must survive until the later Start:
+      // pin the worktree preset as this card's override now, or the choice
+      // evaporates and the worker lands in the checkout it was meant to avoid.
+      if (created.cardId && presetId && !start) {
+        db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(created.cardId, presetId, now());
+      }
       if (created.cardId) bb.realtime.publish("card-state", { cardId: created.cardId });
       return { ok: true, cardId: created.cardId, skipped: created.skipped, error: null };
     },
