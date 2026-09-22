@@ -3769,7 +3769,7 @@ function CardChecksSection({ cardId, card, detail }: { cardId: string; card: Car
         <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label>
       </div>
       {isExecutionUntracked({ activity: card.activity, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">Executing with no scope marked started — the worker has not marked any scope in-progress or done. Scopes may be going untracked.</p> : null}
-      {isScopeTrackingMissing({ activity: card.activity, stage: card.stage, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">No synced scopes on this card — planning likely used headings instead of machine blocks, so sync-scopes parsed nothing. Rewrite the spec with [SCOPE-N] blocks and resync before executing.</p> : null}
+      {isScopeTrackingMissing({ activity: card.activity, stage: card.stage, scopes: detail.scopes }) && card.status !== "completed" && card.status !== "archived" ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">No synced scopes on this card — planning likely used headings instead of machine blocks, so sync-scopes parsed nothing. Rewrite the spec with [SCOPE-N] blocks and resync before executing.</p> : null}
       {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => (
         <div key={group.id} className="space-y-0.5">
           <p className="text-xs">
@@ -7304,13 +7304,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               ) : null}
               {detail?.scopeSync && (detail.scopeSync.state === "human-dialect" || detail.scopeSync.state === "unsynced") ? (
                 <p className="text-xs text-amber-700 dark:text-amber-300" role="status">
-                  {detail.scopeSync.state === "human-dialect"
-                    ? `Scope sync parsed 0 of ${detail.scopeSync.humanBlocks} planned scopes — ${detail.scopeSync.specFile ?? "the spec"} uses headings instead of machine blocks. Rewrite openers as [SCOPE-N] Title, resync, then advance.`
-                    : `Scope sync parsed 0 of ${detail.scopeSync.machineBlocks} planned scopes — run bb stelow sync-scopes, then advance again.`}
+                  {card?.status === "completed" || card?.status === "archived"
+                    ? `Scope sync parsed 0 of ${(detail.scopeSync.humanBlocks || detail.scopeSync.machineBlocks)} planned scopes — this card ended before tracking was established (pre-guard format). Its audit record below is the evidence of what was verified.`
+                    : detail.scopeSync.state === "human-dialect"
+                      ? `Scope sync parsed 0 of ${detail.scopeSync.humanBlocks} planned scopes — ${detail.scopeSync.specFile ?? "the spec"} uses headings instead of machine blocks. Rewrite openers as [SCOPE-N] Title, resync, then advance.`
+                      : `Scope sync parsed 0 of ${detail.scopeSync.machineBlocks} planned scopes — run bb stelow sync-scopes, then advance again.`}
                 </p>
               ) : null}
               {detail ? <CardChecksSection cardId={card.id} card={card} detail={detail} /> : null}
-              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
+              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution — no scope was ever tracked (pre-guard format). Verify the work through the audit record and files below; reopen an earlier stage to continue it under tracking." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <StageTimeline
