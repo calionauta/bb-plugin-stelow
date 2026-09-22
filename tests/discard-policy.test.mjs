@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { SHARED_BRANCH_PATTERN, discardConfirm, discardEligibility, discardTrail, previewFileSample } from "../lib/discard-policy.mjs";
+import { SHARED_BRANCH_PATTERN, discardConfirm, discardEligibility, discardTrail, previewFileSample, cleanupEligibility, cleanupConfirm, cleanupTrail } from "../lib/discard-policy.mjs";
 
 const base = {
   status: "in-progress",
@@ -94,5 +94,23 @@ assert.match(discardTrail("branch-reset", base), /\[a\.ts, b\.ts\]/, "trail carr
 assert.match(discardTrail("worktree-drop", base), /Discarded the bb\/card-x worktree/, "trail records the drop");
 const stashed = discardConfirm({ ...base, stashCount: 2 }, "branch-reset");
 assert.match(stashed.body, /2 stash entries are left untouched/, "stashes are named, never dropped");
+
+// Post-merge cleanup: same evidence, no archive. Completed cards are
+// welcome (that's the point); shared branches, missing checkouts, and
+// shared rooms refuse with the reason.
+assert.deepEqual(cleanupEligibility({ ...base, status: "completed", linkedWorktree: true }).eligible, true, "completed cards clean up");
+assert.match(cleanupEligibility({ checkoutPath: null }).reason ?? "", /no workspace checkout/, "missing checkouts refuse");
+assert.match(cleanupEligibility({ ...base, workspaceKind: "exploratory" }).reason ?? "", /workspace recovery/, "exploratory stays out");
+assert.match(cleanupEligibility({ ...base, branch: "main" }).reason ?? "", /no worktree to remove/, "shared branches refuse");
+assert.match(cleanupEligibility({ ...base, linkedWorktree: false }).reason ?? "", /No linked worktree/, "non-worktrees refuse");
+assert.match(cleanupEligibility({ ...base, linkedWorktree: true, sharedWith: 2 }).reason ?? "", /2 other live cards/, "shared rooms refuse");
+assert.deepEqual(cleanupEligibility(null).eligible, false, "junk refuses");
+const copy = cleanupConfirm({ ...base, unpushedCommits: 1, changed: ["a.ts"], untracked: [] });
+assert.match(copy.title, /Remove the bb\/card-x worktree\?/, "confirm names the worktree");
+assert.match(copy.body, /separate copy/, "benefit first");
+assert.match(copy.body, /1 unpushed commit and 1 changed file/, "blast radius second");
+assert.match(copy.body, /merged or pushed first/, "unpushed work warns explicitly");
+assert.doesNotMatch(copy.body, /archives the card/, "no archive language leaks in");
+assert.match(cleanupTrail(base), /Removed the bb\/card-x worktree.*Card kept as record/, "trail keeps the card");
 
 console.log("discard policy test ok: eligibility matrix, per-action confirm copy, trail");

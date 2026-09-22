@@ -50,8 +50,10 @@ import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
-import { StartImmediatelyCheck } from "./components/start-immediately-check";
+import { WorktreeCleanupSuggestion } from "./components/worktree-cleanup-suggestion";
+import { ConfirmActionDialog } from "./components/confirm-action-dialog";
 import { DisclosureChevron } from "./components/disclosure";
+import { StartImmediatelyCheck } from "./components/start-immediately-check";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -5013,26 +5015,6 @@ function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, 
   );
 }
 
-function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLabel, confirmTone, onConfirm }: { open: boolean; onOpenChange: (next: boolean) => void; title: string; description: string; confirmLabel: string; confirmTone?: "destructive" | "default"; onConfirm: () => void | Promise<void> }) {  const [pending, setPending] = useState(false);
-  useEffect(() => { if (!open) setPending(false); }, [open]);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={pending}>Cancel</Button>
-          </DialogClose>
-          <Button variant={confirmTone === "destructive" ? "destructive" : "default"} disabled={pending} onClick={async () => { setPending(true); try { await onConfirm(); } finally { setPending(false); } }}>{pending ? "Working…" : confirmLabel}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 type WorkspaceRecoveryData = {
   kind: "attached" | "promote" | "external-project" | "ambiguous" | "documents-only";
   message: string;
@@ -7627,6 +7609,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                       <p className="border-t pt-3 text-muted-foreground">{publication.pullRequestMessage ?? "No pull request is linked to this branch. BB can manage an existing pull request; create and push it through your Git provider or BB's native PR flow."}</p>
                     )}
 
+                    <WorktreeCleanupSuggestion cardId={card.id} prMerged={(publication?.pullRequest?.state ?? "") === "merged"} onChanged={() => { void load(); void loadPublication(); }} />
                     {publication.events.length > 0 ? (
                       <div className="border-t pt-3">
                         <p className="mb-1 font-medium text-foreground">Publication history</p>
