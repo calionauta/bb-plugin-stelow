@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.46.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.45.2...v0.46.0) (2026-09-22)
+
+
+### Features
+
+* isolated worktree toggle on manual GitHub import ([96e7495](https://github.com/calionauta/bb-plugin-stelow/commit/96e74955fe49a0dfc4ece33b7c8fe201ce751123))
+* multi-select board filters with canonical stage options ([3cae5d5](https://github.com/calionauta/bb-plugin-stelow/commit/3cae5d5cc3f178fe835b650af92f4d39299da085))
+* worktree storage readout, realtime refresh fixes, completed dirt anchor ([1f61725](https://github.com/calionauta/bb-plugin-stelow/commit/1f61725033449c84bab811b66b7007c7d2087374))
+
+
+### Bug Fixes
+
+* honor provider-provisioned environments instead of collapsing them ([0b700df](https://github.com/calionauta/bb-plugin-stelow/commit/0b700dff68dc6fda225faf1ba10f1f6f7e5c39ac))
+
 ## [0.45.2](https://github.com/calionauta/bb-plugin-stelow/compare/v0.45.1...v0.45.2) (2026-09-22)
 
 
