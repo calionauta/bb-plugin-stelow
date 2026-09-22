@@ -15,6 +15,17 @@ const reuse = { type: "reuse", environmentId: "env_1" };
 assert.equal(selectCardEnvironment(worktree, fallback), worktree, "explicit worktree passes by reference");
 assert.equal(selectCardEnvironment({ type: "project-default" }, fallback).type, "project-default", "explicit default passes");
 assert.equal(selectCardEnvironment(reuse, fallback), reuse, "reuse passes by reference");
+assert.deepEqual(
+  selectCardEnvironment({ type: "provider", environmentProviderId: "cloud-box", inputs: null }, fallback),
+  { type: "provider", environmentProviderId: "cloud-box", inputs: null },
+  "provider environments pass through instead of collapsing to the checkout",
+);
+assert.equal(selectCardEnvironment({ type: "provider" }, fallback), fallback, "provider without id falls back with notice");
+assert.match(
+  environmentFallbackNotice({ type: "provider" }, fallback) ?? "",
+  /asked provider environment \(missing provider id\)/,
+  "provider misses name themselves",
+);
 assert.equal(selectCardEnvironment({ type: "host", workspace: { type: "weird" } }, fallback), fallback, "unknown workspace falls back");
 assert.equal(selectCardEnvironment({ type: "host" }, fallback), fallback, "missing workspace falls back");
 assert.equal(selectCardEnvironment(null, fallback), fallback, "nothing asked falls back silent");
