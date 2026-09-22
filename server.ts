@@ -8380,9 +8380,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // must not certify it. Missing/unreadable specs fail open here;
           // thin specs are owned by the depth gate below.
           if (projectPath) {
-            const specCounts = countScopeDialects(latestSpecTech(projectPath, card.id)?.content ?? null);
+            const specTech = latestSpecTech(projectPath, card.id);
+            const specCounts = countScopeDialects(specTech?.content ?? null);
             // Gate order lives in lib/build-gates (first refusal wins).
-            const doneRefusal = doneBuildGates({ kind: "build", stage: currentStage, scopes: trackedScopes, specMachine: specCounts.machine, specHuman: specCounts.human });
+            const doneRefusal = doneBuildGates({ kind: "build", stage: currentStage, scopes: trackedScopes, specMachine: specCounts.machine, specHuman: specCounts.human, specContent: specTech?.content ?? null });
             if (doneRefusal) return { exitCode: 1, stderr: doneRefusal };
           }
           const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;

@@ -22,4 +22,5 @@ export declare function doneBuildGates(options?: {
   } | null> | null;
   specMachine?: number;
   specHuman?: number;
+  specContent?: unknown;
 }): string | null;

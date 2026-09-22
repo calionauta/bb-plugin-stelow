@@ -7,6 +7,26 @@ import { advanceExecutionGates, doneBuildGates } from "../lib/build-gates.mjs";
 const HUMAN = "## Scopes\n\n### SCOPE-1: Overlay\n";
 const MACHINE = "[SCOPE-1] Overlay\n[TYPE] feature\n";
 
+// Human refusals point at exact lines so the fix is mechanical, capped so
+// a sprawling spec does not flood the error.
+assert.match(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: HUMAN, syncedCount: 0 }).refusal ?? "",
+  /headings at line 3/,
+  "advance names the offending line",
+);
+assert.match(
+  doneBuildGates({ kind: "build", stage: "audit", scopes: [], specMachine: 0, specHuman: 2, specContent: HUMAN }) ?? "",
+  /headings at line 3/,
+  "done names the offending line",
+);
+const MANY = ["# t", "### SCOPE-1: a", "### SCOPE-2: b", "### SCOPE-3: c", "### SCOPE-4: d", "### SCOPE-5: e", "### SCOPE-6: f"].join("\n");
+assert.match(
+  advanceExecutionGates({ kind: "build", stage: "execution", specContent: MANY, syncedCount: 0 }).refusal ?? "",
+  /lines 2, 3, 4, 5, 6\)/,
+  "line lists cap at five",
+);
+assert.ok(!/line 7/.test(advanceExecutionGates({ kind: "build", stage: "execution", specContent: MANY, syncedCount: 0 }).refusal ?? ""), "beyond-cap lines stay out");
+
 // Advance order is contractual: untracked first, then cycles, then the
 // ordering note. First refusal wins — a reordered gate breaks this file.
 assert.match(

@@ -3,6 +3,7 @@ export interface SpecScopeBlock {
   title: string;
   body: string;
   dialect: "machine" | "human";
+  line: number;
 }
 export interface PlannedScopeTask {
   id: string;
@@ -19,6 +20,7 @@ export interface ScopeSyncDiagnosis {
   synced: number;
 }
 export declare function splitScopeBlocks(content: unknown): SpecScopeBlock[];
+export declare function humanScopeLines(content: unknown, limit?: number): number[];
 export declare function countScopeDialects(content: unknown): { machine: number; human: number };
 export declare function parseScopeTasks(blockBody: unknown, scopeId: string): PlannedScopeTask[];
 export declare function diagnoseScopeSync(options?: {

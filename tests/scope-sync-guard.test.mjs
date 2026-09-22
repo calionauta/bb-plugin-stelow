@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   splitScopeBlocks,
   countScopeDialects,
+  humanScopeLines,
   parseScopeTasks,
   diagnoseScopeSync,
   mergePlannedTasks,
@@ -65,6 +66,9 @@ assert.deepEqual(
 assert.deepEqual(countScopeDialects(HUMAN_SPEC), { machine: 0, human: 2 }, "human spec counts as human");
 assert.deepEqual(countScopeDialects(MACHINE_SPEC), { machine: 2, human: 0 }, "machine spec counts as machine");
 assert.deepEqual(countScopeDialects("no scopes here"), { machine: 0, human: 0 }, "junk counts zero");
+assert.deepEqual(humanScopeLines(HUMAN_SPEC), [5, 14], "human lines locate openers for the fix");
+assert.deepEqual(humanScopeLines("no scopes"), [], "no headings means no lines");
+assert.deepEqual(humanScopeLines(null), [], "junk means no lines");
 assert.deepEqual(countScopeDialects(null), { machine: 0, human: 0 }, "junk never throws");
 
 // Task tables carry the acceptance criteria: only tables with both a Task
