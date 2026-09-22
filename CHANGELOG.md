@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.47.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.46.0...v0.47.0) (2026-09-22)
+
+
+### Features
+
+* post-merge worktree cleanup suggestion with shared confirm shape ([ddfb6d5](https://github.com/calionauta/bb-plugin-stelow/commit/ddfb6d5671b161b2af78df75d9ff801c73521e84))
+
 ## [0.46.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.45.2...v0.46.0) (2026-09-22)
 
 
