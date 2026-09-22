@@ -42,6 +42,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   automatic never draft the same `repo#number` twice, even racing. Each
   flow carries its own explicit Start immediately checkbox, both defaulting
   to parked Bucket drafts (creation dialogs default to started instead).
+  Manual import adds one shared Isolated worktree checkbox
+  (`components/isolated-worktree-check.tsx`, one copy source, progressive
+  disclosure): checked workers start on a separate copy via the same
+  isolation gate as rules, refused with the redirect when no New-worktree
+  preset exists, and parked isolated imports pin their preset for the
+  later Start.
   Rules cap at 10 drafts per tick. The list filters by every watched label
   plus project and assignee, and imported rows name the author, the card
   status, whether the completion was posted back, and possibly-related
