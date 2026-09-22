@@ -454,7 +454,10 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   acceptance criteria surface as task notes; the card detail also reports
   scope-sync health (`scopeSync`: spec file, machine/human block counts,
   synced count) and the panel names an unsynced card instead of rendering
-  it empty. Every scope projects its machine evidence beside the plan:
+  it empty. Workers mark scopes through `bb stelow scope <start|done>`
+  (single writer: terminality, containment, and dependency order validated
+  before commit; writes refresh the card and trail the decision).
+  Every scope projects its machine evidence beside the plan:
   acceptance criteria from `scopes/{scope-id}.json` (expandable per scope),
   the Record mirror (verified verdict, file/command counts), live file-claim
   state, and k8s-style conditions (`UnverifiedClose`, `NoRecord`,

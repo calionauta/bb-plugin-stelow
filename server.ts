@@ -75,6 +75,7 @@ import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSpli
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
+import { parseScopeArgs } from "./lib/scope-command.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { ensureTrackableEventsTable, recordTrackableEvent } from "./lib/trackable-events.mjs";
 import { enrichEntriesForDetail, sanitizeEvidenceRecord } from "./lib/trackable-evidence.mjs";
@@ -7558,6 +7559,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
       { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
       { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
+      { name: "scope", summary: "Validated scope transitions (single writer)", usage: "bb stelow scope <start|done> --scope <id> [--project <proj_id>] [--name <workflow>] [--iteration <n>] [--actual-files <a,b>] [--json]" },
       { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
       { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
@@ -8716,6 +8718,32 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // publish makes the card reload (ScopeProgress, list, counts)
         // instead of waiting for the next lifecycle event.
         if (cliCard) {
+          bb.realtime.publish("card-state", { cardId: cliCard.id });
+          bb.realtime.publish("board-changed", { cardId: cliCard.id });
+        }
+        return { exitCode: 0, stdout: result.stdout };
+      }
+      if (argv[0] === "scope") {
+        // Single-writer scope transitions for workers (no scripts/stelow
+        // binary exists in a bb workspace): start|done validate terminality,
+        // containment, and dependency order in the helper and commit
+        // atomically. Like sync-scopes, the write doubles as the refresh
+        // signal so the card reloads, and trails the decision.
+        const parsed = parseScopeArgs(argv.slice(1));
+        if (parsed.error) return { exitCode: 2, stderr: parsed.error };
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
+        const rootPath = workspace?.path ?? await projectRoot(bb, parsed.projectId ?? ctx.projectId ?? null);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
+        if (guard) return { exitCode: 1, stderr: guard };
+        const result = await runHelper(["scope", ...parsed.passthrough!], rootPath, stateDir ?? undefined);
+        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "scope transition failed", stdout: result.stdout };
+        if (cliCard) {
+          try {
+            recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: parsed.scopeId!, transition: parsed.op === "start" ? "started" : "completed", actor: "worker", evidence: result.stdout.slice(0, 200) });
+          } catch { /* trail never blocks */ }
           bb.realtime.publish("card-state", { cardId: cliCard.id });
           bb.realtime.publish("board-changed", { cardId: cliCard.id });
         }
