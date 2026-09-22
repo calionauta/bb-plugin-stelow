@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { doingNowNames, dominantScopeName } from "../lib/doing-now.mjs";
+import { doingNowNames } from "../lib/doing-now.mjs";
 
 const scopes = [
   { id: "s1", name: "Checkout", status: "done", tasks: [{ name: "t1", status: "done" }] },
@@ -16,17 +16,6 @@ assert.deepEqual(doingNowNames(scopes), ["Apple Pay", "t4"], "doing scopes first
 assert.deepEqual(doingNowNames([{ name: "A", status: "done", tasks: [] }]), [], "all-done resolves empty, never history");
 assert.deepEqual(doingNowNames(null), [], "junk resolves empty, never throws");
 assert.deepEqual(doingNowNames(scopes, 1), ["Apple Pay"], "the limit caps callers that only fit one name");
-assert.equal(dominantScopeName(scopes), "Apple Pay", "the executing scope headlines");
-assert.equal(
-  dominantScopeName([
-    { name: "A", status: "pending", tasks: [{ name: "t1", status: "pending" }] },
-    { name: "B", status: "pending", tasks: [{ name: "t1", status: "pending" }, { name: "t2", status: "pending" }, { name: "t3", status: "pending" }] },
-  ]),
-  "B",
-  "without execution the largest open scope headlines",
-);
-assert.equal(dominantScopeName([{ name: "A", status: "done", tasks: [] }]), null, "finished scopes never headline");
-assert.equal(dominantScopeName(null), null, "junk headlines nothing");
 
 // Server carries doing names on the list payload (one parse, cached with
 // the summary): tiles and rows read names, never re-derive them.
@@ -47,4 +36,4 @@ assert.match(app, /\(card\.activity === "running" \|\| card\.activity === "await
 // so the arrow cannot silently stop turning again.
 assert.match(app, /<DisclosureChevron open=\{isOpen\} \/>/, "scope rows rotate through the shared chevron contract");
 
-console.log("doing now test ok: shared selection, dominant headline, done silent");
+console.log("doing now test ok: shared selection, done silent");

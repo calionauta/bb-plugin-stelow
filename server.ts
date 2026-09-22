@@ -15,7 +15,7 @@ import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { ensureInboxResolvedReasonColumn, ensureInboxSeverityColumns, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, refreshEventSeverity, refreshStalledPaused, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { parseSeverityReasons } from "./lib/inbox-severity.mjs";
-import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
+import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, lapsedScopeClaims, liveClaimsForWorkspace, matchScopeClaims, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "./lib/card-terminal.mjs";
 import { resolveClaimKey } from "./lib/card-claim-key.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
@@ -75,6 +75,14 @@ import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSpli
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
+import { parseScopeArgs } from "./lib/scope-command.mjs";
+import { isDoneStatus } from "./lib/trackables.mjs";
+import { ensureTrackableEventsTable, recordTrackableEvent } from "./lib/trackable-events.mjs";
+import { enrichEntriesForDetail, sanitizeEvidenceRecord } from "./lib/trackable-evidence.mjs";
+import { buildRegistry, canStart, dependencyCycles } from "./lib/trackable-relations.mjs";
+import { isSpecTechFile, plansRelDir } from "./lib/tracking-paths.mjs";
+import { countScopeDialects, diagnoseScopeSync, mergePlannedTasks } from "./lib/spec-scope-reader.mjs";
+import { advanceExecutionGates, doneBuildGates } from "./lib/build-gates.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
@@ -88,6 +96,7 @@ import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady,
 import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
 import { detectedTestCommand, sameGitEvidence, verificationReadiness } from "./lib/audit-verification.mjs";
 import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
+import { artifactRole } from "./lib/artifact-roles.mjs";
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents, tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
@@ -219,6 +228,7 @@ const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewM
 const taskSchema = z.object({
   id: z.string(),
   name: z.string(),
+  kind: z.string().optional(),
   status: statusSchema,
   source: z.string().optional(),
   note: z.string().optional(),
@@ -227,6 +237,7 @@ const taskSchema = z.object({
 const scopeSchema = z.object({
   id: z.string(),
   name: z.string(),
+  kind: z.string().optional(),
   type: z.string().optional(),
   status: statusSchema,
   source: z.string().optional(),
@@ -470,7 +481,7 @@ export const rpcContract = defineRpcContract({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()) }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
-      scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional() })) })),
+      scopes: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("scope"), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), record: z.object({ verified: z.boolean().optional(), filesCount: z.number().optional(), commandsCount: z.number().optional(), completedAt: z.string().optional(), startedAt: z.string().optional(), suggestedCommit: z.string().optional() }).optional(), startedAt: z.string().optional(), targetFiles: z.array(z.string()).optional(), contract: z.object({ acceptanceCriteria: z.array(z.string()), verifyCommands: z.array(z.string()), targetFiles: z.array(z.string()) }).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })), claimed: z.boolean().nullable(), tasks: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("task"), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })) })), })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiresAt: z.number().nullable(), staleness: z.object({ docRevised: z.boolean(), docRemoved: z.boolean(), checkoutMoved: z.boolean(), commitCount: z.number(), touchedPaths: z.array(z.string()) }).nullable().optional() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiredAt: z.number(), staleness: z.object({ docRevised: z.boolean(), docRemoved: z.boolean(), checkoutMoved: z.boolean(), commitCount: z.number(), touchedPaths: z.array(z.string()) }).nullable().optional() })),
@@ -478,7 +489,11 @@ export const rpcContract = defineRpcContract({
       // re-implements stage rules (single source: lib/split-proposal).
       splitAction: z.object({ show: z.boolean(), ok: z.boolean(), reason: z.string().nullable() }),
       stageSkips: z.object({ offRoute: z.array(z.string()), skipped: z.array(z.object({ stage: z.string(), reason: z.string() })) }),
-      artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
+      // Scope-sync health: the spec file the writer parses against how many
+      // scopes actually synced. Null on non-build cards; the panel reads the
+      // state to name an untracked card instead of rendering it empty.
+      scopeSync: z.object({ state: z.enum(["ok", "no-spec", "no-blocks", "human-dialect", "unsynced"]), syncedScopes: z.number(), machineBlocks: z.number(), humanBlocks: z.number(), specFile: z.string().nullable() }).nullable(),
+      artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), role: z.enum(["deliverable", "evidence"]), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable() })) })),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
@@ -1147,7 +1162,7 @@ function parseNextStages(rootPath: string | null, currentStage: string): string[
 
 // Scopes follow the immutable owner, never the name: two cards carrying the
 // same request must not read each other's scope progress.
-function loadCardScopes(rootPath: string | null, workflowId: string): Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"] {
+function loadCardScopes(rootPath: string | null, workflowId: string, opts?: { mergePlanned?: boolean }): Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"] {
   if (!rootPath) return [];
   const tracking = join(rootPath, "stelow.json");
   if (!existsSync(tracking)) return [];
@@ -1155,7 +1170,40 @@ function loadCardScopes(rootPath: string | null, workflowId: string): Awaited<Re
   try { trackingData = JSON.parse(readFileSync(tracking, "utf8")) as LooseRecord; } catch { return []; }
   const match = workflowEntryForOwner(array(trackingData.workflows), workflowId) as LooseRecord | null;
   if (!match) return [];
-  return workflowScopes(match);
+  const tracked = workflowScopes(match);
+  // Planned tasks enrich synced scopes at read time (Done Criterion becomes
+  // the task note): the host never writes tracking, so blocks without a
+  // synced scope stay invisible instead of inventing scopes. Gates pass
+  // mergePlanned: false — containment enforces tracked truth, the merge is
+  // display-only (otherwise pre-merge cards could never complete).
+  if (opts?.mergePlanned === false) return tracked as Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"];
+  const spec = latestSpecTech(rootPath, workflowId)?.content ?? null;
+  return mergePlannedTasks(tracked, spec) as Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"];
+}
+
+// Single read of a card's tracking entry: every derived path (plans,
+// scopes, contracts) resolves from this entry through the uniform layout,
+// never by re-deriving date/dirHash per call site.
+function trackingEntryForCard(rootPath: string, workflowId: string): LooseRecord | null {
+  try {
+    const trackingData = JSON.parse(readFileSync(join(rootPath, "stelow.json"), "utf8")) as LooseRecord;
+    return workflowEntryForOwner(array(trackingData.workflows), workflowId) as LooseRecord | null;
+  } catch { return null; }
+}
+function latestSpecTech(rootPath: string, workflowId: string): { file: string; content: string } | null {
+  // Lexicographically latest spec-tech version. Null on any miss: callers
+  // fail open, never dead.
+  try {
+    const match = trackingEntryForCard(rootPath, workflowId);
+    if (!match) return null;
+    const plansRel = plansRelDir(workflowStateRelativeDir(match));
+    if (!plansRel) return null;
+    const plans = nodeJoin(rootPath, ...plansRel.split("/"));
+    const files = readdirSync(plans).filter(isSpecTechFile).sort();
+    if (files.length === 0) return null;
+    const file = files[files.length - 1]!;
+    return { file, content: readFileSync(nodeJoin(plans, file), "utf8") };
+  } catch { return null; }
 }
 
 async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string, stateDir?: string | null, requireOwnedState = false): Promise<string | null> {
@@ -1225,21 +1273,32 @@ async function readJson(files: FilesApi, path: string): Promise<LooseRecord | nu
 function workflowScopes(raw: LooseRecord): Workflow["scopes"] {
   return array(raw.scopes).map((entry, index) => {
     const scope = record(entry);
+    const sanitizedRecord = sanitizeEvidenceRecord(scope.record);
     return {
       id: text(scope.id, `scope-${index + 1}`),
       name: text(scope.name, text(scope.title, `Scope ${index + 1}`)),
+      // Tracking shapes declare their kind: the registry, conditions, and
+      // contract lookups never infer it from nesting again.
+      kind: "scope",
       ...(typeof scope.type === "string" ? { type: scope.type } : {}),
       status: normalizeStatus(scope.status),
       ...(typeof scope.source === "string" ? { source: scope.source } : {}),
       ...(typeof scope.gap === "string" ? { gap: scope.gap } : {}),
       ...(Array.isArray(scope.blockedBy) ? { blockedBy: (scope.blockedBy as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)) } : {}),
       ...(Array.isArray(scope.depends_on) ? { dependsOn: (scope.depends_on as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)) } : {}),
+      // Machine evidence travels with the projection: the record mirror
+      // (verified, counts) and declared target files feed conditions and
+      // claim checks downstream — never silently dropped.
+      ...(sanitizedRecord ? { record: sanitizedRecord } : {}),
+      ...(typeof scope.started_at === "string" && scope.started_at ? { startedAt: scope.started_at } : {}),
+      ...(Array.isArray(scope.targetFiles) ? { targetFiles: (scope.targetFiles as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)).filter(Boolean) } : {}),
       tasks: array(scope.tasks).map((item, taskIndex) => {
         const task = record(item);
         const strArray = (value: unknown): string[] | undefined => Array.isArray(value) ? value.map((entry) => typeof entry === "string" ? entry : String(entry)) : undefined;
         return {
           id: text(task.id, `task-${taskIndex + 1}`),
           name: text(task.name, text(task.title, `Task ${taskIndex + 1}`)),
+          kind: "task",
           status: normalizeStatus(task.status),
           ...(typeof task.source === "string" ? { source: task.source } : {}),
           ...(typeof task.note === "string" ? { note: task.note } : {}),
@@ -1588,6 +1647,9 @@ export default async function plugin(bb: BbPluginApi) {
   if (!expiredQuestionColumns.some((column) => column.name === "kind")) {
     db.exec("ALTER TABLE expired_questions ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard'");
   }
+  // Trackable event trail (lib/trackable-events): append-only causal log.
+  // CREATE TABLE IF NOT EXISTS is its own migration — no column dance.
+  ensureTrackableEventsTable(db);
   if (!expiredQuestionColumns.some((column) => column.name === "locale")) {
     db.exec("ALTER TABLE expired_questions ADD COLUMN locale TEXT");
   }
@@ -5257,7 +5319,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           if (!workspace?.path) return emptySummary;
           const cached = scopeCache.get(row.id);
           if (cached) return cached;
-          const done = (status: string): boolean => ["done", "completed"].includes(status);
+          const done = (status: string): boolean => isDoneStatus(status);
           const scopes = loadCardScopes(workspace.path, row.id);
           const summary = {
             scopesTotal: scopes.length,
@@ -5444,7 +5506,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         documented: totals.documented,
         escalated: totals.escalated,
         items,
-        pendingScopes: gapState.auditGapScopes.filter((scope) => !["done", "completed"].includes(scope.status)).length,
+        pendingScopes: gapState.auditGapScopes.filter((scope) => !isDoneStatus(scope.status)).length,
         unscoped: gapState.escalated.filter((gap) => !gapState.auditGapScopes.some((scope) => scope.gap === gap.description)).length,
         leadMs: timeline.leadMs,
         cycleMs: timeline.cycleMs,
@@ -5574,6 +5636,53 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null;
       const nextStages = parseNextStages(sourcePath, card.stage);
       const scopes = loadCardScopes(sourcePath, card.id);
+      // Scope-sync health, computed on read: the spec-tech the writer parses
+      // against how many scopes actually synced. A silent 0 with blocks in
+      // the spec is the invisible-scopes incident — the panel names it
+      // instead of rendering an empty card.
+      const scopeSync = card.kind === "build" && sourcePath
+        ? (() => {
+          const spec = latestSpecTech(sourcePath, card.id);
+          const diagnosis = diagnoseScopeSync({ specContent: spec?.content ?? null, syncedCount: scopes.length });
+          return { state: diagnosis.state, syncedScopes: scopes.length, machineBlocks: diagnosis.machine, humanBlocks: diagnosis.human, specFile: spec?.file ?? null };
+        })()
+        : null;
+      // Per-entry evidence through one composition (lib/trackable-evidence):
+      // contracts, claims, and conditions for scopes and their tasks.
+      // Non-build cards keep the contract shape with empty evidence.
+      const bareScopes = scopes.map((scope) => ({
+        ...scope,
+        tasks: (Array.isArray(scope.tasks) ? scope.tasks : []).map((task) => ({ ...task, conditions: [] })),
+        conditions: [],
+        claimed: null as boolean | null,
+      }));
+      const enrichedScopes = (card.kind === "build" && sourcePath)
+        ? await (async () => {
+          const entry = trackingEntryForCard(sourcePath, card.id);
+          const stateRel = entry ? workflowStateRelativeDir(entry) : null;
+          if (!stateRel) return bareScopes;
+          let live: Array<{ file_path: string; card_id: string; scope: string | null; expires_at: number }> = [];
+          try { live = liveClaimsForWorkspace(db, { workspacePath: sourcePath }) as typeof live; } catch { live = []; }
+          const at = Date.now();
+          return await enrichEntriesForDetail({
+            entries: scopes,
+            defaultKind: "scope",
+            stateRelDir: stateRel,
+            ownerId: card.id,
+            liveClaims: live,
+            isLapsed: (target: { id?: string; targetFiles?: unknown }) => {
+              try {
+                const files = Array.isArray(target.targetFiles)
+                  ? (target.targetFiles as unknown[]).filter((file): file is string => typeof file === "string")
+                  : [];
+                return lapsedScopeClaims(db, { cardId: card.id, workspacePath: sourcePath, scope: target.id ?? null, files, nowMs: at });
+              } catch { return false; }
+            },
+            readContract: (rel: string) => bb.sdk.files.read({ path: join(sourcePath, rel) }).then((file) => file.content).catch(() => null),
+            nowMs: at,
+          });
+        })()
+        : bareScopes;
       const preset = getReliablePresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", card.id);
       // The helper owns the typed artifact manifest. Its stage is the durable
       // producer attribution rendered beside the workflow timeline.
@@ -5589,7 +5698,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           return await bb.sdk.files.read({ path: join(sourcePath, "state.md") }).then((f) => f.content).catch(() => null);
         })();
         if (!stateBlob) return [];
-        const list: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note: string | null }> = [];
+        const list: Array<{ stage: string; kind: string; role: "deliverable" | "evidence"; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note: string | null }> = [];
         const seen = new Set<string>();
         for (const fields of parseArtifactManifest(stateBlob)) {
           const stage = fields.stage;
@@ -5600,7 +5709,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           const full = resolveArtifactPath(sourcePath, relPath);
           if (!full) continue;
           const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
-          if (artifact && isPublishableArtifactContent(artifact.content) && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId, note: auditReceiptNote(full) });
+          if (artifact && isPublishableArtifactContent(artifact.content) && sourceHostId) list.push({ stage, kind: fields.kind ?? "document", role: artifactRole({ kind: fields.kind ?? "document", path: relPath }), path: relPath, display: fields.label ?? basename(full), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: full, hostId: sourceHostId, note: auditReceiptNote(full) });
           if (full) seen.add(full);
         }
         // The audit trail must not depend on an agent remembering to declare
@@ -5636,7 +5745,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             // The portable receipt is Audit evidence, not stray output: it is
             // listed under the stage whose audit produced it.
             const isTrail = basename(absolute) === AUDIT_TRAIL_FILE;
-            list.push({ stage: isTrail ? "audit" : "unregistered", kind: isTrail ? "audit-trail" : "unregistered", path: relPath, display: basename(absolute), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: absolute, hostId: sourceHostId, note: auditReceiptNote(absolute) });
+            list.push({ stage: isTrail ? "audit" : "unregistered", kind: isTrail ? "audit-trail" : "unregistered", role: artifactRole({ kind: isTrail ? "audit-trail" : "unregistered", path: relPath }), path: relPath, display: basename(absolute), generatedAt: fileTimestamp(artifact, new Date(card.updated_at).toISOString()), absolutePath: absolute, hostId: sourceHostId, note: auditReceiptNote(absolute) });
             seen.add(absolute);
           }
         }
@@ -5712,15 +5821,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
         questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => ["done", "completed"].includes(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => ["done", "completed"].includes(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs, doingNow: doingNowNames(scopes) },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs, doingNow: doingNowNames(scopes) },
         attachments,
         mentionedFiles,
-        scopes,
+        scopes: enrichedScopes,
         comments: comments.map(({ id, target, target_id, author, body, created_at }) => ({ id, target: target as "card" | "scope" | "task", targetId: target_id, author: author as "user" | "agent", body, createdAt: created_at })),
         pendingQuestions: withStaleness(pending),
         expiredQuestions: withStaleness(expiredQuestions),
         splitAction,
         stageSkips,
+        scopeSync,
         artifacts,
         workerHistory,
         fileEnvironmentId,
@@ -7449,6 +7559,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
       { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
       { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
+      { name: "scope", summary: "Validated scope transitions (single writer)", usage: "bb stelow scope <start|done|seed-tasks> --scope <id> [--project <proj_id>] [--name <workflow>] [--iteration <n>] [--actual-files <a,b>] [--tasks <json>] [--start-sha <sha>] [--json]" },
       { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
       { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
       { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
@@ -7815,19 +7926,39 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (cliCard && cliCard.stage === "audit") {
             const gapState = await critiqueGapState(cliCard).catch(() => null);
             if (gapState?.matched) {
-              const open = gapState.auditGapScopes.filter((scope) => !["done", "completed"].includes(scope.status));
+              const open = gapState.auditGapScopes.filter((scope) => !isDoneStatus(scope.status));
               loopNote = open.length > 0
                 ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`
                 : "\n(rework loop: back to execution from audit — no open audit-gap scopes)";
             }
           }
+          let syncedCount: number | null = null;
           try {
             const sync = await runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
             const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
-            if (typeof parsed.synced === "number" && parsed.synced > 0) {
-              return { exitCode: 0, stdout: result.stdout + `\n(sync-scopes: synced ${parsed.synced} scopes)` + loopNote };
-            }
+            if (typeof parsed.synced === "number") syncedCount = parsed.synced;
           } catch { /* best-effort only */ }
+          // Fail-closed scope gates (build only): the sync above had its
+          // chance — refusals preempt entry, notes compose with its report.
+          // Gate order lives in lib/build-gates (first refusal wins).
+          if (cliCard?.kind === "build") {
+            const synced = loadCardScopes(rootPath, cliCard.id);
+            const spec = latestSpecTech(rootPath, cliCard.id)?.content ?? null;
+            const entryRegistry = buildRegistry(synced, { defaultKind: "scope" });
+            const pendingScopes = synced.filter((scope) => scope.status === "pending");
+            const gate = advanceExecutionGates({
+              kind: cliCard.kind, stage, specContent: spec, syncedCount: synced.length,
+              cycles: dependencyCycles(entryRegistry),
+              hasUnstartablePending: pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus)),
+            });
+            const syncedNote = syncedCount !== null && syncedCount > 0 ? `\n(sync-scopes: synced ${syncedCount} scopes)` : "";
+            // Trail the entry decision (fail-open): refused or entered with N.
+            try {
+              recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: "all", transition: gate.refusal ? "execution-refused" : "execution-entered", actor: "host", evidence: gate.refusal ?? `${synced.length} synced scope(s)` });
+            } catch { /* trail never blocks */ }
+            if (gate.refusal) return { exitCode: 1, stderr: gate.refusal };
+            if (gate.note || syncedNote) return { exitCode: 0, stdout: result.stdout + syncedNote + (gate.note ? `\n(${gate.note})` : "") + loopNote };
+          }
           if (loopNote) return { exitCode: 0, stdout: result.stdout + loopNote };
         }
         // Independent pre-review on gate entry (advisory, never blocking):
@@ -7898,6 +8029,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         } catch {
           return { exitCode: 1, stderr: "Could not write stelow.json — retry gap-scopes." };
         }
+        try {
+          recordTrackableEvent(db, { cardId, kind: "scope", trackableId: "audit-gap", transition: "rework-created", actor: "host", evidence: `${created.length} rework scope(s): ${created.map((line) => line.split(":")[0]).join(", ")}` });
+        } catch { /* trail never blocks */ }
+        // Rework scopes appear on the card immediately, not at the next
+        // lifecycle event.
+        bb.realtime.publish("card-state", { cardId });
+        bb.realtime.publish("board-changed", { cardId });
         logCardComment(cardId, "card", cardId, "agent", `Gap-to-scope decision: ${gapState.totals.fixed} fixed inline, ${gapState.totals.documented} documented for next cycle, ${gapState.escalated.length} escalated — ${created.length} new rework scope(s):\n${created.map((line) => `- ${line}`).join("\n")}\nThe card loops back: advance to execution, execute the rework scopes, re-run the critique, then run done again.`);
         return { exitCode: 0, stdout: `Decision recorded: ${gapState.totals.fixed} fixed, ${gapState.totals.documented} documented, ${gapState.escalated.length} escalated.\nCreated ${created.length} rework scope(s):\n${created.map((line) => `- ${line}`).join("\n")}\nLoop back now: bb stelow advance execution — execute the new scopes, re-run the critique, then run done again.` };
       }
@@ -8231,8 +8369,23 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             if (!stateBlob) return { exitCode: 1, stderr: "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored." };
             currentStage = text(stateBlob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
           }
-          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0, scopesOpen: projectPath ? loadCardScopes(projectPath, card.id) : [] });
+          // Gates read tracked truth (mergePlanned: false): the read-time
+          // planned-task merge is display-only, so pre-merge cards keep
+          // completing while tracked checklists bind.
+          const trackedScopes = projectPath ? loadCardScopes(projectPath, card.id, { mergePlanned: false }) : [];
+          const refusal = doneEligibility({ kind: "build", stage: currentStage, questionPending: pending.length > 0, scopesOpen: trackedScopes });
           if (refusal) return { exitCode: 1, stderr: refusal };
+          // Invisible-scopes companion: audit with zero synced scopes but
+          // scope blocks in spec-tech means execution ran untracked — done
+          // must not certify it. Missing/unreadable specs fail open here;
+          // thin specs are owned by the depth gate below.
+          if (projectPath) {
+            const specTech = latestSpecTech(projectPath, card.id);
+            const specCounts = countScopeDialects(specTech?.content ?? null);
+            // Gate order lives in lib/build-gates (first refusal wins).
+            const doneRefusal = doneBuildGates({ kind: "build", stage: currentStage, scopes: trackedScopes, specMachine: specCounts.machine, specHuman: specCounts.human, specContent: specTech?.content ?? null });
+            if (doneRefusal) return { exitCode: 1, stderr: doneRefusal };
+          }
           const receiptContent = doneStateDir ? await bb.sdk.files.read({ path: join(doneStateDir, AUDIT_RECEIPT_FILE) }).then((file) => file.content).catch(() => null) : null;
           const checkout = await cardCheckout(card);
           const gitEvidence = checkout?.path ? await recoveryGitEvidence(checkout.path) : null;
@@ -8263,7 +8416,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             if (unscoped.length > 0) {
               return { exitCode: 1, stderr: `Build completion is blocked: ${unscoped.length} escalated gap(s) have no rework scope — this card is not done, it loops back: run \`bb stelow gap-scopes\`, \`bb stelow advance execution\`, execute the new scopes, re-run the critique, then run done again:\n${unscoped.map((gap) => `- ${gap.description}`).join("\n")}` };
             }
-            const pendingRework = gapState.auditGapScopes.filter((scope) => !["done", "completed"].includes(scope.status));
+            const pendingRework = gapState.auditGapScopes.filter((scope) => !isDoneStatus(scope.status));
             if (pendingRework.length > 0) {
               return { exitCode: 1, stderr: `Build completion is blocked: ${pendingRework.length} audit-gap rework scope(s) still open — finish them, then run done again:\n${pendingRework.map((scope) => `- ${scope.name} (${scope.status})`).join("\n")}` };
             }
@@ -8299,6 +8452,9 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const reset = resetAutoContinue();
           updateCard(cardId, { status: "completed", activity: "idle", last_error: null, stage: currentStage, auto_continue_count: reset.count, auto_continue_stage: reset.stage });
           recordStageEvent(cardId, "done");
+          try {
+            recordTrackableEvent(db, { cardId, kind: "build", trackableId: cardId, transition: "completed", actor: "host", evidence: `audit at ${currentStage}` });
+          } catch { /* trail never blocks */ }
           await releaseCardClaimsAndNotify(cardId);
           return { exitCode: 0, stdout: bundle.wrote ? [`Done. Workflow "${card.name}" completed at audit.`, `Run bundle refreshed at ${bundle.dir}/ — commit it with the work, then paste below the commit subject:`, ...bundle.trailer].join("\n") : `Done. Workflow "${card.name}" completed at audit. No registered artifacts — nothing to bundle.` };
         }
@@ -8572,6 +8728,32 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 0, stdout: result.stdout };
       }
+      if (argv[0] === "scope") {
+        // Single-writer scope transitions for workers (no scripts/stelow
+        // binary exists in a bb workspace): start|done|seed-tasks validate
+        // terminality, containment, and dependency order in the helper and
+        // commit atomically. Like sync-scopes, the write doubles as the
+        // refresh signal so the card reloads, and trails the decision.
+        const parsed = parseScopeArgs(argv.slice(1));
+        if (parsed.error) return { exitCode: 2, stderr: parsed.error };
+        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
+        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
+        const rootPath = workspace?.path ?? await projectRoot(bb, parsed.projectId ?? ctx.projectId ?? null);
+        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
+        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
+        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
+        if (guard) return { exitCode: 1, stderr: guard };
+        const result = await runHelper(["scope", ...parsed.passthrough!], rootPath, stateDir ?? undefined);
+        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "scope transition failed", stdout: result.stdout };
+        if (cliCard) {
+          try {
+            recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: parsed.scopeId!, transition: parsed.op === "start" ? "started" : parsed.op === "seed-tasks" ? "tasks-seeded" : "completed", actor: "worker", evidence: result.stdout.slice(0, 200) });
+          } catch { /* trail never blocks */ }
+          bb.realtime.publish("card-state", { cardId: cliCard.id });
+          bb.realtime.publish("board-changed", { cardId: cliCard.id });
+        }
+        return { exitCode: 0, stdout: result.stdout };
+      }
       if (argv[0] === "lock") {
         const args = argv.slice(1);
         const op = args[0];
@@ -8677,6 +8859,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: `${lines.join("\n")}${result.stderr ? `\n${result.stderr}` : ""}` };
             }
           }
+        }
+        // Acquire/release mutate the claim room the card reads: publish so
+        // claimed indicators flip without waiting for a lifecycle event.
+        // Check stays silent (read-only).
+        if ((op === "acquire" || op === "release") && result.code === 0 && cliCard) {
+          bb.realtime.publish("card-state", { cardId: cliCard.id });
+          bb.realtime.publish("board-changed", { cardId: cliCard.id });
         }
         return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
       }
@@ -8800,7 +8989,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // at done. Read-only — creating scopes stays a gap-scopes call.
           const gapState = await critiqueGapState(card).catch(() => null);
           const unscoped = gapState?.matched ? gapState.escalated.filter((gap) => !gapState.auditGapScopes.some((scope) => scope.gap === gap.description)) : [];
-          const openRework = (gapState?.auditGapScopes ?? []).filter((scope) => !["done", "completed"].includes(scope.status));
+          const openRework = (gapState?.auditGapScopes ?? []).filter((scope) => !isDoneStatus(scope.status));
           const gapLoop = { unscoped: unscoped.map((gap) => gap.description), openRework: openRework.map((scope) => `${scope.id} (${scope.status})`) };
           const gapWarning = unscoped.length > 0 || openRework.length > 0
             ? `\nWARNING: rework loop open (done will refuse):\n${[...unscoped.map((gap) => `UNSCOPED ${gap.description} — run bb stelow gap-scopes`), ...openRework.map((scope) => `OPEN ${scope.id} (${scope.status}) — finish it, then re-run the critique`)].join("\n")}`
@@ -9081,7 +9270,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const taskWorkspace = await cardWorkspace(taskCard).catch(() => null);
         if (!taskWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
         const taskScopes = loadCardScopes(taskWorkspace.path, taskCard.id);
-        const doneTasks = taskScopes.flatMap((scope) => (Array.isArray(scope.tasks) ? scope.tasks : []).filter((task) => ["done", "completed"].includes(task.status)).map((task) => ({ id: task.id, name: task.name, scope: scope.name, verify: taskVerifyCommand(task) })));
+        const doneTasks = taskScopes.flatMap((scope) => (Array.isArray(scope.tasks) ? scope.tasks : []).filter((task) => isDoneStatus(task.status)).map((task) => ({ id: task.id, name: task.name, scope: scope.name, verify: taskVerifyCommand(task) })));
         if (doneTasks.length === 0) return { exitCode: 0, stdout: "No completed tasks to evidence — pending tasks are openly pending, nothing to judge." };
         const taskCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
         const taskRoute = pointRouteConfig(taskPoint, taskCfg);

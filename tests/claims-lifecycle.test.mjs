@@ -7,6 +7,7 @@ import {
   clearClaimWaiters,
   ensureCardClaimsTables,
   liveClaimsForWorkspace,
+  matchScopeClaims,
   releaseAllCardClaims,
   releaseWorkspaceClaims,
   sweepExpiredClaims,
@@ -101,6 +102,22 @@ import { isClaimTerminal } from "../lib/card-terminal.mjs";
     "waiters survive the sweep until the host notifies them",
   );
   assert.equal(liveClaimsForWorkspace(db, { workspacePath: WS, nowMs: T0 + 61_000 }).length, 1, "live claims survive");
+}
+
+// --- Scope matching: one rule for claimed projection and lapsed probe ----
+{
+  const db = new Database(":memory:");
+  ensureCardClaimsTables(db);
+  const WS = "/repo/match";
+  const T0 = 5_000_000;
+  acquireWorkspaceClaims(db, { cardId: "c1", workspacePath: WS, files: ["src/a.ts"], scope: "scope-1", nowMs: T0 });
+  const live = liveClaimsForWorkspace(db, { workspacePath: WS, nowMs: T0 });
+  assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-1", files: [], nowMs: T0 }).length, 1, "scope tag matches");
+  assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-9", files: ["src/a.ts"], nowMs: T0 }).length, 1, "file overlap matches");
+  assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-9", files: ["src/z.ts"], nowMs: T0 }).length, 0, "unrelated misses");
+  assert.equal(matchScopeClaims(live, { ownerId: "c2", scopeId: "scope-1", files: [], nowMs: T0 }).length, 0, "foreign cards miss");
+  assert.equal(matchScopeClaims(live, { ownerId: "c1", scopeId: "scope-1", files: [], nowMs: T0 + 1_900_000 }).length, 0, "expired leases miss");
+  assert.deepEqual(matchScopeClaims(null, { ownerId: "c1", scopeId: "scope-1" }), [], "junk rows miss");
 }
 
 console.log("claims-lifecycle: ok");
