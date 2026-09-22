@@ -237,7 +237,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
     setImportBusy(false);
     onOpenChange(false);
     if (imported > 0) {
-      toast.success(importStart ? (importIsolated ? `Imported and started ${imported} issue${imported === 1 ? "" : "s"} in isolated worktrees.` : `Imported and started ${imported} issue${imported === 1 ? "" : "s"}.`) : `Parked ${imported} issue${imported === 1 ? "" : "s"} in Inbox.`);
+      toast.success(importStart ? (importIsolated ? `Imported and started ${imported} issue${imported === 1 ? "" : "s"} in isolated worktrees.` : `Imported and started ${imported} issue${imported === 1 ? "" : "s"}.`) : `Parked ${imported} issue${imported === 1 ? "" : "s"} as Bucket draft${imported === 1 ? "" : "s"}.`);
       onChanged();
     }
     if (inFlight > 0) toast.success(`${inFlight} already being imported — refresh to see ${inFlight === 1 ? "it" : "them"}.`);
@@ -430,7 +430,7 @@ export function GithubIssuesDialog({ open, onOpenChange, projects, activeProject
             <Button variant="ghost" disabled={importBusy || automationBusy}>Cancel</Button>
           </DialogClose>
           {githubTab === "import"
-            ? <Button onClick={() => void importSelectedIssues()} disabled={importBusy}>{importStart ? "Import and start" : "Park in Inbox"}</Button>
+            ? <Button onClick={() => void importSelectedIssues()} disabled={importBusy}>{importStart ? "Import and start" : "Park in Bucket"}</Button>
             : <Button disabled={automationBusy || automationLabels.length === 0 || !ruleProjectId} title={ruleProjectName ? `Save this rule on ${ruleProjectName}` : undefined} onClick={() => void saveAutomationRule()}>{automationBusy ? "Saving…" : ruleProjectName ? <>Add rule to <span className="max-w-40 truncate">{ruleProjectName}</span></> : "Add rule"}</Button>}
         </DialogFooter>
       </DialogContent>
