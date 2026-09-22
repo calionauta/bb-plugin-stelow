@@ -5649,7 +5649,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // Per-entry evidence through one composition (lib/trackable-evidence):
       // contracts, claims, and conditions for scopes and their tasks.
       // Non-build cards keep the contract shape with empty evidence.
-      const bareScopes = scopes.map((scope) => ({ ...scope, conditions: [], claimed: null as boolean | null }));
+      const bareScopes = scopes.map((scope) => ({
+        ...scope,
+        tasks: (Array.isArray(scope.tasks) ? scope.tasks : []).map((task) => ({ ...task, conditions: [] })),
+        conditions: [],
+        claimed: null as boolean | null,
+      }));
       const enrichedScopes = (card.kind === "build" && sourcePath)
         ? await (async () => {
           const entry = trackingEntryForCard(sourcePath, card.id);
