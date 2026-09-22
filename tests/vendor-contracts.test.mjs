@@ -7,11 +7,11 @@ import { fileURLToPath } from "node:url";
 import { AUDIT_TRAIL_CONTRACT } from "../lib/audit-trail-contract.mjs";
 
 // Vendor contract: every behavior of the vendored Stelow helper the plugin
-// parses or relies on, executed for real in tmp dirs. A vendored bump that
-// changes JSON shapes, exit codes, or scope fields breaks here — at sync
-// time — instead of inside a worker turn. Behavior that only exists in
-// newer upstream (human-headings fallback, `scope` subcommand) is pinned
-// upstream and lands here on the sync that vendors it.
+// parses or relies on, executed for real in tmp dirs. Capability-aware by
+// design: the vendored copy moves with upstream releases, so branches assert
+// per capability (human-headings fallback, `scope` subcommand) instead of
+// freezing one version. A vendored bump that breaks a previously working
+// capability fails here — at sync time — instead of inside a worker turn.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const HELPER_SRC = join(root, "data", "stelow");
 
@@ -90,16 +90,56 @@ function seedProject(specContent) {
   }
 }
 
-// Human headings do not parse in the vendored copy: warn plus exit 0 with
-// scopes left as-is (the host's fail-closed gates own this case until the
-// sync that vendors the fallback lands it here as synced: 2).
+// Human headings: without the upstream fallback the miss warns plus exit 0
+// with scopes left as-is (the host's fail-closed gates own this case);
+// with it, they parse exactly like machine blocks.
 {
-  const { dir, run, tracking } = seedProject("## Scopes\n\n### SCOPE-1: Human\n");
+  const { dir, run, tracking } = seedProject("## Scopes\n\n### SCOPE-1: Human\n\n| # | Task | Components | Risk | Done Criterion | Order Rationale |\n|---|------|-----------|------|---------------|-----------------|\n| 1.1 | Do it | ui-x | LOW (1) | Done | P0: mock |\n");
   try {
     const r = run(["sync-scopes", "--json"]);
-    assert.equal(r.status, 0, "unparseable spec stays exit 0");
-    assert.match(r.stderr, /no \[SCOPE-N\] blocks/, "the miss warns");
-    assert.deepEqual(tracking().workflows[0].scopes, [], "scopes stay as-is");
+    assert.equal(r.status, 0, "human spec stays exit 0");
+    let synced = -1;
+    try {
+      synced = JSON.parse(r.stdout).synced;
+    } catch {
+      synced = 0;
+    }
+    if (synced === 0) {
+      assert.match(r.stderr, /no \[SCOPE-N\] blocks/, "the miss warns");
+      assert.deepEqual(tracking().workflows[0].scopes, [], "scopes stay as-is");
+    } else {
+      assert.equal(synced, 1, "fallback parses the human block");
+      assert.deepEqual(tracking().workflows[0].scopes.map((scope) => scope.id), ["scope-1"], "human ids derive");
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// `scope` subcommand: absent in older vendored copies (workers fall back
+// to tracked edits plus host gates); when present, start|done commit with
+// validation. The probe is behavioral: an unknown subcommand skips with a
+// log instead of failing the suite on an old pin.
+{
+  const { dir, run, tracking } = seedProject(MACHINE_SPEC);
+  try {
+    assert.equal(run(["sync-scopes", "--json"]).status, 0, "scopes sync before scope transitions");
+    const probe = run(["scope", "start", "--scope", "scope-1", "--json"]);
+    if (probe.status !== 0 && /unknown subcommand/.test(probe.stderr)) {
+      console.log("vendor contracts SKIPPED scope subcommand: not in this vendored copy");
+    } else {
+      assert.equal(probe.status, 0, "start commits");
+      const started = JSON.parse(probe.stdout);
+      assert.deepEqual(Object.keys(started).sort(), ["id", "started_at", "status"], "start --json envelope is stable");
+      assert.equal(started.status, "in-progress", "start marks in-progress");
+      assert.equal(typeof started.started_at, "string", "start stamps once");
+      const scopes = () => tracking().workflows[0].scopes;
+      assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "in-progress", "tracking reflects start");
+      assert.equal(run(["scope", "done", "--scope", "scope-1", "--json"]).status, 0, "taskless done commits");
+      assert.equal(scopes().find((scope) => scope.id === "scope-1").status, "done", "tracking reflects done");
+      assert.equal(run(["scope", "done", "--scope", "scope-1"]).status, 1, "done never regresses");
+      assert.equal(run(["scope", "start", "--scope", "scope-1"]).status, 1, "finished never restarts");
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
