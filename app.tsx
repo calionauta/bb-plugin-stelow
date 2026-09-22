@@ -6701,6 +6701,9 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // on CSS group-open variants, and the native marker stays hidden so the
   // affordance is exactly one arrow.
   const [mapOpen, setMapOpen] = useState(false);
+  // Native <details> chevrons frozen before (CSS group-open never fired
+  // here): every collapsible drives its arrow from explicit open state.
+  const [advancedGitOpen, setAdvancedGitOpen] = useState(false);
   type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean; entitySummary: { total: number; fileCount: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null; changedSymbols: Array<{ symbol: string; files: string[]; callers: number; testCallers: number }> | null };
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffData, setDiffData] = useState<CardDiff | null>(null);
@@ -7571,8 +7574,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     )}
 
                     {!publishesToDefaultBranch ? (
-                      <details className="group border-t pt-3">
-                        <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-foreground"><DisclosureChevron />Advanced Git operations</summary>
+                      <details className="group border-t pt-3" open={advancedGitOpen} onToggle={(event) => setAdvancedGitOpen((event.currentTarget as HTMLDetailsElement).open)}>
+                        <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-foreground"><DisclosureChevron open={advancedGitOpen} />Advanced Git operations</summary>
                         <div className="mt-2 space-y-2 text-muted-foreground">
                           <p>Squash branch locally combines this branch’s already committed changes into one commit on its local base branch. It does not fetch remote updates, push, or create a pull request. Use it only when you own local integration.</p>
                           <Button size="sm" variant="outline" disabled={!publication.capabilities.squashMerge.available} title={publication.capabilities.squashMerge.reason ?? "Squash committed branch changes into the local base branch"} onClick={() => setPublicationAction("squash")}>Squash branch locally…</Button>
@@ -7585,8 +7588,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                         <p className="text-muted-foreground">Pull request <UrlLink href={publication.pullRequest.url} className="font-medium text-primary underline-offset-4 hover:underline">#{publication.pullRequest.number} · {publication.pullRequest.title}</UrlLink> · {publication.pullRequest.attention.replaceAll("_", " ")}</p>
                         <p className="text-muted-foreground">Review: {publication.pullRequest.review.replaceAll("_", " ")} · checks: {publication.pullRequest.checks.replaceAll("_", " ")} · mergeability: {publication.pullRequest.mergeability}</p>
                         <div className="flex flex-wrap gap-2">
-                          <Button size="sm" variant="outline" disabled={!publication.capabilities.markReady.available} title={publication.capabilities.markReady.reason ?? "Mark this pull request ready for review"} onClick={() => setPublicationAction("ready")}>Mark ready…</Button>
-                          <Button size="sm" variant="outline" disabled={!publication.capabilities.markDraft.available} title={publication.capabilities.markDraft.reason ?? "Convert this pull request to draft"} onClick={() => setPublicationAction("draft")}>Mark draft…</Button>
+                          {publication.pullRequest.state === "draft" ? (
+                            <Button size="sm" variant="outline" disabled={!publication.capabilities.markReady.available} title={publication.capabilities.markReady.reason ?? "Mark this pull request ready for review"} onClick={() => setPublicationAction("ready")}>Mark ready…</Button>
+                          ) : (
+                            <Button size="sm" variant="outline" disabled={!publication.capabilities.markDraft.available} title={publication.capabilities.markDraft.reason ?? "Convert this pull request to draft"} onClick={() => setPublicationAction("draft")}>Mark draft…</Button>
+                          )}
                           <select value={mergeMethod} onChange={(event) => setMergeMethod(event.target.value as "merge" | "rebase" | "squash")} className="min-h-9 cursor-pointer rounded-md border bg-background px-2 text-xs" aria-label="Merge method">
                             <option value="squash">Squash merge</option>
                             <option value="merge">Merge commit</option>
