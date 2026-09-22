@@ -78,7 +78,7 @@ import { doneEligibility, doneScopeSyncRefusal } from "./lib/completion.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { ensureTrackableEventsTable, recordTrackableEvent } from "./lib/trackable-events.mjs";
 import { contractRelPath, parseEvidenceContract, sanitizeEvidenceRecord, evidenceConditions } from "./lib/trackable-evidence.mjs";
-import { buildRegistry, canClose, dependencyCycles, openChildren } from "./lib/trackable-relations.mjs";
+import { buildRegistry, canClose, canStart, dependencyCycles, openChildren } from "./lib/trackable-relations.mjs";
 import { isSpecTechFile, plansRelDir } from "./lib/tracking-paths.mjs";
 import { countScopeDialects, diagnoseScopeSync, executionScopeRefusal, mergePlannedTasks } from "./lib/spec-scope-reader.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
@@ -7958,6 +7958,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const cycles = dependencyCycles(buildRegistry(synced));
             if (cycles.length > 0) {
               return { exitCode: 1, stderr: `Refused: blockedBy cycle detected (${cycles[0].join(" -> ")}) — fix Dependencies: in the spec-tech file so the graph is acyclic, run \`bb stelow sync-scopes\`, then advance again.` };
+            }
+            // Ordering deadlock without a cycle (e.g. everything waits on a
+            // skipped scope): advisory only — the plan may still re-route.
+            const entryRegistry = buildRegistry(synced);
+            const pendingScopes = synced.filter((scope) => scope.status === "pending");
+            if (pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus))) {
+              return { exitCode: 0, stdout: result.stdout + "\n(no scope can start — every pending scope waits on unfinished work; check blockedBy before executing)" + loopNote };
             }
           }
           if (loopNote) return { exitCode: 0, stdout: result.stdout + loopNote };

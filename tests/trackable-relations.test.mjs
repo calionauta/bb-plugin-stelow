@@ -66,6 +66,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 assert.match(server, /dependencyCycles\(buildRegistry\(/, "advance checks the registry graph");
 assert.match(server, /blockedBy cycle detected/, "cycles refuse naming the loop");
+assert.match(server, /canStart\(entryRegistry/, "advance names unstartable ordering without a cycle");
 assert.match(server, /canClose\(/, "done checks containment through the registry");
 assert.match(server, /a scope closes only when its tasks do/, "containment refuses with the marking redirect");
 assert.match(server, /mergePlanned: false/, "done gates read tracked truth — the planned merge is display-only");
