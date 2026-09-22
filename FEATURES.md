@@ -673,7 +673,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   line, detached HEAD, clean checkout). The confirm dialog states the
   exact blast radius in English before anything runs; execution stops the
   worker, re-validates the checkout, verifies the result, and leaves an
-  agent comment as the trail.
+  agent comment as the trail. No automatic deletion exists anywhere:
+  archival and hard delete leave checkouts to BB's own lifecycle, and a
+  merged pull request surfaces a one-click worktree cleanup suggestion
+  (`cleanupWorktreePreview`, `cleanupWorktree`) — same evidence and blast
+  radius, explicit confirm, card kept as record instead of archived.
 - **Delete archived card** (`deleteCard`). Hard delete offered only on
   archived cards from Manage, behind an English confirm dialog. Removes
   the card row plus comments, presets, questions, inbox events, and

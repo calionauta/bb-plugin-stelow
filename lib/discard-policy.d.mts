@@ -22,3 +22,6 @@ export declare function discardEligibility(evidence: Partial<DiscardEvidence>): 
 export declare function previewFileSample(changed?: string[], untracked?: string[]): string;
 export declare function discardConfirm(evidence: Partial<DiscardEvidence>, action: DiscardAction): { title: string; body: string };
 export declare function discardTrail(action: DiscardAction, evidence: Partial<DiscardEvidence>): string;
+export declare function cleanupEligibility(evidence: Partial<DiscardEvidence>): { eligible: boolean; reason: string | null };
+export declare function cleanupConfirm(evidence: Partial<DiscardEvidence>): { title: string; body: string };
+export declare function cleanupTrail(evidence: Partial<DiscardEvidence>): string;

@@ -105,5 +105,10 @@ assert.match(app, /Open pull request ↗/, "the next step after pushing is a lin
 assert.match(app, /not pushed yet\./, "a saved commit states its remote truth instead of implying arrival");
 assert.match(app, /pushed to origin\./, "a finished push reads as published in the outcome line");
 assert.match(app, /Completed at \{completedAt\.slice\(0, 7\)\}/, "completed cards anchor dirt to their verified HEAD");
+assert.match(app, /<WorktreeCleanupSuggestion cardId=\{card\.id\} prMerged=\{\(publication\?\.pullRequest\?\.state \?\? ""\) === "merged"\}/, "the cleanup nudge renders on merged PRs through one component");
+const cleanupSuggestion = readFileSync(join(root, "components", "worktree-cleanup-suggestion.tsx"), "utf8");
+assert.match(cleanupSuggestion, /rpc\.call\("cleanupWorktreePreview", \{ cardId \}\)/, "the nudge previews blast radius before offering");
+assert.match(cleanupSuggestion, /rpc\.call\("cleanupWorktree", \{ cardId \}\)/, "the nudge executes through the audited RPC");
+assert.match(cleanupSuggestion, /<DetailsDisclosure summary="What gets removed">/, "technical detail hides behind progressive disclosure");
 
 console.log("publication wiring test ok: BB owns writes, Done stays separate, actions are explicit and auditable");

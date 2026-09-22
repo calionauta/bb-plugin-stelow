@@ -28,7 +28,7 @@ import { consumeAskContract, recordAskContracts, validateAskContracts } from "./
 import { resolvePluginRoot } from "./lib/plugin-paths.mjs";
 import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
-import { discardConfirm, discardEligibility, discardTrail } from "./lib/discard-policy.mjs";
+import { discardConfirm, discardEligibility, discardTrail, cleanupEligibility, cleanupConfirm, cleanupTrail } from "./lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "./lib/github-release.mjs";
 import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
@@ -526,6 +526,16 @@ export const rpcContract = defineRpcContract({
   },
   discardCardChanges: {
     experimental_description: "Destroy unpushed work, then archive; leaves an audit trail",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), summary: z.string().nullable(), error: z.string().nullable() }),
+  },
+  cleanupWorktreePreview: {
+    experimental_description: "Preview removing a redundant linked worktree without archiving, blast radius first",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ eligible: z.boolean(), reason: z.string().nullable(), branch: z.string().nullable(), fileCount: z.number(), commitCount: z.number(), confirmTitle: z.string().nullable(), confirmBody: z.string().nullable() }),
+  },
+  cleanupWorktree: {
+    experimental_description: "Remove the linked worktree, keep the card as record; leaves an audit trail",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), summary: z.string().nullable(), error: z.string().nullable() }),
   },
@@ -3048,6 +3058,23 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     linkedWorktree: boolean; sharedWith: number;
   };
   const EXPLORATORY_SCOPE = nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory");
+  // Shared worktree removal (discard + post-merge cleanup): unlock, remove
+  // with force, delete the branch, verify the folder is gone. Same commands
+  // and order wherever a linked worktree is dropped — one function, never
+  // two copies drifting apart.
+  async function dropLinkedWorktree(checkoutPath: string, branch: string): Promise<void> {
+    const common = await runGitIn(checkoutPath, ["rev-parse", "--git-common-dir"]);
+    const mainDir = common.ok && common.stdout.trim() ? common.stdout.trim() : "";
+    const mainAbs = mainDir ? (isAbsolute(mainDir) ? mainDir : nodeJoin(checkoutPath, mainDir)) : "";
+    if (!mainAbs) throw new Error("Cannot locate the main checkout.");
+    // Best-effort: a locked worktree refuses removal until unlocked.
+    await runGitIn(mainAbs, ["worktree", "unlock", checkoutPath]);
+    const removed = await runGitIn(mainAbs, ["worktree", "remove", "--force", checkoutPath]);
+    if (!removed.ok) throw new Error("Could not remove the worktree.");
+    const pruned = await runGitIn(mainAbs, ["branch", "-D", branch]);
+    if (!pruned.ok) throw new Error("Worktree removed, but the branch survived — delete it by hand.");
+    if (existsSync(checkoutPath)) throw new Error("The worktree folder survived removal.");
+  }
   async function discardEvidence(card: CardRow): Promise<DiscardEvidence> {
     const blank: DiscardEvidence = { status: card.status, workspaceKind: card.workspace_kind, checkoutPath: null, dirExists: false, isGit: false, branch: null, hasUpstream: false, upstreamRef: null, changed: [], untracked: [], unpushedCommits: 0, stashCount: 0, resetTarget: null, linkedWorktree: false, sharedWith: 0 };
     if (card.workspace_kind === "exploratory") {
@@ -5982,17 +6009,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           rmSync(target, { recursive: true, force: true });
           if (existsSync(target)) throw new Error("The folder survived deletion.");
         } else if (decision.action === "worktree-drop") {
-          const common = await runGitIn(fresh.checkoutPath ?? "", ["rev-parse", "--git-common-dir"]);
-          const mainDir = common.ok && common.stdout.trim() ? common.stdout.trim() : "";
-          const mainAbs = mainDir ? (isAbsolute(mainDir) ? mainDir : nodeJoin(fresh.checkoutPath ?? "", mainDir)) : "";
-          if (!mainAbs) throw new Error("Cannot locate the main checkout.");
-          // Best-effort: a locked worktree refuses removal until unlocked.
-          await runGitIn(mainAbs, ["worktree", "unlock", fresh.checkoutPath ?? ""]);
-          const removed = await runGitIn(mainAbs, ["worktree", "remove", "--force", fresh.checkoutPath ?? ""]);
-          if (!removed.ok) throw new Error("Could not remove the worktree.");
-          const pruned = await runGitIn(mainAbs, ["branch", "-D", fresh.branch ?? ""]);
-          if (!pruned.ok) throw new Error("Worktree removed, but the branch survived — delete it by hand.");
-          if (fresh.checkoutPath && existsSync(fresh.checkoutPath)) throw new Error("The worktree folder survived removal.");
+          await dropLinkedWorktree(fresh.checkoutPath ?? "", fresh.branch ?? "");
         } else {
           const reset = await runGitIn(fresh.checkoutPath ?? "", ["reset", "--hard", fresh.resetTarget ?? ""]);
           if (!reset.ok) throw new Error("Could not reset the branch.");
@@ -6091,6 +6108,42 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       logCardComment(cardId, "card", cardId, "agent", "Split proposal requested — the worker will ask with --tag split.");
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, error: null };
+    },
+
+    async cleanupWorktreePreview({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) return { eligible: false, reason: ERR_CARD_NOT_FOUND, branch: null, fileCount: 0, commitCount: 0, confirmTitle: null, confirmBody: null };
+      const evidence = await discardEvidence(card);
+      const decision = cleanupEligibility(evidence);
+      if (!decision.eligible) return { eligible: false, reason: decision.reason, branch: evidence.branch, fileCount: 0, commitCount: 0, confirmTitle: null, confirmBody: null };
+      const files = [...evidence.changed, ...evidence.untracked];
+      const copy = cleanupConfirm(evidence);
+      return { eligible: true, reason: null, branch: evidence.branch, fileCount: files.length, commitCount: evidence.unpushedCommits, confirmTitle: copy.title, confirmBody: copy.body };
+    },
+    async cleanupWorktree({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
+      const evidence = await discardEvidence(card);
+      const decision = cleanupEligibility(evidence);
+      if (!decision.eligible) return { ok: false, summary: null, error: decision.reason ?? "Nothing safe to clean up." };
+      // Re-validate after any concurrent change: stop, re-read, re-decide.
+      await stopWorkerThread(card.worker_thread_id);
+      const live = getCard(cardId);
+      if (!live) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
+      const fresh = await discardEvidence(live);
+      const confirm = cleanupEligibility(fresh);
+      if (!confirm.eligible) return { ok: false, summary: null, error: confirm.reason ?? "The checkout changed under this cleanup — review it again." };
+      if (!fresh.branch) return { ok: false, summary: null, error: "The checkout lost its branch mid-cleanup — review it by hand." };
+      try {
+        await dropLinkedWorktree(fresh.checkoutPath ?? "", fresh.branch ?? "");
+      } catch (error) {
+        return { ok: false, summary: null, error: error instanceof Error ? error.message : "Cleanup failed midway — review the checkout by hand." };
+      }
+      const summary = cleanupTrail(fresh);
+      logCardComment(cardId, "card", cardId, "agent", summary);
+      bb.realtime.publish("card-state", { cardId });
+      bb.realtime.publish("board-changed", { cardId });
+      return { ok: true, summary, error: null };
     },
 
     async reseedCard({ cardId, presetId, intent: requestedIntent }) {
