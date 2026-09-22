@@ -15,7 +15,7 @@ import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
 import { ensureInboxResolvedReasonColumn, ensureInboxSeverityColumns, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, refreshEventSeverity, refreshStalledPaused, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
 import { parseSeverityReasons } from "./lib/inbox-severity.mjs";
-import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, lapsedScopeClaims, liveClaimsForWorkspace, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
+import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, lapsedScopeClaims, liveClaimsForWorkspace, matchScopeClaims, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "./lib/card-terminal.mjs";
 import { resolveClaimKey } from "./lib/card-claim-key.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "./lib/ask-cancel.mjs";
@@ -227,6 +227,7 @@ const boardWorkflowDefaultsSchema = z.object({ appetite: appetiteSchema, reviewM
 const taskSchema = z.object({
   id: z.string(),
   name: z.string(),
+  kind: z.string().optional(),
   status: statusSchema,
   source: z.string().optional(),
   note: z.string().optional(),
@@ -235,6 +236,7 @@ const taskSchema = z.object({
 const scopeSchema = z.object({
   id: z.string(),
   name: z.string(),
+  kind: z.string().optional(),
   type: z.string().optional(),
   status: statusSchema,
   source: z.string().optional(),
@@ -478,7 +480,7 @@ export const rpcContract = defineRpcContract({
       card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()) }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
-      scopes: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), record: z.object({ verified: z.boolean().optional(), filesCount: z.number().optional(), commandsCount: z.number().optional(), completedAt: z.string().optional(), startedAt: z.string().optional(), suggestedCommit: z.string().optional() }).optional(), startedAt: z.string().optional(), targetFiles: z.array(z.string()).optional(), contract: z.object({ acceptanceCriteria: z.array(z.string()), verifyCommands: z.array(z.string()), targetFiles: z.array(z.string()) }).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })), claimed: z.boolean().nullable(), tasks: z.array(z.object({ id: z.string(), name: z.string(), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })) })), })),
+      scopes: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("scope"), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), record: z.object({ verified: z.boolean().optional(), filesCount: z.number().optional(), commandsCount: z.number().optional(), completedAt: z.string().optional(), startedAt: z.string().optional(), suggestedCommit: z.string().optional() }).optional(), startedAt: z.string().optional(), targetFiles: z.array(z.string()).optional(), contract: z.object({ acceptanceCriteria: z.array(z.string()), verifyCommands: z.array(z.string()), targetFiles: z.array(z.string()) }).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })), claimed: z.boolean().nullable(), tasks: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("task"), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })) })), })),
       comments: z.array(z.object({ id: z.string(), target: z.enum(["card", "scope", "task"]), targetId: z.string(), author: z.enum(["user", "agent"]), body: z.string(), createdAt: z.number() })),
       pendingQuestions: z.array(z.object({ id: z.string(), title: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiresAt: z.number().nullable(), staleness: z.object({ docRevised: z.boolean(), docRemoved: z.boolean(), checkoutMoved: z.boolean(), commitCount: z.number(), touchedPaths: z.array(z.string()) }).nullable().optional() })),
       expiredQuestions: z.array(z.object({ id: z.string(), question: z.string(), multiple: z.boolean(), kind: z.enum(["standard", "split"]), options: z.array(askOptionSchema), expiredAt: z.number(), staleness: z.object({ docRevised: z.boolean(), docRemoved: z.boolean(), checkoutMoved: z.boolean(), commitCount: z.number(), touchedPaths: z.array(z.string()) }).nullable().optional() })),
@@ -1274,6 +1276,9 @@ function workflowScopes(raw: LooseRecord): Workflow["scopes"] {
     return {
       id: text(scope.id, `scope-${index + 1}`),
       name: text(scope.name, text(scope.title, `Scope ${index + 1}`)),
+      // Tracking shapes declare their kind: the registry, conditions, and
+      // contract lookups never infer it from nesting again.
+      kind: "scope",
       ...(typeof scope.type === "string" ? { type: scope.type } : {}),
       status: normalizeStatus(scope.status),
       ...(typeof scope.source === "string" ? { source: scope.source } : {}),
@@ -1292,6 +1297,7 @@ function workflowScopes(raw: LooseRecord): Workflow["scopes"] {
         return {
           id: text(task.id, `task-${taskIndex + 1}`),
           name: text(task.name, text(task.title, `Task ${taskIndex + 1}`)),
+          kind: "task",
           status: normalizeStatus(task.status),
           ...(typeof task.source === "string" ? { source: task.source } : {}),
           ...(typeof task.note === "string" ? { note: task.note } : {}),

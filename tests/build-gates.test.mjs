@@ -80,6 +80,25 @@ assert.equal(doneBuildGates({ kind: "build", stage: "audit", scopes: [{ id: "s1"
 assert.equal(doneBuildGates({ kind: "research", stage: null, scopes: [] }), null, "non-build kinds pass");
 assert.equal(doneBuildGates({ kind: "build", stage: "verification", scopes: [] }), null, "non-audit stages pass");
 
+// Single source: gates block exactly when the conditions machine names a
+// blocking type — the two can never disagree about what blocks done.
+import { evidenceConditions as _conditions } from "../lib/trackable-evidence.mjs";
+import { buildRegistry as _registry } from "../lib/trackable-relations.mjs";
+import { BLOCKING_CONDITION_TYPES as _blocking } from "../lib/trackables.mjs";
+const matrix = [
+  [],
+  [{ id: "s1", kind: "scope", status: "done" }],
+  [{ id: "s1", kind: "scope", status: "done", record: { verified: false } }],
+  [{ id: "s1", kind: "scope", status: "done", record: { verified: true }, tasks: [{ id: "t", name: "T", status: "pending" }] }],
+  [{ id: "s1", kind: "scope", status: "pending", blockedBy: ["s2"] }, { id: "s2", kind: "scope", status: "pending" }],
+  [{ id: "t1", kind: "task", status: "done" }],
+];
+for (const scopes of matrix) {
+  const reg = _registry(scopes);
+  const hasBlocking = scopes.some((scope) => _conditions({ entry: scope, registry: reg }).some((condition) => _blocking.includes(condition.type)));
+  assert.equal(doneBuildGates({ kind: "build", stage: "audit", scopes }) !== null, hasBlocking, `gates agree with conditions for ${JSON.stringify(scopes.map((scope) => scope.id))}`);
+}
+
 // Wiring pins: server advance/done consult the gates module, never inline
 // refusals — the order above is the contract.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");

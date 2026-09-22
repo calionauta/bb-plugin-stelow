@@ -59,6 +59,12 @@ export declare function liveClaimsForWorkspace(db: Db, args: {
   workspacePath: string;
   nowMs?: number;
 }): Array<{ file_path: string; card_id: string; scope: string | null; expires_at: number; fencing: number }>;
+export declare function matchScopeClaims(rows: unknown, args?: {
+  ownerId?: string;
+  scopeId?: string;
+  files?: string[];
+  nowMs?: number;
+}): Array<{ file_path: string; card_id: string; scope: string | null; expires_at: number }>;
 export declare function lapsedScopeClaims(db: Db, args: {
   cardId: string;
   workspacePath: string;

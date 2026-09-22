@@ -14,6 +14,7 @@ export interface TrackableCondition {
   observedAt: string;
 }
 export declare const TRACKABLE_STATUSES: TrackableStatus[];
+export declare const BLOCKING_CONDITION_TYPES: string[];
 export declare function isDoneStatus(status: unknown): boolean;
 export declare function isSkippedStatus(status: unknown): boolean;
 export declare function isActiveStatus(status: unknown): boolean;
