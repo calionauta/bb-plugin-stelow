@@ -127,5 +127,7 @@ assert.match(server, /scopeSync: z\.object\(\{ state: z\.enum\(/, "the card deta
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 assert.match(app, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the checks section names missing scope tracking from live card state");
 assert.match(app, /detail\?\.scopeSync && \(detail\.scopeSync\.state/, "the progress section renders the reported sync state");
+assert.match(app, /ended before tracking was established/, "completed cards read history, not worker redirects");
+assert.match(app, /card\.status !== "completed" && card\.status !== "archived" \? <p/, "terminal cards hide the rewrite advisory");
 
 console.log("scope sync guard test ok: dialects, task extraction, execution/done refusals, merge, wiring");
