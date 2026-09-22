@@ -208,7 +208,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   orphan the worker) — archive it or move it to a phase instead.
 - **List view.** Same cards grouped by column, for narrow screens —
   on both boards, via a quiet icon toggle beside the filters (a view
-  preference, not a CTA). The picked view (board, list, hill) persists
+  preference, not a CTA). Board filters are multi-select facets shared by
+  every track: project, stage (canonical sequence, never just stages with
+  cards), type, status, and activity as checkbox lists with removable
+  pills, empty meaning all, toggled through one helper
+  (`toggleFilterValue`, `matchesFilterValue`). The picked view (board, list, hill) persists
   per track in local storage — returning from a card restores it instead
   of resetting to board. Closed tiles and list rows name the executing
   scope in one shared pill (`DoingNowPill`, truncated with the full

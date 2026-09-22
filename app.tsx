@@ -40,7 +40,7 @@ import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
 import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
-import { kanbanGridColumns } from "./lib/kanban-layout.mjs";
+import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
 import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
@@ -664,11 +664,11 @@ function BoardPanel({ active }: { active: boolean }) {
       return sanitizeReviewGates(JSON.parse(raw));
     } catch { return []; }
   });
-  const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
-  const [filterStage, setFilterStage] = useState<string>("all");
-  const [filterIntent, setFilterIntent] = useState<string | "all">("all");
-  const [filterStatus, setFilterStatus] = useState<string | "all">("all");
-  const [filterActivity, setFilterActivity] = useState<string | "all">("all");
+  const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
+  const [filterStages, setFilterStages] = useState<string[]>([]);
+  const [filterIntents, setFilterIntents] = useState<string[]>([]);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
+  const [filterActivities, setFilterActivities] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.buildView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
@@ -739,15 +739,15 @@ function BoardPanel({ active }: { active: boolean }) {
   const analysisWorkerPreset = presetForBand("analysis");
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
   const filteredCards = useMemo(() => cards.filter((card) => {
-    if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
-    if (filterIntent !== "all" && card.intent !== filterIntent) return false;
-    if (filterStatus !== "all" && boardColumnOf(card) !== filterStatus) return false;
-    if (filterActivity !== "all" && card.activity !== filterActivity) return false;
-    if (filterStage !== "all" && card.stage !== filterStage) return false;
+    if (!matchesFilterValue(filterProjectIds, card.projectId)) return false;
+    if (!matchesFilterValue(filterIntents, card.intent)) return false;
+    if (!matchesFilterValue(filterStatuses, boardColumnOf(card))) return false;
+    if (!matchesFilterValue(filterActivities, card.activity)) return false;
+    if (!matchesFilterValue(filterStages, card.stage)) return false;
     if (filterAttention && !card.needsAttention) return false;
     return true;
-  }), [cards, filterProjectId, filterIntent, filterStatus, filterActivity, filterStage, filterAttention]);
-  const stageOptions = useMemo(() => Array.from(new Set(cards.map((card) => card.stage))).sort(), [cards]);
+  }), [cards, filterProjectIds, filterIntents, filterStatuses, filterActivities, filterStages, filterAttention]);
+  const stageOptions = useMemo(() => [...STAGE_SEQUENCE], []);
   const grouped = useMemo(() => {
     const groups: Record<string, CardItem[]> = Object.fromEntries(COLUMNS.map((column) => [column, []]));
     for (const card of filteredCards) {
@@ -887,19 +887,19 @@ function BoardPanel({ active }: { active: boolean }) {
               <FiltersBar
                 projects={projects}
                 stageOptions={stageOptions}
-                filterProjectId={filterProjectId}
-                filterStage={filterStage}
-                filterIntent={filterIntent}
-                filterStatus={filterStatus}
-                filterActivity={filterActivity}
+                filterProjectIds={filterProjectIds}
+                filterStages={filterStages}
+                filterIntents={filterIntents}
+                filterStatuses={filterStatuses}
+                filterActivities={filterActivities}
                 filterAttention={filterAttention}
-                onProject={setFilterProjectId}
-                onStage={setFilterStage}
-                onIntent={setFilterIntent}
-                onStatus={setFilterStatus}
-                onActivity={setFilterActivity}
+                onProjectToggle={(value) => setFilterProjectIds((prev) => toggleFilterValue(prev, value))}
+                onStageToggle={(value) => setFilterStages((prev) => toggleFilterValue(prev, value))}
+                onIntentToggle={(value) => setFilterIntents((prev) => toggleFilterValue(prev, value))}
+                onStatusToggle={(value) => setFilterStatuses((prev) => toggleFilterValue(prev, value))}
+                onActivityToggle={(value) => setFilterActivities((prev) => toggleFilterValue(prev, value))}
                 onAttention={setFilterAttention}
-                onReset={() => { setFilterProjectId("all"); setFilterStage("all"); setFilterIntent("all"); setFilterStatus("all"); setFilterActivity("all"); setFilterAttention(false); }}
+                onReset={() => { setFilterProjectIds([]); setFilterStages([]); setFilterIntents([]); setFilterStatuses([]); setFilterActivities([]); setFilterAttention(false); }}
               />
             </div>
             <ViewToggle view={viewMode} onChange={setViewMode} label="Build cards view" />
@@ -919,7 +919,7 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
-          <FlowStrip rpc={rpc} projectId={filterProjectId === "all" ? null : filterProjectId} navigate={navigate} />
+          <FlowStrip rpc={rpc} projectId={filterProjectIds.length === 1 ? filterProjectIds[0] ?? null : null} navigate={navigate} />
           {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns) }}>
             {VISIBLE_COLUMNS.map((column) => (
               <BoardColumn
@@ -981,7 +981,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
-  const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
+  const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
 
   const load = useCallback(async (targetId: string | null) => {
@@ -1023,10 +1023,10 @@ function ResearchPanel({ active }: { active: boolean }) {
   const researchBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "research")?.presetId) ?? null;
   const effectiveResearchPreset = researchBandPreset ?? defaultPreset;
   const filteredCards = useMemo(() => cards.filter((card) => {
-    if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
+    if (!matchesFilterValue(filterProjectIds, card.projectId)) return false;
     if (filterAttention && !card.needsAttention) return false;
     return true;
-  }), [cards, filterProjectId, filterAttention]);
+  }), [cards, filterProjectIds, filterAttention]);
   const grouped = useMemo(() => {
     const groups: Record<string, CardItem[]> = Object.fromEntries(RESEARCH_COLUMNS.map((column) => [column, []]));
     for (const card of filteredCards) {
@@ -1153,11 +1153,11 @@ function ResearchPanel({ active }: { active: boolean }) {
             <div className="min-w-0 flex-1">
               <FiltersBar
                 projects={projects}
-                filterProjectId={filterProjectId}
+                filterProjectIds={filterProjectIds}
                 filterAttention={filterAttention}
-                onProject={setFilterProjectId}
+                onProjectToggle={(value) => setFilterProjectIds((prev) => toggleFilterValue(prev, value))}
                 onAttention={setFilterAttention}
-                onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
+                onReset={() => { setFilterProjectIds([]); setFilterAttention(false); }}
               />
             </div>
             <ViewToggle view={viewMode} onChange={setViewMode} label="Research cards view" views={["board", "list"]} />
@@ -1228,7 +1228,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
-  const [filterProjectId, setFilterProjectId] = useState<string | "all">("all");
+  const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
 
   const load = useCallback(async (targetId: string | null) => {
@@ -1267,10 +1267,10 @@ function ExplorePanel({ active }: { active: boolean }) {
   const effectiveExplorePreset = exploreBandPreset ?? defaultPreset;
   const stageLabelById = useMemo(() => new Map(stages.map((entry) => [entry.id, entry.label])), [stages]);
   const filteredCards = useMemo(() => cards.filter((card) => {
-    if (filterProjectId !== "all" && card.projectId !== filterProjectId) return false;
+    if (!matchesFilterValue(filterProjectIds, card.projectId)) return false;
     if (filterAttention && !card.needsAttention) return false;
     return true;
-  }), [cards, filterProjectId, filterAttention]);
+  }), [cards, filterProjectIds, filterAttention]);
   const grouped = useMemo(() => {
     const groups: Record<string, CardItem[]> = Object.fromEntries(RESEARCH_COLUMNS.map((column) => [column, []]));
     for (const card of filteredCards) {
@@ -1397,11 +1397,11 @@ function ExplorePanel({ active }: { active: boolean }) {
             <div className="min-w-0 flex-1">
               <FiltersBar
                 projects={projects}
-                filterProjectId={filterProjectId}
+                filterProjectIds={filterProjectIds}
                 filterAttention={filterAttention}
-                onProject={setFilterProjectId}
+                onProjectToggle={(value) => setFilterProjectIds((prev) => toggleFilterValue(prev, value))}
                 onAttention={setFilterAttention}
-                onReset={() => { setFilterProjectId("all"); setFilterAttention(false); }}
+                onReset={() => { setFilterProjectIds([]); setFilterAttention(false); }}
               />
             </div>
             <ViewToggle view={viewMode} onChange={setViewMode} label="Explore cards view" views={["board", "list"]} />
@@ -2408,25 +2408,30 @@ function ProjectPill({ value, onChange, projects }: { value: string | null; onCh
 
 // One filter bar for both boards (Archetype A: same components, same
 // affordances). Project + attention are the shared facets; build adds
-// stage/type/status/activity by passing their value + handler. Facets
+// Facets are multi-select arrays (empty means all) shared by every board:
+// stage/type/status/activity by passing values + toggle handler. Facets
 // without a handler are not rendered — Research gets the identical popover,
-// pills, and checkbox without a forked filter row.
-function FiltersBar({ projects, filterProjectId, filterAttention, onProject, onAttention, onReset, stageOptions, filterStage, onStage, filterIntent, onIntent, filterStatus, onStatus, filterActivity, onActivity }: {
+// pills, and checkboxes without a forked filter row. Selected values render
+// as removable pills beside the Filters button (attention-pill pattern);
+// the popover holds checkbox lists (native inputs, keyboard-first) instead
+// of single selects and autocomplete widgets.
+type FilterFacet = { values: string[]; options: Array<{ value: string; label: string }>; onToggle: (value: string) => void };
+function FiltersBar({ projects, filterProjectIds, filterAttention, onProjectToggle, onAttention, onReset, stageOptions, filterStages, onStageToggle, filterIntents, onIntentToggle, filterStatuses, onStatusToggle, filterActivities, onActivityToggle }: {
   projects: Project[];
-  filterProjectId: string;
+  filterProjectIds: string[];
   filterAttention: boolean;
-  onProject: (v: string) => void;
+  onProjectToggle: (v: string) => void;
   onAttention: (v: boolean) => void;
   onReset: () => void;
   stageOptions?: string[];
-  filterStage?: string;
-  onStage?: (v: string) => void;
-  filterIntent?: string;
-  onIntent?: (v: string) => void;
-  filterStatus?: string;
-  onStatus?: (v: string) => void;
-  filterActivity?: string;
-  onActivity?: (v: string) => void;
+  filterStages?: string[];
+  onStageToggle?: (v: string) => void;
+  filterIntents?: string[];
+  onIntentToggle?: (v: string) => void;
+  filterStatuses?: string[];
+  onStatusToggle?: (v: string) => void;
+  filterActivities?: string[];
+  onActivityToggle?: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -2448,13 +2453,17 @@ function FiltersBar({ projects, filterProjectId, filterAttention, onProject, onA
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
-  const projectOptions = useMemo(() => [{ value: "all", label: "All projects" }, ...projects.map((project) => ({ value: project.id, label: project.name }))], [projects]);
-  const stageOptionsList = useMemo(() => [{ value: "all", label: "Any stage" }, ...(stageOptions ?? []).map((stage) => ({ value: stage, label: stage }))], [stageOptions]);
-  const activeCount = (filterProjectId !== "all" ? 1 : 0) + (filterAttention ? 1 : 0)
-    + (onStage && filterStage !== undefined && filterStage !== "all" ? 1 : 0)
-    + (onIntent && filterIntent !== undefined && filterIntent !== "all" ? 1 : 0)
-    + (onStatus && filterStatus !== undefined && filterStatus !== "all" ? 1 : 0)
-    + (onActivity && filterActivity !== undefined && filterActivity !== "all" ? 1 : 0);
+  const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects]);
+  const stageOptionsList = useMemo(() => (stageOptions ?? []).map((stage) => ({ value: stage, label: stageLabel(stage) })), [stageOptions]);
+  const facets: Array<{ label: string } & FilterFacet> = [
+    { label: "Project", values: filterProjectIds, options: projectOptions, onToggle: onProjectToggle },
+    ...(onIntentToggle && filterIntents ? [{ label: "Type", values: filterIntents, options: FILTER_INTENT_OPTIONS, onToggle: onIntentToggle }] : []),
+    ...(onStatusToggle && filterStatuses ? [{ label: "Status", values: filterStatuses, options: FILTER_STATUS_OPTIONS, onToggle: onStatusToggle }] : []),
+    ...(onStageToggle && filterStages ? [{ label: "Stage", values: filterStages, options: stageOptionsList, onToggle: onStageToggle }] : []),
+    ...(onActivityToggle && filterActivities ? [{ label: "Activity", values: filterActivities, options: FILTER_ACTIVITY_OPTIONS, onToggle: onActivityToggle }] : []),
+  ];
+  const activeCount = facets.reduce((total, facet) => total + facet.values.length, 0) + (filterAttention ? 1 : 0);
+  const removePill = (facet: { label: string } & FilterFacet, value: string) => facet.onToggle(value);
   return (
     <div ref={wrapRef} className="relative flex flex-wrap items-center gap-2">
       <button
@@ -2468,6 +2477,15 @@ function FiltersBar({ projects, filterProjectId, filterAttention, onProject, onA
         <span>Filters</span>
         {activeCount > 0 ? <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground" aria-label={`${activeCount} active filter${activeCount === 1 ? "" : "s"}`}>{activeCount}</span> : null}
       </button>
+      {facets.flatMap((facet) => facet.values.map((value) => {
+        const option = facet.options.find((entry) => entry.value === value);
+        return (
+          <button key={`${facet.label}:${value}`} onClick={() => removePill(facet, value)} className="cursor-pointer inline-flex h-7 items-center gap-1 rounded-full border border-primary bg-primary/10 px-3 text-xs font-medium text-foreground hover:text-foreground" aria-label={`Remove ${facet.label} filter ${option?.label ?? value}`}>
+            <span>{option?.label ?? value}</span>
+            <span aria-hidden className="ml-1">×</span>
+          </button>
+        );
+      }))}
       {filterAttention ? <button onClick={() => onAttention(!filterAttention)} className="cursor-pointer inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-500 bg-amber-500/15 px-3 text-xs font-medium text-amber-700 dark:text-amber-300" aria-label="Remove attention filter" aria-pressed="true">
         <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
         Needs attention
@@ -2477,11 +2495,11 @@ function FiltersBar({ projects, filterProjectId, filterAttention, onProject, onA
       {open ? (
         <div role="dialog" aria-label="Filters" className="absolute left-0 top-10 z-20 w-[min(36rem,calc(100vw-2rem))] rounded-md border bg-card p-3 shadow-lg">
           <div className="grid gap-3 sm:grid-cols-2">
-            <FilterSelect label="Project" value={filterProjectId} onChange={onProject} options={projectOptions} />
-            {onIntent ? <FilterSelect label="Type" value={filterIntent ?? "all"} onChange={onIntent} options={FILTER_INTENT_OPTIONS} /> : null}
-            {onStatus ? <FilterSelect label="Status" value={filterStatus ?? "all"} onChange={onStatus} options={FILTER_STATUS_OPTIONS} /> : null}
-            {onStage ? <FilterSelect label="Stage" value={filterStage ?? "all"} onChange={onStage} options={stageOptionsList} /> : null}
-            {onActivity ? <FilterSelect label="Activity" value={filterActivity ?? "all"} onChange={onActivity} options={FILTER_ACTIVITY_OPTIONS} /> : null}
+            <FilterMultiSelect label="Project" values={filterProjectIds} options={projectOptions} onToggle={onProjectToggle} />
+            {onIntentToggle && filterIntents ? <FilterMultiSelect label="Type" values={filterIntents} options={FILTER_INTENT_OPTIONS} onToggle={onIntentToggle} /> : null}
+            {onStatusToggle && filterStatuses ? <FilterMultiSelect label="Status" values={filterStatuses} options={FILTER_STATUS_OPTIONS} onToggle={onStatusToggle} /> : null}
+            {onStageToggle && filterStages ? <FilterMultiSelect label="Stage" values={filterStages} options={stageOptionsList} onToggle={onStageToggle} /> : null}
+            {onActivityToggle && filterActivities ? <FilterMultiSelect label="Activity" values={filterActivities} options={FILTER_ACTIVITY_OPTIONS} onToggle={onActivityToggle} /> : null}
             <label className="flex items-center gap-2 self-end text-sm">
               <input type="checkbox" checked={filterAttention} onChange={(event) => onAttention(event.target.checked)} aria-label="Needs attention" />
               <span className="text-xs text-muted-foreground">Needs attention</span>
@@ -2497,15 +2515,21 @@ function FiltersBar({ projects, filterProjectId, filterAttention, onProject, onA
   );
 }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) {
-  const isAll = value === "all";
+function FilterMultiSelect({ label, values, options, onToggle }: { label: string; values: string[]; options: Array<{ value: string; label: string }>; onToggle: (value: string) => void }) {
+  const active = values.length > 0;
   return (
-    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className={`cursor-pointer rounded-md border px-2 py-1 text-sm ${isAll ? "border-border bg-background text-muted-foreground" : "border-primary bg-primary/10 text-foreground"}`}>
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
+    <fieldset className="min-w-0">
+      <legend className="text-xs text-muted-foreground">{label}{active ? ` (${values.length})` : ""}</legend>
+      <div className={`mt-1 max-h-56 space-y-0.5 overflow-auto rounded-md border px-2 py-1 ${active ? "border-primary bg-primary/10" : "border-border bg-background"}`}>
+        {options.length === 0 ? <p className="px-1 py-1 text-xs text-muted-foreground">No options.</p> : null}
+        {options.map((option) => (
+          <label key={option.value} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm text-foreground hover:bg-muted/60">
+            <input type="checkbox" checked={values.includes(option.value)} onChange={() => onToggle(option.value)} className="size-4 shrink-0 cursor-pointer accent-primary" />
+            <span className="truncate">{option.label}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

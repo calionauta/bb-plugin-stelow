@@ -74,7 +74,7 @@ assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores
 // nothing — clean stays clean. Project comes from the board filter, so
 // no second picker drifts out of sync with it.
 assert.match(app, /function FlowStrip\(\{ rpc, projectId, navigate \}/, "one strip component owns board flow");
-assert.match(app, /<FlowStrip rpc=\{rpc\} projectId=\{filterProjectId === "all" \? null : filterProjectId\} navigate=\{navigate\} \/>/, "the strip follows the board project filter");
+assert.match(app, /<FlowStrip rpc=\{rpc\} projectId=\{filterProjectIds\.length === 1 \? filterProjectIds\[0\] \?\? null : null\} navigate=\{navigate\} \/>/, "the strip follows a single picked project, all projects otherwise");
 assert.match(app, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
 assert.match(app, /\["all", "30d", "90d"\]|FLOW_WINDOWS/, "done windows are presets, not free dates");
 assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open through the shared navigator");
