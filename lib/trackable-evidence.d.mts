@@ -51,6 +51,7 @@ export interface EnrichClaim {
 }
 export declare function enrichEntriesForDetail<T extends { id?: string; tasks?: unknown }>(options?: {
   entries?: T[] | null;
+  defaultKind?: string | null;
   stateRelDir?: string | null;
   ownerId?: string | null;
   liveClaims?: EnrichClaim[] | null;

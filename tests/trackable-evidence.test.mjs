@@ -58,6 +58,15 @@ assert.deepEqual(
   ["NoRecord", "ContractMissing"],
   "recordless close advises twice, never blocks",
 );
+// The production bug this guards: taskless scopes registered without a
+// kind silently lost their contract lookup. defaultKind keeps them scopes.
+const taskless = [{ id: "scope-9", status: "done", tasks: [] }];
+const tasklessReg = buildRegistry(taskless, { defaultKind: "scope" });
+assert.deepEqual(
+  evidenceConditions({ entry: { ...taskless[0], kind: tasklessReg.get("scope-9").kind }, registry: tasklessReg }).map((condition) => condition.type),
+  ["NoRecord", "ContractMissing"],
+  "taskless done scopes keep both advisories",
+);
 assert.deepEqual(
   evidenceConditions({ entry: { ...done, status: "pending", record: { verified: false } }, registry: buildRegistry([done]) }),
   [],
@@ -100,13 +109,37 @@ assert.deepEqual(
   ["NoRecord", "ContractMissing", "OpenChildrenOnClose"],
   "done entries with open children name containment",
 );
-// Kinds without sidecars never warn for lacking one: a done task with no
-// record advises once (NoRecord), not twice.
+// Kind coverage matrix (executable gap analysis): every registry kind
+// through a done entry with no evidence. Only kinds whose contract binds
+// evidence advise — scope (record + contract) and acceptance-criterion
+// (parent contract); stages, tasks, gaps, questions, reviews, and
+// verifications carry their proof in dedicated flows (transitions, critique
+// loop, ask contracts, review gates, verification runs), so silence is
+// correct, not a gap.
+import { TRACKABLE_CONTRACTS } from "../lib/trackable-contracts.mjs";
+const KIND_CONDITIONS = {
+  stage: [],
+  scope: ["NoRecord", "ContractMissing"],
+  task: [],
+  "acceptance-criterion": ["ContractMissing"],
+  gap: [],
+  question: [],
+  review: [],
+  verification: [],
+};
 assert.deepEqual(
-  evidenceConditions({ entry: { id: "t1", kind: "task", name: "T", status: "done" }, registry: buildRegistry([]) }).map((condition) => condition.type),
-  ["NoRecord"],
-  "task close advises without a spurious contract warning",
+  TRACKABLE_CONTRACTS.map((contract) => contract.kind).sort(),
+  Object.keys(KIND_CONDITIONS).sort(),
+  "every contract kind is covered by the matrix",
 );
+for (const contract of TRACKABLE_CONTRACTS) {
+  const entry = { id: "x-1", kind: contract.kind, name: "X", status: "done", tasks: [] };
+  assert.deepEqual(
+    evidenceConditions({ entry, registry: buildRegistry([entry], { defaultKind: contract.kind }) }).map((condition) => condition.type),
+    KIND_CONDITIONS[contract.kind],
+    `${contract.kind} advises exactly where its evidence binds`,
+  );
+}
 
 // Composition is behaviorally tested with fakes (no SDK, no DB): contracts
 // attach, claims resolve, tasks inherit the same machine, and missing
@@ -147,6 +180,19 @@ const lapsed = await enrichEntriesForDetail({
 });
 assert.deepEqual(lapsed[0].conditions.map((condition) => condition.type), ["ClaimLapsed"], "lapsed leases name the stall");
 assert.deepEqual(await enrichEntriesForDetail({ entries: null }), [], "junk resolves empty");
+const tasklessEnriched = await enrichEntriesForDetail({
+  entries: [{ id: "scope-9", kind: undefined, name: "N", status: "done", tasks: [] }],
+  defaultKind: "scope",
+  stateRelDir: ".stelow/d/abc",
+  ownerId: "card1",
+  liveClaims: [],
+  isLapsed: () => false,
+  readContract: async (rel) => rel.endsWith("scopes/scope-9.json")
+    ? JSON.stringify({ acceptance_criteria: ["AC9"], verify_commands: [], target_files: [] })
+    : null,
+  nowMs: 1_000,
+});
+assert.deepEqual(tasklessEnriched[0].contract.acceptanceCriteria, ["AC9"], "defaultKind restores contract lookup for kindless scopes");
 // Wiring pins: the detail composes enrichment through one function (lib
 // owns the topology); the handler only injects SDK and DB.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");

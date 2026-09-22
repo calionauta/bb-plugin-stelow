@@ -14,6 +14,7 @@ export interface DanglingEdge {
 }
 export declare function buildRegistry(
   entries: Array<TrackableEntry | null> | null | undefined,
+  options?: { defaultKind?: string },
 ): Map<string, TrackableEntry>;
 export declare function edgesOf(entry: TrackableEntry | null | undefined): string[];
 export declare function childrenOf(

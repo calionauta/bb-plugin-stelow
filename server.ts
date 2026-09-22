@@ -5654,6 +5654,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           const at = Date.now();
           return await enrichEntriesForDetail({
             entries: scopes,
+            defaultKind: "scope",
             stateRelDir: stateRel,
             ownerId: card.id,
             liveClaims: live,
@@ -7930,7 +7931,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           if (cliCard?.kind === "build") {
             const synced = loadCardScopes(rootPath, cliCard.id);
             const spec = latestSpecTech(rootPath, cliCard.id)?.content ?? null;
-            const entryRegistry = buildRegistry(synced);
+            const entryRegistry = buildRegistry(synced, { defaultKind: "scope" });
             const pendingScopes = synced.filter((scope) => scope.status === "pending");
             const gate = advanceExecutionGates({
               kind: cliCard.kind, stage, specContent: spec, syncedCount: synced.length,

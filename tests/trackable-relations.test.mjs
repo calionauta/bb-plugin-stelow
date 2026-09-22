@@ -31,6 +31,8 @@ assert.deepEqual(childrenOf(registry.get("scope-2"), registry).map((task) => tas
 assert.deepEqual(buildRegistry(null).size, 0, "junk builds empty");
 assert.equal(buildRegistry([{ id: "a", status: "done" }, { id: "a", status: "pending" }]).get("a").status, "done", "duplicate ids keep first, never overwrite");
 assert.ok(buildRegistry([{ id: "scope-1", tasks: [{ id: "3.1", name: "x", status: "pending" }] }]).has("3.1"), "dotted task ids register");
+assert.equal(buildRegistry([{ id: "scope-1", status: "done", tasks: [] }], { defaultKind: "scope" }).get("scope-1").kind, "scope", "defaultKind names kindless entries");
+assert.equal(buildRegistry([{ id: "scope-1", status: "done", tasks: [] }]).get("scope-1").kind, "trackable", "no default keeps bare trackables");
 
 // Edges read blockedBy first, dependsOn second; unknown fields read empty.
 assert.deepEqual(edgesOf(registry.get("scope-3")), ["scope-2", "scope-9", "scope-1"], "edges union both fields");
