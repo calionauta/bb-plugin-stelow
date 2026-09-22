@@ -3001,9 +3001,10 @@ function BoardCard({ card, onOpen }: { card: CardItem; onOpen?: () => void }) {
 // Card gallery dialog: one expanded modal listing cards as the same tiles
 // the board shows — near-fullscreen (70vw), tiles at the board's own column
 // bounds (240–320px, the shared KANBAN_COLUMN_WIDTHS pair) and the board's
-// own natural height, filling left to right and wrapping down, vertical
-// scroll. Buckets and hill piles share it: callers pass title, description,
-// and cards; choosing a tile opens it through the same surface as the
+// own natural height, filling left to right from the top-left and wrapping
+// down, vertical scroll. Rows pin to the start (content-start) so a short
+// pile never centers itself in the tall modal. Buckets and hill piles share
+// it: callers pass title, description, and cards; choosing a tile opens it through the same surface as the
 // board. Empty renders one line, never a dead modal. A narrow modal
 // degrades to one bounded column instead of overflowing sideways.
 function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }: {
@@ -3025,7 +3026,7 @@ function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenC
         {cards.length === 0 ? (
           <p className="text-sm text-muted-foreground">{emptyText}</p>
         ) : (
-          <ul data-gallery-tiles className="grid items-start justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),320px))]">
+          <ul data-gallery-tiles className="grid content-start items-start justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),320px))]">
             {cards.map((card) => (
               <li key={card.id}>
                 <BoardCard card={card} onOpen={() => onOpenCard(card)} />
