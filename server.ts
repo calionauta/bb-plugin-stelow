@@ -8032,6 +8032,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         try {
           recordTrackableEvent(db, { cardId, kind: "scope", trackableId: "audit-gap", transition: "rework-created", actor: "host", evidence: `${created.length} rework scope(s): ${created.map((line) => line.split(":")[0]).join(", ")}` });
         } catch { /* trail never blocks */ }
+        // Rework scopes appear on the card immediately, not at the next
+        // lifecycle event.
+        bb.realtime.publish("card-state", { cardId });
+        bb.realtime.publish("board-changed", { cardId });
         logCardComment(cardId, "card", cardId, "agent", `Gap-to-scope decision: ${gapState.totals.fixed} fixed inline, ${gapState.totals.documented} documented for next cycle, ${gapState.escalated.length} escalated — ${created.length} new rework scope(s):\n${created.map((line) => `- ${line}`).join("\n")}\nThe card loops back: advance to execution, execute the rework scopes, re-run the critique, then run done again.`);
         return { exitCode: 0, stdout: `Decision recorded: ${gapState.totals.fixed} fixed, ${gapState.totals.documented} documented, ${gapState.escalated.length} escalated.\nCreated ${created.length} rework scope(s):\n${created.map((line) => `- ${line}`).join("\n")}\nLoop back now: bb stelow advance execution — execute the new scopes, re-run the critique, then run done again.` };
       }
@@ -8854,6 +8858,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
               return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: `${lines.join("\n")}${result.stderr ? `\n${result.stderr}` : ""}` };
             }
           }
+        }
+        // Acquire/release mutate the claim room the card reads: publish so
+        // claimed indicators flip without waiting for a lifecycle event.
+        // Check stays silent (read-only).
+        if ((op === "acquire" || op === "release") && result.code === 0 && cliCard) {
+          bb.realtime.publish("card-state", { cardId: cliCard.id });
+          bb.realtime.publish("board-changed", { cardId: cliCard.id });
         }
         return { exitCode: result.code ?? 1, stdout: result.stdout, stderr: result.stderr };
       }
