@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { KANBAN_COLUMN_WIDTHS, kanbanGridColumns } from "../lib/kanban-layout.mjs";
+import { KANBAN_COLUMN_WIDTHS, kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "../lib/kanban-layout.mjs";
 
 assert.deepEqual(KANBAN_COLUMN_WIDTHS, {
   expanded: "minmax(240px, 320px)",
@@ -65,5 +65,16 @@ assert.match(app, /className="h-\[85dvh\] overflow-y-auto sm:w-\[70vw\]/, "the g
 assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
 assert.match(app, /function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook without changing default navigation");
 assert.ok(app.includes("onOpen?.()"), "the hook is optional — every existing tile behaves exactly as before");
+assert.match(app, /const stageOptions = useMemo\(\(\) => \[\.\.\.STAGE_SEQUENCE\], \[\]\)/, "stage filter lists the canonical sequence, never just stages with cards");
+assert.match(app, /function FilterMultiSelect/, "facets share one checkbox list, never per-field selects");
+assert.match(app, /toggleFilterValue\(prev, value\)/, "pills and checkboxes toggle through one helper");
+assert.doesNotMatch(app, /function FilterSelect\(/, "the single-select is gone");
+assert.deepEqual(toggleFilterValue([], "a"), ["a"], "empty toggles on");
+assert.deepEqual(toggleFilterValue(["a", "b"], "a"), ["b"], "present toggles off, order kept");
+assert.deepEqual(toggleFilterValue(null, "a"), ["a"], "junk toggles on");
+assert.equal(matchesFilterValue([], "a"), true, "empty matches everything");
+assert.equal(matchesFilterValue(["a"], "a"), true, "membership matches");
+assert.equal(matchesFilterValue(["a"], "b"), false, "absence filters");
+assert.equal(matchesFilterValue(null, "a"), true, "junk matches everything");
 
 console.log("kanban layout test ok: bounded open and collapsed columns");

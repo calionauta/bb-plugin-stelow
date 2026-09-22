@@ -56,7 +56,7 @@ assert.match(server, /WHERE status = 'completed'/, "aggregates read finished car
 assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
 assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
 assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
-assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\), doingNow: z\.array\(z\.string\(\)\) \}\),/, "detail schema carries times and doing names as nullable");
+assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\), doingNow: z\.array\(z\.string\(\)\), verifiedHeadSha: z\.string\(\)\.nullable\(\) \}\),/, "detail schema carries times, doing names, and the verified HEAD as nullable");
 assert.match(app, /flow=\{\{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}\}/, "detail progress reads the card times");
 assert.match(app, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
 
@@ -74,7 +74,7 @@ assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores
 // nothing — clean stays clean. Project comes from the board filter, so
 // no second picker drifts out of sync with it.
 assert.match(app, /function FlowStrip\(\{ rpc, projectId, navigate \}/, "one strip component owns board flow");
-assert.match(app, /<FlowStrip rpc=\{rpc\} projectId=\{filterProjectId === "all" \? null : filterProjectId\} navigate=\{navigate\} \/>/, "the strip follows the board project filter");
+assert.match(app, /<FlowStrip rpc=\{rpc\} projectId=\{filterProjectIds\.length === 1 \? filterProjectIds\[0\] \?\? null : null\} navigate=\{navigate\} \/>/, "the strip follows a single picked project, all projects otherwise");
 assert.match(app, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
 assert.match(app, /\["all", "30d", "90d"\]|FLOW_WINDOWS/, "done windows are presets, not free dates");
 assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open through the shared navigator");

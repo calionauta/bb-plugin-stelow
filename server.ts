@@ -75,6 +75,7 @@ import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSpli
 import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
+import { formatBytes, threadIdFromWorktreePath, isStaleEnvironment } from "./lib/worktree-storage.mjs";
 import { parseScopeArgs } from "./lib/scope-command.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { ensureTrackableEventsTable, recordTrackableEvent } from "./lib/trackable-events.mjs";
@@ -478,7 +479,7 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()) }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()), verifiedHeadSha: z.string().nullable() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("scope"), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), record: z.object({ verified: z.boolean().optional(), filesCount: z.number().optional(), commandsCount: z.number().optional(), completedAt: z.string().optional(), startedAt: z.string().optional(), suggestedCommit: z.string().optional() }).optional(), startedAt: z.string().optional(), targetFiles: z.array(z.string()).optional(), contract: z.object({ acceptanceCriteria: z.array(z.string()), verifyCommands: z.array(z.string()), targetFiles: z.array(z.string()) }).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })), claimed: z.boolean().nullable(), tasks: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("task"), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })) })), })),
@@ -1963,6 +1964,17 @@ export default async function plugin(bb: BbPluginApi) {
     if (!doneEvent) return { leadMs: null, cycleMs: null, doneAt: null };
     const timeline = summarizeTimeline(events, { createdAt: card.created_at, endAt: doneEvent.entered_at });
     return { leadMs: timeline.leadMs, cycleMs: timeline.cycleMs, doneAt: doneEvent.entered_at };
+  }
+  // Anchor a completed card to the tree it was verified at: Done cards
+  // keep evolving checkouts honest by naming their own HEAD instead of
+  // implying current dirt is card leftover.
+  function verifiedHeadShaForCard(cardId: string): string | null {
+    try {
+      const row = db.prepare("SELECT head_sha FROM verification_runs WHERE card_id = ? ORDER BY created_at DESC LIMIT 1").get(cardId) as { head_sha: string } | undefined;
+      return typeof row?.head_sha === "string" && row.head_sha ? row.head_sha : null;
+    } catch {
+      return null;
+    }
   }
   function randomId(prefix: string): string { return `${prefix}_${Math.random().toString(36).slice(2, 10)}`; }
 
@@ -5809,7 +5821,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
         questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs, doingNow: doingNowNames(scopes) },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs, doingNow: doingNowNames(scopes), verifiedHeadSha: verifiedHeadShaForCard(card.id) },
         attachments,
         mentionedFiles,
         scopes: enrichedScopes,
@@ -7554,6 +7566,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       { name: "verify", summary: "Verify artifacts, or run the Build card's host-recorded tests", usage: "bb stelow verify [--card <card_id>] [--tests] [--json]" },
       { name: "gap-scopes", summary: "Convert escalated gaps into rework scopes (idempotent)", usage: "bb stelow gap-scopes [--card <card_id>]" },
       { name: "metrics", summary: "Lead/cycle time and gap rates per card, or fleet-wide without --card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
+      { name: "storage", summary: "Worktree disk usage attributed to cards, heaviest first (read-only)", usage: "bb stelow storage [--json] [--card <card_id>]" },
       { name: "manifest", summary: "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)", usage: "bb stelow manifest [--json] [--card <card_id>]" },
       { name: "export", summary: "Refresh docs/runs/<card> plus manifest.md (idempotent, also automatic at done); --check reports content drift and uncommitted state without writing", usage: "bb stelow export [--json] [--check] [--card <card_id>] [--dir <relpath>]" },
       { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
@@ -8127,6 +8140,68 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             ? `Rework scopes: ${payload.reworkScopes.map((scope) => `${scope.id} (${scope.status})`).join(", ")}`
             : "Rework scopes: none");
         }
+        return { exitCode: 0, stdout: lines.join("\n") };
+      }
+      if (argv[0] === "storage") {
+        // Worktree disk attribution (read-only): every worktree BB reports,
+        // sized with du, attributed to cards by thread, heaviest first.
+        // Unattributed rows still list — an invisible copy is the failure
+        // this exists to prevent. Per-path timeout; unreadable reads unknown.
+        const args = argv.slice(1);
+        const json = args.includes("--json");
+        let onlyCardId: string | undefined;
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === "--card") { onlyCardId = args[i + 1]; i++; continue; }
+          if (args[i] === "--json") continue;
+          return { exitCode: 2, stderr: "Usage: bb stelow storage [--json] [--card <card_id>]" };
+        }
+        const duBytes = (path: string): Promise<number | null> => new Promise((resolveDu) => {
+          execFile("du", ["-sb", path], { timeout: 8000 }, (error, stdout) => {
+            if (error) return resolveDu(null);
+            const match = /^\d+/.exec(String(stdout ?? ""));
+            resolveDu(match ? Number.parseInt(match[0], 10) : null);
+          });
+        });
+        const environments = await bb.sdk.environments.list().then((result) => Array.isArray(result) ? result : []).catch(() => []);
+        const rows: Array<{ environmentId: string; path: string | null; bytes: number | null; branch: string | null; status: string; stale: boolean; cardId: string | null; cardName: string | null; projectId: string | null; kind: string | null; cardStatus: string | null; stage: string | null }> = [];
+        for (const raw of environments) {
+          const env = (raw ?? {}) as { id?: unknown; path?: unknown; isWorktree?: unknown; branchName?: unknown; status?: unknown; lifecycle?: unknown };
+          if (typeof env.id !== "string" || env.isWorktree !== true) continue;
+          const path = typeof env.path === "string" && env.path ? env.path : null;
+          const bytes = path ? await duBytes(path).catch(() => null) : null;
+          const threadId = threadIdFromWorktreePath(path);
+          const owner = threadId ? (db.prepare("SELECT card_id FROM card_threads WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1").get(threadId) as { card_id: string } | undefined) : undefined;
+          const card = owner ? getCard(owner.card_id) : undefined;
+          if (onlyCardId && (!card || card.id !== onlyCardId)) continue;
+          rows.push({
+            environmentId: env.id,
+            path,
+            bytes,
+            branch: typeof env.branchName === "string" ? env.branchName : null,
+            status: typeof env.status === "string" ? env.status : "unknown",
+            stale: isStaleEnvironment(env),
+            cardId: card?.id ?? null,
+            cardName: card ? (card.display_name ?? card.name) : null,
+            projectId: card?.project_id ?? null,
+            kind: card?.kind ?? null,
+            cardStatus: card?.status ?? null,
+            stage: card?.stage ?? null,
+          });
+        }
+        rows.sort((a, b) => (b.bytes ?? -1) - (a.bytes ?? -1));
+        const total = rows.reduce((sum, row) => sum + (row.bytes ?? 0), 0);
+        const unknown = rows.filter((row) => row.bytes === null).length;
+        if (json) return { exitCode: 0, stdout: JSON.stringify({ totalBytes: total, worktrees: rows.length, unreadable: unknown, rows }, null, 2) };
+        if (rows.length === 0) return { exitCode: 0, stdout: "No worktrees reported." };
+        const lines = [
+          `Worktrees: ${rows.length} using ${formatBytes(total) ?? "unknown"}${unknown > 0 ? ` (${unknown} unreadable)` : ""}`,
+          ...rows.map((row) => {
+            const size = formatBytes(row.bytes) ?? "unknown size";
+            const who = row.cardId ? `${row.cardName} (${row.cardId}, ${row.kind}/${row.cardStatus}/${row.stage})` : "unattributed";
+            const stale = row.stale ? " · stale" : "";
+            return `- ${size} · ${who}${row.branch ? ` · ${row.branch}` : ""}${stale}\n  ${row.path ?? "no path"}`;
+          }),
+        ];
         return { exitCode: 0, stdout: lines.join("\n") };
       }
       if (argv[0] === "manifest") {
