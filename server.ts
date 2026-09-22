@@ -1647,8 +1647,6 @@ export default async function plugin(bb: BbPluginApi) {
   // Auto-continue budget for chatty workers (lib/auto-continue): consecutive
   // resumes without a stage advance, reset whenever the stage moves.
   ensureAutoContinueColumns(db);
-  ensureInboxResolvedReasonColumn(db);
-  ensureInboxSeverityColumns(db);
   // Card-split proposals (lib/split-proposal): one recorded, human-approved
   // proposal per card. The host executes it on `bb stelow split` — workers
   // never create cards, so there is no worker verb that takes card content.
@@ -1868,6 +1866,12 @@ export default async function plugin(bb: BbPluginApi) {
   ensureCardClaimsTables(db);
   const inboxColumns = db.prepare("PRAGMA table_info(inbox_events)").all() as Array<{ name: string }>;
   if (!inboxColumns.some((column) => column.name === "resolved_at")) db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
+  // Column migrations run after the table exists: on a fresh database the
+  // CREATE TABLE above already carries resolved_reason/resolved_at, and on
+  // legacy databases these add what the table predates. Calling them before
+  // the CREATE TABLE crashes fresh installs (no such table: inbox_events).
+  ensureInboxResolvedReasonColumn(db);
+  ensureInboxSeverityColumns(db);
   // One-time cleanup of a historical bug: research completions used to emit
   // two events (the generic transition + the research-specific one). The
   // generic rows are redundant noise for research cards — drop them. The
