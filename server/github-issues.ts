@@ -11,9 +11,12 @@
  */
 
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { execFile } from "node:child_process";
 import { z } from "zod";
 import { decideAutomationSpawn, describeParkedReason, resolveEffectiveEnvKind } from "../lib/github-automation-gate.mjs";
 import { acquireGithubImportClaim, completeGithubImport, liveImportedKeys, releaseGithubClaim } from "../lib/github-claims.mjs";
+import { buildCreateIssueArgs, issueBodyForCard, issueKey, parseCreateIssueResponse, resolveGhPath } from "../lib/github-issue-create.mjs";
+import { toMirrorRows } from "../lib/github-issue-comments.mjs";
 import { applyRulePrompt, findRelatedIssues, githubIntentFor, normalizeGithubAuthors, normalizeGithubLabels } from "../lib/github-intent.mjs";
 import { carriesMarker, markerFor } from "../lib/github-writeback.mjs";
 import { matchAutomationIssues, previewAutomationMatches } from "../lib/automation-rules.mjs";
@@ -115,6 +118,23 @@ export const githubRpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), closeIssue: z.boolean().default(false) }).strict(),
     output: z.object({ ok: z.boolean(), issueUrl: z.string().nullable(), error: z.string().nullable() }),
   },
+  createLinkedGithubIssue: {
+    experimental_description: "Create a GitHub issue for a card and link it",
+    input: z.object({ cardId: z.string(), repo: z.string().nullable().optional() }).strict(),
+    output: z.object({ ok: z.boolean(), url: z.string().nullable(), number: z.number().int().positive().nullable(), error: z.string().nullable() }),
+  },
+  getLinkedDiscussion: {
+    experimental_description: "Read-only mirror of the linked GitHub issue comments",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      linked: z.boolean(),
+      repo: z.string().nullable(),
+      number: z.number().int().positive().nullable(),
+      url: z.string().nullable(),
+      comments: z.array(z.object({ author: z.string(), body: z.string(), createdAt: z.number() })),
+      updatedAt: z.number().nullable(),
+    }),
+  },
 });
 
 export function runGithubMigrations(db: Db): void {
@@ -147,6 +167,20 @@ export function runGithubMigrations(db: Db): void {
     PRIMARY KEY (rule_id, source_key),
     FOREIGN KEY (rule_id) REFERENCES automation_rules(id) ON DELETE CASCADE
   );`);
+  // Read-only mirror of linked issue comments (getLinkedDiscussion): identity
+  // is the content fingerprint, so re-fetches converge via INSERT OR IGNORE.
+  // Self-created like every table here — no legacy state, nothing for the
+  // v1 cleanup.
+  db.exec(`CREATE TABLE IF NOT EXISTS github_issue_comments (
+    id TEXT PRIMARY KEY,
+    card_id TEXT NOT NULL,
+    author TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_github_issue_comments_card ON github_issue_comments(card_id, created_at);`);
   const automationRuleColumns = db.prepare("PRAGMA table_info(automation_rules)").all() as Array<{ name: string }>;
   if (!automationRuleColumns.some((column) => column.name === "labels")) db.exec("ALTER TABLE automation_rules ADD COLUMN labels TEXT");
   if (!automationRuleColumns.some((column) => column.name === "start_immediate")) db.exec("ALTER TABLE automation_rules ADD COLUMN start_immediate INTEGER NOT NULL DEFAULT 0");
@@ -177,6 +211,17 @@ interface GithubIssueRef {
   url: string;
   labels: string[];
   comments?: Array<{ author: string; body: string; createdAt: string }>;
+}
+
+// gh subprocess runner (taskboard precedent: same auth, no second token).
+// Stderr carries the refusal; an empty stderr falls back to the exit error.
+function execGh(path: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(path, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) reject(new Error(String(stderr ?? "").trim() || error.message));
+      else resolve(stdout);
+    });
+  });
 }
 
 export function createGithubAutomation(ctx: GithubAutomationDeps) {
@@ -744,7 +789,113 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, issueUrl, error: null };
     },
+
+    async createLinkedGithubIssue({ cardId, repo }: { cardId: string; repo?: string | null }) {
+      requireEnabled();
+      const card = db.prepare("SELECT id, display_name, name, prompt, project_id, status FROM cards WHERE id = ?").get(cardId) as
+        { id: string; display_name: string | null; name: string; prompt: string; project_id: string; status: string } | undefined;
+      if (!card) return { ok: false, url: null, number: null, error: "Card not found." };
+      if (ctx.cards.normalizeStatus(card.status) === "archived") return { ok: false, url: null, number: null, error: "This card is archived." };
+      // Idempotent: a linked card returns its link instead of creating twice.
+      const existing = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
+      if (existing) return { ok: true, url: `https://github.com/${existing.repo}/issues/${existing.number}`, number: existing.number, error: null };
+      const status = await githubStatusResolved().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] as Array<{ repo: string; projectId: string | null }> }));
+      if (!status.ghOk) return { ok: false, url: null, number: null, error: "GitHub is not connected — set up GitHub auth first." };
+      const mapped = status.repos.filter((entry) => entry.projectId === card.project_id).map((entry) => entry.repo);
+      let target = repo ?? null;
+      if (!target) {
+        if (mapped.length === 0) return { ok: false, url: null, number: null, error: "No GitHub repository is mapped to this project." };
+        if (mapped.length > 1) return { ok: false, url: null, number: null, error: "Several repositories are mapped to this project — pick one." };
+        target = mapped[0] as string;
+      } else if (!mapped.includes(target)) {
+        return { ok: false, url: null, number: null, error: `Repository ${target} is not mapped to this project.` };
+      }
+      const title = (card.display_name ?? card.name ?? "").trim() || `Card ${card.id}`;
+      let ghPath: string;
+      try {
+        ghPath = await resolveGhPath(async (candidate) => {
+          await execGh(candidate, ["--version"]);
+          return true;
+        });
+      } catch {
+        return { ok: false, url: null, number: null, error: "GitHub CLI (gh) is not available on the host." };
+      }
+      let raw: string;
+      try {
+        raw = await execGh(ghPath, buildCreateIssueArgs({ repo: target, title, body: issueBodyForCard({ prompt: card.prompt, cardId }) }));
+      } catch (error) {
+        return { ok: false, url: null, number: null, error: error instanceof Error && error.message ? `GitHub refused the issue: ${error.message}` : "GitHub refused the issue." };
+      }
+      let parsed: { number: number; url: string };
+      try {
+        parsed = parseCreateIssueResponse(raw);
+      } catch (error) {
+        return { ok: false, url: null, number: null, error: error instanceof Error ? error.message : "GitHub may have created the issue but the response was unreadable." };
+      }
+      db.prepare("INSERT OR IGNORE INTO github_imports (issue_key, repo, number, label, card_id, imported_at) VALUES (?,?,?,?,?,?)")
+        .run(issueKey(target, parsed.number), target, parsed.number, "", cardId, now());
+      return { ok: true, url: parsed.url, number: parsed.number, error: null };
+    },
+
+    async getLinkedDiscussion({ cardId }: { cardId: string }) {
+      requireEnabled();
+      const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
+      if (!link) return { linked: false, repo: null, number: null, url: null, comments: [], updatedAt: null };
+      const url = `https://github.com/${link.repo}/issues/${link.number}`;
+      const readStored = () => {
+        const rows = db.prepare("SELECT author, body, created_at, fetched_at FROM github_issue_comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as
+          Array<{ author: string; body: string; created_at: number; fetched_at: number }>;
+        return {
+          linked: true, repo: link.repo, number: link.number, url,
+          comments: rows.map((row) => ({ author: row.author, body: row.body, createdAt: row.created_at })),
+          updatedAt: rows.length > 0 ? Math.max(...rows.map((row) => row.fetched_at)) : null,
+        };
+      };
+      // Terminal cards serve the frozen snapshot: their record is history.
+      const card = db.prepare("SELECT status FROM cards WHERE id = ?").get(cardId) as { status: string } | undefined;
+      const terminal = card ? ["completed", "archived"].includes(ctx.cards.normalizeStatus(card.status)) : false;
+      if (!terminal) {
+        try {
+          const issue = await g.getIssue({ repo: link.repo, number: link.number });
+          const rows = toMirrorRows(cardId, issue.issue.comments, now());
+          const insert = db.prepare("INSERT OR IGNORE INTO github_issue_comments (id, card_id, author, body, created_at, fetched_at) VALUES (?,?,?,?,?,?)");
+          let inserted = 0;
+          for (const row of rows) inserted += insert.run(row.id, row.card_id, row.author, row.body, row.created_at, row.fetched_at).changes;
+          if (inserted > 0) bb.realtime.publish("github-discussion", { cardId });
+        } catch (error) {
+          bb.log.warn(`linked discussion refresh failed for ${cardId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      return readStored();
+    },
   };
 
-  return { runAutomationRules, handlers, githubStatus: githubStatusResolved };
+  // Poll vehicle for the discussion mirror (own 5-minute schedule in
+  // server.ts): linked, non-terminal cards only. Terminal cards keep their
+  // frozen snapshot; viewing any card refreshes on open regardless.
+  async function refreshLinkedDiscussions(): Promise<void> {
+    if (!githubIssuesEnabled()) return;
+    const links = db.prepare(
+      "SELECT gi.repo AS repo, gi.number AS number, gi.card_id AS cardId FROM github_imports gi JOIN cards c ON c.id = gi.card_id WHERE gi.card_id IS NOT NULL AND c.status NOT IN ('completed','archived')",
+    ).all() as Array<{ repo: string; number: number; cardId: string }>;
+    for (const link of links) {
+      try {
+        const issue = await g.getIssue({ repo: link.repo, number: link.number });
+        const rows = toMirrorRows(link.cardId, issue.issue.comments, now());
+        const insert = db.prepare("INSERT OR IGNORE INTO github_issue_comments (id, card_id, author, body, created_at, fetched_at) VALUES (?,?,?,?,?,?)");
+        let inserted = 0;
+        for (const row of rows) inserted += insert.run(row.id, row.card_id, row.author, row.body, row.created_at, row.fetched_at).changes;
+        if (inserted > 0) bb.realtime.publish("github-discussion", { cardId: link.cardId });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const warnKey = `mirror:${link.repo}#${link.number}:${message}`;
+        if (!automationWarned.has(warnKey)) {
+          automationWarned.add(warnKey);
+          bb.log.warn(`linked discussion mirror skipped ${link.repo}#${link.number}: ${message}`);
+        }
+      }
+    }
+  }
+
+  return { runAutomationRules, refreshLinkedDiscussions, handlers, githubStatus: githubStatusResolved };
 }

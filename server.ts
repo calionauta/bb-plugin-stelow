@@ -5135,6 +5135,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // The scheduler lives with the feature it drives: disabling the module
   // (STELOW_GITHUB_ISSUES=0) stops the ticks along with the RPCs.
   bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => github.runAutomationRules());
+  bb.background.schedule("stelow-github-discussion-mirror", "*/5 * * * *", () => { void github.refreshLinkedDiscussions(); });
 
   bb.rpc.register(rpcContract, {
     ...github.handlers,

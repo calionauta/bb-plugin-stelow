@@ -649,6 +649,11 @@ function BoardPanel({ active }: { active: boolean }) {
   // Deferred start: unchecked parks the card in Bucket with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
+  // Optional GitHub issue at card birth (Build only): opt-in and off by
+  // default — nothing external happens without a gesture. The card is
+  // always created first; the issue links back to it.
+  const [createGithubIssue, setCreateGithubIssue] = useState(false);
+  const [createGithubRepo, setCreateGithubRepo] = useState<string | null>(null);
   // Workflow preferences stay visible under the composer: a collapsed
   // Settings hides consequential choices (planning depth, review gates)
   // the user would otherwise never discover. The dialog frame keeps a
@@ -784,6 +789,17 @@ function BoardPanel({ active }: { active: boolean }) {
       setCreateBuildOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success(startImmediately ? "Card started in Triage. Stelow will triage it." : "Card parked in Bucket. Start it from the card when ready.");
+      // Best-effort trailer: the card stands whatever GitHub says. Never
+      // throws — a failure toasts and the card keeps no phantom link.
+      if (createGithubIssue) {
+        try {
+          const link = await rpc.call("createLinkedGithubIssue", { cardId: result.cardId, repo: createGithubRepo });
+          if (link.ok && link.url) toast.success(`GitHub issue #${link.number} created and linked.`);
+          else toast.error(link.error ?? "GitHub issue creation failed — the card stands without a link.");
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "GitHub issue creation failed — the card stands without a link.");
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to start the card.";
       setCreateBuildError(message);
@@ -837,7 +853,7 @@ function BoardPanel({ active }: { active: boolean }) {
             </div>
           ) : null}
 
-          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) { setStartImmediately(true); setCreateBuildError(null); } }}>
+          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) { setStartImmediately(true); setCreateGithubIssue(false); setCreateGithubRepo(null); setCreateBuildError(null); } }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new issue</DialogTitle>
@@ -862,6 +878,15 @@ function BoardPanel({ active }: { active: boolean }) {
                   onConfigure={() => setBoardPresetsOpen(true)}
                 />
                 <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
+                {((githubStatus?.repos ?? []).filter((entry) => entry.projectId === activeProjectId).length > 0) ? (
+                  <GithubCreateRow
+                    repos={(githubStatus?.repos ?? []).filter((entry) => entry.projectId === activeProjectId).map((entry) => entry.repo)}
+                    checked={createGithubIssue}
+                    onCheckedChange={setCreateGithubIssue}
+                    repo={createGithubRepo}
+                    onRepoChange={setCreateGithubRepo}
+                  />
+                ) : null}
                 {bucketGallery.bucketGallery}
                 <WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={setAppetite} onReviewGatesChange={setReviewGates} groupNamePrefix="create" />
               </div>
@@ -2994,6 +3019,34 @@ function BoardCard({ card, onOpen }: { card: CardItem; onOpen?: () => void }) {
         <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span>
       </div> : null}
       <CardMetaRows card={card} />
+    </div>
+  );
+}
+
+// Optional GitHub issue at card birth (Build only): one checkbox plus a
+// repo picker when several repos map to the project. Off by default, and
+// the section renders only when at least one repo is mapped.
+function GithubCreateRow({ repos, checked, onCheckedChange, repo, onRepoChange }: {
+  repos: string[];
+  checked: boolean;
+  onCheckedChange: (next: boolean) => void;
+  repo: string | null;
+  onRepoChange: (next: string | null) => void;
+}) {
+  const selected = repo ?? repos[0] ?? null;
+  return (
+    <div className="space-y-1">
+      <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+        <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} className="size-4 accent-primary" />
+        Also create issue{repos.length === 1 ? ` in ${repos[0]}` : " in the project repo"}
+      </label>
+      {repos.length > 1 ? (
+        <select value={selected ?? ""} onChange={(event) => onRepoChange(event.target.value || null)} className="h-10 rounded-md border bg-background px-2 text-sm" aria-label="GitHub repository for the new issue">
+          <option value="">Pick a repository</option>
+          {repos.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      ) : null}
+      <p className="text-xs text-muted-foreground">Card is created first; on failure the card stands and the error names the cause.</p>
     </div>
   );
 }
@@ -5775,7 +5828,7 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
   ].filter((part): part is string => part !== null) : [];
   return (
     <details className={`group${separated ? " mt-3 border-t pt-2" : ""}`}>
-      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : null}</summary>
+      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : history.length > 0 ? <span title="No worker reported token usage — providers decide what to report, and unknown is never shown as zero."> · tokens unknown</span> : null}</summary>
       {legs.length > 0 ? <p className="mt-1 text-[11px] text-muted-foreground" title="Provider-reported split across all workers; legs without reports are omitted, never zeroed.">{legs.join(" · ")}</p> : null}
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (
@@ -5813,6 +5866,38 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
   );
 }
 
+type LinkedDiscussionSnapshot = {
+  linked: boolean;
+  repo: string | null;
+  number: number | null;
+  url: string | null;
+  comments: Array<{ author: string; body: string; createdAt: number }>;
+  updatedAt: number | null;
+};
+// Read-only mirror of the linked GitHub issue thread. A separate stream
+// from the Conversation by design: external text renders badged and never
+// routes to the worker. Renders nothing when the card has no linked issue.
+function LinkedDiscussion({ discussion }: { discussion: LinkedDiscussionSnapshot | null }) {
+  if (!discussion || !discussion.linked) return null;
+  return (
+    <CardDisclosure title="Linked discussion" hint={discussion.comments.length ? `${discussion.comments.length} · mirror` : "mirror"}>
+      <div className="space-y-2">
+        {discussion.url ? <div><UrlLink href={discussion.url} className="text-xs font-medium text-primary underline-offset-4 hover:underline">Open on GitHub ↗</UrlLink></div> : null}
+        {discussion.comments.length ? discussion.comments.map((entry: { author: string; body: string; createdAt: number }, index: number) => (
+          <div key={`${entry.author}-${entry.createdAt}-${index}`} className="rounded-lg border border-border bg-muted/30 p-2.5">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{entry.author || "Someone"}</span>
+              <span title={new Date(entry.createdAt).toLocaleString()}>{new Date(entry.createdAt).toLocaleString()}</span>
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px]">mirror</span>
+            </div>
+            <div className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></div>
+          </div>
+        )) : <p className="text-xs text-muted-foreground">No comments yet.</p>}
+        <p className="text-[11px] text-muted-foreground">Read-only mirror of the issue thread — external text is never fed to workers.</p>
+      </div>
+    </CardDisclosure>
+  );
+}
 function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen = false, threadId }: {
   comments: CardDetailResponse["comments"]; draft: string; onDraftChange: (value: string) => void; onSend: () => void; defaultOpen?: boolean; threadId?: string | null;
 }) {
@@ -6737,6 +6822,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
   }, [cardId, inboxEventId, rpc]);
 
+  const [discussion, setDiscussion] = useState<LinkedDiscussionSnapshot | null>(null);
+  const loadDiscussion = useCallback(async () => {
+    try { setDiscussion(await rpc.call("getLinkedDiscussion", { cardId })); }
+    catch { setDiscussion(null); }
+  }, [cardId, rpc]);
   const loadWorkspaceRecovery = useCallback(async () => {
     if (card?.workspaceKind !== "exploratory") { setWorkspaceRecovery(null); return; }
     setWorkspaceRecoveryLoading(true);
@@ -6747,6 +6837,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
   useEffect(() => { void load(); }, [load, detailRefresh]);
   useEffect(() => { void loadWorkspaceRecovery(); }, [loadWorkspaceRecovery]);
+  useEffect(() => { void loadDiscussion(); }, [loadDiscussion]);
+  useDebouncedRealtime(["github-discussion"], () => { void loadDiscussion(); });
   useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
   // Viewing a completed card marks its completion seen (read, never
   // resolved): the badge drops, Recent updates keeps the entry. Fires on
@@ -7626,6 +7718,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
             {/* Conversation (history + composer) */}
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
+            <LinkedDiscussion discussion={discussion} />
 
           </>
         ) : null}

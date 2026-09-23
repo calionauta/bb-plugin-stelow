@@ -56,7 +56,7 @@
     "test:question-batch": "node tests/question-batch.test.mjs",
     "test:question-presence": "node tests/question-presence.test.mjs",
     "test:question-presentation": "node tests/split-question-presentation.test.mjs && node tests/expired-question-answers.test.mjs",
-    "test:github-lists": "node tests/github-lists.test.mjs",
+    "test:github-lists": "node tests/github-lists.test.mjs && node tests/github-issue-create.test.mjs && node tests/github-issue-comments.test.mjs",
     "test:automation": "node tests/automation-rules.test.mjs",
     "test:promote": "node tests/promote-card.test.mjs",
     "test:research": "node tests/research-index.test.mjs && node tests/research-opportunity-summary.test.mjs && node tests/research-ready.test.mjs && node tests/research-evidence.test.mjs && node tests/research-strategies.test.mjs && node tests/research-rounds.test.mjs && node tests/research-artifacts.test.mjs && node tests/tracks.test.mjs && node tests/stage-skips.test.mjs && node tests/card-move.test.mjs && node tests/artifact-groups.test.mjs",

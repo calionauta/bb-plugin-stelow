@@ -90,6 +90,23 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   comment carries a hidden card marker that is verified back on the issue
   before counting as posted, so retries never double-post and a send
   without a visible comment reports itself instead of succeeding silently.
+- **GitHub issue creation at card birth** (`createLinkedGithubIssue`). The
+  Build creation dialog offers one opt-in checkbox (off by default) when the
+  project has a mapped repo: the card is always created first, then `gh`
+  creates the issue (same auth, no second token — taskboard's pattern) with
+  a hidden card marker in the body, and the link lands in `github_imports`.
+  Title and body only; a failed creation keeps the card and names the cause,
+  and an uncertain write (response lost) reports itself instead of inviting
+  a double-creating retry. Already-linked cards return their link.
+- **Linked discussion mirror** (`getLinkedDiscussion`). Cards linked to an
+  issue render a read-only Linked discussion section: issue comments as a
+  separate badged stream that never renders as agent chatter and never
+  routes to the worker (external text is context, never instructions).
+  Identity is a content fingerprint (the plugin type carries no comment
+  ids), storage dedupes on it, edits/deletes upstream are not tracked.
+  Fetched live on card open plus a 5-minute mirror poll for linked,
+  non-terminal cards (terminal cards serve their frozen snapshot); new rows
+  publish `github-discussion` so open details refresh.
 - **Manual Git changes from Done** (`publicationStatus`, `CardDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
@@ -638,9 +655,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `stelow.json` so history survives plugin DB loss.
 - **Provider token usage.** Each worker-history row shows BB's latest
   provider-reported token total when available. Missing provider data stays
-  hidden rather than presenting a misleading zero or an estimate. The
+  hidden per row rather than presenting a misleading zero or an estimate. The
   history summary adds one card total across all workers and children
-  (`totalTokenUsage`, unknowns skipped, all-unknown hidden). Each entry
+  (`totalTokenUsage`, unknowns skipped); when every worker is unknown the
+  summary reads `tokens unknown` so the feature stays discoverable instead
+  of silently absent. Each entry
   also carries its provider split (input, output, cached, reasoning via
   `tokenBreakdownFromEvents`, summed per card with `sumTokenBreakdowns`);
   the history shows reported legs labeled (`in · out · cached ·

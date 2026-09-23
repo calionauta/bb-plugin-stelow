@@ -69,9 +69,22 @@ coordination on shared checkouts → 10/tick cap.
 
 ## Operations
 
-- Scheduler: every 5 minutes (`stelow-automation-rules`). Persistent
-  config states (repo with no BB project yet) warn once per daemon
-  lifetime and self-heal.
+- Scheduler: every 5 minutes (`stelow-automation-rules` for watchers,
+  `stelow-github-discussion-mirror` for linked-issue comment mirrors).
+  Persistent config states (repo with no BB project yet) warn once per
+  daemon lifetime and self-heal.
+- Card-birth issue creation (`createLinkedGithubIssue`): opt-in checkbox in
+  the Build creation dialog, off by default. The card is always created
+  first; `gh` then posts title plus prompt with a hidden card marker, and
+  the link lands in `github_imports`. Title and body only; a failed creation
+  keeps the card, and an unconfirmed write reports uncertain instead of
+  inviting a double-creating retry.
+- Linked discussion mirror (`getLinkedDiscussion`): read-only, append-only
+  snapshot of the linked issue's comments (identity is a content
+  fingerprint; edits/deletes upstream are not tracked). Fetched live on
+  card open plus the mirror schedule for linked, non-terminal cards;
+  terminal cards serve their frozen snapshot. Mirrored text renders badged
+  and never routes to workers.
 - Kill switch: `STELOW_GITHUB_ISSUES=0` on the host disables the
   scheduler, every RPC (each refusal names the variable), and the panel
   button. No migration, no UI change.
@@ -83,8 +96,8 @@ coordination on shared checkouts → 10/tick cap.
 ## Module map (for maintainers and agents)
 
 - `server/github-issues.ts` — contract fragment, migrations, matcher
-  wiring, scheduler, all 8 RPCs. `server.ts` only spreads the contract
-  and handlers, calls one migration function, and schedules one line.
+  wiring, scheduler, all 10 RPCs. `server.ts` only spreads the contract
+  and handlers, calls one migration function, and schedules two lines.
   The seam is an explicit deps object (`db`, `bb`, clock, card ops).
 - `components/github-issues-dialog.tsx` — the whole dialog (both tabs).
   `BoardPanel` keeps the button and the open flag.
@@ -95,7 +108,8 @@ coordination on shared checkouts → 10/tick cap.
   environment), `lib/tracks.mjs` (`describeCardEnvironment`).
 - Tables: `github_imports` (dedupe + claims + write-back stamp),
   `automation_rules`, `automation_rule_fires` (audit + outcome),
-  `automation_rule_seen` (backlog guard).
+  `automation_rule_seen` (backlog guard), `github_issue_comments`
+  (discussion mirror, fingerprint primary key).
 
 ## Background
 
