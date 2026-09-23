@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { gapSummaryPresentation, qualitySealPresentation, summarizeScopeProgress } from "../lib/build-progress-presentation.mjs";
 
 const scopes = [
@@ -15,6 +18,7 @@ assert.deepEqual(progress.scopes, { done: 1, total: 7, percent: 14 }, "only term
 assert.deepEqual(progress.tasks, { done: 1, total: 2, percent: 50 }, "task completion uses the same terminal-good contract");
 assert.deepEqual(progress.blockedNames, ["Blocked", "Failed", "Escalated"], "all actionable blocked states surface without suppressing doing work");
 assert.deepEqual(progress.doingNames, ["Doing"], "a task inside a doing scope is not listed twice");
+assert.equal(progress.doingCount, progress.doingNames.length, "the overflow count matches visible doing work after nested tasks are deduplicated");
 assert.equal(progress.allComplete, false, "skipped and pending scopes do not claim completion");
 assert.deepEqual(summarizeScopeProgress([]), {
   scopes: { done: 0, total: 0, percent: 0 },
@@ -41,8 +45,8 @@ assert.deepEqual(
 assert.equal(gapSummaryPresentation({ matched: false, escalated: 0, unscoped: 0, pendingScopes: 0, done: false }), null, "unmatched gaps stay absent before the first critique");
 
 assert.deepEqual(
-  ["verified", "hypothesis-only", "needs-revision", "unknown"].map((status) => qualitySealPresentation({ status }, "file.ts").text),
-  ["verified", "hypothesis", "needs work", "unverified"],
+  ["verified", "hypothesis-only", "needs-revision", "load-failed", "unknown"].map((status) => qualitySealPresentation({ status }, "file.ts").text),
+  ["verified", "hypothesis", "needs work", "unavailable", "unverified"],
   "quality keeps loading distinct from every live and unknown verdict",
 );
 assert.equal(qualitySealPresentation(null, "file.ts").text, "quality…", "quality starts in an honest loading state");
@@ -50,6 +54,17 @@ assert.equal(
   qualitySealPresentation({ status: "needs-revision", failures: ["No test", "No evidence"], label: "Seal" }, "file.ts").title,
   "Seal: No test; No evidence",
   "quality failures remain inspectable in the control title",
+);
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const qualityDirective = readFileSync(
+  join(root, "components/detail/stelow-quality-directive.tsx"),
+  "utf8",
+);
+assert.match(
+  qualityDirective,
+  /\.catch\(\(\) => \{[\s\S]*?setSeal\(\{ status: "load-failed" \}\)/,
+  "a failed quality request leaves loading and enters the unavailable state",
 );
 
 console.log("build progress presentation test ok: progress, rework, and quality states");

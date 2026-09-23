@@ -3,7 +3,11 @@ import { useRpc, type PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app
 import { qualitySealPresentation } from "../../lib/build-progress-presentation.mjs";
 import type { rpcContract } from "../../server";
 
-type QualitySeal = { status: string; failures: string[]; label: string | null };
+type QualitySeal = {
+  status: string;
+  failures?: string[];
+  label?: string | null;
+};
 
 export function StelowQualityDirective({ attributes, message, openWorkspaceFile }: PluginMessageDirectiveProps) {
   const rpc = useRpc<typeof rpcContract>();
@@ -13,8 +17,12 @@ export function StelowQualityDirective({ attributes, message, openWorkspaceFile 
     if (!path) return;
     let cancelled = false;
     void rpc.call("qualitySeal", { threadId: message.threadId, path })
-      .then((result) => { if (!cancelled) setSeal(result); })
-      .catch(() => undefined);
+      .then((result) => {
+        if (!cancelled) setSeal(result);
+      })
+      .catch(() => {
+        if (!cancelled) setSeal({ status: "load-failed" });
+      });
     return () => { cancelled = true; };
   }, [rpc, message.threadId, path]);
   if (!path) return null;

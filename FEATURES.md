@@ -1121,7 +1121,8 @@ investigation that feeds the build board.*
   per produced file; the chip revalidates live and renders verified /
   hypothesis / needs-work / unverified with failure details on hover and
   click-to-open. Seals state checked provenance, never truth; unknown
-  shapes and unreadable files read as unverified.
+  shapes and unreadable files read as unverified. A failed live revalidation
+  reports `quality unavailable` instead of waiting forever.
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as build. Stage advance and intent editing refuse on
