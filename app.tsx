@@ -50,7 +50,6 @@ import { checkoutNoteFor, WorkerSection } from "./components/worker-history/work
 import { ArtifactGroups, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
 import { CardDetailHeader } from "./components/manage/card-detail-header";
 import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
-import { useDetailRecoveryActions } from "./components/manage/detail-recovery-actions";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { InboxEventBanner, shouldShowInboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import { InputFiles } from "./components/detail/input-files";
@@ -60,6 +59,7 @@ import { DetailHeroActions } from "./components/detail/detail-hero-actions";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
 import { ResearchDetailBody } from "./components/detail/research-detail-body";
+import { ExploreDetailBody } from "./components/detail/explore-detail-body";
 import { PreviewSection } from "./components/detail/preview-section";
 import { ArtifactViewerDialog } from "./components/detail/artifact-viewer-dialog";
 import type { rpcContract } from "./server";
@@ -209,7 +209,6 @@ type Project = ProjectsResponse["projects"][number];
 type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
 type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
-type CardComment = CardDetailResponse["comments"][number];
 
 function statusGlyph(status: string) {
   if (isDoneStatus(status)) return "✓";
@@ -3503,46 +3502,6 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
 // Shared worker block: preset readout, state-appropriate recovery, and worker
 // history. Card lifecycle actions deliberately live in the card header.
 
-// Explore quality: one file, one seal, resolved live through qualitySeal.
-function ExploreQualitySection({ cardId, filePath, repairing, onRepair }: {
-  cardId: string;
-  filePath: string | null;
-  repairing: boolean;
-  onRepair: (lines: string[]) => void;
-}) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [seal, setSeal] = useState<{ status: string; failures: string[]; label: string | null } | null>(null);
-  useEffect(() => {
-    if (!filePath) return;
-    let cancelled = false;
-    void rpc.call("qualitySeal", { cardId, path: filePath }).then((result) => { if (!cancelled) setSeal(result); }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [rpc, cardId, filePath]);
-  if (!filePath) return null;
-  const bad = (seal?.failures ?? []).length > 0;
-  const lines = (seal?.failures ?? []).map((failure) => `${seal?.label ?? filePath}: ${failure} — rewrite it, then run verify again.`);
-  return (
-    <section aria-label="Artifact quality" className="rounded-lg border p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</h3>
-      {!seal ? <p className="pt-1 text-xs text-muted-foreground">Checking…</p> : null}
-      {seal && !bad ? <p className="pt-1 text-xs text-muted-foreground">Stage deliverable meets its contract.</p> : null}
-      {seal && bad ? (
-        <div className="space-y-2 pt-2">
-          <ul className="space-y-1">
-            {seal.failures.map((failure, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs">
-                <span aria-hidden className="mt-1.5 size-2 shrink-0 rounded-full bg-amber-500" />
-                <span>{failure}</span>
-              </li>
-            ))}
-          </ul>
-          <Button size="sm" variant="outline" disabled={repairing} onClick={() => onRepair(lines)} title="Post the failure list as a comment and resume the worker to fix it.">{repairing ? "Repairing…" : "Repair this artifact"}</Button>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 function fmtGapMs(ms: number | null): string | null {
   if (ms === null || !Number.isFinite(ms) || ms < 0) return null;
   const minutes = Math.floor(ms / 60000);
@@ -3600,169 +3559,6 @@ function BuildGapsSection({ cardId }: { cardId: string }) {
       ) : null}
       {summary.escalated > 0 && !blocked ? <p className="pt-2 text-xs text-muted-foreground">Every escalation links a finished rework scope.</p> : null}
     </section>
-  );
-}
-
-function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate, card, detail, onChanged }: {
-  cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
-  inboxEvent: InboxEventSnapshot | null; card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
-}) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [stages, setStages] = useState<ResearchStrategyOption[]>([]);
-  const { comment, setComment, submitComment } = useDetailComment({ cardId, onChanged });
-  const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
-  const [restarting, setRestarting] = useState(false);
-  const { retrying, doRetry, repairing, doQualityRepair } = useDetailRecoveryActions({ cardId, trackNoun: "exploration", onChanged });
-  const [starting, setStarting] = useState(false);
-  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
-  const inboxEventRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    rpc.call("stageCatalog", {}).then((result) => setStages(result.stages)).catch(() => {});
-  }, [rpc]);
-  // Viewing a completed card marks its completion seen (read, never
-  // resolved): the badge drops, Recent updates keeps the entry.
-  useEffect(() => {
-    if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
-  }, [cardId, card?.status, rpc]);
-  useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
-
-  const stageLabel = card?.exploreStage ? (stages.find((entry) => entry.id === card.exploreStage)?.label ?? card.exploreStage) : null;
-
-  async function doStart() {
-    setStarting(true);
-    try {
-      const result = await rpc.call("startWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Start failed.");
-      else toast.success("Worker started — the exploration is now Doing.");
-      onChanged();
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  async function doRestartWorker() {
-    setRestartWorkerOpen(false);
-    setRestarting(true);
-    try {
-      const result = await rpc.call("restartWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Restart failed.");
-      else toast.success("Worker restarted — continuing the exploration.");
-      onChanged();
-    } finally {
-      setRestarting(false);
-    }
-  }
-
-  const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
-  const hero = card ? heroFor(card, detail) : null;
-  const heroStyle = hero ? HERO_STYLE[hero.kind] : null;
-  const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
-
-  return (
-    <div className={`stelow-live-surface stelow-detail-surface flex h-full flex-col ${card ? liveBorderClass(card) : ""}`}>
-      <div className="flex-1 overflow-auto p-4">
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-        {card ? (
-          <>
-            <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
-            {hero && heroStyle ? (
-              <section aria-label="Exploration status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
-                <div className="flex items-start gap-2.5">
-                  <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${heroStyle.dot}`} />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-                    <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? null} tagLabel={stageLabel} tagTitle="Technique — the focused approach this exploration runs." kind="explore" />
-                      {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
-                    </div>
-                    <DetailHeroActions
-                      card={card}
-                      heroKind={hero.kind}
-                      pending={Boolean(pendingFirst)}
-                      preset={{ stale: presetStale, providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }}
-                      state={{ starting, retrying, restarting }}
-                      continuation="continuing the exploration"
-                      onStart={doStart}
-                      onRetry={doRetry}
-                      onRestart={() => setRestartWorkerOpen(true)}
-                    />
-                  </div>
-                </div>
-                {pendingFirst ? (
-                  <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={() => onChanged()} />
-                  </div>
-                ) : null}
-                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => onChanged()} /></div> : null}
-              </section>
-            ) : null}
-
-            <WorkerSection
-              card={card}
-              detail={detail}
-              presetStale={presetStale}
-              restarting={restarting}
-              onRestartWorker={() => setRestartWorkerOpen(true)}
-              onPreset={() => setPresetDialogOpen(true)}
-              presetPill={<>Explore · {detail?.card.presetName ?? "default"}</>}
-              presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
-              pillTitle="Preset for the next worker"
-              checkoutNote={checkoutNoteFor(detail?.card.environmentLabel)}
-            />
-
-            <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
-
-            <PreviewSection cardId={card.id} />
-
-            <ExploreQualitySection cardId={card.id} filePath={detail?.artifacts.map((item) => item.path).find((itemPath) => card?.exploreStage != null && itemPath.endsWith(`explore-${card.exploreStage}.md`)) ?? null} repairing={repairing} onRepair={(lines) => void doQualityRepair(lines)} />
-
-            <DisclosureSection title="Artifacts" hint={detail ? `${detail.artifacts.length} files` : "being prepared"} defaultOpen>
-              {detail ? (
-                <ArtifactGroups
-                  artifacts={detail.artifacts}
-                  workspaceKind={card.workspaceKind}
-                  fileEnvironmentId={detail.fileEnvironmentId}
-                  onView={(file) => setViewerFile(file)}
-                  groupTitleForStage={() => stageLabel ?? "Exploration"}
-                />
-              ) : <p className="text-xs text-muted-foreground">Loading…</p>}
-            </DisclosureSection>
-
-            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
-
-          </>
-        ) : null}
-        </div>
-      </div>
-      <ConfirmActionDialog
-        open={restartWorkerOpen}
-        onOpenChange={setRestartWorkerOpen}
-        title="Restart the worker on the current preset?"
-        description="Stops the running worker and starts a fresh one on this card's preset, continuing the exploration (not from scratch). Use this to apply a preset change."
-        confirmLabel="Restart worker"
-        confirmTone="default"
-        onConfirm={doRestartWorker}
-      />
-      <PresetAssignDialog
-        open={presetDialogOpen}
-        onOpenChange={setPresetDialogOpen}
-        cardId={cardId}
-        onChanged={onChanged}
-      />
-      <ArtifactViewerDialog
-        open={viewerFile !== null}
-        onOpenChange={(next) => { if (!next) setViewerFile(null); }}
-        cardId={cardId}
-        file={viewerFile}
-        editorTarget={viewerFile?.target ?? null}
-        mode={viewerFile?.mode}
-        onCommented={onChanged}
-      />
-    </div>
   );
 }
 
@@ -4248,7 +4044,17 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           />
         ) : null}
         {card && card.kind === "explore" ? (
-          <ExploreDetailBody cardId={cardId} inboxEventId={inboxEventId} inboxEvent={inboxEvent} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
+          <ExploreDetailBody
+            cardId={cardId}
+            inboxEventId={inboxEventId}
+            inboxEvent={inboxEvent}
+            card={card}
+            detail={detail}
+            onChanged={() => void load()}
+            renderPresetDialog={({ open, onOpenChange, onChanged }) => (
+              <PresetAssignDialog open={open} onOpenChange={onOpenChange} cardId={cardId} onChanged={onChanged} />
+            )}
+          />
         ) : null}
         {card && card.kind === "build" ? (
           <>

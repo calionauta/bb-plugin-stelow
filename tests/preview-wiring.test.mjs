@@ -12,7 +12,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(root, "server.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
 const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
-const detailSource = `${appSource}\n${researchSource}`;
+const exploreSource = readFileSync(join(root, "components/detail/explore-detail-content.tsx"), "utf8");
+const detailSource = `${appSource}\n${researchSource}\n${exploreSource}`;
 const previewSource = readFileSync(join(root, "components/detail/preview-section.tsx"), "utf8");
 
 /** The text between two markers, failing loudly if either is gone. */
@@ -100,6 +101,7 @@ assert.match(source, /createPreviewRuntime/, "server.ts must construct the runti
 // the polling/action state machine, while deleting one RPC would strand a live
 // control even though both files would still typecheck.
 assert.match(researchSource, /import \{ PreviewSection \} from "\.\/preview-section"/, "the extracted research body must consume the preview seam");
+assert.match(exploreSource, /import \{ PreviewSection \} from "\.\/preview-section"/, "the extracted explore body must consume the preview seam");
 assert.equal((detailSource.match(/<PreviewSection/g) ?? []).length, 3, "Build, Research, and Explore must each mount one preview section");
 assert.doesNotMatch(detailSource, /function PreviewSection|const PreviewFrame|function PreviewAddress/, "preview implementation must not be copied into a detail route module");
 for (const rpcName of ["previewState", "previewStart", "previewStop", "previewShare"]) {

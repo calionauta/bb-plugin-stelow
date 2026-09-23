@@ -9,7 +9,11 @@ const app = readFileSync(join(root, "app.tsx"), "utf8");
 const researchDetail = readFileSync(join(root, "components/detail/research-detail-body.tsx"), "utf8");
 const researchContent = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
 const researchState = readFileSync(join(root, "components/detail/use-research-detail-state.ts"), "utf8");
-const detailSource = [app, researchDetail, researchContent, researchState].join("\n");
+const exploreDetail = readFileSync(join(root, "components/detail/explore-detail-body.tsx"), "utf8");
+const exploreContent = readFileSync(join(root, "components/detail/explore-detail-content.tsx"), "utf8");
+const exploreState = readFileSync(join(root, "components/detail/use-explore-detail-state.ts"), "utf8");
+const exploreQuality = readFileSync(join(root, "components/detail/explore-quality-section.tsx"), "utf8");
+const detailSource = [app, researchDetail, researchContent, researchState, exploreDetail, exploreContent, exploreState, exploreQuality].join("\n");
 const buildStatusPills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
 const conversation = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
 const cardConversation = readFileSync(join(root, "components", "conversation", "card-conversation.tsx"), "utf8");
@@ -99,9 +103,17 @@ assert.doesNotMatch(manageMenu, /Stop & archive/, "two distinct lifecycle action
 // the track noun flavoring the toast.
 assert.match(manageRecovery, /export function useDetailRecoveryActions\(\{ cardId, trackNoun, onChanged/, "retry and repair live in one shared hook");
 assert.match(researchState, /useDetailRecoveryActions\(\{\s*cardId,\s*trackNoun: "research",\s*onChanged,/, "the research body delegates recovery");
-assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "exploration", onChanged \}\)/, "the explore body delegates recovery");
+assert.match(exploreState, /useDetailRecoveryActions\(\{ cardId, trackNoun: "exploration", onChanged \}\)/, "the explore body delegates recovery");
 assert.match(researchContent, /import \{ ResearchQualitySection \} from "\.\/research-quality-section"/, "the research body reads the extracted quality section");
 assert.doesNotMatch(app, /function ResearchQualitySection\(/, "no research quality copy remains in the panel");
+assert.match(exploreDetail, /export function ExploreDetailBody\(/, "the explore detail body owns its route-facing boundary");
+assert.match(app, /import \{ ExploreDetailBody \} from "\.\/components\/detail\/explore-detail-body"/, "the route mounts the extracted explore detail body");
+assert.doesNotMatch(app, /function ExploreDetailBody\(/, "the explore detail body has no local app copy");
+assert.equal((exploreState.match(/rpc\.call\("stageCatalog"/g) ?? []).length, 1, "the explore body has one technique catalog read seam");
+assert.match(exploreState, /if \(cardStatus === "completed"\) void rpc\.call\("markCardNotificationsRead", \{ cardId, kind: "completed" \}\)/, "viewing completed exploration marks completion read without resolving it");
+assert.match(exploreQuality, /rpc\.call\("qualitySeal", \{ cardId, path: filePath \}\)/, "explore quality reads the current stage seal from the host");
+assert.doesNotMatch(app, /function ExploreQualitySection\(/, "no explore quality copy remains in the panel");
+assert.match(exploreContent, /detail && detail\.expiredQuestions\.length > 0[\s\S]*<ExpiredQuestionsSection[\s\S]*onOpenArtifact=\{\(artifact, mode\) => openAskArtifact\(card, detail\.fileEnvironmentId, setViewerFile, artifact, mode\)\}/, "expired explore questions stay answerable and reopen their artifact through the shared viewer target");
 assert.match(researchQuality, /sub\.status !== "ready"/, "only failed composite substeps enter repair");
 assert.match(researchQuality, /rewrite per the playbook completeness contract, then run verify again\./, "repair lines name the exact fix and verification step");
 // Research follow-up dialogs own their RPC and transient state as one slice.
@@ -331,10 +343,10 @@ assert.match(app, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress h
 // show identity (tag) while open cards add position (column) — the board
 // already gives tiles their position, so only open cards need it.
 assert.match(app, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{null\}/, "tiles show identity only — position comes from the board section");
-assert.match(app, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{RESEARCH_COLUMN_LABELS\[researchColumnOf\(card\)\]/, "open cards add the position pill the board cannot show them");
+assert.match(detailSource, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{LIGHTWEIGHT_COLUMN_LABELS\[researchColumnForStatus\(card\.status\)\]/, "open lightweight cards add the position pill the board cannot show them");
 assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Research strategy/, "the open research tag no longer out-colors its tile twin");
 assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Technique/, "the open explore tag no longer out-colors its tile twin");
-assert.match(app, /stelow-live-surface stelow-detail-surface flex h-full flex-col.*liveBorderClass\(card\)/, "every open track pulses its live border while working");
+assert.match(detailSource, /stelow-live-surface stelow-detail-surface flex h-full flex-col.*liveBorderClass\(card\)/, "every open track pulses its live border while working");
 assert.doesNotMatch(boardCard, /flex-1 truncate text-sm/, "build card titles are no longer truncated beside pills");
 assert.doesNotMatch(app, /hsl\(280 80% 60%/, "running cards no longer cycle through distracting rainbow colors");
 
