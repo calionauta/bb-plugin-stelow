@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.48.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.47.1...v0.48.0) (2026-09-23)
+
+
+### Features
+
+* create GitHub issues at card birth and mirror linked discussion ([e4cc098](https://github.com/calionauta/bb-plugin-stelow/commit/e4cc09877158dc4d532c1d9dad585baa8325da11))
+* create GitHub issues at card birth and mirror linked discussion ([fe88887](https://github.com/calionauta/bb-plugin-stelow/commit/fe888874bbd9cd6cff29a4cdee636baecb87d331))
+* linked-issue composer, done-note drafts, link from any card ([99c0c86](https://github.com/calionauta/bb-plugin-stelow/commit/99c0c8680ee5b1e9d338a1866cf1164f7c1918af))
+
 ## [0.47.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.47.0...v0.47.1) (2026-09-22)
 
 
