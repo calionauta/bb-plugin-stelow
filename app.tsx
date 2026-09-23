@@ -11,7 +11,6 @@ import {
   type NewThreadRequest,
   type PluginCommandRegistration,
   type PluginMessageDirectiveProps,
-  type PluginPendingInteractionProps,
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
@@ -35,8 +34,6 @@ import {
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill } from "./lib/hill-position.mjs";
-import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
-import { questionCopy } from "./lib/question-presentation.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
@@ -65,7 +62,7 @@ import { WorkflowSettings, sanitizeReviewGates, type Appetite, type ResearchStra
 import { CreateBuildDialog } from "./components/creation/create-build-dialog";
 import { CreateResearchDialog } from "./components/creation/create-research-dialog";
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
-import { BatchStepper, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
+import { registerPendingInteraction } from "./components/conversation/question-form";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { StelowQualityDirective } from "./components/detail/stelow-quality-directive";
 import type { rpcContract } from "./server";
@@ -3183,52 +3180,6 @@ function PillsyStyles() {
   return null;
 }
 
-function QuestionForm({ interaction, submit, cancel }: PluginPendingInteractionProps) {
-  const payload = interaction.payload as { question?: string; multiple?: boolean; kind?: "standard" | "split"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; questions?: Array<{ question?: string; multiple?: boolean; kind?: "standard" | "split"; options?: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }> }> };
-  // Thread payloads carry raw artifact paths (no viewer here to resolve
-  // against); normalize to the shared shape so display never renders
-  // undefined. Open affordances stay card-only by design.
-  const toArtifact = (raw: unknown): AskArtifact | null => {
-    const path = typeof raw === "string" ? raw : (raw as { path?: unknown } | null)?.path;
-    const normalized = normalizeAskArtifactPath(path);
-    return normalized ? { ...normalized, absolutePath: null, hostId: null } : null;
-  };
-  const clean = (options: unknown): BatchItem["options"] => {
-    const list = Array.isArray(options)
-      ? options.filter((o): o is { label: string; description: string; preview: string | null; artifact: AskArtifact | null } => !!o && typeof o === "object" && typeof (o as { label?: unknown }).label === "string").map((o) => ({ label: o.label, description: typeof o.description === "string" ? o.description : "", preview: typeof o.preview === "string" ? o.preview : null, artifact: toArtifact((o as { artifact?: unknown }).artifact) }))
-      : [];
-    // Same per-option policy as the card (lib/question-batch): an approval
-    // here must name the document its siblings carry, never render blind.
-    const inherited = inheritAskArtifact(list);
-    return list.map((option, index) => ({
-      ...option,
-      artifact: option.artifact ?? (inherited[index] ? { ...inherited[index], absolutePath: null, hostId: null } : null),
-    }));
-  };
-  // Batch payloads (one `bb stelow ask` call with repeated --question groups)
-  // answer together; single-question payloads keep their exact shape.
-  const genericTitle = /^stelow questions?(?: \(\d+\))?$/i.test(interaction.title ?? "") ? "" : interaction.title;
-  const items: BatchItem[] = Array.isArray(payload.questions) && payload.questions.length > 0
-    ? payload.questions.map((q, i) => ({ id: `q${i}`, title: genericTitle, prompt: typeof q?.question === "string" ? q.question : "", multiple: q?.multiple === true, kind: q?.kind, options: clean(q?.options) })).filter((q) => q.options.length > 0)
-    : [{ id: "q0", title: genericTitle, prompt: payload.question ?? interaction.title, multiple: payload.multiple === true, kind: payload.kind, options: clean(payload.options) }];
-  if (items.length === 0) return null;
-  const batched = items.length > 1;
-  const copy = questionCopy();
-  return (
-    <div className="space-y-3">
-      <BatchStepper
-        questions={items}
-        allowSkip
-        busy={false}
-        error={null}
-        submitLabel={batched ? copy.continueWithAnswers(items.length) : copy.continue}
-        onSubmit={(all) => void submit(batched ? { answers: all } : { answers: all[0] ?? [] })}
-      />
-      <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => void cancel()}>Cancel</Button></div>
-    </div>
-  );
-}
-
 function OpenStelowAction({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
@@ -3287,7 +3238,7 @@ export default definePluginApp((app) => {
     component: (props) => { PillsyStyles(); return <StelowPanelRoute subPath={props.subPath} />; },
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
-  app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
+  registerPendingInteraction(app);
   app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns2", component: StelowCardDrawer });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow", title: "Open Stelow", component: OpenStelowAction });
 
