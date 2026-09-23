@@ -2,7 +2,6 @@ import { Children, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import {
   definePluginApp,
   UrlLink,
-  experimental_Diff as DiffView,
   experimental_PermissionModePicker as PermissionModePicker,
   experimental_ProviderModelPicker as ProviderModelPicker,
   useBbContext,
@@ -33,6 +32,7 @@ import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COL
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
 import { BuildPublication } from "./components/detail/build-publication";
+import { BuildDiff } from "./components/detail/build-diff";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
@@ -2476,35 +2476,6 @@ function LightweightTrackList({ groups, navigate, metaFor, collapsed, onToggle }
 // regresses ONE stage — the timeline is the position context AND the advance
 // control, so the user always sees where the card is and what it can move to.
 
-// One-line entity summary for the Diff section ("4 entities · 2 added,
-// 1 modified, 1 deleted"). Null when sem is absent or found nothing — the
-// patch list renders on its own either way.
-function formatEntitySummary(summary: { total: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null): string | null {
-  if (!summary || summary.total <= 0) return null;
-  const parts = [
-    summary.added > 0 ? `${summary.added} added` : null,
-    summary.modified > 0 ? `${summary.modified} modified` : null,
-    summary.deleted > 0 ? `${summary.deleted} deleted` : null,
-    summary.renamed > 0 ? `${summary.renamed} renamed` : null,
-    summary.moved > 0 ? `${summary.moved} moved` : null,
-  ].filter((part): part is string => part !== null);
-  const head = `${summary.total} ${summary.total === 1 ? "entity" : "entities"}`;
-  const tail = summary.cosmeticOnly ? " · cosmetic only" : "";
-  return parts.length > 0 ? `${head} · ${parts.join(" · ")}${tail}` : `${head}${tail}`;
-}
-
-// Blast-radius line for the Diff section ("mul · 3 callers (1 test); add ·
-// no callers"). Null when cymbal is absent or found no symbols.
-function formatChangedSymbols(symbols: Array<{ symbol: string; callers: number; testCallers: number }> | null): string | null {
-  if (!symbols || symbols.length === 0) return null;
-  return symbols.map((entry) => {
-    const impact = entry.callers === 0
-      ? "no callers"
-      : `${entry.callers} caller${entry.callers === 1 ? "" : "s"}${entry.testCallers > 0 ? ` (${entry.testCallers} test${entry.testCallers === 1 ? "" : "s"})` : ""}`;
-    return `${entry.symbol} · ${impact}`;
-  }).join("; ");
-}
-
 function CardDrawerAdapter(props: PluginThreadPanelProps) {
   const params = props.params;
   const directCardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
@@ -3406,10 +3377,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // affordance is exactly one arrow.
   const [mapOpen, setMapOpen] = useState(false);
   // Native <details> chevrons are owned by the publication feature.
-  type CardDiff = { found: boolean; isRepo: boolean; files: Array<{ path: string; display: string; patch: string | null; isNew: boolean; absolutePath: string; hostId: string }>; truncated: boolean; entitySummary: { total: number; fileCount: number; added: number; modified: number; deleted: number; renamed: number; moved: number; cosmeticOnly: boolean } | null; changedSymbols: Array<{ symbol: string; files: string[]; callers: number; testCallers: number }> | null };
-  const [diffOpen, setDiffOpen] = useState(false);
-  const [diffData, setDiffData] = useState<CardDiff | null>(null);
-  const [diffError, setDiffError] = useState<string | null>(null);
   const artifactsRef = useRef<HTMLDivElement | null>(null);
   // One way in: the progress section's file count opens Artifacts and brings
   // it into view. Instant scroll (no smooth) to respect reduced motion.
@@ -3707,61 +3674,15 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             </DisclosureSection>
             </div>
 
-            {/* Diff is the pre-completion review instrument (uncommitted work at
-                the gates). Once completed, Git changes owns history via the
-                commit viewer — except when the tree went dirty again without
-                reopening: then pending changes are reviewable here while the
-                commit action lives in Git changes. Evaluate in Diff, act in
-                Git changes. */}
-            {card && ((card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit")) || (card.status === "completed" && publicationDirty) || (card.status === "completed" && workspaceRecovery?.kind === "attached")) ? (
-            <DisclosureSection
-              title="Diff"
-              hint={diffData ? (diffData.isRepo ? `${diffData.files.length} files` : "not a git repository") : "working tree vs HEAD"}
-              open={diffOpen}
-              onToggle={(next) => {
-                setDiffOpen(next);
-                if (next && !diffData) {
-                  rpc.call("cardDiff", { cardId }).then((d) => { setDiffData(d); if (!d.found && d.error) setDiffError(d.error); }).catch((err) => setDiffError(err instanceof Error ? err.message : "Unable to load diff."));
-                }
-              }}
-            >
-              {!diffData && !diffError ? <p className="text-xs text-muted-foreground">Loading…</p> : null}
-              {diffError ? <p className="text-xs text-destructive">{diffError}</p> : null}
-              {diffData && !diffData.isRepo ? <p className="text-xs text-muted-foreground">This card's workspace is not a git repository — no diff to review.</p> : null}
-              {diffData && diffData.isRepo && diffData.files.length === 0 ? <p className="text-xs text-muted-foreground">Working tree clean — nothing to review.</p> : null}
-              {diffData && diffData.files.length > 0 ? (
-                <div className="space-y-3">
-                  {formatEntitySummary(diffData.entitySummary) ? (
-                    <p className="text-[11px] text-muted-foreground">{formatEntitySummary(diffData.entitySummary)}</p>
-                  ) : null}
-                  {formatChangedSymbols(diffData.changedSymbols) ? (
-                    <p className="text-[11px] text-muted-foreground" title="Changed symbols with caller impact (cymbal)">{formatChangedSymbols(diffData.changedSymbols)}</p>
-                  ) : null}
-                  {diffData.files.map((file) => (
-                    <div key={file.path} className="space-y-1">
-                      <p className="text-[11px] font-semibold text-muted-foreground">{file.display}{file.isNew ? " · new" : ""}</p>
-                      {file.patch ? (
-                        DiffView ? (
-                          <DiffView patch={file.patch} path={file.path} view="unified" />
-                        ) : (
-                          <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre>
-                        )
-                      ) : (
-                        <button
-                          onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.path, file.hostId, file.absolutePath) })}
-                          className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-xs text-foreground hover:bg-sky-500/20"
-                          title={`Open ${file.display}`}
-                        >
-                          <span aria-hidden>📄</span><span>Open {file.display}</span>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {diffData.truncated ? <p className="text-xs text-muted-foreground">Truncated — the full diff is larger than shown.</p> : null}
-                </div>
-              ) : null}
-            </DisclosureSection>
-            ) : null}
+            {/* Diff is the pre-completion review instrument. Once completed, Git changes owns history,
+                except when the tree became dirty again or an attached recovery checkout needs review. */}
+            <BuildDiff
+              cardId={cardId}
+              visible={Boolean(card && ((card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit")) || (card.status === "completed" && publicationDirty) || (card.status === "completed" && workspaceRecovery?.kind === "attached")))}
+              workspaceKind={card?.workspaceKind ?? "unknown"}
+              fileEnvironmentId={detail?.fileEnvironmentId ?? null}
+              onOpenFile={setViewerFile}
+            />
 
             {card.status === "completed" ? (
               <BuildPublication
