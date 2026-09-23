@@ -6004,6 +6004,103 @@ function LinkedDiscussionSection({ cardId }: { cardId: string }) {
     </CardDisclosure>
   );
 }
+// Done-note draft dialog, self-contained: generates on open with the cheap
+// generation preset (freshness plus no wasted tokens), fully editable,
+// deliverable artifacts checked by default with evidence opt-in. Nothing
+// posts without the explicit Post below.
+function DoneDraftDialog({ open, onOpenChange, cardId, artifacts, issueRef }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  cardId: string;
+  artifacts: Array<{ path: string; display: string; role: string }>;
+  issueRef: { repo: string; number: number } | null;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<string[]>([]);
+  const [posting, setPosting] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setText("");
+    setError(null);
+    setChecked(artifacts.filter((artifact) => artifact.role === "deliverable").map((artifact) => artifact.path));
+    setLoading(true);
+    rpc.call("draftDoneComment", { cardId }).then(
+      (result) => {
+        if (result.ok && result.draft) setText(result.draft);
+        else setError(result.error ?? "Could not draft the comment — write it yourself below.");
+      },
+      (err: unknown) => setError(err instanceof Error ? err.message : "Could not draft the comment — write it yourself below."),
+    ).finally(() => setLoading(false));
+    // Snapshot-at-open by design (open, cardId, rpc only): artifacts and
+    // card stay as opened, so a background refresh never swaps the draft.
+  }, [open, cardId, rpc]);
+  const post = async () => {
+    const list = artifacts.filter((artifact) => checked.includes(artifact.path));
+    const body = text.trim() + (list.length > 0 ? `\n\nArtifacts:\n${list.map((artifact) => `- ${artifact.display} (${artifact.path})`).join("\n")}` : "");
+    if (!body.trim()) {
+      setError("Comment must not be empty.");
+      return;
+    }
+    setPosting(true);
+    try {
+      const result = await rpc.call("postIssueComment", { cardId, body });
+      if (!result.ok) {
+        setError(result.error ?? "GitHub refused the comment.");
+        return;
+      }
+      onOpenChange(false);
+      toast.success("Comment posted on GitHub.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "GitHub refused the comment.");
+    } finally {
+      setPosting(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Draft GitHub comment?</DialogTitle>
+          <DialogDescription className="space-y-2">
+            <p>
+              Drafted with the cheap generation preset for {issueRef ? `${issueRef.repo}#${issueRef.number}` : "the linked issue"} — judge every word before posting. Checked artifacts append as a list; uncheck to detach.
+            </p>
+          </DialogDescription>
+        </DialogHeader>
+        {loading ? <p className="text-sm text-muted-foreground">Drafting…</p> : (
+          <>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Comment (editable)</span>
+              <textarea value={text} onChange={(event) => setText(event.target.value)} rows={8} className="min-h-32 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Write the completion note…" />
+            </label>
+            {artifacts.length > 0 ? (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Artifacts ({checked.length} attached)</span>
+                {artifacts.map((artifact) => (
+                  <label key={artifact.path} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/60">
+                    <input type="checkbox" checked={checked.includes(artifact.path)} onChange={(event) => setChecked((prev) => event.target.checked ? [...prev, artifact.path] : prev.filter((path) => path !== artifact.path))} className="size-4 accent-primary" />
+                    <span className="min-w-0 flex-1 truncate">{artifact.display}</span>
+                    <span className="text-[11px] text-muted-foreground">{artifact.role}</span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </>
+        )}
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={posting || loading}>Cancel</Button>
+          </DialogClose>
+          <Button disabled={posting || loading || !text.trim()} onClick={() => void post()}>{posting ? "Posting…" : "Post comment"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen = false, threadId }: {
   comments: CardDetailResponse["comments"]; draft: string; onDraftChange: (value: string) => void; onSend: () => void; defaultOpen?: boolean; threadId?: string | null;
 }) {
@@ -6872,11 +6969,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // the cheap generation preset, fully editable, artifacts detachable.
   // Nothing posts without the explicit Post below.
   const [doneDraftOpen, setDoneDraftOpen] = useState(false);
-  const [doneDraftText, setDoneDraftText] = useState("");
-  const [doneDraftLoading, setDoneDraftLoading] = useState(false);
-  const [doneDraftError, setDoneDraftError] = useState<string | null>(null);
-  const [doneChecked, setDoneChecked] = useState<string[]>([]);
-  const [donePosting, setDonePosting] = useState(false);
   const [githubPosting, setGithubPosting] = useState(false);
   type PublicationStatus = Awaited<ReturnType<typeof rpc.call<"publicationStatus">>>;
   const [publication, setPublication] = useState<PublicationStatus | null>(null);
@@ -7170,46 +7262,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       setSplitError(err instanceof Error ? err.message : "Could not request a split.");
     } finally {
       setSplitting(false);
-    }
-  }
-
-  async function openDoneDraft() {
-    setDoneDraftText("");
-    setDoneDraftError(null);
-    setDoneChecked((detail?.artifacts ?? []).filter((artifact) => artifact.role === "deliverable").map((artifact) => artifact.path));
-    setDoneDraftOpen(true);
-    setDoneDraftLoading(true);
-    try {
-      const result = await rpc.call("draftDoneComment", { cardId });
-      if (result.ok && result.draft) setDoneDraftText(result.draft);
-      else setDoneDraftError(result.error ?? "Could not draft the comment — write it yourself below.");
-    } catch (error) {
-      setDoneDraftError(error instanceof Error ? error.message : "Could not draft the comment — write it yourself below.");
-    } finally {
-      setDoneDraftLoading(false);
-    }
-  }
-
-  async function doDonePost() {
-    const artifacts = (detail?.artifacts ?? []).filter((artifact) => doneChecked.includes(artifact.path));
-    const body = doneDraftText.trim() + (artifacts.length > 0 ? `\n\nArtifacts:\n${artifacts.map((artifact) => `- ${artifact.display} (${artifact.path})`).join("\n")}` : "");
-    if (!body.trim()) {
-      setDoneDraftError("Comment must not be empty.");
-      return;
-    }
-    setDonePosting(true);
-    try {
-      const result = await rpc.call("postIssueComment", { cardId, body });
-      if (!result.ok) {
-        setDoneDraftError(result.error ?? "GitHub refused the comment.");
-        return;
-      }
-      setDoneDraftOpen(false);
-      toast.success("Comment posted on GitHub.");
-    } catch (error) {
-      setDoneDraftError(error instanceof Error ? error.message : "GitHub refused the comment.");
-    } finally {
-      setDonePosting(false);
     }
   }
 
@@ -7510,7 +7562,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     ) : (
                       <>
                       <button onClick={() => { setGithubCloseIssue(false); setGithubPostOpen(true); }} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
-                      <button onClick={() => void openDoneDraft()} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Draft GitHub comment…</button>
+                      <button onClick={() => setDoneDraftOpen(true)} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Draft GitHub comment…</button>
                       </>
                     )
                   ) : (
@@ -8054,45 +8106,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={doneDraftOpen} onOpenChange={setDoneDraftOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Draft GitHub comment?</DialogTitle>
-            <DialogDescription className="space-y-2">
-              <p>
-                Drafted with the cheap generation preset for {detail?.githubLink ? `${detail.githubLink.repo}#${detail.githubLink.number}` : "the linked issue"} — judge every word before posting. Checked artifacts append as a list; uncheck to detach.
-              </p>
-            </DialogDescription>
-          </DialogHeader>
-          {doneDraftLoading ? <p className="text-sm text-muted-foreground">Drafting…</p> : (
-            <>
-              <label className="block space-y-1">
-                <span className="text-xs font-medium text-muted-foreground">Comment (editable)</span>
-                <textarea value={doneDraftText} onChange={(event) => setDoneDraftText(event.target.value)} rows={8} className="min-h-32 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Write the completion note…" />
-              </label>
-              {(detail?.artifacts ?? []).length > 0 ? (
-                <div className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Artifacts ({doneChecked.length} attached)</span>
-                  {(detail?.artifacts ?? []).map((artifact) => (
-                    <label key={artifact.path} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/60">
-                      <input type="checkbox" checked={doneChecked.includes(artifact.path)} onChange={(event) => setDoneChecked((prev) => event.target.checked ? [...prev, artifact.path] : prev.filter((path) => path !== artifact.path))} className="size-4 accent-primary" />
-                      <span className="min-w-0 flex-1 truncate">{artifact.display}</span>
-                      <span className="text-[11px] text-muted-foreground">{artifact.role}</span>
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </>
-          )}
-          {doneDraftError ? <p className="text-xs text-destructive">{doneDraftError}</p> : null}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={donePosting || doneDraftLoading}>Cancel</Button>
-            </DialogClose>
-            <Button disabled={donePosting || doneDraftLoading || !doneDraftText.trim()} onClick={() => void doDonePost()}>{donePosting ? "Posting…" : "Post comment"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DoneDraftDialog
+        open={doneDraftOpen}
+        onOpenChange={setDoneDraftOpen}
+        cardId={cardId}
+        artifacts={detail?.artifacts ?? []}
+        issueRef={detail?.githubLink ? { repo: detail.githubLink.repo, number: detail.githubLink.number } : null}
+      />
       <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
         <DialogContent>
           <DialogHeader>

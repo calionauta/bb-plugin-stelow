@@ -4529,6 +4529,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     try { await bb.sdk.threads.stop({ threadId }); } catch { /* already gone */ }
   }
 
+  // Shared draft-burst prologue (CLI `bb stelow draft` and the done-note
+  // draft RPC): card lookup, generation-preset cascade, workspace, spawn
+  // environment. One place so preset and environment semantics cannot drift
+  // between callers; each caller keeps its own error presentation (exit
+  // codes vs RPC refusal objects).
+  async function resolveDraftContext(card: CardRow): Promise<
+    | { ok: true; draftPreset: PresetRow; params: ReturnType<typeof presetAttachmentParams>; workspace: { path: string; hostId: string | null }; environment: Awaited<ReturnType<typeof continuingWorkerEnvironment>>; resolvedSource: string | null }
+    | { ok: false; error: string }
+  > {
+    const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
+    const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+    const boardDefault = designated ? getPresetById(designated.preset_id) : null;
+    const bandPreset = getPresetForBand(band, card.id);
+    const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
+    const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
+    if (!draftPreset) return { ok: false, error: "No preset available for drafting (no generation preset, no band preset). Assign presets first." };
+    const params = presetAttachmentParams(draftPreset);
+    const workspace = await cardWorkspace(card).catch(() => null);
+    if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
+    const draftSource = workspace.hostId ? { path: workspace.path, hostId: workspace.hostId } : null;
+    const environment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+    return { ok: true, draftPreset, params, workspace, environment, resolvedSource: resolved.source };
+  }
+
   // Disposable spawns (draft bursts, independent reviews) die with their
   // worker through lifecycleOwnerThreadId (BB 0.43 dependent threads).
   // Hosts predating the field strip unknown keys and honor the spawn; a host
@@ -5628,16 +5652,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card) throw new Error(ERR_CARD_NOT_FOUND);
       if (isArchivedCard(card)) throw new Error(ERR_CARD_ARCHIVED);
-      const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
-      const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      const boardDefault = designated ? getPresetById(designated.preset_id) : null;
-      const bandPreset = getPresetForBand(band, cardId);
-      const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
-      const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
-      if (!draftPreset) return { ok: false, draft: null, error: "No preset available for the draft (no generation preset, no band preset). Assign presets first." };
-      const params = presetAttachmentParams(draftPreset);
-      const workspace = await cardWorkspace(card).catch(() => null);
-      if (!workspace?.path) return { ok: false, draft: null, error: ERR_WORKSPACE_UNAVAILABLE };
+      const draftContext = await resolveDraftContext(card);
+      if (!draftContext.ok) return { ok: false, draft: null, error: draftContext.error };
+      const { draftPreset, params, workspace, environment: draftEnvironment } = draftContext;
       const scopes = loadCardScopes(workspace.path, card.id);
       const scopeLines = scopes.map((scope) => `- ${String(scope.name)} (${String(scope.status)})`);
       const doneCount = scopes.filter((scope) => scope.status === "done" || scope.status === "completed").length;
@@ -5651,8 +5668,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         promptExcerpt: card.prompt.length > 1500 ? `${card.prompt.slice(0, 1500)}…` : card.prompt,
       });
       const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
-      const draftSource = workspace.hostId ? { path: workspace.path, hostId: workspace.hostId } : null;
-      const draftEnvironment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
       let draftThread: { id: string };
       try {
         draftThread = await spawnDisposable({
@@ -9675,22 +9690,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const card = getCard(cardId);
         if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
         if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
-        const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
-        const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-        const boardDefault = designated ? getPresetById(designated.preset_id) : null;
-        const bandPreset = getPresetForBand(band, cardId);
-        const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
-        const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
-        if (!draftPreset) return { exitCode: 1, stderr: "No preset available for the draft burst (no generation preset, no band preset). Assign presets first." };
-        const params = presetAttachmentParams(draftPreset);
+        const draftContext = await resolveDraftContext(card);
+        if (!draftContext.ok) return { exitCode: 1, stderr: draftContext.error };
+        const { draftPreset, params, workspace: draftWorkspace, environment: draftEnvironment, resolvedSource } = draftContext;
         const permissionNote = params.permissionMode === "full"
           ? " (preset permission coerced full → accept-edits: drafts read, never write)"
           : "";
-        const fallbackNote = resolved.source === "band" ? " (generation preset unset — ran on the band preset)" : "";
-        const draftWorkspace = await cardWorkspace(card);
-        if (!draftWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
-        const draftSource = draftWorkspace.hostId ? { path: draftWorkspace.path, hostId: draftWorkspace.hostId } : null;
-        const draftEnvironment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+        const fallbackNote = resolvedSource === "band" ? " (generation preset unset — ran on the band preset)" : "";
         const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
         let draftThread: { id: string };
         try {
@@ -9739,13 +9745,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             await bb.sdk.files.mkdir({ path: dirname(full), rootPath: draftWorkspace.path, recursive: true });
             await bb.sdk.files.write({
               path: full,
-              content: `# Draft ${stamp} (${resolved.source})\n\nCard: ${card.display_name ?? card.name}\nThread: ${draftThread.id}\nPreset: ${draftPreset.name}\n\n${validated.text}\n`,
+              content: `# Draft ${stamp} (${resolvedSource})\n\nCard: ${card.display_name ?? card.name}\nThread: ${draftThread.id}\nPreset: ${draftPreset.name}\n\n${validated.text}\n`,
             });
             draftPath = workspaceRelative(draftWorkspace.path, full) ?? `drafts/draft-${stamp}.md`;
           } catch { /* draft still returned via stdout */ }
         }
         logCardComment(cardId, "card", cardId, "agent", `Draft burst (${draftPreset.name}${fallbackNote}) — judge every word before using it.${draftPath ? ` Record: ${draftPath}.` : ""}${permissionNote}`);
-        if (json) return { exitCode: 0, stdout: JSON.stringify({ draft: validated.text, truncated: validated.truncated ?? false, threadId: draftThread.id, path: draftPath, source: resolved.source }, null, 2) };
+        if (json) return { exitCode: 0, stdout: JSON.stringify({ draft: validated.text, truncated: validated.truncated ?? false, threadId: draftThread.id, path: draftPath, source: resolvedSource }, null, 2) };
         return { exitCode: 0, stdout: validated.text };
       }
       if (argv[0] === "preset") {
