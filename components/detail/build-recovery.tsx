@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 
-export type WorkspaceRecoveryData = {
+type WorkspaceRecoveryData = {
   kind: "attached" | "promote" | "external-project" | "ambiguous" | "documents-only";
   message: string;
   candidates: Array<{ projectId: string; projectName: string; path: string; branch: string | null; headSha: string | null; changedFiles: number; evidence: string }>;
