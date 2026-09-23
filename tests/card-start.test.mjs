@@ -22,6 +22,8 @@ const githubState = readFileSync(join(root, "components", "github", "github-dial
 const githubChrome = readFileSync(join(root, "components", "github", "github-dialog-chrome.tsx"), "utf8");
 const startCheck = readFileSync(join(root, "components", "start-immediately-check.tsx"), "utf8");
 const heroActions = readFileSync(join(root, "components", "detail", "detail-hero-actions.tsx"), "utf8");
+const researchState = readFileSync(join(root, "components", "detail", "use-research-detail-state.ts"), "utf8");
+const detailStartSource = `${app}\n${researchState}`;
 
 // Deferred start: creating spawns by default, and parks only where a human
 // chose it. The automation path carries the rule's autostart flag (default
@@ -126,7 +128,7 @@ assert.match(buildDialog, /const \[startImmediately, setStartImmediately\] = use
 assert.equal(((buildDialog.match(/setStartImmediately\] = useState\(true\)/g) ?? []).length + (researchDialog.match(/setStartImmediately\] = useState\(true\)/g) ?? []).length + (exploreDialog.match(/setStartImmediately\] = useState\(true\)/g) ?? []).length), 3, "build, research, and explore creation default to started");
 assert.match(githubState, /const \[importStart, setImportStart\] = useState\(false\)/, "import defaults to parked");
 assert.match(githubState, /const \[automationStart, setAutomationStart\] = useState\(false\)/, "automation defaults to parked");
-assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 3, "build, research, and explore cards all offer Start");
+assert.equal((detailStartSource.match(/rpc\.call\("startWorker"/g) ?? []).length, 3, "build, research, and explore cards all offer Start");
 assert.match(heroActions, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
 // The Bucket is the board's first column on every track, and leaving it is
 // what starts a parked card (a build phase move spawns instead of lying).

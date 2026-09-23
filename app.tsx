@@ -1,6 +1,5 @@
 import { Children, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
-  Markdown,
   definePluginApp,
   UrlLink,
   experimental_Diff as DiffView,
@@ -24,9 +23,6 @@ import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxEventText, inboxEventT
 import { joinStrategyLabels, liveBorderClass, statusTone } from "./lib/detail-presentation.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
-import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
-import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
-import { groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "./lib/card-checks.mjs";
@@ -51,7 +47,7 @@ import { BatchStepper, ExpiredQuestionsSection, QuestionBatch, type ArtifactView
 import { CardConversation } from "./components/conversation/card-conversation";
 import { useDetailComment } from "./components/conversation/use-detail-comment";
 import { checkoutNoteFor, WorkerSection } from "./components/worker-history/worker-history";
-import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
+import { ArtifactGroups, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
 import { CardDetailHeader } from "./components/manage/card-detail-header";
 import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
 import { useDetailRecoveryActions } from "./components/manage/detail-recovery-actions";
@@ -63,8 +59,7 @@ import { HERO_STYLE, heroFor } from "./components/detail/detail-hero";
 import { DetailHeroActions } from "./components/detail/detail-hero-actions";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
-import { ResearchQualitySection } from "./components/detail/research-quality-section";
-import { FanOutDialog, StrategyRunDialog, type ResearchIndexState } from "./components/detail/research-detail-dialogs";
+import { ResearchDetailBody } from "./components/detail/research-detail-body";
 import { PreviewSection } from "./components/detail/preview-section";
 import { ArtifactViewerDialog } from "./components/detail/artifact-viewer-dialog";
 import type { rpcContract } from "./server";
@@ -3608,237 +3603,6 @@ function BuildGapsSection({ cardId }: { cardId: string }) {
   );
 }
 
-function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate, card, detail, onChanged }: {
-  cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
-  inboxEvent: InboxEventSnapshot | null; card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
-}) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [index, setIndex] = useState<ResearchIndexState | null>(null);
-  const [indexRefresh, setIndexRefresh] = useState(0);
-  const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
-  const { comment, setComment, submitComment } = useDetailComment({ cardId, onChanged });
-  const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
-  const [restarting, setRestarting] = useState(false);
-  const { retrying, doRetry, repairing, doQualityRepair } = useDetailRecoveryActions({ cardId, trackNoun: "research", onChanged });
-  const [starting, setStarting] = useState(false);
-  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
-  const [fanOutOpen, setFanOutOpen] = useState(false);
-  const [strategyRunOpen, setStrategyRunOpen] = useState(false);
-  const inboxEventRef = useRef<HTMLElement | null>(null);
-
-  const loadIndex = useCallback(async () => {
-    try {
-      const [indexResult, strategiesResult] = await Promise.all([
-        rpc.call("researchIndex", { cardId }),
-        rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
-      ]);
-      setIndex(indexResult);
-      setStrategies(strategiesResult.strategies);
-    } catch {
-      setIndex({ found: false, indexPath: null, content: null, truncated: false, opportunities: [], rounds: [], error: "Unable to load the index." });
-    }
-  }, [cardId, rpc]);
-
-  useEffect(() => { void loadIndex(); }, [loadIndex, indexRefresh]);
-  // Viewing a completed card marks its completion seen (read, never
-  // resolved): the badge drops, Recent updates keeps the entry.
-  useEffect(() => {
-    if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
-  }, [cardId, card?.status, rpc]);
-  useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
-
-  async function doStart() {
-    setStarting(true);
-    try {
-      const result = await rpc.call("startWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Start failed.");
-      else toast.success("Worker started — the research is now Doing.");
-      onChanged();
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  async function doRestartWorker() {
-    setRestartWorkerOpen(false);
-    setRestarting(true);
-    try {
-      const result = await rpc.call("restartWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Restart failed.");
-      else toast.success("Worker restarted — continuing the research.");
-      onChanged();
-    } finally {
-      setRestarting(false);
-    }
-  }
-
-  const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
-  const hero = card ? heroFor(card, detail) : null;
-  const heroStyle = hero ? HERO_STYLE[hero.kind] : null;
-  const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
-  const strategyById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
-  const strategyLabel = card ? joinStrategyLabels(card.researchStrategies ?? [card.researchStrategy], strategyById) : null;
-  const available = index?.opportunities.filter((item) => !item.checked) ?? [];
-  // The index supplies research findings and friendly labels; the round
-  // history remains the only source of openable files.
-  const indexBody = useMemo(() => (index?.found && index.content ? parseResearchIndexSections(index.content) : null), [index]);
-  const artifactGroups = useMemo<ArtifactInventoryGroup[]>(() => groupResearchArtifacts(index?.rounds, indexBody?.outputs), [index?.rounds, indexBody?.outputs]);
-  const artifactCount = artifactGroups.reduce((total, group) => total + group.items.length, 0);
-
-  return (
-    <div className={`stelow-live-surface stelow-detail-surface flex h-full flex-col ${card ? liveBorderClass(card) : ""}`}>
-      <div className="flex-1 overflow-auto p-4">
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-        {card ? (
-          <>
-            <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
-            {hero && heroStyle ? (
-              <section aria-label="Research status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
-                <div className="flex items-start gap-2.5">
-                  <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${heroStyle.dot}`} />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-                    <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
-                    {index && index.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? (
-                      <p className="text-xs text-muted-foreground">Review the results below, select opportunities to build, then move this card to Done.</p>
-                    ) : null}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? null} tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." kind="research" />
-                      {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
-                    </div>
-                    <DetailHeroActions
-                      card={card}
-                      heroKind={hero.kind}
-                      pending={Boolean(pendingFirst)}
-                      preset={{ stale: presetStale, providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }}
-                      state={{ starting, retrying, restarting }}
-                      continuation="continuing the research"
-                      onStart={doStart}
-                      onRetry={doRetry}
-                      onRestart={() => setRestartWorkerOpen(true)}
-                    />
-                  </div>
-                </div>
-                {pendingFirst ? (
-                  <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={() => { onChanged(); void loadIndex(); }} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
-                  </div>
-                ) : null}
-                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => { onChanged(); void loadIndex(); }} /></div> : null}
-              </section>
-            ) : null}
-
-            <WorkerSection
-              card={card}
-              detail={detail}
-              presetStale={presetStale}
-              restarting={restarting}
-              onRestartWorker={() => setRestartWorkerOpen(true)}
-              onPreset={() => setPresetDialogOpen(true)}
-              presetPill={<>Research · {detail?.card.presetName ?? "default"}</>}
-              presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
-              pillTitle="Preset for the next worker"
-              checkoutNote={checkoutNoteFor(detail?.card.environmentLabel)}
-            />
-
-            <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
-
-            <DisclosureSection
-              title="Research summary"
-              hint={index && index.found ? researchOpportunityHint(available.length, index.opportunities.length) : "being prepared"}
-              defaultOpen
-            >
-              {!index ? <p className="text-xs text-muted-foreground">Preparing results…</p> : null}
-              {index && !index.found ? <p className="text-xs text-muted-foreground">Results are still being prepared.</p> : null}
-              {index?.found && indexBody?.summary ? <div className="text-sm leading-relaxed"><Markdown content={indexBody.summary} /></div> : null}
-              {index?.found && artifactGroups.length > 0 ? <p className="text-xs text-muted-foreground">Read the artifacts for the full evidence and detail.</p> : null}
-              {index?.truncated ? <p className="text-xs text-muted-foreground">Results are shortened here. Open the full research file at {index.indexPath}.</p> : null}
-              {index?.found && index.opportunities.length > 0 ? (
-                <div className="space-y-2 border-t pt-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Opportunities</h4>
-                    <span className="flex flex-wrap items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setStrategyRunOpen(true)} title="Run another strategy on the same request. Its findings are added to these results.">Explore another strategy…</Button>
-                          <Button size="sm" variant="outline" disabled={available.length === 0} onClick={() => setFanOutOpen(true)} title="Select opportunities, then create the build cards.">Select To Build</Button>
-                    </span>
-                  </div>
-                  <ul className="space-y-1">
-                    {index.opportunities.map((item) => (
-                      <li key={item.id} className="flex items-start gap-2 text-sm">
-                        <span className="mt-0.5 shrink-0" aria-hidden>•</span>
-                        <span className={item.checked ? "text-muted-foreground line-through" : ""}>{item.title}</span>
-                        {item.checked ? <span className="shrink-0 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">fanned out</span> : null}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </DisclosureSection>
-
-            <PreviewSection cardId={card.id} />
-
-            <ResearchQualitySection rounds={index?.rounds ?? []} repairing={repairing} onRepair={(lines) => void doQualityRepair(lines)} />
-
-            <DisclosureSection title="Artifacts" hint={artifactCount > 0 ? `${artifactCount} ${artifactCount === 1 ? "file" : "files"} · newest round first` : "being prepared"} defaultOpen>
-              <ArtifactInventory
-                groups={artifactGroups}
-                workspaceKind={card.workspaceKind}
-                fileEnvironmentId={detail?.fileEnvironmentId ?? null}
-                onView={(file) => setViewerFile(file)}
-              />
-            </DisclosureSection>
-
-            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
-
-          </>
-        ) : null}
-        </div>
-      </div>
-      <ConfirmActionDialog
-        open={restartWorkerOpen}
-        onOpenChange={setRestartWorkerOpen}
-        title="Restart the worker on the current preset?"
-        description="Stops the running worker and starts a fresh one on this card's preset, continuing the research (not from scratch). Use this to apply a preset change."
-        confirmLabel="Restart worker"
-        confirmTone="default"
-        onConfirm={doRestartWorker}
-      />
-      <PresetAssignDialog
-        open={presetDialogOpen}
-        onOpenChange={setPresetDialogOpen}
-        cardId={cardId}
-        onChanged={() => { onChanged(); void loadIndex(); }}
-      />
-      <ArtifactViewerDialog
-        open={viewerFile !== null}
-        onOpenChange={(next) => { if (!next) setViewerFile(null); }}
-        cardId={cardId}
-        file={viewerFile}
-        editorTarget={viewerFile?.target ?? null}
-        mode={viewerFile?.mode}
-        onCommented={() => onChanged()}
-      />
-      <FanOutDialog
-        open={fanOutOpen}
-        onOpenChange={setFanOutOpen}
-        cardId={cardId}
-        opportunities={index?.opportunities ?? []}
-        onFanned={() => { onChanged(); setIndexRefresh((value) => value + 1); }}
-      />
-      <StrategyRunDialog
-        open={strategyRunOpen}
-        onOpenChange={setStrategyRunOpen}
-        cardId={cardId}
-        strategies={strategies}
-        runIds={card?.researchStrategies ?? []}
-        onStarted={() => { onChanged(); setIndexRefresh((value) => value + 1); }}
-      />
-    </div>
-  );
-}
-
 function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate, card, detail, onChanged }: {
   cardId: string; inboxEventId: string | null; onClose: () => void; navigate: ReturnType<typeof useBbNavigate>;
   inboxEvent: InboxEventSnapshot | null; card: CardItem | null; detail: CardDetailResponse | null; onChanged: () => void;
@@ -4471,7 +4235,17 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         <div className="mx-auto w-full max-w-3xl space-y-6">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {card && card.kind === "research" ? (
-          <ResearchDetailBody cardId={cardId} inboxEventId={inboxEventId} inboxEvent={inboxEvent} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />
+          <ResearchDetailBody
+            cardId={cardId}
+            inboxEventId={inboxEventId}
+            inboxEvent={inboxEvent}
+            card={card}
+            detail={detail}
+            onChanged={() => void load()}
+            renderPresetDialog={({ open, onOpenChange, onChanged }) => (
+              <PresetAssignDialog open={open} onOpenChange={onOpenChange} cardId={cardId} onChanged={onChanged} />
+            )}
+          />
         ) : null}
         {card && card.kind === "explore" ? (
           <ExploreDetailBody cardId={cardId} inboxEventId={inboxEventId} inboxEvent={inboxEvent} onClose={onClose} navigate={navigate} card={card} detail={detail} onChanged={() => void load()} />

@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const researchDetail = readFileSync(join(root, "components/detail/research-detail-body.tsx"), "utf8");
+const researchContent = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
+const researchState = readFileSync(join(root, "components/detail/use-research-detail-state.ts"), "utf8");
+const detailSource = [app, researchDetail, researchContent, researchState].join("\n");
 const buildStatusPills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
 const conversation = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
 const cardConversation = readFileSync(join(root, "components", "conversation", "card-conversation.tsx"), "utf8");
@@ -94,20 +98,31 @@ assert.doesNotMatch(manageMenu, /Stop & archive/, "two distinct lifecycle action
 // place, repair posts-then-resumes through the same retry rail — with
 // the track noun flavoring the toast.
 assert.match(manageRecovery, /export function useDetailRecoveryActions\(\{ cardId, trackNoun, onChanged/, "retry and repair live in one shared hook");
-assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "research", onChanged \}\)/, "the research body delegates recovery");
+assert.match(researchState, /useDetailRecoveryActions\(\{\s*cardId,\s*trackNoun: "research",\s*onChanged,/, "the research body delegates recovery");
 assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "exploration", onChanged \}\)/, "the explore body delegates recovery");
-assert.match(app, /import \{ ResearchQualitySection \} from "\.\/components\/detail\/research-quality-section"/, "the research body reads the extracted quality section");
+assert.match(researchContent, /import \{ ResearchQualitySection \} from "\.\/research-quality-section"/, "the research body reads the extracted quality section");
 assert.doesNotMatch(app, /function ResearchQualitySection\(/, "no research quality copy remains in the panel");
 assert.match(researchQuality, /sub\.status !== "ready"/, "only failed composite substeps enter repair");
 assert.match(researchQuality, /rewrite per the playbook completeness contract, then run verify again\./, "repair lines name the exact fix and verification step");
 // Research follow-up dialogs own their RPC and transient state as one slice.
 // Background index refreshes must not disturb an open selection, and the panel
 // must not accumulate a second implementation of either dialog.
-assert.match(app, /import \{ FanOutDialog, StrategyRunDialog, type ResearchIndexState \} from "\.\/components\/detail\/research-detail-dialogs"/, "research details read the extracted dialog slice");
+assert.match(researchDetail, /import \{ FanOutDialog, StrategyRunDialog \} from "\.\/research-detail-dialogs"/, "research details read the extracted dialog slice");
 assert.match(researchDialogs, /export type ResearchIndexState =/, "the research index shape belongs to the dialog slice");
 assert.match(researchDialogs, /export function FanOutDialog\(props: FanOutDialogProps\)/, "fan-out owns its component boundary");
 assert.match(researchDialogs, /export function StrategyRunDialog\(props: StrategyRunDialogProps\)/, "strategy rounds own their component boundary");
 assert.doesNotMatch(app, /^type ResearchIndexState =|^function (?:FanOutDialog|StrategyRunDialog)\(/m, "no local research dialog or index-state copy remains in the panel");
+assert.match(app, /import \{ ResearchDetailBody \} from "\.\/components\/detail\/research-detail-body"/, "the route mounts the extracted research detail body");
+assert.match(researchDetail, /export function ResearchDetailBody\(/, "the research detail body owns its route-facing boundary");
+assert.doesNotMatch(app, /function ResearchDetailBody\(/, "the research detail body has no local app copy");
+assert.equal((researchState.match(/rpc\.call\("researchIndex"/g) ?? []).length, 1, "the research body has one index read seam");
+assert.equal((researchState.match(/rpc\.call\("researchStrategies"/g) ?? []).length, 1, "the research body has one strategy catalog read seam");
+assert.match(researchState, /if \(cardStatus === "completed"\) void rpc\.call\("markCardNotificationsRead", \{ cardId, kind: "completed" \}\)/, "viewing completed research marks completion read without resolving it");
+assert.equal((researchContent.match(/onAnswered=\{onQuestionsChanged\}/g) ?? []).length, 2, "pending and expired questions both refresh the index after an answer");
+assert.match(researchContent, /<InboxEventBanner[\s\S]*<ResearchStatus[\s\S]*<InputFiles[\s\S]*<ResearchSummary[\s\S]*<PreviewSection[\s\S]*<ResearchQualitySection[\s\S]*<ResearchArtifacts[\s\S]*<CardConversation/, "research detail keeps its original shared-leaf composition order");
+assert.match(researchDetail, /<ConfirmActionDialog[\s\S]*renderPresetDialog[\s\S]*<ArtifactViewerDialog[\s\S]*<FanOutDialog[\s\S]*<StrategyRunDialog/, "research detail composes its confirm, preset, viewer, fan-out, and strategy leaves in order");
+assert.match(researchDetail, /onFanned=\{\(\) => \{ onChanged\(\); state\.refreshIndex\(\); \}\}/, "fan-out refreshes card detail and the research index");
+assert.match(researchDetail, /onStarted=\{\(\) => \{ onChanged\(\); state\.refreshIndex\(\); \}\}/, "a strategy round refreshes card detail and the research index");
 assert.match(researchDialogs, /rpc\.call\("fanOutResearch", \{ cardId: props\.cardId, opportunityIds: chosen\.map\(\(item\) => item\.id\) \}\)/, "fan-out reaches the host through its single owned RPC seam");
 assert.match(researchDialogs, /rpc\.call\("runResearchStrategy", \{ cardId: props\.cardId, strategy: active\.id \}\)/, "strategy rounds reach the host through their single owned RPC seam");
 assert.match(researchDialogs, /if \(!open\) return;\s*setSelected\(\{\}\);\s*setBusy\(false\);[\s\S]*?\}, \[open\]\);/, "opening fan-out clears selection and busy state without watching refreshed opportunity arrays");
@@ -119,41 +134,43 @@ assert.match(manageRecovery, /const retried = await rpc\.call\("retryWorker", \{
 // Detail leaves: one banner definition for every body; event text, time,
 // and the relative clock live in lib (tested), never pasted per surface.
 assert.match(detailBanner, /export function InboxEventBanner\(\{ visible, event, sectionRef/, "the banner lives in the detail module");
-assert.match(app, /import \{ InboxEventBanner, shouldShowInboxEventBanner, useInboxEventFocus \} from "\.\/components\/detail\/inbox-event-banner"/, "detail bodies read the shared banner and visibility policy");
+assert.match(detailSource, /InboxEventBanner,[\s\S]*shouldShowInboxEventBanner,[\s\S]*useInboxEventFocus/, "all detail routes read the shared banner and visibility policy");
 assert.doesNotMatch(app, /function InboxEventBanner\(/, "no local banner copy survives in the panel");
 assert.doesNotMatch(app, /function inboxEventDescription\(/, "descriptions come from lib, never a local copy");
 assert.doesNotMatch(app, /function inboxEventTime\(/, "event times come from lib, never a local copy");
 assert.doesNotMatch(app, /function relativeTime\(/, "the relative clock lives in lib, never pasted");
-assert.match(app, /import \{ joinStrategyLabels, liveBorderClass, statusTone \} from "\.\/lib\/detail-presentation\.mjs"/, "shared card presentation comes from one tested lib");
+assert.match(researchContent, /import \{ joinStrategyLabels, statusTone \} from "\.\.\/\.\.\/lib\/detail-presentation\.mjs"/, "research reads shared strategy and status presentation from one tested lib");
+assert.match(researchDetail, /import \{ liveBorderClass \} from "\.\.\/\.\.\/lib\/detail-presentation\.mjs"/, "research reads the shared live border from the same tested lib");
 assert.doesNotMatch(app, /function (joinStrategyLabels|liveBorderClass|statusTone)\(/, "no shared detail presentation copy remains in the panel");
 assert.match(detailPresentation, /export function (joinStrategyLabels|liveBorderClass|statusTone)/, "the lib owns strategy labels, live borders, and status tones");
 assert.match(detailBanner, /export function shouldShowInboxEventBanner/, "banner visibility belongs to the banner feature");
 assert.doesNotMatch(app, /function shouldShowInboxEventBanner\(/, "no banner visibility copy remains in the panel");
 assert.match(artifactModule, /export function openAskArtifact\(/, "ask artifacts open through the artifact target convention");
+assert.match(researchContent, /import \{ ArtifactInventory, openAskArtifact,/, "research composes the shared inventory and ask-artifact opener");
 assert.doesNotMatch(app, /function openAskArtifact\(/, "no ask-artifact opener copy remains in the panel");
 assert.match(workerHistory, /export function checkoutNoteFor\(/, "checkout wording belongs to worker presentation");
-assert.doesNotMatch(app, /function checkoutNoteFor\(/, "no checkout wording copy remains in the panel");
+assert.match(researchContent, /import \{ checkoutNoteFor, WorkerSection \} from "\.\.\/worker-history\/worker-history"/, "research composes shared worker and checkout presentation");
 // Input files: one shared renderer; openable files open in the viewer,
 // the rest render as plain rows — never a dead button.
 assert.match(detailInputFiles, /export function InputFiles\(\{ card, detail, onView/, "input files live in the detail module");
-assert.match(app, /import \{ InputFiles \} from "\.\/components\/detail\/input-files"/, "detail bodies read the shared input files");
+assert.match(detailSource, /import \{ InputFiles \} from/, "all detail routes read the shared input files");
 assert.doesNotMatch(app, /function InputFiles\(/, "no local input-files copy survives in the panel");
 assert.match(detailInputFiles, /: <div key={`/, "unopenable files render plain, never a dead button");
 // Detail hero: one prioritized reading — archived history, then open
 // questions, then worker states, then calm. Shared by the three bodies.
 assert.match(detailHero, /export function heroFor\(card: HeroCardState, detail: HeroDetailState\)/, "the hero lives in the detail module");
-assert.match(app, /import \{ HERO_STYLE, heroFor \} from "\.\/components\/detail\/detail-hero"/, "detail bodies read the shared hero");
+assert.match(detailSource, /import \{ HERO_STYLE, heroFor \} from/, "all detail routes read the shared hero");
 assert.doesNotMatch(app, /function heroFor\(/, "no local hero copy survives in the panel");
 assert.match(detailHero, /return attentionHero\(card, detail\) \?\? workerHero\(card, detail\) \?\? calmHero\(card\)/, "priority reads attention, then worker, then calm");
 assert.match(detailHero, /if \(archived\) return archived\.hero/, "archived history wins over every live state");
-assert.match(app, /<DetailHeroActions/g, "all three detail bodies use the shared hero action rail");
-assert.equal((app.match(/<DetailHeroActions/g) ?? []).length, 3, "Build, Research, and Explore must not drift into separate action policies");
+assert.match(detailSource, /<DetailHeroActions/g, "all three detail bodies use the shared hero action rail");
+assert.equal((detailSource.match(/<DetailHeroActions/g) ?? []).length, 3, "Build, Research, and Explore must not drift into separate action policies");
 assert.doesNotMatch(app, /hero\.kind === "error" && card\.workerThreadId/, "recovery branches are no longer pasted per detail body");
 assert.match(detailHeroActions, /heroKind === "paused" && card\.lastError \? "Retry" : "Resume"/, "paused failures retry while routine idles resume");
 assert.match(detailHeroActions, /card\.activity === "error" && card\.lastError && !preset\.stale/, "a decision can retry a concurrent failure only when the preset is current");
 assert.match(detailHeroActions, /<HeroErrorNote card=\{card\} \/>/, "a decision hero keeps the worker error beside the question");
 assert.match(detailHeroActions, /heroKind === "calm" && card\.activity === "idle"/, "only a live calm idle offers resume");
-assert.equal((app.match(/useDetailComment\(/g) ?? []).length, 3, "all three conversations share one comment submission seam");
+assert.equal((detailSource.match(/useDetailComment\(/g) ?? []).length, 3, "all three conversations share one comment submission seam");
 assert.doesNotMatch(app, /async function submitComment\(/, "no detail body keeps a private comment sender");
 assert.match(detailComment, /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body \}\)/, "trimmed comments route to the card worker");
 assert.match(detailComment, /if \(result\.error\)[\s\S]*?setComment\(""\);[\s\S]*?await onChanged\(\);/, "failed comments stay drafted while success clears and refreshes");
@@ -410,15 +427,16 @@ assert.match(app, /card\.status === "completed" \? <AuditTrailStatusRow cardId=\
 // freshness row — grouping sums through lib, the row re-checks on demand.
 assert.match(artifactModule, /export function ArtifactInventory\(\{ groups, workspaceKind, fileEnvironmentId, onView/, "the inventory lives in the artifacts module");
 assert.match(artifactModule, /export function AuditTrailStatusRow\(\{ cardId \}/, "the freshness row lives in the artifacts module");
-assert.match(app, /import \{ ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "detail bodies read the shared artifact surfaces and opener");
+assert.match(app, /import \{ ArtifactGroups, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "Build and Explore read the shared artifact surfaces and opener");
+assert.match(researchContent, /import \{ ArtifactInventory, openAskArtifact, type ArtifactInventoryGroup \} from "\.\.\/artifacts\/artifact-inventory"/, "Research reads the shared artifact inventory and opener");
 assert.doesNotMatch(app, /function ArtifactInventory\(/, "no local inventory copy survives in the panel");
 assert.doesNotMatch(app, /function AuditTrailStatusRow\(/, "no local freshness-row copy survives in the panel");
 assert.match(artifactModule, /groupArtifactsByStage\(artifacts\)/, "stage grouping sums through the lib, never inline math");
 // The viewer is shared by every detail track. It owns both live file reads and
 // the quote-to-card-comment flow; a local copy would strand draft resets or RPC
 // routing even when TypeScript still accepted the three call sites.
-assert.match(app, /import \{ ArtifactViewerDialog \} from "\.\/components\/detail\/artifact-viewer-dialog"/, "detail bodies share one artifact viewer");
-assert.equal((app.match(/<ArtifactViewerDialog/g) ?? []).length, 3, "Build, Research, and Explore mount the same viewer");
+assert.match(detailSource, /import \{ ArtifactViewerDialog \} from/, "detail bodies share one artifact viewer");
+assert.equal((detailSource.match(/<ArtifactViewerDialog/g) ?? []).length, 3, "Build, Research, and Explore mount the same viewer");
 assert.doesNotMatch(app, /function ArtifactViewerDialog\(/, "no local viewer copy survives in the panel");
 assert.match(detailViewer, /rpc\.call\("readCardFile", \{ cardId, path: file\.path \}\)/, "the viewer reads the selected card file through the host");
 assert.match(detailViewer, /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body: commentBody\(file, drafts\) \}\)/, "quoted excerpts post to the card worker as one comment");
