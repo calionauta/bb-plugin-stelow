@@ -25,8 +25,8 @@ assert.equal(
 );
 assert.equal(
   (server.match(/await spawnDisposable\(\{/g) ?? []).length,
-  4,
-  "four disposable spawns pinned (review, draft, card-title, gate pre-review); a fifth updates this contract deliberately",
+  5,
+  "five disposable spawns pinned (review, draft, card-title, gate pre-review, done-note); a sixth updates this contract deliberately",
 );
 
 // The SDK surface has no history inheritance today — keep it that way. If a

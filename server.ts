@@ -42,6 +42,8 @@ import { validateArtifact, validateSubstep, validateVariant, validateExplore, bu
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "./lib/delegation-map.mjs";
 import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput, buildCardNamePrompt, validateCardName, heuristicDisplayName, CARD_NAME_MAX_CHARS } from "./lib/draft-burst.mjs";
+import { buildDoneCommentBrief } from "./lib/github-issue-create.mjs";
+import { awaitDraftThread } from "./lib/draft-await.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria, groupCriteriaByKind, parseCriteriaBlock } from "./lib/skill-criteria.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
@@ -474,6 +476,11 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Rename a card's display title (1-120 chars); blank restores the heuristic",
     input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  draftDoneComment: {
+    experimental_description: "Draft a GitHub completion note with the cheap generation preset",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), draft: z.string().nullable(), error: z.string().nullable() }),
   },
   cardDetail: {
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
@@ -4522,6 +4529,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     try { await bb.sdk.threads.stop({ threadId }); } catch { /* already gone */ }
   }
 
+  // Shared draft-burst prologue (CLI `bb stelow draft` and the done-note
+  // draft RPC): card lookup, generation-preset cascade, workspace, spawn
+  // environment. One place so preset and environment semantics cannot drift
+  // between callers; each caller keeps its own error presentation (exit
+  // codes vs RPC refusal objects).
+  async function resolveDraftContext(card: CardRow): Promise<
+    | { ok: true; draftPreset: PresetRow; params: ReturnType<typeof presetAttachmentParams>; workspace: { path: string; hostId: string | null }; environment: Awaited<ReturnType<typeof continuingWorkerEnvironment>>; resolvedSource: string | null }
+    | { ok: false; error: string }
+  > {
+    const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
+    const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+    const boardDefault = designated ? getPresetById(designated.preset_id) : null;
+    const bandPreset = getPresetForBand(band, card.id);
+    const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
+    const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
+    if (!draftPreset) return { ok: false, error: "No preset available for drafting (no generation preset, no band preset). Assign presets first." };
+    const params = presetAttachmentParams(draftPreset);
+    const workspace = await cardWorkspace(card).catch(() => null);
+    if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
+    const draftSource = workspace.hostId ? { path: workspace.path, hostId: workspace.hostId } : null;
+    const environment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+    return { ok: true, draftPreset, params, workspace, environment, resolvedSource: resolved.source };
+  }
+
   // Disposable spawns (draft bursts, independent reviews) die with their
   // worker through lifecycleOwnerThreadId (BB 0.43 dependent threads).
   // Hosts predating the field strip unknown keys and honor the spawn; a host
@@ -5135,6 +5166,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // The scheduler lives with the feature it drives: disabling the module
   // (STELOW_GITHUB_ISSUES=0) stops the ticks along with the RPCs.
   bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => github.runAutomationRules());
+  bb.background.schedule("stelow-github-discussion-mirror", "*/5 * * * *", () => { void github.refreshLinkedDiscussions(); });
 
   bb.rpc.register(rpcContract, {
     ...github.handlers,
@@ -5610,6 +5642,70 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       if (!matched) return unverified;
       return { status: sealStatus(failures.length === 0 ? { pass: true } : { pass: false }, evidence ?? "verified"), failures, evidence, label };
+    },
+
+    // Done-note draft for the GitHub post dialog: same generation-preset
+    // cascade and hidden-thread lifecycle as disposable prose bursts, with
+    // the card's own scopes as the factual brief. Generated on dialog open
+    // (freshness plus no wasted tokens), never at Done time.
+    async draftDoneComment({ cardId }: { cardId: string }) {
+      const card = getCard(cardId);
+      if (!card) throw new Error(ERR_CARD_NOT_FOUND);
+      if (isArchivedCard(card)) throw new Error(ERR_CARD_ARCHIVED);
+      const draftContext = await resolveDraftContext(card);
+      if (!draftContext.ok) return { ok: false, draft: null, error: draftContext.error };
+      const { draftPreset, params, workspace, environment: draftEnvironment } = draftContext;
+      const scopes = loadCardScopes(workspace.path, card.id);
+      const scopeLines = scopes.map((scope) => `- ${String(scope.name)} (${String(scope.status)})`);
+      const doneCount = scopes.filter((scope) => scope.status === "done" || scope.status === "completed").length;
+      const brief = buildDoneCommentBrief({
+        title: card.display_name ?? card.name,
+        intent: card.intent ?? "unknown",
+        stage: card.stage,
+        scopesDone: doneCount,
+        scopesTotal: scopes.length,
+        scopeLines,
+        promptExcerpt: card.prompt.length > 1500 ? `${card.prompt.slice(0, 1500)}…` : card.prompt,
+      });
+      const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
+      let draftThread: { id: string };
+      try {
+        draftThread = await spawnDisposable({
+          projectId: card.project_id,
+          environment: draftEnvironment,
+          visibility: "hidden",
+          // Same dependent lifecycle as prose bursts: archiving the worker
+          // archives the draft with it. The text returns through this RPC,
+          // never thread history.
+          ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
+          title: `Stelow done-note: ${card.display_name ?? card.name}`,
+          providerId: params.providerId,
+          model: params.modelId,
+          reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
+          permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
+          executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
+          prompt,
+        }, "draft-burst");
+      } catch (error) {
+        return { ok: false, draft: null, error: `Draft spawn failed: ${error instanceof Error ? error.message : "unknown error"}.` };
+      }
+      const waited = await awaitDraftThread(
+        {
+          threadStatus: async () => {
+            const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
+            const status = (thread as { status?: unknown } | null)?.status;
+            return typeof status === "string" ? status : null;
+          },
+          threadOutput: () => bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => ""),
+          stopThread: () => stopWorkerThread(draftThread.id),
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+        },
+        draftThread.id,
+      );
+      if (!waited.ok) return { ok: false, draft: null, error: waited.error };
+      const validated = validateDraftOutput(waited.output);
+      if (!validated.ok) return { ok: false, draft: null, error: validated.error ?? "Empty draft." };
+      return { ok: true, draft: validated.text, error: null };
     },
 
     async cardDetail({ cardId }) {
@@ -9594,22 +9690,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const card = getCard(cardId);
         if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
         if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
-        const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
-        const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-        const boardDefault = designated ? getPresetById(designated.preset_id) : null;
-        const bandPreset = getPresetForBand(band, cardId);
-        const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
-        const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
-        if (!draftPreset) return { exitCode: 1, stderr: "No preset available for the draft burst (no generation preset, no band preset). Assign presets first." };
-        const params = presetAttachmentParams(draftPreset);
+        const draftContext = await resolveDraftContext(card);
+        if (!draftContext.ok) return { exitCode: 1, stderr: draftContext.error };
+        const { draftPreset, params, workspace: draftWorkspace, environment: draftEnvironment, resolvedSource } = draftContext;
         const permissionNote = params.permissionMode === "full"
           ? " (preset permission coerced full → accept-edits: drafts read, never write)"
           : "";
-        const fallbackNote = resolved.source === "band" ? " (generation preset unset — ran on the band preset)" : "";
-        const draftWorkspace = await cardWorkspace(card);
-        if (!draftWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
-        const draftSource = draftWorkspace.hostId ? { path: draftWorkspace.path, hostId: draftWorkspace.hostId } : null;
-        const draftEnvironment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+        const fallbackNote = resolvedSource === "band" ? " (generation preset unset — ran on the band preset)" : "";
         const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
         let draftThread: { id: string };
         try {
@@ -9632,27 +9719,21 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         } catch (error) {
           return { exitCode: 1, stderr: `Draft spawn failed: ${error instanceof Error ? error.message : "unknown error"}.${permissionNote}` };
         }
-        const DRAFT_POLL_MS = 5000;
-        const DRAFT_POLLS = 36;
-        for (let poll = 0; poll < DRAFT_POLLS; poll++) {
-          await new Promise((resolve) => setTimeout(resolve, DRAFT_POLL_MS));
-          const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
-          const status = (thread as { status?: unknown } | null)?.status;
-          if (status === "idle" || status === "stopping") break;
-          // The worker may be archived mid-draft (dependent lifecycle above):
-          // stop polling and fall through to the empty-draft path below.
-          if (status === "archived" || status === "deleted") break;
-          if (status === "failed" || status === "error") {
-            await stopWorkerThread(draftThread.id).catch(() => undefined);
-            return { exitCode: 1, stderr: `Draft thread ${draftThread.id} ended with status ${String(status)} — do the draft yourself.` };
-          }
-          if (poll === DRAFT_POLLS - 1) {
-            await stopWorkerThread(draftThread.id).catch(() => undefined);
-            return { exitCode: 1, stderr: `Draft thread ${draftThread.id} still running after 3 minutes — stopped; do the draft yourself.` };
-          }
-        }
-        const output = await bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => "");
-        await stopWorkerThread(draftThread.id).catch(() => undefined);
+        const waited = await awaitDraftThread(
+          {
+            threadStatus: async () => {
+              const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
+              const status = (thread as { status?: unknown } | null)?.status;
+              return typeof status === "string" ? status : null;
+            },
+            threadOutput: () => bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => ""),
+            stopThread: () => stopWorkerThread(draftThread.id),
+            sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          },
+          draftThread.id,
+        );
+        if (!waited.ok) return { exitCode: 1, stderr: waited.error ?? "Draft failed." };
+        const output = waited.output;
         const validated = validateDraftOutput(output);
         if (!validated.ok) return { exitCode: 1, stderr: validated.error ?? "Empty draft." };
         const stamp = roundTimestamp();
@@ -9664,13 +9745,13 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             await bb.sdk.files.mkdir({ path: dirname(full), rootPath: draftWorkspace.path, recursive: true });
             await bb.sdk.files.write({
               path: full,
-              content: `# Draft ${stamp} (${resolved.source})\n\nCard: ${card.display_name ?? card.name}\nThread: ${draftThread.id}\nPreset: ${draftPreset.name}\n\n${validated.text}\n`,
+              content: `# Draft ${stamp} (${resolvedSource})\n\nCard: ${card.display_name ?? card.name}\nThread: ${draftThread.id}\nPreset: ${draftPreset.name}\n\n${validated.text}\n`,
             });
             draftPath = workspaceRelative(draftWorkspace.path, full) ?? `drafts/draft-${stamp}.md`;
           } catch { /* draft still returned via stdout */ }
         }
         logCardComment(cardId, "card", cardId, "agent", `Draft burst (${draftPreset.name}${fallbackNote}) — judge every word before using it.${draftPath ? ` Record: ${draftPath}.` : ""}${permissionNote}`);
-        if (json) return { exitCode: 0, stdout: JSON.stringify({ draft: validated.text, truncated: validated.truncated ?? false, threadId: draftThread.id, path: draftPath, source: resolved.source }, null, 2) };
+        if (json) return { exitCode: 0, stdout: JSON.stringify({ draft: validated.text, truncated: validated.truncated ?? false, threadId: draftThread.id, path: draftPath, source: resolvedSource }, null, 2) };
         return { exitCode: 0, stdout: validated.text };
       }
       if (argv[0] === "preset") {

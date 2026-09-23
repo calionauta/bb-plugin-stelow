@@ -649,6 +649,16 @@ function BoardPanel({ active }: { active: boolean }) {
   // Deferred start: unchecked parks the card in Bucket with no worker.
   // Checked (default) preserves today's behavior — spawn on submit.
   const [startImmediately, setStartImmediately] = useState(true);
+  // Optional GitHub issue at card birth (Build only): opt-in and off by
+  // default — nothing external happens without a gesture. The card is
+  // always created first; the issue links back to it.
+  const [createGithubIssue, setCreateGithubIssue] = useState(false);
+  const [createGithubRepo, setCreateGithubRepo] = useState<string | null>(null);
+  // Submit guard: double-clicking submit must not create two cards (and now
+  // two issues). A ref, not state — the second gesture can land before the
+  // re-render. Reset on every terminal path below, never on early returns
+  // above the flag.
+  const submitBusyRef = useRef(false);
   // Workflow preferences stay visible under the composer: a collapsed
   // Settings hides consequential choices (planning depth, review gates)
   // the user would otherwise never discover. The dialog frame keeps a
@@ -777,6 +787,8 @@ function BoardPanel({ active }: { active: boolean }) {
       .map((part) => ({ type: part.type, path: part.path }));
     const prompt = text;
     if (!prompt.trim()) return;
+    if (submitBusyRef.current) return;
+    submitBusyRef.current = true;
     setCreateBuildError(null);
     try {
       const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode: reviewGates, start: startImmediately, execution: composerExecutionOf(request) });
@@ -784,7 +796,10 @@ function BoardPanel({ active }: { active: boolean }) {
       setCreateBuildOpen(false);
       navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
       toast.success(startImmediately ? "Card started in Triage. Stelow will triage it." : "Card parked in Bucket. Start it from the card when ready.");
+      await submitGithubTrailer(rpc, result.cardId, createGithubIssue, createGithubRepo);
+      submitBusyRef.current = false;
     } catch (error) {
+      submitBusyRef.current = false;
       const message = error instanceof Error ? error.message : "Unable to start the card.";
       setCreateBuildError(message);
       toast.error(message);
@@ -837,7 +852,7 @@ function BoardPanel({ active }: { active: boolean }) {
             </div>
           ) : null}
 
-          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) { setStartImmediately(true); setCreateBuildError(null); } }}>
+          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) { setStartImmediately(true); setCreateGithubIssue(false); setCreateGithubRepo(null); setCreateBuildError(null); } }}>
             <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Start new issue</DialogTitle>
@@ -862,6 +877,15 @@ function BoardPanel({ active }: { active: boolean }) {
                   onConfigure={() => setBoardPresetsOpen(true)}
                 />
                 <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
+                {((githubStatus?.repos ?? []).filter((entry) => entry.projectId === activeProjectId).length > 0) ? (
+                  <GithubCreateRow
+                    repos={(githubStatus?.repos ?? []).filter((entry) => entry.projectId === activeProjectId).map((entry) => entry.repo)}
+                    checked={createGithubIssue}
+                    onCheckedChange={setCreateGithubIssue}
+                    repo={createGithubRepo}
+                    onRepoChange={setCreateGithubRepo}
+                  />
+                ) : null}
                 {bucketGallery.bucketGallery}
                 <WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={setAppetite} onReviewGatesChange={setReviewGates} groupNamePrefix="create" />
               </div>
@@ -2996,6 +3020,49 @@ function BoardCard({ card, onOpen }: { card: CardItem; onOpen?: () => void }) {
       <CardMetaRows card={card} />
     </div>
   );
+}
+
+// Optional GitHub issue at card birth (Build only): one checkbox plus a
+// repo picker when several repos map to the project. Off by default, and
+// the section renders only when at least one repo is mapped.
+function GithubCreateRow({ repos, checked, onCheckedChange, repo, onRepoChange }: {
+  repos: string[];
+  checked: boolean;
+  onCheckedChange: (next: boolean) => void;
+  repo: string | null;
+  onRepoChange: (next: string | null) => void;
+}) {
+  const selected = repo ?? repos[0] ?? null;
+  return (
+    <div className="space-y-1">
+      <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+        <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} className="size-4 accent-primary" />
+        Also create issue{repos.length === 1 ? ` in ${repos[0]}` : " in the project repo"}
+      </label>
+      {repos.length > 1 ? (
+        <select value={selected ?? ""} onChange={(event) => onRepoChange(event.target.value || null)} className="h-10 rounded-md border bg-background px-2 text-sm" aria-label="GitHub repository for the new issue">
+          <option value="">Pick a repository</option>
+          {repos.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      ) : null}
+      <p className="text-xs text-muted-foreground">Card is created first; on failure the card stands and the error names the cause.</p>
+    </div>
+  );
+}
+
+// Best-effort trailer after card creation: the card stands whatever GitHub
+// says. Never throws — a failure toasts and the card keeps no phantom link.
+// Extracted so the submit path stays about cards; deleting the GitHub
+// integration removes this call plus the checkbox above, nothing else.
+async function submitGithubTrailer(rpc: ReturnType<typeof useRpc<typeof rpcContract>>, cardId: string, create: boolean, repo: string | null) {
+  if (!create) return;
+  try {
+    const link = await rpc.call("createLinkedGithubIssue", { cardId, repo });
+    if (link.ok && link.url) toast.success(`GitHub issue #${link.number} created and linked.`);
+    else toast.error(link.error ?? "GitHub issue creation failed — the card stands without a link.");
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "GitHub issue creation failed — the card stands without a link.");
+  }
 }
 
 // Card gallery dialog: one expanded modal listing cards as the same tiles
@@ -5775,7 +5842,7 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
   ].filter((part): part is string => part !== null) : [];
   return (
     <details className={`group${separated ? " mt-3 border-t pt-2" : ""}`}>
-      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : null}</summary>
+      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : history.length > 0 ? <span title="No worker reported token usage — providers decide what to report, and unknown is never shown as zero."> · tokens unknown</span> : null}</summary>
       {legs.length > 0 ? <p className="mt-1 text-[11px] text-muted-foreground" title="Provider-reported split across all workers; legs without reports are omitted, never zeroed.">{legs.join(" · ")}</p> : null}
       <div className="mt-1 divide-y divide-border rounded-md border">
         {history.map((entry) => (
@@ -5813,6 +5880,227 @@ function WorkerHistoryList({ history, separated = false }: { history: CardDetail
   );
 }
 
+type LinkedDiscussionSnapshot = {
+  linked: boolean;
+  repo: string | null;
+  number: number | null;
+  url: string | null;
+  comments: Array<{ author: string; body: string; createdAt: number }>;
+  updatedAt: number | null;
+  canCreate: boolean;
+  repos: string[];
+};
+// Linked GitHub thread, self-contained: fetches its own mirror on mount,
+// refreshes on mirror events, and owns every state — linked comments plus
+// composer, or the create CTA when the card may link. Rendered in every
+// track's detail; each instance minds only its own cardId.
+function LinkedDiscussionSection({ cardId }: { cardId: string }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [discussion, setDiscussion] = useState<LinkedDiscussionSnapshot | null>(null);
+  const [draft, setDraft] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createRepo, setCreateRepo] = useState<string | null>(null);
+  const loadDiscussion = useCallback(async () => {
+    try { setDiscussion(await rpc.call("getLinkedDiscussion", { cardId })); }
+    catch { setDiscussion(null); }
+  }, [cardId, rpc]);
+  useEffect(() => { void loadDiscussion(); }, [loadDiscussion]);
+  useDebouncedRealtime(["github-discussion"], () => { void loadDiscussion(); });
+  if (!discussion) return null;
+  if (!discussion.linked) {
+    if (!discussion.canCreate || discussion.repos.length === 0) return null;
+    const selected = createRepo ?? discussion.repos[0] ?? null;
+    const create = async () => {
+      if (creating) return;
+      setCreating(true);
+      try {
+        const link = await rpc.call("createLinkedGithubIssue", { cardId, repo: createRepo });
+        if (link.ok) {
+          toast.success(`GitHub issue #${link.number} created and linked.`);
+          await loadDiscussion();
+        } else {
+          toast.error(link.error ?? "GitHub issue creation failed.");
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "GitHub issue creation failed.");
+      } finally {
+        setCreating(false);
+      }
+    };
+    return (
+      <CardDisclosure title="Linked discussion" hint="link it">
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">No linked issue yet — link one to mirror its thread here.</p>
+          {discussion.repos.length > 1 ? (
+            <select value={selected ?? ""} onChange={(event) => setCreateRepo(event.target.value || null)} className="h-10 rounded-md border bg-background px-2 text-sm" aria-label="GitHub repository for the new issue">
+              <option value="">Pick a repository</option>
+              {discussion.repos.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          ) : null}
+          <div><Button size="sm" disabled={creating} onClick={() => void create()}>{creating ? "Creating…" : `Create issue${discussion.repos.length === 1 ? ` in ${discussion.repos[0]}` : ""}`}</Button></div>
+        </div>
+      </CardDisclosure>
+    );
+  }
+  const post = async () => {
+    if (posting || !draft.trim()) return;
+    setPosting(true);
+    setPostError(null);
+    try {
+      const result = await rpc.call("postIssueComment", { cardId, body: draft.trim() });
+      if (result.ok) {
+        setDraft("");
+        setConfirming(false);
+        toast.success("Comment posted on GitHub.");
+        await loadDiscussion();
+      } else {
+        setPostError(result.error ?? "GitHub refused the comment.");
+      }
+    } catch (error) {
+      setPostError(error instanceof Error ? error.message : "GitHub refused the comment.");
+    } finally {
+      setPosting(false);
+    }
+  };
+  return (
+    <CardDisclosure title="Linked discussion" hint={discussion.comments.length ? `${discussion.comments.length} · mirror` : "mirror"}>
+      <div className="space-y-2">
+        {discussion.url ? <div><UrlLink href={discussion.url} className="text-xs font-medium text-primary underline-offset-4 hover:underline">Open on GitHub ↗</UrlLink></div> : null}
+        {discussion.comments.length ? discussion.comments.map((entry, index) => (
+          <div key={`${entry.author}-${entry.createdAt}-${index}`} className="rounded-lg border border-border bg-muted/30 p-2.5">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{entry.author || "Someone"}</span>
+              <span title={new Date(entry.createdAt).toLocaleString()}>{new Date(entry.createdAt).toLocaleString()}</span>
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px]">mirror</span>
+            </div>
+            <div className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></div>
+          </div>
+        )) : <p className="text-xs text-muted-foreground">No comments yet.</p>}
+        {confirming ? (
+          <div className="space-y-2 rounded-md border border-primary/25 bg-primary/5 p-2.5">
+            <p className="text-xs font-medium">Post to {discussion.repo}#{discussion.number} as a comment — public and hard to undo.</p>
+            <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed">{draft.trim()}</div>
+            {postError ? <p className="text-xs text-destructive">{postError}</p> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" disabled={posting} onClick={() => void post()}>{posting ? "Posting…" : "Confirm post"}</Button>
+              <Button size="sm" variant="outline" disabled={posting} onClick={() => { setConfirming(false); setPostError(null); }}>Cancel</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Write to the issue</span>
+              <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Comment as yourself on the linked issue…" />
+            </label>
+            {postError ? <p className="text-xs text-destructive">{postError}</p> : null}
+            <div><Button size="sm" variant="outline" disabled={!draft.trim() || posting} onClick={() => { setPostError(null); setConfirming(true); }}>Post to issue</Button></div>
+          </div>
+        )}
+        <p className="text-[11px] text-muted-foreground">Read-only mirror of the issue thread — external text is never fed to workers.</p>
+      </div>
+    </CardDisclosure>
+  );
+}
+// Done-note draft dialog, self-contained: generates on open with the cheap
+// generation preset (freshness plus no wasted tokens), fully editable,
+// deliverable artifacts checked by default with evidence opt-in. Nothing
+// posts without the explicit Post below.
+function DoneDraftDialog({ open, onOpenChange, cardId, artifacts, issueRef }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  cardId: string;
+  artifacts: Array<{ path: string; display: string; role: string }>;
+  issueRef: { repo: string; number: number } | null;
+}) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<string[]>([]);
+  const [posting, setPosting] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setText("");
+    setError(null);
+    setChecked(artifacts.filter((artifact) => artifact.role === "deliverable").map((artifact) => artifact.path));
+    setLoading(true);
+    rpc.call("draftDoneComment", { cardId }).then(
+      (result) => {
+        if (result.ok && result.draft) setText(result.draft);
+        else setError(result.error ?? "Could not draft the comment — write it yourself below.");
+      },
+      (err: unknown) => setError(err instanceof Error ? err.message : "Could not draft the comment — write it yourself below."),
+    ).finally(() => setLoading(false));
+    // Snapshot-at-open by design (open, cardId, rpc only): artifacts and
+    // card stay as opened, so a background refresh never swaps the draft.
+  }, [open, cardId, rpc]);
+  const post = async () => {
+    const list = artifacts.filter((artifact) => checked.includes(artifact.path));
+    const body = text.trim() + (list.length > 0 ? `\n\nArtifacts:\n${list.map((artifact) => `- ${artifact.display} (${artifact.path})`).join("\n")}` : "");
+    if (!body.trim()) {
+      setError("Comment must not be empty.");
+      return;
+    }
+    setPosting(true);
+    try {
+      const result = await rpc.call("postIssueComment", { cardId, body });
+      if (!result.ok) {
+        setError(result.error ?? "GitHub refused the comment.");
+        return;
+      }
+      onOpenChange(false);
+      toast.success("Comment posted on GitHub.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "GitHub refused the comment.");
+    } finally {
+      setPosting(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Draft GitHub comment?</DialogTitle>
+          <DialogDescription className="space-y-2">
+            <p>
+              Drafted with the cheap generation preset for {issueRef ? `${issueRef.repo}#${issueRef.number}` : "the linked issue"} — judge every word before posting. Checked artifacts append as a list; uncheck to detach.
+            </p>
+          </DialogDescription>
+        </DialogHeader>
+        {loading ? <p className="text-sm text-muted-foreground">Drafting…</p> : (
+          <>
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Comment (editable)</span>
+              <textarea value={text} onChange={(event) => setText(event.target.value)} rows={8} className="min-h-32 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Write the completion note…" />
+            </label>
+            {artifacts.length > 0 ? (
+              <div className="space-y-1">
+                <span className="text-xs font-medium text-muted-foreground">Artifacts ({checked.length} attached)</span>
+                {artifacts.map((artifact) => (
+                  <label key={artifact.path} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted/60">
+                    <input type="checkbox" checked={checked.includes(artifact.path)} onChange={(event) => setChecked((prev) => event.target.checked ? [...prev, artifact.path] : prev.filter((path) => path !== artifact.path))} className="size-4 accent-primary" />
+                    <span className="min-w-0 flex-1 truncate">{artifact.display}</span>
+                    <span className="text-[11px] text-muted-foreground">{artifact.role}</span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </>
+        )}
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline" disabled={posting || loading}>Cancel</Button>
+          </DialogClose>
+          <Button disabled={posting || loading || !text.trim()} onClick={() => void post()}>{posting ? "Posting…" : "Post comment"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen = false, threadId }: {
   comments: CardDetailResponse["comments"]; draft: string; onDraftChange: (value: string) => void; onSend: () => void; defaultOpen?: boolean; threadId?: string | null;
 }) {
@@ -6359,6 +6647,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
             </CardDisclosure>
 
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
+            <LinkedDiscussionSection cardId={cardId} />
 
           </>
         ) : null}
@@ -6617,6 +6906,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
             </CardDisclosure>
 
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
+            <LinkedDiscussionSection cardId={cardId} />
 
           </>
         ) : null}
@@ -6675,6 +6965,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [promoting, setPromoting] = useState(false);
   const [githubPostOpen, setGithubPostOpen] = useState(false);
   const [githubCloseIssue, setGithubCloseIssue] = useState(false);
+  // LLM-drafted issue comment (Done cards): generated on dialog open with
+  // the cheap generation preset, fully editable, artifacts detachable.
+  // Nothing posts without the explicit Post below.
+  const [doneDraftOpen, setDoneDraftOpen] = useState(false);
   const [githubPosting, setGithubPosting] = useState(false);
   type PublicationStatus = Awaited<ReturnType<typeof rpc.call<"publicationStatus">>>;
   const [publication, setPublication] = useState<PublicationStatus | null>(null);
@@ -7266,7 +7560,10 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     detail.githubLink.postedAt ? (
                       <span className="text-emerald-700 dark:text-emerald-300">✓ Completion summary posted to GitHub</span>
                     ) : (
+                      <>
                       <button onClick={() => { setGithubCloseIssue(false); setGithubPostOpen(true); }} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
+                      <button onClick={() => setDoneDraftOpen(true)} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Draft GitHub comment…</button>
+                      </>
                     )
                   ) : (
                     <span>A completion summary can be posted once this card is Done.</span>
@@ -7626,6 +7923,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
             {/* Conversation (history + composer) */}
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
+            <LinkedDiscussionSection cardId={cardId} />
 
           </>
         ) : null}
@@ -7808,6 +8106,13 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <DoneDraftDialog
+        open={doneDraftOpen}
+        onOpenChange={setDoneDraftOpen}
+        cardId={cardId}
+        artifacts={detail?.artifacts ?? []}
+        issueRef={detail?.githubLink ? { repo: detail.githubLink.repo, number: detail.githubLink.number } : null}
+      />
       <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
         <DialogContent>
           <DialogHeader>
