@@ -196,4 +196,3 @@ export function BuildProgress({ card, detail, archivedPresentation, artifactTota
     </>
   );
 }
-

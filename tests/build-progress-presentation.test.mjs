@@ -27,6 +27,11 @@ const combined = gapSummaryPresentation({ matched: true, escalated: 2, unscoped:
 assert.equal(combined.blocked, true, "unscoped and open rework scopes both block unfinished done state");
 assert.match(combined.waitCopy, /Done waits on 1 escalated gap without a rework scope/, "missing rework scope names the actionable loop");
 assert.match(combined.waitCopy, /2 rework scopes still open/, "open rework scopes remain visible beside the missing-scope warning");
+assert.deepEqual(
+  gapSummaryPresentation({ matched: true, escalated: 1, unscoped: 0, pendingScopes: 1, done: false }),
+  { blocked: true, waitCopy: "1 rework scope still open.", resolvedCopy: null },
+  "an open rework scope blocks Done independently of a missing rework scope",
+);
 assert.equal(gapSummaryPresentation({ matched: true, escalated: 1, unscoped: 1, pendingScopes: 0, done: true }).waitCopy, null, "terminal cards suppress the live blocker warning");
 assert.deepEqual(
   gapSummaryPresentation({ matched: true, escalated: 1, unscoped: 0, pendingScopes: 0, done: false }),
