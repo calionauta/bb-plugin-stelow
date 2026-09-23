@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.47.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.47.0...v0.47.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* Bucket import copy and gallery top-left pin ([f187c67](https://github.com/calionauta/bb-plugin-stelow/commit/f187c67ebdc06161415bfca9838aef074777d2c2))
+* name the import parking spot Bucket, not Inbox ([c4a57d6](https://github.com/calionauta/bb-plugin-stelow/commit/c4a57d69bf01d51056e1a89c588a2483fc7fde27))
+* pin gallery rows to the top-left ([217d36e](https://github.com/calionauta/bb-plugin-stelow/commit/217d36e03f76a0feb440b247340e7bd3a8bef82a))
+
 ## [0.47.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.46.0...v0.47.0) (2026-09-22)
 
 
