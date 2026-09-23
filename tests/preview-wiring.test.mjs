@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(root, "server.ts"), "utf8");
+const appSource = readFileSync(join(root, "app.tsx"), "utf8");
+const previewSource = readFileSync(join(root, "components/detail/preview-section.tsx"), "utf8");
 
 /** The text between two markers, failing loudly if either is gone. */
 function slice(start, end) {
@@ -91,4 +93,16 @@ assert.match(slice("    async previewStop({ cardId }) {", "  });"), /previewStop
 assert.match(source, /\{ name: "preview", summary:/, "the CLI must document the subcommand");
 assert.match(source, /createPreviewRuntime/, "server.ts must construct the runtime");
 
-console.log("preview wiring test ok: host effects wired, dispose wired, lifecycle in lib, worker checkout first, one renderer, shared state list");
+// --- The extracted panel owns its complete preview seam. ------------------
+// These are topology guards, not snapshots: a copy left in app.tsx would split
+// the polling/action state machine, while deleting one RPC would strand a live
+// control even though both files would still typecheck.
+assert.match(appSource, /import \{ PreviewSection \} from "\.\/components\/detail\/preview-section"/, "the three detail bodies must consume the extracted preview seam");
+assert.doesNotMatch(appSource, /function PreviewSection|const PreviewFrame|function PreviewAddress/, "preview implementation must not be copied back into app.tsx");
+for (const rpcName of ["previewState", "previewStart", "previewStop", "previewShare"]) {
+  assert.ok(previewSource.includes(`"${rpcName}"`), `the preview panel must keep its ${rpcName} seam`);
+}
+assert.match(previewSource, /previewAction\(info\.state, info\.available\)/, "the button must use the canonical runtime action decision");
+assert.match(previewSource, /tries >= 30/, "starting preview polling must stay bounded");
+
+console.log("preview wiring test ok: host effects wired, dispose wired, lifecycle in lib, worker checkout first, one renderer, shared state list, panel seam intact");

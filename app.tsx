@@ -1,4 +1,4 @@
-import { Children, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Children, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   Markdown,
   experimental_SourceCode as SourceCode,
@@ -40,7 +40,6 @@ import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-updat
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
-import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
@@ -64,9 +63,9 @@ import { ScopesList } from "./components/detail/scopes-list";
 import { HERO_STYLE, HeroErrorNote, heroFor, type HeroKind } from "./components/detail/detail-hero";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
-import type { PreviewInfo, rpcContract } from "./server";
+import { PreviewSection } from "./components/detail/preview-section";
+import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
-import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -3529,240 +3528,6 @@ function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAtt
       {recovery.kind === "attached" && recovery.recovery ? <div className="rounded border border-emerald-500/30 bg-emerald-500/10 p-2"><p className="font-medium">Attached: {recovery.recovery.projectName}</p><p className="mt-1 break-all text-emerald-900/80 dark:text-emerald-100/80"><code>{recovery.recovery.path}</code> · attached {new Date(recovery.recovery.attachedAt).toLocaleString()}</p><p className="mt-1 text-emerald-900/80 dark:text-emerald-100/80">This original card is preserved as a mismatch record. A separate Build recovery audit owns review, tests, commits, and PRs.</p>{recovery.audit ? <Button className="mt-2" size="sm" variant="outline" onClick={() => onOpenAudit(recovery.audit!.cardId)}>Open recovery audit</Button> : <Button className="mt-2" size="sm" variant="outline" onClick={onCreateAudit}>Create recovery audit</Button>}</div> : null}
     </> : null}
   </div>;
-}
-
-// The workflow reference is intentionally separate from the very large card
-// body: it is a stable explainer, not card-state orchestration. Keeping it
-// here makes its visual density and accessibility contract independently
-// reviewable while the parent owns only whether it is expanded.
-// --- Preview: run the card's web app and look at it. ------------------------
-//
-// Three properties matter here more than features:
-//
-// 1. Re-render discipline. This plugin reloads board data in the background,
-//    so the frame is memoized on its address alone and the only polling is a
-//    bounded wait while a server is starting. Nothing else re-renders it.
-// 2. No dead ends. Every state has one obvious action, and every framed
-//    preview keeps "Open in a new tab" visible — the escape hatch for an app
-//    that refuses framing, or a browser stricter than the verdict.
-// 3. Honesty. The exact command, the port, the checkout, and which checkout it
-//    is (worker worktree vs project source) are always on screen.
-const PreviewFrame = memo(function PreviewFrame({ url, title }: { url: string; title: string }) {
-  return (
-    <iframe
-      key={url}
-      src={url}
-      title={title}
-      // allow-same-origin keeps the dev app's own localStorage and cookies
-      // working. That is safe only because the verdict refuses to frame bb's own
-      // origin (see previewFrameVerdict), so the framed document is always a
-      // different origin from the app that frames it.
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-popups-to-escape-sandbox"
-      referrerPolicy="no-referrer"
-      loading="lazy"
-      className="h-[420px] w-full rounded-md border border-border bg-background"
-    />
-  );
-});
-
-function PreviewAddress({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Copy failed — select the address and copy it by hand.");
-    }
-  }
-  return (
-    <div className="relative max-w-full">
-      <code className="block w-full truncate rounded-md border border-border bg-background/60 py-1 pl-2 pr-10 font-mono text-xs" title={url}>{url}</code>
-      {/* Copy lives inside the address it copies, height-matched and always
-          pointer-shaped: a sibling button never quite aligns with its input. */}
-      <button type="button" onClick={() => void copy()} aria-label="Copy preview address" title={copied ? "Copied" : "Copy preview address"} className={`absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-xs text-muted-foreground ${CONTROL_HOVER_TRANSITION} hover:bg-muted hover:text-foreground`}>
-        {copied ? "✓" : "⧉"}
-      </button>
-    </div>
-  );
-}
-
-const PREVIEW_STATE_TONE: Record<PreviewInfo["state"], string> = {
-  stopped: "text-muted-foreground",
-  starting: "text-amber-600 dark:text-amber-400",
-  running: "text-emerald-600 dark:text-emerald-400",
-  failed: "text-destructive",
-};
-
-function PreviewSection({ cardId }: { cardId: string }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const navigate = useBbNavigate();
-  const [info, setInfo] = useState<PreviewInfo | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [showLog, setShowLog] = useState(false);
-  const [frameHidden, setFrameHidden] = useState(false);
-  const [nowTick, setNowTick] = useState(() => Date.now());
-  const logAutoOpened = useRef<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const next = await rpc.call("previewState", { cardId, appOrigin: window.location.origin });
-      setInfo(next);
-      return next;
-    } catch {
-      return null;
-    }
-  }, [rpc, cardId]);
-
-  // Load once per card. Never on every parent render: the board reloads in the
-  // background, and a preview must not re-probe Connect — or re-mount a frame —
-  // because of it.
-  useEffect(() => { void load(); }, [load]);
-
-  async function act(action: "previewStart" | "previewStop" | "previewShare") {
-    setBusy(true);
-    try {
-      const result = await rpc.call(action, { cardId });
-      if (!result.ok) toast.error(result.error ?? "The preview could not be changed.");
-      setFrameHidden(false);
-      await load();
-    } catch {
-      toast.error("The preview could not be changed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // A server that is still starting is the ONE thing worth waiting for, and
-  // the wait is bounded: once it is running or failed, the loop ends. The
-  // same tick drives the elapsed clock, and the log opens itself while
-  // starting or failed: that is exactly when the read-only terminal is
-  // needed, not after hunting for the toggle. The ref keeps a manual hide
-  // from being re-opened by the next poll.
-  const starting = info?.state === "starting";
-  useEffect(() => {
-    if (!starting) return;
-    let tries = 0;
-    setNowTick(Date.now());
-    const timer = setInterval(() => {
-      tries += 1;
-      setNowTick(Date.now());
-      void load().then((next) => { if (!next || next.state !== "starting" || tries >= 30) clearInterval(timer); });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [starting, load]);
-  useEffect(() => {
-    const state = info?.state ?? null;
-    if ((state === "starting" || state === "failed") && info?.log && logAutoOpened.current !== state) {
-      logAutoOpened.current = state;
-      setShowLog(true);
-    }
-    if (state !== "starting" && state !== "failed") logAutoOpened.current = null;
-  }, [info?.state, info?.log]);
-
-  if (info === null) return null;
-  // No web app here: stay out of the way. A missing workspace is worth saying,
-  // because the user expected a card they can look at.
-  if (!info.available) return info.error ? <p className="text-xs text-muted-foreground">{info.error}</p> : null;
-
-  const running = info.state === "running";
-  // Carrying the address in the condition (rather than a separate boolean) keeps
-  // the frame's `src` narrowed to a string without a non-null assertion.
-  const framedUrl = running && info.frame === "frame" && info.url && !frameHidden ? info.url : null;
-  const framed = framedUrl !== null;
-  // The same narrowing for the open-in-a-tab affordance.
-  const openUrl = running && info.url ? info.url : null;
-  const elapsedSecs = starting && info.startedAt ? Math.max(0, Math.round((nowTick - info.startedAt) / 1000)) : null;
-  const stateLabel = info.state === "starting" ? `Starting…${elapsedSecs != null ? ` ${elapsedSecs}s` : ""}` : info.state === "running" ? "Running" : info.state === "failed" ? "Failed" : "Not running";
-
-  return (
-    <DisclosureSection
-      title="Preview"
-      hint={running && info.url ? info.url.replace(/^https?:\/\//, "") : `${info.label ?? "Web app"} · ${info.source ?? ""}`.trim()}
-      defaultOpen
-      action={
-        <span className="flex items-center gap-2">
-          <span className={`text-xs font-medium ${PREVIEW_STATE_TONE[info.state]}`}>{stateLabel}</span>
-          {/* The canonical action decision, so the button and the runtime can
-              never disagree about what a state offers. `available` is always
-              true here (the early return above), passed explicitly so the
-              call states its real input instead of a magic literal. */}
-          {previewAction(info.state, info.available) === "stop" ? (
-            <Button size="sm" variant="outline" className="cursor-pointer" disabled={busy} onClick={() => void act("previewStop")}>{busy ? "Stopping…" : "Stop"}</Button>
-          ) : (
-            <Button size="sm" variant="outline" className="cursor-pointer" disabled={busy} onClick={() => void act("previewStart")}>{busy ? "Starting…" : "Start"}</Button>
-          )}
-          {/* Same Button pattern and height as Start/Stop: one row, one shape. */}
-          <Button size="sm" variant="outline" className="cursor-pointer" onClick={() => void load()} aria-label="Refresh preview state">Refresh</Button>
-        </span>
-      }
-    >
-      {info.command ? (
-        <p className="font-mono text-[11px] leading-relaxed text-muted-foreground" title={info.evidence ?? undefined}>
-          {info.source ? `${info.source} · ` : ""}{info.checkout ? `${info.checkout} · ` : ""}$ {info.command}
-        </p>
-      ) : null}
-      {info.error ? <p className="text-xs text-destructive">{info.error}</p> : null}
-      {info.url ? <PreviewAddress url={info.url} /> : <p className="text-xs text-muted-foreground">Starting the server will show its address here.</p>}
-      {info.reason ? <p className="text-[11px] text-muted-foreground">{info.reason}</p> : null}
-
-      {framedUrl ? (
-        <div className="space-y-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-muted-foreground">Live preview</span>
-            <span className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setFrameHidden(true)}>Hide</Button>
-              <Button size="sm" variant="outline" onClick={() => navigate.openUrl(framedUrl)}>Open in a new tab</Button>
-            </span>
-          </div>
-          <PreviewFrame url={framedUrl} title={`Preview of ${info.label ?? "the workspace"}`} />
-        </div>
-      ) : null}
-
-      {openUrl && !framed ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => navigate.openUrl(openUrl)}>Open in a new tab</Button>
-          {info.frame === "frame" ? <Button size="sm" variant="ghost" onClick={() => setFrameHidden(false)}>Show preview</Button> : null}
-        </div>
-      ) : null}
-      {running && info.frame !== null && info.frame !== "frame" && info.frameReason ? (
-        <p className="text-[11px] text-muted-foreground">Showing this inline is not possible: {info.frameReason}.</p>
-      ) : null}
-
-      {info.hints.length > 0 ? (
-        <ul className="space-y-1">
-          {info.hints.map((hint) => (
-            <li key={hint.text} className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[11px] text-muted-foreground">
-              <span>{hint.text}</span>
-              {/* A highlighted action that opens nothing is a lie — every
-                  hint action here does something real: an href navigates
-                  (pairing dashboard), otherwise it retries the port share. */}
-              {hint.action ? hint.href ? (
-                <Button size="sm" variant="outline" className="h-7 cursor-pointer px-2 text-[11px]" onClick={() => navigate.openUrl(hint.href!)}>{hint.action}</Button>
-              ) : (
-                <Button size="sm" variant="outline" className="h-7 cursor-pointer px-2 text-[11px]" disabled={busy} onClick={() => void act("previewShare")}>{busy ? "Sharing…" : hint.action}</Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      {info.log ? (
-        <div className="space-y-1">
-          <button type="button" onClick={() => setShowLog((value) => !value)} className={`min-h-11 text-[11px] font-medium text-primary hover:underline`}>
-            {showLog ? "Hide server log" : "Show server log"}
-          </button>
-          {showLog ? (
-            <pre className="max-h-64 overflow-auto rounded-md border border-border bg-background/60 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap animate-in fade-in-0 slide-in-from-top-2 duration-150 motion-reduce:animate-none">{info.log}</pre>
-          ) : null}
-        </div>
-      ) : null}
-    </DisclosureSection>
-  );
 }
 
 // Hybrid (A+D+E): single contextual hero derived from card state. One plain
