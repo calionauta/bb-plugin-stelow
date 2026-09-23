@@ -22,6 +22,7 @@ assert.deepEqual(doingNowNames(scopes, 1), ["Apple Pay"], "the limit caps caller
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const scopesList = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 assert.match(server, /doingNow: z\.array\(z\.string\(\)\)/, "list cards contract the doing names");
 assert.match(server, /doingNow: doingNowNames\(scopes\)/, "the cached summary computes names once per card");
 assert.match(server, /doingNow: summary\.doingNow/, "list rows carry the cached names");
@@ -34,6 +35,6 @@ assert.match(app, /\(card\.activity === "running" \|\| card\.activity === "await
 // Scope rows disclose through the same chevron as every other surface:
 // the explicit open prop drives rotation, never the group-open variant,
 // so the arrow cannot silently stop turning again.
-assert.match(app, /<DisclosureChevron open=\{isOpen\} \/>/, "scope rows rotate through the shared chevron contract");
+assert.match(scopesList, /<DisclosureChevron open=\{isOpen\} \/>/, "scope rows rotate through the shared chevron contract");
 
 console.log("doing now test ok: shared selection, done silent");

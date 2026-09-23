@@ -20,6 +20,7 @@ const detailBanner = readFileSync(join(root, "components", "detail", "inbox-even
 const detailInputFiles = readFileSync(join(root, "components", "detail", "input-files.tsx"), "utf8");
 const detailHero = readFileSync(join(root, "components", "detail", "detail-hero.tsx"), "utf8");
 const detailTimeline = readFileSync(join(root, "components", "detail", "stage-timeline.tsx"), "utf8");
+const detailScopes = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
@@ -120,6 +121,14 @@ assert.doesNotMatch(app, /function StageTimeline\(/, "no local timeline copy sur
 assert.match(detailTimeline, /const canAdvance = idx === current \+ 1 && legal\.has\(stage\)/, "advance hits the next legal stage only");
 assert.match(detailTimeline, /terminal !== "archived" && passed/, "archived stages never regress");
 assert.match(detailTimeline, /terminal \? STAGE_SEQUENCE\.length/, "finished parks the cursor past the end");
+// Scope list: dependency-ordered with waiting markers; ordering and rank
+// math live in lib (tested); status presentation arrives as functions.
+assert.match(detailScopes, /export function ScopesList\(\{ scopes, statusTone, statusGlyph, statusLabel/, "the scope list lives in the detail module");
+assert.match(app, /import \{ ScopesList \} from "\.\/components\/detail\/scopes-list"/, "detail bodies read the shared scope list");
+assert.doesNotMatch(app, /function ScopesList\(/, "no local scope-list copy survives in the panel");
+assert.doesNotMatch(app, /function orderScopes\(/, "ordering lives in lib, never pasted in the panel");
+assert.match(detailScopes, /\{ordered\.map\(\(scope\) => \(/, "scopes render in dependency order");
+assert.match(detailScopes, /waiting on \{wait\.length\}/, "blocked scopes name their wait");
 // Manage surfaces: menu, header, and confirm live in one home; the panel
 // reads them, never pastes them. Picking a menu entry closes the menu
 // before the action runs.

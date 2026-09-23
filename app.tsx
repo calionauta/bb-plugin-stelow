@@ -60,6 +60,7 @@ import { useDetailRecoveryActions } from "./components/manage/detail-recovery-ac
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { InboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import { InputFiles } from "./components/detail/input-files";
+import { ScopesList } from "./components/detail/scopes-list";
 import { HERO_STYLE, HeroErrorNote, heroFor, type HeroKind } from "./components/detail/detail-hero";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import type { PreviewInfo, rpcContract } from "./server";
@@ -2612,57 +2613,6 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
-// Status rank for sorting work (tasks): active first, then committed, then
-// blocked, then finished. Used to give a sensible vertical reading.
-const STATUS_RANK: Record<string, number> = {
-  "in-progress": 0,
-  draft: 1,
-  planning: 1,
-  pending: 1,
-  blocked: 2,
-  failed: 2,
-  skipped: 3,
-  done: 4,
-  completed: 4,
-};
-const statusRank = (s: string | undefined) => STATUS_RANK[s ?? ""] ?? 3;
-
-// Topological order of scopes by dependency. A scope that depends on / is
-// blocked by another comes AFTER its dependency, so reading top→bottom follows
-// execution order. Ties keep the original (state.md) order — deterministic.
-// Returns scopes in dependency-order plus a map of scope-id → ids it is
-// waiting on (dependencies not yet finished).
-function orderScopes(scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]): { ordered: typeof scopes; waitingOn: Map<string, string[]> } {
-  const byId = new Map(scopes.map((s) => [s.id, s]));
-  const done = new Set(scopes.filter((s) => isDoneStatus(s.status ?? "")).map((s) => s.id));
-  // dependency ids: dependsOn must precede; blockedBy must precede
-  const deps = (s: (typeof scopes)[number]) => [
-    ...(s.dependsOn ?? []).filter((id) => byId.has(id)),
-    ...(s.blockedBy ?? []).filter((id) => byId.has(id)),
-  ];
-  const ordered: typeof scopes = [];
-  const placed = new Set<string>();
-  const chain = new Set<string>();
-  const waitingOn = new Map<string, string[]>();
-  const visit = (s: (typeof scopes)[number]): void => {
-    if (placed.has(s.id)) return;
-    if (chain.has(s.id)) return; // cycle guard: keep original position
-    chain.add(s.id);
-    // visit each live dependency first (finished deps are fine in any order)
-    for (const depId of deps(s)) {
-      const dep = byId.get(depId);
-      if (dep && !done.has(depId)) visit(dep); // still-pending deps push order
-    }
-    chain.delete(s.id);
-    placed.add(s.id);
-    ordered.push(s);
-    const wait = deps(s).filter((id) => !done.has(id));
-    if (wait.length) waitingOn.set(s.id, wait);
-  };
-  scopes.forEach(visit);
-  return { ordered, waitingOn };
-}
-
 // Scope progress hero: one glanceable readout above the per-scope list.
 // Presentation only — same scopes/tasks contract, no new data. Shows
 // overall scope + task bars, what is actively doing now, and what waits.
@@ -2759,92 +2709,6 @@ function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, {
         <p className="text-xs"><span className="font-semibold text-destructive">⚠ Blocked: </span><span className="text-muted-foreground">{blockedScopes.map((scope) => scope.name).slice(0, 3).join(" · ")}</span></p>
       ) : null}
     </div>
-  );
-}
-
-function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"] }) {
-  const [openIds, setOpenIds] = useState<Set<string>>(new Set(scopes.filter((scope) => scope.status === "in-progress").map((scope) => scope.id)));
-  const { ordered, waitingOn } = orderScopes(scopes);
-  const byId = new Map(scopes.map((s) => [s.id, s]));
-  const finished = (id: string) => isDoneStatus(byId.get(id)?.status ?? "");
-  return (
-    <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Scopes ({scopes.length})</h3>
-      {scopes.length > 1 ? <p className="text-[11px] text-muted-foreground">Ordered by dependency — ⛔ waits on unfinished work.</p> : null}
-      {ordered.map((scope) => {
-        const isOpen = openIds.has(scope.id);
-        const wait = waitingOn.get(scope.id) ?? [];
-        const blockedNow = wait.length > 0;
-        const tasksSorted = [...scope.tasks].sort((a, b) => statusRank(a.status) - statusRank(b.status));
-        const tasksDone = scope.tasks.filter((task) => statusRank(task.status) === 4).length;
-        return (
-          <details key={scope.id} open={isOpen} onToggle={(event) => { const next = new Set(openIds); if ((event.currentTarget as HTMLDetailsElement).open) next.add(scope.id); else next.delete(scope.id); setOpenIds(next); }} className={`group rounded-md border p-3 ${scope.status === "in-progress" ? "stelow-border-running" : blockedNow ? "border-amber-500/50" : "border-border"}`}>
-            <summary className="cursor-pointer list-none space-y-1">
-              <div className="flex flex-wrap items-center gap-1">
-                <DisclosureChevron open={isOpen} />
-                <span className="font-mono text-xs text-muted-foreground">{scope.id}</span>
-                <span className="font-medium">{scope.name}</span>
-                {scope.type ? <Pill>{scope.type}</Pill> : null}
-                {scope.source === "audit-gap" ? <Pill tone="bg-amber-500/15 text-amber-700 dark:text-amber-300" title={scope.gap ? `Rework for escalated gap: ${scope.gap}` : "Rework scope from an escalated gap"}>↻ rework</Pill> : null}
-                <Pill tone={statusTone(scope.status)}><span className="mr-1">{statusGlyph(scope.status)}</span>{statusLabel(scope.status)}</Pill>
-                {scope.tasks.length > 0 ? <span className="text-[11px] text-muted-foreground" title={`${tasksDone} of ${scope.tasks.length} tasks done`}>{tasksDone}/{scope.tasks.length} tasks</span> : null}
-                {blockedNow ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={wait.join(", ")}>⛔ waiting on {wait.length}</span> : null}
-              </div>
-              {(scope.blockedBy?.length || scope.dependsOn?.length) ? (
-                <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-                  {scope.dependsOn?.filter((id) => byId.has(id)).map((dep) => <span key={dep} className={`rounded-md border px-2 py-0.5 ${finished(dep) ? "border-border" : "border-amber-500/40 bg-amber-500/10"}`}>after {byId.get(dep)!.name}</span>)}
-                  {scope.blockedBy?.filter((id) => byId.has(id)).map((dep) => <span key={dep} className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5">blocked by {byId.get(dep)!.name}</span>)}
-                  {scope.dependsOn?.filter((id) => !byId.has(id)).map((dep) => <span key={dep} className="rounded-md border border-dashed px-2 py-0.5">after {dep} (missing)</span>)}
-                </div>
-              ) : null}
-            </summary>
-            {scope.conditions && scope.conditions.length > 0 ? (
-              <div className="mt-2 space-y-1">
-                {scope.conditions.map((condition) => <p key={condition.type} className="text-[11px] text-amber-700 dark:text-amber-300" role="note">{condition.message}</p>)}
-              </div>
-            ) : null}
-            {scope.record || scope.claimed !== null ? (
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                {scope.record ? (scope.record.verified === true ? "✓ verified" : scope.record.verified === false ? "⚠ record unverified" : "record without verdict") : null}
-                {scope.record && typeof scope.record.filesCount === "number" ? ` · ${scope.record.filesCount} files` : null}
-                {scope.record && typeof scope.record.commandsCount === "number" ? ` · ${scope.record.commandsCount} commands` : null}
-                {scope.claimed === true ? " · ● files claimed" : scope.claimed === false && scope.status === "in-progress" ? " · ○ no live file claim" : null}
-              </p>
-            ) : null}
-            {scope.contract && scope.contract.acceptanceCriteria.length > 0 ? (
-              <details className="mt-2">
-                <summary className="inline-flex min-h-11 cursor-pointer items-center text-[11px] font-medium text-primary hover:underline">Acceptance criteria ({scope.contract.acceptanceCriteria.length})</summary>
-                <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
-                  {scope.contract.acceptanceCriteria.map((criterion, index) => <li key={index}>{criterion}</li>)}
-                </ul>
-              </details>
-            ) : null}
-            <div className="mt-3 space-y-1 border-l pl-3">
-              {tasksSorted.length === 0 ? <p className="text-xs text-muted-foreground">No tasks tracked.</p> : tasksSorted.map((task) => (
-                <div key={task.id} className="flex items-start gap-2 text-sm">
-                  <span className="mt-0.5 font-mono">{statusGlyph(task.status)}</span>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className={statusRank(task.status) === 4 ? "line-through text-muted-foreground" : ""}>{task.name}</span>
-                      <span className="text-xs text-muted-foreground">({statusLabel(task.status)})</span>
-                      {task.source ? <Pill>{task.source}</Pill> : null}
-                    </div>
-                    {task.note ? <div className="text-xs text-muted-foreground">{task.note}</div> : null}
-                    {task.conditions && task.conditions.length > 0 ? task.conditions.map((condition) => <p key={condition.type} className="text-[11px] text-amber-700 dark:text-amber-300" role="note">{condition.message}</p>) : null}
-                    {(task.blockedBy?.length || task.dependsOn?.length) ? (
-                      <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-                        {task.dependsOn?.map((dep) => <span key={dep} className="rounded-md border border-dashed px-1.5 py-0.5">after {dep}</span>)}
-                        {task.blockedBy?.map((dep) => <span key={dep} className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5">blocked by {dep}</span>)}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </details>
-        );
-      })}
-    </section>
   );
 }
 
@@ -5564,7 +5428,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 </p>
               ) : null}
               {detail ? <CardChecksSection cardId={card.id} card={card} detail={detail} /> : null}
-              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution — no scope was ever tracked (pre-guard format). Verify the work through the audit record and files below; reopen an earlier stage to continue it under tracking." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
+              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} statusTone={statusTone} statusGlyph={statusGlyph} statusLabel={statusLabel} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution — no scope was ever tracked (pre-guard format). Verify the work through the audit record and files below; reopen an earlier stage to continue it under tracking." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
               {detail ? (
                 <div className="space-y-2 border-t pt-3">
                   <StageTimeline
