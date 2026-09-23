@@ -41,6 +41,18 @@ import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COL
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
 import { BuildDetailBody } from "./components/detail/build-detail-body";
+import { StelowPanel } from "./components/panel/stelow-panel";
+import {
+  STELOW_PANEL_ID,
+  STELOW_PANEL_PATH,
+  cardSubPath,
+  inboxCardSubPath,
+  trackOfCard,
+  trackRootSubPath,
+  trackTitle,
+  type ParsedStelowRoute,
+  type StelowTrack,
+} from "./components/panel/stelow-route.mjs";
 import { useDebouncedRealtime } from "./components/use-debounced-realtime";
 import { ActivityPill, AttentionChip, BuildStatusPills, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
@@ -55,7 +67,7 @@ import { StelowQualityDirective } from "./components/detail/stelow-quality-direc
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Icon, type IconName } from "@/components/ui/icon";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -111,38 +123,8 @@ function researchColumnOf(card: Pick<CardItem, "status">): string {
   return researchColumnForStatus(card.status);
 }
 
-type StelowTrack = "inbox" | "build" | "research" | "explore" | "about";
-// Single source for tracks: the tab bar, the router, and every navigation
-// helper read from here. Renaming a track (or reordering tabs) is one line.
-const STELOW_TRACKS: Array<{ key: StelowTrack; title: string; icon: IconName; rootSubPath: string }> = [
-  { key: "inbox", title: "Inbox", icon: "Mail", rootSubPath: "inbox" },
-  { key: "research", title: "Research", icon: "Idea", rootSubPath: "research" },
-  { key: "explore", title: "Explore", icon: "Target", rootSubPath: "explore" },
-  { key: "build", title: "Build", icon: "Columns2", rootSubPath: "build" },
-  { key: "about", title: "About", icon: "Info", rootSubPath: "about" },
-];
-function trackTitle(track: StelowTrack): string {
-  return STELOW_TRACKS.find((entry) => entry.key === track)?.title ?? track;
-}
-function trackRootSubPath(track: StelowTrack): string {
-  return STELOW_TRACKS.find((entry) => entry.key === track)?.rootSubPath ?? "";
-}
-function trackOfCard(card: Pick<CardItem, "kind">): StelowTrack {
-  return card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "build";
-}
-function cardSubPath(card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): string {
-  const track = trackOfCard(card);
-  return `${track}/card/${cardId}${eventId ? `/event/${eventId}` : ""}`;
-}
-function inboxCardSubPath(cardId: string, eventId: string): string {
-  return `inbox/card/${cardId}/event/${eventId}`;
-}
-
-// Panel identity lives here, not scattered across call sites: every
-// navigation flows through goToTrack / goToCard / goToInboxCard, so the
-// panel id, track routes, and card URLs change in exactly one place each.
-const STELOW_PANEL_ID = "stelow";
-const STELOW_PANEL_PATH = "stelow";
+// Every navigation flows through goToTrack / goToCard / goToInboxCard, so
+// track roots and card URLs keep one owner in the panel router feature.
 type BbNavigate = ReturnType<typeof useBbNavigate>;
 function goToTrack(navigate: BbNavigate, track: StelowTrack): void {
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: trackRootSubPath(track) });
@@ -1090,14 +1072,12 @@ function ExplorePanel({ active }: { active: boolean }) {
   );
 }
 
-// localStorage keys in one place: board/research column collapse and the
-// remembered track. Renaming a key is one line; readers never guess at
-// raw strings scattered through panels.
+// localStorage keys in one place for board and track preferences. Renaming
+// a key is one line; readers never guess at raw strings scattered through panels.
 const STORAGE_KEYS = {
   boardColumns: "stelow-columns-collapsed-v1",
   researchColumns: "stelow-research-columns-collapsed-v1",
   exploreColumns: "stelow-explore-columns-collapsed-v1",
-  lastTab: "stelow-tab-v1",
   reviewGates: "stelow-review-gates-v1",
   onboardBuild: "stelow-onboard-build-v1",
   onboardResearch: "stelow-onboard-research-v1",
@@ -1149,70 +1129,6 @@ function useCollapsedGroups(storageKey: string) {
     try { window.localStorage.setItem(storageKey, JSON.stringify(collapsed)); } catch { /* ignore */ }
   }, [storageKey, collapsed]);
   return [collapsed, setCollapsed] as const;
-}
-
-type ParsedStelowRoute =
-  | { kind: "track"; track: StelowTrack }
-  | { kind: "card"; cardId: string; eventId: string | null; origin: StelowTrack }
-  | { kind: "bare-card"; cardId: string; eventId: string | null };
-
-// One panel, five tracks. Grammar (routes are panel-relative):
-//   "" | "build"                 -> Build board ("" reopens the last tab)
-//   "inbox"                      -> Inbox list
-//   "research"                   -> Research board
-//   "explore"                    -> Explore board
-//   "about"                      -> About Stelow (no cards live here)
-//   "<track>/card/<id>[/event/]" -> card detail, back returns to <track>
-//   "card/<id>[/event/]"         -> trackless link: kind is resolved
-//                                  live, then rendered with back to its track.
-function parseStelowSubPath(subPath: string): ParsedStelowRoute {
-  const normalized = subPath.replace(/^\/+|\/+$/g, "");
-  if (normalized === "" || normalized === "build") return { kind: "track", track: "build" };
-  if (normalized === "inbox") return { kind: "track", track: "inbox" };
-  if (normalized === "research") return { kind: "track", track: "research" };
-  if (normalized === "explore") return { kind: "track", track: "explore" };
-  if (normalized === "about") return { kind: "track", track: "about" };
-  let match = normalized.match(/^(inbox|build|research|explore)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
-  if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, origin: match[1] as StelowTrack };
-  match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
-  if (match) return { kind: "bare-card", cardId: match[1]!, eventId: match[2] ?? null };
-  return { kind: "track", track: "build" };
-}
-
-function StelowTabBar({ tab, counts, aboutAlert, onSelect }: {
-  tab: StelowTrack;
-  counts: { inbox: number; build: number; research: number; explore: number; about: number };
-  aboutAlert?: boolean;
-  onSelect: (track: StelowTrack) => void;
-}) {
-  const countFor = (key: StelowTrack) => counts[key];
-  // Route navigation, not tab panels: each track is its own subPath route,
-  // so this is a nav with aria-current (the GitHub repo-tabs pattern) —
-  // never a tablist, which would promise tabpanels and arrow-key behavior
-  // that routed views don't have.
-  return (
-    <nav aria-label="Stelow tracks" className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto border-b bg-card/80 px-2 py-1.5 sm:px-3">
-      {STELOW_TRACKS.map((entry) => {
-        const active = tab === entry.key;
-        const count = countFor(entry.key);
-        return (
-          <button
-            key={entry.key}
-            aria-current={active ? "page" : undefined}
-            onClick={() => onSelect(entry.key)}
-            title={entry.key === "inbox" ? "Things that need you, plus recent completions" : entry.key === "build" ? "Build board" : entry.key === "research" ? "Research board" : entry.key === "explore" ? "Single-technique runs" : "What Stelow is"}
-            className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:px-3 sm:text-sm ${active ? "bg-foreground text-background shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-          >
-            <Icon name={entry.icon} className="h-4 w-4" aria-hidden />
-            <span>{entry.title}</span>
-            {entry.key === "about" ? (aboutAlert ? <UpdateBadge /> : null) : (
-              <span className={`rounded-full px-1.5 py-0.5 text-2xs font-medium tabular-nums ${active ? "bg-background/20 text-background" : "bg-muted text-muted-foreground"}`}>{count}</span>
-            )}
-          </button>
-        );
-      })}
-    </nav>
-  );
 }
 
 function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
@@ -1686,69 +1602,47 @@ function AboutPanel() {
   );
 }
 
-function StelowPanel({ subPath }: { subPath: string }) {
-  const navigate = useBbNavigate();
-  const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);
-  const inbox = useInboxAccessory();
-  const build = useBuildAccessory();
-  const research = useResearchAccessory();
-  const [lastTab, setLastTab] = useState<StelowTrack>(() => {
-    if (typeof window === "undefined") return "inbox";
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEYS.lastTab);
-      if (raw === "inbox" || raw === "build" || raw === "research" || raw === "explore" || raw === "about") return raw;
-    } catch { /* default below */ }
-    return "inbox";
-  });
-  // Remember the last visited track so the bare root reopens where you were.
-  // The bare root itself only reads — persisting it would overwrite the
-  // memory with the fallback on every fresh entry.
-  useEffect(() => {
-    if (route.kind !== "track") return;
-    if (subPath.replace(/^\/+|\/+$/g, "") === "") return;
-    setLastTab(route.track);
-    try { window.localStorage.setItem(STORAGE_KEYS.lastTab, route.track); } catch { /* ignore */ }
-  }, [route, subPath]);
-  const goTrack = useCallback((track: StelowTrack) => {
-    goToTrack(navigate, track);
-  }, [navigate]);
-  const aboutAlert = usePluginUpdateSignal();
+function renderTrackPanel(tab: StelowTrack) {
+  if (tab === "inbox") return <InboxPanel />;
+  if (tab === "build") return <BoardPanel active />;
+  if (tab === "research") return <ResearchPanel active />;
+  if (tab === "explore") return <ExplorePanel active />;
+  return <AboutPanel />;
+}
 
-  if (route.kind === "card") {
-    return <StelowCardDetail cardId={route.cardId} eventId={route.eventId} backTrack={route.origin} navigate={navigate} />;
-  }
+function renderCardRoute(route: ParsedStelowRoute, navigate: BbNavigate) {
   if (route.kind === "bare-card") {
     return <BareCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
   }
-  // The bare root reopens the last visited track; explicit track routes
-  // always win (otherwise clicking Build while lastTab is Research would
-  // visibly do nothing).
-  const bare = subPath.replace(/^\/+|\/+$/g, "") === "";
-  const tab = bare ? lastTab : route.track;
-  const counts = { inbox: inbox.count, build: build.count, research: research.count, explore: 0, about: 0 };
-  // Keep-alive: all tracks stay mounted and only the active one
-  // shows. Tab switches are instant (no reload flash) and every track
-  // keeps its realtime subscription warm. First mount still loads once —
-  // data has to come from somewhere.
+  if (route.kind === "card") {
+    return (
+      <StelowCardDetail
+        cardId={route.cardId}
+        eventId={route.eventId}
+        backTrack={route.origin}
+        navigate={navigate}
+      />
+    );
+  }
+  return null;
+}
+
+function StelowPanelRoute({ subPath }: { subPath: string }) {
+  const navigate = useBbNavigate();
+  const inbox = useInboxAccessory();
+  const build = useBuildAccessory();
+  const research = useResearchAccessory();
+  const aboutAlert = usePluginUpdateSignal();
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
-      <StelowTabBar tab={tab} counts={counts} aboutAlert={aboutAlert} onSelect={goTrack} />
-      <div className={tab === "inbox" ? "min-h-0 flex-1" : "hidden"}>
-        <InboxPanel />
-      </div>
-      <div className={tab === "build" ? "min-h-0 flex-1" : "hidden"}>
-        <BoardPanel active={tab === "build"} />
-      </div>
-      <div className={tab === "research" ? "min-h-0 flex-1" : "hidden"}>
-        <ResearchPanel active={tab === "research"} />
-      </div>
-      <div className={tab === "explore" ? "min-h-0 flex-1" : "hidden"}>
-        <ExplorePanel active={tab === "explore"} />
-      </div>
-      <div className={tab === "about" ? "min-h-0 flex-1" : "hidden"}>
-        <AboutPanel />
-      </div>
-    </div>
+    <StelowPanel
+      subPath={subPath}
+      counts={{ inbox: inbox.count, build: build.count, research: research.count, explore: 0, about: 0 }}
+      aboutAlert={aboutAlert}
+      updateBadge={<UpdateBadge />}
+      onSelectTrack={(track) => goToTrack(navigate, track)}
+      renderCard={(route) => renderCardRoute(route, navigate)}
+      renderTrack={renderTrackPanel}
+    />
   );
 }
 
@@ -3450,7 +3344,7 @@ export default definePluginApp((app) => {
     title: "Stelow • Product Hub",
     icon: "Star",
     path: STELOW_PANEL_PATH,
-    component: (props) => { PillsyStyles(); return <StelowPanel subPath={props.subPath} />; },
+    component: (props) => { PillsyStyles(); return <StelowPanelRoute subPath={props.subPath} />; },
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
