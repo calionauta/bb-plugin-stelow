@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const routeAdapters = readFileSync(join(root, "components/detail/card-detail-route.tsx"), "utf8");
 const researchDetail = readFileSync(join(root, "components/detail/research-detail-body.tsx"), "utf8");
 const researchContent = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
 const researchState = readFileSync(join(root, "components/detail/use-research-detail-state.ts"), "utf8");
@@ -294,8 +295,8 @@ assert.doesNotMatch(
   privateLifecycleAction,
   "no Build lifecycle action remains private to the detail slice",
 );
-assert.match(app, /import \{ BuildDetailBody \} from "\.\/components\/detail\/build-detail-body"/, "the routes mount the extracted Build detail shell");
-assert.equal((app.match(/<BuildDetailBody/g) ?? []).length, 2, "panel and drawer routes share one Build detail shell");
+assert.match(routeAdapters, /import \{ BuildDetailBody \} from "\.\/build-detail-body"/, "the routes mount the extracted Build detail shell");
+assert.equal((routeAdapters.match(/<BuildDetailBody/g) ?? []).length, 2, "panel and drawer routes share one Build detail shell");
 assert.doesNotMatch(app, /function CardDetailBody\(/, "the old Build detail implementation is completely removed from app.tsx");
 const detailRealtime = /useDebouncedRealtime\(\["card-state", "inbox-changed"\], \(\) => void load\(\)\)/;
 assert.match(
@@ -478,8 +479,8 @@ assert.match(server, /presentation: \{ label: askTimelineLabels\(\{ batched, cou
 assert.match(server, /describeSubmission: \(value: unknown\) => describeAskSubmission\(value\)/, "the settled row keeps decisions only — BB never stores the payload or raw value");
 assert.match(app, /id: "open-card-for-thread"/, "the palette opens the current thread's card without leaving BB");
 assert.match(app, /params: \{ threadId: context\.threadId \}/, "the palette command hands the drawer a thread, never a guessed card");
-assert.match(app, /cardByWorkerThread/, "the card drawer resolves palette threads through the owning card");
-assert.match(app, /This thread is not a Stelow worker thread/, "a palette open from a foreign thread says so instead of an empty card");
+assert.match(routeAdapters, /cardByWorkerThread/, "the card drawer resolves palette threads through the owning card");
+assert.match(routeAdapters, /This thread is not a Stelow worker thread/, "a palette open from a foreign thread says so instead of an empty card");
 assert.match(answerExpired, /formatBatchContinuation\(decisions\)/, "recovered answers use the same neutral continuation as live answers");
 assert.doesNotMatch(answerExpired, /question that timed out/, "recovered answer delivery does not leak timeout jargon into the worker thread");
 assert.doesNotMatch(app, />Show<\/span><button/, "no detached Show label explains the read filter");

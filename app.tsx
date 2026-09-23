@@ -40,14 +40,18 @@ import { questionCopy } from "./lib/question-presentation.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
-import { BuildDetailBody } from "./components/detail/build-detail-body";
+import {
+  BareCardRoute,
+  CardDrawerAdapter,
+  INTENT_LABEL,
+  StelowCardDetail,
+} from "./components/detail/card-detail-route";
 import { StelowPanel } from "./components/panel/stelow-panel";
 import {
   STELOW_PANEL_ID,
   STELOW_PANEL_PATH,
   cardSubPath,
   inboxCardSubPath,
-  trackOfCard,
   trackRootSubPath,
   trackTitle,
   type ParsedStelowRoute,
@@ -82,14 +86,6 @@ type ProjectList = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContrac
 type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][number];
 
 type ProjectsResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R ? Extract<R, { projects?: unknown }> : never;
-
-const INTENT_LABEL: Record<string, string> = {
-  "new-product": "New product",
-  feature: "Feature",
-  bugfix: "Bug fix",
-  refactor: "Refactor",
-  investigate: "Investigate",
-};
 
 // Intent mapping lives server-side (lib/github-intent.mjs, single source).
 // The panel no longer guesses intent; the server derives it from live labels.
@@ -1131,51 +1127,9 @@ function useCollapsedGroups(storageKey: string) {
   return [collapsed, setCollapsed] as const;
 }
 
-function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
-  cardId: string; eventId: string | null; backTrack: StelowTrack; navigate: ReturnType<typeof useBbNavigate>;
-}) {
-  const back = () => goToTrack(navigate, backTrack);
-  return (
-    <BuildDetailBody
-      cardId={cardId}
-      inboxEventId={eventId}
-      onClose={back}
-      onBack={back}
-      intentLabels={INTENT_LABEL}
-      onOpenRecoveryAudit={(auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId)}
-      renderPresetDialog={({ open, onOpenChange, onChanged }) => (
-        <PresetAssignDialog
-          open={open}
-          onOpenChange={onOpenChange}
-          cardId={cardId}
-          onChanged={onChanged}
-        />
-      )}
-    />
-  );
-}
-
-// Bare card link (card/<id> without a track prefix): the track is unknown until
-// the card loads, so resolve the kind live and render with back to its
-// track. New code always links track-prefixed routes instead.
-function BareCardRoute({ cardId, eventId, navigate }: {
-  cardId: string; eventId: string | null; navigate: ReturnType<typeof useBbNavigate>;
-}) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [kind, setKind] = useState<"build" | "research" | "explore" | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setKind(null);
-    void rpc.call("listCards", { projectId: null }).then((result) => {
-      if (cancelled) return;
-      const found = result.cards.find((entry) => entry.id === cardId);
-      setKind(found ? found.kind : "build");
-    }).catch(() => { if (!cancelled) setKind("build"); });
-    return () => { cancelled = true; };
-  }, [cardId, rpc]);
-  if (!kind) return <div className="p-4"><PanelSkeleton rows={4} /></div>;
-  return <StelowCardDetail cardId={cardId} eventId={eventId} backTrack={trackOfCard({ kind })} navigate={navigate} />;
-}
+// Card route adapters live in components/detail/card-detail-route. The app
+// supplies navigation and the preset dialog factory so route behavior stays
+// independent from the panel shell.
 
 // About track: what Stelow is vs what this plugin adds — one section each,
 // each with its own repo link and its own version, so the two releases can
@@ -1610,22 +1564,32 @@ function renderTrackPanel(tab: StelowTrack, active: boolean) {
   return <AboutPanel />;
 }
 
-function renderCardRoute(route: ParsedStelowRoute, navigate: BbNavigate) {
+function renderCardRoute(
+  route: ParsedStelowRoute,
+  navigate: BbNavigate,
+  onOpenRecoveryAudit: (cardId: string) => void,
+  renderPresetDialog: (cardId: string, props: { open: boolean; onOpenChange: (next: boolean) => void; onChanged: () => void }) => React.ReactNode,
+) {
+  const shared = {
+    navigate,
+    intentLabels: INTENT_LABEL,
+    onOpenRecoveryAudit,
+    renderPresetDialog,
+  };
   if (route.kind === "bare-card") {
-    return <BareCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
+    return <BareCardRoute cardId={route.cardId} eventId={route.eventId} {...shared} />;
   }
   if (route.kind === "card") {
-    return (
-      <StelowCardDetail
-        cardId={route.cardId}
-        eventId={route.eventId}
-        backTrack={route.origin}
-        navigate={navigate}
-      />
-    );
+    return <StelowCardDetail cardId={route.cardId} eventId={route.eventId} backTrack={route.origin} {...shared} />;
   }
   return null;
 }
+
+type PresetDialogRendererProps = {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  onChanged: () => void;
+};
 
 function StelowPanelRoute({ subPath }: { subPath: string }) {
   const navigate = useBbNavigate();
@@ -1633,6 +1597,9 @@ function StelowPanelRoute({ subPath }: { subPath: string }) {
   const build = useBuildAccessory();
   const research = useResearchAccessory();
   const aboutAlert = usePluginUpdateSignal();
+  const renderPresetDialog = (cardId: string, { open, onOpenChange, onChanged }: PresetDialogRendererProps) => (
+    <PresetAssignDialog open={open} onOpenChange={onOpenChange} cardId={cardId} onChanged={onChanged} />
+  );
   return (
     <StelowPanel
       subPath={subPath}
@@ -1640,7 +1607,12 @@ function StelowPanelRoute({ subPath }: { subPath: string }) {
       aboutAlert={aboutAlert}
       updateBadge={<UpdateBadge />}
       onSelectTrack={(track) => goToTrack(navigate, track)}
-      renderCard={(route) => renderCardRoute(route, navigate)}
+      renderCard={(route) => renderCardRoute(
+        route,
+        navigate,
+        (cardId) => goToCard(navigate, { kind: "build" }, cardId),
+        renderPresetDialog,
+      )}
       renderTrack={renderTrackPanel}
     />
   );
@@ -2339,51 +2311,19 @@ function LightweightTrackList({ groups, navigate, metaFor, collapsed, onToggle }
 // regresses ONE stage — the timeline is the position context AND the advance
 // control, so the user always sees where the card is and what it can move to.
 
-function CardDrawerAdapter(props: PluginThreadPanelProps) {
-  const params = props.params;
-  const directCardId = typeof params === "object" && params && "cardId" in params && typeof params.cardId === "string" ? params.cardId : "";
-  const threadId = typeof params === "object" && params && "threadId" in params && typeof params.threadId === "string" ? params.threadId : "";
-  const rpc = useRpc<typeof rpcContract>();
+// Palette commands open the extracted drawer with a threadId (no card context
+// at the palette); its adapter resolves that thread to the owning card.
+function StelowCardDrawer(props: PluginThreadPanelProps) {
   const navigate = useBbNavigate();
-  // Palette commands open this drawer with a threadId (no card context at
-  // the palette); resolve it to the owning card like the header action does.
-  const [resolvedCardId, setResolvedCardId] = useState<string | null>(null);
-  const [resolving, setResolving] = useState(false);
-  useEffect(() => {
-    if (directCardId || !threadId) return;
-    let cancelled = false;
-    setResolving(true);
-    void rpc.call("cardByWorkerThread", { threadId }).then((result) => {
-      if (!cancelled) {
-        setResolvedCardId(result.cardId);
-        setResolving(false);
-      }
-    }).catch(() => {
-      if (!cancelled) setResolving(false);
-    });
-    return () => { cancelled = true; };
-  }, [rpc, directCardId, threadId]);
-  const cardId = directCardId || resolvedCardId || "";
-  if (!cardId) {
-    if (resolving) return <p className="p-4 text-sm text-muted-foreground">Finding this thread&apos;s Stelow card…</p>;
-    if (threadId) return <p className="p-4 text-sm text-muted-foreground">This thread is not a Stelow worker thread.</p>;
-    return <p className="p-4 text-sm text-muted-foreground">Pick a card from Stelow {trackTitle("build")} to see its details here.</p>;
-  }
+  const renderPresetDialog = (cardId: string, { open, onOpenChange, onChanged }: PresetDialogRendererProps) => (
+    <PresetAssignDialog open={open} onOpenChange={onOpenChange} cardId={cardId} onChanged={onChanged} />
+  );
   return (
-    <BuildDetailBody
-      cardId={cardId}
-      inboxEventId={null}
-      onClose={() => { /* host tab close */ }}
+    <CardDrawerAdapter
+      {...props}
       intentLabels={INTENT_LABEL}
-      onOpenRecoveryAudit={(auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId)}
-      renderPresetDialog={({ open, onOpenChange, onChanged }) => (
-        <PresetAssignDialog
-          open={open}
-          onOpenChange={onOpenChange}
-          cardId={cardId}
-          onChanged={onChanged}
-        />
-      )}
+      onOpenRecoveryAudit={(cardId) => goToCard(navigate, { kind: "build" }, cardId)}
+      renderPresetDialog={renderPresetDialog}
     />
   );
 }
@@ -3348,7 +3288,7 @@ export default definePluginApp((app) => {
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   app.slots.pendingInteraction({ id: "stelow-question", component: QuestionForm });
-  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns2", component: CardDrawerAdapter });
+  app.slots.threadPanelAction({ id: "stelow-card-detail", title: "Stelow card", icon: "Columns2", component: StelowCardDrawer });
   app.slots.experimental_threadHeaderAction({ id: "open-stelow", title: "Open Stelow", component: OpenStelowAction });
 
   // Quick-palette command (BB 0.43 `app.commands.register`): from any worker

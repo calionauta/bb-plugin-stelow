@@ -59,7 +59,7 @@ for (const [prop, wiring] of [
   assert.match(recoveryPanelCall, wiring, `recovery ${prop} action remains wired after extraction`);
 }
 assert.equal(
-  (app.match(/onOpenRecoveryAudit=\{\(auditCardId\) => goToCard\(navigate, \{ kind: "build" \}, auditCardId\)\}/g) ?? []).length,
+  (app.match(/goToCard\(navigate, \{ kind: "build" \}, cardId\)/g) ?? []).length,
   2,
   "both Build detail entry points route recovery audits back to the Build track",
 );
