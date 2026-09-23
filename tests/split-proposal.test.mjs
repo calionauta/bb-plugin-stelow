@@ -104,8 +104,9 @@ assert.match(serverSource, /splitAction: z\.object\(\{ show:/, "cardDetail expos
 assert.match(serverSource, /const splitAction = splitActionState\(\{/, "cardDetail computes the flag from the shared rule");
 
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
+const buildLifecycleSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/use-build-detail-lifecycle.ts"), "utf8");
 assert.match(appSource, /Propose split…/, "the build card offers the trigger at triage/select");
-assert.match(appSource, /rpc\.call\("requestSplitProposal", \{ cardId \}\)/, "the button calls the trigger RPC");
+assert.match(buildLifecycleSource, /rpc\.call\("requestSplitProposal", \{ cardId \}\)/, "the button handler calls the trigger RPC through the extracted lifecycle state");
 assert.match(appSource, /detail\?\.splitAction\?\.show/, "the UI reads the server flag, never local stage rules");
 
 console.log("split proposal test ok: validation, keep veto, unknown refusal, partial remainder");

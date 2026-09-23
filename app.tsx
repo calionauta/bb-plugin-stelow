@@ -49,7 +49,6 @@ import { useDetailComment } from "./components/conversation/use-detail-comment";
 import { checkoutNoteFor, WorkerSection } from "./components/worker-history/worker-history";
 import { ArtifactGroups, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
 import { CardDetailHeader } from "./components/manage/card-detail-header";
-import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { InboxEventBanner, shouldShowInboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import { InputFiles } from "./components/detail/input-files";
@@ -60,6 +59,8 @@ import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
 import { ResearchDetailBody } from "./components/detail/research-detail-body";
 import { ExploreDetailBody } from "./components/detail/explore-detail-body";
+import { BuildLifecycleDialogs } from "./components/detail/build-lifecycle-dialogs";
+import { useBuildDetailLifecycle } from "./components/detail/use-build-detail-lifecycle";
 import { PreviewSection } from "./components/detail/preview-section";
 import { ArtifactViewerDialog } from "./components/detail/artifact-viewer-dialog";
 import type { rpcContract } from "./server";
@@ -3570,20 +3571,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
-  const [repairOpen, setRepairOpen] = useState(false);
-  const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
-  const [restarting, setRestarting] = useState(false);
-  const [retrying, setRetrying] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [splitting, setSplitting] = useState(false);
-  const [splitError, setSplitError] = useState<string | null>(null);
-  const [archiveOpen, setArchiveOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [discardOpen, setDiscardOpen] = useState(false);
-  const [discardConfirm, setDiscardConfirm] = useState<{ title: string; body: string } | null>(null);
-  const [promoteOpen, setPromoteOpen] = useState(false);
-  const [promoteName, setPromoteName] = useState("");
-  const [promoting, setPromoting] = useState(false);
   const [githubPostOpen, setGithubPostOpen] = useState(false);
   type PublicationStatus = Awaited<ReturnType<typeof rpc.call<"publicationStatus">>>;
   const [publication, setPublication] = useState<PublicationStatus | null>(null);
@@ -3620,11 +3607,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [diffOpen, setDiffOpen] = useState(false);
   const [diffData, setDiffData] = useState<CardDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
-  type WorkspaceRecovery = Awaited<ReturnType<typeof rpc.call<"workspaceRecovery">>>;
-  const [workspaceRecovery, setWorkspaceRecovery] = useState<WorkspaceRecovery | null>(null);
-  const [workspaceRecoveryLoading, setWorkspaceRecoveryLoading] = useState(false);
-  const [recoveryAttachProjectId, setRecoveryAttachProjectId] = useState<string | null>(null);
-  const [creatingRecoveryAudit, setCreatingRecoveryAudit] = useState(false);
   const artifactsRef = useRef<HTMLDivElement | null>(null);
   // One way in: the progress section's file count opens Artifacts and brings
   // it into view. Instant scroll (no smooth) to respect reduced motion.
@@ -3646,14 +3628,20 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
   }, [cardId, inboxEventId, rpc]);
   const { comment, setComment, submitComment } = useDetailComment({ cardId, onChanged: load });
-
-  const loadWorkspaceRecovery = useCallback(async () => {
-    if (card?.workspaceKind !== "exploratory") { setWorkspaceRecovery(null); return; }
-    setWorkspaceRecoveryLoading(true);
-    try { setWorkspaceRecovery(await rpc.call("workspaceRecovery", { cardId })); }
-    catch { setWorkspaceRecovery(null); }
-    finally { setWorkspaceRecoveryLoading(false); }
-  }, [card?.workspaceKind, cardId, rpc]);
+  const lifecycle = useBuildDetailLifecycle({
+    cardId,
+    card,
+    intentLabels: INTENT_LABEL,
+    onChanged: load,
+    onClose,
+    onOpenRecoveryAudit: (auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId),
+  });
+  const {
+    setRepairOpen, setRestartWorkerOpen, restarting, retrying, starting, splitting, splitError,
+    setArchiveOpen, setDeleteOpen, setPromoteOpen, setPromoteName, setRecoveryAttachProjectId,
+    creatingRecoveryAudit, workspaceRecovery, workspaceRecoveryLoading, loadWorkspaceRecovery,
+    openDiscard, doCreateRecoveryAudit, doRepair, doRetry, doStart, doRequestSplit,
+  } = lifecycle;
 
   useEffect(() => { void load(); }, [load, detailRefresh]);
   useEffect(() => { void loadWorkspaceRecovery(); }, [loadWorkspaceRecovery]);
@@ -3704,171 +3692,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // closed card never refreshes into thin air.
   const pushRefreshTimers = useRef<number[]>([]);
   useEffect(() => () => { for (const timer of pushRefreshTimers.current) window.clearTimeout(timer); pushRefreshTimers.current = []; }, []);
-
-  async function doArchive() {
-    setArchiveOpen(false);
-    try {
-      const result = await rpc.call("cancelCard", { cardId });
-      if (!result.archived) {
-        toast.error("Archive did not take — the card is gone.");
-        return;
-      }
-      toast.success("Card archived.");
-      onClose();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Archive failed.");
-    }
-  }
-
-  async function doDelete() {
-    setDeleteOpen(false);
-    const result = await rpc.call("deleteCard", { cardId });
-    if (!result.deleted) {
-      toast.error(result.error ?? "Delete failed.");
-      return;
-    }
-    toast.success("Card deleted.");
-    onClose();
-  }
-
-  async function openDiscard() {
-    try {
-      const preview = await rpc.call("discardPreview", { cardId });
-      if (!preview.eligible) {
-        toast.error(preview.reason ?? "Nothing safe to discard.");
-        return;
-      }
-      setDiscardConfirm({ title: preview.confirmTitle ?? "Discard this card’s work?", body: preview.confirmBody ?? "" });
-      setDiscardOpen(true);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not inspect the checkout.");
-    }
-  }
-
-  async function doDiscard() {
-    setDiscardOpen(false);
-    try {
-      const result = await rpc.call("discardCardChanges", { cardId });
-      if (!result.ok) {
-        toast.error(result.error ?? "Discard failed.");
-        return;
-      }
-      toast.success(result.summary ?? "Card work discarded.");
-      onClose();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Discard failed.");
-    }
-  }
-
-  async function doPromote() {
-    if (!card) return;
-    setPromoting(true);
-    try {
-      const result = await rpc.call("promoteCard", { cardId, name: promoteName.trim() || card.displayName });
-      if (!result.ok) {
-        toast.error(result.error ?? "Could not turn into project.");
-        return;
-      }
-      setPromoteOpen(false);
-      toast.success(`Project "${result.projectName}" created — a new project worker is continuing the workflow.`);
-      await load();
-    } finally {
-      setPromoting(false);
-    }
-  }
-
-  async function doAttachRecoveryCheckout() {
-    if (!recoveryAttachProjectId) return;
-    const result = await rpc.call("attachRecoveryCheckout", { cardId, projectId: recoveryAttachProjectId });
-    if (!result.ok) {
-      toast.error(result.error ?? "Could not attach the checkout.");
-      return;
-    }
-    setRecoveryAttachProjectId(null);
-    toast.success("Checkout attached for review. No files, branch, or Git history were changed.");
-    await Promise.all([loadWorkspaceRecovery(), load()]);
-  }
-
-  async function doCreateRecoveryAudit() {
-    setCreatingRecoveryAudit(true);
-    try {
-      const result = await rpc.call("createRecoveryAudit", { cardId });
-      if (!result.ok || !result.auditCardId) {
-        toast.error(result.error ?? "Could not create the recovery audit.");
-        return;
-      }
-      toast.success("Recovery audit started in the registered project workspace.");
-      await Promise.all([loadWorkspaceRecovery(), load()]);
-      goToCard(navigate, { kind: "build" }, result.auditCardId);
-    } finally {
-      setCreatingRecoveryAudit(false);
-    }
-  }
-
-  async function doRepair(intent?: string): Promise<boolean> {
-    setRepairOpen(false);
-    const result = await rpc.call("reseedCard", { cardId, ...(intent ? { intent: intent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" } : {}) });
-    if (!result.reseeded) {
-      toast.error(result.error ?? "Restart failed");
-      return false;
-    }
-    toast.success(result.reclassified ? `Workflow reclassified as ${INTENT_LABEL[intent ?? ""] ?? intent} and restarted from triage.` : "Fresh worker started from triage.");
-    await load();
-    return true;
-  }
-
-  async function doRetry() {
-    setRetrying(true);
-    try {
-      const result = await rpc.call("retryWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Retry failed. Try Restart fresh instead.");
-      else toast.success("Worker retried — continuing from the current stage.");
-      await load();
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  async function doRestartWorker() {
-    setRestartWorkerOpen(false);
-    setRestarting(true);
-    try {
-      const result = await rpc.call("restartWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Restart failed.");
-      else toast.success("Worker restarted — continuing from the current stage.");
-      await load();
-    } finally {
-      setRestarting(false);
-    }
-  }
-
-  // Leaving the Bucket is what starts a parked card: the same start path the
-  // board's drag uses, so the card never claims to be running without a
-  // worker behind it.
-  async function doStart() {
-    setStarting(true);
-    try {
-      const result = await rpc.call("startWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Start failed.");
-      else toast.success("Worker started — the card moved from Bucket and is triaging.");
-      await load();
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  async function doRequestSplit() {
-    setSplitting(true); setSplitError(null);
-    try {
-      const result = await rpc.call("requestSplitProposal", { cardId });
-      if (!result.ok) setSplitError(result.error ?? "Could not request a split.");
-      else { toast.success("Split requested — answer the worker's proposal on this card."); await load(); }
-    } catch (err) {
-      setSplitError(err instanceof Error ? err.message : "Could not request a split.");
-    } finally {
-      setSplitting(false);
-    }
-  }
 
   async function doPublicationAction() {
     const action = publicationAction;
@@ -4494,24 +4317,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         ) : null}
         </div>
       </div>
-      <ConfirmActionDialog
-        open={repairOpen}
-        onOpenChange={setRepairOpen}
-        title="Restart with a fresh worker?"
-        description="Reseed state.md and stelow.json so a new worker restarts from the triage stage. Existing scope work and comments are kept. Try Retry first — restart only if the worker itself is broken."
-        confirmLabel="Restart fresh"
-        confirmTone="default"
-        onConfirm={() => void doRepair()}
-      />
-      <ConfirmActionDialog
-        open={restartWorkerOpen}
-        onOpenChange={setRestartWorkerOpen}
-        title="Restart the worker on the current preset?"
-        description="Stops the running worker and starts a fresh one on this card's preset, continuing from the current stage (not from triage). Use this to apply a preset change."
-        confirmLabel="Restart worker"
-        confirmTone="default"
-        onConfirm={doRestartWorker}
-      />
       <PresetAssignDialog
         open={presetDialogOpen}
         onOpenChange={setPresetDialogOpen}
@@ -4555,42 +4360,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <ConfirmActionDialog
-        open={archiveOpen}
-        onOpenChange={setArchiveOpen}
-        title="Archive this card?"
-        description="Moves this card to Archived. If its worker is active, Stelow stops it. Comments and history are preserved."
-        confirmLabel="Archive card"
-        confirmTone="destructive"
-        onConfirm={doArchive}
-      />
-      <ConfirmActionDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete this card permanently?"
-        description="Removes the card, its comments, history, and its Stelow run files (.stelow artifacts) — cannot be recovered. Code changes in Git checkouts are kept: committed and uncommitted work survives the delete."
-        confirmLabel="Delete"
-        confirmTone="destructive"
-        onConfirm={doDelete}
-      />
-      <ConfirmActionDialog
-        open={discardOpen}
-        onOpenChange={setDiscardOpen}
-        title={discardConfirm?.title ?? "Discard this card’s work?"}
-        description={discardConfirm?.body ?? ""}
-        confirmLabel="Discard work"
-        confirmTone="destructive"
-        onConfirm={doDiscard}
-      />
-      <ConfirmActionDialog
-        open={recoveryAttachProjectId !== null}
-        onOpenChange={(open) => { if (!open) setRecoveryAttachProjectId(null); }}
-        title="Attach this reported checkout to the audit trail?"
-        description="Stelow will record the reviewed project path, current branch, HEAD, changed-file count, and the worker report. It will not move files, alter the Git index, commit, push, or claim that acceptance tests have passed."
-        confirmLabel="Attach reviewed checkout"
-        confirmTone="default"
-        onConfirm={doAttachRecoveryCheckout}
-      />
       <Dialog open={publicationAction !== null} onOpenChange={(open) => { if (!open && !publicationSubmitting) setPublicationAction(null); }}>
         <DialogContent>
           <DialogHeader>
@@ -4650,28 +4419,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         </DialogContent>
       </Dialog>
       <GithubCompletionDialog open={githubPostOpen} onOpenChange={setGithubPostOpen} cardId={cardId} issueLabel={detail?.githubLink ? `${detail.githubLink.repo}#${detail.githubLink.number}` : null} onPosted={load} />
-      <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Turn into project?</DialogTitle>
-            <DialogDescription className="space-y-2">
-              <p>
-                Files stay in place. To keep one writer for this workflow, Stelow archives the exploratory worker and starts a new worker in the project from the current stage. Open thread then opens that project worker; the earlier thread stays in Worker history.
-              </p>
-            </DialogDescription>
-          </DialogHeader>
-          <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Project name</span>
-            <Input value={promoteName} onChange={(event) => setPromoteName(event.target.value)} placeholder={card?.displayName ?? "Project name"} aria-label="Project name" maxLength={120} />
-          </label>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={promoting}>Cancel</Button>
-            </DialogClose>
-            <Button disabled={promoting || !promoteName.trim()} onClick={() => void doPromote()}>{promoting ? "Creating…" : "Turn into project"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BuildLifecycleDialogs state={lifecycle} cardDisplayName={card?.displayName ?? null} />
     </div>
   );
 }

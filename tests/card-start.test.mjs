@@ -24,7 +24,8 @@ const startCheck = readFileSync(join(root, "components", "start-immediately-chec
 const heroActions = readFileSync(join(root, "components", "detail", "detail-hero-actions.tsx"), "utf8");
 const researchState = readFileSync(join(root, "components", "detail", "use-research-detail-state.ts"), "utf8");
 const exploreState = readFileSync(join(root, "components", "detail", "use-explore-detail-state.ts"), "utf8");
-const detailStartSource = `${app}\n${researchState}\n${exploreState}`;
+const buildLifecycleState = readFileSync(join(root, "components", "detail", "use-build-detail-lifecycle.ts"), "utf8");
+const detailStartSource = `${app}\n${researchState}\n${exploreState}\n${buildLifecycleState}`;
 
 // Deferred start: creating spawns by default, and parks only where a human
 // chose it. The automation path carries the rule's autostart flag (default

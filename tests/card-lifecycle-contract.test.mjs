@@ -13,7 +13,10 @@ const exploreDetail = readFileSync(join(root, "components/detail/explore-detail-
 const exploreContent = readFileSync(join(root, "components/detail/explore-detail-content.tsx"), "utf8");
 const exploreState = readFileSync(join(root, "components/detail/use-explore-detail-state.ts"), "utf8");
 const exploreQuality = readFileSync(join(root, "components/detail/explore-quality-section.tsx"), "utf8");
-const detailSource = [app, researchDetail, researchContent, researchState, exploreDetail, exploreContent, exploreState, exploreQuality].join("\n");
+const buildLifecycleState = readFileSync(join(root, "components/detail/use-build-detail-lifecycle.ts"), "utf8");
+const buildLifecycleDialogs = readFileSync(join(root, "components/detail/build-lifecycle-dialogs.tsx"), "utf8");
+const buildLifecyclePolicy = readFileSync(join(root, "lib/build-detail-lifecycle.mjs"), "utf8");
+const detailSource = [app, researchDetail, researchContent, researchState, exploreDetail, exploreContent, exploreState, exploreQuality, buildLifecycleDialogs].join("\n");
 const buildStatusPills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
 const conversation = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
 const cardConversation = readFileSync(join(root, "components", "conversation", "card-conversation.tsx"), "utf8");
@@ -208,7 +211,7 @@ assert.match(detailScopes, /waiting on \{wait\.length\}/, "blocked scopes name t
 assert.match(manageMenu, /export function CardActionsMenu\(\{ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify/, "the menu lives in the manage module");
 assert.match(manageHeader, /export function CardDetailHeader\(\{ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify, statusTone, intentLabel/, "the header lives in the manage module");
 assert.match(app, /import \{ CardDetailHeader \} from "\.\/components\/manage\/card-detail-header"/, "detail bodies read the shared header");
-assert.match(app, /import \{ ConfirmActionDialog \} from "\.\/components\/manage\/confirm-action-dialog"/, "detail bodies read the shared confirm");
+assert.match(detailSource, /import \{ ConfirmActionDialog \} from "\.\.\/manage\/confirm-action-dialog"|import \{ ConfirmActionDialog \} from "\.\/components\/manage\/confirm-action-dialog"/, "detail bodies read the shared confirm");
 assert.doesNotMatch(app, /function CardActionsMenu\(/, "no local menu copy survives in the panel");
 assert.doesNotMatch(app, /function CardDetailHeader\(/, "no local header copy survives in the panel");
 assert.doesNotMatch(app, /function ConfirmActionDialog\(/, "no local confirm copy survives in the panel");
@@ -226,8 +229,20 @@ const failedHandler = server.slice(server.indexOf('bb.events.on("thread.failed"'
 for (const [name, handler] of [["idle", idleHandler], ["active", activeHandler], ["failed", failedHandler]]) {
   assert.match(handler, /status != 'archived'/, `thread.${name} events never sync archived cards`);
 }
-const doArchive = appFunction("doArchive", "async function doDelete");
-assert.match(doArchive, /if \(!result\.archived\)/, "a refused archive surfaces an error instead of a false success");
+// Build lifecycle state is cohesive and has one owned RPC seam per action.
+// The tested policy module decides outcomes; the hook owns React state and
+// the dialog component owns only confirmations. Copying any path back into
+// app.tsx would let its toast/close/refresh semantics drift independently.
+assert.match(app, /import \{ useBuildDetailLifecycle \} from "\.\/components\/detail\/use-build-detail-lifecycle"/, "Build details mount the extracted lifecycle state");
+assert.match(app, /import \{ BuildLifecycleDialogs \} from "\.\/components\/detail\/build-lifecycle-dialogs"/, "Build details mount the extracted lifecycle dialogs");
+assert.match(app, /<BuildLifecycleDialogs state=\{lifecycle\} cardDisplayName=\{card\?\.displayName \?\? null\} \/>/, "the extracted dialog leaf receives the complete lifecycle state");
+assert.doesNotMatch(app, /async function (?:doArchive|doDelete|openDiscard|doDiscard|doPromote|doAttachRecoveryCheckout|doCreateRecoveryAudit|doRepair|doRetry|doRestartWorker|doStart|doRequestSplit)\(/, "no Build lifecycle action remains private to the panel");
+for (const rpc of ["cancelCard", "deleteCard", "discardPreview", "discardCardChanges", "promoteCard", "attachRecoveryCheckout", "createRecoveryAudit", "reseedCard", "retryWorker", "restartWorker", "startWorker", "requestSplitProposal"]) {
+  assert.equal((buildLifecycleState.match(new RegExp(`rpc\\.call\\("${rpc}"`, "g")) ?? []).length, 1, `Build lifecycle has one ${rpc} seam`);
+}
+assert.match(buildLifecyclePolicy, /result\.archived[\s\S]*close: true/, "archive closes only after the host confirms archival");
+assert.equal((buildLifecycleDialogs.match(/<ConfirmActionDialog/g) ?? []).length, 6, "the lifecycle dialog leaf owns repair, restart, archive, delete, discard, and recovery confirmation");
+assert.match(buildLifecycleDialogs, /<Dialog open=\{state\.promoteOpen\}/, "promotion keeps its named-project dialog in the lifecycle leaf");
 
 // Archived terminality binds every worker-touching or state-moving RPC, not
 // just the poll path: each refuses upfront with the named exit.
