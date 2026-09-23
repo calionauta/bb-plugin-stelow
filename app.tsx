@@ -22,7 +22,8 @@ import {
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
-import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxFilterEntries, isOpenInboxAction, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
+import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxEventText, inboxEventTime, inboxFilterEntries, isOpenInboxAction, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
+import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
@@ -51,12 +52,13 @@ import { CreateResearchDialog } from "./components/creation/create-research-dial
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
 import { BatchStepper, ExpiredQuestionsSection, QuestionBatch, type ArtifactViewerMode, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
 import { CardConversation } from "./components/conversation/card-conversation";
-import { OpenThreadButton, WorkerSection, relativeTime } from "./components/worker-history/worker-history";
+import { OpenThreadButton, WorkerSection } from "./components/worker-history/worker-history";
 import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactFilename, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
 import { CardDetailHeader } from "./components/manage/card-detail-header";
 import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
 import { useDetailRecoveryActions } from "./components/manage/detail-recovery-actions";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
+import { InboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -429,22 +431,6 @@ const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: strin
   paused: { icon: "Ⅱ", label: INBOX_EVENT_LABELS.paused, tone: "bg-amber-500/15 text-amber-700" },
   completed: { icon: "✓", label: INBOX_EVENT_LABELS.completed, tone: "bg-emerald-500/15 text-emerald-700" },
 };
-
-function inboxEventDescription(event: InboxEventSnapshot): string {
-  const { stateLabel } = inboxEventPresentation(event);
-  return stateLabel ? "This Inbox update is kept for history." : event.summary;
-}
-
-function inboxEventText(event: InboxEventSnapshot): string {
-  const { label } = inboxEventPresentation(event);
-  const description = inboxEventDescription(event);
-  return description.toLowerCase().includes(label.toLowerCase()) ? description : `${label}. ${description}`;
-}
-
-function inboxEventTime(event: InboxEventSnapshot): string {
-  const { stateAt, stateLabel } = inboxEventPresentation(event);
-  return stateLabel ? `${stateLabel} ${relativeTime(stateAt)}` : relativeTime(stateAt);
-}
 
 function shouldShowInboxEventBanner(event: InboxEventSnapshot | null, hero: { kind: HeroKind } | null): boolean {
   if (!event || !isOpenInboxAction(event)) return true;
@@ -4474,34 +4460,6 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
       </DialogContent>
     </Dialog>
   );
-}
-
-// Shared detail leaves. Build and research bodies render identical
-// Inbox-event banner — one definition instead of a drifting copy.
-function InboxEventBanner({ visible, event, sectionRef }: {
-  visible: boolean;
-  event: InboxEventSnapshot | null;
-  sectionRef: React.RefObject<HTMLElement | null>;
-}) {
-  if (!visible) return null;
-  const presentation = event ? inboxEventPresentation(event) : null;
-  return (
-    <section ref={sectionRef} tabIndex={-1} className={`rounded-lg border p-3 text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${presentation?.tone ? "border-border bg-muted/40" : "border-amber-500/40 bg-amber-500/10"}`} aria-label="Inbox notification">
-      <p className="text-sm font-semibold">{presentation ? `${presentation.label}.` : "Opened from Stelow Inbox."}</p>
-      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{event ? inboxEventDescription(event) : "This notification is no longer available."}</p>
-      {event && presentation ? <p className="mt-1 text-xs text-muted-foreground" title={new Date(presentation.stateAt).toLocaleString()}>{inboxEventTime(event)}</p> : null}
-    </section>
-  );
-}
-
-function useInboxEventFocus(eventId: string | null, event: InboxEventSnapshot | null, sectionRef: React.RefObject<HTMLElement | null>) {
-  const focusedEventId = useRef<string | null>(null);
-  useEffect(() => {
-    if (!eventId || !event || focusedEventId.current === eventId) return;
-    focusedEventId.current = eventId;
-    sectionRef.current?.scrollIntoView({ block: "nearest" });
-    sectionRef.current?.focus({ preventScroll: true });
-  }, [event, eventId, sectionRef]);
 }
 
 // Shared worker block: preset readout, state-appropriate recovery, and worker

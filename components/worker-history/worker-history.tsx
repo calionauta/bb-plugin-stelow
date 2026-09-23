@@ -3,24 +3,14 @@ import { Button } from "@/components/ui/button";
 import { DisclosureChevron } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
 import { workerSectionPolicy } from "../../lib/worker-action-policy.mjs";
+import { relativeTime } from "../../lib/relative-time.mjs";
 import { formatTokenUsage, sumTokenBreakdowns, totalTokenUsage } from "../../lib/token-usage.mjs";
 
 // Worker presence: the thread opener, the history list (archived threads
-// stay readable, provider-reported token totals), the policy-driven
-// section (preset controls, stale-preset resume, write-back link slot),
-// and the relative clock they all read. Every detail body renders the
-// same worker truth — one home, not three track copies.
-
-export function relativeTime(timestamp: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
-  if (seconds < 60) return "Just now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "Yesterday" : `${days}d ago`;
-}
+// stay readable, provider-reported token totals), and the policy-driven
+// section (preset controls, stale-preset resume, write-back link slot).
+// Times read the shared relative clock (lib). Every detail body renders
+// the same worker truth — one home, not three track copies.
 
 export function OpenThreadButton({ threadId }: { threadId: string | null | undefined }) {
   const navigate = useBbNavigate();

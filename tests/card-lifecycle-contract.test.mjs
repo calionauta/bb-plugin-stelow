@@ -16,6 +16,7 @@ const creationModule = readFileSync(join(root, "components", "creation", "creati
 const strategyPickerModule = readFileSync(join(root, "components", "creation", "strategy-picker.tsx"), "utf8");
 const manageMenu = readFileSync(join(root, "components", "manage", "card-actions-menu.tsx"), "utf8");
 const manageRecovery = readFileSync(join(root, "components", "manage", "detail-recovery-actions.ts"), "utf8");
+const detailBanner = readFileSync(join(root, "components", "detail", "inbox-event-banner.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
@@ -87,6 +88,14 @@ assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "research", o
 assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "exploration", onChanged \}\)/, "the explore body delegates recovery");
 assert.match(manageRecovery, /Worker retried — continuing the \$\{trackNoun\}\./, "the retry toast names its track");
 assert.match(manageRecovery, /const retried = await rpc\.call\("retryWorker", \{ cardId \}\)/, "repair resumes through the retry rail, never a second path");
+// Detail leaves: one banner definition for every body; event text, time,
+// and the relative clock live in lib (tested), never pasted per surface.
+assert.match(detailBanner, /export function InboxEventBanner\(\{ visible, event, sectionRef/, "the banner lives in the detail module");
+assert.match(app, /import \{ InboxEventBanner, useInboxEventFocus \} from "\.\/components\/detail\/inbox-event-banner"/, "detail bodies read the shared banner");
+assert.doesNotMatch(app, /function InboxEventBanner\(/, "no local banner copy survives in the panel");
+assert.doesNotMatch(app, /function inboxEventDescription\(/, "descriptions come from lib, never a local copy");
+assert.doesNotMatch(app, /function inboxEventTime\(/, "event times come from lib, never a local copy");
+assert.doesNotMatch(app, /function relativeTime\(/, "the relative clock lives in lib, never pasted");
 // Manage surfaces: menu, header, and confirm live in one home; the panel
 // reads them, never pastes them. Picking a menu entry closes the menu
 // before the action runs.

@@ -19,3 +19,6 @@ export function inboxEventPresentation(event: InboxEventPresentationInput): {
 export function isOpenInboxAction(event: (InboxEventPresentationInput & { readAt?: number | null }) | null): boolean;
 export function inboxFilterEntries<T extends InboxFilterInput>(entries: T[], filter: "attention" | "resolved" | "archived" | "all"): T[];
 export function unreadInboxEntries<T extends { readAt?: number | null }>(entries: T[] | null | undefined, unreadOnly?: boolean): T[];
+export function inboxEventDescription(event: InboxEventPresentationInput & { summary: string }): string;
+export function inboxEventText(event: InboxEventPresentationInput & { summary: string }): string;
+export function inboxEventTime(event: InboxEventPresentationInput & { summary: string }): string;
