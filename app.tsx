@@ -7,7 +7,6 @@ import {
   useBbContext,
   useBbNavigate,
   useComposer,
-  useRealtime,
   useRpc,
   type NewThreadRequest,
   type PluginCommandRegistration,
@@ -22,7 +21,17 @@ import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxEventText, inboxEventT
 import { joinStrategyLabels, liveBorderClass, statusTone } from "./lib/detail-presentation.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
+import {
+  BUILD_BOARD_COLUMNS,
+  BUILD_BOARD_COLUMN_LABELS,
+  BUILD_BOARD_VISIBLE_COLUMNS,
+  STAGE_SEQUENCE,
+  STAGE_SKILL,
+  WORKFLOW_PHASES,
+  buildBoardColumnFor,
+  stageInfoUrl,
+  stageLabel,
+} from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill } from "./lib/hill-position.mjs";
@@ -31,40 +40,18 @@ import { questionCopy } from "./lib/question-presentation.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
-import { BuildPublication } from "./components/detail/build-publication";
-import { BuildDiff } from "./components/detail/build-diff";
-import { WorkspaceRecoveryPanel } from "./components/detail/build-recovery";
-import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
-import { shouldShowBuildDiff } from "./lib/build-diff-presentation.mjs";
+import { BuildDetailBody } from "./components/detail/build-detail-body";
+import { useDebouncedRealtime } from "./components/use-debounced-realtime";
 import { ActivityPill, AttentionChip, BuildStatusPills, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
-import { GithubCompletionDialog } from "./components/github/github-completion-dialog";
 import { WorkflowSettings, sanitizeReviewGates, type Appetite, type ResearchStrategyOption, type ReviewGates } from "./components/creation/creation-settings";
 import { CreateBuildDialog } from "./components/creation/create-build-dialog";
 import { CreateResearchDialog } from "./components/creation/create-research-dialog";
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
-import { BatchStepper, ExpiredQuestionsSection, QuestionBatch, type ArtifactViewerMode, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
-import { CardConversation } from "./components/conversation/card-conversation";
-import { useDetailComment } from "./components/conversation/use-detail-comment";
-import { checkoutNoteFor, WorkerSection } from "./components/worker-history/worker-history";
-import { ArtifactGroups, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
-import { CardDetailHeader } from "./components/manage/card-detail-header";
+import { BatchStepper, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
-import { InboxEventBanner, shouldShowInboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
-import { InputFiles } from "./components/detail/input-files";
-import { HERO_STYLE, heroFor } from "./components/detail/detail-hero";
-import { DetailHeroActions } from "./components/detail/detail-hero-actions";
-import { BAND_LABEL } from "./components/detail/stage-timeline";
-import { BuildProgress } from "./components/detail/build-progress";
 import { StelowQualityDirective } from "./components/detail/stelow-quality-directive";
-import { WorkflowMap } from "./components/detail/workflow-map";
-import { ResearchDetailBody } from "./components/detail/research-detail-body";
-import { ExploreDetailBody } from "./components/detail/explore-detail-body";
-import { BuildLifecycleDialogs } from "./components/detail/build-lifecycle-dialogs";
-import { useBuildDetailLifecycle } from "./components/detail/use-build-detail-lifecycle";
-import { PreviewSection } from "./components/detail/preview-section";
-import { ArtifactViewerDialog } from "./components/detail/artifact-viewer-dialog";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,7 +59,6 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -97,7 +83,6 @@ const INTENT_LABEL: Record<string, string> = {
 // The panel no longer guesses intent; the server derives it from live labels.
 // Stages are ordered workflow checkpoints; phases are board-level groups.
 // Explore calls its independent, one-off choices techniques instead.
-const STAGE_BAND = STAGE_TO_BAND;
 // Build board topology is centralized with the workflow vocabulary. The
 // aliases keep component call sites readable; they do not define columns.
 const COLUMNS = BUILD_BOARD_COLUMNS;
@@ -170,12 +155,6 @@ function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): v
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: inboxCardSubPath(cardId, eventId) });
 }
 
-// Position of a stage in the canonical sequence (-1 if unknown).
-function stageIndex(stage: string) {
-  return STAGE_SEQUENCE.indexOf(stage);
-}
-
-
 const FILTER_INTENT_OPTIONS = [{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))];
 const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...VISIBLE_COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
 const FILTER_ACTIVITY_OPTIONS = [
@@ -192,7 +171,6 @@ type ProjectsResponse = Extract<BoardResult, { projects: unknown }>;
 type Project = ProjectsResponse["projects"][number];
 type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
-type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
 
 function statusGlyph(status: string) {
   if (isDoneStatus(status)) return "✓";
@@ -206,8 +184,6 @@ function statusGlyph(status: string) {
 }
 
 const buildStatusPillProps = (card: CardItem) => ({ card, statusTone, intentLabel: (intent: string) => INTENT_LABEL[intent] });
-
-const DEBOUNCE_MS = 250;
 
 // Unified attention: ONE flag (needsAttention) + the reason (kind). All four
 // Attention label derived from the card's own activity/status — no separate
@@ -230,28 +206,6 @@ function pendingReview(card: Pick<CardItem, "status" | "hasPendingReview">): boo
 
 function ReviewChip() {
   return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
-}
-
-function useDebouncedRealtime(channels: readonly string[], handler: () => void, delayMs = DEBOUNCE_MS) {
-  const handlerRef = useRef(handler);
-  handlerRef.current = handler;
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-  const schedule = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      handlerRef.current();
-    }, delayMs);
-  }, [delayMs]);
-  for (const channel of channels) {
-    useRealtime(channel, schedule);
-  }
 }
 
 interface SidebarAccessoryHandle {
@@ -385,8 +339,6 @@ type InboxNotification = {
   summary: string; occurredAt: number; readAt: number | null; resolvedAt: number | null; archivedAt: number | null;
   severity: number; severityReasons: string[];
 };
-
-type InboxEventSnapshot = Pick<InboxNotification, "kind" | "summary" | "occurredAt" | "resolvedAt" | "archivedAt">;
 
 const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
   question: { icon: "?", label: INBOX_EVENT_LABELS.question, tone: "bg-amber-500/15 text-amber-700" },
@@ -1268,7 +1220,22 @@ function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
 }) {
   const back = () => goToTrack(navigate, backTrack);
   return (
-    <CardDetailBody cardId={cardId} inboxEventId={eventId} onClose={back} onBack={back} navigate={navigate} />
+    <BuildDetailBody
+      cardId={cardId}
+      inboxEventId={eventId}
+      onClose={back}
+      onBack={back}
+      intentLabels={INTENT_LABEL}
+      onOpenRecoveryAudit={(auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId)}
+      renderPresetDialog={({ open, onOpenChange, onChanged }) => (
+        <PresetAssignDialog
+          open={open}
+          onOpenChange={onOpenChange}
+          cardId={cardId}
+          onChanged={onChanged}
+        />
+      )}
+    />
   );
 }
 
@@ -2508,7 +2475,23 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
     if (threadId) return <p className="p-4 text-sm text-muted-foreground">This thread is not a Stelow worker thread.</p>;
     return <p className="p-4 text-sm text-muted-foreground">Pick a card from Stelow {trackTitle("build")} to see its details here.</p>;
   }
-  return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
+  return (
+    <BuildDetailBody
+      cardId={cardId}
+      inboxEventId={null}
+      onClose={() => { /* host tab close */ }}
+      intentLabels={INTENT_LABEL}
+      onOpenRecoveryAudit={(auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId)}
+      renderPresetDialog={({ open, onOpenChange, onChanged }) => (
+        <PresetAssignDialog
+          open={open}
+          onOpenChange={onOpenChange}
+          cardId={cardId}
+          onChanged={onChanged}
+        />
+      )}
+    />
+  );
 }
 
 type PresetManagerPreset = { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean };
@@ -3320,407 +3303,6 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// Shared worker block: preset readout, state-appropriate recovery, and worker
-// history. Card lifecycle actions deliberately live in the card header.
-
-function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; onBack?: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [card, setCard] = useState<CardItem | null>(null);
-  const [detail, setDetail] = useState<CardDetailResponse | null>(null);
-  const [detailRefresh, setDetailRefresh] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [advancing, setAdvancing] = useState<string | null>(null);
-  const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
-  const [githubPostOpen, setGithubPostOpen] = useState(false);
-  const [publicationDirty, setPublicationDirty] = useState(false);
-  const [publicationBranch, setPublicationBranch] = useState<string | null>(null);
-  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
-  const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
-  const [inboxEvent, setInboxEvent] = useState<InboxEventSnapshot | null>(null);
-  const inboxEventRef = useRef<HTMLElement | null>(null);
-  const [artifactsOpen, setArtifactsOpen] = useState(false);
-  // Workflow map open state drives its own chevron explicitly: no reliance
-  // on CSS group-open variants, and the native marker stays hidden so the
-  // affordance is exactly one arrow.
-  const [mapOpen, setMapOpen] = useState(false);
-  // Native <details> chevrons are owned by the publication feature.
-  const artifactsRef = useRef<HTMLDivElement | null>(null);
-  // One way in: the progress section's file count opens Artifacts and brings
-  // it into view. Instant scroll (no smooth) to respect reduced motion.
-  const showArtifacts = useCallback(() => {
-    setArtifactsOpen(true);
-    requestAnimationFrame(() => artifactsRef.current?.scrollIntoView({ block: "nearest" }));
-  }, []);
-
-  const load = useCallback(async () => {
-    try {
-      const detailResult = await rpc.call("cardDetail", { cardId });
-      const eventResult = inboxEventId ? await rpc.call("getNotification", { notificationId: inboxEventId, cardId }) : null;
-      setDetail(detailResult);
-      setCard(detailResult.card);
-      setInboxEvent(eventResult?.notification ?? null);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load card.");
-    }
-  }, [cardId, inboxEventId, rpc]);
-  const { comment, setComment, submitComment } = useDetailComment({ cardId, onChanged: load });
-  const lifecycle = useBuildDetailLifecycle({
-    cardId,
-    card,
-    intentLabels: INTENT_LABEL,
-    onChanged: load,
-    onClose,
-    onOpenRecoveryAudit: (auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId),
-  });
-  const {
-    setRepairOpen, setRestartWorkerOpen, restarting, retrying, starting, splitting, splitError,
-    setArchiveOpen, setDeleteOpen, setPromoteOpen, setPromoteName, setRecoveryAttachProjectId,
-    creatingRecoveryAudit, workspaceRecovery, workspaceRecoveryLoading, loadWorkspaceRecovery,
-    openDiscard, doCreateRecoveryAudit, doRepair, doRetry, doStart, doRequestSplit,
-  } = lifecycle;
-
-  useEffect(() => { void load(); }, [load, detailRefresh]);
-  useEffect(() => { void loadWorkspaceRecovery(); }, [loadWorkspaceRecovery]);
-  useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
-  // Viewing a completed card marks its completion seen (read, never
-  // resolved): the badge drops, Recent updates keeps the entry. Fires on
-  // mount-if-completed and on the transition; steady state never refires
-  // because the dep is the status value, not the card object.
-  useEffect(() => {
-    if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
-  }, [cardId, card?.status, rpc]);
-  // A completed card's deliverable IS its evidence, so Artifacts opens by
-  // default there: the two receipts and their verification state are the first
-  // thing on the card, instead of behind the disclosure that serves live work.
-  useEffect(() => {
-    if (card?.status === "completed") setArtifactsOpen(true);
-  }, [card?.status]);
-  useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
-
-  // The publication feature owns its status, actions, push-shell refreshes,
-  // and commit review. CardDetailBody only observes dirty-tree state so the
-  // pre-completion Diff panel can yield to Git changes after completion.
-
-  async function advance(stage: string) {
-    setAdvancing(stage);
-    try {
-      const result = await rpc.call("advanceCard", { cardId, stage });
-      if (!result.ok) toast.error(result.error ?? "Advance failed");
-      else toast.success(`Advanced to ${stage}`);
-      await load();
-    } finally {
-      setAdvancing(null);
-    }
-  }
-
-  // A fetched pending question wins over a possibly stale activity snapshot:
-  // decision > error > paused > working > calm.
-  const pendingFirst = detail?.pendingQuestions?.[0] ?? null;
-
-  const hero = card ? heroFor(card, detail) : null;
-  const heroStyle = hero ? HERO_STYLE[hero.kind] : null;
-  const archivedPresentation = card ? archivedCardDetailPresentation(card, stageLabel) : null;
-  const completedWorkerPreset = card?.status === "completed"
-    ? detail?.workerHistory.find((worker) => worker.threadId === card.workerThreadId)?.presetName ?? detail?.card.presetName ?? "Default"
-    : null;
-  // Provider/model are fixed at spawn: a preset change only lands when a new
-  // worker starts. Retry continues the SAME thread, so while the running
-  // worker predates the override the hero must offer Restart, not Resume.
-  // Staleness is the explicit restart-pending flag (set on assign, healed by
-  // thread-birth comparison) with id-mismatch as backup.
-  const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
-  const artifactTotal = detail?.artifacts.filter((artifact) => artifact.role !== "evidence").length ?? 0;
-  const artifactEvidenceTotal = detail?.artifacts.filter((artifact) => artifact.role === "evidence").length ?? 0;
-  // Gate review entry: the document the pending decision is actually about.
-  // The pending question's own option artifact wins: board position (card.stage)
-  // deliberately stays at the last advanced stage while a question waits (see
-  // lib/card-question-state), so a gate-stage manifest lookup alone can point
-  // at the wrong file when two planning documents exist. Manifest is the
-  // second source, newest artifact only the last resort.
-  const GATE_ARTIFACT_STAGE: Record<string, string> = { gate: "shape", "int-gate": "interface", selection: "interface", "plan-gate": "planning" };
-  // Evidence attached to a pending or recoverable question — the document
-  // under decision even when the manifest doesn't list it yet. Same
-  // viewer, same shape: option artifacts carry display/path/absolute/host.
-  const pendingQuestionArtifact = detail
-    ? [...detail.pendingQuestions, ...detail.expiredQuestions].flatMap((q) => q.options ?? []).find((o) => o?.artifact)?.artifact ?? null
-    : null;
-  const reviewArtifact = detail && card && (hero?.kind === "decision" || detail.pendingQuestions.length > 0)
-    ? pendingQuestionArtifact ?? detail.artifacts.filter((artifact) => artifact.role !== "evidence").find((artifact) => artifact.stage === (GATE_ARTIFACT_STAGE[card.stage] ?? "")) ?? detail.artifacts.filter((artifact) => artifact.role !== "evidence").pop() ?? null
-    : null;
-  // Viewer-ready shape, narrowed once here (property narrowing does not
-  // survive into the onClick closure below). The button only renders when a
-  // readable absolute path exists; agent-produced labels fall back plainly.
-  const reviewTarget = reviewArtifact?.absolutePath
-    ? { display: reviewArtifact.display ?? "artifact", path: reviewArtifact.absolutePath, relPath: reviewArtifact.path ?? reviewArtifact.absolutePath, hostId: reviewArtifact.hostId ?? "" }
-    : null;
-
-  return (
-    <div className="flex h-full flex-col">
-      <CardDetailHeader
-        card={card}
-        onBack={onBack}
-        onRestartFresh={() => setRepairOpen(true)}
-        onArchive={() => setArchiveOpen(true)}
-        onDiscard={() => void openDiscard()}
-        onDelete={() => setDeleteOpen(true)}
-        onReclassify={doRepair}
-        statusTone={statusTone}
-        intentLabel={(intent) => INTENT_LABEL[intent]}
-      />
-      <div className="flex-1 overflow-auto p-4">
-        <div className="mx-auto w-full max-w-3xl space-y-6">
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {card && card.kind === "research" ? (
-          <ResearchDetailBody
-            cardId={cardId}
-            inboxEventId={inboxEventId}
-            inboxEvent={inboxEvent}
-            card={card}
-            detail={detail}
-            onChanged={() => void load()}
-            renderPresetDialog={({ open, onOpenChange, onChanged }) => (
-              <PresetAssignDialog open={open} onOpenChange={onOpenChange} cardId={cardId} onChanged={onChanged} />
-            )}
-          />
-        ) : null}
-        {card && card.kind === "explore" ? (
-          <ExploreDetailBody
-            cardId={cardId}
-            inboxEventId={inboxEventId}
-            inboxEvent={inboxEvent}
-            card={card}
-            detail={detail}
-            onChanged={() => void load()}
-            renderPresetDialog={({ open, onOpenChange, onChanged }) => (
-              <PresetAssignDialog open={open} onOpenChange={onOpenChange} cardId={cardId} onChanged={onChanged} />
-            )}
-          />
-        ) : null}
-        {card && card.kind === "build" ? (
-          <>
-            <InboxEventBanner visible={Boolean(inboxEventId) && shouldShowInboxEventBanner(inboxEvent, hero)} event={inboxEvent} sectionRef={inboxEventRef} />
-            {/* HERO — one contextual sentence + one primary action (D primary, A type scale) */}
-            {hero && heroStyle ? (
-              <section aria-label="Card status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
-                <div className="flex items-start gap-2.5">
-                  <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${heroStyle.dot}`} />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <h2 className="text-[16px] font-semibold leading-snug tracking-tight text-foreground">{hero.title}</h2>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{hero.sub}</p>
-                    <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
-                    {card.workspaceKind === "exploratory" ? <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" title={card.workspacePath ?? undefined}><span>Exploratory work · stored locally</span>{workspaceRecovery?.kind === "promote" ? <Button size="sm" variant="outline" onClick={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} title="This workspace contains source material. Create a BB project without moving files.">Turn into project…</Button> : null}{workspaceRecovery && workspaceRecovery.kind !== "attached" && workspaceRecovery.candidates.length > 0 ? <span className="font-medium text-amber-800 dark:text-amber-200">Reported code checkout needs review below.</span> : null}</p> : null}
-                    {/* One primary action per state; secondary actions are real
-                        buttons (outline/ghost) so affordances never read as
-                        body text. */}
-                    <DetailHeroActions
-                      card={card}
-                      heroKind={hero.kind}
-                      pending={Boolean(pendingFirst)}
-                      preset={{ stale: presetStale, providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }}
-                      state={{ starting, retrying, restarting }}
-                      continuation="continuing from the current stage"
-                      retryTail=" from the current stage"
-                      extra={hero.kind === "decision" && reviewTarget ? (
-                        <span className="w-full">
-                          <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewTarget.display, path: reviewTarget.path, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewTarget.relPath, reviewTarget.hostId, reviewTarget.path), mode: "review" })} title={`Read ${reviewTarget.display} before deciding`}>Review {reviewTarget.display} ↗</Button>
-                        </span>
-                      ) : null}
-                      onStart={doStart}
-                      onRetry={doRetry}
-                      onRestart={() => setRestartWorkerOpen(true)}
-                    />
-                  </div>
-                </div>
-                {pendingFirst ? (
-                  <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
-                    <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={() => void load()} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
-                  </div>
-                ) : null}
-                {detail?.splitAction?.show ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3">
-                    {detail.splitAction.ok ? (
-                      <>
-                        <Button size="sm" variant="outline" disabled={splitting} onClick={() => void doRequestSplit()} title="Ask the worker for a real split proposal now (one option per delivery plus Keep as one card). Only a --tag split proposal can create cards.">Propose split…</Button>
-                        <span className="text-xs text-muted-foreground">One option per delivery, approved by you, executed by the host.</span>
-                      </>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{detail.splitAction.reason}</span>
-                    )}
-                    {splitError ? <span className="w-full text-xs text-destructive">{splitError}</span> : null}
-                  </div>
-                ) : null}
-                {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={(a, mode) => openAskArtifact(card, detail.fileEnvironmentId, setViewerFile, a, mode)} onAnswered={() => void load()} /></div> : null}
-              </section>
-            ) : null}
-
-            <WorkerSection
-              card={card}
-              detail={detail}
-              presetStale={presetStale}
-              restarting={restarting}
-              onRestartWorker={() => setRestartWorkerOpen(true)}
-              onPreset={() => setPresetDialogOpen(true)}
-              presetPill={card.status === "completed" ? <>Completed · {completedWorkerPreset}</> : <>{card.stage ? `${BAND_LABEL[STAGE_BAND[card.stage] ?? "analysis"]} · ` : ""}{detail?.card.presetName ?? "default"}</>}
-              presetNote={card.status === "completed" ? <>Preset recorded for the completed worker.</> : <>{card.stage ? <strong>{stageLabel(card.stage)}</strong> : "current"} phase{detail?.card.presetOverridden ? " — overridden for this card" : " — board default"} · applies to the next worker</>}
-              pillTitle={card.status === "completed" ? "Preset used by the completed worker" : card.stage ? `Preset for the ${stageLabel(card.stage)} phase` : "Preset for the next worker"}
-              githubLink={detail?.githubLink ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>Imported from <UrlLink href={detail.githubLink.url} className="font-medium text-primary underline-offset-4 hover:underline">{detail.githubLink.repo}#{detail.githubLink.number}</UrlLink></span>
-                  {card.status === "completed" ? (
-                    detail.githubLink.postedAt ? (
-                      <span className="text-emerald-700 dark:text-emerald-300">✓ Completion summary posted to GitHub</span>
-                    ) : (
-                      <button onClick={() => setGithubPostOpen(true)} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
-                    )
-                  ) : (
-                    <span>A completion summary can be posted once this card is Done.</span>
-                  )}
-                </div>
-              ) : null}
-              checkoutNote={checkoutNoteFor(detail?.card.environmentLabel, publicationBranch)}
-            />
-
-            <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
-
-            {/* Preview sits above progress: once the card is ready, seeing the
-                result matters more than following the stages. */}
-            <PreviewSection cardId={card.id} />
-
-            {detail ? (
-              <BuildProgress
-                card={card}
-                detail={detail}
-                archivedPresentation={archivedPresentation}
-                artifactTotal={artifactTotal}
-                defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
-                intentLabels={INTENT_LABEL}
-                onOpenArtifacts={showArtifacts}
-                onPickStage={setPendingAdvance}
-                onViewFile={setViewerFile}
-              />
-            ) : <p className="text-xs text-muted-foreground">Loading…</p>}
-
-            {/* The map is a reference, not card state: it sits beside the
-                progress section (same heading shape, same stage names) so
-                neither has to pretend to be the other. */}
-            <WorkflowMap open={mapOpen} onToggle={setMapOpen} />
-
-            <div ref={artifactsRef}>
-            <DisclosureSection
-              title="Artifacts"
-              hint={detail ? `${artifactTotal} file${artifactTotal === 1 ? "" : "s"}${artifactEvidenceTotal > 0 ? ` + ${artifactEvidenceTotal} evidence` : ""} · audit trail${detail.artifacts.some((artifact) => artifact.stage === "unregistered") ? " · some unregistered" : ""}` : "produced files"}
-              open={artifactsOpen}
-              onToggle={setArtifactsOpen}
-            >
-              {card.status === "completed" ? <AuditTrailStatusRow cardId={card.id} /> : null}
-              {detail ? (
-                <>
-                  <ArtifactGroups
-                    artifacts={detail.artifacts.filter((artifact) => artifact.role !== "evidence")}
-                    workspaceKind={card.workspaceKind}
-                    fileEnvironmentId={detail.fileEnvironmentId}
-                    onView={(file) => setViewerFile(file)}
-                    groupTitleForStage={artifactGroupTitle}
-                  />
-                  {artifactEvidenceTotal > 0 ? (
-                    <section aria-label="Evidence" className="space-y-2 border-t pt-3">
-                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Evidence — machine receipts ({artifactEvidenceTotal})</h3>
-                      <p className="text-[11px] text-muted-foreground">Kept for audit with the run bundle, not counted as deliverables.</p>
-                      <ArtifactGroups
-                        artifacts={detail.artifacts.filter((artifact) => artifact.role === "evidence")}
-                        workspaceKind={card.workspaceKind}
-                        fileEnvironmentId={detail.fileEnvironmentId}
-                        onView={(file) => setViewerFile(file)}
-                        groupTitleForStage={artifactGroupTitle}
-                      />
-                    </section>
-                  ) : null}
-                </>
-              ) : <p className="text-xs text-muted-foreground">Loading…</p>}
-            </DisclosureSection>
-            </div>
-
-            {/* Diff is the pre-completion review instrument. Once completed, Git changes owns history,
-                except when the tree became dirty again or an attached recovery checkout needs review. */}
-            {card && shouldShowBuildDiff({ status: card.status, stage: card.stage, publicationDirty, recoveryKind: workspaceRecovery?.kind ?? null }) ? (
-              <BuildDiff
-                cardId={cardId}
-                workspaceKind={card.workspaceKind}
-                fileEnvironmentId={detail?.fileEnvironmentId ?? null}
-                onOpenFile={setViewerFile}
-              />
-            ) : null}
-
-            {card.status === "completed" ? (
-              <BuildPublication
-                cardId={cardId}
-                verifiedHeadSha={detail?.card.verifiedHeadSha ?? null}
-                recoveryContent={card.workspaceKind === "exploratory" ? (
-                  <WorkspaceRecoveryPanel recovery={workspaceRecovery} loading={workspaceRecoveryLoading || creatingRecoveryAudit} onRefresh={() => void loadWorkspaceRecovery()} onPromote={() => { setPromoteName(card.displayName); setPromoteOpen(true); }} onAttach={setRecoveryAttachProjectId} onCreateAudit={() => void doCreateRecoveryAudit()} onOpenAudit={(auditCardId) => goToCard(navigate, { kind: "build" }, auditCardId)} />
-                ) : null}
-                onChanged={load}
-                onDirtyChange={setPublicationDirty}
-                onBranchChange={setPublicationBranch}
-              />
-            ) : null}
-
-            {/* Conversation (history + composer) */}
-            <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
-
-          </>
-        ) : null}
-        </div>
-      </div>
-      <PresetAssignDialog
-        open={presetDialogOpen}
-        onOpenChange={setPresetDialogOpen}
-        cardId={cardId}
-        onChanged={() => void load()}
-      />
-      <ArtifactViewerDialog
-        open={viewerFile !== null}
-        onOpenChange={(next) => { if (!next) setViewerFile(null); }}
-        cardId={cardId}
-        file={viewerFile}
-        editorTarget={viewerFile?.target ?? null}
-        mode={viewerFile?.mode}
-        onCommented={() => void load()}
-      />
-      {/* Advance preview: never jump stages blindly — show where you are, where
-          you'd go, and what the target stage produces before confirming. */}
-      <Dialog open={pendingAdvance !== null} onOpenChange={(next) => { if (!next) setPendingAdvance(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage) ? "Advance to" : "Return to"} {pendingAdvance ? stageLabel(pendingAdvance) : ""}?</DialogTitle>
-            <DialogDescription className="space-y-2">
-              <p>
-                Move this card from <strong>{stageLabel(card?.stage ?? "")}</strong> to <strong>{pendingAdvance ? stageLabel(pendingAdvance) : ""}</strong>.
-              </p>
-              <p className="rounded-md bg-muted p-2 text-xs">
-                {pendingAdvance ? STAGE_PRODUCES[pendingAdvance] ?? "The agent works on this stage and advances on its own once done." : ""}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage)
-                  ? "This is a manual override. The agent usually advances on its own. Stage gates (product, interface, plan, diff) still apply on the next advance."
-                  : "Going back is safe and reversible. The workflow will re-run earlier stages as needed."}
-              </p>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={advancing !== null}>Cancel</Button>
-            </DialogClose>
-            <Button disabled={advancing !== null || !pendingAdvance} onClick={() => { const target = pendingAdvance; setPendingAdvance(null); if (target) void advance(target); }}>{advancing ? "Applying…" : pendingAdvance && card && stageIndex(pendingAdvance) > stageIndex(card.stage) ? "Advance" : "Return"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <GithubCompletionDialog open={githubPostOpen} onOpenChange={setGithubPostOpen} cardId={cardId} issueLabel={detail?.githubLink ? `${detail.githubLink.repo}#${detail.githubLink.number}` : null} onPosted={load} />
-      <BuildLifecycleDialogs state={lifecycle} cardDisplayName={card?.displayName ?? null} />
-    </div>
   );
 }
 

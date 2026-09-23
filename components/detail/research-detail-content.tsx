@@ -4,13 +4,14 @@ import { researchColumnForStatus } from "../../lib/card-question-state.mjs";
 import { groupResearchArtifacts } from "../../lib/artifact-groups.mjs";
 import { joinStrategyLabels, statusTone } from "../../lib/detail-presentation.mjs";
 import { parseResearchIndexSections } from "../../lib/research-index-sections.mjs";
+import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { researchOpportunityHint } from "../../lib/research-opportunity-summary.mjs";
 import { LIGHTWEIGHT_COLUMN_LABELS } from "../../lib/tracks.mjs";
-import { ArtifactInventory, openAskArtifact, type ArtifactInventoryGroup } from "../artifacts/artifact-inventory";
+import { ArtifactInventory, type ArtifactInventoryGroup } from "../artifacts/artifact-inventory";
 import { CardConversation } from "../conversation/card-conversation";
-import { ExpiredQuestionsSection, QuestionBatch } from "../conversation/question-batch";
 import { LightweightStatusPills } from "../dashboard/build-status-pills";
 import { DisclosureSection } from "../disclosure";
+import { DetailQuestionSections } from "./detail-question-sections";
 import { DetailHeroActions } from "./detail-hero-actions";
 import { HERO_STYLE, heroFor } from "./detail-hero";
 import { InboxEventBanner, shouldShowInboxEventBanner, type InboxEventItem } from "./inbox-event-banner";
@@ -46,16 +47,13 @@ type ResearchContentProps = {
 
 type ResearchStatusProps = Pick<ResearchContentProps, "card" | "detail" | "index" | "strategies" | "actions" | "onOpenRestart" | "onOpenPreset" | "setViewerFile" | "onQuestionsChanged">;
 
-function presetIsStale(card: ResearchCard, detail: ResearchDetail | null): boolean {
-  return Boolean(detail && card.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
-}
-
 function ResearchStatus({ card, detail, index, strategies, actions, onOpenRestart, onOpenPreset, setViewerFile, onQuestionsChanged }: ResearchStatusProps) {
   const hero = heroFor(card, detail);
   const heroStyle = HERO_STYLE[hero.kind];
   const labels = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
   const strategyLabel = joinStrategyLabels(card.researchStrategies ?? [card.researchStrategy], labels);
   const available = index?.opportunities.filter((item) => !item.checked) ?? [];
+  const presetStale = isWorkerPresetStale(card, detail);
   return (
     <>
       <section aria-label="Research status" {...(heroStyle.alert ? { role: "alert" } : {})} className={`rounded-lg border p-4 ${heroStyle.wrap}`}>
@@ -67,13 +65,95 @@ function ResearchStatus({ card, detail, index, strategies, actions, onOpenRestar
             <p className="pt-1 text-[15px] leading-relaxed text-foreground">{card.prompt}</p>
             {index?.found && available.length > 0 && card.status !== "completed" && card.status !== "archived" ? <p className="text-xs text-muted-foreground">Review the results below, select opportunities to build, then move this card to Done.</p> : null}
             <ResearchIdentity card={card} strategyLabel={strategyLabel} />
-            <DetailHeroActions card={card} heroKind={hero.kind} pending={Boolean(detail?.pendingQuestions?.[0])} preset={{ stale: presetIsStale(card, detail), providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }} state={{ starting: actions.starting, retrying: actions.retrying, restarting: actions.restarting }} continuation="continuing the research" onStart={actions.start} onRetry={actions.doRetry} onRestart={onOpenRestart} />
+            <ResearchHeroActions
+              card={card}
+              detail={detail}
+              hero={hero}
+              presetStale={presetStale}
+              actions={actions}
+              onOpenRestart={onOpenRestart}
+            />
           </div>
         </div>
-        <ResearchQuestions card={card} detail={detail} setViewerFile={setViewerFile} onQuestionsChanged={onQuestionsChanged} />
+        <ResearchQuestions
+          card={card}
+          detail={detail}
+          setViewerFile={setViewerFile}
+          onQuestionsChanged={onQuestionsChanged}
+        />
       </section>
-      <WorkerSection card={card} detail={detail} presetStale={presetIsStale(card, detail)} restarting={actions.restarting} onRestartWorker={onOpenRestart} onPreset={onOpenPreset} presetPill={<>Research · {detail?.card.presetName ?? "default"}</>} presetNote={<>Applies to the next worker — Resume keeps the current one.</>} pillTitle="Preset for the next worker" checkoutNote={checkoutNoteFor(detail?.card.environmentLabel)} />
+      <WorkerSection
+        card={card}
+        detail={detail}
+        presetStale={presetStale}
+        restarting={actions.restarting}
+        onRestartWorker={onOpenRestart}
+        onPreset={onOpenPreset}
+        presetPill={<>Research · {detail?.card.presetName ?? "default"}</>}
+        presetNote={<>Applies to the next worker — Resume keeps the current one.</>}
+        pillTitle="Preset for the next worker"
+        checkoutNote={checkoutNoteFor(detail?.card.environmentLabel)}
+      />
     </>
+  );
+}
+
+type ResearchQuestionsProps = Pick<
+  ResearchStatusProps,
+  "card" | "detail" | "setViewerFile" | "onQuestionsChanged"
+>;
+
+function ResearchQuestions({
+  card,
+  detail,
+  setViewerFile,
+  onQuestionsChanged,
+}: ResearchQuestionsProps) {
+  if (!detail) return null;
+  return (
+    <DetailQuestionSections
+      card={card}
+      detail={detail}
+      setViewerFile={setViewerFile}
+      onAnswered={onQuestionsChanged}
+      openLiveArtifact
+    />
+  );
+}
+
+type ResearchHeroActionsProps = Pick<ResearchStatusProps, "card" | "detail" | "actions" | "onOpenRestart"> & {
+  hero: ReturnType<typeof heroFor>;
+  presetStale: boolean;
+};
+
+function ResearchHeroActions({
+  card,
+  detail,
+  hero,
+  presetStale,
+  actions,
+  onOpenRestart,
+}: ResearchHeroActionsProps) {
+  return (
+    <DetailHeroActions
+      card={card}
+      heroKind={hero.kind}
+      pending={Boolean(detail?.pendingQuestions[0])}
+      preset={{
+        stale: presetStale,
+        providerId: detail?.card.presetProviderId ?? null,
+        modelId: detail?.card.presetModelId ?? null,
+      }}
+      state={{
+        starting: actions.starting,
+        retrying: actions.retrying,
+        restarting: actions.restarting,
+      }}
+      continuation="continuing the research"
+      onStart={actions.start}
+      onRetry={actions.doRetry}
+      onRestart={onOpenRestart}
+    />
   );
 }
 
@@ -83,18 +163,6 @@ function ResearchIdentity({ card, strategyLabel }: { card: ResearchCard; strateg
       <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={LIGHTWEIGHT_COLUMN_LABELS[researchColumnForStatus(card.status)] ?? null} tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." kind="research" />
       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
     </div>
-  );
-}
-
-function ResearchQuestions({ card, detail, setViewerFile, onQuestionsChanged }: { card: ResearchCard; detail: ResearchDetail | null; setViewerFile: Dispatch<SetStateAction<ViewerFile | null>>; onQuestionsChanged: () => void }) {
-  const pending = detail?.pendingQuestions?.[0] ?? null;
-  if (!pending && !detail?.expiredQuestions.length) return null;
-  const openArtifact = (artifact: Parameters<typeof openAskArtifact>[3], mode?: Parameters<typeof openAskArtifact>[4]) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, artifact, mode);
-  return (
-    <>
-      {pending ? <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3"><QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={onQuestionsChanged} onOpenArtifact={openArtifact} /></div> : null}
-      {detail && detail.expiredQuestions.length > 0 ? <div className="mt-3 border-t border-amber-500/20 pt-3"><ExpiredQuestionsSection cardId={card.id} questions={detail.expiredQuestions} onOpenArtifact={openArtifact} onAnswered={onQuestionsChanged} /></div> : null}
-    </>
   );
 }
 

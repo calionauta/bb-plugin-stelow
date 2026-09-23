@@ -16,8 +16,33 @@ const exploreQuality = readFileSync(join(root, "components/detail/explore-qualit
 const buildLifecycleState = readFileSync(join(root, "components/detail/use-build-detail-lifecycle.ts"), "utf8");
 const buildLifecycleDialogs = readFileSync(join(root, "components/detail/build-lifecycle-dialogs.tsx"), "utf8");
 const buildLifecyclePolicy = readFileSync(join(root, "lib/build-detail-lifecycle.mjs"), "utf8");
+const buildDetail = readFileSync(join(root, "components/detail/build-detail-body.tsx"), "utf8");
+const buildContent = readFileSync(join(root, "components/detail/build-detail-content.tsx"), "utf8");
+const buildHero = readFileSync(join(root, "components/detail/build-detail-hero.tsx"), "utf8");
+const buildProgressView = readFileSync(join(root, "components/detail/build-detail-progress.tsx"), "utf8");
+const buildReviewTools = readFileSync(join(root, "components/detail/build-detail-review-tools.tsx"), "utf8");
+const buildWorkspace = readFileSync(join(root, "components/detail/build-detail-workspace.tsx"), "utf8");
+const detailQuestions = readFileSync(join(root, "components/detail/detail-question-sections.tsx"), "utf8");
 const buildProgress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
-const detailSource = [app, researchDetail, researchContent, researchState, exploreDetail, exploreContent, exploreState, exploreQuality, buildLifecycleDialogs, buildProgress].join("\n");
+const detailSource = [
+  app,
+  buildContent,
+  buildDetail,
+  buildHero,
+  buildProgressView,
+  buildReviewTools,
+  buildWorkspace,
+  detailQuestions,
+  researchDetail,
+  researchContent,
+  researchState,
+  exploreDetail,
+  exploreContent,
+  exploreState,
+  exploreQuality,
+  buildLifecycleDialogs,
+  buildProgress,
+].join("\n");
 const buildStatusPills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
 const conversation = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
 const cardConversation = readFileSync(join(root, "components", "conversation", "card-conversation.tsx"), "utf8");
@@ -97,7 +122,7 @@ assert.match(remove, /publish\("card-state", \{ cardId \}\)/, "delete refreshes 
 assert.match(remove, /publish\("board-changed", \{ cardId \}\)/, "delete refreshes board surfaces");
 
 assert.match(workerHistory, /workerSectionPolicy\(card, Boolean\(detail\?\.card\.needsAttention\), \{ hasGithubLink, historyCount: detail\?\.workerHistory\.length \?\? 0 \}\)/, "Worker visibility comes from the shared policy");
-assert.match(app, /archivedCardDetailPresentation\(card, stageLabel\)/, "archived hero and workflow copy come from one presentation policy");
+assert.match(buildProgressView, /archivedCardDetailPresentation\(card, stageLabel\)/, "archived hero and workflow copy come from one presentation policy");
 
 assert.match(manageHeader, /canEditWorkflowIntent\(card\)/, "the header delegates type editability to the shared policy");
 
@@ -111,13 +136,27 @@ assert.match(exploreState, /useDetailRecoveryActions\(\{ cardId, trackNoun: "exp
 assert.match(researchContent, /import \{ ResearchQualitySection \} from "\.\/research-quality-section"/, "the research body reads the extracted quality section");
 assert.doesNotMatch(app, /function ResearchQualitySection\(/, "no research quality copy remains in the panel");
 assert.match(exploreDetail, /export function ExploreDetailBody\(/, "the explore detail body owns its route-facing boundary");
-assert.match(app, /import \{ ExploreDetailBody \} from "\.\/components\/detail\/explore-detail-body"/, "the route mounts the extracted explore detail body");
+assert.match(buildContent, /import \{ ExploreDetailBody \} from "\.\/explore-detail-body"/, "the detail content mounts the extracted explore body");
 assert.doesNotMatch(app, /function ExploreDetailBody\(/, "the explore detail body has no local app copy");
 assert.equal((exploreState.match(/rpc\.call\("stageCatalog"/g) ?? []).length, 1, "the explore body has one technique catalog read seam");
 assert.match(exploreState, /if \(cardStatus === "completed"\) void rpc\.call\("markCardNotificationsRead", \{ cardId, kind: "completed" \}\)/, "viewing completed exploration marks completion read without resolving it");
 assert.match(exploreQuality, /rpc\.call\("qualitySeal", \{ cardId, path: filePath \}\)/, "explore quality reads the current stage seal from the host");
 assert.doesNotMatch(app, /function ExploreQualitySection\(/, "no explore quality copy remains in the panel");
-assert.match(exploreContent, /detail && detail\.expiredQuestions\.length > 0[\s\S]*<ExpiredQuestionsSection[\s\S]*onOpenArtifact=\{\(artifact, mode\) => openAskArtifact\(card, detail\.fileEnvironmentId, setViewerFile, artifact, mode\)\}/, "expired explore questions stay answerable and reopen their artifact through the shared viewer target");
+assert.match(
+  detailQuestions,
+  /function ExpiredQuestionSection[\s\S]*questions\.length === 0[\s\S]*<ExpiredQuestionsSection[\s\S]*onOpenArtifact=\{onOpenArtifact\}/,
+  "expired questions stay answerable through the shared detail section",
+);
+assert.match(
+  detailQuestions,
+  /openAskArtifact\([\s\S]*detail\.fileEnvironmentId,[\s\S]*setViewerFile/,
+  "question artifacts open through the shared viewer target",
+);
+assert.match(
+  exploreContent,
+  /<DetailQuestionSections[\s\S]*openLiveArtifact=\{false\}/,
+  "explore keeps live questions answerable without adding artifact opening",
+);
 assert.match(researchQuality, /sub\.status !== "ready"/, "only failed composite substeps enter repair");
 assert.match(researchQuality, /rewrite per the playbook completeness contract, then run verify again\./, "repair lines name the exact fix and verification step");
 // Research follow-up dialogs own their RPC and transient state as one slice.
@@ -128,13 +167,15 @@ assert.match(researchDialogs, /export type ResearchIndexState =/, "the research 
 assert.match(researchDialogs, /export function FanOutDialog\(props: FanOutDialogProps\)/, "fan-out owns its component boundary");
 assert.match(researchDialogs, /export function StrategyRunDialog\(props: StrategyRunDialogProps\)/, "strategy rounds own their component boundary");
 assert.doesNotMatch(app, /^type ResearchIndexState =|^function (?:FanOutDialog|StrategyRunDialog)\(/m, "no local research dialog or index-state copy remains in the panel");
-assert.match(app, /import \{ ResearchDetailBody \} from "\.\/components\/detail\/research-detail-body"/, "the route mounts the extracted research detail body");
+assert.match(buildContent, /import \{ ResearchDetailBody \} from "\.\/research-detail-body"/, "the detail content mounts the extracted research body");
 assert.match(researchDetail, /export function ResearchDetailBody\(/, "the research detail body owns its route-facing boundary");
 assert.doesNotMatch(app, /function ResearchDetailBody\(/, "the research detail body has no local app copy");
 assert.equal((researchState.match(/rpc\.call\("researchIndex"/g) ?? []).length, 1, "the research body has one index read seam");
 assert.equal((researchState.match(/rpc\.call\("researchStrategies"/g) ?? []).length, 1, "the research body has one strategy catalog read seam");
 assert.match(researchState, /if \(cardStatus === "completed"\) void rpc\.call\("markCardNotificationsRead", \{ cardId, kind: "completed" \}\)/, "viewing completed research marks completion read without resolving it");
-assert.equal((researchContent.match(/onAnswered=\{onQuestionsChanged\}/g) ?? []).length, 2, "pending and expired questions both refresh the index after an answer");
+assert.match(researchContent, /<DetailQuestionSections[\s\S]*onAnswered=\{onQuestionsChanged\}/, "research questions share the index refresh callback");
+assert.match(detailQuestions, /<QuestionBatch[\s\S]*onAnswered=\{onAnswered\}/, "pending questions refresh the index after an answer");
+assert.match(detailQuestions, /<ExpiredQuestionsSection[\s\S]*onAnswered=\{onAnswered\}/, "expired questions refresh the index after an answer");
 assert.match(researchContent, /<InboxEventBanner[\s\S]*<ResearchStatus[\s\S]*<InputFiles[\s\S]*<ResearchSummary[\s\S]*<PreviewSection[\s\S]*<ResearchQualitySection[\s\S]*<ResearchArtifacts[\s\S]*<CardConversation/, "research detail keeps its original shared-leaf composition order");
 assert.match(researchDetail, /<ConfirmActionDialog[\s\S]*renderPresetDialog[\s\S]*<ArtifactViewerDialog[\s\S]*<FanOutDialog[\s\S]*<StrategyRunDialog/, "research detail composes its confirm, preset, viewer, fan-out, and strategy leaves in order");
 assert.match(researchDetail, /onFanned=\{\(\) => \{ onChanged\(\); state\.refreshIndex\(\); \}\}/, "fan-out refreshes card detail and the research index");
@@ -162,7 +203,8 @@ assert.match(detailPresentation, /export function (joinStrategyLabels|liveBorder
 assert.match(detailBanner, /export function shouldShowInboxEventBanner/, "banner visibility belongs to the banner feature");
 assert.doesNotMatch(app, /function shouldShowInboxEventBanner\(/, "no banner visibility copy remains in the panel");
 assert.match(artifactModule, /export function openAskArtifact\(/, "ask artifacts open through the artifact target convention");
-assert.match(researchContent, /import \{ ArtifactInventory, openAskArtifact,/, "research composes the shared inventory and ask-artifact opener");
+assert.match(researchContent, /import \{ ArtifactInventory, type ArtifactInventoryGroup \}/, "research composes the shared artifact inventory");
+assert.match(researchContent, /<DetailQuestionSections/, "research delegates question artifacts to the shared detail section");
 assert.doesNotMatch(app, /function openAskArtifact\(/, "no ask-artifact opener copy remains in the panel");
 assert.match(workerHistory, /export function checkoutNoteFor\(/, "checkout wording belongs to worker presentation");
 assert.match(researchContent, /import \{ checkoutNoteFor, WorkerSection \} from "\.\.\/worker-history\/worker-history"/, "research composes shared worker and checkout presentation");
@@ -181,21 +223,21 @@ assert.match(detailHero, /return attentionHero\(card, detail\) \?\? workerHero\(
 assert.match(detailHero, /if \(archived\) return archived\.hero/, "archived history wins over every live state");
 assert.match(detailSource, /<DetailHeroActions/g, "all three detail bodies use the shared hero action rail");
 assert.equal((detailSource.match(/<DetailHeroActions/g) ?? []).length, 3, "Build, Research, and Explore must not drift into separate action policies");
-assert.doesNotMatch(app, /hero\.kind === "error" && card\.workerThreadId/, "recovery branches are no longer pasted per detail body");
+assert.doesNotMatch(detailSource, /hero\.kind === "error" && card\.workerThreadId/, "recovery branches are no longer pasted per detail body");
 assert.match(detailHeroActions, /heroKind === "paused" && card\.lastError \? "Retry" : "Resume"/, "paused failures retry while routine idles resume");
 assert.match(detailHeroActions, /card\.activity === "error" && card\.lastError && !preset\.stale/, "a decision can retry a concurrent failure only when the preset is current");
 assert.match(detailHeroActions, /<HeroErrorNote card=\{card\} \/>/, "a decision hero keeps the worker error beside the question");
 assert.match(detailHeroActions, /heroKind === "calm" && card\.activity === "idle"/, "only a live calm idle offers resume");
 assert.equal((detailSource.match(/useDetailComment\(/g) ?? []).length, 3, "all three conversations share one comment submission seam");
-assert.doesNotMatch(app, /async function submitComment\(/, "no detail body keeps a private comment sender");
+assert.doesNotMatch(detailSource, /async function submitComment\(/, "no detail body keeps a private comment sender");
 assert.match(detailComment, /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body \}\)/, "trimmed comments route to the card worker");
 assert.match(detailComment, /if \(result\.error\)[\s\S]*?setComment\(""\);[\s\S]*?await onChanged\(\);/, "failed comments stay drafted while success clears and refreshes");
 // Stage timeline: one shared renderer; advance hits the next legal stage,
 // archived never regresses, finished parks past the end.
 assert.match(detailTimeline, /export function StageTimeline\(\{ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal/, "the timeline lives in the detail module");
 assert.match(buildProgress, /import \{ StageTimeline \} from "\.\/stage-timeline"/, "the extracted build progress body reads the shared timeline");
-assert.match(app, /import \{ BAND_LABEL \} from "\.\/components\/detail\/stage-timeline"/, "build worker presentation reads the shared band vocabulary");
-assert.doesNotMatch(app, /function StageTimeline\(/, "no local timeline copy survives in the panel");
+assert.match(buildWorkspace, /import \{ BAND_LABEL \} from "\.\/stage-timeline"/, "build worker presentation reads the shared band vocabulary");
+assert.doesNotMatch(detailSource, /function StageTimeline\(/, "no local timeline copy survives in the detail slice");
 assert.match(detailTimeline, /const canAdvance = idx === current \+ 1 && legal\.has\(stage\)/, "advance hits the next legal stage only");
 assert.match(detailTimeline, /terminal !== "archived" && passed/, "archived stages never regress");
 assert.match(detailTimeline, /terminal \? STAGE_SEQUENCE\.length/, "finished parks the cursor past the end");
@@ -203,8 +245,8 @@ assert.match(detailTimeline, /terminal \? STAGE_SEQUENCE\.length/, "finished par
 // math live in lib (tested); status presentation arrives as functions.
 assert.match(detailScopes, /export function ScopesList\(\{ scopes, statusTone, statusGlyph, statusLabel/, "the scope list lives in the detail module");
 assert.match(buildProgress, /import \{ ScopesList \} from "\.\/scopes-list"/, "the extracted build progress body reads the shared scope list");
-assert.doesNotMatch(app, /function ScopesList\(/, "no local scope-list copy survives in the panel");
-assert.doesNotMatch(app, /function orderScopes\(/, "ordering lives in lib, never pasted in the panel");
+assert.doesNotMatch(detailSource, /function ScopesList\(/, "no local scope-list copy survives in the detail slice");
+assert.doesNotMatch(detailSource, /function orderScopes\(/, "ordering lives in lib, never pasted in the detail slice");
 assert.match(detailScopes, /\{ordered\.map\(\(scope\) => \(/, "scopes render in dependency order");
 assert.match(detailScopes, /waiting on \{wait\.length\}/, "blocked scopes name their wait");
 // Manage surfaces: menu, header, and confirm live in one home; the panel
@@ -212,11 +254,11 @@ assert.match(detailScopes, /waiting on \{wait\.length\}/, "blocked scopes name t
 // before the action runs.
 assert.match(manageMenu, /export function CardActionsMenu\(\{ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify/, "the menu lives in the manage module");
 assert.match(manageHeader, /export function CardDetailHeader\(\{ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify, statusTone, intentLabel/, "the header lives in the manage module");
-assert.match(app, /import \{ CardDetailHeader \} from "\.\/components\/manage\/card-detail-header"/, "detail bodies read the shared header");
+assert.match(buildDetail, /import \{ CardDetailHeader \} from "\.\.\/manage\/card-detail-header"/, "Build detail reads the shared header");
 assert.match(detailSource, /import \{ ConfirmActionDialog \} from "\.\.\/manage\/confirm-action-dialog"|import \{ ConfirmActionDialog \} from "\.\/components\/manage\/confirm-action-dialog"/, "detail bodies read the shared confirm");
-assert.doesNotMatch(app, /function CardActionsMenu\(/, "no local menu copy survives in the panel");
-assert.doesNotMatch(app, /function CardDetailHeader\(/, "no local header copy survives in the panel");
-assert.doesNotMatch(app, /function ConfirmActionDialog\(/, "no local confirm copy survives in the panel");
+assert.doesNotMatch(detailSource, /function CardActionsMenu\(/, "no local menu copy survives in the detail slice");
+assert.doesNotMatch(detailSource, /function CardDetailHeader\(/, "no local header copy survives in the detail slice");
+assert.doesNotMatch(detailSource, /function ConfirmActionDialog\(/, "no local confirm copy survives in the detail slice");
 assert.match(manageMenu, /onPick=\{\(action\) => \{ setOpen\(false\); action\(\); \}\}/, "picking closes the menu before running");
 
 assert.doesNotMatch(workerHistory, /Archive card|Delete permanently|Restart fresh/, "Worker contains worker context only, never card lifecycle actions");
@@ -235,10 +277,48 @@ for (const [name, handler] of [["idle", idleHandler], ["active", activeHandler],
 // The tested policy module decides outcomes; the hook owns React state and
 // the dialog component owns only confirmations. Copying any path back into
 // app.tsx would let its toast/close/refresh semantics drift independently.
-assert.match(app, /import \{ useBuildDetailLifecycle \} from "\.\/components\/detail\/use-build-detail-lifecycle"/, "Build details mount the extracted lifecycle state");
-assert.match(app, /import \{ BuildLifecycleDialogs \} from "\.\/components\/detail\/build-lifecycle-dialogs"/, "Build details mount the extracted lifecycle dialogs");
-assert.match(app, /<BuildLifecycleDialogs state=\{lifecycle\} cardDisplayName=\{card\?\.displayName \?\? null\} \/>/, "the extracted dialog leaf receives the complete lifecycle state");
-assert.doesNotMatch(app, /async function (?:doArchive|doDelete|openDiscard|doDiscard|doPromote|doAttachRecoveryCheckout|doCreateRecoveryAudit|doRepair|doRetry|doRestartWorker|doStart|doRequestSplit)\(/, "no Build lifecycle action remains private to the panel");
+assert.match(buildDetail, /import \{ useBuildDetailLifecycle \} from "\.\/use-build-detail-lifecycle"/, "Build detail mounts the extracted lifecycle state");
+assert.match(buildDetail, /import \{ BuildLifecycleDialogs \} from "\.\/build-lifecycle-dialogs"/, "Build detail mounts the extracted lifecycle dialogs");
+const lifecycleDialogCall = /<BuildLifecycleDialogs[\s\S]*state=\{lifecycle\}[\s\S]*cardDisplayName=\{card\?\.displayName \?\? null\}/;
+assert.match(
+  buildDetail,
+  lifecycleDialogCall,
+  "the extracted dialog leaf receives the complete lifecycle state",
+);
+const privateLifecycleAction = new RegExp(
+  "async function (?:doArchive|doDelete|openDiscard|doDiscard|doPromote|" +
+  "doAttachRecoveryCheckout|doCreateRecoveryAudit|doRepair|doRetry|" +
+  "doRestartWorker|doStart|doRequestSplit)\\(",
+);
+assert.doesNotMatch(
+  detailSource,
+  privateLifecycleAction,
+  "no Build lifecycle action remains private to the detail slice",
+);
+assert.match(app, /import \{ BuildDetailBody \} from "\.\/components\/detail\/build-detail-body"/, "the routes mount the extracted Build detail shell");
+assert.equal((app.match(/<BuildDetailBody/g) ?? []).length, 2, "panel and drawer routes share one Build detail shell");
+assert.doesNotMatch(app, /function CardDetailBody\(/, "the old Build detail implementation is completely removed from app.tsx");
+const detailRealtime = /useDebouncedRealtime\(\["card-state", "inbox-changed"\], \(\) => void load\(\)\)/;
+assert.match(
+  buildDetail,
+  detailRealtime,
+  "the extracted shell keeps debounced card and inbox refreshes",
+);
+const closesAdvancePreview = /const confirm = \(\) => \{\s*if \(!pendingAdvance\) return;\s*onOpenChange\(false\);\s*void onAdvance\(pendingAdvance\);/;
+assert.match(
+  buildDetail,
+  closesAdvancePreview,
+  "confirming an advance closes the preview before the async transition starts",
+);
+const buildOrder = buildContent.slice(
+  buildContent.indexOf("<BuildReviewHero"),
+  buildContent.indexOf("<CardConversation"),
+);
+assert.ok(
+  buildOrder.indexOf("<BuildProgressSection") < buildOrder.indexOf("<WorkflowMap") &&
+    buildOrder.indexOf("<WorkflowMap") < buildOrder.indexOf("<BuildArtifacts"),
+  "progress, workflow map, and artifacts keep their established detail order",
+);
 for (const rpc of ["cancelCard", "deleteCard", "discardPreview", "discardCardChanges", "promoteCard", "attachRecoveryCheckout", "createRecoveryAudit", "reseedCard", "retryWorker", "restartWorker", "startWorker", "requestSplitProposal"]) {
   assert.equal((buildLifecycleState.match(new RegExp(`rpc\\.call\\("${rpc}"`, "g")) ?? []).length, 1, `Build lifecycle has one ${rpc} seam`);
 }
@@ -420,8 +500,8 @@ assert.match(conversation, /if \(!has\) setCustom\(\(c\) => \(\{\s*\.\.\.c, \[qu
 // Agent thread: one shared conversation component across detail bodies —
 // history plus compose box — never a per-track copy.
 assert.match(cardConversation, /export function CardConversation\(\{ comments, draft, onDraftChange, onSend/, "the agent thread lives in the conversation module");
-assert.match(app, /import \{ CardConversation \} from "\.\/components\/conversation\/card-conversation"/, "detail bodies read the shared thread");
-assert.doesNotMatch(app, /function CardConversation\(/, "no local thread copy survives in the panel");
+assert.match(detailSource, /import \{ CardConversation \} from/, "detail bodies read the shared thread");
+assert.doesNotMatch(detailSource, /function CardConversation\(/, "no local thread copy survives in the detail slice");
 assert.match(cardConversation, /disabled=\{!draft\.trim\(\)\} onClick=\{\(\) => onSend\(\)\}>Send to agent/, "empty drafts cannot send");
 assert.match(cardConversation, /event\.metaKey \|\| event\.ctrlKey/, "keyboard send rides Cmd/Ctrl+Enter");
 
@@ -432,13 +512,20 @@ assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecovery
 // duplicated Artifacts are gone, counts are counts, and the reference map is a
 // sibling of the progress section rather than nested inside card state.
 assert.match(disclosureModule, /function DisclosureSection\(\{ title, subtitle, hint/, "a section can name its job on its own line");
-assert.doesNotMatch(app, /onShowArtifacts/, "the per-stage document buttons are gone; files and navigation never share one shape");
-assert.doesNotMatch(app, /workflow\.progressTitle/, "the progress block no longer repeats the disclosure title it sits under");
-assert.doesNotMatch(app, /Agent advances alone/, "the override coaching stops being permanent chrome");
-const progressSection = app.slice(app.indexOf("<BuildProgress"), app.indexOf("<div ref={artifactsRef}>"));
-assert.ok(progressSection.length > 0 && progressSection.indexOf("<BuildProgress") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of extracted progress, never nested inside it");
+assert.doesNotMatch(detailSource, /onShowArtifacts/, "the per-stage document buttons are gone; files and navigation never share one shape");
+assert.doesNotMatch(detailSource, /workflow\.progressTitle/, "the progress block no longer repeats the disclosure title it sits under");
+assert.doesNotMatch(detailSource, /Agent advances alone/, "the override coaching stops being permanent chrome");
+const progressSection = buildContent.slice(
+  buildContent.indexOf("<BuildProgressSection"),
+  buildContent.indexOf("<BuildArtifacts"),
+);
+assert.ok(
+  progressSection.length > 0 &&
+    progressSection.indexOf("<BuildProgressSection") < progressSection.indexOf("<WorkflowMap"),
+  "the workflow map is a sibling of extracted progress, never nested inside it",
+);
 assert.match(readFileSync(join(root, "components", "detail", "workflow-map.tsx"), "utf8"), /export function WorkflowMap\(\{ open, onToggle/, "the map lives in the detail module");
-assert.doesNotMatch(app, /function WorkflowMap\(/, "no local map copy survives in the panel");
+assert.doesNotMatch(detailSource, /function WorkflowMap\(/, "no local map copy survives in the detail slice");
 assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");
 
 // Finished work is not blocked work. The review signal is its own quieter
@@ -452,22 +539,39 @@ assert.match(server, /current\.kind === "build" && !opts\?\.suppressCompletionEv
 // Two receipts, one word apart. Only their freshness tells them apart, so the
 // card asks the owning helper for that verdict and labels both where they list.
 assert.match(artifactModule, /rpc\.call\("auditTrailStatus", \{ cardId \}\)/, "freshness comes from the host, never guessed in the UI");
-assert.match(app, /card\.status === "completed" \? <AuditTrailStatusRow cardId=\{card\.id\} \/> : null/, "the freshness row appears only where a receipt can exist");
+assert.match(
+  buildProgressView,
+  /card\.status === "completed" \? <AuditTrailStatusRow cardId=\{card\.id\} \/> : null/,
+  "the freshness row appears only where a receipt can exist",
+);
 // Artifact surfaces: one shared inventory renderer plus the audit-trail
 // freshness row — grouping sums through lib, the row re-checks on demand.
 assert.match(artifactModule, /export function ArtifactInventory\(\{ groups, workspaceKind, fileEnvironmentId, onView/, "the inventory lives in the artifacts module");
 assert.match(artifactModule, /export function AuditTrailStatusRow\(\{ cardId \}/, "the freshness row lives in the artifacts module");
-assert.match(app, /import \{ ArtifactGroups, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "Build and Explore read the shared artifact surfaces and opener");
-assert.match(researchContent, /import \{ ArtifactInventory, openAskArtifact, type ArtifactInventoryGroup \} from "\.\.\/artifacts\/artifact-inventory"/, "Research reads the shared artifact inventory and opener");
-assert.doesNotMatch(app, /function ArtifactInventory\(/, "no local inventory copy survives in the panel");
-assert.doesNotMatch(app, /function AuditTrailStatusRow\(/, "no local freshness-row copy survives in the panel");
+assert.match(
+  buildProgressView,
+  /import \{\s*ArtifactGroups,\s*AuditTrailStatusRow,\s*artifactGroupTitle,/s,
+  "Build progress and artifacts read the shared artifact surfaces",
+);
+assert.match(
+  buildHero,
+  /import \{ DetailQuestionSections \} from/,
+  "Build review questions delegate artifact opening to the shared detail section",
+);
+assert.match(
+  researchContent,
+  /import \{ ArtifactInventory, type ArtifactInventoryGroup \} from "\.\.\/artifacts\/artifact-inventory"/,
+  "Research reads the shared artifact inventory",
+);
+assert.doesNotMatch(detailSource, /function ArtifactInventory\(/, "no local inventory copy survives in the detail slice");
+assert.doesNotMatch(detailSource, /function AuditTrailStatusRow\(/, "no local freshness-row copy survives in the detail slice");
 assert.match(artifactModule, /groupArtifactsByStage\(artifacts\)/, "stage grouping sums through the lib, never inline math");
 // The viewer is shared by every detail track. It owns both live file reads and
 // the quote-to-card-comment flow; a local copy would strand draft resets or RPC
 // routing even when TypeScript still accepted the three call sites.
 assert.match(detailSource, /import \{ ArtifactViewerDialog \} from/, "detail bodies share one artifact viewer");
 assert.equal((detailSource.match(/<ArtifactViewerDialog/g) ?? []).length, 3, "Build, Research, and Explore mount the same viewer");
-assert.doesNotMatch(app, /function ArtifactViewerDialog\(/, "no local viewer copy survives in the panel");
+assert.doesNotMatch(detailSource, /function ArtifactViewerDialog\(/, "no local viewer copy survives in the detail slice");
 assert.match(detailViewer, /rpc\.call\("readCardFile", \{ cardId, path: file\.path \}\)/, "the viewer reads the selected card file through the host");
 assert.match(detailViewer, /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body: commentBody\(file, drafts\) \}\)/, "quoted excerpts post to the card worker as one comment");
 assert.match(detailViewer, /if \(open && file\) setDrafts\(\[\]\)/, "opening or changing the file clears excerpts from the previous file");
@@ -485,7 +589,7 @@ assert.match(strategyPickerModule, /strategies\.filter\(\(entry\) => \[entry\.id
 assert.match(strategyPickerModule, /<StrategyOptionRow key=\{entry\.id\} entry=\{entry\} selected=\{value === entry\.id\}/, "options render through one shared row");
 assert.match(strategyPickerModule, /<StrategyResults visible=\{visible\}/, "the shell composes search, count, and results");
 assert.match(strategyPickerModule, /const flash = useAttentionFlash\(attentionSignal, searchRef\)/, "the attention signal drives search focus and flash");
-assert.match(app, /if \(card\?\.status === "completed"\) setArtifactsOpen\(true\)/, "a completed card opens its evidence instead of hiding it");
+assert.match(buildDetail, /if \(card\?\.status === "completed"\) setArtifactsOpen\(true\)/, "a completed card opens its evidence instead of hiding it");
 assert.match(server, /const isTrail = basename\(absolute\) === AUDIT_TRAIL_FILE;/, "the host recognizes the portable receipt by the name Stelow owns");
 assert.match(server, /stage: isTrail \? "audit" : "unregistered"/, "the portable receipt is attributed to the stage that produced it");
 assert.match(server, /note: auditReceiptNote\(/, "both receipts are labelled where they are listed");

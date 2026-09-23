@@ -5,6 +5,8 @@ import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheck
 
 const root = join(import.meta.dirname, "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const body = readFileSync(join(root, "components/detail/build-detail-body.tsx"), "utf8");
+const reviewTools = readFileSync(join(root, "components/detail/build-detail-review-tools.tsx"), "utf8");
 
 assert.deepEqual(reportedCheckoutPaths("Changes are uncommitted in `/home/deploy/repos/bb-plugin-stelow`."), ["/home/deploy/repos/bb-plugin-stelow"], "an explicit worker report yields a candidate path");
 assert.deepEqual(reportedCheckoutPaths("I edited /tmp/guess without reporting it as a checkout."), [], "bare paths never become recovery candidates");
@@ -29,20 +31,25 @@ assert.equal(hasWorkspaceSource([{ name: "data", isDirectory: true }, { name: "n
 assert.equal(hasWorkspaceSource([]), false);
 assert.equal(hasWorkspaceSource(null), false);
 
-assert.match(app, /import \{ WorkspaceRecoveryPanel \} from "\.\/components\/detail\/build-recovery";/, "CardDetailBody imports one recovery presentation feature");
-assert.doesNotMatch(app, /function WorkspaceRecoveryPanel/, "CardDetailBody no longer owns recovery presentation markup");
-const recoveryPanelCall = app.match(/<WorkspaceRecoveryPanel[\s\S]*?\/>/)?.[0];
-assert.ok(recoveryPanelCall, "CardDetailBody mounts the recovery presentation feature");
+assert.match(reviewTools, /import \{ WorkspaceRecoveryPanel \} from "\.\/build-recovery";/, "Build review tools import one recovery presentation feature");
+assert.doesNotMatch(`${app}\n${body}`, /function WorkspaceRecoveryPanel/, "Build detail no longer owns recovery presentation markup");
+const recoveryPanelCall = reviewTools.match(/<WorkspaceRecoveryPanel[\s\S]*?\/>/)?.[0];
+assert.ok(recoveryPanelCall, "Build review tools mount the recovery presentation feature");
 for (const [prop, wiring] of [
-  ["recovery", /recovery=\{workspaceRecovery\}/],
-  ["loading", /loading=\{workspaceRecoveryLoading \|\| creatingRecoveryAudit\}/],
-  ["refresh", /onRefresh=\{\(\) => void loadWorkspaceRecovery\(\)\}/],
-  ["promote", /onPromote=\{\(\) => \{ setPromoteName\(card\.displayName\); setPromoteOpen\(true\); \}\}/],
-  ["attach", /onAttach=\{setRecoveryAttachProjectId\}/],
-  ["create audit", /onCreateAudit=\{\(\) => void doCreateRecoveryAudit\(\)\}/],
-  ["open audit", /onOpenAudit=\{\(auditCardId\) => goToCard\(navigate, \{ kind: "build" \}, auditCardId\)\}/],
+  ["recovery", /recovery=\{lifecycle\.workspaceRecovery\}/],
+  ["loading", /loading=\{lifecycle\.workspaceRecoveryLoading \|\| lifecycle\.creatingRecoveryAudit\}/],
+  ["refresh", /onRefresh=\{\(\) => void lifecycle\.loadWorkspaceRecovery\(\)\}/],
+  ["promote", /onPromote=\{\(\) => \{\s*lifecycle\.setPromoteName\(card\.displayName\);\s*lifecycle\.setPromoteOpen\(true\);/],
+  ["attach", /onAttach=\{lifecycle\.setRecoveryAttachProjectId\}/],
+  ["create audit", /onCreateAudit=\{\(\) => void lifecycle\.doCreateRecoveryAudit\(\)\}/],
+  ["open audit", /onOpenAudit=\{view\.onOpenRecoveryAudit\}/],
 ]) {
   assert.match(recoveryPanelCall, wiring, `recovery ${prop} action remains wired after extraction`);
 }
+assert.equal(
+  (app.match(/onOpenRecoveryAudit=\{\(auditCardId\) => goToCard\(navigate, \{ kind: "build" \}, auditCardId\)\}/g) ?? []).length,
+  2,
+  "both Build detail entry points route recovery audits back to the Build track",
+);
 
 console.log("workspace recovery test ok: promotion and attachment are mutually exclusive evidence-led paths");

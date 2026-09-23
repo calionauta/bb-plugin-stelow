@@ -46,9 +46,13 @@ assert.equal(groupState({}), "empty", "shapeless reads empty");
 // summary, review flag), with pending-only on by default. These wiring pins
 // constrain topology only; grouping and guard behavior are asserted above.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
+const buildProgressView = readFileSync(join(root, "components/detail/build-detail-progress.tsx"), "utf8");
 const progress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
-assert.match(app, /<BuildProgress[\s\S]*card=\{card\}[\s\S]*detail=\{detail\}/, "detail renders the extracted progress section with card and detail in scope");
+assert.match(
+  buildProgressView,
+  /<BuildProgress[\s\S]*card=\{card\}[\s\S]*detail=\{detail\}/,
+  "build detail renders the extracted progress section with card and detail in scope",
+);
 assert.equal((progress.match(/rpc\.call\("gapSummary", \{ cardId \}\)/g) ?? []).length, 1, "checks and gaps share one gapSummary request");
 assert.match(progress, /questions: \[\.\.\.detail\.pendingQuestions, \.\.\.detail\.expiredQuestions\]/, "questions cover live and expired asks");
 assert.match(progress, /review: card\.status === "completed" \? \{ pending: card\.hasPendingReview/, "review resolves from card state, never inferred");

@@ -13,7 +13,8 @@ const source = readFileSync(join(root, "server.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
 const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
 const exploreSource = readFileSync(join(root, "components/detail/explore-detail-content.tsx"), "utf8");
-const detailSource = `${appSource}\n${researchSource}\n${exploreSource}`;
+const buildSource = readFileSync(join(import.meta.dirname, "../components/detail/build-detail-workspace.tsx"), "utf8");
+const detailSource = `${appSource}\n${buildSource}\n${researchSource}\n${exploreSource}`;
 const previewSource = readFileSync(join(root, "components/detail/preview-section.tsx"), "utf8");
 
 /** The text between two markers, failing loudly if either is gone. */

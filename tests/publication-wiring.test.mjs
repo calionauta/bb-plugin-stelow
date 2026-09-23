@@ -7,7 +7,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
 const diff = readFileSync(join(root, "components/detail/build-diff.tsx"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8") + publication;
+const reviewTools = readFileSync(join(root, "components/detail/build-detail-review-tools.tsx"), "utf8");
+const app = readFileSync(join(root, "app.tsx"), "utf8") + reviewTools + publication;
 
 for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullPush", "publicationPullRequestAction"]) {
   assert.match(server, new RegExp(`async ${method}\\(`), `${method} RPC exists`);
@@ -92,8 +93,12 @@ assert.match(diff, /filesEpoch/, "commit files render as collapsed accordions wi
 assert.match(app, /Next: publish the branch\./, "a saved commit names its pending step as structure, not buried prose");
 assert.doesNotMatch(app, /What remains to publish it/, "publish steps live as sections with action rows, never as buttons inside prose");
 assert.doesNotMatch(app, /Push the branch — this panel runs/, "no call-to-action hides inside a paragraph anymore");
-assert.match(app, /card && shouldShowBuildDiff\(\{ status: card\.status, stage: card\.stage, publicationDirty, recoveryKind:/, "the extracted Diff feature remains wired to card stage, dirty-tree state, and recovery state");
-assert.match(app, /<BuildDiff[\s\S]*onOpenFile=\{setViewerFile\}/, "working-tree files continue to open in the shared artifact viewer");
+assert.match(
+  reviewTools,
+  /shouldShowBuildDiff\(\{\s*status: card\.status,\s*stage: card\.stage,[\s\S]*publicationDirty: view\.publicationDirty,\s*recoveryKind:/,
+  "the extracted Diff feature remains wired to card stage, dirty-tree state, and recovery state",
+);
+assert.match(reviewTools, /<BuildDiff[\s\S]*onOpenFile=\{view\.setViewerFile\}/, "working-tree files continue to open in the shared artifact viewer");
 assert.match(app, /Copy command/, "post-commit commands name what they copy instead of a bare Copy");
 assert.match(app, /Saved locally on/, "a successful local save has an explicit outcome state");
 assert.match(app, /View commit/, "recorded local commits can be inspected from Done");
@@ -114,7 +119,11 @@ assert.match(publication, /action === "push" \|\| action === "sync"[\s\S]*schedu
 assert.match(diff, /rpc\.call\("publicationCommitDiff", \{ cardId, commitSha: sha \}\)/, "commit review loads the selected SHA for the current card from the diff feature owner");
 assert.match(publication, /function PublicationActions/, "publication write confirmations and execution have one focused owner");
 assert.match(publication, /<CommitDiffReview[\s\S]*openCommit\(savedSha\)[\s\S]*openCommit\(event\.commitSha!\)/, "saved and historical commits both navigate through the diff feature owner");
-assert.match(app, /<BuildPublication[\s\S]*onDirtyChange=\{setPublicationDirty\}/, "CardDetailBody delegates publication UI while observing dirty-tree state");
-assert.doesNotMatch(readFileSync(join(root, "app.tsx"), "utf8"), /publicationPullRequestAction/, "CardDetailBody no longer owns publication RPC actions");
+assert.match(
+  reviewTools,
+  /<BuildPublication[\s\S]*onDirtyChange=\{view\.setPublicationDirty\}/,
+  "Build detail delegates publication UI while observing dirty-tree state",
+);
+assert.doesNotMatch(readFileSync(join(root, "app.tsx"), "utf8"), /publicationPullRequestAction/, "Build detail no longer owns publication RPC actions");
 
 console.log("publication wiring test ok: BB owns writes, Done stays separate, actions are explicit and auditable");

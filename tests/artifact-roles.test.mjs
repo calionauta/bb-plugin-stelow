@@ -35,8 +35,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 assert.match(server, /artifactRole\(/, "card detail stamps the artifact role");
 assert.match(server, /role: z\.enum\(\["deliverable", "evidence"\]\)/, "the card detail contract carries the role");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
-assert.match(app, /\.filter\(\(artifact\) => artifact\.role !== "evidence"\)/, "the file count excludes evidence");
-assert.match(app, /Evidence — machine receipts/, "the Artifacts section groups evidence apart");
+const progress = readFileSync(join(root, "components/detail/build-detail-progress.tsx"), "utf8");
+assert.match(progress, /\.filter\(\s*\(artifact\) => artifact\.role !== "evidence",/, "the file count excludes evidence");
+assert.match(progress, /Evidence — machine receipts/, "the Artifacts section groups evidence apart");
+assert.equal((progress.match(/<ArtifactGroups/g) ?? []).length, 2, "deliverables and evidence each mount one artifact group");
 
 console.log("artifact roles test ok: receipt roles, partition, wiring");
