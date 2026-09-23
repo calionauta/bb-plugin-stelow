@@ -7,6 +7,7 @@ const root = join(import.meta.dirname, "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const body = readFileSync(join(root, "components/detail/build-detail-body.tsx"), "utf8");
 const reviewTools = readFileSync(join(root, "components/detail/build-detail-review-tools.tsx"), "utf8");
+const recovery = readFileSync(join(root, "components/detail/build-recovery.tsx"), "utf8");
 
 assert.deepEqual(reportedCheckoutPaths("Changes are uncommitted in `/home/deploy/repos/bb-plugin-stelow`."), ["/home/deploy/repos/bb-plugin-stelow"], "an explicit worker report yields a candidate path");
 assert.deepEqual(reportedCheckoutPaths("I edited /tmp/guess without reporting it as a checkout."), [], "bare paths never become recovery candidates");
@@ -33,6 +34,17 @@ assert.equal(hasWorkspaceSource(null), false);
 
 assert.match(reviewTools, /import \{ WorkspaceRecoveryPanel \} from "\.\/build-recovery";/, "Build review tools import one recovery presentation feature");
 assert.doesNotMatch(`${app}\n${body}`, /function WorkspaceRecoveryPanel/, "Build detail no longer owns recovery presentation markup");
+for (const [action, wiring] of [
+  ["refresh", /<RecoveryHeader[\s\S]*onRefresh=\{onRefresh\}/],
+  ["promote", /<RecoveryMessage[\s\S]*onPromote=\{onPromote\}/],
+  ["attach", /onClick=\{\(\) => onAttach\(candidate\.projectId\)\}/],
+  ["create audit", /onClick=\{onCreateAudit\}/],
+  ["open audit", /onClick=\{\(\) => onOpenAudit\(recovery\.audit!\.cardId\)\}/],
+]) {
+  assert.match(recovery, wiring, `recovery ${action} remains connected after presentation cleanup`);
+}
+assert.match(recovery, /function LooseRecoveryEvidence[\s\S]*entries\.map/, "loose evidence stays visible without becoming an automatic destination");
+assert.match(recovery, /function AttachedRecovery[\s\S]*recovery\.kind !== "attached"/, "attachment presentation stays exclusive to attached recovery");
 const recoveryPanelCall = reviewTools.match(/<WorkspaceRecoveryPanel[\s\S]*?\/>/)?.[0];
 assert.ok(recoveryPanelCall, "Build review tools mount the recovery presentation feature");
 for (const [prop, wiring] of [
