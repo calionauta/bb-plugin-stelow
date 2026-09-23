@@ -9,6 +9,10 @@ const publication = readFileSync(join(root, "components/detail/build-publication
 const actions = readFileSync(join(root, "components/detail/build-publication-actions.tsx"), "utf8");
 const diff = readFileSync(join(root, "components/detail/build-diff.tsx"), "utf8");
 const reviewTools = readFileSync(join(root, "components/detail/build-detail-review-tools.tsx"), "utf8");
+const executeActionStart = actions.indexOf("async function executeAction(");
+const actionTitleStart = actions.indexOf("function actionTitle(", executeActionStart);
+assert.ok(executeActionStart >= 0 && actionTitleStart > executeActionStart, "publication action dispatcher is testable");
+const executeAction = actions.slice(executeActionStart, actionTitleStart);
 
 for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullPush", "publicationPullRequestAction"]) {
   assert.match(server, new RegExp(`async ${method}\\(`), `${method} RPC exists`);
@@ -40,6 +44,31 @@ assert.match(server, /pull --rebase/, "the decided workflow is rebase (linear hi
 assert.match(server, /STELOW_SYNC_EXIT/, "the pull step reports its own exit separately from the push");
 assert.match(server, /STELOW_SYNC_ABORTED/, "a conflicted pull aborts itself instead of stranding the checkout mid-rebase");
 assert.match(server, /REBASE_HEAD/, "conflict detection reads rebase state, not output text");
+assert.match(
+  executeAction,
+  /if \(action === "commit"\) \{[\s\S]*?rpc\.call\("publicationCommit", \{ cardId \}\)/,
+  "commit actions use the BB commit RPC",
+);
+assert.match(
+  executeAction,
+  /else if \(action === "squash"\) \{[\s\S]*?rpc\.call\("publicationSquashMerge", \{ cardId \}\)/,
+  "squash actions use the local squash RPC",
+);
+assert.match(
+  executeAction,
+  /action === "push"\s*\?\s*await context\.rpc\.call\("publicationPushTerminal", \{ cardId \}\)/,
+  "push actions use the tracked push-terminal RPC",
+);
+assert.match(
+  executeAction,
+  /:\s*await context\.rpc\.call\("publicationPullPush", \{ cardId \}\)/,
+  "sync actions use the pull-rebase-and-push RPC",
+);
+assert.match(
+  executeAction,
+  /rpc\.call\("publicationPullRequestAction", \{[\s\S]*?operation: action,[\s\S]*?action === "merge" \? \{ method: mergeMethod \}/,
+  "pull-request actions forward the operation and selected merge method",
+);
 assert.match(actions, /Sync & push/, "a rejected push offers remediation where the failure is shown");
 assert.match(publication, /Sync &amp; push again/, "failed shells carry their own retry that syncs first");
 assert.match(publication, /STELOW_SYNC_ABORTED:1/, "an aborted sync names the manual exit instead of a dead end");
