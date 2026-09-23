@@ -3,13 +3,12 @@ import { UrlLink, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { z } from "zod";
 import { branchWebLinks } from "../../lib/remote-url.mjs";
+import { PublicationActions, type PublicationAction } from "./build-publication-actions";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DisclosureChevron, DisclosureSection } from "../disclosure";
 import { CommitDiffReview } from "./build-diff";
 import type { rpcContract } from "../../server";
 
-type PublicationAction = "commit" | "squash" | "push" | "sync" | "ready" | "draft" | "merge";
 type PublicationStatus = z.infer<typeof rpcContract.publicationStatus.output>;
 type PushTerminal = { id: string; title: string; pushState: "succeeded" | "failed" | "waiting" | "running"; outputUnavailable: boolean; createdAt: number; pushExit: number | null; outputTail: string | null };
 type PushTerminals = { ok: boolean; error: string | null; remote: { owner: string; repo: string; webUrl: string } | null; terminals: PushTerminal[] };
@@ -131,56 +130,6 @@ function PublicationSection(props: PublicationSectionProps) {
   </>;
 }
 
-type PublicationActionsProps = {
-  cardId: string;
-  action: PublicationAction | null;
-  setAction: (action: PublicationAction | null) => void;
-  publicationDefaultBranch: string | null;
-  publishesToDefaultBranch: boolean;
-  behind: number;
-  mergeMethod: "merge" | "rebase" | "squash";
-  loadPublication: () => Promise<void>;
-  loadPushTerminals: () => Promise<void>;
-  schedulePushRefresh: (action: PublicationAction) => void;
-  onChanged: () => void | Promise<void>;
-};
-
-function PublicationActions(props: PublicationActionsProps) {
-  const { cardId, action, setAction, publicationDefaultBranch, publishesToDefaultBranch, behind, mergeMethod, loadPublication, loadPushTerminals, schedulePushRefresh, onChanged } = props;
-  const rpc = useRpc<typeof rpcContract>();
-  const [submitting, setSubmitting] = useState(false);
-
-  async function doAction() {
-    if (!action || submitting) return;
-    setSubmitting(true);
-    try {
-      if (action === "commit") {
-        const result = await rpc.call("publicationCommit", { cardId });
-        if (!result.ok) toast.error(result.message); else toast.success(result.commitSha ? `Committed ${result.commitSha.slice(0, 7)}.` : result.message);
-      } else if (action === "squash") {
-        const result = await rpc.call("publicationSquashMerge", { cardId });
-        if (!result.ok) toast.error(result.message); else toast.success(result.commitSha ? `Squash merged as ${result.commitSha.slice(0, 7)}.` : result.message);
-      } else if (action === "push" || action === "sync") {
-        const result = action === "push"
-          ? await rpc.call("publicationPushTerminal", { cardId })
-          : await rpc.call("publicationPullPush", { cardId });
-        if (!result.ok) toast.error(result.message); else toast.success(result.message);
-        await loadPushTerminals();
-        schedulePushRefresh(action);
-      } else {
-        const result = await rpc.call("publicationPullRequestAction", { cardId, operation: action, ...(action === "merge" ? { method: mergeMethod } : {}) });
-        if (!result.ok) toast.error(result.message); else toast.success(result.message);
-      }
-    } finally {
-      setSubmitting(false);
-      setAction(null);
-      await loadPublication();
-      await onChanged();
-    }
-  }
-
-  return       <Dialog open={action !== null} onOpenChange={(open) => { if (!open && !submitting) setAction(null); }}><DialogContent><DialogHeader><DialogTitle>{action === "commit" ? publishesToDefaultBranch ? `Save a local commit to ${publicationDefaultBranch}?` : "Commit this workspace?" : action === "squash" ? "Squash this branch into its local base?" : action === "push" ? "Push this branch now?" : action === "sync" ? "Sync & push now?" : action === "ready" ? "Mark this pull request ready?" : action === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle><DialogDescription className="space-y-2">{action === "commit" && publishesToDefaultBranch ? <p>BB will create a local commit on <code>{publicationDefaultBranch}</code> in the card’s selected checkout. It will not fetch remote updates, merge incoming changes, push, or create a pull request. This bypasses a pull request, so continue only when the checkout is current and direct commits are intended.</p> : null}{action === "commit" && !publishesToDefaultBranch ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}{action === "squash" ? <p>BB will combine this branch’s committed changes into one local commit on its base branch. It will not fetch remote updates, push, or create a pull request. It bypasses pull-request review, so use it only when direct local integration is intended.</p> : null}{action === "push" ? <p>This panel will run <code>git push</code> in this card’s worker checkout and stream the output into Push shells below — nothing hides in a sidebar you have to hunt. Rejections and auth prompts appear there; an auth prompt is finished in BB’s sidebar terminal.</p> : null}{action === "sync" ? <p>This panel will run <code>git pull --rebase</code> followed by <code>git push</code> in this card’s worker checkout — one click, linear history, no merge commits. If the pull conflicts, the rebase aborts itself and nothing changes; resolve the conflict where you edit code and push again. The output streams into Push shells below.</p> : null}{action === "push" && behind > 0 ? <p>This branch is {behind} behind — a push will be rejected. Cancel and use Sync &amp; push instead: it pulls with rebase, then pushes.</p> : null}{action === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}{action === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}{action === "merge" ? <p>BB will re-check the PR and request a {mergeMethod} merge. Repository rules, approvals, checks, and merge queues remain authoritative.</p> : null}</DialogDescription></DialogHeader><DialogFooter><DialogClose asChild><Button variant="outline" disabled={submitting}>Cancel</Button></DialogClose><Button disabled={submitting} onClick={() => void doAction()}>{submitting ? "Submitting…" : action === "commit" ? publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}` : "Commit workspace" : action === "squash" ? "Squash branch locally" : action === "push" ? "Push branch" : action === "sync" ? "Sync & push" : action === "ready" ? "Mark ready" : action === "draft" ? "Mark draft" : "Merge PR"}</Button></DialogFooter></DialogContent></Dialog>;
-}
 async function copyText(text: string, label: string) {
   try { await navigator.clipboard.writeText(text); toast.success(`${label} copied.`); return; } catch { /* fallback below */ }
   try {
