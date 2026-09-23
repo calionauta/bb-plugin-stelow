@@ -24,6 +24,7 @@ const detailHeroActions = readFileSync(join(root, "components", "detail", "detai
 const detailComment = readFileSync(join(root, "components", "conversation", "use-detail-comment.ts"), "utf8");
 const detailTimeline = readFileSync(join(root, "components", "detail", "stage-timeline.tsx"), "utf8");
 const researchQuality = readFileSync(join(root, "components", "detail", "research-quality-section.tsx"), "utf8");
+const researchDialogs = readFileSync(join(root, "components", "detail", "research-detail-dialogs.tsx"), "utf8");
 const detailScopes = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 const detailViewer = readFileSync(join(root, "components", "detail", "artifact-viewer-dialog.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
@@ -99,6 +100,20 @@ assert.match(app, /import \{ ResearchQualitySection \} from "\.\/components\/det
 assert.doesNotMatch(app, /function ResearchQualitySection\(/, "no research quality copy remains in the panel");
 assert.match(researchQuality, /sub\.status !== "ready"/, "only failed composite substeps enter repair");
 assert.match(researchQuality, /rewrite per the playbook completeness contract, then run verify again\./, "repair lines name the exact fix and verification step");
+// Research follow-up dialogs own their RPC and transient state as one slice.
+// Background index refreshes must not disturb an open selection, and the panel
+// must not accumulate a second implementation of either dialog.
+assert.match(app, /import \{ FanOutDialog, StrategyRunDialog, type ResearchIndexState \} from "\.\/components\/detail\/research-detail-dialogs"/, "research details read the extracted dialog slice");
+assert.match(researchDialogs, /export type ResearchIndexState =/, "the research index shape belongs to the dialog slice");
+assert.match(researchDialogs, /export function FanOutDialog\(props: FanOutDialogProps\)/, "fan-out owns its component boundary");
+assert.match(researchDialogs, /export function StrategyRunDialog\(props: StrategyRunDialogProps\)/, "strategy rounds own their component boundary");
+assert.doesNotMatch(app, /^type ResearchIndexState =|^function (?:FanOutDialog|StrategyRunDialog)\(/m, "no local research dialog or index-state copy remains in the panel");
+assert.match(researchDialogs, /rpc\.call\("fanOutResearch", \{ cardId: props\.cardId, opportunityIds: chosen\.map\(\(item\) => item\.id\) \}\)/, "fan-out reaches the host through its single owned RPC seam");
+assert.match(researchDialogs, /rpc\.call\("runResearchStrategy", \{ cardId: props\.cardId, strategy: active\.id \}\)/, "strategy rounds reach the host through their single owned RPC seam");
+assert.match(researchDialogs, /if \(!open\) return;\s*setSelected\(\{\}\);\s*setBusy\(false\);[\s\S]*?\}, \[open\]\);/, "opening fan-out clears selection and busy state without watching refreshed opportunity arrays");
+assert.match(researchDialogs, /if \(!props\.open\) return;\s*setBusy\(false\);\s*setPicked\(\(current\) => openedStrategy\(current, props\.strategies, props\.runIds\)\);[\s\S]*?\}, \[props\.open\]\);/, "opening a strategy round resets busy state and defaults the pick once per open");
+assert.doesNotMatch(researchDialogs, /\[(?:open|props\.open), (?:opportunities|props\.opportunities|strategies|props\.strategies)\]/, "realtime data changes never become dialog reset dependencies");
+assert.match(researchDialogs, /<StrategyPicker strategies=\{props\.strategies\} value=\{picked\}[\s\S]*runIds=\{props\.runIds\}/, "strategy rounds reuse the established picker");
 assert.match(manageRecovery, /Worker retried — continuing the \$\{trackNoun\}\./, "the retry toast names its track");
 assert.match(manageRecovery, /const retried = await rpc\.call\("retryWorker", \{ cardId \}\)/, "repair resumes through the retry rail, never a second path");
 // Detail leaves: one banner definition for every body; event text, time,

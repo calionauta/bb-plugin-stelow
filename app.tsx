@@ -44,7 +44,6 @@ import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
 import { GithubCompletionDialog } from "./components/github/github-completion-dialog";
 import { WorkflowSettings, sanitizeReviewGates, type Appetite, type ResearchStrategyOption, type ReviewGates } from "./components/creation/creation-settings";
-import { StrategyPicker } from "./components/creation/strategy-picker";
 import { CreateBuildDialog } from "./components/creation/create-build-dialog";
 import { CreateResearchDialog } from "./components/creation/create-research-dialog";
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
@@ -65,6 +64,7 @@ import { DetailHeroActions } from "./components/detail/detail-hero-actions";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
 import { ResearchQualitySection } from "./components/detail/research-quality-section";
+import { FanOutDialog, StrategyRunDialog, type ResearchIndexState } from "./components/detail/research-detail-dialogs";
 import { PreviewSection } from "./components/detail/preview-section";
 import { ArtifactViewerDialog } from "./components/detail/artifact-viewer-dialog";
 import type { rpcContract } from "./server";
@@ -3499,162 +3499,6 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button disabled={busy || !selected || (selected === "custom" && (!customProvider || !customModel.trim()))} onClick={() => void apply()}>{busy ? "Applying…" : "Apply"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-type ResearchIndexState = {
-  found: boolean;
-  indexPath: string | null;
-  content: string | null;
-  truncated: boolean;
-  opportunities: Array<{ id: string; title: string; checked: boolean; group: string | null }>;
-  rounds: Array<{ n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; substeps: Array<{ slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" }>; files: Array<{ display: string; path: string; absolutePath: string; hostId: string; generatedAt: string }> }>;
-  error: string | null;
-};
-
-// Fan-out: turn checked opportunities into build cards. Mirrors the
-// GitHub-import dialog (checkbox list + bulk confirm); the server re-parses
-// the index, spawns, and flips exactly the spawned boxes.
-function FanOutDialog({ open, onOpenChange, cardId, opportunities, onFanned }: {
-  open: boolean; onOpenChange: (next: boolean) => void; cardId: string;
-  opportunities: ResearchIndexState["opportunities"];
-  onFanned: () => void;
-}) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [busy, setBusy] = useState(false);
-  // Selection resets ONLY when the dialog opens. The `opportunities` prop is
-  // a fresh array on every parent render (realtime index reloads), so it must
-  // never be a dependency here — otherwise a background reload re-checks
-  // everything while the user is mid-selection.
-  useEffect(() => {
-    if (!open) return;
-    setSelected({});
-    setBusy(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  const available = opportunities.filter((item) => !item.checked);
-  const groups = useMemo(() => {
-    const seen: string[] = [];
-    for (const item of available) {
-      const group = item.group ?? "Opportunities";
-      if (!seen.includes(group)) seen.push(group);
-    }
-    return seen;
-  }, [available]);
-  const chosen = available.filter((item) => selected[item.id]);
-  async function confirm() {
-    if (chosen.length === 0) return;
-    setBusy(true);
-    try {
-      const result = await rpc.call("fanOutResearch", { cardId, opportunityIds: chosen.map((item) => item.id) });
-      if (!result.ok) {
-        toast.error(result.error ?? "Could not create build cards.");
-        if (result.created.length > 0) {
-          onOpenChange(false);
-          onFanned();
-        }
-        return;
-      }
-      toast.success(`Created ${result.created.length} ${result.created.length === 1 ? "build card" : "build cards"}.`);
-      onOpenChange(false);
-      onFanned();
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Select To Build</DialogTitle>
-          <DialogDescription>Select which opportunities become build cards (starting at triage) — nothing is created until you confirm. Created cards are marked here so retrying never duplicates them.</DialogDescription>
-        </DialogHeader>
-        {available.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nothing available — every opportunity was already fanned out or checked.</p>
-        ) : (
-          <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-md border">
-            {groups.map((group) => (
-              <li key={group}>
-                <p className="bg-muted/40 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{group}</p>
-                {available.filter((item) => (item.group ?? "Opportunities") === group).map((item) => (
-                  <label key={item.id} className="flex cursor-pointer items-start gap-2 p-2 hover:bg-muted/40">
-                    <input
-                      className="mt-1 h-4 w-4 shrink-0 cursor-pointer"
-                      type="checkbox"
-                      checked={Boolean(selected[item.id])}
-                      onChange={() => setSelected((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
-                      disabled={busy}
-                    />
-                    <span className="min-w-0 text-sm leading-5">{item.title}</span>
-                  </label>
-                ))}
-              </li>
-            ))}
-          </ul>
-        )}
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="ghost" disabled={busy}>Cancel</Button>
-          </DialogClose>
-          <Button onClick={() => void confirm()} disabled={busy || chosen.length === 0}>{busy ? "Creating…" : chosen.length === 0 ? "Select opportunities" : `Create ${chosen.length} ${chosen.length === 1 ? "card" : "cards"}`}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Composite research: run another strategy round on the same request. One
-// round at a time (single-select) — rounds accumulate as ### sections in
-// the index, so the card stays a deterministic sequence, never a parallel
-// batch to merge.
-function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onStarted }: {
-  open: boolean; onOpenChange: (next: boolean) => void; cardId: string;
-  strategies: ResearchStrategyOption[];
-  runIds: string[];
-  onStarted: () => void;
-}) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [picked, setPicked] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    setBusy(false);
-    setPicked((current) => current ?? strategies.find((entry) => !runIds.includes(entry.id))?.id ?? strategies[0]?.id ?? null);
-  }, [open]);
-  const active = strategies.find((entry) => entry.id === picked) ?? null;
-  async function confirm() {
-    if (!active) return;
-    setBusy(true);
-    try {
-      const result = await rpc.call("runResearchStrategy", { cardId, strategy: active.id });
-      if (!result.ok) {
-        toast.error(result.error ?? "Could not start the strategy round.");
-        return;
-      }
-      toast.success(`Started a ${active.label} research round. Results will be added to this card.`);
-      onOpenChange(false);
-      onStarted();
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Explore another strategy</DialogTitle>
-          <DialogDescription>A fresh worker applies another approach to the same request. Its findings are added without overwriting existing results.</DialogDescription>
-        </DialogHeader>
-        <StrategyPicker strategies={strategies} value={picked} onChange={setPicked} runIds={runIds} groupName="research-strategy-round" disabled={busy} />
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="ghost" disabled={busy}>Cancel</Button>
-          </DialogClose>
-          <Button onClick={() => void confirm()} disabled={busy || !active}>{busy ? "Starting…" : active ? `Run ${active.label}` : "Pick a strategy"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
