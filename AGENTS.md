@@ -15,6 +15,14 @@
 - Never `read`-then-`edit` from memory on large regions — reproduce `oldString` from a fresh `read`, or the match silently targets the wrong text.
 - Before writing or updating a test pin, `grep -c` the pattern first: generic shapes match other tracks (research/explore submits share the build shape). Anchor pins on track-specific identifiers (RPC names), and declare test-file reads before their first use.
 
+## Source shape: LoC is a safety limit, never a formatting target
+
+- A file at 400 lines or a function at 50 lines is a red flag, not a quota to hit by compressing code.
+- Never satisfy a LoC budget with minified JSX, chained expressions, semicolon-packed declarations, or intentionally long single-line JSX. Split behavior, markup, and data instead.
+- Keep JSX readable: one element/branch per line, attributes grouped across lines when needed, and extracted components for repeated or conditional blocks.
+- Treat a changed source line over 160 characters as a review failure unless it is an unavoidable URL, generated artifact, or machine-readable fixture. Do not hide JSX or logic in long template strings.
+- LoC checks must measure readable source, not reward line-count gaming. New extraction slices must pass the repository shape checks before review; inherited legacy violations are reported separately, not copied into new files.
+
 ## Don'ts
 
 - Never restart `bb-daemon.service` to reload this plugin — it terminates active BB threads.
