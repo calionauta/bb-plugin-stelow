@@ -6,7 +6,7 @@ import { branchWebLinks } from "../../lib/remote-url.mjs";
 import { PublicationActions, type PublicationAction } from "./build-publication-actions";
 import { Button } from "@/components/ui/button";
 import { DisclosureChevron, DisclosureSection } from "../disclosure";
-import { CommitDiffReview } from "./build-diff";
+import { CommitDiffReview } from "./build-commit-diff";
 import type { rpcContract } from "../../server";
 
 type PublicationStatus = z.infer<typeof rpcContract.publicationStatus.output>;

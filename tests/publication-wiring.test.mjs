@@ -8,6 +8,7 @@ const server = readFileSync(join(root, "server.ts"), "utf8");
 const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
 const actions = readFileSync(join(root, "components/detail/build-publication-actions.tsx"), "utf8");
 const diff = readFileSync(join(root, "components/detail/build-diff.tsx"), "utf8");
+const commitDiff = readFileSync(join(root, "components/detail/build-commit-diff.tsx"), "utf8");
 const reviewTools = readFileSync(join(root, "components/detail/build-detail-review-tools.tsx"), "utf8");
 const executeActionStart = actions.indexOf("async function executeAction(");
 const actionTitleStart = actions.indexOf("function actionTitle(", executeActionStart);
@@ -96,7 +97,7 @@ assert.match(publication, /✓ Pushed/, "a finished push reads as pushed, not as
 assert.match(publication, /Waiting — git push typed but NOT sent/, "legacy typed-only shells name what is missing instead of looking executed");
 assert.match(server, /stelow commit diff: diffPatch (unavailable|failed)/, "patch fetch failures are logged for diagnosis instead of swallowed");
 assert.match(server, /initialPatches is empty even/, "commit targets fetch every missing patch, not just on-demand ones");
-assert.match(diff, /file\.loadMode === "too_large"/, "the commit viewer distinguishes too-large files from missing patches");
+assert.match(commitDiff, /commitFileState\(file\)/, "the commit viewer delegates tested file-state labels to presentation logic");
 assert.match(server, /recordPublication\(cardId, "squash_merge", message, verdict\.sha\)/, "only a verified squash SHA enters publication history");
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
@@ -126,7 +127,26 @@ assert.match(publication, /Merge PR…/, "PR merge remains an explicit user acti
 assert.match(actions, /submitting/, "publication confirmations prevent duplicate write requests");
 assert.match(actions, /Repository rules,\s*approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
 assert.match(publication, /Publication history/, "the user can audit prior publication actions");
-assert.match(diff, /filesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
+assert.match(
+  commitDiff,
+  /<details open=\{props\.open\}[\s\S]*Expand all[\s\S]*Collapse all[\s\S]*<CommitDiffFileActions[\s\S]*filesEpoch/,
+  "commit files use controlled accordions with explicit expand and collapse actions",
+);
+assert.match(
+  diff,
+  /formatEntitySummary\(props\.diffData\.entitySummary\)[\s\S]*<p className="text-\[11px\] text-muted-foreground">\{entitySummary\}<\/p>/,
+  "working-tree review renders the entity summary returned by presentation logic",
+);
+assert.match(
+  diff,
+  /formatChangedSymbols\(props\.diffData\.changedSymbols\)[\s\S]*title="Changed symbols with caller impact \(cymbal\)"[\s\S]*\{changedSymbols\}/,
+  "working-tree review renders changed-symbol caller impact",
+);
+assert.match(
+  diff,
+  /const openFile = \(\) => props\.onOpenFile\(\{[\s\S]*target: fileLinkTarget\([\s\S]*onClick=\{openFile\}/,
+  "patchless working-tree files open through the artifact viewer with an explicit click path",
+);
 assert.match(publication, /Next: publish the branch\./, "a saved commit names its pending step as structure, not buried prose");
 assert.doesNotMatch(publication, /What remains to publish it/, "publish steps live as sections with action rows, never as buttons inside prose");
 assert.doesNotMatch(publication, /Push the branch — this panel runs/, "no call-to-action hides inside a paragraph anymore");
@@ -161,7 +181,21 @@ assert.match(
   /else if \(action === "push" \|\| action === "sync"\) \{[\s\S]*?await loadPushTerminals\(\);\s*schedulePushRefresh\(action\);\s*\}/,
   "both remote publication paths refresh terminals immediately and schedule delayed refreshes",
 );
-assert.match(diff, /rpc\.call\("publicationCommitDiff", \{ cardId, commitSha: sha \}\)/, "commit review loads the selected SHA for the current card from the diff feature owner");
+assert.match(
+  diff,
+  /rpc\.call\("cardDiff", \{ cardId: props\.cardId \}\)/,
+  "working-tree review loads the current card diff from the diff feature owner",
+);
+assert.match(
+  diff,
+  /if \(next && !diffData\) void loadDiff\(\)/,
+  "working-tree diff loading stays lazy until disclosure opens",
+);
+assert.match(
+  commitDiff,
+  /rpc\.call\("publicationCommitDiff", \{ cardId, commitSha: sha \}\)/,
+  "commit review loads the selected SHA for the current card from the diff feature owner",
+);
 assert.match(publication, /<CommitDiffReview[\s\S]*openCommit\(savedSha\)[\s\S]*openCommit\(event\.commitSha!\)/, "saved and historical commits both navigate through the diff feature owner");
 assert.match(
   reviewTools,

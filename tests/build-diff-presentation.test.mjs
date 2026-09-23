@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { formatChangedSymbols, formatEntitySummary, shouldShowBuildDiff } from "../lib/build-diff-presentation.mjs";
+import {
+  commitFileState,
+  formatChangedSymbols,
+  formatEntitySummary,
+  shouldShowBuildDiff,
+} from "../lib/build-diff-presentation.mjs";
 
 const visibility = (overrides = {}) => shouldShowBuildDiff({ status: "working", stage: "analysis", publicationDirty: false, recoveryKind: null, ...overrides });
 assert.equal(visibility({ stage: "diff-gate" }), true, "working cards expose pending changes at the diff gate");
@@ -16,4 +21,26 @@ assert.equal(formatChangedSymbols([{ symbol: "parseCard", callers: 3, testCaller
 assert.equal(formatChangedSymbols(null), null, "an absent impact list is omitted");
 assert.equal(formatChangedSymbols([]), null, "an empty impact list is omitted");
 
-console.log("build diff presentation test ok: visibility, summaries, and caller impact remain intact");
+const commitFile = {
+  binary: false,
+  patch: "diff --git a/file b/file",
+  loadMode: "initial",
+};
+assert.equal(commitFileState(commitFile), "", "renderable commit files need no state suffix");
+assert.equal(
+  commitFileState({ ...commitFile, binary: true, patch: null }),
+  " · binary",
+  "binary commit files are labeled even when no patch exists",
+);
+assert.equal(
+  commitFileState({ ...commitFile, patch: null, loadMode: "too_large" }),
+  " · too large",
+  "oversized commit files remain distinct from missing patches",
+);
+assert.equal(
+  commitFileState({ ...commitFile, patch: null, loadMode: "initial" }),
+  " · no patch",
+  "missing commit patches receive an honest state label",
+);
+
+console.log("build diff presentation test ok: visibility, summaries, caller impact, and file states remain intact");
