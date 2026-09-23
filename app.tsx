@@ -53,12 +53,13 @@ import { CreateExploreDialog } from "./components/creation/create-explore-dialog
 import { BatchStepper, ExpiredQuestionsSection, QuestionBatch, type ArtifactViewerMode, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
 import { CardConversation } from "./components/conversation/card-conversation";
 import { OpenThreadButton, WorkerSection } from "./components/worker-history/worker-history";
-import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactFilename, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
+import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
 import { CardDetailHeader } from "./components/manage/card-detail-header";
 import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
 import { useDetailRecoveryActions } from "./components/manage/detail-recovery-actions";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { InboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
+import { InputFiles } from "./components/detail/input-files";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -2671,39 +2672,6 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, skips, off
         );
       })}
     </div>
-  );
-}
-
-function InputFiles({ card, detail, onView }: { card: CardItem; detail: CardDetailResponse | null; onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void }) {
-  const files = detail?.attachments ?? [];
-  if (files.length === 0) return null;
-  return (
-    <DisclosureSection title="Input files" hint={`${files.length} file${files.length === 1 ? "" : "s"}`} defaultOpen>
-      <p className="text-xs text-muted-foreground">Files attached when this card was started.</p>
-      <div className="mt-2 divide-y divide-border rounded-md border">
-        {files.map((file) => {
-          const canOpen = Boolean(file.hostId && file.absolutePath);
-          const body = <>
-            <span className="mt-0.5" aria-hidden>{file.type === "localImage" ? "🖼️" : "📎"}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium text-foreground">{file.display}</span>
-              <span className="block truncate text-muted-foreground">File: {artifactFilename(file.path)}</span>
-            </span>
-            {canOpen ? <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span> : null}
-          </>;
-          return canOpen ? (
-            <button
-              key={`${file.type}:${file.path}`}
-              onClick={() => onView({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, file.relPath ?? file.path, file.hostId!, file.absolutePath) })}
-              className="flex min-h-11 w-full cursor-pointer items-start gap-2 px-2 py-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-              title={`Open ${file.display}`}
-            >
-              {body}
-            </button>
-          ) : <div key={`${file.type}:${file.path}`} className="flex min-h-11 items-start gap-2 px-2 py-2 text-xs">{body}</div>;
-        })}
-      </div>
-    </DisclosureSection>
   );
 }
 

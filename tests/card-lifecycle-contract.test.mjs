@@ -17,6 +17,7 @@ const strategyPickerModule = readFileSync(join(root, "components", "creation", "
 const manageMenu = readFileSync(join(root, "components", "manage", "card-actions-menu.tsx"), "utf8");
 const manageRecovery = readFileSync(join(root, "components", "manage", "detail-recovery-actions.ts"), "utf8");
 const detailBanner = readFileSync(join(root, "components", "detail", "inbox-event-banner.tsx"), "utf8");
+const detailInputFiles = readFileSync(join(root, "components", "detail", "input-files.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
@@ -96,6 +97,12 @@ assert.doesNotMatch(app, /function InboxEventBanner\(/, "no local banner copy su
 assert.doesNotMatch(app, /function inboxEventDescription\(/, "descriptions come from lib, never a local copy");
 assert.doesNotMatch(app, /function inboxEventTime\(/, "event times come from lib, never a local copy");
 assert.doesNotMatch(app, /function relativeTime\(/, "the relative clock lives in lib, never pasted");
+// Input files: one shared renderer; openable files open in the viewer,
+// the rest render as plain rows — never a dead button.
+assert.match(detailInputFiles, /export function InputFiles\(\{ card, detail, onView/, "input files live in the detail module");
+assert.match(app, /import \{ InputFiles \} from "\.\/components\/detail\/input-files"/, "detail bodies read the shared input files");
+assert.doesNotMatch(app, /function InputFiles\(/, "no local input-files copy survives in the panel");
+assert.match(detailInputFiles, /: <div key={`/, "unopenable files render plain, never a dead button");
 // Manage surfaces: menu, header, and confirm live in one home; the panel
 // reads them, never pastes them. Picking a menu entry closes the menu
 // before the action runs.
@@ -331,7 +338,7 @@ assert.match(app, /card\.status === "completed" \? <AuditTrailStatusRow cardId=\
 // freshness row — grouping sums through lib, the row re-checks on demand.
 assert.match(artifactModule, /export function ArtifactInventory\(\{ groups, workspaceKind, fileEnvironmentId, onView/, "the inventory lives in the artifacts module");
 assert.match(artifactModule, /export function AuditTrailStatusRow\(\{ cardId \}/, "the freshness row lives in the artifacts module");
-assert.match(app, /import \{ ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactFilename, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "detail bodies read the shared artifact surfaces");
+assert.match(app, /import \{ ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "detail bodies read the shared artifact surfaces");
 assert.doesNotMatch(app, /function ArtifactInventory\(/, "no local inventory copy survives in the panel");
 assert.doesNotMatch(app, /function AuditTrailStatusRow\(/, "no local freshness-row copy survives in the panel");
 assert.match(artifactModule, /groupArtifactsByStage\(artifacts\)/, "stage grouping sums through the lib, never inline math");
