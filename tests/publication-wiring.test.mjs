@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
+const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
+const app = readFileSync(join(root, "app.tsx"), "utf8") + publication;
 
 for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullPush", "publicationPullRequestAction"]) {
   assert.match(server, new RegExp(`async ${method}\\(`), `${method} RPC exists`);
@@ -80,10 +81,10 @@ assert.match(app, /default checkout selected in BB/, "the publication panel expl
 assert.match(app, /cannot fetch remote updates, merge incoming changes, push, or create a pull request/, "the publication panel does not promise remote synchronization the BB API does not expose");
 assert.match(app, /Advanced Git operations/, "local squash integration is progressively disclosed");
 assert.match(app, /DisclosureChevron open=\{advancedGitOpen\} \/>Advanced Git operations/, "the disclosure arrow reads explicit open state, never CSS hope");
-assert.match(app, /publication\.pullRequest\.state === "draft" \? \(/, "ready/draft resolves to one contextual action from PR state");
+assert.match(app, /publication\.pullRequest\.state === "draft" \? <Button/, "ready/draft resolves to one contextual action from PR state");
 assert.match(app, /Squash branch locally/, "local squash integration uses plain-language copy");
 assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
-assert.match(app, /publicationSubmitting/, "publication confirmations prevent duplicate write requests");
+assert.match(publication, /submitting/, "publication confirmations prevent duplicate write requests");
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
 assert.match(app, /Publication history/, "the user can audit prior publication actions");
 assert.match(app, /commitFilesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
@@ -91,19 +92,25 @@ assert.match(app, /Next: publish the branch\./, "a saved commit names its pendin
 assert.doesNotMatch(app, /What remains to publish it/, "publish steps live as sections with action rows, never as buttons inside prose");
 assert.doesNotMatch(app, /Push the branch — this panel runs/, "no call-to-action hides inside a paragraph anymore");
 assert.match(app, /card\.status !== "completed" && \(card\.stage === "diff-gate"/, "the Diff review panel yields to Git changes once the card is completed");
-assert.match(app, /card\.status === "completed" && publication\?\.workingTree\?\.hasUncommittedChanges/, "pending changes on a Done card stay reviewable in Diff while the commit action lives in Git changes");
+assert.match(app, /card\.status === "completed" && publicationDirty/, "pending changes on a Done card stay reviewable in Diff while the commit action lives in Git changes");
 assert.match(app, /Copy command/, "post-commit commands name what they copy instead of a bare Copy");
 assert.match(app, /Saved locally on/, "a successful local save has an explicit outcome state");
 assert.match(app, /View commit/, "recorded local commits can be inspected from Done");
 assert.match(server, /parsePushRemoteUrl/, "the remote comes from git's own To line, never an assumed host");
 assert.match(app, /branchWebLinks/, "branch links are built from the parsed remote, not hardcoded");
-assert.match(app, /pushed \|\| publication\.pullRequest \? branchWebLinks/, "remote links need a branch proven to exist remotely, never a failed first push");
+assert.match(publication, /publication && \(pushed \|\| publication\.pullRequest\) \? branchWebLinks/, "remote links need a branch proven to exist remotely, never a failed first push");
 assert.match(app, /last push outcome unknown/, "an ended shell admits ignorance instead of claiming unpushed");
 assert.match(app, /On GitHub/, "a pushed branch links out to the remote it landed on");
 assert.match(app, /View branch ↗/, "the branch is one click away after pushing");
 assert.match(app, /Open pull request ↗/, "the next step after pushing is a link, not a paragraph");
 assert.match(app, /not pushed yet\./, "a saved commit states its remote truth instead of implying arrival");
 assert.match(app, /pushed to origin\./, "a finished push reads as published in the outcome line");
-assert.match(app, /Completed at \{completedAt\.slice\(0, 7\)\}/, "completed cards anchor dirt to their verified HEAD");
+assert.match(app, /Completed at \{verifiedHeadSha\.slice\(0, 7\)\}/, "completed cards anchor dirt to their verified HEAD");
+assert.match(publication, /finally \{[\s\S]*await loadPublication\(\);[\s\S]*await onChanged\(\);/, "partial failures still refresh publication and card state");
+assert.match(publication, /setPushTerminals\(\{ ok: false, error:/, "push-shell listing failures stay visible instead of disappearing");
+assert.match(publication, /window\.setTimeout\(\(\) => void loadPushTerminals\(\), 8000\)/, "push results refresh automatically after an asynchronous run");
+assert.match(publication, /publicationCommitDiff/, "commit review remains owned by the publication feature");
+assert.match(app, /<BuildPublication[\s\S]*onDirtyChange=\{setPublicationDirty\}/, "CardDetailBody delegates publication UI while observing dirty-tree state");
+assert.doesNotMatch(readFileSync(join(root, "app.tsx"), "utf8"), /publicationPullRequestAction/, "CardDetailBody no longer owns publication RPC actions");
 
 console.log("publication wiring test ok: BB owns writes, Done stays separate, actions are explicit and auditable");
