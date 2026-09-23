@@ -32,7 +32,7 @@ assert.match(app, /same host pickers as the new-card composer/, "the shared bloc
 // Manager dialog: bounded frame + disclosed band routing + picker form.
 const managerAt = app.indexOf("function PresetManagerDialog(");
 assert.ok(managerAt >= 0, "the manager dialog exists");
-const managerWindow = app.slice(managerAt, app.indexOf("function ArtifactViewerDialog("));
+const managerWindow = app.slice(managerAt, app.indexOf("function PresetAssignDialog("));
 assert.ok(managerWindow.includes("overflow-y-auto sm:max-h-[calc(100dvh-1rem)]"), "the manager frame scrolls instead of overflowing the viewport");
 assert.ok(managerWindow.includes("fullscreenOnMobile"), "the manager stays a real modal on phones");
 assert.match(managerWindow, /<DisclosureSection title="Worker preset per track"/, "band routing hides behind a disclosure");

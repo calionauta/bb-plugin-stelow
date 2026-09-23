@@ -65,10 +65,11 @@ assert.doesNotMatch(serverSource, /options\.every\(\(option\) => !option\.artifa
 // second, newest artifact only the last resort.
 const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
 const conversationSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/conversation/question-batch.tsx"), "utf8");
+const viewerSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/artifact-viewer-dialog.tsx"), "utf8");
 assert.match(appSource, /pendingQuestionArtifact/, "the hero reads question-attached evidence");
 assert.match(appSource, /pendingQuestionArtifact \?\? detail\.artifacts\.filter\(\(artifact\) => artifact\.role !== "evidence"\)\.find/, "the pending document wins over the manifest guess, and evidence never serves as the review document");
 assert.match(conversationSource, /artifactViewerModeForOption/, "approval and change options select their appropriate viewer mode");
-assert.match(appSource, /mode === "comment"/, "the review-only viewer hides comment and editor controls");
+assert.match(viewerSource, /const canComment = mode === "comment"/, "the review-only viewer hides comment and editor controls");
 assert.match(appSource, /const inherited = inheritAskArtifact\(list\)/, "thread questions inherit per-option evidence too");
 // The option's document affordance is the shared outline Button, so it can
 // never drift back into a hand-rolled third color beside the amber panel.

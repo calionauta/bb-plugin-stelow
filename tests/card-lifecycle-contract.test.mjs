@@ -21,6 +21,7 @@ const detailInputFiles = readFileSync(join(root, "components", "detail", "input-
 const detailHero = readFileSync(join(root, "components", "detail", "detail-hero.tsx"), "utf8");
 const detailTimeline = readFileSync(join(root, "components", "detail", "stage-timeline.tsx"), "utf8");
 const detailScopes = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
+const detailViewer = readFileSync(join(root, "components", "detail", "artifact-viewer-dialog.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
@@ -370,6 +371,16 @@ assert.match(app, /import \{ ArtifactGroups, ArtifactInventory, AuditTrailStatus
 assert.doesNotMatch(app, /function ArtifactInventory\(/, "no local inventory copy survives in the panel");
 assert.doesNotMatch(app, /function AuditTrailStatusRow\(/, "no local freshness-row copy survives in the panel");
 assert.match(artifactModule, /groupArtifactsByStage\(artifacts\)/, "stage grouping sums through the lib, never inline math");
+// The viewer is shared by every detail track. It owns both live file reads and
+// the quote-to-card-comment flow; a local copy would strand draft resets or RPC
+// routing even when TypeScript still accepted the three call sites.
+assert.match(app, /import \{ ArtifactViewerDialog \} from "\.\/components\/detail\/artifact-viewer-dialog"/, "detail bodies share one artifact viewer");
+assert.equal((app.match(/<ArtifactViewerDialog/g) ?? []).length, 3, "Build, Research, and Explore mount the same viewer");
+assert.doesNotMatch(app, /function ArtifactViewerDialog\(/, "no local viewer copy survives in the panel");
+assert.match(detailViewer, /rpc\.call\("readCardFile", \{ cardId, path: file\.path \}\)/, "the viewer reads the selected card file through the host");
+assert.match(detailViewer, /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body: commentBody\(file, drafts\) \}\)/, "quoted excerpts post to the card worker as one comment");
+assert.match(detailViewer, /if \(open && file\) setDrafts\(\[\]\)/, "opening or changing the file clears excerpts from the previous file");
+assert.match(detailViewer, /\(no note — for context\)/, "an excerpt without a note still sends honest context");
 // Review checkpoints: bulk actions and one-click templates write into the
 // same multi-select state as the checkboxes — shortcuts, never a second
 // model; rows render through one shared row.
