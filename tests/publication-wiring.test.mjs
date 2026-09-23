@@ -87,7 +87,7 @@ assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(publication, /submitting/, "publication confirmations prevent duplicate write requests");
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
 assert.match(app, /Publication history/, "the user can audit prior publication actions");
-assert.match(app, /commitFilesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
+assert.match(publication, /filesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
 assert.match(app, /Next: publish the branch\./, "a saved commit names its pending step as structure, not buried prose");
 assert.doesNotMatch(app, /What remains to publish it/, "publish steps live as sections with action rows, never as buttons inside prose");
 assert.doesNotMatch(app, /Push the branch — this panel runs/, "no call-to-action hides inside a paragraph anymore");
@@ -106,10 +106,13 @@ assert.match(app, /Open pull request ↗/, "the next step after pushing is a lin
 assert.match(app, /not pushed yet\./, "a saved commit states its remote truth instead of implying arrival");
 assert.match(app, /pushed to origin\./, "a finished push reads as published in the outcome line");
 assert.match(app, /Completed at \{verifiedHeadSha\.slice\(0, 7\)\}/, "completed cards anchor dirt to their verified HEAD");
-assert.match(publication, /finally \{[\s\S]*await loadPublication\(\);[\s\S]*await onChanged\(\);/, "partial failures still refresh publication and card state");
+assert.match(publication, /async function doAction\(\) \{[\s\S]*?\} finally \{[\s\S]*?await loadPublication\(\);[\s\S]*?await onChanged\(\);/, "the publication action finally block refreshes both publication and card state after partial failures");
 assert.match(publication, /setPushTerminals\(\{ ok: false, error:/, "push-shell listing failures stay visible instead of disappearing");
-assert.match(publication, /window\.setTimeout\(\(\) => void loadPushTerminals\(\), 8000\)/, "push results refresh automatically after an asynchronous run");
+assert.match(publication, /action === "sync" \? \[10000, 25000\] : \[8000, 20000\]/, "push and sync results refresh automatically at their established follow-up times");
+assert.match(publication, /action === "push" \|\| action === "sync"[\s\S]*schedulePushRefresh\(action\)/, "both remote publication paths schedule delayed terminal refreshes");
 assert.match(publication, /publicationCommitDiff/, "commit review remains owned by the publication feature");
+assert.match(publication, /function PublicationActions/, "publication write confirmations and execution have one focused owner");
+assert.match(publication, /function CommitReview/, "commit diff loading and presentation have one focused owner");
 assert.match(app, /<BuildPublication[\s\S]*onDirtyChange=\{setPublicationDirty\}/, "CardDetailBody delegates publication UI while observing dirty-tree state");
 assert.doesNotMatch(readFileSync(join(root, "app.tsx"), "utf8"), /publicationPullRequestAction/, "CardDetailBody no longer owns publication RPC actions");
 
