@@ -18,6 +18,7 @@ const manageMenu = readFileSync(join(root, "components", "manage", "card-actions
 const manageRecovery = readFileSync(join(root, "components", "manage", "detail-recovery-actions.ts"), "utf8");
 const detailBanner = readFileSync(join(root, "components", "detail", "inbox-event-banner.tsx"), "utf8");
 const detailInputFiles = readFileSync(join(root, "components", "detail", "input-files.tsx"), "utf8");
+const detailHero = readFileSync(join(root, "components", "detail", "detail-hero.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
@@ -103,6 +104,13 @@ assert.match(detailInputFiles, /export function InputFiles\(\{ card, detail, onV
 assert.match(app, /import \{ InputFiles \} from "\.\/components\/detail\/input-files"/, "detail bodies read the shared input files");
 assert.doesNotMatch(app, /function InputFiles\(/, "no local input-files copy survives in the panel");
 assert.match(detailInputFiles, /: <div key={`/, "unopenable files render plain, never a dead button");
+// Detail hero: one prioritized reading — archived history, then open
+// questions, then worker states, then calm. Shared by the three bodies.
+assert.match(detailHero, /export function heroFor\(card: HeroCardState, detail: HeroDetailState\)/, "the hero lives in the detail module");
+assert.match(app, /import \{ HERO_STYLE, HeroErrorNote, heroFor, type HeroKind \} from "\.\/components\/detail\/detail-hero"/, "detail bodies read the shared hero");
+assert.doesNotMatch(app, /function heroFor\(/, "no local hero copy survives in the panel");
+assert.match(detailHero, /return attentionHero\(card, detail\) \?\? workerHero\(card, detail\) \?\? calmHero\(card\)/, "priority reads attention, then worker, then calm");
+assert.match(detailHero, /if \(archived\) return archived\.hero/, "archived history wins over every live state");
 // Manage surfaces: menu, header, and confirm live in one home; the panel
 // reads them, never pastes them. Picking a menu entry closes the menu
 // before the action runs.
@@ -235,7 +243,7 @@ assert.match(buildStatusPills, /const started = card\.workerThreadId !== null/, 
 assert.match(buildStatusPills, />Not started<\/Pill>/, "unstarted cards read Not started on tiles and open cards alike");
 assert.match(buildStatusPills, /const terminal = card\.status === "completed" \|\| card\.status === "archived"/, "terminal cards are defined once, not per pill");
 assert.match(buildStatusPills, /\{!terminal \? \(started/, "completed and archived cards show no stage pill — every checkpoint already traversed");
-assert.match(app, /if \(card\.workerThreadId == null\) \{\s*return \{\s*kind: "calm",\s*title: "Not started",/, "the parked hero claims no checkpoint either");
+assert.match(detailHero, /if \(card\.workerThreadId == null\) \{\s*return \{\s*kind: "calm",\s*title: "Not started",/, "the parked hero claims no checkpoint either");
 assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the live checkpoint treatment has one definition");
 assert.match(app, /\? CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");
 assert.match(app, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress header names the checkpoint with the pulsing pill, never detached plain text");
