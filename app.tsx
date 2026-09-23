@@ -20,7 +20,8 @@ import {
 import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
-import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxEventText, inboxEventTime, inboxFilterEntries, isOpenInboxAction, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
+import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxEventText, inboxEventTime, inboxFilterEntries, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
+import { joinStrategyLabels, liveBorderClass, statusTone } from "./lib/detail-presentation.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
@@ -50,16 +51,16 @@ import { CreateExploreDialog } from "./components/creation/create-explore-dialog
 import { BatchStepper, ExpiredQuestionsSection, QuestionBatch, type ArtifactViewerMode, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
 import { CardConversation } from "./components/conversation/card-conversation";
 import { useDetailComment } from "./components/conversation/use-detail-comment";
-import { WorkerSection } from "./components/worker-history/worker-history";
-import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
+import { checkoutNoteFor, WorkerSection } from "./components/worker-history/worker-history";
+import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
 import { CardDetailHeader } from "./components/manage/card-detail-header";
 import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
 import { useDetailRecoveryActions } from "./components/manage/detail-recovery-actions";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
-import { InboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
+import { InboxEventBanner, shouldShowInboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import { InputFiles } from "./components/detail/input-files";
 import { ScopesList } from "./components/detail/scopes-list";
-import { HERO_STYLE, heroFor, type HeroKind } from "./components/detail/detail-hero";
+import { HERO_STYLE, heroFor } from "./components/detail/detail-hero";
 import { DetailHeroActions } from "./components/detail/detail-hero-actions";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
@@ -189,18 +190,6 @@ function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): v
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: inboxCardSubPath(cardId, eventId) });
 }
 
-// Composite strategy label: unique playbook labels joined in run order.
-// Falls back to the raw id when the label map has not loaded yet, so the
-// pill never renders empty while strategies fetch.
-function joinStrategyLabels(ids: Array<string | null | undefined>, byId: Map<string, string>): string | null {
-  const labels: string[] = [];
-  for (const id of ids) {
-    const label = (id && byId.get(id)) || id;
-    if (label && !labels.includes(label)) labels.push(label);
-  }
-  return labels.length > 0 ? labels.join(" + ") : null;
-}
-
 // Position of a stage in the canonical sequence (-1 if unknown).
 function stageIndex(stage: string) {
   return STAGE_SEQUENCE.indexOf(stage);
@@ -225,15 +214,6 @@ type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
 type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
 type CardComment = CardDetailResponse["comments"][number];
-
-function statusTone(status: string) {
-  if (["completed", "done"].includes(status)) return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
-  if (["in-progress", "approved"].includes(status)) return "bg-primary/15 text-primary";
-  if (["blocked", "failed"].includes(status)) return "bg-destructive/15 text-destructive";
-  if (["escalated"].includes(status)) return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
-  if (["skipped", "archived"].includes(status)) return "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300";
-  return "bg-muted text-muted-foreground";
-}
 
 function statusGlyph(status: string) {
   if (isDoneStatus(status)) return "✓";
@@ -435,13 +415,6 @@ const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: strin
   paused: { icon: "Ⅱ", label: INBOX_EVENT_LABELS.paused, tone: "bg-amber-500/15 text-amber-700" },
   completed: { icon: "✓", label: INBOX_EVENT_LABELS.completed, tone: "bg-emerald-500/15 text-emerald-700" },
 };
-
-function shouldShowInboxEventBanner(event: InboxEventSnapshot | null, hero: { kind: HeroKind } | null): boolean {
-  if (!event || !isOpenInboxAction(event)) return true;
-  return !((event.kind === "question" && hero?.kind === "decision")
-    || (event.kind === "error" && hero?.kind === "error")
-    || (event.kind === "paused" && hero?.kind === "paused"));
-}
 
 function PanelSkeleton({ rows = 4 }: { rows?: number }) {
   return <div className="space-y-3" aria-label="Loading" aria-busy="true">
@@ -2321,14 +2294,6 @@ function CardMetaRows({ card }: { card: CardItem }) {
   );
 }
 
-// Activity is transient and is communicated by the surface itself. Keeping
-// this mapping here lets every card shape use the exact same live language.
-function liveBorderClass(card: Pick<CardItem, "activity" | "needsAttention">): string {
-  if (card.activity === "running") return "stelow-border-running";
-  if (card.activity === "awaiting-answer" || card.needsAttention) return "stelow-border-attention";
-  return "";
-}
-
 // All board tiles share this header geometry. Identity, state and recovery
 // actions are deliberately distinct rows: a narrow board column must never
 // make a title look like a tiny label among controls, or make state look like
@@ -2561,24 +2526,6 @@ function formatChangedSymbols(symbols: Array<{ symbol: string; callers: number; 
       : `${entry.callers} caller${entry.callers === 1 ? "" : "s"}${entry.testCallers > 0 ? ` (${entry.testCallers} test${entry.testCallers === 1 ? "" : "s"})` : ""}`;
     return `${entry.symbol} · ${impact}`;
   }).join("; ");
-}
-
-// Open an ask-option artifact in the card viewer. Same target convention
-// as every other artifact button: workspace target for exploratory cards,
-// host target otherwise.
-function openAskArtifact(
-  card: Pick<CardItem, "workspaceKind">,
-  fileEnvironmentId: string | null,
-  setViewerFile: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null) => void,
-  artifact: AskArtifact,
-  mode: ArtifactViewerMode,
-): void {
-  setViewerFile({
-    display: artifact.display,
-    path: artifact.absolutePath ?? artifact.path,
-    target: fileLinkTarget(card.workspaceKind === "exploratory", fileEnvironmentId, artifact.path, artifact.hostId ?? "", artifact.absolutePath ?? artifact.path),
-    mode,
-  });
 }
 
 function CardDrawerAdapter(props: PluginThreadPanelProps) {
@@ -3715,20 +3662,6 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
 
 // Shared worker block: preset readout, state-appropriate recovery, and worker
 // history. Card lifecycle actions deliberately live in the card header.
-// Checkout identity in plain words: the card reads its stored spawn
-// environment instead of guessing shared-vs-worktree from paths.
-// Exploratory cards already say so elsewhere, so they get no line here.
-const CHECKOUT_LABEL: Record<string, string> = {
-  worktree: "Isolated worktree",
-  shared: "Shared project checkout",
-  managed: "BB-managed checkout",
-  personal: "Personal workspace",
-};
-function checkoutNoteFor(environmentLabel: string | null | undefined, branch?: string | null) {
-  if (!environmentLabel || environmentLabel === "unknown" || environmentLabel === "exploratory") return null;
-  const label = CHECKOUT_LABEL[environmentLabel] ?? environmentLabel;
-  return <>Checkout: {label}{branch ? <> · branch <code>{branch}</code></> : null}</>;
-}
 
 // Research-track card detail: hero + index + fan-out + artifacts + worker +
 // conversation. Build-only surfaces (stages, timeline, gates, intent)

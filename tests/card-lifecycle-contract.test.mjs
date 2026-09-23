@@ -17,6 +17,7 @@ const strategyPickerModule = readFileSync(join(root, "components", "creation", "
 const manageMenu = readFileSync(join(root, "components", "manage", "card-actions-menu.tsx"), "utf8");
 const manageRecovery = readFileSync(join(root, "components", "manage", "detail-recovery-actions.ts"), "utf8");
 const detailBanner = readFileSync(join(root, "components", "detail", "inbox-event-banner.tsx"), "utf8");
+const detailPresentation = readFileSync(join(root, "lib", "detail-presentation.mjs"), "utf8");
 const detailInputFiles = readFileSync(join(root, "components", "detail", "input-files.tsx"), "utf8");
 const detailHero = readFileSync(join(root, "components", "detail", "detail-hero.tsx"), "utf8");
 const detailHeroActions = readFileSync(join(root, "components", "detail", "detail-hero-actions.tsx"), "utf8");
@@ -98,11 +99,20 @@ assert.match(manageRecovery, /const retried = await rpc\.call\("retryWorker", \{
 // Detail leaves: one banner definition for every body; event text, time,
 // and the relative clock live in lib (tested), never pasted per surface.
 assert.match(detailBanner, /export function InboxEventBanner\(\{ visible, event, sectionRef/, "the banner lives in the detail module");
-assert.match(app, /import \{ InboxEventBanner, useInboxEventFocus \} from "\.\/components\/detail\/inbox-event-banner"/, "detail bodies read the shared banner");
+assert.match(app, /import \{ InboxEventBanner, shouldShowInboxEventBanner, useInboxEventFocus \} from "\.\/components\/detail\/inbox-event-banner"/, "detail bodies read the shared banner and visibility policy");
 assert.doesNotMatch(app, /function InboxEventBanner\(/, "no local banner copy survives in the panel");
 assert.doesNotMatch(app, /function inboxEventDescription\(/, "descriptions come from lib, never a local copy");
 assert.doesNotMatch(app, /function inboxEventTime\(/, "event times come from lib, never a local copy");
 assert.doesNotMatch(app, /function relativeTime\(/, "the relative clock lives in lib, never pasted");
+assert.match(app, /import \{ joinStrategyLabels, liveBorderClass, statusTone \} from "\.\/lib\/detail-presentation\.mjs"/, "shared card presentation comes from one tested lib");
+assert.doesNotMatch(app, /function (joinStrategyLabels|liveBorderClass|statusTone)\(/, "no shared detail presentation copy remains in the panel");
+assert.match(detailPresentation, /export function (joinStrategyLabels|liveBorderClass|statusTone)/, "the lib owns strategy labels, live borders, and status tones");
+assert.match(detailBanner, /export function shouldShowInboxEventBanner/, "banner visibility belongs to the banner feature");
+assert.doesNotMatch(app, /function shouldShowInboxEventBanner\(/, "no banner visibility copy remains in the panel");
+assert.match(artifactModule, /export function openAskArtifact\(/, "ask artifacts open through the artifact target convention");
+assert.doesNotMatch(app, /function openAskArtifact\(/, "no ask-artifact opener copy remains in the panel");
+assert.match(workerHistory, /export function checkoutNoteFor\(/, "checkout wording belongs to worker presentation");
+assert.doesNotMatch(app, /function checkoutNoteFor\(/, "no checkout wording copy remains in the panel");
 // Input files: one shared renderer; openable files open in the viewer,
 // the rest render as plain rows — never a dead button.
 assert.match(detailInputFiles, /export function InputFiles\(\{ card, detail, onView/, "input files live in the detail module");
@@ -112,7 +122,7 @@ assert.match(detailInputFiles, /: <div key={`/, "unopenable files render plain, 
 // Detail hero: one prioritized reading — archived history, then open
 // questions, then worker states, then calm. Shared by the three bodies.
 assert.match(detailHero, /export function heroFor\(card: HeroCardState, detail: HeroDetailState\)/, "the hero lives in the detail module");
-assert.match(app, /import \{ HERO_STYLE, heroFor, type HeroKind \} from "\.\/components\/detail\/detail-hero"/, "detail bodies read the shared hero");
+assert.match(app, /import \{ HERO_STYLE, heroFor \} from "\.\/components\/detail\/detail-hero"/, "detail bodies read the shared hero");
 assert.doesNotMatch(app, /function heroFor\(/, "no local hero copy survives in the panel");
 assert.match(detailHero, /return attentionHero\(card, detail\) \?\? workerHero\(card, detail\) \?\? calmHero\(card\)/, "priority reads attention, then worker, then calm");
 assert.match(detailHero, /if \(archived\) return archived\.hero/, "archived history wins over every live state");
@@ -380,7 +390,7 @@ assert.match(app, /card\.status === "completed" \? <AuditTrailStatusRow cardId=\
 // freshness row — grouping sums through lib, the row re-checks on demand.
 assert.match(artifactModule, /export function ArtifactInventory\(\{ groups, workspaceKind, fileEnvironmentId, onView/, "the inventory lives in the artifacts module");
 assert.match(artifactModule, /export function AuditTrailStatusRow\(\{ cardId \}/, "the freshness row lives in the artifacts module");
-assert.match(app, /import \{ ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "detail bodies read the shared artifact surfaces");
+assert.match(app, /import \{ ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, openAskArtifact, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "detail bodies read the shared artifact surfaces and opener");
 assert.doesNotMatch(app, /function ArtifactInventory\(/, "no local inventory copy survives in the panel");
 assert.doesNotMatch(app, /function AuditTrailStatusRow\(/, "no local freshness-row copy survives in the panel");
 assert.match(artifactModule, /groupArtifactsByStage\(artifacts\)/, "stage grouping sums through the lib, never inline math");

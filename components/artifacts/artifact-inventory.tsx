@@ -21,6 +21,25 @@ export function fileLinkTarget(useWorkspace: boolean, environmentId: string | nu
   return { kind: "host", hostId, path: absolutePath };
 }
 
+type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
+type ViewerFile = { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: "review" | "comment" };
+
+export function openAskArtifact(
+  card: { workspaceKind: string },
+  fileEnvironmentId: string | null,
+  setViewerFile: (file: ViewerFile | null) => void,
+  artifact: AskArtifact,
+  mode: ViewerFile["mode"],
+): void {
+  const path = artifact.absolutePath ?? artifact.path;
+  setViewerFile({
+    display: artifact.display,
+    path,
+    target: fileLinkTarget(card.workspaceKind === "exploratory", fileEnvironmentId, artifact.path, artifact.hostId ?? "", path),
+    mode,
+  });
+}
+
 type ArtifactInventoryFile = { kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note?: string | null };
 export type ArtifactInventoryGroup = { id: string; title: string; items: ArtifactInventoryFile[] };
 

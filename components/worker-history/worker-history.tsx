@@ -12,6 +12,19 @@ import { formatTokenUsage, sumTokenBreakdowns, totalTokenUsage } from "../../lib
 // Times read the shared relative clock (lib). Every detail body renders
 // the same worker truth — one home, not three track copies.
 
+const CHECKOUT_LABEL: Record<string, string> = {
+  worktree: "Isolated worktree",
+  shared: "Shared project checkout",
+  managed: "BB-managed checkout",
+  personal: "Personal workspace",
+};
+
+export function checkoutNoteFor(environmentLabel: string | null | undefined, branch?: string | null) {
+  if (!environmentLabel || environmentLabel === "unknown" || environmentLabel === "exploratory") return null;
+  const label = CHECKOUT_LABEL[environmentLabel] ?? environmentLabel;
+  return <>Checkout: {label}{branch ? <> · branch <code>{branch}</code></> : null}</>;
+}
+
 // Every "open the worker thread" affordance: one definition with the
 // inspect-title everywhere (it is always an inspection). Renders nothing
 // without a thread instead of a dead button that swallows clicks.

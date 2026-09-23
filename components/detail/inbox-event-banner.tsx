@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { inboxEventDescription, inboxEventPresentation, inboxEventTime } from "../../lib/inbox-event-presentation.mjs";
+import { inboxEventDescription, inboxEventPresentation, inboxEventTime, isOpenInboxAction } from "../../lib/inbox-event-presentation.mjs";
 
 // Inbox-event banner shared by the detail bodies: one definition instead
 // of a drifting copy. Renders the event's presentation (label, tone,
@@ -14,6 +14,13 @@ export type InboxEventItem = {
   resolvedAt: number | null;
   archivedAt: number | null;
 };
+
+export function shouldShowInboxEventBanner(event: InboxEventItem | null, hero: { kind: string } | null): boolean {
+  if (!event || !isOpenInboxAction(event)) return true;
+  return !((event.kind === "question" && hero?.kind === "decision")
+    || (event.kind === "error" && hero?.kind === "error")
+    || (event.kind === "paused" && hero?.kind === "paused"));
+}
 
 export function InboxEventBanner({ visible, event, sectionRef }: {
   visible: boolean;
