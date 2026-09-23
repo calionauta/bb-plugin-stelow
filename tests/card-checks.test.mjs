@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "../lib/card-checks.mjs";
+import { groupCardChecks, groupState, isExecutionUntracked } from "../lib/card-checks.mjs";
 
 const scopes = [
   { id: "s1", name: "Checkout", status: "done", tasks: [{ name: "t1", status: "done" }] },
@@ -41,19 +41,20 @@ assert.equal(groupState({ open: ["x"], doneCount: 1, total: 2 }), "pending", "an
 assert.equal(groupState(null), "empty", "junk reads empty");
 assert.equal(groupState({}), "empty", "shapeless reads empty");
 
-// The detail renders one rollup above the scopes: same sources the heroes
-// read (pending + expired questions, scope states, gap summary, review
-// flag), grouped by type with a pending-only filter defaulting on. A
-// rollup that invented its own sources would drift — this one cannot.
+// The extracted detail section keeps one gap request and one checks rollup:
+// same live sources (pending + expired questions, scope states, the shared gap
+// summary, review flag), with pending-only on by default. These wiring pins
+// constrain topology only; grouping and guard behavior are asserted above.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
-assert.match(app, /<CardChecksSection cardId=\{card\.id\} card=\{card\} detail=\{detail\} \/>/, "detail renders the rollup with card and detail in scope");
-assert.match(app, /questions: \[\.\.\.detail\.pendingQuestions, \.\.\.detail\.expiredQuestions\]/, "questions cover live and expired asks");
-assert.match(app, /rpc\.call\("gapSummary", \{ cardId \}\)/, "gaps resolve through the same RPC as the gaps section");
-assert.match(app, /review: card\.status === "completed" \? \{ pending: card\.hasPendingReview/, "review resolves from card state, never inferred");
-assert.match(app, /const \[pendingOnly, setPendingOnly\] = useState\(true\)/, "the pending filter defaults on");
-assert.match(app, /isExecutionUntracked\(\{ activity: card\.activity, scopes: detail\.scopes \}\)/, "the rollup names untracked execution from live card state");
-assert.match(app, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the rollup names missing scope tracking from live card state");
+const progress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
+assert.match(app, /<BuildProgress[\s\S]*card=\{card\}[\s\S]*detail=\{detail\}/, "detail renders the extracted progress section with card and detail in scope");
+assert.equal((progress.match(/rpc\.call\("gapSummary", \{ cardId \}\)/g) ?? []).length, 1, "checks and gaps share one gapSummary request");
+assert.match(progress, /questions: \[\.\.\.detail\.pendingQuestions, \.\.\.detail\.expiredQuestions\]/, "questions cover live and expired asks");
+assert.match(progress, /review: card\.status === "completed" \? \{ pending: card\.hasPendingReview/, "review resolves from card state, never inferred");
+assert.match(progress, /const \[pendingOnly, setPendingOnly\] = useState\(true\)/, "the pending filter defaults on");
+assert.match(progress, /isExecutionUntracked\(\{ activity: card\.activity, scopes: detail\.scopes \}\)/, "the rollup names untracked execution from live card state");
+assert.match(progress, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the rollup names missing scope tracking from live card state");
 
 // Untracked execution: running with synced scopes but nothing ever marked
 // (neither in-progress nor done) names the silence bands — the exact shape

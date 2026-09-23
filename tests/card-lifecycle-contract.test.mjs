@@ -16,7 +16,8 @@ const exploreQuality = readFileSync(join(root, "components/detail/explore-qualit
 const buildLifecycleState = readFileSync(join(root, "components/detail/use-build-detail-lifecycle.ts"), "utf8");
 const buildLifecycleDialogs = readFileSync(join(root, "components/detail/build-lifecycle-dialogs.tsx"), "utf8");
 const buildLifecyclePolicy = readFileSync(join(root, "lib/build-detail-lifecycle.mjs"), "utf8");
-const detailSource = [app, researchDetail, researchContent, researchState, exploreDetail, exploreContent, exploreState, exploreQuality, buildLifecycleDialogs].join("\n");
+const buildProgress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
+const detailSource = [app, researchDetail, researchContent, researchState, exploreDetail, exploreContent, exploreState, exploreQuality, buildLifecycleDialogs, buildProgress].join("\n");
 const buildStatusPills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
 const conversation = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
 const cardConversation = readFileSync(join(root, "components", "conversation", "card-conversation.tsx"), "utf8");
@@ -192,7 +193,8 @@ assert.match(detailComment, /if \(result\.error\)[\s\S]*?setComment\(""\);[\s\S]
 // Stage timeline: one shared renderer; advance hits the next legal stage,
 // archived never regresses, finished parks past the end.
 assert.match(detailTimeline, /export function StageTimeline\(\{ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal/, "the timeline lives in the detail module");
-assert.match(app, /import \{ BAND_LABEL, StageTimeline \} from "\.\/components\/detail\/stage-timeline"/, "detail bodies read the shared timeline");
+assert.match(buildProgress, /import \{ StageTimeline \} from "\.\/stage-timeline"/, "the extracted build progress body reads the shared timeline");
+assert.match(app, /import \{ BAND_LABEL \} from "\.\/components\/detail\/stage-timeline"/, "build worker presentation reads the shared band vocabulary");
 assert.doesNotMatch(app, /function StageTimeline\(/, "no local timeline copy survives in the panel");
 assert.match(detailTimeline, /const canAdvance = idx === current \+ 1 && legal\.has\(stage\)/, "advance hits the next legal stage only");
 assert.match(detailTimeline, /terminal !== "archived" && passed/, "archived stages never regress");
@@ -200,7 +202,7 @@ assert.match(detailTimeline, /terminal \? STAGE_SEQUENCE\.length/, "finished par
 // Scope list: dependency-ordered with waiting markers; ordering and rank
 // math live in lib (tested); status presentation arrives as functions.
 assert.match(detailScopes, /export function ScopesList\(\{ scopes, statusTone, statusGlyph, statusLabel/, "the scope list lives in the detail module");
-assert.match(app, /import \{ ScopesList \} from "\.\/components\/detail\/scopes-list"/, "detail bodies read the shared scope list");
+assert.match(buildProgress, /import \{ ScopesList \} from "\.\/scopes-list"/, "the extracted build progress body reads the shared scope list");
 assert.doesNotMatch(app, /function ScopesList\(/, "no local scope-list copy survives in the panel");
 assert.doesNotMatch(app, /function orderScopes\(/, "ordering lives in lib, never pasted in the panel");
 assert.match(detailScopes, /\{ordered\.map\(\(scope\) => \(/, "scopes render in dependency order");
@@ -291,7 +293,8 @@ assert.match(server, /updateCard\(cardId, questionWaitUpdates\(lastOutput\)\)/, 
 // List-view groups collapse with archived collapsed by default and stored
 // choices surviving reloads; completed build cards read as one state.
 assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
-assert.match(app, /card\?\.status === "completed" \? "where this card is" : <>where this card is/, "completed cards carry no stale stage hint");
+assert.match(buildProgress, /const positioned = progress\.scopes\.total > 0 \|\| card\.status === "completed"/, "completed cards carry no stale stage hint");
+assert.match(buildProgress, /positioned \? "where this card is" : <>where this card is · <CurrentStagePill/, "only cards without a terminal or scoped position show the live checkpoint pill");
 assert.match(detailTimeline, /isTerminalCheckpoint/, "the terminal Audit checkpoint cannot be selected as a reopen target");
 assert.match(detailTimeline, /disabled=\{!clickable \|\| isCurrent\}/, "every current workflow checkpoint is inert, not Audit alone");
 assert.match(server, /cardStatus: card\.status/, "the audit watchdog refuses an already-completed card");
@@ -352,7 +355,7 @@ assert.match(buildStatusPills, /\{!terminal \? \(started/, "completed and archiv
 assert.match(detailHero, /if \(card\.workerThreadId == null\) \{\s*return \{\s*kind: "calm",\s*title: "Not started",/, "the parked hero claims no checkpoint either");
 assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the live checkpoint treatment has one definition");
 assert.match(detailTimeline, /if \(isCurrent\) return CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");
-assert.match(app, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress header names the checkpoint with the pulsing pill, never detached plain text");
+assert.match(buildProgress, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress header names the checkpoint with the pulsing pill, never detached plain text");
 // Research/Explore share one presentation: track icon for position, content
 // icon for the playbook tag, statusTone for state, muted for the tag. Tiles
 // show identity (tag) while open cards add position (column) — the board
@@ -432,8 +435,8 @@ assert.match(disclosureModule, /function DisclosureSection\(\{ title, subtitle, 
 assert.doesNotMatch(app, /onShowArtifacts/, "the per-stage document buttons are gone; files and navigation never share one shape");
 assert.doesNotMatch(app, /workflow\.progressTitle/, "the progress block no longer repeats the disclosure title it sits under");
 assert.doesNotMatch(app, /Agent advances alone/, "the override coaching stops being permanent chrome");
-const progressSection = app.slice(app.indexOf("DISCLOSURE 1"), app.indexOf("<div ref={artifactsRef}>"));
-assert.ok(progressSection.length > 0 && progressSection.indexOf("</DisclosureSection>") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of progress, never nested inside it");
+const progressSection = app.slice(app.indexOf("<BuildProgress"), app.indexOf("<div ref={artifactsRef}>"));
+assert.ok(progressSection.length > 0 && progressSection.indexOf("<BuildProgress") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of extracted progress, never nested inside it");
 assert.match(readFileSync(join(root, "components", "detail", "workflow-map.tsx"), "utf8"), /export function WorkflowMap\(\{ open, onToggle/, "the map lives in the detail module");
 assert.doesNotMatch(app, /function WorkflowMap\(/, "no local map copy survives in the panel");
 assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");

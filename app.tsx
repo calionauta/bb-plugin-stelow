@@ -25,7 +25,6 @@ import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
-import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "./lib/card-checks.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
@@ -35,7 +34,7 @@ import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-updat
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
-import { ActivityPill, AttentionChip, BuildStatusPills, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
+import { ActivityPill, AttentionChip, BuildStatusPills, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
 import { GithubCompletionDialog } from "./components/github/github-completion-dialog";
@@ -52,10 +51,11 @@ import { CardDetailHeader } from "./components/manage/card-detail-header";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { InboxEventBanner, shouldShowInboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import { InputFiles } from "./components/detail/input-files";
-import { ScopesList } from "./components/detail/scopes-list";
 import { HERO_STYLE, heroFor } from "./components/detail/detail-hero";
 import { DetailHeroActions } from "./components/detail/detail-hero-actions";
-import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
+import { BAND_LABEL } from "./components/detail/stage-timeline";
+import { BuildProgress } from "./components/detail/build-progress";
+import { StelowQualityDirective } from "./components/detail/stelow-quality-directive";
 import { WorkflowMap } from "./components/detail/workflow-map";
 import { ResearchDetailBody } from "./components/detail/research-detail-body";
 import { ExploreDetailBody } from "./components/detail/explore-detail-body";
@@ -93,25 +93,6 @@ const INTENT_LABEL: Record<string, string> = {
 
 // Intent mapping lives server-side (lib/github-intent.mjs, single source).
 // The panel no longer guesses intent; the server derives it from live labels.
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  planning: "Planning",
-  approved: "Approved",
-  "in-progress": "In progress",
-  completed: "Completed",
-  archived: "Archived",
-  pending: "Pending",
-  done: "Done",
-  skipped: "Skipped",
-  blocked: "Blocked",
-  escalated: "Escalated",
-  failed: "Failed",
-};
-
-function statusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
-}
-
 // Stages are ordered workflow checkpoints; phases are board-level groups.
 // Explore calls its independent, one-off choices techniques instead.
 const STAGE_BAND = STAGE_TO_BAND;
@@ -2557,105 +2538,6 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
-// Scope progress hero: one glanceable readout above the per-scope list.
-// Presentation only — same scopes/tasks contract, no new data. Shows
-// overall scope + task bars, what is actively doing now, and what waits.
-// Checks rollup: every pending thing on the card grouped by type with
-// done/pending counts — questions, scopes, tasks, gaps, review. Reads the
-// same sources the heroes read (pending questions, scope states, the gap
-// summary RPC), never a second truth. A pending-only filter hides
-// all-done groups; all clear reads as one line, not an empty box.
-function CardChecksSection({ cardId, card, detail }: { cardId: string; card: CardItem; detail: CardDetailResponse }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [gaps, setGaps] = useState<{ matched: boolean; items: Array<{ description: string }>; fixed: number; documented: number; total: number } | null>(null);
-  const [pendingOnly, setPendingOnly] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    void rpc.call("gapSummary", { cardId }).then((result) => { if (!cancelled) setGaps(result); }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [rpc, cardId]);
-  const groups = groupCardChecks({
-    questions: [...detail.pendingQuestions, ...detail.expiredQuestions],
-    scopes: detail.scopes,
-    gaps,
-    review: card.status === "completed" ? { pending: card.hasPendingReview, done: !card.hasPendingReview } : null,
-  });
-  if (groups.length === 0) return null;
-  const visible = pendingOnly ? groups.filter((group) => groupState(group) === "pending") : groups;
-  return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-      <div className="flex items-center gap-2">
-        <h3 className="text-xs font-semibold text-foreground">Checks</h3>
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"><input type="checkbox" checked={pendingOnly} onChange={(event) => setPendingOnly(event.target.checked)} className="size-3.5 accent-primary" />Pending only</label>
-      </div>
-      {isExecutionUntracked({ activity: card.activity, scopes: detail.scopes }) ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">Executing with no scope marked started — the worker has not marked any scope in-progress or done. Scopes may be going untracked.</p> : null}
-      {isScopeTrackingMissing({ activity: card.activity, stage: card.stage, scopes: detail.scopes }) && card.status !== "completed" && card.status !== "archived" ? <p className="text-xs text-amber-700 dark:text-amber-300" role="status">No synced scopes on this card — planning likely used headings instead of machine blocks, so sync-scopes parsed nothing. Rewrite the spec with [SCOPE-N] blocks and resync before executing.</p> : null}
-      {visible.length === 0 ? <p className="text-xs text-muted-foreground">All clear — nothing pending on this card.</p> : visible.map((group) => (
-        <div key={group.id} className="space-y-0.5">
-          <p className="text-xs">
-            <span className="font-medium text-foreground">{group.label}</span>
-            <span className="ml-2 tabular-nums text-muted-foreground">{group.open.length}/{group.total} open</span>
-            {groupState(group) === "done" ? <span className="ml-2 text-emerald-700 dark:text-emerald-300">✓</span> : null}
-          </p>
-          {group.open.length > 0 ? <p className="truncate text-[11px] text-muted-foreground" title={group.open.join(" · ")}>{group.open.slice(0, 3).join(" · ")}{group.open.length > 3 ? ` +${group.open.length - 3} more` : ""}</p> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]; flow?: { leadMs: number | null; cycleMs: number | null } | null }) {
-  const isDone = (status: string | undefined) => isDoneStatus(status ?? "");
-  const scopesDone = scopes.filter((scope) => isDone(scope.status)).length;
-  const tasksAll = scopes.flatMap((scope) => scope.tasks);
-  const tasksDone = tasksAll.filter((task) => isDone(task.status)).length;
-  const doingScopes = scopes.filter((scope) => scope.status === "in-progress");
-  const doingTasks = tasksAll.filter((task) => task.status === "in-progress");
-  const blockedScopes = scopes.filter((scope) => ["blocked", "failed", "escalated"].includes(scope.status ?? ""));
-  const scopePct = scopes.length > 0 ? Math.round((scopesDone / scopes.length) * 100) : 0;
-  const taskPct = tasksAll.length > 0 ? Math.round((tasksDone / tasksAll.length) * 100) : 0;
-  const bar = (pct: number, tone: string) => (
-    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-      <div className={`h-full rounded-full transition-all ${tone}`} style={{ width: `${pct}%` }} />
-    </div>
-  );
-  return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-      {flow && (flow.leadMs !== null || flow.cycleMs !== null) ? (
-        <p className="text-xs text-muted-foreground" title="Lead runs idea to done; cycle runs first real movement to done. Unfinished cards show no times.">
-          <span className="font-semibold text-foreground">Lead {flow.leadMs !== null ? formatDuration(flow.leadMs) : "—"}</span>
-          <span aria-hidden> · </span>
-          <span>Cycle {flow.cycleMs !== null ? formatDuration(flow.cycleMs) : "—"}</span>
-        </p>
-      ) : null}
-      <div className="flex items-center gap-2 text-xs">
-        <span className="font-semibold">✓ {scopesDone}/{scopes.length} scopes</span>
-        {bar(scopePct, "bg-emerald-500")}
-      </div>
-      {tasksAll.length > 0 ? (
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-semibold">✓ {tasksDone}/{tasksAll.length} tasks</span>
-          {bar(taskPct, "bg-primary")}
-        </div>
-      ) : null}
-      {doingScopes.length > 0 || doingTasks.length > 0 ? (
-        <p className="text-xs">
-          <span className="font-semibold text-primary">● Doing now: </span>
-          <span className="text-muted-foreground">
-            {[...doingScopes.map((scope) => scope.name), ...doingTasks.filter((task) => !doingScopes.some((scope) => scope.tasks.includes(task))).map((task) => task.name)].slice(0, 3).join(" · ")}
-            {doingScopes.length + doingTasks.length > 3 ? ` +${doingScopes.length + doingTasks.length - 3} more` : ""}
-          </span>
-        </p>
-      ) : scopesDone === scopes.length && scopes.length > 0 ? (
-        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">✓ All scopes complete</p>
-      ) : null}
-      {blockedScopes.length > 0 ? (
-        <p className="text-xs"><span className="font-semibold text-destructive">⚠ Blocked: </span><span className="text-muted-foreground">{blockedScopes.map((scope) => scope.name).slice(0, 3).join(" · ")}</span></p>
-      ) : null}
-    </div>
-  );
-}
-
 type PresetManagerPreset = { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; builtIn: boolean; isDefault: boolean };
 const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "", modelId: "", reasoningLevel: "medium", permissionMode: "full" as "accept-edits" | "auto" | "full", environmentKind: "project-default" as "project-default" | "new-worktree" };
 
@@ -3503,66 +3385,6 @@ function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: b
 // Shared worker block: preset readout, state-appropriate recovery, and worker
 // history. Card lifecycle actions deliberately live in the card header.
 
-function fmtGapMs(ms: number | null): string | null {
-  if (ms === null || !Number.isFinite(ms) || ms < 0) return null;
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return hours % 24 === 0 ? `${hours / 24}d` : `${Math.floor(hours / 24)}d ${hours % 24}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
-
-// Build gaps: the ESCALATED → rework-scope loop surfaced on the mother
-// card. Resolved live through gapSummary — counts by resolution, each
-// escalation linked to its audit-gap scope status, plus lead/cycle time.
-// Read-only: workers advance the loop through gap-scopes and done, whose
-// refusals name the fix. Renders nothing before the first critique.
-function BuildGapsSection({ cardId }: { cardId: string }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [summary, setSummary] = useState<{
-    matched: boolean; total: number; fixed: number; documented: number; escalated: number;
-    items: Array<{ description: string; scopeStatus: string | null }>;
-    pendingScopes: number; unscoped: number;
-    leadMs: number | null; cycleMs: number | null; done: boolean;
-  } | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    void rpc.call("gapSummary", { cardId }).then((result) => { if (!cancelled) setSummary(result); }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [rpc, cardId]);
-  if (!summary?.matched) return null;
-  const blocked = summary.unscoped > 0 || summary.pendingScopes > 0;
-  const lead = fmtGapMs(summary.leadMs);
-  const cycle = fmtGapMs(summary.cycleMs);
-  return (
-    <section aria-label="Gaps and rework" className="rounded-lg border p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Gaps &amp; rework</h3>
-      <p className="pt-1 text-xs text-muted-foreground" title="From the execution critique Gap Registry">
-        {summary.total} gap{summary.total === 1 ? "" : "s"} · {summary.fixed} fixed · {summary.documented} documented · {summary.escalated} escalated
-        {lead ? ` · lead ${lead}` : ""}{cycle ? ` · cycle ${cycle}` : ""}
-      </p>
-      {summary.escalated > 0 ? (
-        <ul className="space-y-1 pt-2">
-          {summary.items.map((item) => (
-            <li key={item.description} className="flex items-start gap-2 text-xs">
-              <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${item.scopeStatus && isDoneStatus(item.scopeStatus) ? "bg-emerald-500" : "bg-amber-500"}`} />
-              <span className="flex-1">{item.description}</span>
-              {item.scopeStatus ? <Pill tone={statusTone(item.scopeStatus)}><span className="mr-1">{statusGlyph(item.scopeStatus)}</span>{statusLabel(item.scopeStatus)}</Pill> : <span className="text-amber-700 dark:text-amber-300">no scope yet</span>}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {blocked && !summary.done ? (
-        <p className="pt-2 text-xs text-amber-700 dark:text-amber-300">
-          {summary.unscoped > 0 ? `Done waits on ${summary.unscoped} escalated gap${summary.unscoped === 1 ? "" : "s"} without a rework scope — this card loops back: the worker runs gap-scopes, advances to execution, executes the new scopes, and re-runs the critique. ` : ""}
-          {summary.pendingScopes > 0 ? `${summary.pendingScopes} rework scope${summary.pendingScopes === 1 ? "" : "s"} still open.` : ""}
-        </p>
-      ) : null}
-      {summary.escalated > 0 && !blocked ? <p className="pt-2 text-xs text-muted-foreground">Every escalation links a finished rework scope.</p> : null}
-    </section>
-  );
-}
-
 function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; onBack?: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
@@ -3809,9 +3631,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // Staleness is the explicit restart-pending flag (set on assign, healed by
   // thread-birth comparison) with id-mismatch as backup.
   const presetStale = Boolean(detail && card?.workerThreadId && (detail.card.presetRestartPending || (detail.card.workerPresetId && detail.card.workerPresetId !== detail.card.presetId)));
-  const scopeDone = detail?.scopes.filter((s) => isDoneStatus(s.status ?? "")).length ?? 0;
-  const scopeTotal = detail?.scopes.length ?? 0;
-  const openScope = detail?.scopes.find((s) => s.status === "in-progress") ?? null;
   const artifactTotal = detail?.artifacts.filter((artifact) => artifact.role !== "evidence").length ?? 0;
   const artifactEvidenceTotal = detail?.artifacts.filter((artifact) => artifact.role === "evidence").length ?? 0;
   // Gate review entry: the document the pending decision is actually about.
@@ -3969,87 +3788,19 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 result matters more than following the stages. */}
             <PreviewSection cardId={card.id} />
 
-            {/* DISCLOSURE 1 — Workflow progress: where this card is, and the
-                one way to the files it produced. The reference (Workflow map)
-                is its own sibling section, never nested in here. */}
-            <DisclosureSection
-              title={archivedPresentation?.workflow.title ?? "Workflow progress"}
-              subtitle={archivedPresentation ? undefined : scopeTotal > 0 || card?.status === "completed" ? "where this card is" : <>where this card is · <CurrentStagePill stage={card.stage} /></>}
-              hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : undefined)}
-              // Production rides the action slot (count + the single way to the
-              // files) so no fact is printed twice once the section is open.
-              action={artifactTotal > 0 ? (
-                <button
-                  type="button"
-                  onClick={showArtifacts}
-                  title="Open this card's Artifacts section"
-                  className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-primary hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                >
-                  {artifactTotal} file{artifactTotal === 1 ? "" : "s"} ↓
-                </button>
-              ) : null}
-              defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
-            >
-              {card.stage === "select" && !archivedPresentation ? (
-                <p className="text-xs text-muted-foreground">
-                  Item selection: pick the item in the thread — the agent advances on its own, or advance manually below.
-                </p>
-              ) : null}
-              {detail?.scopeSync && (detail.scopeSync.state === "human-dialect" || detail.scopeSync.state === "unsynced") ? (
-                <p className="text-xs text-amber-700 dark:text-amber-300" role="status">
-                  {card?.status === "completed" || card?.status === "archived"
-                    ? `Scope sync parsed 0 of ${(detail.scopeSync.humanBlocks || detail.scopeSync.machineBlocks)} planned scopes — this card ended before tracking was established (pre-guard format). Its audit record below is the evidence of what was verified.`
-                    : detail.scopeSync.state === "human-dialect"
-                      ? `Scope sync parsed 0 of ${detail.scopeSync.humanBlocks} planned scopes — ${detail.scopeSync.specFile ?? "the spec"} uses headings instead of machine blocks. Rewrite openers as [SCOPE-N] Title, resync, then advance.`
-                      : `Scope sync parsed 0 of ${detail.scopeSync.machineBlocks} planned scopes — run bb stelow sync-scopes, then advance again.`}
-                </p>
-              ) : null}
-              {detail ? <CardChecksSection cardId={card.id} card={card} detail={detail} /> : null}
-              {detail && detail.scopes.length > 0 ? <><ScopeProgress scopes={detail.scopes} flow={{ leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null }} /><ScopesList scopes={detail.scopes} statusTone={statusTone} statusGlyph={statusGlyph} statusLabel={statusLabel} /></> : <p className="text-xs text-muted-foreground">{archivedPresentation?.workflow.emptyScopes ?? (card?.status === "completed" ? "Completed without scoped execution — no scope was ever tracked (pre-guard format). Verify the work through the audit record and files below; reopen an earlier stage to continue it under tracking." : "No scopes broken down yet — the agent is still shaping the card.")}</p>}
-              {detail ? (
-                <div className="space-y-2 border-t pt-3">
-                  <StageTimeline
-                    currentStage={card.stage}
-                    terminal={card?.status === "completed" ? "completed" : card?.status === "archived" ? "archived" : undefined}
-                    nextStages={detail.nextStages}
-                    artifacts={detail.artifacts}
-                    onPick={(stage) => setPendingAdvance(stage)}
-                    skips={detail.stageSkips ?? { offRoute: [], skipped: [] }}
-                    offRouteReason={card.intent && card.intent !== "unknown" ? `Not in this ${INTENT_LABEL[card.intent] ?? card.intent} route` : null}
-                  />
-                  {/* Coaching follows the thing it explains, and only when there
-                      is something to click. Archived cards already say why
-                      they stopped in the summary. */}
-                  {card.status === "archived" ? null : (
-                    <p className="text-xs text-muted-foreground">{card.status === "completed" ? "Workflow complete — choose an earlier stage to reopen it" : "The agent advances on its own · click a lit stage to override"}</p>
-                  )}
-                </div>
-              ) : null}
-              {detail?.mentionedFiles && detail.mentionedFiles.length > 0 ? (
-                <div className="space-y-1 border-t pt-3">
-                  <span className="text-xs font-medium text-muted-foreground">Files named in your request ({detail.mentionedFiles.length}):</span>
-                  <p className="text-[11px] text-muted-foreground">Paths your request spells out that exist in this workspace. Nothing is inferred from a file name.</p>
-                  <div className="flex flex-wrap gap-1">
-                    {detail.mentionedFiles.map((file) => (
-                      <button
-                        key={file.path}
-                        onClick={() => setViewerFile({ display: file.display, path: file.absolutePath, target: fileLinkTarget(card.workspaceKind === "exploratory", detail.fileEnvironmentId, file.relPath, file.hostId, file.absolutePath) })}
-                        className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-xs text-foreground hover:bg-muted"
-                        title={`Review ${file.display}`}
-                      >
-                        <span>📄</span>
-                        <span>{file.display}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </DisclosureSection>
-
-            {/* Gaps live on the mother card: every escalation names its
-                audit-gap scope status, and blocked done states name the fix.
-                Renders nothing before the first execution critique. */}
-            <BuildGapsSection cardId={card.id} />
+            {detail ? (
+              <BuildProgress
+                card={card}
+                detail={detail}
+                archivedPresentation={archivedPresentation}
+                artifactTotal={artifactTotal}
+                defaultOpen={hero?.kind === "working" || hero?.kind === "calm"}
+                intentLabels={INTENT_LABEL}
+                onOpenArtifacts={showArtifacts}
+                onPickStage={setPendingAdvance}
+                onViewFile={setViewerFile}
+              />
+            ) : <p className="text-xs text-muted-foreground">Loading…</p>}
 
             {/* The map is a reference, not card state: it sits beside the
                 progress section (same heading shape, same stage names) so
@@ -4531,45 +4282,6 @@ function OpenStelowAction({ threadId }: { threadId: string }) {
   // "Open thread" affordance (h-8), never a taller custom button — the slot
   // stretches its children, so a touch-target height here filled the bar.
   return <Button size="sm" variant="outline" className="shrink-0 self-center" onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this card">Stelow card ↗</Button>;
-}
-
-function StelowQualityDirective({ attributes, message, openWorkspaceFile }: PluginMessageDirectiveProps) {
-  const rpc = useRpc<typeof rpcContract>();
-  const path = (attributes.path ?? "").replace(/^\.\//, "");
-  const threadId = message.threadId;
-  const [seal, setSeal] = useState<{ status: string; failures: string[]; label: string | null } | null>(null);
-  useEffect(() => {
-    if (!path) return;
-    let cancelled = false;
-    void rpc.call("qualitySeal", { threadId, path }).then((result) => { if (!cancelled) setSeal(result); }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [rpc, threadId, path]);
-  if (!path) return null;
-  // Provenance, not truth: the RPC revalidates live; unknown shapes and
-  // unreadable files render unverified — a first-class state, not an error.
-  const tone = seal?.status === "verified"
-    ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
-    : seal?.status === "hypothesis-only"
-      ? "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20"
-      : seal?.status === "needs-revision"
-        ? "border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20"
-        : "border-zinc-500/40 bg-zinc-500/10 hover:bg-zinc-500/20";
-  const icon = seal?.status === "verified" ? "✓" : seal?.status === "hypothesis-only" ? "◐" : seal?.status === "needs-revision" ? "!" : "?";
-  const text = !seal ? "quality…" : seal.status === "verified" ? "verified" : seal.status === "hypothesis-only" ? "hypothesis" : seal.status === "needs-revision" ? "needs work" : "unverified";
-  const title = seal?.failures?.length ? `${seal.label ?? path}: ${seal.failures.join("; ")}` : (seal?.label ?? path);
-  const openFile = () => { openWorkspaceFile?.(path); };
-  return (
-    <button
-      onClick={openFile}
-      disabled={!openWorkspaceFile}
-      className={`cursor-pointer inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-60 ${tone}`}
-      title={title}
-    >
-      <span>{icon}</span>
-      <span className="text-muted-foreground">quality</span>
-      <span className="font-medium">{text}</span>
-    </button>
-  );
 }
 
 function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {

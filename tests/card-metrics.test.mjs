@@ -51,6 +51,7 @@ assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
 assert.match(server, /WHERE status = 'completed'/, "aggregates read finished cards, never actives");
@@ -58,8 +59,9 @@ assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per
 assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
 assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
 assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\), doingNow: z\.array\(z\.string\(\)\), verifiedHeadSha: z\.string\(\)\.nullable\(\) \}\),/, "detail schema carries times, doing names, and the verified HEAD as nullable");
-assert.match(app, /flow=\{\{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}\}/, "detail progress reads the card times");
-assert.match(app, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
+assert.match(buildProgress, /const flow = \{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}/, "detail progress reads the card times");
+assert.match(buildProgress, /<ScopeProgress scopes=\{detail\.scopes\} flow=\{flow\} \/>/, "the scoped progress view receives the card flow");
+assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
 
 // View persistence: returning from a card restores the picked view per
 // track (board, list, hill) instead of resetting to board. Unknown stored
