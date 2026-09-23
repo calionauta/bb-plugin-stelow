@@ -19,6 +19,8 @@ const manageRecovery = readFileSync(join(root, "components", "manage", "detail-r
 const detailBanner = readFileSync(join(root, "components", "detail", "inbox-event-banner.tsx"), "utf8");
 const detailInputFiles = readFileSync(join(root, "components", "detail", "input-files.tsx"), "utf8");
 const detailHero = readFileSync(join(root, "components", "detail", "detail-hero.tsx"), "utf8");
+const detailHeroActions = readFileSync(join(root, "components", "detail", "detail-hero-actions.tsx"), "utf8");
+const detailComment = readFileSync(join(root, "components", "conversation", "use-detail-comment.ts"), "utf8");
 const detailTimeline = readFileSync(join(root, "components", "detail", "stage-timeline.tsx"), "utf8");
 const detailScopes = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 const detailViewer = readFileSync(join(root, "components", "detail", "artifact-viewer-dialog.tsx"), "utf8");
@@ -110,10 +112,21 @@ assert.match(detailInputFiles, /: <div key={`/, "unopenable files render plain, 
 // Detail hero: one prioritized reading — archived history, then open
 // questions, then worker states, then calm. Shared by the three bodies.
 assert.match(detailHero, /export function heroFor\(card: HeroCardState, detail: HeroDetailState\)/, "the hero lives in the detail module");
-assert.match(app, /import \{ HERO_STYLE, HeroErrorNote, heroFor, type HeroKind \} from "\.\/components\/detail\/detail-hero"/, "detail bodies read the shared hero");
+assert.match(app, /import \{ HERO_STYLE, heroFor, type HeroKind \} from "\.\/components\/detail\/detail-hero"/, "detail bodies read the shared hero");
 assert.doesNotMatch(app, /function heroFor\(/, "no local hero copy survives in the panel");
 assert.match(detailHero, /return attentionHero\(card, detail\) \?\? workerHero\(card, detail\) \?\? calmHero\(card\)/, "priority reads attention, then worker, then calm");
 assert.match(detailHero, /if \(archived\) return archived\.hero/, "archived history wins over every live state");
+assert.match(app, /<DetailHeroActions/g, "all three detail bodies use the shared hero action rail");
+assert.equal((app.match(/<DetailHeroActions/g) ?? []).length, 3, "Build, Research, and Explore must not drift into separate action policies");
+assert.doesNotMatch(app, /hero\.kind === "error" && card\.workerThreadId/, "recovery branches are no longer pasted per detail body");
+assert.match(detailHeroActions, /heroKind === "paused" && card\.lastError \? "Retry" : "Resume"/, "paused failures retry while routine idles resume");
+assert.match(detailHeroActions, /card\.activity === "error" && card\.lastError && !preset\.stale/, "a decision can retry a concurrent failure only when the preset is current");
+assert.match(detailHeroActions, /<HeroErrorNote card=\{card\} \/>/, "a decision hero keeps the worker error beside the question");
+assert.match(detailHeroActions, /heroKind === "calm" && card\.activity === "idle"/, "only a live calm idle offers resume");
+assert.equal((app.match(/useDetailComment\(/g) ?? []).length, 3, "all three conversations share one comment submission seam");
+assert.doesNotMatch(app, /async function submitComment\(/, "no detail body keeps a private comment sender");
+assert.match(detailComment, /rpc\.call\("addCardComment", \{ cardId, target: "card", targetId: cardId, body \}\)/, "trimmed comments route to the card worker");
+assert.match(detailComment, /if \(result\.error\)[\s\S]*?setComment\(""\);[\s\S]*?await onChanged\(\);/, "failed comments stay drafted while success clears and refreshes");
 // Stage timeline: one shared renderer; advance hits the next legal stage,
 // archived never regresses, finished parks past the end.
 assert.match(detailTimeline, /export function StageTimeline\(\{ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal/, "the timeline lives in the detail module");

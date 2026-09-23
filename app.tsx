@@ -49,7 +49,8 @@ import { CreateResearchDialog } from "./components/creation/create-research-dial
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
 import { BatchStepper, ExpiredQuestionsSection, QuestionBatch, type ArtifactViewerMode, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
 import { CardConversation } from "./components/conversation/card-conversation";
-import { OpenThreadButton, WorkerSection } from "./components/worker-history/worker-history";
+import { useDetailComment } from "./components/conversation/use-detail-comment";
+import { WorkerSection } from "./components/worker-history/worker-history";
 import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
 import { CardDetailHeader } from "./components/manage/card-detail-header";
 import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
@@ -58,7 +59,8 @@ import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { InboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import { InputFiles } from "./components/detail/input-files";
 import { ScopesList } from "./components/detail/scopes-list";
-import { HERO_STYLE, HeroErrorNote, heroFor, type HeroKind } from "./components/detail/detail-hero";
+import { HERO_STYLE, heroFor, type HeroKind } from "./components/detail/detail-hero";
+import { DetailHeroActions } from "./components/detail/detail-hero-actions";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
 import { PreviewSection } from "./components/detail/preview-section";
@@ -3892,7 +3894,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const [index, setIndex] = useState<ResearchIndexState | null>(null);
   const [indexRefresh, setIndexRefresh] = useState(0);
   const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
-  const [comment, setComment] = useState("");
+  const { comment, setComment, submitComment } = useDetailComment({ cardId, onChanged });
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const { retrying, doRetry, repairing, doQualityRepair } = useDetailRecoveryActions({ cardId, trackNoun: "research", onChanged });
@@ -3923,17 +3925,6 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
     if (card?.status === "completed") void rpc.call("markCardNotificationsRead", { cardId, kind: "completed" }).catch(() => {});
   }, [cardId, card?.status, rpc]);
   useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
-
-  async function submitComment() {
-    if (!comment.trim()) return;
-    const result = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: comment.trim() });
-    if (result.error) {
-      toast.error(result.error);
-      return;
-    }
-    setComment("");
-    onChanged();
-  }
 
   async function doStart() {
     setStarting(true);
@@ -3995,56 +3986,17 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                       <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? null} tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." kind="research" />
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 pt-3">
-                      {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
-                        <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Bucket. Nothing runs until you start it.</span>
-                          <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
-                        </>
-                      ) : null}
-                      {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
-                      {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
-                      {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
-                        <Button size="sm" variant="outline" disabled={retrying} onClick={() => void doRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{retrying ? "Retrying…" : "Retry worker"}</Button>
-                      ) : null}
-                      {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
-                      {hero.kind === "error" && card.workerThreadId ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the research.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                      {hero.kind === "paused" ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the research.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title={card.lastError ? "Retry the failed worker in place — nothing is reset." : "Resume the idle worker in place — nothing is reset."}>{retrying ? "Retrying…" : card.lastError ? "Retry" : "Resume"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                      {(hero.kind === "working" || hero.kind === "calm") && card.workerThreadId && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
-                        <OpenThreadButton threadId={card.workerThreadId} />
-                      ) : null}
-                      {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the research.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                    </div>
+                    <DetailHeroActions
+                      card={card}
+                      heroKind={hero.kind}
+                      pending={Boolean(pendingFirst)}
+                      preset={{ stale: presetStale, providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }}
+                      state={{ starting, retrying, restarting }}
+                      continuation="continuing the research"
+                      onStart={doStart}
+                      onRetry={doRetry}
+                      onRestart={() => setRestartWorkerOpen(true)}
+                    />
                   </div>
                 </div>
                 {pendingFirst ? (
@@ -4171,7 +4123,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [stages, setStages] = useState<ResearchStrategyOption[]>([]);
-  const [comment, setComment] = useState("");
+  const { comment, setComment, submitComment } = useDetailComment({ cardId, onChanged });
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const { retrying, doRetry, repairing, doQualityRepair } = useDetailRecoveryActions({ cardId, trackNoun: "exploration", onChanged });
@@ -4191,17 +4143,6 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
   useInboxEventFocus(inboxEventId, inboxEvent, inboxEventRef);
 
   const stageLabel = card?.exploreStage ? (stages.find((entry) => entry.id === card.exploreStage)?.label ?? card.exploreStage) : null;
-
-  async function submitComment() {
-    if (!comment.trim()) return;
-    const result = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: comment.trim() });
-    if (result.error) {
-      toast.error(result.error);
-      return;
-    }
-    setComment("");
-    onChanged();
-  }
 
   async function doStart() {
     setStarting(true);
@@ -4252,56 +4193,17 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                       <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={RESEARCH_COLUMN_LABELS[researchColumnOf(card)] ?? null} tagLabel={stageLabel} tagTitle="Technique — the focused approach this exploration runs." kind="explore" />
                       {card.workspaceKind === "exploratory" ? <p className="text-xs text-muted-foreground" title={card.workspacePath ?? undefined}>Exploratory work · stored locally</p> : null}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 pt-3">
-                      {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
-                        <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Bucket. Nothing runs until you start it.</span>
-                          <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
-                        </>
-                      ) : null}
-                      {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
-                      {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
-                      {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
-                        <Button size="sm" variant="outline" disabled={retrying} onClick={() => void doRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{retrying ? "Retrying…" : "Retry worker"}</Button>
-                      ) : null}
-                      {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
-                      {hero.kind === "error" && card.workerThreadId ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the exploration.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                      {hero.kind === "paused" ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the exploration.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title={card.lastError ? "Retry the failed worker in place — nothing is reset." : "Resume the idle worker in place — nothing is reset."}>{retrying ? "Retrying…" : card.lastError ? "Retry" : "Resume"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                      {(hero.kind === "working" || hero.kind === "calm") && card.workerThreadId && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
-                        <OpenThreadButton threadId={card.workerThreadId} />
-                      ) : null}
-                      {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing the exploration.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                    </div>
+                    <DetailHeroActions
+                      card={card}
+                      heroKind={hero.kind}
+                      pending={Boolean(pendingFirst)}
+                      preset={{ stale: presetStale, providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }}
+                      state={{ starting, retrying, restarting }}
+                      continuation="continuing the exploration"
+                      onStart={doStart}
+                      onRetry={doRetry}
+                      onRestart={() => setRestartWorkerOpen(true)}
+                    />
                   </div>
                 </div>
                 {pendingFirst ? (
@@ -4383,7 +4285,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
   const [detailRefresh, setDetailRefresh] = useState(0);
-  const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState<string | null>(null);
@@ -4462,6 +4363,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       setError(err instanceof Error ? err.message : "Unable to load card.");
     }
   }, [cardId, inboxEventId, rpc]);
+  const { comment, setComment, submitComment } = useDetailComment({ cardId, onChanged: load });
 
   const loadWorkspaceRecovery = useCallback(async () => {
     if (card?.workspaceKind !== "exploratory") { setWorkspaceRecovery(null); return; }
@@ -4520,17 +4422,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   // closed card never refreshes into thin air.
   const pushRefreshTimers = useRef<number[]>([]);
   useEffect(() => () => { for (const timer of pushRefreshTimers.current) window.clearTimeout(timer); pushRefreshTimers.current = []; }, []);
-
-  async function submitComment() {
-    if (!comment.trim()) return;
-    const result = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: comment.trim() });
-    if (result.error) {
-      toast.error(result.error);
-      return;
-    }
-    setComment("");
-    await load();
-  }
 
   async function doArchive() {
     setArchiveOpen(false);
@@ -4879,61 +4770,23 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     {/* One primary action per state; secondary actions are real
                         buttons (outline/ghost) so affordances never read as
                         body text. */}
-                    <div className="flex flex-wrap items-center gap-2 pt-3">
-                      {!card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
-                        <>
-                          <span className="w-full text-xs text-muted-foreground">Not started — parked in Bucket. Nothing runs until you start it.</span>
-                          <Button size="sm" disabled={starting} onClick={() => void doStart()} title="Start a worker for this card now.">{starting ? "Starting…" : "Start"}</Button>
-                        </>
-                      ) : null}
-                      {hero.kind === "decision" && pendingFirst ? <span className="w-full text-xs text-muted-foreground">Answer directly below — the first question is open.</span> : null}
-                      {hero.kind === "decision" ? <HeroErrorNote card={card} /> : null}
-                      {hero.kind === "decision" && card.activity === "error" && card.lastError && !presetStale ? (
-                        <Button size="sm" variant="outline" disabled={retrying} onClick={() => void doRetry()} title="Retry the failed worker in place instead of answering — nothing is reset.">{retrying ? "Retrying…" : "Retry worker"}</Button>
-                      ) : null}
-                      {hero.kind === "decision" && card.workerThreadId ? <OpenThreadButton threadId={card.workerThreadId} /> : null}
-                      {hero.kind === "decision" && reviewTarget ? (
+                    <DetailHeroActions
+                      card={card}
+                      heroKind={hero.kind}
+                      pending={Boolean(pendingFirst)}
+                      preset={{ stale: presetStale, providerId: detail?.card.presetProviderId ?? null, modelId: detail?.card.presetModelId ?? null }}
+                      state={{ starting, retrying, restarting }}
+                      continuation="continuing from the current stage"
+                      retryTail=" from the current stage"
+                      extra={hero.kind === "decision" && reviewTarget ? (
                         <span className="w-full">
                           <Button size="sm" variant="outline" onClick={() => setViewerFile({ display: reviewTarget.display, path: reviewTarget.path, target: fileLinkTarget(card.workspaceKind === "exploratory", detail?.fileEnvironmentId ?? null, reviewTarget.relPath, reviewTarget.hostId, reviewTarget.path), mode: "review" })} title={`Read ${reviewTarget.display} before deciding`}>Review {reviewTarget.display} ↗</Button>
                         </span>
                       ) : null}
-                      {hero.kind === "error" && card.workerThreadId ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Retry"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                      {hero.kind === "paused" ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title={card.lastError ? "Retry the failed worker in place from the current stage — nothing is reset." : "Resume the idle worker in place from the current stage — nothing is reset."}>{retrying ? "Retrying…" : card.lastError ? "Retry" : "Resume"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                      {(hero.kind === "working" || hero.kind === "calm") && card.workerThreadId && !(hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived") ? (
-                        <OpenThreadButton threadId={card.workerThreadId} />
-                      ) : null}
-                      {hero.kind === "calm" && card.activity === "idle" && card.workerThreadId && card.status !== "completed" && card.status !== "archived" ? (
-                        <>
-                          {presetStale ? <span className="w-full text-xs text-muted-foreground">Preset changed to {detail?.card.presetProviderId}/{detail?.card.presetModelId} — needs a fresh worker.</span> : null}
-                          {presetStale ? (
-                            <Button size="sm" disabled={restarting} onClick={() => setRestartWorkerOpen(true)} title="Start a fresh worker on the new preset, continuing from the current stage.">{restarting ? "Restarting…" : "Restart worker…"}</Button>
-                          ) : (
-                            <Button size="sm" disabled={retrying} onClick={() => void doRetry()} title="Continue the same worker in place from the current stage — nothing is reset.">{retrying ? "Retrying…" : "Resume"}</Button>
-                          )}
-                          <OpenThreadButton threadId={card.workerThreadId} />
-                        </>
-                      ) : null}
-                    </div>
+                      onStart={doStart}
+                      onRetry={doRetry}
+                      onRestart={() => setRestartWorkerOpen(true)}
+                    />
                   </div>
                 </div>
                 {pendingFirst ? (

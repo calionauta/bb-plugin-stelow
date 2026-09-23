@@ -21,6 +21,7 @@ const githubAuto = readFileSync(join(root, "components", "github", "github-autom
 const githubState = readFileSync(join(root, "components", "github", "github-dialog-state.ts"), "utf8");
 const githubChrome = readFileSync(join(root, "components", "github", "github-dialog-chrome.tsx"), "utf8");
 const startCheck = readFileSync(join(root, "components", "start-immediately-check.tsx"), "utf8");
+const heroActions = readFileSync(join(root, "components", "detail", "detail-hero-actions.tsx"), "utf8");
 
 // Deferred start: creating spawns by default, and parks only where a human
 // chose it. The automation path carries the rule's autostart flag (default
@@ -126,7 +127,7 @@ assert.equal(((buildDialog.match(/setStartImmediately\] = useState\(true\)/g) ??
 assert.match(githubState, /const \[importStart, setImportStart\] = useState\(false\)/, "import defaults to parked");
 assert.match(githubState, /const \[automationStart, setAutomationStart\] = useState\(false\)/, "automation defaults to parked");
 assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 3, "build, research, and explore cards all offer Start");
-assert.match(app, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
+assert.match(heroActions, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
 // The Bucket is the board's first column on every track, and leaving it is
 // what starts a parked card (a build phase move spawns instead of lying).
 assert.match(server, /const decision = resolveCardMove\(card\.kind, status, \{ hasWorker: Boolean\(card\.worker_thread_id\) \}\)/, "the move policy knows whether the card already started");
