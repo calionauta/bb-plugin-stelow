@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   cardSubPath,
   inboxCardSubPath,
   parseStelowSubPath,
   trackOfCard,
   trackRootSubPath,
+  trackTitle,
 } from "../components/panel/stelow-route.mjs";
 
 const track = (value) => ({ kind: "track", track: value });
@@ -48,8 +50,20 @@ for (const value of [
   assert.deepEqual(parseStelowSubPath(value), track("build"), `invalid path falls back safely: ${value}`);
 }
 
-assert.equal(trackRootSubPath("research"), "research", "navigation uses the canonical track root");
-assert.equal(trackOfCard({ kind: "explore" }), "explore", "card navigation preserves lightweight tracks");
+const trackMetadata = [
+  ["inbox", "Inbox", "inbox"],
+  ["build", "Build", "build"],
+  ["research", "Research", "research"],
+  ["explore", "Explore", "explore"],
+  ["about", "About", "about"],
+];
+for (const [key, title, root] of trackMetadata) {
+  assert.equal(trackTitle(key), title, `${key} has one canonical title`);
+  assert.equal(trackRootSubPath(key), root, `${key} has one canonical route root`);
+}
+for (const kind of ["build", "research", "explore"]) {
+  assert.equal(trackOfCard({ kind }), kind, `${kind} cards stay on their source track`);
+}
 assert.equal(cardSubPath({ kind: "research" }, "card_abc123"), "research/card/card_abc123", "cards link under their track");
 assert.equal(
   cardSubPath({ kind: "build" }, "card_abc123", "evt_xyz789"),
@@ -58,4 +72,17 @@ assert.equal(
 );
 assert.equal(inboxCardSubPath("card_abc123", "evt_xyz789"), "inbox/card/card_abc123/event/evt_xyz789", "inbox events always identify both ids");
 
-console.log("panel routes test ok: tracks, cards, events, padding, and safe fallback");
+// React has no mounted renderer in this repository. These wiring pins catch
+// hidden keep-alive panels becoming active, which would restart subscriptions.
+const panelSource = readFileSync(new URL("../components/panel/stelow-panel.tsx", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
+assert.match(panelSource, /renderTrack\(track, track === tab\)/, "only the selected keep-alive track receives active=true");
+for (const component of ["BoardPanel", "ResearchPanel", "ExplorePanel"]) {
+  assert.match(
+    appSource,
+    new RegExp(`<${component} active=\\{active\\} />`),
+    `${component} must forward the routed active state`,
+  );
+}
+
+console.log("panel routes test ok: tracks, cards, events, padding, active state, and safe fallback");

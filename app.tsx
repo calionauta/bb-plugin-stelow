@@ -1602,11 +1602,11 @@ function AboutPanel() {
   );
 }
 
-function renderTrackPanel(tab: StelowTrack) {
+function renderTrackPanel(tab: StelowTrack, active: boolean) {
   if (tab === "inbox") return <InboxPanel />;
-  if (tab === "build") return <BoardPanel active />;
-  if (tab === "research") return <ResearchPanel active />;
-  if (tab === "explore") return <ExplorePanel active />;
+  if (tab === "build") return <BoardPanel active={active} />;
+  if (tab === "research") return <ResearchPanel active={active} />;
+  if (tab === "explore") return <ExplorePanel active={active} />;
   return <AboutPanel />;
 }
 

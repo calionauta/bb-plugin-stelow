@@ -37,7 +37,7 @@ function useRememberedTrack(route: ParsedStelowRoute, subPath: string): StelowTr
 
 function TrackPanels({ tab, renderTrack }: {
   tab: StelowTrack;
-  renderTrack: (tab: StelowTrack) => ReactNode;
+  renderTrack: (tab: StelowTrack, active: boolean) => ReactNode;
 }) {
   const panels: StelowTrack[] = ["inbox", "build", "research", "explore", "about"];
   return panels.map((track) => (
@@ -45,7 +45,7 @@ function TrackPanels({ tab, renderTrack }: {
       key={track}
       className={tab === track ? "min-h-0 flex-1" : "hidden"}
     >
-      {renderTrack(track)}
+      {renderTrack(track, track === tab)}
     </div>
   ));
 }
@@ -57,7 +57,7 @@ export function StelowPanel({ subPath, counts, aboutAlert, updateBadge, onSelect
   updateBadge: ReactNode;
   onSelectTrack: (track: StelowTrack) => void;
   renderCard: (route: ParsedStelowRoute & { kind: "card" | "bare-card" }) => ReactNode;
-  renderTrack: (tab: StelowTrack) => ReactNode;
+  renderTrack: (tab: StelowTrack, active: boolean) => ReactNode;
 }) {
   const route = useMemo(() => parseStelowSubPath(subPath), [subPath]);
   const lastTrack = useRememberedTrack(route, subPath);
