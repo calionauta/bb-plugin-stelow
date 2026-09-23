@@ -346,6 +346,8 @@ assert.doesNotMatch(app, /workflow\.progressTitle/, "the progress block no longe
 assert.doesNotMatch(app, /Agent advances alone/, "the override coaching stops being permanent chrome");
 const progressSection = app.slice(app.indexOf("DISCLOSURE 1"), app.indexOf("<div ref={artifactsRef}>"));
 assert.ok(progressSection.length > 0 && progressSection.indexOf("</DisclosureSection>") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of progress, never nested inside it");
+assert.match(readFileSync(join(root, "components", "detail", "workflow-map.tsx"), "utf8"), /export function WorkflowMap\(\{ open, onToggle/, "the map lives in the detail module");
+assert.doesNotMatch(app, /function WorkflowMap\(/, "no local map copy survives in the panel");
 assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");
 
 // Finished work is not blocked work. The review signal is its own quieter
