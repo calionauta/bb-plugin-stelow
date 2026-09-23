@@ -19,6 +19,7 @@ const manageRecovery = readFileSync(join(root, "components", "manage", "detail-r
 const detailBanner = readFileSync(join(root, "components", "detail", "inbox-event-banner.tsx"), "utf8");
 const detailInputFiles = readFileSync(join(root, "components", "detail", "input-files.tsx"), "utf8");
 const detailHero = readFileSync(join(root, "components", "detail", "detail-hero.tsx"), "utf8");
+const detailTimeline = readFileSync(join(root, "components", "detail", "stage-timeline.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
@@ -111,6 +112,14 @@ assert.match(app, /import \{ HERO_STYLE, HeroErrorNote, heroFor, type HeroKind \
 assert.doesNotMatch(app, /function heroFor\(/, "no local hero copy survives in the panel");
 assert.match(detailHero, /return attentionHero\(card, detail\) \?\? workerHero\(card, detail\) \?\? calmHero\(card\)/, "priority reads attention, then worker, then calm");
 assert.match(detailHero, /if \(archived\) return archived\.hero/, "archived history wins over every live state");
+// Stage timeline: one shared renderer; advance hits the next legal stage,
+// archived never regresses, finished parks past the end.
+assert.match(detailTimeline, /export function StageTimeline\(\{ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal/, "the timeline lives in the detail module");
+assert.match(app, /import \{ BAND_LABEL, StageTimeline \} from "\.\/components\/detail\/stage-timeline"/, "detail bodies read the shared timeline");
+assert.doesNotMatch(app, /function StageTimeline\(/, "no local timeline copy survives in the panel");
+assert.match(detailTimeline, /const canAdvance = idx === current \+ 1 && legal\.has\(stage\)/, "advance hits the next legal stage only");
+assert.match(detailTimeline, /terminal !== "archived" && passed/, "archived stages never regress");
+assert.match(detailTimeline, /terminal \? STAGE_SEQUENCE\.length/, "finished parks the cursor past the end");
 // Manage surfaces: menu, header, and confirm live in one home; the panel
 // reads them, never pastes them. Picking a menu entry closes the menu
 // before the action runs.
@@ -186,8 +195,8 @@ assert.match(server, /updateCard\(cardId, questionWaitUpdates\(lastOutput\)\)/, 
 // choices surviving reloads; completed build cards read as one state.
 assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
 assert.match(app, /card\?\.status === "completed" \? "where this card is" : <>where this card is/, "completed cards carry no stale stage hint");
-assert.match(app, /isTerminalCheckpoint/, "the terminal Audit checkpoint cannot be selected as a reopen target");
-assert.match(app, /disabled=\{!clickable \|\| isCurrent\}/, "every current workflow checkpoint is inert, not Audit alone");
+assert.match(detailTimeline, /isTerminalCheckpoint/, "the terminal Audit checkpoint cannot be selected as a reopen target");
+assert.match(detailTimeline, /disabled=\{!clickable \|\| isCurrent\}/, "every current workflow checkpoint is inert, not Audit alone");
 assert.match(server, /cardStatus: card\.status/, "the audit watchdog refuses an already-completed card");
 
 // Explore headers never regress to stage/skill wording.
@@ -245,7 +254,7 @@ assert.match(buildStatusPills, /const terminal = card\.status === "completed" \|
 assert.match(buildStatusPills, /\{!terminal \? \(started/, "completed and archived cards show no stage pill — every checkpoint already traversed");
 assert.match(detailHero, /if \(card\.workerThreadId == null\) \{\s*return \{\s*kind: "calm",\s*title: "Not started",/, "the parked hero claims no checkpoint either");
 assert.match(buildStatusPills, /export const CURRENT_STAGE_PILL_CLASS/, "the live checkpoint treatment has one definition");
-assert.match(app, /\? CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");
+assert.match(detailTimeline, /if \(isCurrent\) return CURRENT_STAGE_PILL_CLASS/, "the timeline cursor and the progress header share one pulsing shape");
 assert.match(app, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the progress header names the checkpoint with the pulsing pill, never detached plain text");
 // Research/Explore share one presentation: track icon for position, content
 // icon for the playbook tag, statusTone for state, muted for the tag. Tiles

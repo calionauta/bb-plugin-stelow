@@ -28,7 +28,7 @@ import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
 import { groupResearchArtifacts } from "./lib/artifact-groups.mjs";
-import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
+import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "./lib/card-checks.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
@@ -41,7 +41,7 @@ import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/
 import { branchWebLinks } from "./lib/remote-url.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
-import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
+import { ActivityPill, AttentionChip, BuildStatusPills, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
 import { GithubCompletionDialog } from "./components/github/github-completion-dialog";
@@ -61,6 +61,7 @@ import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { InboxEventBanner, useInboxEventFocus } from "./components/detail/inbox-event-banner";
 import { InputFiles } from "./components/detail/input-files";
 import { HERO_STYLE, HeroErrorNote, heroFor, type HeroKind } from "./components/detail/detail-hero";
+import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
@@ -114,7 +115,6 @@ function statusLabel(status: string) {
 // Stages are ordered workflow checkpoints; phases are board-level groups.
 // Explore calls its independent, one-off choices techniques instead.
 const STAGE_BAND = STAGE_TO_BAND;
-const BAND_LABEL: Record<string, string> = { ...PHASE_LABELS, research: "Research", explore: "Explore" };
 // Build board topology is centralized with the workflow vocabulary. The
 // aliases keep component call sites readable; they do not define columns.
 const COLUMNS = BUILD_BOARD_COLUMNS;
@@ -2577,88 +2577,6 @@ function openAskArtifact(
     target: fileLinkTarget(card.workspaceKind === "exploratory", fileEnvironmentId, artifact.path, artifact.hostId ?? "", artifact.absolutePath ?? artifact.path),
     mode,
   });
-}
-
-function StageTimeline({ currentStage, nextStages, artifacts, onPick, skips, offRouteReason, terminal }: { currentStage: string; nextStages: string[]; artifacts: Array<{ stage: string }>; onPick: (stage: string) => void; skips: { offRoute: string[]; skipped: Array<{ stage: string; reason: string }> }; offRouteReason: string | null; terminal?: "completed" | "archived" }) {
-  const curIdx = STAGE_SEQUENCE.indexOf(currentStage);
-  // A finished card has no current stage: park the cursor past the end so
-  // every reached stage reads as passed and nothing stays lit (or pulsing)
-  // as if work were still there. Earlier completed stages remain revisit-able;
-  // the terminal checkpoint and every archived stage are intentionally inert.
-  const current = terminal ? STAGE_SEQUENCE.length : curIdx >= 0 ? curIdx : 0;
-  const legal = new Set(nextStages.filter((stage) => stage && !stage.includes("(")));
-  const offRoute = new Set(skips.offRoute);
-  const skipReasonByStage = new Map(skips.skipped.map((entry) => [entry.stage, entry.reason]));
-  // group consecutive STAGE_SEQUENCE entries by STAGE_BAND
-  const bands = new Map<string, string[]>();
-  for (const stage of STAGE_SEQUENCE) {
-    const band = STAGE_BAND[stage] ?? "other";
-    if (!bands.has(band)) bands.set(band, []);
-    bands.get(band)!.push(stage);
-  }
-  return (
-    <div className="space-y-3">
-      {Array.from(bands.entries()).map(([band, stages]) => {
-        const bandActive = stages.some((stage) => stage === currentStage);
-        const hasAnyPassed = stages.some((stage) => STAGE_SEQUENCE.indexOf(stage) < current);
-        const hasAnyUpcoming = stages.some((stage) => STAGE_SEQUENCE.indexOf(stage) > current);
-        return (
-          <div key={band}>
-            <div className="mb-1 flex items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{BAND_LABEL[band] ?? band}</span>
-              <span className={`h-px flex-1 ${bandActive ? "bg-primary/40" : hasAnyPassed ? "bg-emerald-500/30" : "bg-border"}`} />
-            </div>
-            <div className="flex gap-1 overflow-x-auto pb-0.5 md:flex-wrap md:overflow-visible">
-              {stages.map((stage) => {
-                const idx = STAGE_SEQUENCE.indexOf(stage);
-                const isCurrent = !terminal && stage === currentStage;
-                // A completed card retains its final stage as a completion
-                // record. It is not an earlier stage to reopen from the UI.
-                const isTerminalCheckpoint = terminal === "completed" && stage === currentStage;
-                const isOffRoute = !isCurrent && offRoute.has(stage);
-                const skipReason = !isCurrent ? skipReasonByStage.get(stage) ?? null : null;
-                const passed = idx >= 0 && idx < current && !isOffRoute && !skipReason;
-                const canAdvance = idx === current + 1 && legal.has(stage);
-                const canRegress = terminal !== "archived" && passed && !isCurrent && !isTerminalCheckpoint;
-                const clickable = canAdvance || canRegress;
-                const produced = artifacts.filter((artifact) => artifact.stage === stage);
-                const dimmedTitle = skipReason ?? (isOffRoute ? offRouteReason ?? "Not in this workflow's route" : [STAGE_PRODUCES[stage], STAGE_SKILL[stage] ? `Defined by ${STAGE_SKILL[stage]} — see the Workflow map below for the link.` : null].filter(Boolean).join(" "));
-                return (
-                  <span key={stage} className={`inline-flex shrink-0 items-center gap-1 ${isOffRoute ? "opacity-60" : ""}`}>
-                    <button
-                      type="button"
-                      disabled={!clickable || isCurrent}
-                      title={dimmedTitle}
-                      onClick={() => onPick(stage)}
-                      className={`disabled:cursor-not-allowed cursor-pointer relative inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                      isCurrent
-                        ? CURRENT_STAGE_PILL_CLASS
-                        : passed
-                        ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300"
-                        : skipReason ?? isOffRoute
-                        ? "border border-dashed border-border text-muted-foreground/70 hover:border-primary/50 hover:text-foreground"
-                        : canAdvance
-                        ? "cursor-pointer border border-primary/40 text-primary hover:bg-primary/10"
-                        : "cursor-pointer border border-dashed border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                    }`}
-                      >
-                        {passed ? <span aria-hidden>✓</span> : isCurrent ? "●" : skipReason ? <span aria-hidden>⊘</span> : canAdvance ? "·" : "·"}
-                        <span className={isOffRoute ? "line-through" : ""}>{stageLabel(stage)}</span>
-                        {/* Count-only, never a control: files and navigation
-                            keep one shape each, and the pill stays one
-                            click target (advance/return). */}
-                        {produced.length > 0 ? <span className="text-muted-foreground">· {produced.length} file{produced.length === 1 ? "" : "s"}</span> : null}
-                        {canAdvance ? <span aria-hidden className="text-[9px]">→</span> : null}
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 function CardDrawerAdapter(props: PluginThreadPanelProps) {
