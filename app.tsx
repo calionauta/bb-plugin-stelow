@@ -34,6 +34,7 @@ import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/
 import { BuildPublication } from "./components/detail/build-publication";
 import { BuildDiff } from "./components/detail/build-diff";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
+import { shouldShowBuildDiff } from "./lib/build-diff-presentation.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
@@ -3676,13 +3677,14 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
 
             {/* Diff is the pre-completion review instrument. Once completed, Git changes owns history,
                 except when the tree became dirty again or an attached recovery checkout needs review. */}
-            <BuildDiff
-              cardId={cardId}
-              visible={Boolean(card && ((card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit")) || (card.status === "completed" && publicationDirty) || (card.status === "completed" && workspaceRecovery?.kind === "attached")))}
-              workspaceKind={card?.workspaceKind ?? "unknown"}
-              fileEnvironmentId={detail?.fileEnvironmentId ?? null}
-              onOpenFile={setViewerFile}
-            />
+            {card && shouldShowBuildDiff({ status: card.status, stage: card.stage, publicationDirty, recoveryKind: workspaceRecovery?.kind ?? null }) ? (
+              <BuildDiff
+                cardId={cardId}
+                workspaceKind={card.workspaceKind}
+                fileEnvironmentId={detail?.fileEnvironmentId ?? null}
+                onOpenFile={setViewerFile}
+              />
+            ) : null}
 
             {card.status === "completed" ? (
               <BuildPublication

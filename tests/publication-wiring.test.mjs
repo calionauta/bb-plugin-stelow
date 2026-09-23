@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
+const diff = readFileSync(join(root, "components/detail/build-diff.tsx"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8") + publication;
 
 for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullPush", "publicationPullRequestAction"]) {
@@ -65,7 +66,7 @@ assert.match(app, /✓ Pushed/, "a finished push reads as pushed, not as raw ter
 assert.match(app, /Waiting — git push typed but NOT sent/, "legacy typed-only shells name what is missing instead of looking executed");
 assert.match(server, /stelow commit diff: diffPatch (unavailable|failed)/, "patch fetch failures are logged for diagnosis instead of swallowed");
 assert.match(server, /initialPatches is empty even/, "commit targets fetch every missing patch, not just on-demand ones");
-assert.match(app, /file\.loadMode === "too_large"/, "the commit viewer distinguishes too-large files from missing patches");
+assert.match(diff, /file\.loadMode === "too_large"/, "the commit viewer distinguishes too-large files from missing patches");
 assert.match(server, /recordPublication\(cardId, "squash_merge", message, verdict\.sha\)/, "only a verified squash SHA enters publication history");
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
@@ -87,12 +88,12 @@ assert.match(app, /Merge PR…/, "PR merge remains an explicit user action");
 assert.match(publication, /submitting/, "publication confirmations prevent duplicate write requests");
 assert.match(app, /Repository rules, approvals, checks, and merge queues remain authoritative/, "merge confirmation does not bypass repository policy");
 assert.match(app, /Publication history/, "the user can audit prior publication actions");
-assert.match(publication, /filesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
+assert.match(diff, /filesEpoch/, "commit files render as collapsed accordions with expand/collapse all");
 assert.match(app, /Next: publish the branch\./, "a saved commit names its pending step as structure, not buried prose");
 assert.doesNotMatch(app, /What remains to publish it/, "publish steps live as sections with action rows, never as buttons inside prose");
 assert.doesNotMatch(app, /Push the branch — this panel runs/, "no call-to-action hides inside a paragraph anymore");
-assert.match(app, /card\.status !== "completed" && \(card\.stage === "diff-gate"/, "the Diff review panel yields to Git changes once the card is completed");
-assert.match(app, /card\.status === "completed" && publicationDirty/, "pending changes on a Done card stay reviewable in Diff while the commit action lives in Git changes");
+assert.match(app, /card && shouldShowBuildDiff\(\{ status: card\.status, stage: card\.stage, publicationDirty, recoveryKind:/, "the extracted Diff feature remains wired to card stage, dirty-tree state, and recovery state");
+assert.match(app, /<BuildDiff[\s\S]*onOpenFile=\{setViewerFile\}/, "working-tree files continue to open in the shared artifact viewer");
 assert.match(app, /Copy command/, "post-commit commands name what they copy instead of a bare Copy");
 assert.match(app, /Saved locally on/, "a successful local save has an explicit outcome state");
 assert.match(app, /View commit/, "recorded local commits can be inspected from Done");
@@ -110,9 +111,9 @@ assert.match(publication, /async function doAction\(\) \{[\s\S]*?\} finally \{[\
 assert.match(publication, /setPushTerminals\(\{ ok: false, error:/, "push-shell listing failures stay visible instead of disappearing");
 assert.match(publication, /action === "sync" \? \[10000, 25000\] : \[8000, 20000\]/, "push and sync results refresh automatically at their established follow-up times");
 assert.match(publication, /action === "push" \|\| action === "sync"[\s\S]*schedulePushRefresh\(action\)/, "both remote publication paths schedule delayed terminal refreshes");
-assert.match(publication, /publicationCommitDiff/, "commit review remains owned by the publication feature");
+assert.match(diff, /rpc\.call\("publicationCommitDiff", \{ cardId, commitSha: sha \}\)/, "commit review loads the selected SHA for the current card from the diff feature owner");
 assert.match(publication, /function PublicationActions/, "publication write confirmations and execution have one focused owner");
-assert.match(publication, /function CommitReview/, "commit diff loading and presentation have one focused owner");
+assert.match(publication, /<CommitDiffReview[\s\S]*openCommit\(savedSha\)[\s\S]*openCommit\(event\.commitSha!\)/, "saved and historical commits both navigate through the diff feature owner");
 assert.match(app, /<BuildPublication[\s\S]*onDirtyChange=\{setPublicationDirty\}/, "CardDetailBody delegates publication UI while observing dirty-tree state");
 assert.doesNotMatch(readFileSync(join(root, "app.tsx"), "utf8"), /publicationPullRequestAction/, "CardDetailBody no longer owns publication RPC actions");
 

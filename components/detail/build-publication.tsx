@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { experimental_Diff as DiffView, UrlLink, useRpc } from "@get-bb/plugin-sdk/app";
+import { UrlLink, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { z } from "zod";
 import { branchWebLinks } from "../../lib/remote-url.mjs";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DisclosureChevron, DisclosureSection } from "../disclosure";
+import { CommitDiffReview } from "./build-diff";
 import type { rpcContract } from "../../server";
 
 type PublicationAction = "commit" | "squash" | "push" | "sync" | "ready" | "draft" | "merge";
 type PublicationStatus = z.infer<typeof rpcContract.publicationStatus.output>;
-type PublicationCommitDiff = z.infer<typeof rpcContract.publicationCommitDiff.output>;
 type PushTerminal = { id: string; title: string; pushState: "succeeded" | "failed" | "waiting" | "running"; outputUnavailable: boolean; createdAt: number; pushExit: number | null; outputTail: string | null };
 type PushTerminals = { ok: boolean; error: string | null; remote: { owner: string; repo: string; webUrl: string } | null; terminals: PushTerminal[] };
 
@@ -100,7 +100,7 @@ function PublicationSection(props: PublicationSectionProps) {
   const publishesToDefaultBranch = Boolean(publicationDefaultBranch && publication?.branch?.current === publicationDefaultBranch);
 
   return <>
-    <CommitReview cardId={cardId}>{ (openCommit) => <>
+    <CommitDiffReview cardId={cardId}>{ (openCommit) => <>
       <DisclosureSection title="Git changes" hint={loading ? "Checking BB workspace…" : publication?.source ?? "No live BB workspace"} defaultOpen action={<Button size="sm" variant="outline" disabled={loading} onClick={() => void loadPublication()} title="Re-check the workspace and pull-request state in BB">Refresh</Button>}>
         {!publication && !loading ? <p className="text-xs text-muted-foreground">Publication status is unavailable.</p> : null}
         {recoveryContent}
@@ -114,7 +114,7 @@ function PublicationSection(props: PublicationSectionProps) {
           {publication.events.length > 0 ? <div className="border-t pt-3"><p className="mb-1 font-medium text-foreground">Publication history</p><ul className="space-y-1 text-muted-foreground">{publication.events.map((event) => <li key={event.id}>{event.action.replaceAll("_", " ")} · {event.commitSha ? event.message.replace(event.commitSha, event.commitSha.slice(0, 7)) : event.message}{event.commitSha ? <> · <button type="button" className="cursor-pointer text-primary underline-offset-2 hover:underline" onClick={() => void openCommit(event.commitSha!)} title={`View ${event.commitSha.slice(0, 7)} in BB`}>View commit</button></> : null}{event.pullRequestUrl ? <> · <UrlLink href={event.pullRequestUrl} className="text-primary underline-offset-2 hover:underline">Open PR</UrlLink></> : null}</li>)}</ul></div> : null}
         </div> : null}
       </DisclosureSection>
-    </> }</CommitReview>
+    </> }</CommitDiffReview>
     <PublicationActions
       cardId={cardId}
       action={action}
@@ -181,32 +181,6 @@ function PublicationActions(props: PublicationActionsProps) {
 
   return       <Dialog open={action !== null} onOpenChange={(open) => { if (!open && !submitting) setAction(null); }}><DialogContent><DialogHeader><DialogTitle>{action === "commit" ? publishesToDefaultBranch ? `Save a local commit to ${publicationDefaultBranch}?` : "Commit this workspace?" : action === "squash" ? "Squash this branch into its local base?" : action === "push" ? "Push this branch now?" : action === "sync" ? "Sync & push now?" : action === "ready" ? "Mark this pull request ready?" : action === "draft" ? "Convert this pull request to draft?" : "Merge this pull request?"}</DialogTitle><DialogDescription className="space-y-2">{action === "commit" && publishesToDefaultBranch ? <p>BB will create a local commit on <code>{publicationDefaultBranch}</code> in the card’s selected checkout. It will not fetch remote updates, merge incoming changes, push, or create a pull request. This bypasses a pull request, so continue only when the checkout is current and direct commits are intended.</p> : null}{action === "commit" && !publishesToDefaultBranch ? <p>BB will commit the current changes on the card’s workspace host. This is manual and will use BB’s configured Git identity and hooks.</p> : null}{action === "squash" ? <p>BB will combine this branch’s committed changes into one local commit on its base branch. It will not fetch remote updates, push, or create a pull request. It bypasses pull-request review, so use it only when direct local integration is intended.</p> : null}{action === "push" ? <p>This panel will run <code>git push</code> in this card’s worker checkout and stream the output into Push shells below — nothing hides in a sidebar you have to hunt. Rejections and auth prompts appear there; an auth prompt is finished in BB’s sidebar terminal.</p> : null}{action === "sync" ? <p>This panel will run <code>git pull --rebase</code> followed by <code>git push</code> in this card’s worker checkout — one click, linear history, no merge commits. If the pull conflicts, the rebase aborts itself and nothing changes; resolve the conflict where you edit code and push again. The output streams into Push shells below.</p> : null}{action === "push" && behind > 0 ? <p>This branch is {behind} behind — a push will be rejected. Cancel and use Sync &amp; push instead: it pulls with rebase, then pushes.</p> : null}{action === "ready" ? <p>This makes the existing pull request ready for review. It does not merge or deploy anything.</p> : null}{action === "draft" ? <p>This returns the existing pull request to draft. Reviews and checks remain visible.</p> : null}{action === "merge" ? <p>BB will re-check the PR and request a {mergeMethod} merge. Repository rules, approvals, checks, and merge queues remain authoritative.</p> : null}</DialogDescription></DialogHeader><DialogFooter><DialogClose asChild><Button variant="outline" disabled={submitting}>Cancel</Button></DialogClose><Button disabled={submitting} onClick={() => void doAction()}>{submitting ? "Submitting…" : action === "commit" ? publishesToDefaultBranch ? `Save local commit to ${publicationDefaultBranch}` : "Commit workspace" : action === "squash" ? "Squash branch locally" : action === "push" ? "Push branch" : action === "sync" ? "Sync & push" : action === "ready" ? "Mark ready" : action === "draft" ? "Mark draft" : "Merge PR"}</Button></DialogFooter></DialogContent></Dialog>;
 }
-function CommitReview({ cardId, children }: { cardId: string; children: (openCommit: (sha: string) => void) => ReactNode }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [commitSha, setCommitSha] = useState<string | null>(null);
-  const [commitDiff, setCommitDiff] = useState<PublicationCommitDiff | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [filesExpanded, setFilesExpanded] = useState(false);
-  const [filesEpoch, setFilesEpoch] = useState(0);
-
-  async function openCommit(sha: string) {
-    setCommitSha(sha);
-    setCommitDiff(null);
-    setLoading(true);
-    setFilesExpanded(false);
-    setFilesEpoch((epoch) => epoch + 1);
-    try {
-      setCommitDiff(await rpc.call("publicationCommitDiff", { cardId, commitSha: sha }));
-    } catch (err) {
-      setCommitDiff({ found: false, commitSha: null, shortstat: null, files: [], truncated: false, error: err instanceof Error ? err.message : "Unable to load this commit." });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return <>{children(openCommit)}      <Dialog open={commitSha !== null} onOpenChange={(open) => { if (!open) { setCommitSha(null); setCommitDiff(null); } }}><DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle>Commit {commitSha?.slice(0, 7)}</DialogTitle><DialogDescription>This is the diff BB recorded for this card’s local commit. Viewing it never changes the workspace or remote repository.</DialogDescription></DialogHeader>{loading ? <p className="text-xs text-muted-foreground">Loading commit diff from BB…</p> : null}{commitDiff?.error ? <p className="text-xs text-destructive">{commitDiff.error}</p> : null}{commitDiff?.found ? <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">{commitDiff.shortstat || `${commitDiff.files.length} changed files`}</p>{commitDiff.files.length > 1 ? <div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => { setFilesExpanded(true); setFilesEpoch((epoch) => epoch + 1); }}>Expand all</Button><Button size="sm" variant="ghost" onClick={() => { setFilesExpanded(false); setFilesEpoch((epoch) => epoch + 1); }}>Collapse all</Button></div> : null}</div>{commitDiff.files.map((file) => <details key={`${commitSha}-${filesEpoch}-${file.path}`} open={filesExpanded} className="group rounded-md border"><summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />{file.path} · {file.changeKind} · +{file.additions}/-{file.deletions}{file.binary ? " · binary" : file.patch ? "" : file.loadMode === "too_large" ? " · too large" : " · no patch"}</summary><div className="space-y-1 border-t p-2">{file.binary ? <p className="text-xs text-muted-foreground">Binary file — BB does not render its patch.</p> : file.patch ? DiffView ? <DiffView patch={file.patch} path={file.path} view="unified" /> : <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{file.patch.slice(0, 4000)}</pre> : file.loadMode === "too_large" ? <p className="text-xs text-muted-foreground">This file is too large for BB to render its patch.</p> : <p className="text-xs text-muted-foreground">BB did not return a patch for this file.</p>}{file.truncated ? <p className="text-xs text-muted-foreground">This file’s patch is truncated.</p> : null}</div></details>)}{commitDiff.truncated ? <p className="text-xs text-muted-foreground">The commit diff is truncated — some files may be missing.</p> : null}</div> : null}</DialogContent></Dialog></>;
-}
-
 async function copyText(text: string, label: string) {
   try { await navigator.clipboard.writeText(text); toast.success(`${label} copied.`); return; } catch { /* fallback below */ }
   try {
