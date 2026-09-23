@@ -16,7 +16,12 @@ type LifecycleOptions = {
 type LifecycleResult = Parameters<typeof buildLifecycleOutcome>[1];
 type LifecycleContext = Parameters<typeof buildLifecycleOutcome>[2];
 
-function reportOutcome(action: BuildLifecycleAction, result: LifecycleResult, context?: LifecycleContext, setSplitError?: Dispatch<SetStateAction<string | null>>) {
+function reportOutcome(
+  action: BuildLifecycleAction,
+  result: LifecycleResult,
+  context?: LifecycleContext,
+  setSplitError?: Dispatch<SetStateAction<string | null>>,
+) {
   const outcome = buildLifecycleOutcome(action, result, context);
   if (!outcome.ok) {
     if (action === "split") setSplitError?.(outcome.error ?? null);
@@ -26,6 +31,15 @@ function reportOutcome(action: BuildLifecycleAction, result: LifecycleResult, co
     toast.success(outcome.success ?? "Done.");
   }
   return outcome;
+}
+
+async function refreshAfterReport(
+  action: "retry" | "restart" | "start",
+  result: LifecycleResult,
+  onChanged: () => void | Promise<void>,
+) {
+  const outcome = reportOutcome(action, result);
+  if (outcome.refresh) await onChanged();
 }
 
 function useRemovalState(cardId: string) {
@@ -86,23 +100,20 @@ function useWorkerResumeActions(cardId: string, onChanged: () => void | Promise<
   async function doRetry() {
     setRetrying(true);
     try {
-      reportOutcome("retry", await rpc.call("retryWorker", { cardId }));
-      await onChanged();
+      await refreshAfterReport("retry", await rpc.call("retryWorker", { cardId }), onChanged);
     } finally { setRetrying(false); }
   }
   async function doRestartWorker() {
     setRestartWorkerOpen(false);
     setRestarting(true);
     try {
-      reportOutcome("restart", await rpc.call("restartWorker", { cardId }));
-      await onChanged();
+      await refreshAfterReport("restart", await rpc.call("restartWorker", { cardId }), onChanged);
     } finally { setRestarting(false); }
   }
   async function doStart() {
     setStarting(true);
     try {
-      reportOutcome("start", await rpc.call("startWorker", { cardId }));
-      await onChanged();
+      await refreshAfterReport("start", await rpc.call("startWorker", { cardId }), onChanged);
     } finally { setStarting(false); }
   }
   return { restarting, retrying, starting, restartWorkerOpen, setRestartWorkerOpen, doRetry, doRestartWorker, doStart };
@@ -116,17 +127,32 @@ function useRepairAndSplitActions(cardId: string, intentLabels: Record<string, s
 
   async function doRepair(intent?: string): Promise<boolean> {
     setRepairOpen(false);
-    const result = await rpc.call("reseedCard", { cardId, ...(intent ? { intent: intent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" } : {}) });
+    const intentValue = intent as
+      | "new-product"
+      | "feature"
+      | "bugfix"
+      | "refactor"
+      | "investigate"
+      | "unknown";
+    const result = await rpc.call("reseedCard", {
+      cardId,
+      ...(intent ? { intent: intentValue } : {}),
+    });
     const outcome = reportOutcome("repair", result, { intent, intentLabels });
-    if (outcome.ok) await onChanged();
+    if (outcome.refresh) await onChanged();
     return outcome.ok;
   }
   async function doRequestSplit() {
     setSplitting(true);
     setSplitError(null);
     try {
-      const outcome = reportOutcome("split", await rpc.call("requestSplitProposal", { cardId }), undefined, setSplitError);
-      if (outcome.ok) await onChanged();
+      const outcome = reportOutcome(
+        "split",
+        await rpc.call("requestSplitProposal", { cardId }),
+        undefined,
+        setSplitError,
+      );
+      if (outcome.refresh) await onChanged();
     } catch (err) {
       setSplitError(err instanceof Error ? err.message : "Could not request a split.");
     } finally { setSplitting(false); }
@@ -158,29 +184,46 @@ function usePromotionActions(cardId: string, card: BuildLifecycleCard, onChanged
     if (!card) return;
     setPromoting(true);
     try {
-      const outcome = reportOutcome("promote", await rpc.call("promoteCard", { cardId, name: promoteName.trim() || card.displayName }));
-      if (outcome.ok) { setPromoteOpen(false); await onChanged(); }
+      const outcome = reportOutcome("promote", await rpc.call("promoteCard", {
+        cardId,
+        name: promoteName.trim() || card.displayName,
+      }));
+      if (outcome.refresh) {
+        setPromoteOpen(false);
+        await onChanged();
+      }
     } finally { setPromoting(false); }
   }
   return { promoteOpen, setPromoteOpen, promoteName, setPromoteName, promoting, doPromote };
 }
 
-function useRecoveryActions(cardId: string, onChanged: () => void | Promise<void>, onOpenRecoveryAudit: (cardId: string) => void, recovery: ReturnType<typeof useWorkspaceRecovery>) {
+function useRecoveryActions(
+  cardId: string,
+  onChanged: () => void | Promise<void>,
+  onOpenRecoveryAudit: (cardId: string) => void,
+  recovery: ReturnType<typeof useWorkspaceRecovery>,
+) {
   const rpc = useRpc<typeof rpcContract>();
   const [recoveryAttachProjectId, setRecoveryAttachProjectId] = useState<string | null>(null);
   const [creatingRecoveryAudit, setCreatingRecoveryAudit] = useState(false);
   async function doAttachRecoveryCheckout() {
     if (!recoveryAttachProjectId) return;
-    const outcome = reportOutcome("attach-recovery", await rpc.call("attachRecoveryCheckout", { cardId, projectId: recoveryAttachProjectId }));
-    if (!outcome.ok) return;
+    const outcome = reportOutcome("attach-recovery", await rpc.call("attachRecoveryCheckout", {
+      cardId,
+      projectId: recoveryAttachProjectId,
+    }));
+    if (!outcome.refreshRecovery) return;
     setRecoveryAttachProjectId(null);
     await Promise.all([recovery.loadWorkspaceRecovery(), onChanged()]);
   }
   async function doCreateRecoveryAudit() {
     setCreatingRecoveryAudit(true);
     try {
-      const outcome = reportOutcome("create-recovery-audit", await rpc.call("createRecoveryAudit", { cardId }));
-      if (!outcome.ok) return;
+      const outcome = reportOutcome(
+        "create-recovery-audit",
+        await rpc.call("createRecoveryAudit", { cardId }),
+      );
+      if (!outcome.refreshRecovery) return;
       await Promise.all([recovery.loadWorkspaceRecovery(), onChanged()]);
       if (outcome.auditCardId) onOpenRecoveryAudit(outcome.auditCardId);
     } finally { setCreatingRecoveryAudit(false); }

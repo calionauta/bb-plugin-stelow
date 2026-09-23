@@ -15,7 +15,6 @@ const exploreState = readFileSync(join(root, "components/detail/use-explore-deta
 const exploreQuality = readFileSync(join(root, "components/detail/explore-quality-section.tsx"), "utf8");
 const buildLifecycleState = readFileSync(join(root, "components/detail/use-build-detail-lifecycle.ts"), "utf8");
 const buildLifecycleDialogs = readFileSync(join(root, "components/detail/build-lifecycle-dialogs.tsx"), "utf8");
-const buildLifecyclePolicy = readFileSync(join(root, "lib/build-detail-lifecycle.mjs"), "utf8");
 const buildDetail = readFileSync(join(root, "components/detail/build-detail-body.tsx"), "utf8");
 const buildContent = readFileSync(join(root, "components/detail/build-detail-content.tsx"), "utf8");
 const buildHero = readFileSync(join(root, "components/detail/build-detail-hero.tsx"), "utf8");
@@ -322,7 +321,6 @@ assert.ok(
 for (const rpc of ["cancelCard", "deleteCard", "discardPreview", "discardCardChanges", "promoteCard", "attachRecoveryCheckout", "createRecoveryAudit", "reseedCard", "retryWorker", "restartWorker", "startWorker", "requestSplitProposal"]) {
   assert.equal((buildLifecycleState.match(new RegExp(`rpc\\.call\\("${rpc}"`, "g")) ?? []).length, 1, `Build lifecycle has one ${rpc} seam`);
 }
-assert.match(buildLifecyclePolicy, /result\.archived[\s\S]*close: true/, "archive closes only after the host confirms archival");
 assert.equal((buildLifecycleDialogs.match(/<ConfirmActionDialog/g) ?? []).length, 6, "the lifecycle dialog leaf owns repair, restart, archive, delete, discard, and recovery confirmation");
 assert.match(buildLifecycleDialogs, /<Dialog open=\{state\.promoteOpen\}/, "promotion keeps its named-project dialog in the lifecycle leaf");
 

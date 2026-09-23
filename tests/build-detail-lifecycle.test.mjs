@@ -41,37 +41,61 @@ test("discard preview refuses before opening confirmation", () => {
   });
 });
 
-test("promotion and recovery handoffs refresh only on success", () => {
-  assert.equal(buildLifecycleOutcome("promote", { ok: false, error: "No project" }).reload, undefined);
+test("promotion and recovery effects follow successful handoffs", () => {
+  assert.equal(buildLifecycleOutcome("promote", { ok: false, error: "No project" }).refresh, undefined);
   assert.deepEqual(buildLifecycleOutcome("promote", { ok: true, projectName: "Atlas" }), {
     ok: true,
     success: 'Project "Atlas" created — a new project worker is continuing the workflow.',
-    reload: true,
+    refresh: true,
   });
-  assert.equal(buildLifecycleOutcome("attach-recovery", { ok: true }).reload, true);
-  assert.equal(buildLifecycleOutcome("attach-recovery", { ok: false, error: "Unregistered project" }).error, "Unregistered project");
-  assert.equal(buildLifecycleOutcome("create-recovery-audit", { ok: true }).auditCardId, undefined);
-  assert.equal(buildLifecycleOutcome("create-recovery-audit", { ok: true, auditCardId: "card-audit" }).auditCardId, "card-audit");
+  assert.deepEqual(buildLifecycleOutcome("attach-recovery", { ok: true }), {
+    ok: true,
+    success: "Checkout attached for review. No files, branch, or Git history were changed.",
+    refresh: true,
+    refreshRecovery: true,
+  });
+  assert.equal(buildLifecycleOutcome("attach-recovery", { ok: false }).refreshRecovery, undefined);
+  assert.equal(buildLifecycleOutcome("create-recovery-audit", { ok: true }).refreshRecovery, undefined);
+  assert.deepEqual(buildLifecycleOutcome("create-recovery-audit", { ok: true, auditCardId: "card-audit" }), {
+    ok: true,
+    success: "Recovery audit started in the registered project workspace.",
+    refresh: true,
+    refreshRecovery: true,
+    auditCardId: "card-audit",
+  });
 });
 
-test("repair reports the chosen intent and refuses a false reseed", () => {
-  assert.deepEqual(buildLifecycleOutcome("repair", { reseeded: false, error: "Active worker" }, { intent: "bugfix", intentLabels: { bugfix: "Bug fix" } }), {
-    ok: false,
-    error: "Active worker",
-  });
-  assert.equal(buildLifecycleOutcome("repair", { reseeded: true, reclassified: true }, { intent: "bugfix", intentLabels: { bugfix: "Bug fix" } }).success, "Workflow reclassified as Bug fix and restarted from triage.");
-  assert.equal(buildLifecycleOutcome("repair", { reseeded: true, reclassified: false }, { intent: "feature" }).success, "Fresh worker started from triage.");
+test("repair reports the chosen intent and refreshes only after a reseed", () => {
+  const failed = buildLifecycleOutcome(
+    "repair",
+    { reseeded: false, error: "Active worker" },
+    { intent: "bugfix", intentLabels: { bugfix: "Bug fix" } },
+  );
+  assert.deepEqual(failed, { ok: false, error: "Active worker" });
+  assert.equal(failed.refresh, undefined);
+  const reclassified = buildLifecycleOutcome(
+    "repair",
+    { reseeded: true, reclassified: true },
+    { intent: "bugfix", intentLabels: { bugfix: "Bug fix" } },
+  );
+  assert.equal(reclassified.success, "Workflow reclassified as Bug fix and restarted from triage.");
+  assert.equal(reclassified.refresh, true);
+  assert.equal(
+    buildLifecycleOutcome("repair", { reseeded: true, reclassified: false }, { intent: "feature" }).success,
+    "Fresh worker started from triage.",
+  );
 });
 
-test("worker and split outcomes preserve host errors and success effects", () => {
+test("resume actions always refresh while split refreshes only on success", () => {
+  for (const action of ["retry", "restart", "start"]) {
+    assert.equal(buildLifecycleOutcome(action, { ok: false }).refresh, true, `${action} refreshes failed host state`);
+    assert.equal(buildLifecycleOutcome(action, { ok: true }).refresh, true);
+  }
   assert.equal(buildLifecycleOutcome("retry", { ok: false }).error, "Retry failed. Try Restart fresh instead.");
-  assert.equal(buildLifecycleOutcome("retry", { ok: true }).reload, true);
   assert.equal(buildLifecycleOutcome("restart", { ok: false, error: "Cannot stop" }).error, "Cannot stop");
-  assert.equal(buildLifecycleOutcome("restart", { ok: true }).success, "Worker restarted — continuing from the current stage.");
   assert.equal(buildLifecycleOutcome("start", { ok: false }).error, "Start failed.");
-  assert.equal(buildLifecycleOutcome("start", { ok: true }).success, "Worker started — the card moved from Bucket and is triaging.");
-  assert.equal(buildLifecycleOutcome("split", { ok: false, error: "No worker" }).error, "No worker");
-  assert.equal(buildLifecycleOutcome("split", { ok: true }).reload, true);
+  assert.equal(buildLifecycleOutcome("split", { ok: false }).refresh, undefined);
+  assert.equal(buildLifecycleOutcome("split", { ok: true }).refresh, true);
 });
 
 test("unknown lifecycle action fails fast", () => {

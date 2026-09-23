@@ -16,7 +16,8 @@ export type BuildLifecycleOutcome = {
   success?: string;
   error?: string;
   close?: boolean;
-  reload?: boolean;
+  refresh?: boolean;
+  refreshRecovery?: boolean;
   auditCardId?: string;
 };
 
