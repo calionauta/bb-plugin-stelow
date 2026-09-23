@@ -6,7 +6,6 @@ import {
   UrlLink,
   experimental_Diff as DiffView,
   experimental_FileLink as FileLink,
-  experimental_NewThreadComposer as NewThreadComposer,
   experimental_PermissionModePicker as PermissionModePicker,
   experimental_ProviderModelPicker as ProviderModelPicker,
   useBbContext,
@@ -27,35 +26,40 @@ import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxFilterEntries, isOpenI
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { parseResearchIndexSections } from "./lib/research-index-sections.mjs";
 import { researchOpportunityHint } from "./lib/research-opportunity-summary.mjs";
-import { groupArtifactsByStage, groupResearchArtifacts } from "./lib/artifact-groups.mjs";
+import { groupResearchArtifacts } from "./lib/artifact-groups.mjs";
 import { BUILD_BOARD_COLUMNS, BUILD_BOARD_COLUMN_LABELS, BUILD_BOARD_VISIBLE_COLUMNS, PHASE_LABELS, STAGE_PRODUCES, STAGE_SEQUENCE, STAGE_SKILL, STAGE_TO_BAND, WORKFLOW_PHASES, buildBoardColumnFor, stageInfoUrl, stageLabel } from "./lib/workflow-vocabulary.mjs";
 import { formatDuration } from "./lib/card-metrics.mjs";
 import { groupCardChecks, groupState, isExecutionUntracked, isScopeTrackingMissing } from "./lib/card-checks.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill } from "./lib/hill-position.mjs";
 import { inheritAskArtifact, normalizeAskArtifactPath } from "./lib/question-batch.mjs";
-import { isSplitQuestion, splitOptionDescription, splitQuestionText, splitSelectionNotice } from "./lib/split-question-presentation.mjs";
 import { questionCopy } from "./lib/question-presentation.mjs";
-import { SPLIT_KEEP_LABEL } from "./lib/split-proposal.mjs";
-import { expiredAnswerPayload } from "./lib/expired-question-answers.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
 import { branchWebLinks } from "./lib/remote-url.mjs";
-import { workerActionPolicy, workerSectionPolicy } from "./lib/worker-action-policy.mjs";
-import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-intent-policy.mjs";
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
-import { formatTokenUsage, totalTokenUsage, sumTokenBreakdowns } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
 import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
-import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
-import { StartImmediatelyCheck } from "./components/start-immediately-check";
-import { DisclosureChevron } from "./components/disclosure";
+import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
+import { GithubCompletionDialog } from "./components/github/github-completion-dialog";
+import { WorkflowSettings, sanitizeReviewGates, type Appetite, type ResearchStrategyOption, type ReviewGates } from "./components/creation/creation-settings";
+import { StrategyPicker } from "./components/creation/strategy-picker";
+import { CreateBuildDialog } from "./components/creation/create-build-dialog";
+import { CreateResearchDialog } from "./components/creation/create-research-dialog";
+import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
+import { BatchStepper, ExpiredQuestionsSection, QuestionBatch, type ArtifactViewerMode, type AskArtifact, type BatchItem } from "./components/conversation/question-batch";
+import { CardConversation } from "./components/conversation/card-conversation";
+import { OpenThreadButton, WorkerSection, relativeTime } from "./components/worker-history/worker-history";
+import { ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactFilename, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget } from "./components/artifacts/artifact-inventory";
+import { CardDetailHeader } from "./components/manage/card-detail-header";
+import { ConfirmActionDialog } from "./components/manage/confirm-action-dialog";
+import { useDetailRecoveryActions } from "./components/manage/detail-recovery-actions";
+import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import type { PreviewInfo, rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { CONTROL_HOVER_TRANSITION } from "@/components/ui/motion";
-import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -215,7 +219,6 @@ type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
 type CardDetailResponse = Extract<BoardResult, { card: unknown; comments: unknown; pendingQuestions: unknown }>;
 type CardComment = CardDetailResponse["comments"][number];
-type ExpiredQuestion = CardDetailResponse["expiredQuestions"][number];
 
 function statusTone(status: string) {
   if (["completed", "done"].includes(status)) return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
@@ -240,52 +243,6 @@ function statusGlyph(status: string) {
 const buildStatusPillProps = (card: CardItem) => ({ card, statusTone, intentLabel: (intent: string) => INTENT_LABEL[intent] });
 
 const DEBOUNCE_MS = 250;
-
-const APPETITE_OPTIONS = [
-  { value: "Lean", label: "Lean", description: "Smallest useful cycle: 1–2 scopes and one direct direction." },
-  { value: "Core", label: "Core", description: "Standard cycle: main job, obvious edge cases, and 3–5 scopes." },
-  { value: "Complete", label: "Complete", description: "Broad exploration and deeper validation across the whole request." },
-] as const;
-
-const REVIEW_GATE_OPTIONS = [
-  { value: "spec", label: "Product spec", description: "Review the shaped product specification and assumptions." },
-  { value: "interface", label: "Interface direction", description: "Pick the interface proposal after reviewing the alternatives." },
-  { value: "scope", label: "Build scopes", description: "Confirm the planned build scopes (IN/OUT)." },
-  { value: "tech", label: "Technical plan", description: "Review the technical plan before execution." },
-  { value: "diff", label: "Code diff", description: "Review the final code diff." },
-] as const;
-
-const REVIEW_GATE_VALUES = REVIEW_GATE_OPTIONS.map((option) => option.value);
-
-// One-click templates write into the same multi-select state — they are
-// shortcuts, never a second model. The six legacy rungs plus named
-// shortcuts for combinations the ladder could never express.
-const REVIEW_GATE_PRESETS: ReadonlyArray<{ label: string; gates: ReviewGate[] }> = [
-  { label: "Auto", gates: [] },
-  { label: "Product Spec Gate", gates: ["spec"] },
-  { label: "Product Spec + Interface Gates", gates: ["spec", "interface"] },
-  { label: "Product Spec + Interface + Scopes", gates: ["spec", "interface", "scope"] },
-  { label: "Product Spec + Interface + Tech Review", gates: ["spec", "interface", "scope", "tech"] },
-  { label: "Product Spec + Interface + Tech Review + Code Diff", gates: ["spec", "interface", "scope", "tech", "diff"] },
-  { label: "Interface only", gates: ["interface"] },
-  { label: "Spec + tech plan", gates: ["spec", "tech"] },
-];
-
-type Appetite = (typeof APPETITE_OPTIONS)[number]["value"];
-type ReviewGate = (typeof REVIEW_GATE_OPTIONS)[number]["value"];
-type ReviewGates = ReviewGate[];
-
-function sanitizeReviewGates(value: unknown): ReviewGates {
-  if (!Array.isArray(value)) return [];
-  const valid: ReadonlySet<string> = new Set(REVIEW_GATE_VALUES);
-  const gates = value.filter((entry): entry is ReviewGate => typeof entry === "string" && valid.has(entry));
-  return REVIEW_GATE_VALUES.filter((atom): atom is ReviewGate => gates.includes(atom));
-}
-
-function reviewGatesSummary(gates: string[]): string {
-  if (gates.length === 0) return "Auto — the agent decides everything";
-  return gates.map((gate) => REVIEW_GATE_OPTIONS.find((option) => option.value === gate)?.label ?? gate).join(", ");
-}
 
 // Unified attention: ONE flag (needsAttention) + the reason (kind). All four
 // Attention label derived from the card's own activity/status — no separate
@@ -496,17 +453,6 @@ function shouldShowInboxEventBanner(event: InboxEventSnapshot | null, hero: { ki
     || (event.kind === "paused" && hero?.kind === "paused"));
 }
 
-function relativeTime(timestamp: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1_000));
-  if (seconds < 60) return "Just now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "Yesterday" : `${days}d ago`;
-}
-
 function PanelSkeleton({ rows = 4 }: { rows?: number }) {
   return <div className="space-y-3" aria-label="Loading" aria-busy="true">
     {Array.from({ length: rows }, (_, index) => <div key={index} className="h-20 animate-pulse rounded-md border bg-muted/30" />)}
@@ -606,17 +552,6 @@ function InboxPanel() {
   return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} title={entry.description} className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? FILTER_ACTIVE[entry.id] ?? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}><span aria-hidden className={`size-1.5 rounded-full ${FILTER_DOT[entry.id] ?? "bg-primary"}`} />{entry.label}</button>)}</div><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={unreadOnly} onChange={(event) => setUnreadOnly(event.target.checked)} className="size-4 accent-primary" />Unread only</label></div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{emptyTitle}</h2><p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p></section>}</div></div>;
 }
 
-function composerExecutionOf(request: NewThreadRequest) {
-  return {
-    providerId: request.providerId,
-    model: request.model,
-    reasoningLevel: request.reasoningLevel,
-    permissionMode: request.permissionMode,
-    ...(request.serviceTier ? { serviceTier: request.serviceTier } : {}),
-    ...(request.executionInputSources ? { executionInputSources: request.executionInputSources } : {}),
-  };
-}
-
 function BoardPanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
@@ -643,16 +578,10 @@ function BoardPanel({ active }: { active: boolean }) {
   // it; refreshes update state silently.
   const firstLoadRef = useRef(true);
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
-  const [createBuildError, setCreateBuildError] = useState<string | null>(null);
-  // Deferred start: unchecked parks the card in Bucket with no worker.
-  // Checked (default) preserves today's behavior — spawn on submit.
-  const [startImmediately, setStartImmediately] = useState(true);
   // Workflow preferences stay visible under the composer: a collapsed
   // Settings hides consequential choices (planning depth, review gates)
   // the user would otherwise never discover. The dialog frame keeps a
   // fixed max height with inner scroll, so nothing jumps or resizes.
-  const [prompt, setPrompt] = useState("");
-  const [intent, setIntent] = useState<"new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown">("unknown");
   const [appetite, setAppetite] = useState<Appetite>("Lean");
   // Review gates are a pure multi-select (empty ≡ Auto). The composer
   // remembers the last used selection per surface; board defaults fill
@@ -763,33 +692,6 @@ function BoardPanel({ active }: { active: boolean }) {
   // header Bucket button, opened from the "park in Bucket" copy.
   const bucketGallery = useBucketGallery(grouped.inbox ?? []);
 
-  async function start(request: NewThreadRequest) {
-    const targetProjectId = request.projectId || activeProjectId;
-    if (!targetProjectId) return;
-    // Keep files structured: a path printed in a prompt is not an attachment,
-    // so BB cannot render or open it in the worker thread.
-    const textPart = request.input.find((part) => part.type === "text");
-    const text = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
-    const attachments = request.input
-      .filter((part): part is { type: "localFile" | "localImage"; path: string } => (part.type === "localFile" || part.type === "localImage") && "path" in part && typeof part.path === "string" && part.path.length > 0)
-      .map((part) => ({ type: part.type, path: part.path }));
-    const prompt = text;
-    if (!prompt.trim()) return;
-    setCreateBuildError(null);
-    try {
-      const result = await rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode: reviewGates, start: startImmediately, execution: composerExecutionOf(request) });
-      setPrompt("");
-      setCreateBuildOpen(false);
-      navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Card started in Triage. Stelow will triage it." : "Card parked in Bucket. Start it from the card when ready.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to start the card.";
-      setCreateBuildError(message);
-      toast.error(message);
-      throw error;
-    }
-  }
-
   async function moveCard(cardId: string, target: string) {
     if (!(COLUMNS as readonly string[]).includes(target)) return;
     const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "analysis" | "planning" | "execution" | "review" | "completed" | "archived" });
@@ -835,36 +737,18 @@ function BoardPanel({ active }: { active: boolean }) {
             </div>
           ) : null}
 
-          <Dialog open={createBuildOpen} onOpenChange={(open) => { setCreateBuildOpen(open); if (open) { setStartImmediately(true); setCreateBuildError(null); } }}>
-            <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Start new issue</DialogTitle>
-                <DialogDescription>Describe the outcome, problem, or change. Planning depth and review checkpoints below start from the board defaults — keep them or adjust, then submit.</DialogDescription>
-              </DialogHeader>
-              {createBuildError ? <CreateCardAlert message={createBuildError} /> : null}
-              <NewThreadComposer
-                defaultProjectId={activeProjectId ?? undefined}
-                defaultProviderId={analysisWorkerPreset?.providerId}
-                defaultModel={analysisWorkerPreset?.modelId}
-                defaultReasoningLevel={analysisWorkerPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-                defaultPermissionMode={analysisWorkerPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-                initialPrompt={prompt}
-                placeholder="What should Stelow build?"
-                layout="contained"
-                draftKey="stelow-board-create"
-                onSubmit={(request) => start(request)}
-              />
-              <div className="grid gap-4 border-t pt-4">
-                <AgentConfigBox
-                  lines={[`Analysis phase runs on ${analysisWorkerPreset?.name ?? "Default"}`]}
-                  onConfigure={() => setBoardPresetsOpen(true)}
-                />
-                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
-                {bucketGallery.bucketGallery}
-                <WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={setAppetite} onReviewGatesChange={setReviewGates} groupNamePrefix="create" />
-              </div>
-            </DialogContent>
-          </Dialog>
+          <CreateBuildDialog
+            open={createBuildOpen}
+            onOpenChange={setCreateBuildOpen}
+            activeProjectId={activeProjectId}
+            analysisPreset={analysisWorkerPreset}
+            appetite={appetite}
+            reviewGates={reviewGates}
+            onAppetiteChange={setAppetite}
+            onReviewGatesChange={setReviewGates}
+            bucketGallery={bucketGallery}
+            onOpenPresets={() => setBoardPresetsOpen(true)}
+          />
 
           <GithubIssuesDialog
             open={githubOpen}
@@ -940,8 +824,6 @@ function BoardPanel({ active }: { active: boolean }) {
   );
 }
 
-type ResearchStrategyOption = { id: string; label: string; skill: string; blurb: string; emoji: string; keywords: string[] };
-
 // Second track beside Build: lightweight research (Bucket / Doing / Done)
 // driven by one stelow-product-* strategy per card. No stages, no gates —
 // the card produces a index, and opportunities fan out into Build cards.
@@ -973,13 +855,6 @@ function ResearchPanel({ active }: { active: boolean }) {
   // Background refreshes must never flash loading UI (see BoardPanel).
   const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState("");
-  const [strategy, setStrategy] = useState<string | null>(null);
-  const [strategyAttention, setStrategyAttention] = useState(0);
-  // Deferred start: unchecked parks the card in Bucket with no worker.
-  // Checked (default) preserves today's behavior — spawn on submit.
-  const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
   const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
@@ -1043,37 +918,6 @@ function ResearchPanel({ active }: { active: boolean }) {
   const bucketGallery = useBucketGallery(grouped.inbox ?? []);
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
 
-  async function start(request: NewThreadRequest) {
-    const targetProjectId = request.projectId || activeProjectId;
-    if (!targetProjectId) return;
-    const textPart = request.input.find((part) => part.type === "text");
-    const text = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
-    const attachments = request.input
-      .filter((part): part is { type: "localFile" | "localImage"; path: string } => (part.type === "localFile" || part.type === "localImage") && "path" in part && typeof part.path === "string" && part.path.length > 0)
-      .map((part) => ({ type: part.type, path: part.path }));
-    if (!text.trim()) return;
-    if (!strategy) {
-      toast.error("Pick a strategy first.");
-      setStrategyAttention((count) => count + 1);
-      // Throw so the composer keeps the draft: a blocked submit must never
-      // lose what the user typed (SDK clears the draft only on resolve).
-      throw new Error("Pick a strategy first.");
-    }
-    setCreateError(null);
-    try {
-      const result = await rpc.call("createResearchCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, strategy, start: startImmediately, execution: composerExecutionOf(request) });
-      setPrompt("");
-      setCreateOpen(false);
-      navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Research started. Results will appear on this card when ready." : "Research parked in Bucket. Start it from the card when ready.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to start research.";
-      setCreateError(message);
-      toast.error(message);
-      throw error;
-    }
-  }
-
   async function moveCard(cardId: string, target: string) {
     if (!(RESEARCH_COLUMNS as readonly string[]).includes(target)) return;
     const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "doing" | "done" | "archived" });
@@ -1108,39 +952,16 @@ function ResearchPanel({ active }: { active: boolean }) {
             active={active}
           />
 
-          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStrategy(null); setStartImmediately(true); setCreateError(null); } }}>
-            <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Start new research</DialogTitle>
-                <DialogDescription>Pick a strategy below, then describe what to investigate. One strategy per round — run more rounds from the card to compound perspectives.</DialogDescription>
-              </DialogHeader>
-              {createError ? <CreateCardAlert message={createError} /> : null}
-              <div className="grid gap-4">
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Choose a strategy</span>
-                  <StrategyPicker strategies={strategies} value={strategy} onChange={setStrategy} groupName="strategy-pick" attentionSignal={strategyAttention} />
-                </div>
-                <AgentConfigBox
-                  lines={[`Research runs on ${effectiveResearchPreset?.name ?? "Default"}${researchBandPreset ? "" : " (board default)"}`]}
-                  onConfigure={() => setResearchPresetsOpen(true)}
-                />
-                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
-                {bucketGallery.bucketGallery}
-                <NewThreadComposer
-                  defaultProjectId={activeProjectId ?? undefined}
-                  defaultProviderId={effectiveResearchPreset?.providerId}
-                  defaultModel={effectiveResearchPreset?.modelId}
-                  defaultReasoningLevel={effectiveResearchPreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-                  defaultPermissionMode={effectiveResearchPreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-                  initialPrompt={prompt}
-                  placeholder="What should Stelow investigate?"
-                  layout="contained"
-                  draftKey="stelow-research-create"
-                  onSubmit={(request) => start(request)}
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
+          <CreateResearchDialog
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            activeProjectId={activeProjectId}
+            strategies={strategies}
+            researchPreset={effectiveResearchPreset}
+            hasBandPreset={Boolean(researchBandPreset)}
+            bucketGallery={bucketGallery}
+            onOpenPresets={() => setResearchPresetsOpen(true)}
+          />
 
           <PresetManagerDialog
             open={researchPresetsOpen}
@@ -1220,13 +1041,6 @@ function ExplorePanel({ active }: { active: boolean }) {
   // Background refreshes must never flash loading UI (see BoardPanel).
   const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState("");
-  const [stage, setStage] = useState<string | null>(null);
-  const [stageAttention, setStageAttention] = useState(0);
-  // Deferred start: unchecked parks the card in Bucket with no worker.
-  // Checked (default) preserves today's behavior — spawn on submit.
-  const [startImmediately, setStartImmediately] = useState(true);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView);
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
   const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
@@ -1287,37 +1101,6 @@ function ExplorePanel({ active }: { active: boolean }) {
   const bucketGallery = useBucketGallery(grouped.inbox ?? []);
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
 
-  async function start(request: NewThreadRequest) {
-    const targetProjectId = request.projectId || activeProjectId;
-    if (!targetProjectId) return;
-    const textPart = request.input.find((part) => part.type === "text");
-    const text = textPart && "text" in textPart ? (textPart as { text: string }).text.trim() : "";
-    const attachments = request.input
-      .filter((part): part is { type: "localFile" | "localImage"; path: string } => (part.type === "localFile" || part.type === "localImage") && "path" in part && typeof part.path === "string" && part.path.length > 0)
-      .map((part) => ({ type: part.type, path: part.path }));
-    if (!text.trim()) return;
-    if (!stage) {
-      toast.error("Pick a stage first.");
-      setStageAttention((count) => count + 1);
-      // Throw so the composer keeps the draft: a blocked submit must never
-      // lose what the user typed (SDK clears the draft only on resolve).
-      throw new Error("Pick a stage first.");
-    }
-    setCreateError(null);
-    try {
-      const result = await rpc.call("createExploreCard", { projectId: targetProjectId, environment: request.environment, prompt: text, attachments, stageId: stage, start: startImmediately, execution: composerExecutionOf(request) });
-      setPrompt("");
-      setCreateOpen(false);
-      navigate.openThreadPanel({ actionId: "stelow-card-detail", title: result.cardId, params: { cardId: result.cardId } });
-      toast.success(startImmediately ? "Exploration started. The result will appear on this card when ready." : "Exploration parked in Bucket. Start it from the card when ready.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to start exploration.";
-      setCreateError(message);
-      toast.error(message);
-      throw error;
-    }
-  }
-
   async function moveCard(cardId: string, target: string) {
     if (!(RESEARCH_COLUMNS as readonly string[]).includes(target)) return;
     const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "doing" | "done" | "archived" });
@@ -1352,39 +1135,16 @@ function ExplorePanel({ active }: { active: boolean }) {
             active={active}
           />
 
-          <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (open) { setStage(null); setStartImmediately(true); setCreateError(null); } }}>
-            <DialogContent fullscreenOnMobile className="overflow-y-auto sm:max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
-              <DialogHeader>
-                <DialogTitle>Start new exploration</DialogTitle>
-                  <DialogDescription>Pick one technique below, then describe the input — an idea, an existing proposal, a codebase, or a URL. The agent runs that approach and returns a focused result.</DialogDescription>
-              </DialogHeader>
-              {createError ? <CreateCardAlert message={createError} /> : null}
-              <div className="grid gap-4">
-                <div className="grid gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Choose a technique</span>
-                  <StrategyPicker strategies={stages} value={stage} onChange={setStage} groupName="stage-pick" attentionSignal={stageAttention} noun="techniques" legend="Technique" />
-                </div>
-                <AgentConfigBox
-                  lines={[`Explore runs on ${effectiveExplorePreset?.name ?? "Default"}${exploreBandPreset ? "" : " (board default)"}`]}
-                  onConfigure={() => setResearchPresetsOpen(true)}
-                />
-                <StartImmediatelyCheck checked={startImmediately} onChange={setStartImmediately} onViewBucket={bucketGallery.openBucketGallery} />
-                {bucketGallery.bucketGallery}
-                <NewThreadComposer
-                  defaultProjectId={activeProjectId ?? undefined}
-                  defaultProviderId={effectiveExplorePreset?.providerId}
-                  defaultModel={effectiveExplorePreset?.modelId}
-                  defaultReasoningLevel={effectiveExplorePreset?.reasoningLevel as NewThreadRequest["reasoningLevel"] | undefined}
-                  defaultPermissionMode={effectiveExplorePreset?.permissionMode as NewThreadRequest["permissionMode"] | undefined}
-                  initialPrompt={prompt}
-                  placeholder="What should Stelow explore?"
-                  layout="contained"
-                  draftKey="stelow-explore-create"
-                  onSubmit={(request) => start(request)}
-                />
-              </div>
-            </DialogContent>
-          </Dialog>
+          <CreateExploreDialog
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            activeProjectId={activeProjectId}
+            stages={stages}
+            explorePreset={effectiveExplorePreset}
+            hasBandPreset={Boolean(exploreBandPreset)}
+            bucketGallery={bucketGallery}
+            onOpenPresets={() => setResearchPresetsOpen(true)}
+          />
 
           <PresetManagerDialog
             open={researchPresetsOpen}
@@ -1796,22 +1556,6 @@ function PluginUpdateStatus({ version, update, github, confirming, updating, che
   );
 }
 
-// Persistent submit-failure alert for the create dialogs. A toast alone
-// fades; this stays until the next submit or reopen, and the throw that
-// preserves the composer draft (the SDK clears it only on resolve) keeps
-// the dialog open so the cause can be fixed and retried in place.
-function CreateCardAlert({ message }: { message: string }) {
-  return (
-    <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-5">
-      <span aria-hidden className="text-amber-600 dark:text-amber-400">⚠</span>
-      <div>
-        <p className="font-medium text-foreground">Couldn’t start this card</p>
-        <p className="text-muted-foreground">{message} Nothing was lost — fix it above and submit again.</p>
-      </div>
-    </div>
-  );
-}
-
 function AboutPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const [buildInfo, setBuildInfo] = useState<{ version: string; builtAt: string | null; stelowVersion: string | null; skills: string[]; pluginUpdate: PluginUpdateInfo; githubRelease: GithubReleaseInfo } | null>(null);
@@ -2099,314 +1843,6 @@ function StelowPanel({ subPath }: { subPath: string }) {
   );
 }
 
-// Choice cards for planning depth + human review gates: every option visible
-// with its description, real radio inputs (keyboard + screen-reader native),
-// min-h-11 touch targets. Replaces a cramped native select whose gray micro
-// copy failed lay users and low vision — same option values, new surface.
-// labelHidden lets a collapsible wrapper own the visible heading so the
-// legend is never announced twice.
-function ChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName, labelHidden = false }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string; labelHidden?: boolean }) {
-  return (
-    <fieldset className="flex min-w-0 flex-col gap-1.5">
-      {labelHidden ? null : <legend className="text-sm font-medium text-foreground">{label}</legend>}
-      {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
-      <div className="grid gap-2">
-        {options.map((option) => {
-          const selected = option.value === value;
-          return (
-            <label key={option.value} className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition focus-within:outline focus-within:outline-2 focus-within:outline-primary ${selected ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}>
-              <input type="radio" name={groupName} value={option.value} checked={selected} onChange={() => onChange(option.value)} className="mt-0.5 size-4 shrink-0 accent-primary" />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium leading-5 text-foreground">{option.label}</span>
-                <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{option.description}</span>
-              </span>
-            </label>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
-// A named visual boundary for configuration controls. It can wrap any
-// settings content, so disclosures do not leave their revealed controls
-// looking detached from the heading that opened them.
-function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return (
-    <section aria-label={title} className="rounded-md border bg-muted/20 p-3">
-      <div className="mb-3">
-        <h3 className="text-sm font-medium text-foreground">{title}</h3>
-        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
-      </div>
-      <div className="grid gap-4">{children}</div>
-    </section>
-  );
-}
-
-// One preference category as a compact summary row: the title and the
-// current value are always visible (so the setting is discoverable without
-// scrolling), and one tap reveals the full ChoiceCards. Showing all nine
-// radio cards at once pushed Pause for my review below the fold and read
-// as a wall of text; a native select would hide the options again. This
-// keeps both virtues: compact like a select, explicit like radio cards,
-// reusing the same ChoiceCards instead of a second option renderer.
-function CollapsibleChoiceCards<T extends string>({ label, hint, value, options, onChange, groupName }: { label: string; hint?: string; value: T; options: readonly { value: T; label: string; description: string }[]; onChange: (value: T) => void; groupName: string }) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((option) => option.value === value) ?? options[0];
-  return (
-    <div className="group rounded-md border bg-background/60">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        aria-label={`${label}: ${selected ? selected.label : "not set"}. ${open ? "Collapse" : "Change"}`}
-        className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-      >
-        <DisclosureChevron open={open} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium leading-5 text-foreground">{label}</span>
-          {selected ? <span className="block truncate text-xs leading-5 text-muted-foreground" title={selected.description}>{selected.label} — {selected.description}</span> : null}
-        </span>
-        <span className="shrink-0 text-xs font-medium text-primary">{open ? "Less" : "Change"}</span>
-      </button>
-      {open ? (
-        <div className="border-t px-3 pb-3 pt-2">
-          <ChoiceCards label={label} labelHidden hint={hint} value={value} options={options} onChange={onChange} groupName={groupName} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function WorkflowSettings({ appetite, reviewGates, onAppetiteChange, onReviewGatesChange, groupNamePrefix }: {
-  appetite: Appetite;
-  reviewGates: ReviewGates;
-  onAppetiteChange: (value: Appetite) => void;
-  onReviewGatesChange: (value: ReviewGates) => void;
-  groupNamePrefix: string;
-}) {
-  return (
-    <SettingsSection title="Workflow preferences" description="Planning depth sets how much the agent plans before building; review checkpoints are where it stops and waits for your decision. These are the board defaults — kept for every new card until you change them.">
-      <CollapsibleChoiceCards label="Planning depth" hint="Deeper planning takes longer up front but means fewer surprises during execution." value={appetite} options={APPETITE_OPTIONS} onChange={onAppetiteChange} groupName={`${groupNamePrefix}-appetite`} />
-      <ReviewGatePicker label="Pause for my review" hint="The agent stops at each checkpoint you pick and waits — nothing advances until you answer. Nothing picked means Auto: the agent decides everything itself." value={reviewGates} onChange={onReviewGatesChange} groupName={`${groupNamePrefix}-review`} />
-    </SettingsSection>
-  );
-}
-
-// Review checkpoints as a pure multi-select: real checkboxes (keyboard +
-// screen-reader native), Select all / Clear, and one-click preset
-// templates that write into the same state. Empty ≡ Auto.
-function ReviewGatePicker({ label, hint, value, onChange, groupName }: { label: string; hint?: string; value: ReviewGates; onChange: (value: ReviewGates) => void; groupName: string }) {
-  const [open, setOpen] = useState(false);
-  const summary = reviewGatesSummary(value);
-  function toggle(atom: ReviewGate) {
-    onChange(value.includes(atom) ? value.filter((entry) => entry !== atom) : [...value, atom].sort((a, b) => REVIEW_GATE_VALUES.indexOf(a) - REVIEW_GATE_VALUES.indexOf(b)));
-  }
-  return (
-    <div className="group rounded-md border bg-background/60">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        aria-label={`${label}: ${summary}. ${open ? "Collapse" : "Change"}`}
-        className="flex min-h-11 w-full cursor-pointer items-center gap-2 px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-      >
-        <DisclosureChevron open={open} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium leading-5 text-foreground">{label}</span>
-          <span className="block truncate text-xs leading-5 text-muted-foreground" title={summary}>{summary}</span>
-        </span>
-        <span className="shrink-0 text-xs font-medium text-primary">{open ? "Less" : "Change"}</span>
-      </button>
-      {open ? (
-        <div className="grid gap-2 border-t px-3 pb-3 pt-2">
-          <fieldset className="flex min-w-0 flex-col gap-1.5">
-            <legend className="sr-only">{label}</legend>
-            {hint ? <p className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
-            <div className="flex gap-2">
-              <button type="button" onClick={() => onChange([...REVIEW_GATE_VALUES])} className="min-h-11 cursor-pointer rounded-md border px-3 text-xs font-medium hover:bg-muted">Select all</button>
-              <button type="button" onClick={() => onChange([])} className="min-h-11 cursor-pointer rounded-md border px-3 text-xs font-medium hover:bg-muted">Clear</button>
-            </div>
-            <div className="grid gap-2">
-              {REVIEW_GATE_OPTIONS.map((option) => {
-                const selected = value.includes(option.value);
-                return (
-                  <label key={option.value} className={`flex min-h-11 cursor-pointer items-start gap-2.5 rounded-md border p-2.5 transition focus-within:outline focus-within:outline-2 focus-within:outline-primary ${selected ? "border-primary bg-primary/5" : "hover:border-primary/50"}`}>
-                    <input type="checkbox" name={groupName} value={option.value} checked={selected} onChange={() => toggle(option.value)} className="mt-0.5 size-4 shrink-0 accent-primary" />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium leading-5 text-foreground">{option.label}</span>
-                      <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{option.description}</span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <p className="text-xs font-medium text-muted-foreground">Start from a template:</p>
-            <div className="flex flex-wrap gap-1.5">
-              {REVIEW_GATE_PRESETS.map((preset) => (
-                <button key={preset.label} type="button" onClick={() => onChange([...preset.gates])} title={preset.gates.length === 0 ? "Auto" : preset.gates.join(", ")} className="min-h-11 cursor-pointer rounded-md border px-2.5 text-xs font-medium hover:bg-muted">{preset.label}</button>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// Visual strategy picker shared by the creation modal and the follow-up
-// round dialog: search field over emoji radio-cards, single select, no
-// preselected default. RunIds (follow-up) only badge already-run rows.
-function StrategyPicker({ strategies, value, onChange, runIds = [], groupName, disabled = false, attentionSignal = 0, noun = "strategies", legend = "Research strategy" }: {
-  strategies: ResearchStrategyOption[];
-  value: string | null;
-  onChange: (id: string) => void;
-  runIds?: string[];
-  groupName: string;
-  disabled?: boolean;
-  // Increment to draw attention to the picker (focus search + transient
-  // ring). Used when submit is blocked for want of a selection.
-  attentionSignal?: number;
-  noun?: string;
-  legend?: string;
-}) {
-  const [query, setQuery] = useState("");
-  const [flash, setFlash] = useState(false);
-  const searchRef = useRef<HTMLInputElement | null>(null);
-  // Compact (mobile): the list keeps its ~4-row cap with inner scroll on
-  // every viewport — capped over expanded, per explicit preference.
-  // Autofocus is desktop-only so the keyboard doesn't cover the list on open.
-  const compact = useIsCompactViewport();
-  useEffect(() => {
-    if (attentionSignal === 0) return;
-    searchRef.current?.focus();
-    setFlash(true);
-    const timer = window.setTimeout(() => setFlash(false), 1800);
-    return () => window.clearTimeout(timer);
-  }, [attentionSignal]);
-  const needle = query.trim().toLowerCase();
-  const visible = needle.length === 0
-    ? strategies
-    : strategies.filter((entry) => [entry.id, entry.label, entry.blurb, ...entry.keywords].join(" ").toLowerCase().includes(needle));
-  function focusSearch() {
-    searchRef.current?.focus();
-  }
-  return (
-    <div
-      className="grid gap-2"
-      onKeyDown={(event) => {
-        const target = event.target as HTMLElement | null;
-        if (event.key === "/" && target && !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) {
-          event.preventDefault();
-          focusSearch();
-        }
-      }}
-    >
-      <div className="relative">
-        <input
-          ref={searchRef}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={`Search ${noun}…`}
-          autoFocus={!compact}
-          disabled={disabled}
-          aria-label={`Search ${noun}`}
-          className="h-11 w-full rounded-md border bg-background pr-9 pl-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-        />
-        {query.length > 0 ? (
-          <button onClick={() => { setQuery(""); focusSearch(); }} aria-label="Clear search" className="cursor-pointer absolute top-1/2 right-1 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground">×</button>
-        ) : null}
-      </div>
-      <p className="text-xs text-muted-foreground" aria-live="polite">
-        {strategies.length === 0
-          ? `Loading ${noun}…`
-          : needle.length > 0
-            ? `${visible.length} of ${strategies.length} ${noun}`
-            : `${strategies.length} ${noun}`}
-      </p>
-      {visible.length === 0 && strategies.length > 0 ? (
-        <div className="rounded-md border border-dashed p-4 text-center">
-          <p className="text-sm text-muted-foreground">No {noun} match “{query.trim()}”.</p>
-          <button onClick={() => { setQuery(""); focusSearch(); }} className="cursor-pointer mt-2 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-muted">Clear search</button>
-        </div>
-      ) : (
-        <div className={`relative max-h-72 min-w-0 overflow-y-auto overscroll-contain p-1 ${flash ? "rounded-md ring-2 ring-destructive/60" : ""}`}>
-          <fieldset className="grid gap-2">
-          <legend className="sr-only">{legend}</legend>
-          {visible.map((entry) => {
-            const selected = value === entry.id;
-            const ran = runIds.includes(entry.id);
-            return (
-              <label
-                key={entry.id}
-                className={`flex min-w-0 items-start gap-2.5 rounded-md border p-3 focus-within:outline focus-within:outline-2 focus-within:outline-primary ${disabled ? "opacity-60" : "cursor-pointer"} ${selected ? "border-primary bg-primary/5" : disabled ? "" : "hover:bg-muted/50"}`}
-              >
-                <input
-                  type="radio"
-                  name={groupName}
-                  checked={selected}
-                  onChange={() => onChange(entry.id)}
-                  disabled={disabled}
-                  className="sr-only"
-                  aria-label={`${entry.label}${ran ? " (already ran)" : ""}`}
-                />
-                <span aria-hidden className="text-xl leading-none">{entry.emoji}</span>
-                <span className="min-w-0 flex-1">
-                  <span className={`flex flex-wrap items-center gap-2 text-sm ${selected ? "font-semibold text-foreground" : "font-medium text-foreground"}`}>
-                    {entry.label}
-                    {ran ? <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">already ran — runs again</span> : null}
-                    {selected ? <span aria-hidden className="text-primary">✓</span> : null}
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground" title={entry.blurb}>{entry.blurb}</span>
-                </span>
-              </label>
-            );
-          })}
-          </fieldset>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Agent configuration as its own block (not inline muted text): which
-// agent runs, with a Configure entry point. Shared by the Build settings
-// and the research creation dialog so it reads as one configuration.
-function AgentConfigBox({ lines, onConfigure }: { lines: string[]; onConfigure: () => void }) {
-  return (
-    <div className="rounded-md border bg-muted/30 px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-foreground">Agent configuration</span>
-        <Button size="sm" variant="outline" className="shrink-0" onClick={onConfigure}>Configure presets</Button>
-      </div>
-      <ul className="mt-0.5 space-y-0.5">
-        {lines.map((line) => (
-          <li key={line} className="text-xs text-muted-foreground">{line}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-// Deferred start for lightweight creation dialogs: unchecked parks the
-// card in the Bucket with no worker. One component, every creation dialog.
-function ProjectPill({ value, onChange, projects }: { value: string | null; onChange: (v: string | null) => void; projects: Project[] }) {
-  const selected = projects.find((project) => project.id === value);
-  return (
-    <select
-      value={value ?? ""}
-      onChange={(event) => onChange(event.target.value || null)}
-      aria-label="Project"
-      className={`h-10 cursor-pointer rounded-md border px-3 text-sm ${selected ? "border-primary/40 bg-primary/5 text-foreground" : "border-border bg-background text-muted-foreground"}`}
-    >
-      <option value="">Choose a project</option>
-      {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-    </select>
-  );
-}
-
 // One filter bar for both boards (Archetype A: same components, same
 // affordances). Project + attention are the shared facets; build adds
 // Facets are multi-select arrays (empty means all) shared by every board:
@@ -2666,21 +2102,6 @@ function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnTyp
 // Phase rail: the four workflow phases with the card's current one filled.
 // A glanceable "you are here" for the open card; research/explore cards
 // (no workflow stage) render no marker rather than a wrong one.
-function PhaseRail({ stage }: { stage: string }) {
-  const current = STAGE_TO_BAND[stage] ?? null;
-  const known = WORKFLOW_PHASES.some((phase) => phase.id === current);
-  return (
-    <div aria-label="Workflow phase" className="flex items-center gap-1">
-      {WORKFLOW_PHASES.map((phase, index) => (
-        <span key={phase.id} className="flex items-center gap-1">
-          {index > 0 ? <span aria-hidden className="h-px w-3 bg-muted-foreground/30" /> : null}
-          <span title={phase.label} className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${known && phase.id === current ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}>{phase.label}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
 // Flow strip: finished-work lead/cycle reading on the Build board. One
 // Flow indicators over finished cards: a named header (finished count with
 // a measured trail, typical/median and slow/p90 lead/cycle), expanding to
@@ -2887,12 +2308,6 @@ function useReturnFocus<T extends HTMLElement>(cardId: string) {
 // Every "open the worker thread" affordance: one definition with the
 // inspect-title everywhere (it is always an inspection). Renders nothing
 // without a thread instead of a dead button that swallows clicks.
-function OpenThreadButton({ threadId }: { threadId: string | null | undefined }) {
-  const navigate = useBbNavigate();
-  if (!threadId) return null;
-  return <Button size="sm" variant="outline" onClick={() => navigate.toThread(threadId)} title="Open the worker thread to inspect what happened.">Open thread ↗</Button>;
-}
-
 // A decision hero wins over the error hero by design — the open question is
 // the recovery path — so a concurrent failure must be named inside it.
 // Otherwise the Failed chip reads as unexplained next to an actionable
@@ -3143,13 +2558,7 @@ function LightweightTrackList({ groups, navigate, metaFor, collapsed, onToggle }
 // chip: passed / current / upcoming. Clicking an allowed target advances or
 // regresses ONE stage — the timeline is the position context AND the advance
 // control, so the user always sees where the card is and what it can move to.
-type WorkspaceFileTarget = { kind: "workspace"; environmentId: string; path: string };
-type HostFileTarget = { kind: "host"; hostId: string; path: string };
 
-// Workspace-kind links open in bb's official file viewer (with comments).
-// Host-kind links cannot resolve exploratory paths, which live outside
-// provisioned environments — so exploratory cards use the worker thread's
-// environment + worktree-relative path, everything else keeps host links.
 // One-line entity summary for the Diff section ("4 entities · 2 added,
 // 1 modified, 1 deleted"). Null when sem is absent or found nothing — the
 // patch list renders on its own either way.
@@ -3177,11 +2586,6 @@ function formatChangedSymbols(symbols: Array<{ symbol: string; callers: number; 
       : `${entry.callers} caller${entry.callers === 1 ? "" : "s"}${entry.testCallers > 0 ? ` (${entry.testCallers} test${entry.testCallers === 1 ? "" : "s"})` : ""}`;
     return `${entry.symbol} · ${impact}`;
   }).join("; ");
-}
-
-function fileLinkTarget(useWorkspace: boolean, environmentId: string | null, relPath: string | null, hostId: string, absolutePath: string): WorkspaceFileTarget | HostFileTarget {
-  if (useWorkspace && environmentId && relPath) return { kind: "workspace", environmentId, path: relPath };
-  return { kind: "host", hostId, path: absolutePath };
 }
 
 // Open an ask-option artifact in the card viewer. Same target convention
@@ -3284,154 +2688,11 @@ function StageTimeline({ currentStage, nextStages, artifacts, onPick, skips, off
   );
 }
 
-type ArtifactInventoryFile = { kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string; note?: string | null };
-type ArtifactInventoryGroup = { id: string; title: string; items: ArtifactInventoryFile[] };
-
-// A document the workflow wrote but never registered still belongs on the
-// audit trail — it just says so instead of claiming a stage it cannot prove.
-function artifactGroupTitle(stage: string): string {
-  return stage === "unregistered" ? "Produced but not registered" : stageLabel(stage);
-}
-
-function artifactFilename(path: string): string {
-  const clean = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return clean.split("/").pop() || path;
-}
-
-function formatArtifactDate(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
-}
-
-// One visual inventory for every card type. Each track supplies its durable
-// grouping axis (Build stage, Research round, Explore technique); rows always mean
-// an actual file that opens in the viewer.
-function ArtifactInventory({ groups, workspaceKind, fileEnvironmentId, onView }: {
-  groups: ArtifactInventoryGroup[];
-  workspaceKind: string;
-  fileEnvironmentId: string | null;
-  onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
-}) {
-  if (groups.length === 0) return <p className="text-xs text-muted-foreground">No artifacts yet — they appear here as work completes.</p>;
-  return (
-    <div className="space-y-3">
-      {groups.map((group) => (
-        <div key={group.id} className="space-y-1 rounded-md p-1">
-          <div className="flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <p>{group.title}</p>
-            <span className="shrink-0 normal-case tracking-normal">{group.items.length} artifact{group.items.length === 1 ? "" : "s"}</span>
-          </div>
-          <div className="divide-y divide-border rounded-md border">
-            {group.items.map((file) => (
-              <button
-                key={file.path}
-                onClick={() => onView({ display: file.display, path: file.absolutePath, target: fileLinkTarget(workspaceKind === "exploratory", fileEnvironmentId, file.path, file.hostId, file.absolutePath) })}
-                className="flex min-h-11 w-full cursor-pointer items-start gap-2 px-2 py-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                title={`Open ${file.display} (${file.path})`}
-              >
-                <span className="mt-0.5" aria-hidden>📄</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-foreground">{file.display}</span>
-                  <span className="block truncate text-muted-foreground">{[formatArtifactDate(file.generatedAt), `File: ${artifactFilename(file.path)}`].filter(Boolean).join(" · ")}</span>
-                  {file.note ? <span className="mt-0.5 block text-muted-foreground">{file.note}</span> : null}
-                </span>
-                <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>↗</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Build and Explore use stages as their canonical grouping axis. Keeping this
-// adapter preserves the shared inventory while avoiding a second renderer.
-function ArtifactGroups({ artifacts, workspaceKind, fileEnvironmentId, onView, groupTitleForStage }: {
-  artifacts: Array<{ stage: string; kind: string; path: string; display: string; generatedAt: string; absolutePath: string; hostId: string }>;
-  workspaceKind: string;
-  fileEnvironmentId: string | null;
-  onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void;
-  groupTitleForStage?: (stage: string) => string;
-}) {
-  const groups = useMemo<ArtifactInventoryGroup[]>(() => groupArtifactsByStage(artifacts).map((group) => ({
-    id: group.stage,
-    title: groupTitleForStage?.(group.stage) ?? stageLabel(group.stage),
-    items: group.items,
-  })), [artifacts, groupTitleForStage]);
-  return <ArtifactInventory groups={groups} workspaceKind={workspaceKind} fileEnvironmentId={fileEnvironmentId} onView={onView} />;
-}
-
-// A completed Build card carries two receipts whose names differ by one word,
-// so only their freshness tells them apart — and only Stelow can say that.
-// This asks the helper on demand (never on every board read: `check` re-derives
-// the projection and samples the worktree) and re-asks on the button, so a card
-// whose tree moved after completion says so instead of reading as verified
-// forever.
-type AuditTrailStatus = {
-  state: "verified" | "changed" | "missing" | "refused" | "unsupported" | "unavailable";
-  detail: string | null; head: string | null; path: string | null; contract: string | null;
-  recon: { state: "recorded" | "missing" | "invalid"; detail: string } | null;
-};
-
-const AUDIT_TRAIL_COPY: Record<AuditTrailStatus["state"], { label: string; tone: string; sub: string | null }> = {
-  verified: { label: "Audit trail verified", tone: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300", sub: null },
-  changed: { label: "Changed since completion", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300", sub: "The repository or the workflow documents moved after this card was audited, so its receipt no longer describes the current tree. Re-check after committing, or re-run the audit." },
-  missing: { label: "No audit trail", tone: "bg-muted text-muted-foreground", sub: "This card has no portable Stelow receipt. Cards completed before the receipt existed read this way." },
-  refused: { label: "Audit trail refused", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300", sub: null },
-  unsupported: { label: "Audit trail unreadable", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300", sub: null },
-  unavailable: { label: "Audit trail unavailable", tone: "bg-muted text-muted-foreground", sub: null },
-};
-
-function AuditTrailStatusRow({ cardId }: { cardId: string }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [status, setStatus] = useState<AuditTrailStatus | null>(null);
-  const [checking, setChecking] = useState(false);
-  const check = useCallback(async () => {
-    setChecking(true);
-    try {
-      setStatus(await rpc.call("auditTrailStatus", { cardId }));
-    } catch {
-      setStatus({ state: "unavailable", detail: "The host could not read the audit trail.", head: null, path: null, contract: null, recon: null });
-    } finally {
-      setChecking(false);
-    }
-  }, [cardId, rpc]);
-  useEffect(() => { void check(); }, [check]);
-  if (!status) return <p className="text-xs text-muted-foreground">Checking the audit trail…</p>;
-  const copy = AUDIT_TRAIL_COPY[status.state];
-  const detail = copy.sub ?? (status.state === "verified" ? (status.head ? `Attests HEAD ${status.head.slice(0, 12)}.` : null) : status.detail);
-  return (
-    <div className="mb-3 rounded-md border p-2 text-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className={`rounded-full px-2 py-0.5 font-medium ${copy.tone}`}>{copy.label}</span>
-        <button
-          type="button"
-          onClick={() => void check()}
-          disabled={checking}
-          className="min-h-11 cursor-pointer rounded-md px-2 text-xs font-medium text-primary hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-60"
-        >
-          {checking ? "Checking…" : "Re-check"}
-        </button>
-      </div>
-      {detail ? <p className="mt-1 text-muted-foreground">{detail}</p> : null}
-      {status.recon && status.recon.state !== "recorded" ? (
-        <p className="mt-1 text-amber-700 dark:text-amber-300">
-          {status.recon.state === "missing"
-            ? "No codebase context snapshot — advisory only, not a failure: the audit above still verified the tree. Run the recon preflight before the next audit to attach codebase context; cards completed before the receipt existed always read this way."
-            : `Codebase context snapshot unreadable (${status.recon.detail}) — advisory only, not a failure: the audit above still verified the tree. Re-run the recon preflight, then re-run audit to refresh it.`}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 function InputFiles({ card, detail, onView }: { card: CardItem; detail: CardDetailResponse | null; onView: (file: { display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null }) => void }) {
   const files = detail?.attachments ?? [];
   if (files.length === 0) return null;
   return (
-    <CardDisclosure title="Input files" hint={`${files.length} file${files.length === 1 ? "" : "s"}`} defaultOpen>
+    <DisclosureSection title="Input files" hint={`${files.length} file${files.length === 1 ? "" : "s"}`} defaultOpen>
       <p className="text-xs text-muted-foreground">Files attached when this card was started.</p>
       <div className="mt-2 divide-y divide-border rounded-md border">
         {files.map((file) => {
@@ -3456,7 +2717,7 @@ function InputFiles({ card, detail, onView }: { card: CardItem; detail: CardDeta
           ) : <div key={`${file.type}:${file.path}`} className="flex min-h-11 items-start gap-2 px-2 py-2 text-xs">{body}</div>;
         })}
       </div>
-    </CardDisclosure>
+    </DisclosureSection>
   );
 }
 
@@ -3492,224 +2753,6 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
   }
   return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
-
-function CardActionsMenu({ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify }: {
-  card: CardItem;
-  onRestartFresh: () => void;
-  onArchive: () => void;
-  onDiscard: () => void;
-  onDelete: () => void;
-  onReclassify: (intent: string) => Promise<boolean>;
-}) {
-  const actions = workerActionPolicy(card, card.needsAttention);
-  const [open, setOpen] = useState(false);
-  const [reclassifyOpen, setReclassifyOpen] = useState(false);
-  const [nextIntent, setNextIntent] = useState(card.intent);
-  const [reclassifying, setReclassifying] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const closeOnOutsidePress = (event: MouseEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) return;
-      setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-      triggerRef.current?.focus();
-    };
-    document.addEventListener("mousedown", closeOnOutsidePress);
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutsidePress);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-  const choose = (action: () => void) => {
-    setOpen(false);
-    action();
-  };
-  const canReclassify = canReclassifyWorkflow(card);
-  return (
-    <>
-      <div ref={rootRef} className="relative shrink-0">
-        <Button
-          ref={triggerRef}
-          size="icon"
-          variant="ghost"
-          aria-label="Card actions"
-          aria-expanded={open}
-          aria-controls={`card-actions-${card.id}`}
-          title="Card actions"
-          onClick={() => setOpen((value) => !value)}
-          className="min-h-11 min-w-11"
-        >
-          <Icon name="MoreHorizontal" className="h-4 w-4" aria-hidden />
-        </Button>
-        {open ? (
-          <div id={`card-actions-${card.id}`} role="group" aria-label="Card actions" className="absolute right-0 z-20 mt-1 w-56 overflow-hidden rounded-md border bg-popover p-1 text-sm shadow-md">
-            {canReclassify ? (
-              <button type="button" onClick={() => choose(() => { setNextIntent(card.intent); setReclassifyOpen(true); })} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Reclassify workflow…</button>
-            ) : null}
-            {actions.showRestartFresh ? (
-              <button type="button" onClick={() => choose(onRestartFresh)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left hover:bg-state-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Restart fresh…</button>
-            ) : null}
-            {(canReclassify || actions.showRestartFresh) && (actions.showArchive || actions.showDiscard || actions.showDelete) ? <div className="my-1 border-t" /> : null}
-            {actions.showArchive ? (
-              <button type="button" onClick={() => choose(onArchive)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Archive card…</button>
-            ) : null}
-            {actions.showDiscard ? (
-              <button type="button" onClick={() => choose(onDiscard)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Discard work…</button>
-            ) : null}
-            {actions.showDelete ? (
-              <button type="button" onClick={() => choose(onDelete)} className="flex min-h-11 w-full cursor-pointer items-center rounded-sm px-2 text-left text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Delete permanently…</button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-      <Dialog open={reclassifyOpen} onOpenChange={setReclassifyOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reclassify and restart from triage?</DialogTitle>
-            <DialogDescription>
-              This starts a fresh worker from triage on the selected workflow type. Existing comments and history stay as the record of the previous attempt; its route, pending stages, and plan are recalculated.
-            </DialogDescription>
-          </DialogHeader>
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Workflow type</span>
-            <select value={nextIntent} onChange={(event) => setNextIntent(event.target.value)} className="h-10 rounded-md border bg-background px-2 text-sm">
-              <option value="new-product">New product</option>
-              <option value="feature">Feature</option>
-              <option value="bugfix">Bug fix</option>
-              <option value="refactor">Refactor</option>
-              <option value="investigate">Investigate</option>
-              <option value="unknown">Unknown intent</option>
-            </select>
-          </label>
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline" disabled={reclassifying}>Cancel</Button></DialogClose>
-            <Button disabled={reclassifying || nextIntent === card.intent} onClick={() => {
-              setReclassifying(true);
-              void onReclassify(nextIntent).then((restarted) => { if (restarted) setReclassifyOpen(false); }).finally(() => setReclassifying(false));
-            }}>{reclassifying ? "Restarting…" : "Reclassify & restart"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-function CardDetailHeader({ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify }: {
-  card: CardItem | null;
-  onBack?: () => void;
-  onRestartFresh: () => void;
-  onArchive: () => void;
-  onDiscard: () => void;
-  onDelete: () => void;
-  onReclassify: (intent: string) => Promise<boolean>;
-}) {
-  const rpc = useRpc<typeof rpcContract>();
-  const closeRef = useRef<HTMLButtonElement | null>(null);
-  // Inline rename: pencil swaps the breadcrumb title for an input with
-  // explicit Save/Cancel — no silent blur-save, the realtime card-state
-  // publish refreshes every surface after saving.
-  const [renaming, setRenaming] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [renamingBusy, setRenamingBusy] = useState(false);
-  async function applyRename() {
-    if (!card || renamingBusy) return;
-    setRenamingBusy(true);
-    try {
-      const result = await rpc.call("renameCard", { cardId: card.id, name: draftName });
-      if (!result.ok) {
-        toast.error(result.error ?? "Could not rename.");
-        return;
-      }
-      setRenaming(false);
-    } finally {
-      setRenamingBusy(false);
-    }
-  }
-  useEffect(() => {
-    if (!onBack) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) onBack();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onBack]);
-  async function applyIntent(nextIntent: string) {
-    if (!card) return;
-    const result = await rpc.call("updateCardIntent", { cardId: card.id, intent: nextIntent as "new-product" | "feature" | "bugfix" | "refactor" | "investigate" | "unknown" });
-    if (!result.ok) {
-      toast.error(result.error ?? "Could not change intent.");
-      return;
-    }
-    toast.success(`Workflow type changed to ${INTENT_LABEL[nextIntent] ?? nextIntent}`);
-  }
-  return (
-    <header className="flex items-center gap-2 border-b bg-card/80 px-3 py-1.5">
-      {onBack ? <button onClick={onBack} title="Back to board (Esc)" className="inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-md bg-background px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
-        <span aria-hidden>←</span>
-        <span>Board</span>
-      </button> : null}
-      <nav className="min-w-0 flex-1 truncate text-xs text-muted-foreground" aria-label="Breadcrumb">
-        <span>Stelow</span>
-        <span aria-hidden className="mx-1 text-border">/</span>
-        <span className="font-medium">{card?.projectName ?? "…"}</span>
-        <span aria-hidden className="mx-1 text-border">/</span>
-        {renaming && card ? (
-          <span className="inline-flex min-w-0 flex-1 items-center gap-1 align-middle">
-            <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void applyRename(); if (event.key === "Escape") setRenaming(false); }} aria-label="Card title" maxLength={120} className="h-7 min-w-0 flex-1 text-xs" autoFocus />
-            <Button size="sm" variant="outline" disabled={renamingBusy || draftName.trim().length === 0} onClick={() => void applyRename()}>Save</Button>
-            <Button size="sm" variant="ghost" disabled={renamingBusy} onClick={() => setRenaming(false)}>Cancel</Button>
-          </span>
-        ) : (
-          <>
-            <span className="font-medium text-foreground">{card?.displayName ?? card?.name ?? "Loading…"}</span>
-            {card ? (
-              <button type="button" onClick={() => { setDraftName(card.displayName ?? card.name); setRenaming(true); }} title="Rename card" aria-label="Rename card" className="ml-1 inline-flex min-h-8 min-w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-                <Icon name="Edit" className="h-3.5 w-3.5" aria-hidden />
-              </button>
-            ) : null}
-          </>
-        )}
-        {card ? <span className="ml-2 inline-flex flex-wrap items-center gap-1.5 align-middle"><BuildStatusPills {...buildStatusPillProps(card)} /></span> : null}
-        {card && card.kind === "build" ? <span className="ml-2 hidden align-middle md:inline-flex"><PhaseRail stage={card.stage} /></span> : null}
-      </nav>
-      {card ? <>
-        {card.kind === "build" && canEditWorkflowIntent(card) ? (
-        <select
-          aria-label="Intent"
-          title="Workflow type — correct it while this card is still in triage."
-          value={card.intent}
-          onChange={(event) => {
-            const nextIntent = event.target.value;
-            if (nextIntent === card.intent) return;
-            void applyIntent(nextIntent);
-          }}
-          className="h-6 max-w-32 cursor-pointer truncate rounded-full border border-transparent bg-transparent text-xs font-medium text-muted-foreground hover:border-border hover:text-foreground"
-        >
-          <option value="new-product">New Product</option>
-          <option value="feature">Feature</option>
-          <option value="bugfix">Bugfix</option>
-          <option value="refactor">Refactor</option>
-          <option value="investigate">Investigate</option>
-          <option value="unknown">Unknown intent</option>
-        </select>
-        ) : null}
-        <CardActionsMenu card={card} onRestartFresh={onRestartFresh} onArchive={onArchive} onDiscard={onDiscard} onDelete={onDelete} onReclassify={onReclassify} />
-      </> : null}
-      {onBack ? <button ref={closeRef} onClick={onBack} title="Close (Esc)" aria-label="Close card details" className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md bg-background text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-        <Icon name="X" className="h-4 w-4" aria-hidden />
-      </button> : null}
-    </header>
-  );
-}
-
 
 // Status rank for sorting work (tasks): active first, then committed, then
 // blocked, then finished. Used to give a sensible vertical reading.
@@ -3943,286 +2986,6 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
           </details>
         );
       })}
-    </section>
-  );
-}
-
-type AskArtifact = { path: string; display: string; absolutePath: string | null; hostId: string | null };
-type ArtifactViewerMode = "review" | "comment";
-type QuestionStalenessNotice = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
-type BatchItem = { id: string; title: string; prompt: string; multiple: boolean; kind?: "standard" | "split"; options: Array<{ label: string; description: string; preview: string | null; artifact: AskArtifact | null }>; staleness?: QuestionStalenessNotice | null };
-
-function artifactViewerModeForOption(label: string): ArtifactViewerMode {
-  // An approval is a decision after reading, not a request to alter the
-  // document. All other choices — especially Request/Review changes — keep
-  // the full quote-and-comment path to communicate precise feedback.
-  return /\b(approve|accept|proceed)\b/i.test(label) ? "review" : "comment";
-}
-
-// Per-option evidence: the document opens from inside the option row
-// (right side), the inline glance expands below. The artifact opens in the
-// viewer where a file opener exists (card), and degrades to a plain
-// filename where it doesn't (thread) — never a dead button pretending
-// to open, never one shared button after the options.
-function OptionPreview({ preview }: { preview: string | null }) {
-  if (!preview) return null;
-  return (
-    <div className="ml-1 space-y-1 border-l-2 border-muted pl-2">
-      <details className="group">
-        <summary className="inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Preview</summary>
-        <pre className="whitespace-pre-wrap rounded-md border bg-background/60 p-2 font-mono text-[11px] leading-relaxed">{preview}</pre>
-      </details>
-    </div>
-  );
-}
-
-// Advisory only: names what moved since a question was asked — a revised or
-// removed document, a moved checkout with the touched paths — and points at
-// the existing exits (re-open the doc, request changes, regress the stage).
-// It never blocks answering and adds no new actions of its own.
-function StalenessNotice({ staleness }: { staleness: QuestionStalenessNotice }) {
-  if (!staleness.docRevised && !staleness.docRemoved && !staleness.checkoutMoved) return null;
-  return (
-    <div className="rounded-md border border-amber-600/40 bg-amber-600/10 p-2 text-xs leading-relaxed text-amber-900 dark:text-amber-200" role="note" aria-label="Evidence changed since asked">
-      <p className="font-semibold">Something changed since this question was asked</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-4">
-        {staleness.docRevised ? <li>A linked document was revised — open the current version from the options below before answering.</li> : null}
-        {staleness.docRemoved ? <li>A linked document can no longer be opened at its recorded path.</li> : null}
-        {staleness.checkoutMoved ? <li>{staleness.commitCount > 0
-          ? `${staleness.commitCount} commit${staleness.commitCount === 1 ? "" : "s"} landed since${staleness.touchedPaths.length > 0 ? `, touching ${staleness.touchedPaths.join(", ")}` : ""}. The plan may assume code that changed.`
-          : "The checkout moved since this question was asked. The plan may assume code that changed."}</li> : null}
-      </ul>
-      <p className="mt-1 text-amber-900/70 dark:text-amber-200/70">If the plan no longer matches the code, request changes or return it to an earlier stage from Workflow progress.</p>
-    </div>
-  );
-}
-
-// radio (single) / checkbox (multi) options plus a free-text "Other", explicit
-// skip, and a single atomic submit — one worker resume, one inbox resolution.
-function BatchStepper({ questions, allowSkip, busy, error, submitLabel, showHeading = true, onSubmit, onOpenArtifact }: {
-  questions: BatchItem[];
-  allowSkip: boolean;
-  busy: boolean;
-  error: string | null;
-  submitLabel: string;
-  showHeading?: boolean;
-  onSubmit: (answers: string[][]) => void;
-  onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void;
-}) {
-  const [index, setIndex] = useState(0);
-  const [selected, setSelected] = useState<Record<string, string[]>>({});
-  const [custom, setCustom] = useState<Record<string, string>>({});
-  const [skipped, setSkipped] = useState<Set<string>>(new Set());
-  if (questions.length === 0) return null;
-  const current = questions[Math.min(index, questions.length - 1)]!;
-  const copy = questionCopy();
-  const splitKeepLabel = SPLIT_KEEP_LABEL;
-  const isSplitProposal = isSplitQuestion(current);
-  const prompt = isSplitProposal ? splitQuestionText(current.prompt) : current.prompt;
-  const splitNotice = isSplitProposal ? splitSelectionNotice(current.options, selected[current.id] ?? []) : null;
-  const merged = (id: string): string[] => {
-    if (skipped.has(id)) return [];
-    const out = [...(selected[id] ?? [])];
-    const text = (custom[id] ?? "").trim();
-    if (text) out.push(text);
-    return out;
-  };
-  const doneCount = questions.filter((q) => skipped.has(q.id) || merged(q.id).length > 0).length;
-  const remainingCount = questions.length - doneCount;
-  const complete = remainingCount === 0;
-  const isLastQuestion = index === questions.length - 1;
-  const pick = (question: BatchItem, label: string) => {
-    setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
-    setSelected((prev) => {
-      const has = (prev[question.id] ?? []).includes(label);
-      if (question === current && isSplitProposal) {
-        // Delivery cards form a multi-select. The explicit keep choice is an
-        // alternative, not a fourth delivery: choosing either side clears
-        // the other so a card answer can never encode two contradictory
-        // outcomes.
-        if (label === splitKeepLabel) return { ...prev, [question.id]: has ? [] : [splitKeepLabel] };
-        const withoutKeep = (prev[question.id] ?? []).filter((item) => item !== splitKeepLabel);
-        return { ...prev, [question.id]: has ? withoutKeep.filter((item) => item !== label) : [...withoutKeep, label] };
-      }
-      if (question.multiple) return { ...prev, [question.id]: has ? prev[question.id]!.filter((item) => item !== label) : [...(prev[question.id] ?? []), label] };
-      // Single-select: an option and a custom text are mutually exclusive.
-      if (!has) setCustom((c) => ({ ...c, [question.id]: "" }));
-      return { ...prev, [question.id]: has ? [] : [label] };
-    });
-  };
-  const typeCustom = (question: BatchItem, value: string) => {
-    setCustom((prev) => ({ ...prev, [question.id]: value }));
-    if (value.trim() && !question.multiple) setSelected((prev) => ({ ...prev, [question.id]: [] }));
-    if (value.trim()) setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
-  };
-  const skip = (question: BatchItem) => {
-    setSkipped((prev) => new Set(prev).add(question.id));
-    setSelected((prev) => ({ ...prev, [question.id]: [] }));
-    setCustom((prev) => ({ ...prev, [question.id]: "" }));
-  };
-  const unskip = (question: BatchItem) => setSkipped((prev) => { const next = new Set(prev); next.delete(question.id); return next; });
-  return (
-    <div role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
-      <div className="flex items-start gap-3">
-        <span aria-hidden className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300">?</span>
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            {showHeading ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              {questions.length > 1 ? copy.answersNeeded(questions.length) : copy.answerNeeded}
-            </div> : null}
-            {questions.length > 1 ? <div className="text-xs text-amber-900/70 dark:text-amber-200/70">{copy.questionOf(index + 1, questions.length)}</div> : null}
-          </div>
-          {questions.length > 1 ? (
-            <div className="flex flex-wrap gap-1" role="group" aria-label={copy.questions}>
-              {questions.map((q, i) => {
-                const done = skipped.has(q.id) || merged(q.id).length > 0;
-                return (
-                  <button
-                    key={q.id}
-                    aria-current={i === index ? "step" : undefined}
-                    aria-label={`${copy.questionOf(i + 1, questions.length)}${done ? ` (${copy.answered})` : ""}`}
-                    onClick={() => setIndex(i)}
-                    className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border px-2 text-xs font-medium ${i === index ? "border-primary bg-primary/15 text-foreground" : done ? "border-emerald-500/50 bg-emerald-500/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}
-                  >
-                    {done && i !== index ? "✓ " : ""}{i + 1}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          {current.title ? <div className="text-sm font-medium text-amber-900 dark:text-amber-200">{current.title}</div> : null}
-          {prompt ? <p className="text-sm text-amber-900/80 dark:text-amber-200/80">{prompt}</p> : null}
-          {current.staleness ? <StalenessNotice staleness={current.staleness} /> : null}
-          {isSplitProposal ? <p className="rounded-md border border-amber-500/30 bg-background/50 p-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/80">Choose deliveries or <strong className="text-amber-900 dark:text-amber-100">Keep as one card</strong> — not both.</p> : null}
-          <div className="grid gap-1" role={current.multiple ? "group" : "radiogroup"} aria-label={current.title}>
-            {current.options.map((option) => {
-              const active = (selected[current.id] ?? []).includes(option.label);
-              const isKeepOption = isSplitProposal && option.label === splitKeepLabel;
-              const optionLabel = option.label;
-              const description = isSplitProposal ? splitOptionDescription(option.description) : option.description;
-              const artifact = option.artifact;
-              return (
-                <div key={option.label} className={`space-y-1 ${isKeepOption ? "mt-2 border-t border-amber-500/30 pt-2" : ""}`}>
-                  <div className={`flex min-h-11 items-stretch overflow-hidden rounded-md border ${active ? "border-primary bg-primary/10" : "border-border bg-background/40 hover:border-primary/50"}`}>
-                    <button
-                      role={current.multiple ? "checkbox" : "radio"}
-                      aria-checked={active}
-                      onClick={() => pick(current, option.label)}
-                      className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 p-3 text-left text-sm text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                    >
-                      <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-2 text-xs font-bold ${current.multiple && !isKeepOption ? "rounded-sm" : "rounded-full"} ${active ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/70 bg-background"}`}>{active ? "✓" : ""}</span>
-                      <span className="min-w-0"><span className="block font-medium">{optionLabel}</span>{description ? <span className="mt-1 block whitespace-pre-line text-xs leading-5 text-muted-foreground">{description}</span> : null}</span>
-                    </button>
-                    {artifact ? (
-                      onOpenArtifact ? (
-                        // The option's own document, not a second decision: it
-                        // sits inside the row instead of forming a slab beside
-                        // it, and borrows the shared outline treatment so it
-                        // harmonizes with the amber panel and the primary
-                        // accents instead of introducing a third color.
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onOpenArtifact(artifact, artifactViewerModeForOption(option.label))}
-                          title={`Open document: ${artifact.display}`}
-                          aria-label={`Open document ${artifact.display}`}
-                          className="mr-2 min-h-11 shrink-0 gap-1 self-center"
-                        >Open document<span aria-hidden>↗</span></Button>
-                      ) : (
-                        <span className="inline-flex shrink-0 items-center self-center px-1 text-[11px] text-muted-foreground" title={artifact.path}>{artifact.display}</span>
-                      )
-                    ) : null}
-                  </div>
-                  <OptionPreview preview={option.preview} />
-                </div>
-              );
-            })}
-          </div>
-          {splitNotice ? <p role="status" className="rounded-md border border-primary/40 bg-primary/10 p-2 text-xs leading-5 text-foreground">{splitNotice.text}</p> : null}
-          {!isSplitProposal ? <label className="block text-xs font-medium text-amber-900/80 dark:text-amber-200/80">
-            <span>{copy.other}</span>
-            <input
-              value={custom[current.id] ?? ""}
-              onChange={(event) => typeCustom(current, event.target.value)}
-              placeholder={copy.customPlaceholder}
-              className="mt-1 min-h-11 w-full cursor-text rounded-md border border-border bg-background/60 px-2 text-sm font-normal text-foreground placeholder:text-muted-foreground"
-            />
-          </label> : null}
-          {allowSkip && !isSplitProposal ? (
-            skipped.has(current.id)
-              ? <button onClick={() => unskip(current)} className="min-h-11 cursor-pointer text-xs font-medium text-primary hover:underline">{copy.skipped}</button>
-              : <button onClick={() => skip(current)} className="min-h-11 cursor-pointer text-xs text-amber-900/70 hover:underline dark:text-amber-200/70">{copy.skip}</button>
-          ) : null}
-          {error ? <p className="text-xs text-destructive">{error}</p> : null}
-          {questions.length > 1 ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{copy.batchProgress(doneCount, questions.length, allowSkip)}</p>
-          ) : current.multiple && !isSplitProposal ? (
-            <p className="text-xs text-amber-900/60 dark:text-amber-200/60">{copy.pickOneOrMore}</p>
-          ) : null}
-          {isLastQuestion && !complete ? <p role="status" className="text-xs text-amber-900/70 dark:text-amber-200/70">{copy.answersRemaining(remainingCount, allowSkip)}</p> : null}
-          <div className="flex flex-wrap items-center gap-2">
-            {questions.length > 1 ? <Button size="sm" variant="outline" disabled={index === 0 || busy} onClick={() => setIndex((i) => Math.max(0, i - 1))}>{copy.back}</Button> : null}
-            {questions.length > 1 && index < questions.length - 1 ? <Button size="sm" variant="outline" disabled={busy} onClick={() => setIndex((i) => Math.min(questions.length - 1, i + 1))}>{copy.next}</Button> : null}
-            {isLastQuestion ? <Button size="sm" disabled={!complete || busy} onClick={() => onSubmit(questions.map((q) => merged(q.id)))}>{busy ? copy.sending : submitLabel}</Button> : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QuestionBatch({ cardId, questions, mode, onAnswered, onOpenArtifact }: { cardId: string; questions: BatchItem[]; mode: "live" | "expired"; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (questions.length === 0) return null;
-  const copy = questionCopy();
-  async function submit(all: string[][]) {
-    setBusy(true); setError(null);
-    try {
-      if (mode === "live") {
-        const result = await rpc.call("answerQuestions", { cardId, answers: questions.map((q, i) => ({ questionId: q.id, answers: all[i] ?? [] })) });
-        if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
-      } else {
-        // Timed-out questions retain every selected option. The batch stays
-        // atomic, so a later answer cannot revise work already resumed.
-        const payload = expiredAnswerPayload(questions, all);
-        if (payload.length === 0) return;
-        const result = await rpc.call("answerExpiredQuestions", { cardId, answers: payload });
-        if (!result.ok) { setError(result.error ?? "Could not send the answers."); return; }
-      }
-      onAnswered();
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-      <BatchStepper
-        questions={questions}
-        allowSkip={mode === "live"}
-        busy={busy}
-        error={error}
-        submitLabel={questions.length > 1 ? copy.submitAnswers : copy.submitAnswer}
-        showHeading={mode !== "expired"}
-        onSubmit={(all) => void submit(all)}
-        onOpenArtifact={onOpenArtifact}
-      />
-  );
-}
-
-function ExpiredQuestionsSection({ cardId, questions, onAnswered, onOpenArtifact }: { cardId: string; questions: ExpiredQuestion[]; onAnswered: () => void; onOpenArtifact?: (artifact: AskArtifact, mode: ArtifactViewerMode) => void }) {
-  if (questions.length === 0) return null;
-  const copy = questionCopy();
-  return (
-    <section className="space-y-2">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">{copy.recoveryHeading}</h3>
-        <QuestionBatch
-          cardId={cardId}
-          mode="expired"
-          questions={questions.map((q) => ({ id: q.id, title: "", prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null }))}
-          onAnswered={onAnswered}
-          onOpenArtifact={onOpenArtifact}
-        />
     </section>
   );
 }
@@ -5013,26 +3776,6 @@ function ArtifactViewerDialog({ open, onOpenChange, cardId, file, editorTarget, 
   );
 }
 
-function ConfirmActionDialog({ open, onOpenChange, title, description, confirmLabel, confirmTone, onConfirm }: { open: boolean; onOpenChange: (next: boolean) => void; title: string; description: string; confirmLabel: string; confirmTone?: "destructive" | "default"; onConfirm: () => void | Promise<void> }) {  const [pending, setPending] = useState(false);
-  useEffect(() => { if (!open) setPending(false); }, [open]);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={pending}>Cancel</Button>
-          </DialogClose>
-          <Button variant={confirmTone === "destructive" ? "destructive" : "default"} disabled={pending} onClick={async () => { setPending(true); try { await onConfirm(); } finally { setPending(false); } }}>{pending ? "Working…" : confirmLabel}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 type WorkspaceRecoveryData = {
   kind: "attached" | "promote" | "external-project" | "ambiguous" | "documents-only";
   message: string;
@@ -5064,49 +3807,6 @@ function WorkspaceRecoveryPanel({ recovery, loading, onRefresh, onPromote, onAtt
     </> : null}
   </div>;
 }
-
-// Open-card building blocks: one contextual hero (heroFor) + one disclosure
-// pattern (DisclosureSection) for secondary content. Previously every zone —
-// banners, meta grid, timeline, preset, comments — used its own ad-hoc
-// spacing and heading style.
-// One open/close affordance for every collapsible in the panel: a chevron
-// that points right when closed and rotates down when open. Native
-// <details>/<summary> use the `group-open:` variant; controlled buttons pass
-// `open` directly. Native controls already expose expanded state to assistive
-// tech; this mirrors it visually for sighted, low-vision, and lay users.
-function DisclosureSection({ title, subtitle, hint, action, children, defaultOpen = false, open, onToggle }: { title: string; subtitle?: React.ReactNode; hint?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean; open?: boolean; onToggle?: (open: boolean) => void }) {
-  const controlled = open !== undefined;
-  return (
-    <details
-      open={controlled ? open : defaultOpen}
-      onToggle={(event) => onToggle?.((event.currentTarget as HTMLDetailsElement).open)}
-      className="group rounded-lg border bg-muted/20"
-    >
-      <summary className={`flex cursor-pointer list-none items-center px-3 py-2 text-sm font-medium marker:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden ${subtitle ? "min-h-12" : "min-h-11"}`}>
-        <DisclosureChevron className="mr-1.5" />
-        {/* A subtitle is how a section names its job; the Workflow map uses the
-            same two-line shape, so the pair reads as one family. */}
-        {subtitle ? (
-          <span className="min-w-0">
-            <span className="block font-semibold leading-5 text-foreground">{title}</span>
-            <span className="block text-xs font-normal leading-5 text-muted-foreground">{subtitle}</span>
-          </span>
-        ) : <span>{title}</span>}
-        {typeof hint === "string" ? (
-          hint ? <span className="ml-2 truncate text-xs font-normal text-muted-foreground">{hint}</span> : null
-        ) : (
-          hint ? <span className="ml-auto inline-flex shrink-0 items-center overflow-visible pl-2 text-xs font-normal text-muted-foreground">{hint}</span> : null
-        )}
-        {action ? <span className="ml-auto inline-flex shrink-0 pl-2" onClick={(event) => event.stopPropagation()}>{action}</span> : null}
-      </summary>
-      <div className="space-y-3 px-3 pb-3">{children}</div>
-    </details>
-  );
-}
-
-// Legacy name retained while card-specific call sites migrate; the component
-// itself is deliberately generic and now also owns configuration disclosures.
-const CardDisclosure = DisclosureSection;
 
 // The workflow reference is intentionally separate from the very large card
 // body: it is a stable explainer, not card-state orchestration. Keeping it
@@ -5312,7 +4012,7 @@ function PreviewSection({ cardId }: { cardId: string }) {
   const stateLabel = info.state === "starting" ? `Starting…${elapsedSecs != null ? ` ${elapsedSecs}s` : ""}` : info.state === "running" ? "Running" : info.state === "failed" ? "Failed" : "Not running";
 
   return (
-    <CardDisclosure
+    <DisclosureSection
       title="Preview"
       hint={running && info.url ? info.url.replace(/^https?:\/\//, "") : `${info.label ?? "Web app"} · ${info.source ?? ""}`.trim()}
       defaultOpen
@@ -5393,7 +4093,7 @@ function PreviewSection({ cardId }: { cardId: string }) {
           ) : null}
         </div>
       ) : null}
-    </CardDisclosure>
+    </DisclosureSection>
   );
 }
 
@@ -5777,98 +4477,7 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
 }
 
 // Shared detail leaves. Build and research bodies render identical
-// worker history, conversation, and inbox-event banners — one definition
-// each instead of drifting copies.
-function WorkerHistoryList({ history, separated = false }: { history: CardDetailResponse["workerHistory"]; separated?: boolean }) {
-  const navigate = useBbNavigate();
-  if (history.length === 0) return null;
-  const total = totalTokenUsage(history);
-  const breakdown = sumTokenBreakdowns(history.flatMap((entry) => [entry.tokenBreakdown, ...(entry.children ?? []).map((child) => child.tokenBreakdown)]));
-  const legs = breakdown ? [
-    breakdown.input !== null ? `in ${formatTokenUsage(breakdown.input)}` : null,
-    breakdown.output !== null ? `out ${formatTokenUsage(breakdown.output)}` : null,
-    breakdown.cached !== null ? `cached ${formatTokenUsage(breakdown.cached)}` : null,
-    breakdown.reasoning !== null ? `reasoning ${formatTokenUsage(breakdown.reasoning)}` : null,
-  ].filter((part): part is string => part !== null) : [];
-  return (
-    <details className={`group${separated ? " mt-3 border-t pt-2" : ""}`}>
-      <summary className="flex min-h-11 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron />Worker history ({history.length}) — archived threads stay readable{total !== null ? <span title={`${total.toLocaleString()} provider-reported tokens across all workers`}> · {formatTokenUsage(total)} tokens total</span> : null}</summary>
-      {legs.length > 0 ? <p className="mt-1 text-[11px] text-muted-foreground" title="Provider-reported split across all workers; legs without reports are omitted, never zeroed.">{legs.join(" · ")}</p> : null}
-      <div className="mt-1 divide-y divide-border rounded-md border">
-        {history.map((entry) => (
-          <div key={entry.threadId}>
-            <div className="flex items-center gap-2 px-2 py-1.5 text-xs">
-              <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${entry.endedAt === null ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                <span className="font-medium text-foreground">{entry.endedAt === null ? "Current worker" : ({ "band-swap": "Phase preset", restart: "Manual restart", reseed: "Restarted fresh", "strategy-add": "New strategy round", initial: "First worker" } as Record<string, string>)[entry.endedReason ?? ""] ?? "Replaced worker"}</span>
-                {entry.presetName ? <span> · {entry.presetName}</span> : null}
-                {formatTokenUsage(entry.tokenUsage) ? <span title={`${entry.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(entry.tokenUsage)} tokens</span> : null}
-                <span title={new Date(entry.startedAt).toLocaleString()}> · {relativeTime(entry.startedAt)}</span>
-              </span>
-              <button onClick={() => navigate.toThread(entry.threadId)} title="Open this worker thread (archived threads stay readable)." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
-            </div>
-            {entry.children?.length ? (
-              <div className="space-y-1 border-t border-dashed px-2 py-1.5 pl-6 text-xs">
-                {entry.children.map((child) => (
-                  <div key={child.threadId} className="flex items-center gap-2">
-                    <span aria-hidden className="size-1 shrink-0 rounded-full bg-muted-foreground/40" />
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground" title={child.threadId}>
-                      <span className="font-medium text-foreground">{child.title ?? child.threadId.slice(0, 12)}</span>
-                      <span> · {child.status}</span>
-                      {child.providerId ? <span> · {child.providerId}</span> : null}
-                      {formatTokenUsage(child.tokenUsage) ? <span title={`${child.tokenUsage!.toLocaleString()} provider-reported tokens`}> · {formatTokenUsage(child.tokenUsage)} tokens</span> : null}
-                    </span>
-                    <button onClick={() => navigate.toThread(child.threadId)} title="Open this child thread." className="cursor-pointer min-h-11 shrink-0 rounded-md px-2 font-medium text-primary hover:underline">Open ↗</button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function CardConversation({ comments, draft, onDraftChange, onSend, defaultOpen = false, threadId }: {
-  comments: CardDetailResponse["comments"]; draft: string; onDraftChange: (value: string) => void; onSend: () => void; defaultOpen?: boolean; threadId?: string | null;
-}) {
-  return (
-    <CardDisclosure
-      title="Conversation"
-      hint={comments.length ? `${comments.length}` : "talk to the agent"}
-      defaultOpen={defaultOpen}
-    >
-      <div className="space-y-2">
-        {comments.length ? comments.map((entry) => {
-          const mine = entry.author !== "agent";
-          return (
-            <div key={entry.id} className={`rounded-lg border p-2.5 ${mine ? "border-primary/25 bg-primary/5" : "border-border bg-muted/30"}`}>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${mine ? "bg-primary" : "bg-muted-foreground"}`} />
-                <span className="font-medium text-foreground">{mine ? "You" : "Agent"}</span>
-                <span title={new Date(entry.createdAt).toLocaleString()}>{new Date(entry.createdAt).toLocaleString()}</span>
-              </div>
-              <div className="mt-1 text-sm leading-relaxed"><Markdown content={entry.body} /></div>
-            </div>
-          );
-        }) : <p className="text-xs text-muted-foreground">No comments yet — send the first note to the agent below.</p>}
-      </div>
-      <label className="block space-y-1">
-        <span className="text-xs font-medium text-muted-foreground">Write to the agent</span>
-        <textarea value={draft} onChange={(event) => onDraftChange(event.target.value)} rows={3} className="min-h-24 w-full rounded-md border bg-background p-2 text-sm leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" placeholder="Ask, correct, or add context... (Cmd/Ctrl+Enter to send)" onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && draft.trim()) onSend(); }} />
-      </label>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] text-muted-foreground">⌘/Ctrl + Enter sends · attachments and @mentions live in the worker thread</span>
-        <span className="ml-auto inline-flex items-center gap-2">
-          {threadId ? <OpenThreadButton threadId={threadId} /> : null}
-          <Button disabled={!draft.trim()} onClick={() => onSend()}>Send to agent</Button>
-        </span>
-      </div>
-    </CardDisclosure>
-  );
-}
-
+// Inbox-event banner — one definition instead of a drifting copy.
 function InboxEventBanner({ visible, event, sectionRef }: {
   visible: boolean;
   event: InboxEventSnapshot | null;
@@ -5910,49 +4519,6 @@ function checkoutNoteFor(environmentLabel: string | null | undefined, branch?: s
   if (!environmentLabel || environmentLabel === "unknown" || environmentLabel === "exploratory") return null;
   const label = CHECKOUT_LABEL[environmentLabel] ?? environmentLabel;
   return <>Checkout: {label}{branch ? <> · branch <code>{branch}</code></> : null}</>;
-}
-
-function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onPreset, presetPill, presetNote, pillTitle, githubLink, checkoutNote }: {
-  card: CardItem | null;
-  detail: CardDetailResponse | null;
-  presetStale: boolean;
-  restarting: boolean;
-  onRestartWorker: () => void;
-  onPreset: () => void;
-  presetPill: React.ReactNode;
-  presetNote: React.ReactNode;
-  pillTitle?: string;
-  githubLink?: React.ReactNode;
-  checkoutNote?: React.ReactNode;
-}) {
-  const hasGithubLink = Boolean(githubLink);
-  const hasHistory = Boolean(detail?.workerHistory.length);
-  const actions = workerSectionPolicy(card, Boolean(detail?.card.needsAttention), { hasGithubLink, historyCount: detail?.workerHistory.length ?? 0 });
-  const hasPreset = actions.showPresetControls;
-  if (!actions.showSection) return null;
-  return (
-    <section aria-label="Worker" className="rounded-lg border p-3">
-      {actions.showPresetControls ? <div className="flex flex-wrap items-center gap-2">
-        <Pill tone="bg-muted text-muted-foreground" title={pillTitle}>
-          {presetPill}
-          {detail?.card.presetProviderId && detail?.card.presetModelId ? (
-            <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/80">{detail.card.presetProviderId}/{detail.card.presetModelId}</span>
-          ) : null}
-        </Pill>
-        <Button size="sm" variant="outline" onClick={onPreset} title="Change which provider and model the next worker uses. Takes effect when a new worker starts.">Change preset…</Button>
-        <span className="text-xs text-muted-foreground">{presetNote}</span>
-      </div> : null}
-      {actions.showPresetControls && presetStale ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
-          <p className="min-w-40 flex-1 text-xs text-muted-foreground">The running worker predates this preset — Resume will not switch provider/model.</p>
-          <Button size="sm" disabled={restarting} onClick={onRestartWorker}>{restarting ? "Restarting…" : "Restart worker…"}</Button>
-        </div>
-      ) : null}
-      {githubLink ? <div className={hasPreset ? "mt-3 border-t pt-3" : ""}>{githubLink}</div> : null}
-      {checkoutNote ? <p className="mt-2 text-xs text-muted-foreground">{checkoutNote}</p> : null}
-      {detail && hasHistory ? <WorkerHistoryList history={detail.workerHistory} separated={hasPreset || hasGithubLink} /> : null}
-    </section>
-  );
 }
 
 // Research-track card detail: hero + index + fan-out + artifacts + worker +
@@ -6122,7 +4688,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
   const [comment, setComment] = useState("");
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [retrying, setRetrying] = useState(false);
+  const { retrying, doRetry, repairing, doQualityRepair } = useDetailRecoveryActions({ cardId, trackNoun: "research", onChanged });
   const [starting, setStarting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
@@ -6160,38 +4726,6 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
     }
     setComment("");
     onChanged();
-  }
-
-  async function doRetry() {
-    setRetrying(true);
-    try {
-      const result = await rpc.call("retryWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Retry failed. Try Restart fresh instead.");
-      else toast.success("Worker retried — continuing the research.");
-      onChanged();
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  // Quality repair: post the failure list where the worker reads it, then
-  // resume in place. One human action, existing rails only.
-  const [repairing, setRepairing] = useState(false);
-  async function doQualityRepair(lines: string[]) {
-    setRepairing(true);
-    try {
-      const posted = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: `Repair requested — the Quality section names these failures:\n${lines.map((line) => `- ${line}`).join("\n")}` });
-      if (posted.error) {
-        toast.error(posted.error);
-        return;
-      }
-      const retried = await rpc.call("retryWorker", { cardId });
-      if (!retried.ok) toast.error(retried.error ?? "Repair posted, but resume failed.");
-      else toast.success("Repair requested — worker resumed with the failure list.");
-      onChanged();
-    } finally {
-      setRepairing(false);
-    }
   }
 
   async function doStart() {
@@ -6330,7 +4864,7 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
 
             <InputFiles card={card} detail={detail} onView={(file) => setViewerFile(file)} />
 
-            <CardDisclosure
+            <DisclosureSection
               title="Research summary"
               hint={index && index.found ? researchOpportunityHint(available.length, index.opportunities.length) : "being prepared"}
               defaultOpen
@@ -6360,20 +4894,20 @@ function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigat
                   </ul>
                 </div>
               ) : null}
-            </CardDisclosure>
+            </DisclosureSection>
 
             <PreviewSection cardId={card.id} />
 
             <ResearchQualitySection rounds={index?.rounds ?? []} repairing={repairing} onRepair={(lines) => void doQualityRepair(lines)} />
 
-            <CardDisclosure title="Artifacts" hint={artifactCount > 0 ? `${artifactCount} ${artifactCount === 1 ? "file" : "files"} · newest round first` : "being prepared"} defaultOpen>
+            <DisclosureSection title="Artifacts" hint={artifactCount > 0 ? `${artifactCount} ${artifactCount === 1 ? "file" : "files"} · newest round first` : "being prepared"} defaultOpen>
               <ArtifactInventory
                 groups={artifactGroups}
                 workspaceKind={card.workspaceKind}
                 fileEnvironmentId={detail?.fileEnvironmentId ?? null}
                 onView={(file) => setViewerFile(file)}
               />
-            </CardDisclosure>
+            </DisclosureSection>
 
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
 
@@ -6433,7 +4967,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
   const [comment, setComment] = useState("");
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [retrying, setRetrying] = useState(false);
+  const { retrying, doRetry, repairing, doQualityRepair } = useDetailRecoveryActions({ cardId, trackNoun: "exploration", onChanged });
   const [starting, setStarting] = useState(false);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
   const [viewerFile, setViewerFile] = useState<{ display: string; path: string; target: WorkspaceFileTarget | HostFileTarget | null; mode?: ArtifactViewerMode } | null>(null);
@@ -6460,36 +4994,6 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
     }
     setComment("");
     onChanged();
-  }
-
-  async function doRetry() {
-    setRetrying(true);
-    try {
-      const result = await rpc.call("retryWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Retry failed. Try Restart fresh instead.");
-      else toast.success("Worker retried — continuing the exploration.");
-      onChanged();
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  const [repairing, setRepairing] = useState(false);
-  async function doQualityRepair(lines: string[]) {
-    setRepairing(true);
-    try {
-      const posted = await rpc.call("addCardComment", { cardId, target: "card", targetId: cardId, body: `Repair requested — the Quality section names these failures:\n${lines.map((line) => `- ${line}`).join("\n")}` });
-      if (posted.error) {
-        toast.error(posted.error);
-        return;
-      }
-      const retried = await rpc.call("retryWorker", { cardId });
-      if (!retried.ok) toast.error(retried.error ?? "Repair posted, but resume failed.");
-      else toast.success("Repair requested — worker resumed with the failure list.");
-      onChanged();
-    } finally {
-      setRepairing(false);
-    }
   }
 
   async function doStart() {
@@ -6621,7 +5125,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
 
             <ExploreQualitySection cardId={card.id} filePath={detail?.artifacts.map((item) => item.path).find((itemPath) => card?.exploreStage != null && itemPath.endsWith(`explore-${card.exploreStage}.md`)) ?? null} repairing={repairing} onRepair={(lines) => void doQualityRepair(lines)} />
 
-            <CardDisclosure title="Artifacts" hint={detail ? `${detail.artifacts.length} files` : "being prepared"} defaultOpen>
+            <DisclosureSection title="Artifacts" hint={detail ? `${detail.artifacts.length} files` : "being prepared"} defaultOpen>
               {detail ? (
                 <ArtifactGroups
                   artifacts={detail.artifacts}
@@ -6631,7 +5135,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
                   groupTitleForStage={() => stageLabel ?? "Exploration"}
                 />
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
-            </CardDisclosure>
+            </DisclosureSection>
 
             <CardConversation comments={detail?.comments ?? []} draft={comment} onDraftChange={setComment} onSend={() => void submitComment()} defaultOpen={hero?.kind === "decision"} threadId={card?.workerThreadId ?? null} />
 
@@ -6691,8 +5195,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [promoteName, setPromoteName] = useState("");
   const [promoting, setPromoting] = useState(false);
   const [githubPostOpen, setGithubPostOpen] = useState(false);
-  const [githubCloseIssue, setGithubCloseIssue] = useState(false);
-  const [githubPosting, setGithubPosting] = useState(false);
   type PublicationStatus = Awaited<ReturnType<typeof rpc.call<"publicationStatus">>>;
   const [publication, setPublication] = useState<PublicationStatus | null>(null);
   const [publicationLoading, setPublicationLoading] = useState(false);
@@ -6988,25 +5490,6 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
     }
   }
 
-  async function doGithubPost() {
-    setGithubPosting(true);
-    try {
-      const result = await rpc.call("postGithubCompletion", { cardId, closeIssue: githubCloseIssue });
-      if (!result.ok) {
-        toast.error(result.error ?? "Could not post to GitHub.");
-        // Reload anyway: the comment may have posted even when the close
-        // failed, and the card should show the posted state immediately.
-        await load();
-        return;
-      }
-      setGithubPostOpen(false);
-      toast.success(githubCloseIssue ? "Summary posted and issue closed on GitHub." : "Completion summary posted on GitHub.");
-      await load();
-    } finally {
-      setGithubPosting(false);
-    }
-  }
-
   async function doPublicationAction() {
     const action = publicationAction;
     if (!action || publicationSubmitting) return;
@@ -7161,6 +5644,8 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
         onDiscard={() => void openDiscard()}
         onDelete={() => setDeleteOpen(true)}
         onReclassify={doRepair}
+        statusTone={statusTone}
+        intentLabel={(intent) => INTENT_LABEL[intent]}
       />
       <div className="flex-1 overflow-auto p-4">
         <div className="mx-auto w-full max-w-3xl space-y-6">
@@ -7283,7 +5768,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     detail.githubLink.postedAt ? (
                       <span className="text-emerald-700 dark:text-emerald-300">✓ Completion summary posted to GitHub</span>
                     ) : (
-                      <button onClick={() => { setGithubCloseIssue(false); setGithubPostOpen(true); }} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
+                      <button onClick={() => setGithubPostOpen(true)} className="cursor-pointer min-h-11 font-medium text-primary hover:underline">Share completion summary on GitHub…</button>
                     )
                   ) : (
                     <span>A completion summary can be posted once this card is Done.</span>
@@ -7302,7 +5787,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             {/* DISCLOSURE 1 — Workflow progress: where this card is, and the
                 one way to the files it produced. The reference (Workflow map)
                 is its own sibling section, never nested in here. */}
-            <CardDisclosure
+            <DisclosureSection
               title={archivedPresentation?.workflow.title ?? "Workflow progress"}
               subtitle={archivedPresentation ? undefined : scopeTotal > 0 || card?.status === "completed" ? "where this card is" : <>where this card is · <CurrentStagePill stage={card.stage} /></>}
               hint={archivedPresentation?.workflow.hint ?? (scopeTotal > 0 ? `${scopeDone}/${scopeTotal} scopes${openScope ? ` · now: ${openScope.name}` : ""}` : undefined)}
@@ -7374,7 +5859,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   </div>
                 </div>
               ) : null}
-            </CardDisclosure>
+            </DisclosureSection>
 
             {/* Gaps live on the mother card: every escalation names its
                 audit-gap scope status, and blocked done states name the fix.
@@ -7387,7 +5872,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
             <WorkflowMap open={mapOpen} onToggle={setMapOpen} />
 
             <div ref={artifactsRef}>
-            <CardDisclosure
+            <DisclosureSection
               title="Artifacts"
               hint={detail ? `${artifactTotal} file${artifactTotal === 1 ? "" : "s"}${artifactEvidenceTotal > 0 ? ` + ${artifactEvidenceTotal} evidence` : ""} · audit trail${detail.artifacts.some((artifact) => artifact.stage === "unregistered") ? " · some unregistered" : ""}` : "produced files"}
               open={artifactsOpen}
@@ -7418,7 +5903,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   ) : null}
                 </>
               ) : <p className="text-xs text-muted-foreground">Loading…</p>}
-            </CardDisclosure>
+            </DisclosureSection>
             </div>
 
             {/* Diff is the pre-completion review instrument (uncommitted work at
@@ -7428,7 +5913,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                 commit action lives in Git changes. Evaluate in Diff, act in
                 Git changes. */}
             {card && ((card.status !== "completed" && (card.stage === "diff-gate" || card.stage === "audit")) || (card.status === "completed" && publication?.workingTree?.hasUncommittedChanges) || (card.status === "completed" && workspaceRecovery?.kind === "attached")) ? (
-            <CardDisclosure
+            <DisclosureSection
               title="Diff"
               hint={diffData ? (diffData.isRepo ? `${diffData.files.length} files` : "not a git repository") : "working tree vs HEAD"}
               open={diffOpen}
@@ -7474,11 +5959,11 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   {diffData.truncated ? <p className="text-xs text-muted-foreground">Truncated — the full diff is larger than shown.</p> : null}
                 </div>
               ) : null}
-            </CardDisclosure>
+            </DisclosureSection>
             ) : null}
 
             {card.status === "completed" ? (
-              <CardDisclosure
+              <DisclosureSection
                 title="Git changes"
                 hint={publicationLoading ? "Checking BB workspace…" : publication?.source ?? "No live BB workspace"}
                 defaultOpen
@@ -7637,7 +6122,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                     ) : null}
                   </div>
                 ) : null}
-              </CardDisclosure>
+              </DisclosureSection>
             ) : null}
 
             {/* Conversation (history + composer) */}
@@ -7802,28 +6287,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
           ) : null}
         </DialogContent>
       </Dialog>
-      <Dialog open={githubPostOpen} onOpenChange={setGithubPostOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Share completion summary on GitHub?</DialogTitle>
-            <DialogDescription className="space-y-2">
-              <p>
-                Posts a factual summary (scopes, tasks, prompt) as a comment on {detail?.githubLink ? `${detail.githubLink.repo}#${detail.githubLink.number}` : "the linked issue"}. Nothing is posted automatically — only this action writes back.
-              </p>
-            </DialogDescription>
-          </DialogHeader>
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4 cursor-pointer" checked={githubCloseIssue} onChange={(event) => setGithubCloseIssue(event.target.checked)} />
-            <span>Also close the issue on GitHub</span>
-          </label>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={githubPosting}>Cancel</Button>
-            </DialogClose>
-            <Button disabled={githubPosting} onClick={() => void doGithubPost()}>{githubPosting ? "Posting…" : "Post summary"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <GithubCompletionDialog open={githubPostOpen} onOpenChange={setGithubPostOpen} cardId={cardId} issueLabel={detail?.githubLink ? `${detail.githubLink.repo}#${detail.githubLink.number}` : null} onPosted={load} />
       <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
         <DialogContent>
           <DialogHeader>

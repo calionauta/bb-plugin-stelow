@@ -20,6 +20,9 @@ assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanb
 // through params, so a second modal fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const buildDialogKanban = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
+const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
+const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
 assert.equal((app.match(/<BucketGalleryButton cards=\{grouped\.inbox \?\? \[\]\} \/>/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
 // Rendered boards hide the Bucket column (grouping, moves, and filters
 // keep the full catalog): the kanban grids and both list views iterate
@@ -41,8 +44,9 @@ for (const label of ["New issue", "New research", "New exploration"]) {
   assert.ok(window.indexOf("<BucketGalleryButton") < window.indexOf("Agent Presets</Button>"), "Bucket precedes Agent Presets");
 }
 assert.equal((app.match(/<CardGalleryDialog/g) ?? []).length, 2, "one shared gallery dialog: the Bucket button and the hill pile");
-assert.equal((app.match(/const bucketGallery = useBucketGallery\(grouped\.inbox \?\? \[\]\);/g) ?? []).length, 3, "each creation dialog shares one opener for its track's pile");
-assert.equal((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length, 3, "each creation checkbox links to its pile's gallery");
+assert.equal((app.match(/const bucketGallery = useBucketGallery\(grouped\.inbox \?\? \[\]\);/g) ?? []).length, 3, "each track owns one pile opener shared by its header and creation dialog");
+assert.match(buildDialogKanban, /bucketGallery=\{bucketGallery\}/, "the build dialog receives its track pile opener as a prop");
+assert.equal(((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (buildDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (researchDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (exploreDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length), 3, "each creation checkbox links to its pile's gallery");
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
 // Tiles are the board's own tiles at the board's own size. The track bound
 // is derived from KANBAN_COLUMN_WIDTHS.expanded, never a stretched `1fr`,

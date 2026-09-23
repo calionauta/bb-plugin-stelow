@@ -77,7 +77,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   destination it fails closed (save refuses, ticks park with the fix
   named). Rules never move cards, merge code, or import behind the user's
   back. The whole feature is one decoupled module (`server/github-issues.ts`
-  + `components/github-issues-dialog.tsx`, pure core in `lib/`): evolve it
+  + `components/github/`, pure core in `lib/`): evolve it
   there, and `STELOW_GITHUB_ISSUES=0` on the host switches off its
   scheduler, RPCs, and panel button without touching anything else.
   Operator guide (flows, trust model, kill switch, module map):

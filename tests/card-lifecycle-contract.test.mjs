@@ -7,6 +7,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const buildStatusPills = readFileSync(join(root, "components/dashboard/build-status-pills.tsx"), "utf8");
+const conversation = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
+const cardConversation = readFileSync(join(root, "components", "conversation", "card-conversation.tsx"), "utf8");
+const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
+const disclosureModule = readFileSync(join(root, "components", "disclosure.tsx"), "utf8");
+const artifactModule = readFileSync(join(root, "components", "artifacts", "artifact-inventory.tsx"), "utf8");
+const creationModule = readFileSync(join(root, "components", "creation", "creation-settings.tsx"), "utf8");
+const strategyPickerModule = readFileSync(join(root, "components", "creation", "strategy-picker.tsx"), "utf8");
+const manageMenu = readFileSync(join(root, "components", "manage", "card-actions-menu.tsx"), "utf8");
+const manageRecovery = readFileSync(join(root, "components", "manage", "detail-recovery-actions.ts"), "utf8");
+const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 function rpcMethod(name, nextName) {
   const start = server.indexOf(`    async ${name}(`);
@@ -37,9 +47,9 @@ assert.match(rename, /heuristicDisplayName\(card\.prompt, card\.name\)/, "blank 
 assert.match(rename, /UPDATE cards SET display_name = \?, updated_at = \? WHERE id = \?/, "rename writes display_name, nothing else");
 assert.match(rename, /publish\("card-state", \{ cardId \}\)/, "rename refreshes open card surfaces");
 assert.match(server, /void suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
-assert.match(app, /aria-label="Rename card"/, "the header offers inline rename beside the title");
-assert.match(app, /aria-label="Card title"/, "the rename input is labelled");
-assert.match(app, /rpc\.call\("renameCard", \{ cardId: card\.id, name: draftName \}\)/, "save rides the rename RPC, cancel just closes");
+assert.match(manageHeader, /aria-label="Rename card"/, "the header offers inline rename beside the title");
+assert.match(manageHeader, /aria-label="Card title"/, "the rename input is labelled");
+assert.match(manageHeader, /rpc\.call\("renameCard", \{ cardId, name: draftName \}\)/, "save rides the rename RPC, cancel just closes");
 
 // Fire-and-forget titling: creation keeps the instant heuristic and the
 // Generation burst upgrades it when it lands — never blocking, never
@@ -63,17 +73,33 @@ const remove = rpcMethod("deleteCard", "retryWorker");
 assert.match(remove, /publish\("card-state", \{ cardId \}\)/, "delete refreshes open card surfaces");
 assert.match(remove, /publish\("board-changed", \{ cardId \}\)/, "delete refreshes board surfaces");
 
-assert.match(app, /workerSectionPolicy\(card, Boolean\(detail\?\.card\.needsAttention\), \{ hasGithubLink, historyCount: detail\?\.workerHistory\.length \?\? 0 \}\)/, "Worker visibility comes from the shared policy");
+assert.match(workerHistory, /workerSectionPolicy\(card, Boolean\(detail\?\.card\.needsAttention\), \{ hasGithubLink, historyCount: detail\?\.workerHistory\.length \?\? 0 \}\)/, "Worker visibility comes from the shared policy");
 assert.match(app, /archivedCardDetailPresentation\(card, stageLabel\)/, "archived hero and workflow copy come from one presentation policy");
 
-const header = appFunction("CardDetailHeader", "// Status rank");
-assert.match(header, /canEditWorkflowIntent\(card\)/, "the header delegates type editability to the shared policy");
+assert.match(manageHeader, /canEditWorkflowIntent\(card\)/, "the header delegates type editability to the shared policy");
 
-const menu = appFunction("CardActionsMenu", "function CardDetailHeader");
-assert.doesNotMatch(menu, /Stop & archive/, "two distinct lifecycle actions are never conflated");
+assert.doesNotMatch(manageMenu, /Stop & archive/, "two distinct lifecycle actions are never conflated");
+// Failure recovery: one hook serves the lightweight bodies — retry in
+// place, repair posts-then-resumes through the same retry rail — with
+// the track noun flavoring the toast.
+assert.match(manageRecovery, /export function useDetailRecoveryActions\(\{ cardId, trackNoun, onChanged/, "retry and repair live in one shared hook");
+assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "research", onChanged \}\)/, "the research body delegates recovery");
+assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "exploration", onChanged \}\)/, "the explore body delegates recovery");
+assert.match(manageRecovery, /Worker retried — continuing the \$\{trackNoun\}\./, "the retry toast names its track");
+assert.match(manageRecovery, /const retried = await rpc\.call\("retryWorker", \{ cardId \}\)/, "repair resumes through the retry rail, never a second path");
+// Manage surfaces: menu, header, and confirm live in one home; the panel
+// reads them, never pastes them. Picking a menu entry closes the menu
+// before the action runs.
+assert.match(manageMenu, /export function CardActionsMenu\(\{ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify/, "the menu lives in the manage module");
+assert.match(manageHeader, /export function CardDetailHeader\(\{ card, onBack, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify, statusTone, intentLabel/, "the header lives in the manage module");
+assert.match(app, /import \{ CardDetailHeader \} from "\.\/components\/manage\/card-detail-header"/, "detail bodies read the shared header");
+assert.match(app, /import \{ ConfirmActionDialog \} from "\.\/components\/manage\/confirm-action-dialog"/, "detail bodies read the shared confirm");
+assert.doesNotMatch(app, /function CardActionsMenu\(/, "no local menu copy survives in the panel");
+assert.doesNotMatch(app, /function CardDetailHeader\(/, "no local header copy survives in the panel");
+assert.doesNotMatch(app, /function ConfirmActionDialog\(/, "no local confirm copy survives in the panel");
+assert.match(manageMenu, /onPick=\{\(action\) => \{ setOpen\(false\); action\(\); \}\}/, "picking closes the menu before running");
 
-const worker = appFunction("WorkerSection", "// Research-track card detail");
-assert.doesNotMatch(worker, /Archive card|Delete permanently|Restart fresh/, "Worker contains worker context only, never card lifecycle actions");
+assert.doesNotMatch(workerHistory, /Archive card|Delete permanently|Restart fresh/, "Worker contains worker context only, never card lifecycle actions");
 
 // Archived is terminal: the single updateCard choke point strips
 // resuscitations, worker-thread events never reach archived cards, and the
@@ -112,7 +138,7 @@ assert.match(server, /if \(!card\.worker_thread_id\) return \{ ok: false, error:
 assert.match(server, /CREATE TABLE IF NOT EXISTS question_evidence/, "asked documents keep an ask-time baseline for staleness notices");
 assert.match(server, /void snapshotQuestionEvidence\(cardRow\.id, groups\.flatMap/, "asking snapshots its documents before the blocking wait, never blocking the ask");
 assert.match(server, /stalenessForQuestions\(cardId, \[\.\.\.pending, \.\.\.expiredQuestions\]\)/, "card reads compare every open question against its baseline");
-assert.match(app, /<StalenessNotice staleness=\{current\.staleness\} \/>/, "each open question carries its own notice");
+assert.match(conversation, /<StalenessNotice staleness=\{current\.staleness\} \/>/, "each open question carries its own notice");
 assert.match(server, /auditReceiptReadiness\(receiptContent, stateBlob \? parseArtifactManifest\(stateBlob\) : \[\], checkout\?\.path \?\? null, gitEvidence, verificationRun\)/, "Build completion passes host-sampled Git and test evidence into receipt validation");
 
 // The single updateCard choke point strips resuscitations twice: against the
@@ -183,7 +209,7 @@ assert.match(buildStatusPills, /Workflow stage[\s\S]*stageLabel\(card\.stage\)[\
 assert.match(buildStatusPills, /card\.activity === "awaiting-answer"[\s\S]*ActivityPill/, "Build summaries surface human waiting consistently");
 assert.doesNotMatch(buildStatusPills, /Board location|Lifecycle state/, "Build summaries do not duplicate column or lifecycle labels");
 assert.match(boardCard, /BuildStatusPills \{\.\.\.buildStatusPillProps\(card\)\}/, "Kanban tiles use the shared Build state presentation");
-assert.match(header, /BuildStatusPills \{\.\.\.buildStatusPillProps\(card\)\}/, "open Build cards use the same state presentation as Kanban tiles");
+assert.match(manageHeader, /<BuildStatusPills card=\{card\} statusTone=\{statusTone\} intentLabel=\{intentLabel\} \/>/, "open Build cards use the same state presentation as Kanban tiles");
 assert.match(boardCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "build tiles offer heading recovery for idle stalls only, never for failures");
 assert.match(lightweightCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "research/explore tiles match: heading recovery is idle-only");
 assert.doesNotMatch(boardCard, /bg-destructive\/10/, "build tiles render no failure body — the open card explains");
@@ -251,7 +277,20 @@ assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questio
 assert.match(answerExpired, /cleanAnswerList\(item\.answers\)/, "timed-out answers are cleaned through the shared helper before completeness validation");
 assert.match(answerExpired, /recordSplitAnswer\(db, cardId, decisions\)/, "a timed-out split answer records through the same shared helper as a live answer");
 assert.match(answerExpired, /if \(rows\.size !== openIds\.size\) return \{ ok: false as const, answered: 0, error: "Answer every pending question before submitting\." \}/, "timed-out batches refuse a partial answer at the RPC boundary");
-assert.match(app, /\{isLastQuestion \? <Button size="sm" disabled=\{!complete \|\| busy\}/, "the batch action only renders on the last step and waits for every decision");
+assert.match(conversation, /\{sel\.isLastQuestion \? <Button size="sm" disabled=\{!sel\.complete \|\| busy\}/, "the batch action only renders on the last step and waits for every decision");
+// Stepper composition: one selection hook drives dots, options, and
+// submit; heading and option list render through dedicated units.
+assert.match(conversation, /const sel = useBatchSelection\(questions\)/, "dots, options, and submit read one selection state");
+assert.match(conversation, /<BatchQuestionHeading questions=\{questions\}/, "the heading renders through one unit");
+assert.match(conversation, /<BatchOptionList current=\{current\}/, "options render through one list");
+assert.match(conversation, /if \(!has\) setCustom\(\(c\) => \(\{\s*\.\.\.c, \[question\.id\]: ""\s*\}\)\)/, "single-select keeps option and custom text mutually exclusive");
+// Agent thread: one shared conversation component across detail bodies —
+// history plus compose box — never a per-track copy.
+assert.match(cardConversation, /export function CardConversation\(\{ comments, draft, onDraftChange, onSend/, "the agent thread lives in the conversation module");
+assert.match(app, /import \{ CardConversation \} from "\.\/components\/conversation\/card-conversation"/, "detail bodies read the shared thread");
+assert.doesNotMatch(app, /function CardConversation\(/, "no local thread copy survives in the panel");
+assert.match(cardConversation, /disabled=\{!draft\.trim\(\)\} onClick=\{\(\) => onSend\(\)\}>Send to agent/, "empty drafts cannot send");
+assert.match(cardConversation, /event\.metaKey \|\| event\.ctrlKey/, "keyboard send rides Cmd/Ctrl+Enter");
 
 const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
 assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
@@ -259,12 +298,12 @@ assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecovery
 // One progress section, one artifact home, one reference. The doc buttons that
 // duplicated Artifacts are gone, counts are counts, and the reference map is a
 // sibling of the progress section rather than nested inside card state.
-assert.match(app, /function DisclosureSection\(\{ title, subtitle, hint/, "a section can name its job on its own line");
+assert.match(disclosureModule, /function DisclosureSection\(\{ title, subtitle, hint/, "a section can name its job on its own line");
 assert.doesNotMatch(app, /onShowArtifacts/, "the per-stage document buttons are gone; files and navigation never share one shape");
 assert.doesNotMatch(app, /workflow\.progressTitle/, "the progress block no longer repeats the disclosure title it sits under");
 assert.doesNotMatch(app, /Agent advances alone/, "the override coaching stops being permanent chrome");
 const progressSection = app.slice(app.indexOf("DISCLOSURE 1"), app.indexOf("<div ref={artifactsRef}>"));
-assert.ok(progressSection.length > 0 && progressSection.indexOf("</CardDisclosure>") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of progress, never nested inside it");
+assert.ok(progressSection.length > 0 && progressSection.indexOf("</DisclosureSection>") < progressSection.indexOf("<WorkflowMap"), "the workflow map is a sibling of progress, never nested inside it");
 assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplicates the triage column");
 
 // Finished work is not blocked work. The review signal is its own quieter
@@ -277,8 +316,29 @@ assert.match(server, /current\.kind === "build" && !opts\?\.suppressCompletionEv
 
 // Two receipts, one word apart. Only their freshness tells them apart, so the
 // card asks the owning helper for that verdict and labels both where they list.
-assert.match(app, /rpc\.call\("auditTrailStatus", \{ cardId \}\)/, "freshness comes from the host, never guessed in the UI");
+assert.match(artifactModule, /rpc\.call\("auditTrailStatus", \{ cardId \}\)/, "freshness comes from the host, never guessed in the UI");
 assert.match(app, /card\.status === "completed" \? <AuditTrailStatusRow cardId=\{card\.id\} \/> : null/, "the freshness row appears only where a receipt can exist");
+// Artifact surfaces: one shared inventory renderer plus the audit-trail
+// freshness row — grouping sums through lib, the row re-checks on demand.
+assert.match(artifactModule, /export function ArtifactInventory\(\{ groups, workspaceKind, fileEnvironmentId, onView/, "the inventory lives in the artifacts module");
+assert.match(artifactModule, /export function AuditTrailStatusRow\(\{ cardId \}/, "the freshness row lives in the artifacts module");
+assert.match(app, /import \{ ArtifactGroups, ArtifactInventory, AuditTrailStatusRow, artifactFilename, artifactGroupTitle, fileLinkTarget, type ArtifactInventoryGroup, type HostFileTarget, type WorkspaceFileTarget \} from "\.\/components\/artifacts\/artifact-inventory"/, "detail bodies read the shared artifact surfaces");
+assert.doesNotMatch(app, /function ArtifactInventory\(/, "no local inventory copy survives in the panel");
+assert.doesNotMatch(app, /function AuditTrailStatusRow\(/, "no local freshness-row copy survives in the panel");
+assert.match(artifactModule, /groupArtifactsByStage\(artifacts\)/, "stage grouping sums through the lib, never inline math");
+// Review checkpoints: bulk actions and one-click templates write into the
+// same multi-select state as the checkboxes — shortcuts, never a second
+// model; rows render through one shared row.
+assert.match(creationModule, /<ReviewGateBulkActions onChange=\{onChange\} \/>/, "select-all and clear share the picker state");
+assert.match(creationModule, /<ReviewGateTemplates onPick=\{onChange\} \/>/, "templates write into the picker state");
+assert.match(creationModule, /onClick=\{\(\) => onPick\(\[\.\.\.preset\.gates\]\)\}/, "a template replaces the selection, never appends");
+assert.match(creationModule, /<ReviewGateOptionRow key=\{option\.value\} option=\{option\} selected=\{value\.includes\(option\.value\)\} groupName=\{groupName\} onToggle=\{toggle\} \/>/, "options render through one shared row");
+// Strategy picker: search narrows across identity, label, blurb, and
+// keywords; results delegate rows; the attention signal drives the flash.
+assert.match(strategyPickerModule, /strategies\.filter\(\(entry\) => \[entry\.id, entry\.label, entry\.blurb, \.\.\.entry\.keywords\]/, "search narrows the list, never just filters it");
+assert.match(strategyPickerModule, /<StrategyOptionRow key=\{entry\.id\} entry=\{entry\} selected=\{value === entry\.id\}/, "options render through one shared row");
+assert.match(strategyPickerModule, /<StrategyResults visible=\{visible\}/, "the shell composes search, count, and results");
+assert.match(strategyPickerModule, /const flash = useAttentionFlash\(attentionSignal, searchRef\)/, "the attention signal drives search focus and flash");
 assert.match(app, /if \(card\?\.status === "completed"\) setArtifactsOpen\(true\)/, "a completed card opens its evidence instead of hiding it");
 assert.match(server, /const isTrail = basename\(absolute\) === AUDIT_TRAIL_FILE;/, "the host recognizes the portable receipt by the name Stelow owns");
 assert.match(server, /stage: isTrail \? "audit" : "unregistered"/, "the portable receipt is attributed to the stage that produced it");

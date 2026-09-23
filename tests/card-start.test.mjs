@@ -12,7 +12,14 @@ const app = readFileSync(join(root, "app.tsx"), "utf8");
 // GitHub issues live decoupled: the feature module owns matching,
 // creation, scheduler, and RPCs; server.ts only wires the seam.
 const githubServer = readFileSync(join(root, "server", "github-issues.ts"), "utf8");
-const githubApp = readFileSync(join(root, "components", "github-issues-dialog.tsx"), "utf8");
+const githubApp = readFileSync(join(root, "components", "github", "github-issues-dialog.tsx"), "utf8");
+const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
+const researchDialog = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
+const exploreDialog = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
+const githubImport = readFileSync(join(root, "components", "github", "github-import-tab.tsx"), "utf8");
+const githubAuto = readFileSync(join(root, "components", "github", "github-automation-tab.tsx"), "utf8");
+const githubState = readFileSync(join(root, "components", "github", "github-dialog-state.ts"), "utf8");
+const githubChrome = readFileSync(join(root, "components", "github", "github-dialog-chrome.tsx"), "utf8");
 const startCheck = readFileSync(join(root, "components", "start-immediately-check.tsx"), "utf8");
 
 // Deferred start: creating spawns by default, and parks only where a human
@@ -42,33 +49,56 @@ assert.ok(!splitCall.includes("start"), "split children inherit start-by-default
 // offer Start in place of thread-bound actions. Every track offers it —
 // Build included, so no track can only be created running.
 assert.match(startCheck, /function StartImmediatelyCheck/, "one checkbox component serves every creation dialog");
-assert.equal(((app.match(/<StartImmediatelyCheck/g) ?? []).length + (githubApp.match(/<StartImmediatelyCheck/g) ?? []).length), 5, "build, research, explore, import, and automation dialogs all offer it");
+assert.equal(((buildDialog.match(/<StartImmediatelyCheck/g) ?? []).length + (researchDialog.match(/<StartImmediatelyCheck/g) ?? []).length + (exploreDialog.match(/<StartImmediatelyCheck/g) ?? []).length + (githubImport.match(/<StartImmediatelyCheck/g) ?? []).length + (githubAuto.match(/<StartImmediatelyCheck/g) ?? []).length), 5, "build, research, explore, import, and automation dialogs all offer it");
 // The word rides the board label map, never a pasted string — renaming the
 // concept again is one line. The creation checkboxes link to their pile's
 // gallery; the GitHub dialogs (no pile in scope) render plain text.
 assert.match(startCheck, /BUILD_BOARD_COLUMN_LABELS\[BUILD_BOARD_INBOX\]/, "the checkbox names the column from the label map");
 assert.doesNotMatch(startCheck, /park in Inbox/, "no pasted Inbox survives in the checkbox copy");
-assert.equal((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length, 3, "build, research, and explore checkboxes link to their galleries");
-assert.equal((githubApp.match(/onViewBucket/g) ?? []).length, 0, "import and automation checkboxes render the plain word");
-assert.match(app, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
-assert.match(app, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
-assert.match(app, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");
-assert.match(githubApp, /rpc\.call\("importGithubIssue", \{[^}]*start: importStart/, "import submit passes the choice");
-assert.match(githubApp, /<IsolatedWorktreeCheck checked=\{importIsolated\} onChange=\{setImportIsolated\} \/>/, "import offers the shared isolated toggle");
-assert.match(githubApp, /isolated: importIsolated \}\)/, "import submit passes isolation");
-assert.doesNotMatch(githubApp, /separate copy/, "the toggle copy lives in one component, never pasted in the dialog");
+assert.equal(((buildDialog.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (researchDialog.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (exploreDialog.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length), 3, "build, research, and explore checkboxes link to their galleries");
+assert.equal(((githubImport.match(/onViewBucket/g) ?? []).length + (githubAuto.match(/onViewBucket/g) ?? []).length), 0, "import and automation checkboxes render the plain word");
+assert.match(buildDialog, /rpc\.call\("createCard", \{[^}]*start: startImmediately/, "build submit passes the choice");
+// Build creation: one dialog component owns draft, intent, error, and
+// start — the panel keeps the open flag plus board defaults.
+assert.match(buildDialog, /export function CreateBuildDialog\(\{ open, onOpenChange, activeProjectId, analysisPreset/, "the build dialog lives in the creation module");
+assert.match(app, /import \{ CreateBuildDialog \} from "\.\/components\/creation\/create-build-dialog"/, "the board reads the shared dialog");
+assert.doesNotMatch(app, /rpc\.call\("createCard",/, "no local build submit survives in the panel");
+assert.match(buildDialog, /function handleOpenChange\(next: boolean\) \{\s*\n\s*onOpenChange\(next\);\s*\n\s*if \(next\) submit\.resetOnOpen\(\);/, "every open resets to started with a clean error");
+assert.match(buildDialog, /function resetOnOpen\(\) \{\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "reset restores started default and clears the error");
+assert.match(researchDialog, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
+// Research creation: one dialog component owns draft, strategy, error,
+// and start — the panel keeps the open flag plus the strategy catalog.
+assert.match(researchDialog, /export function CreateResearchDialog\(\{ open, onOpenChange, activeProjectId, strategies, researchPreset/, "the research dialog lives in the creation module");
+assert.match(app, /import \{ CreateResearchDialog \} from "\.\/components\/creation\/create-research-dialog"/, "the board reads the shared dialog");
+assert.doesNotMatch(app, /rpc\.call\("createResearchCard",/, "no local research submit survives in the panel");
+assert.match(researchDialog, /function resetOnOpen\(\) \{\s*\n\s*setStrategy\(null\);\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "every open resets strategy, start, and error");
+assert.match(exploreDialog, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");
+// Explore creation: one dialog component owns draft, stage, error, and
+// start — the panel keeps the open flag plus the technique catalog.
+assert.match(exploreDialog, /export function CreateExploreDialog\(\{ open, onOpenChange, activeProjectId, stages, explorePreset/, "the explore dialog lives in the creation module");
+assert.match(app, /import \{ CreateExploreDialog \} from "\.\/components\/creation\/create-explore-dialog"/, "the board reads the shared dialog");
+assert.doesNotMatch(app, /rpc\.call\("createExploreCard",/, "no local explore submit survives in the panel");
+assert.match(exploreDialog, /function resetOnOpen\(\) \{\s*\n\s*setStage\(null\);\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "every open resets stage, start, and error");
+assert.match(githubState, /rpc\.call\("importGithubIssue", \{[^}]*start: importStart/, "import submit passes the choice");
+assert.match(githubImport, /<IsolatedWorktreeCheck checked=\{importIsolated\} onChange=\{setImportIsolated\} \/>/, "import offers the shared isolated toggle");
+assert.match(githubState, /isolated: importIsolated \}\)/, "import submit passes isolation");
+assert.doesNotMatch(githubImport, /separate copy/, "the toggle copy lives in one component, never pasted in the dialog");
 const disclosure = readFileSync(join(root, "components", "disclosure.tsx"), "utf8");
 assert.match(disclosure, /export function DisclosureChevron/, "the chevron lives in one shared module");
 assert.match(disclosure, /export function DetailsDisclosure/, "progressive disclosure is one convention, not ad-hoc details");
-assert.match(app, /import \{ DisclosureChevron \} from "\.\/components\/disclosure"/, "the panel reads the shared chevron");
+assert.match(app, /import \{ DisclosureChevron, DisclosureSection \} from "\.\/components\/disclosure"/, "the panel reads the shared disclosure set");
 assert.doesNotMatch(app, /function DisclosureChevron\(/, "no local chevron copy survives in the panel");
+assert.match(disclosure, /export function DisclosureSection/, "the section lives in the shared disclosure module");
+assert.doesNotMatch(disclosure, /CardDisclosure/, "the legacy card name is migrated, never aliased");
+assert.doesNotMatch(app, /CardDisclosure/, "no legacy card name survives in the panel");
+assert.doesNotMatch(app, /function DisclosureSection\(/, "no local section copy survives in the panel");
 assert.match(readFileSync(join(root, "components", "isolated-worktree-check.tsx"), "utf8"), /<DetailsDisclosure summary="How it works">/, "the toggle discloses progressively");
 assert.match(githubServer, /presetId = resolveWorktreePreset\(\);/, "isolated import resolves the worktree preset");
 assert.match(githubServer, /Isolated start refused:/, "missing isolation refuses with the redirect, never silent checkout");
 assert.match(githubServer, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)"\)\.run\(created\.cardId, presetId, now\(\)\)/, "parked isolated imports pin their preset for the later Start");
-assert.match(githubApp, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
-assert.match(githubApp, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
-assert.match(githubApp, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");
+assert.match(githubState, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
+assert.match(githubState, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
+assert.match(githubState, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");
 assert.match(githubServer, /seenKeys: seenAutomationKeys\(row\.id\)/, "the tick consults the backlog guard before matching");
 assert.match(githubServer, /primed = await primeAutomationRule\(ruleId, projectId, clean, authors\)/, "enabling a rule primes the backlog without drafting");
 assert.match(githubServer, /Rule saved disabled \(/, "a prime failure refuses live rules with the retry path named");
@@ -91,9 +121,10 @@ assert.doesNotMatch(githubServer, /card_id, fired_at\) VALUES/, "fires rows alwa
 // so no copy pins here.
 // Same checkbox, per-dialog default: creation dialogs start checked,
 // GitHub flows park unchecked.
-assert.match(app, /const \[startImmediately, setStartImmediately\] = useState\(true\)/, "new-issue dialogs default to started");
-assert.match(githubApp, /const \[importStart, setImportStart\] = useState\(false\)/, "import defaults to parked");
-assert.match(githubApp, /const \[automationStart, setAutomationStart\] = useState\(false\)/, "automation defaults to parked");
+assert.match(buildDialog, /const \[startImmediately, setStartImmediately\] = useState\(true\)/, "new-issue dialogs default to started");
+assert.equal(((buildDialog.match(/setStartImmediately\] = useState\(true\)/g) ?? []).length + (researchDialog.match(/setStartImmediately\] = useState\(true\)/g) ?? []).length + (exploreDialog.match(/setStartImmediately\] = useState\(true\)/g) ?? []).length), 3, "build, research, and explore creation default to started");
+assert.match(githubState, /const \[importStart, setImportStart\] = useState\(false\)/, "import defaults to parked");
+assert.match(githubState, /const \[automationStart, setAutomationStart\] = useState\(false\)/, "automation defaults to parked");
 assert.equal((app.match(/rpc\.call\("startWorker"/g) ?? []).length, 3, "build, research, and explore cards all offer Start");
 assert.match(app, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
 // The Bucket is the board's first column on every track, and leaving it is
@@ -120,55 +151,61 @@ assert.match(server, /auditReceiptReadiness\(receiptContent/, "Build done checks
 // Automation rules live on the picker's project, not the board's: the Auto
 // tab offers every project (the dialog opens from boards with none active),
 // re-anchors on every open, and every rule RPC carries the picked id.
-assert.match(githubApp, /label="Project for new rules"/, "the Auto tab offers a project picker");
-assert.match(githubApp, /setRuleProjectId\(id\); setRulePreview\(null\); void refreshAutomationRules\(id\)/, "picking a project reloads its rules at once");
-assert.match(githubApp, /const target = activeProjectId \?\? projects\[0\]\?\.id \?\? null;/, "opening re-anchors to the board project, else the first");
-assert.match(githubApp, /rpc\.call\("saveAutomationRule", \{ projectId: ruleProjectId/, "saves carry the picked project");
-assert.match(githubApp, /rpc\.call\("previewAutomationRule", \{ projectId: ruleProjectId/, "previews carry the picked project");
-assert.match(githubApp, /rpc\.call\("listAutomationRules", \{ projectId \}/, "refresh carries its explicit project");
-assert.doesNotMatch(githubApp, /projectId: activeProjectId/, "no rule RPC rides the ambient board project anymore");
-assert.match(githubApp, /Add rule to <span/, "the save names its project — carried-over labels can never land silently");
+assert.match(githubAuto, /label="Project for new rules"/, "the Auto tab offers a project picker");
+assert.match(githubAuto, /setRuleProjectId\(id\); setRulePreview\(null\); void refreshAutomationRules\(id\)/, "picking a project reloads its rules at once");
+assert.match(githubState, /const target = activeProjectId \?\? projects\[0\]\?\.id \?\? null;/, "opening re-anchors to the board project, else the first");
+assert.match(githubState, /rpc\.call\("saveAutomationRule", \{ projectId: ruleProjectId/, "saves carry the picked project");
+assert.match(githubState, /rpc\.call\("previewAutomationRule", \{ projectId: ruleProjectId/, "previews carry the picked project");
+assert.match(githubState, /rpc\.call\("listAutomationRules", \{ projectId \}/, "refresh carries its explicit project");
+assert.doesNotMatch(githubState, /projectId: activeProjectId/, "no rule RPC rides the ambient board project anymore");
+assert.match(githubChrome, /Add rule to <span/, "the save names its project — carried-over labels can never land silently");
 
 // Shared filter fields: both tabs filter the same issue universe through
 // one visual language (visible labels, h-11 controls, chips for label
 // sets) instead of two dialects. A tab that grows its own filter copy
 // fails here.
 const githubFilters = readFileSync(join(root, "components", "github-filter-fields.tsx"), "utf8");
-assert.match(githubApp, /from "\.\/github-filter-fields"/, "the dialog imports the shared fields");
-assert.equal((githubApp.match(/<LabelChipsField/g) ?? []).length, 2, "import and auto tabs share the chips field");
-assert.equal((githubApp.match(/<ProjectFilterSelect/g) ?? []).length, 2, "import and auto tabs share the project select");
+assert.match(githubImport, /from "\.\.\/github-filter-fields"/, "the import tab reads the shared fields");
+assert.match(githubAuto, /from "\.\.\/github-filter-fields"/, "the auto tab reads the shared fields");
+assert.equal((githubImport.match(/<LabelChipsField/g) ?? []).length, 1, "the import tab renders one chips field");
+assert.equal((githubAuto.match(/<LabelChipsField/g) ?? []).length, 1, "the auto tab renders one chips field");
+assert.equal((githubImport.match(/<ProjectFilterSelect/g) ?? []).length, 1, "the import tab renders one project select");
+assert.equal((githubAuto.match(/<ProjectFilterSelect/g) ?? []).length, 1, "the auto tab renders one project select");
 assert.ok((githubFilters.match(/h-11/g) ?? []).length >= 3, "shared inputs, selects, and buttons share one control height");
 
 // Label chips are the server query, not a client filter: editing them
 // re-searches at once, so the list can never freeze on a removed label.
 // An emptied set clears instead of erroring; the field explains the next
 // step.
-assert.match(githubApp, /onChange=\{\(next\) => \{ setImportLabels\(next\); void listGithubIssues\(next\); \}\}/, "import chip edits re-search with the new set");
-assert.match(githubApp, /async function listGithubIssues\(explicit\?: string\[\]\)/, "the search accepts the explicit set, not just state");
-assert.match(githubApp, /setImportCandidates\(\[\]\);\n\s*setImportSelected\(\{\}\);\n\s*return;/, "emptying the chips clears stale results without a fetch");
-assert.match(githubApp, /onChange=\{\(next\) => \{ setAutomationLabels\(next\); setRulePreview\(null\); \}\}/, "auto chip edits invalidate the stale preview");
+assert.match(githubImport, /onChange=\{\(next\) => \{ setImportLabels\(next\); void listGithubIssues\(next\); \}\}/, "import chip edits re-search with the new set");
+assert.match(githubState, /async function listGithubIssues\(explicit\?: string\[\]\)/, "the search accepts the explicit set, not just state");
+// Narrowing and preselect live in lib (tested): the hook delegates.
+assert.match(githubState, /filterImportCandidates<GithubCandidate>\(importCandidates/, "narrowing delegates to the tested lib helper");
+assert.match(githubState, /setImportSelected\(preselectFreshIssues\(result\.issues\)\)/, "preselect delegates to the tested lib helper");
+assert.match(githubState, /setImportCandidates\(\[\]\);\n\s*setImportSelected\(\{\}\);\n\s*return;/, "emptying the chips clears stale results without a fetch");
+assert.match(githubAuto, /onChange=\{\(next\) => \{ setAutomationLabels\(next\); setRulePreview\(null\); \}\}/, "auto chip edits invalidate the stale preview");
 
 // The auto tab's scope picker is the same shared select in required mode:
 // no "all", no ambient default, and switching projects reloads + clears
 // the preview built for the previous scope.
-assert.match(githubApp, /allowAll=\{false\}/, "rule scope never offers an all-projects escape");
-assert.match(githubApp, /setRulePreview\(null\); void refreshAutomationRules\(id\)/, "switching rule project reloads and drops the old preview");
+assert.match(githubAuto, /allowAll=\{false\}/, "rule scope never offers an all-projects escape");
+assert.match(githubAuto, /setRulePreview\(null\); void refreshAutomationRules\(id\)/, "switching rule project reloads and drops the old preview");
 
 // Authors allowlist and worker instructions are rule scope, not import
 // filters: they shape what a rule drafts, so they render once, in the
 // Auto tab. The import tab narrows with assignee instead.
-assert.equal((githubApp.match(/Only these authors/g) ?? []).length, 1, "the authors allowlist exists once, in rule scope");
-assert.equal((githubApp.match(/Worker instructions/g) ?? []).length, 1, "worker instructions exist once, in rule scope");
+assert.equal((githubAuto.match(/Only these authors/g) ?? []).length, 1, "the authors allowlist exists once, in rule scope");
+assert.equal((githubAuto.match(/Worker instructions/g) ?? []).length, 1, "worker instructions exist once, in rule scope");
 
 // Dialog tabs are a real tablist (panels switch in place): roles,
 // roving tabindex, arrows/Home/End. The board stays a nav (aria-current,
 // routed views) and inbox filters stay pressed buttons — same look,
 // three different contracts, documented at the component.
-assert.match(githubApp, /role="tablist" aria-label="GitHub sections"/, "dialog tabs announce as a tablist");
-assert.match(githubApp, /role="tab"[\s\S]*?aria-selected=\{githubTab === tab\}/, "tabs expose selection, not pressed state");
-assert.match(githubApp, /tabIndex=\{githubTab === tab \? 0 : -1\}/, "roving tabindex keeps one tab stop");
-assert.match(githubApp, /event\.key === "ArrowRight"/, "arrow keys move between tabs");
+assert.match(githubChrome, /role="tablist" aria-label="GitHub sections"/, "dialog tabs announce as a tablist");
+assert.match(githubChrome, /role="tab"[\s\S]*?aria-selected=\{tab === entry\}/, "tabs expose selection, not pressed state");
+assert.match(githubChrome, /tabIndex=\{tab === entry \? 0 : -1\}/, "roving tabindex keeps one tab stop");
+assert.match(githubChrome, /event\.key === "ArrowRight"/, "arrow keys move between tabs");
 assert.match(githubApp, /role="tabpanel" id=\{`github-panel-\$\{githubTab\}`\}/, "the visible panel is labelled by its tab");
-assert.match(githubApp, /Deliberately NOT the board's nav pattern/, "the three-pattern split is documented, not accidental");
+assert.match(githubChrome, /Deliberately NOT the board's nav pattern/, "the three-pattern split is documented, not accidental");
 
 console.log("card start test ok: deferred start, shared spawn, split always starts");

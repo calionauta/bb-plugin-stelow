@@ -94,6 +94,10 @@ assert.equal(fallback.executionInputSources.providerId, "explicit", "missing pro
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const composerHelper = readFileSync(join(root, "components", "creation", "composer-execution.ts"), "utf8");
+const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
+const exploreDialog = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
+const researchDialog = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 
 assert.match(server, /composerExecutionSchema/, "the RPC contract names the shared execution schema");
 for (const method of ["createCard", "createResearchCard", "createExploreCard"]) {
@@ -118,8 +122,12 @@ const pinAt = createWindow.indexOf("pinnedOverrideId, ts");
 assert.ok(cardsInsertAt >= 0 && pinAt >= 0 && cardsInsertAt < pinAt, "the override pin lands after the card row");
 assert.ok(createWindow.includes("DELETE FROM presets WHERE id = ?"), "a failed spawn cleans the staged override row");
 
-assert.match(app, /function composerExecutionOf\(/, "the panel extracts the composer choice through one helper");
-assert.equal((app.match(/composerExecutionOf\(request\)/g) ?? []).length, 3, "build, research and explore submits all forward the choice");
+assert.match(composerHelper, /export function composerExecutionOf\(/, "the creation module extracts the composer choice through one helper");
+assert.equal((app.match(/composerExecutionOf\(request\)/g) ?? []).length, 0, "no submit left in the panel forwards inline");
+assert.equal((buildDialog.match(/composerExecutionOf\(request\)/g) ?? []).length, 1, "the build submit forwards the choice");
+assert.equal((researchDialog.match(/composerExecutionOf\(request\)/g) ?? []).length, 1, "the research submit forwards the choice");
+assert.equal((exploreDialog.match(/composerExecutionOf\(request\)/g) ?? []).length, 1, "the explore submit forwards the choice");
 assert.ok(!app.includes('rpc.call("createCard", { projectId: targetProjectId, environment: request.environment, prompt, attachments, intent, appetite, reviewMode })'), "the build submit no longer drops the choice");
+assert.match(buildDialog, /execution: composerExecutionOf\(request\)/, "the build submit carries the composer choice");
 
 console.log("composer execution test ok: sanitize, merge, override, spawn input, all three tracks wired");

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const pills = readFileSync(join(root, "components", "dashboard", "build-status-pills.tsx"), "utf8");
+const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 // Third view mode on the Build track only: research/explore cards carry
 // no scopes and non-workflow stages, so a hill there would pile every dot
@@ -96,7 +97,7 @@ assert.ok(pills.includes("if (!(total > 0)) return null"), "scopeless cards rend
 // Phase rail: the four workflow phases with the card's own checkpoint
 // filled, on build detail headers only — research/explore cards render no
 // marker rather than a wrong one.
-assert.match(app, /<PhaseRail stage=\{card\.stage\} \/>/, "build detail headers carry the rail");
-assert.match(app, /STAGE_TO_BAND\[stage\]/, "the marker resolves through the stage vocabulary, never a pasted map");
+assert.match(manageHeader, /<PhaseRail stage=\{card\.stage\} \/>/, "build detail headers carry the rail");
+assert.match(manageHeader, /STAGE_TO_BAND\[stage\]/, "the marker resolves through the stage vocabulary, never a pasted map");
 
 console.log("hill view test ok: shared hill, strips, and rail from board data");

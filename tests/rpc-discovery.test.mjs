@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,9 +9,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // experimental_discoverRpc): `bb plugin rpc list` and other plugins read
 // these without executing code. A method without a description is invisible
 // to discovery, so the contract test fails when one is added bare.
+//
+// The contract is split across server.ts (main contract) and server/*.ts
+// feature slices (github-issues.ts precedent: contract fragment + handlers
+// + migrations + scheduler). Discovery scans the whole surface so a moved
+// method never goes blind.
 const contracts = [
   { file: "server.ts", start: "export const rpcContract = defineRpcContract({", end: "export type PreviewInfo" },
-  { file: join("server", "github-issues.ts"), start: "export const githubRpcContract = defineRpcContract({", end: null },
+  ...readdirSync(join(root, "server"))
+    .filter((file) => file.endsWith(".ts"))
+    .map((file) => ({ file: join("server", file), start: "defineRpcContract({", end: null })),
 ];
 
 let total = 0;

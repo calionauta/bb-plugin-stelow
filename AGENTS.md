@@ -8,6 +8,13 @@
 - `node scripts/sync-stelow-assets.mjs` — manual skill/data sync (pinned commit; then `npm run reload`).
 - `grep dist/` — confirm the bundle actually contains the change; the reload version string is unreliable.
 
+## Edit discipline (agent tooling traps)
+
+- One `edit` per file per parallel block — parallel edits to the same file silently clobber each other; sequence them instead.
+- After any failed `edit`, verify the file before continuing (`wc -l` + `git diff --stat`): a failed match has truncated files before.
+- Never `read`-then-`edit` from memory on large regions — reproduce `oldString` from a fresh `read`, or the match silently targets the wrong text.
+- Before writing or updating a test pin, `grep -c` the pattern first: generic shapes match other tracks (research/explore submits share the build shape). Anchor pins on track-specific identifiers (RPC names), and declare test-file reads before their first use.
+
 ## Don'ts
 
 - Never restart `bb-daemon.service` to reload this plugin — it terminates active BB threads.

@@ -51,6 +51,7 @@ assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
 assert.match(server, /WHERE status = 'completed'/, "aggregates read finished cards, never actives");
 assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
@@ -106,7 +107,9 @@ assert.doesNotMatch(app, /p90 lead \{/, "no bare p90 readout survives in the win
 
 // Worker-history total: one summed line in the summary, unknowns skipped,
 // all-unknown hidden — the per-thread rows below keep their own numbers.
-assert.match(app, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");
-assert.match(app, /tokens total<\/span>/, "the total reads as a total, not another row");
+assert.match(workerHistory, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");
+assert.match(workerHistory, /<WorkerHistoryRow key=\{entry\.threadId\} entry=\{entry\} \/>/, "the list delegates one row per entry");
+assert.match(workerHistory, /entry\.endedAt === null \? "Current worker"/, "a live worker reads current, a replaced one names its end");
+assert.match(workerHistory, /tokens total<\/span>/, "the total reads as a total, not another row");
 
 console.log("card metrics test ok: lead/cycle math, stage split, durations");

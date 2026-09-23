@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 // Fresh-install contract: a brand-new user installs from the marketplace
 // (git semver tag) and bb builds with `bb plugin build` only — postbuild
@@ -36,13 +36,16 @@ for (const file of [
 // npm installs carry only `files`).
 const packed = new Set(manifest.files);
 const covered = (file) => [...packed].some((entry) => file === entry || file.startsWith(entry + "/"));
-for (const file of ["server.ts", "app.tsx", "skills/", "data/", "assets/", "lib/", "components/", "hooks/"]) {
+for (const file of ["server.ts", "app.tsx", "skills/", "data/", "assets/", "lib/", "components/", "hooks/", "server/"]) {
   assert.equal(covered(file), true, `first-boot read ${file} survives packaging`);
 }
 
 // Migrations must be fresh-safe and upgrade-safe: conditional creates plus
 // guarded ALTERs only — never a bare CREATE TABLE that crashes reinstalls.
-const server = readFileSync(new URL("server.ts", root), "utf8");
+// Slices live under server/*.ts (github-issues.ts precedent), so the pins
+// scan the whole server surface, not just the entry file.
+const serverSources = ["server.ts", ...readdirSync(new URL("server/", root)).filter((file) => file.endsWith(".ts")).map((file) => `server/${file}`)];
+const server = serverSources.map((file) => readFileSync(new URL(file, root), "utf8")).join("\n");
 assert.doesNotMatch(server, /"CREATE TABLE (?!IF NOT EXISTS)/, "migrations never crash a fresh database");
 assert.match(server, /CREATE TABLE IF NOT EXISTS cards/, "first boot creates the cards table");
 assert.match(server, /CREATE TABLE IF NOT EXISTS presets/, "first boot creates the presets table");
