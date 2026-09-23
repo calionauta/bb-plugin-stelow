@@ -20,8 +20,6 @@ export type BuildLifecycleOutcome = {
   auditCardId?: string;
 };
 
-export const BUILD_LIFECYCLE_ACTIONS: readonly BuildLifecycleAction[];
-
 export function buildLifecycleOutcome(
   action: BuildLifecycleAction,
   result: Record<string, unknown>,

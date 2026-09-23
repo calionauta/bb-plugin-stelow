@@ -1,17 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  BUILD_LIFECYCLE_ACTIONS,
   buildDiscardConfirmation,
   buildLifecycleOutcome,
 } from "../lib/build-detail-lifecycle.mjs";
-
-test("Build lifecycle owns every card action", () => {
-  assert.deepEqual(BUILD_LIFECYCLE_ACTIONS, [
-    "archive", "delete", "discard", "promote", "attach-recovery",
-    "create-recovery-audit", "repair", "retry", "restart", "start", "split",
-  ]);
-});
 
 test("destructive actions close only after host confirmation", () => {
   assert.deepEqual(buildLifecycleOutcome("archive", { archived: false }), {
