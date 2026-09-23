@@ -1120,9 +1120,10 @@ investigation that feeds the build board.*
   `app.slots.messageDirective`, `qualitySeal` RPC). Workers emit one seal
   per produced file; the chip revalidates live and renders verified /
   hypothesis / needs-work / unverified with failure details on hover and
-  click-to-open. Seals state checked provenance, never truth; unknown
-  shapes and unreadable files read as unverified. A failed live revalidation
-  reports `quality unavailable` instead of waiting forever.
+  click-to-open with a 44px touch target. Seals state checked provenance,
+  never truth; unknown shapes and unreadable files read as unverified. A
+  failed live revalidation reports `quality unavailable` instead of waiting
+  forever.
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as build. Stage advance and intent editing refuse on

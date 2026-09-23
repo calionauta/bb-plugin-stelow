@@ -31,7 +31,11 @@ export function StelowQualityDirective({ attributes, message, openWorkspaceFile 
     <button
       onClick={() => openWorkspaceFile?.(path)}
       disabled={!openWorkspaceFile}
-      className={`cursor-pointer inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-60 ${view.tone}`}
+      className={[
+        "cursor-pointer inline-flex min-h-11 items-center gap-1 rounded-md border px-2",
+        "py-0.5 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-60",
+        view.tone,
+      ].join(" ")}
       title={view.title ?? path}
     >
       <span>{view.icon}</span>
