@@ -90,7 +90,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   comment carries a hidden card marker that is verified back on the issue
   before counting as posted, so retries never double-post and a send
   without a visible comment reports itself instead of succeeding silently.
-- **Manual Git changes from Done** (`publicationStatus`, `CardDetailBody`). A
+- **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
   BB stays authoritative: a default-branch action is prominently labelled as

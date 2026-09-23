@@ -92,7 +92,7 @@ coordination on shared checkouts → 10/tick cap.
   `github-automation-tab.tsx`), the chrome (`github-dialog-chrome.tsx`:
   tablist + footer), plus the completion write-back dialog
   (`github-completion-dialog.tsx`). `BoardPanel` keeps the button and
-  the open flag; `CardDetailBody` keeps the trigger and the open flag.
+  the open flag; `BuildDetailBody` keeps the trigger and the open flag.
 - Pure core with node tests: `lib/automation-rules.mjs` (one decision
   function serves scheduler + dry-run), `lib/github-intent.mjs`
   (intent, authors, prompt threading, related issues),

@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 
 /**
- * GitHub completion write-back dialog (CardDetailBody trigger).
+ * GitHub completion write-back dialog (BuildDetailBody trigger).
  *
  * Owns its concern end to end: the close-issue choice, the posting
  * state, and the postGithubCompletion call. The card keeps only the
