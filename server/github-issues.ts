@@ -15,7 +15,7 @@ import { execFile } from "node:child_process";
 import { z } from "zod";
 import { decideAutomationSpawn, describeParkedReason, resolveEffectiveEnvKind } from "../lib/github-automation-gate.mjs";
 import { acquireGithubImportClaim, completeGithubImport, liveImportedKeys, releaseGithubClaim } from "../lib/github-claims.mjs";
-import { buildCreateIssueArgs, issueBodyForCard, issueKey, parseCreateIssueResponse, resolveGhPath } from "../lib/github-issue-create.mjs";
+import { buildCreateIssueArgs, issueBodyForCard, issueKey, parseCreateIssueResponse, resolveGhPath, resolveTargetRepo, validatePostBody } from "../lib/github-issue-create.mjs";
 import { toMirrorRows } from "../lib/github-issue-comments.mjs";
 import { applyRulePrompt, findRelatedIssues, githubIntentFor, normalizeGithubAuthors, normalizeGithubLabels } from "../lib/github-intent.mjs";
 import { carriesMarker, markerFor } from "../lib/github-writeback.mjs";
@@ -133,7 +133,14 @@ export const githubRpcContract = defineRpcContract({
       url: z.string().nullable(),
       comments: z.array(z.object({ author: z.string(), body: z.string(), createdAt: z.number() })),
       updatedAt: z.number().nullable(),
+      canCreate: z.boolean(),
+      repos: z.array(z.string()),
     }),
+  },
+  postIssueComment: {
+    experimental_description: "Post a human-approved comment to the linked GitHub issue",
+    input: z.object({ cardId: z.string(), body: z.string().min(1).max(60000) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
 });
 
@@ -802,14 +809,9 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       const status = await githubStatusResolved().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] as Array<{ repo: string; projectId: string | null }> }));
       if (!status.ghOk) return { ok: false, url: null, number: null, error: "GitHub is not connected — set up GitHub auth first." };
       const mapped = status.repos.filter((entry) => entry.projectId === card.project_id).map((entry) => entry.repo);
-      let target = repo ?? null;
-      if (!target) {
-        if (mapped.length === 0) return { ok: false, url: null, number: null, error: "No GitHub repository is mapped to this project." };
-        if (mapped.length > 1) return { ok: false, url: null, number: null, error: "Several repositories are mapped to this project — pick one." };
-        target = mapped[0] as string;
-      } else if (!mapped.includes(target)) {
-        return { ok: false, url: null, number: null, error: `Repository ${target} is not mapped to this project.` };
-      }
+      const resolved = resolveTargetRepo({ mapped, requested: repo ?? null });
+      if (!resolved.ok || !resolved.repo) return { ok: false, url: null, number: null, error: resolved.error };
+      const target = resolved.repo;
       const title = (card.display_name ?? card.name ?? "").trim() || `Card ${card.id}`;
       let ghPath: string;
       try {
@@ -839,14 +841,24 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
 
     async getLinkedDiscussion({ cardId }: { cardId: string }) {
       requireEnabled();
+      // Eligibility for the create CTA doubles as the unlinked shape: any
+      // non-archived card on a mapped project can link, on any track.
       const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
-      if (!link) return { linked: false, repo: null, number: null, url: null, comments: [], updatedAt: null };
+      if (!link) {
+        const card = db.prepare("SELECT project_id, status FROM cards WHERE id = ?").get(cardId) as { project_id: string; status: string } | undefined;
+        if (!card || ctx.cards.normalizeStatus(card.status) === "archived") {
+          return { linked: false, repo: null, number: null, url: null, comments: [], updatedAt: null, canCreate: false, repos: [] as string[] };
+        }
+        const status = await githubStatusResolved().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] as Array<{ repo: string; projectId: string | null }> }));
+        const repos = status.ghOk ? status.repos.filter((entry) => entry.projectId === card.project_id).map((entry) => entry.repo) : [];
+        return { linked: false, repo: null, number: null, url: null, comments: [], updatedAt: null, canCreate: repos.length > 0, repos };
+      }
       const url = `https://github.com/${link.repo}/issues/${link.number}`;
       const readStored = () => {
         const rows = db.prepare("SELECT author, body, created_at, fetched_at FROM github_issue_comments WHERE card_id = ? ORDER BY created_at ASC").all(cardId) as
           Array<{ author: string; body: string; created_at: number; fetched_at: number }>;
         return {
-          linked: true, repo: link.repo, number: link.number, url,
+          linked: true, repo: link.repo, number: link.number, url, canCreate: false, repos: [] as string[],
           comments: rows.map((row) => ({ author: row.author, body: row.body, createdAt: row.created_at })),
           updatedAt: rows.length > 0 ? Math.max(...rows.map((row) => row.fetched_at)) : null,
         };
@@ -867,6 +879,35 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
         }
       }
       return readStored();
+    },
+
+    // Human-gated write-back (the composer confirms destination and text):
+    // workers never reach this through UI, and the server enforces the
+    // payload anyway — trust the gesture, verify the payload.
+    async postIssueComment({ cardId, body }: { cardId: string; body: string }) {
+      requireEnabled();
+      const checked = validatePostBody(body);
+      if (!checked.ok) return { ok: false, error: checked.error };
+      const link = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
+      if (!link) return { ok: false, error: "This card has no linked GitHub issue." };
+      const card = db.prepare("SELECT status FROM cards WHERE id = ?").get(cardId) as { status: string } | undefined;
+      if (card && ctx.cards.normalizeStatus(card.status) === "archived") return { ok: false, error: "This card is archived." };
+      try {
+        await g.commentIssue({ repo: link.repo, number: link.number, body: checked.text });
+      } catch (error) {
+        return { ok: false, error: error instanceof Error && error.message ? `GitHub refused the comment: ${error.message}` : "GitHub refused the comment." };
+      }
+      // Best-effort mirror refresh so the post reads back instantly; the
+      // next fetch converges regardless.
+      try {
+        const issue = await g.getIssue({ repo: link.repo, number: link.number });
+        const rows = toMirrorRows(cardId, issue.issue.comments, now());
+        const insert = db.prepare("INSERT OR IGNORE INTO github_issue_comments (id, card_id, author, body, created_at, fetched_at) VALUES (?,?,?,?,?,?)");
+        let inserted = 0;
+        for (const row of rows) inserted += insert.run(row.id, row.card_id, row.author, row.body, row.created_at, row.fetched_at).changes;
+        if (inserted > 0) bb.realtime.publish("github-discussion", { cardId });
+      } catch { /* the post succeeded; the next fetch converges */ }
+      return { ok: true, error: null };
     },
   };
 

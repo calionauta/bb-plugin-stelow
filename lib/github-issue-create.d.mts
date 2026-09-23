@@ -1,4 +1,9 @@
 export function resolveGhPath(probe: (candidate: string) => Promise<boolean>): Promise<string>;
+export const CREATE_OUTCOME_UNCERTAIN_MARKER: string;
+export function resolveTargetRepo(input: { mapped: string[]; requested?: string | null }): { ok: boolean; repo: string | null; error: string | null };
+export const POST_BODY_MAX_CHARS: number;
+export function validatePostBody(body: string): { ok: boolean; text: string; error: string | null };
+export function buildDoneCommentBrief(input: { title: string; intent: string; stage: string; scopesDone: number; scopesTotal: number; scopeLines: string[]; promptExcerpt: string }): string;
 export function issueMarker(cardId: string): string;
 export function issueKey(repo: string, number: number): string;
 export function buildCreateIssueArgs(input: { repo: string; title: string; body?: string }): string[];
