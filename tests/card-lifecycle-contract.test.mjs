@@ -23,6 +23,7 @@ const detailHero = readFileSync(join(root, "components", "detail", "detail-hero.
 const detailHeroActions = readFileSync(join(root, "components", "detail", "detail-hero-actions.tsx"), "utf8");
 const detailComment = readFileSync(join(root, "components", "conversation", "use-detail-comment.ts"), "utf8");
 const detailTimeline = readFileSync(join(root, "components", "detail", "stage-timeline.tsx"), "utf8");
+const researchQuality = readFileSync(join(root, "components", "detail", "research-quality-section.tsx"), "utf8");
 const detailScopes = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 const detailViewer = readFileSync(join(root, "components", "detail", "artifact-viewer-dialog.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
@@ -94,6 +95,10 @@ assert.doesNotMatch(manageMenu, /Stop & archive/, "two distinct lifecycle action
 assert.match(manageRecovery, /export function useDetailRecoveryActions\(\{ cardId, trackNoun, onChanged/, "retry and repair live in one shared hook");
 assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "research", onChanged \}\)/, "the research body delegates recovery");
 assert.match(app, /useDetailRecoveryActions\(\{ cardId, trackNoun: "exploration", onChanged \}\)/, "the explore body delegates recovery");
+assert.match(app, /import \{ ResearchQualitySection \} from "\.\/components\/detail\/research-quality-section"/, "the research body reads the extracted quality section");
+assert.doesNotMatch(app, /function ResearchQualitySection\(/, "no research quality copy remains in the panel");
+assert.match(researchQuality, /sub\.status !== "ready"/, "only failed composite substeps enter repair");
+assert.match(researchQuality, /rewrite per the playbook completeness contract, then run verify again\./, "repair lines name the exact fix and verification step");
 assert.match(manageRecovery, /Worker retried — continuing the \$\{trackNoun\}\./, "the retry toast names its track");
 assert.match(manageRecovery, /const retried = await rpc\.call\("retryWorker", \{ cardId \}\)/, "repair resumes through the retry rail, never a second path");
 // Detail leaves: one banner definition for every body; event text, time,

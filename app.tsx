@@ -64,6 +64,7 @@ import { HERO_STYLE, heroFor } from "./components/detail/detail-hero";
 import { DetailHeroActions } from "./components/detail/detail-hero-actions";
 import { BAND_LABEL, StageTimeline } from "./components/detail/stage-timeline";
 import { WorkflowMap } from "./components/detail/workflow-map";
+import { ResearchQualitySection } from "./components/detail/research-quality-section";
 import { PreviewSection } from "./components/detail/preview-section";
 import { ArtifactViewerDialog } from "./components/detail/artifact-viewer-dialog";
 import type { rpcContract } from "./server";
@@ -3662,62 +3663,6 @@ function StrategyRunDialog({ open, onOpenChange, cardId, strategies, runIds, onS
 
 // Shared worker block: preset readout, state-appropriate recovery, and worker
 // history. Card lifecycle actions deliberately live in the card header.
-
-// Research-track card detail: hero + index + fan-out + artifacts + worker +
-// conversation. Build-only surfaces (stages, timeline, gates, intent)
-// never render here; every leaf below is shared with the build body.
-type SubstepQuality = { slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" };
-
-const SUBSTEP_STATUS_LABEL: Record<SubstepQuality["status"], string> = {
-  ready: "ready",
-  missing: "missing",
-  invalid: "thin or mirrored",
-  "needs-depth": "needs depth",
-};
-
-const SUBSTEP_STATUS_DOT: Record<SubstepQuality["status"], string> = {
-  ready: "bg-emerald-500",
-  missing: "bg-zinc-400",
-  invalid: "bg-orange-500",
-  "needs-depth": "bg-amber-500",
-};
-
-// Quality section for research rounds: per-substep status from the same
-// predicates verify enforces (rounds carry substeps from researchIndex),
-// plus one Repair action that posts the failure list as a comment and
-// resumes the worker. Read-only otherwise — no second lifecycle here.
-function ResearchQualitySection({ rounds, repairing, onRepair }: {
-  rounds: Array<{ n: number; label: string; status: "ready" | "pending" | "missing"; substeps: SubstepQuality[] }>;
-  repairing: boolean;
-  onRepair: (lines: string[]) => void;
-}) {
-  const composite = rounds.filter((round) => round.substeps.length > 0);
-  if (composite.length === 0) return null;
-  const open = composite.flatMap((round) =>
-    round.substeps.filter((sub) => sub.status !== "ready").map((sub) => ({ round, sub })),
-  );
-  const lines = open.map(({ round, sub }) => `Round ${round.n} (${round.label} — ${sub.slug}): ${SUBSTEP_STATUS_LABEL[sub.status]} — rewrite per the playbook completeness contract, then run verify again.`);
-  return (
-    <section aria-label="Artifact quality" className="rounded-lg border p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</h3>
-      {open.length === 0 ? (
-        <p className="pt-1 text-xs text-muted-foreground">All composite substeps meet their contracts. {rounds.length === 1 ? "1 round" : `${rounds.length} rounds`} checked.</p>
-      ) : (
-        <div className="space-y-2 pt-2">
-          <ul className="space-y-1">
-            {open.map(({ round, sub }) => (
-              <li key={`${round.n}-${sub.slug}`} className="flex items-start gap-2 text-xs">
-                <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${SUBSTEP_STATUS_DOT[sub.status]}`} />
-                <span>Round {round.n} ({sub.slug}): {SUBSTEP_STATUS_LABEL[sub.status]}</span>
-              </li>
-            ))}
-          </ul>
-          <Button size="sm" variant="outline" disabled={repairing} onClick={() => onRepair(lines)} title="Post the failure list as a comment and resume the worker to fix it.">{repairing ? "Repairing…" : "Repair this artifact"}</Button>
-        </div>
-      )}
-    </section>
-  );
-}
 
 // Explore quality: one file, one seal, resolved live through qualitySeal.
 function ExploreQualitySection({ cardId, filePath, repairing, onRepair }: {
