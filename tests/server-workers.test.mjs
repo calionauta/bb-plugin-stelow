@@ -183,6 +183,7 @@ test("failed respawn preserves the old worker instead of parking the card", asyn
 
 test("continuing workers reuse their live environment and ledger ownership is queryable", async () => {
   const { db, workers } = harness();
+  assert.equal(workers.ledgerCardId("thread-missing"), null);
   workers.recordThread("card-1", "thread-old", preset.id, "initial");
   await new Promise((resolve) => setTimeout(resolve, 2));
   workers.recordThread("card-1", "thread-new", preset.id, "restart");

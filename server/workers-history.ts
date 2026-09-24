@@ -124,7 +124,7 @@ export function createWorkerHistory(db: Db, bb: BbPluginApi) {
     },
     ledgerCardId(threadId: string) {
       const row = db.prepare(OWNER_SELECT).get(threadId) as { card_id: string } | undefined;
-      return row?.card_id ?? null;
+      return row ? row.card_id : null;
     },
     deleteCard(cardId: string): void {
       db.prepare("DELETE FROM card_threads WHERE card_id = ?").run(cardId);
