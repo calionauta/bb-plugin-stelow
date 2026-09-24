@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Database from "better-sqlite3";
+import { workerTestDb } from "./helpers/worker-test-db.mjs";
 import {
   createWorkers,
   runWorkerMigrations,
@@ -18,6 +18,13 @@ const preset = {
   base_branch: null,
   machine_id: null,
   instructions: "",
+  providerId: "pi",
+  modelId: "bifrost/harness-coding",
+  reasoningLevel: "medium",
+  permissionMode: "full",
+  environmentKind: "project-default",
+  baseBranch: null,
+  machineId: null,
 };
 
 function card(overrides = {}) {
@@ -57,18 +64,6 @@ function card(overrides = {}) {
   };
 }
 
-function database() {
-  const db = new Database(":memory:");
-  db.exec(`
-    CREATE TABLE cards (id TEXT PRIMARY KEY);
-    CREATE TABLE presets (id TEXT PRIMARY KEY, name TEXT NOT NULL);
-  `);
-  db.prepare("INSERT INTO presets VALUES (?, ?)").run(preset.id, preset.name);
-  runWorkerMigrations(db);
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card-1");
-  return db;
-}
-
 function workerHost(calls, spawnError, environment) {
   return {
     sdk: {
@@ -93,19 +88,6 @@ function workerHost(calls, spawnError, environment) {
   };
 }
 
-function attachmentParams(value) {
-  return {
-    providerId: value.provider_id,
-    modelId: value.model_id,
-    reasoningLevel: value.reasoning_level,
-    permissionMode: value.permission_mode,
-    environmentKind: value.environment_kind,
-    baseBranch: value.base_branch,
-    machineId: value.machine_id,
-    instructions: value.instructions,
-  };
-}
-
 function harness({
   spawnError = null,
   environment = null,
@@ -113,7 +95,7 @@ function harness({
   scheduler = undefined,
   retryDelayMs = undefined,
 } = {}) {
-  const db = database();
+  const db = workerTestDb();
   const calls = [];
   const current = card({ worker_thread_id: workerThreadId });
   const bb = workerHost(calls, spawnError, environment);
@@ -126,7 +108,7 @@ function harness({
     comment: (cardId, body) => calls.push(["comment", cardId, body]),
     getPreset: () => preset,
     getReliablePreset: () => preset,
-    presetParams: attachmentParams,
+    presetParams: (value) => value,
     prepareRespawn: async () => ({
       prompt: "Continue the card",
       projectPath: "/repo",
@@ -145,7 +127,7 @@ function harness({
 }
 
 test("worker migrations are idempotent and create the retry/ledger columns", () => {
-  const db = database();
+  const db = workerTestDb();
   runWorkerMigrations(db);
   const columns = db.prepare("PRAGMA table_info(cards)").all().map((row) => row.name);
   assert.ok(columns.includes("spawn_retry_thread"));

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import Database from "better-sqlite3";
-import { runWorkerMigrations } from "../server/workers.ts";
 import { createWorkerRetry } from "../server/workers-retry.ts";
+import { workerTestDb } from "./helpers/worker-test-db.mjs";
 
 function card(overrides = {}) {
   return {
@@ -18,18 +17,6 @@ function card(overrides = {}) {
   };
 }
 
-function database() {
-  const db = new Database(":memory:");
-  db.exec(`
-    CREATE TABLE cards (id TEXT PRIMARY KEY);
-    CREATE TABLE presets (id TEXT PRIMARY KEY, name TEXT NOT NULL);
-  `);
-  db.prepare("INSERT INTO presets VALUES (?, ?)").run("preset-a", "Primary");
-  runWorkerMigrations(db);
-  db.prepare("INSERT INTO cards (id) VALUES (?)").run("card-1");
-  return db;
-}
-
 function retryHarness({
   current = card(),
   delayMs = 0,
@@ -38,7 +25,7 @@ function retryHarness({
   onComment = () => {},
   onPublish = () => {},
 } = {}) {
-  const db = database();
+  const db = workerTestDb();
   const state = { db, freshCalls: 0, comments: [], published: [] };
   const retry = createWorkerRetry({
     db,
