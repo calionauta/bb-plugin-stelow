@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { UrlLink, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { resetOnboarding } from "../../lib/preset-onboarding-state.mjs";
-import { shortRef, updateAvailableFrom, type PluginUpdateVerdict } from "../../lib/plugin-update.mjs";
+import { updateAvailableFrom, type BuildInfo } from "../../lib/plugin-update.mjs";
 import { setPluginUpdateAvailable } from "../../lib/plugin-update-signal.mjs";
 import {
   beginToolInstall,
@@ -22,27 +22,9 @@ import {
 } from "../ui/dialog";
 import { Icon } from "../ui/icon";
 import { HostToolsSection } from "./host-tools-section";
+import { usePluginUpdateActions } from "./plugin-update-actions";
 import { PluginUpdateStatus } from "./plugin-update-status";
 import { UpdateBadge } from "./update-badge";
-
-type GithubReleaseInfo = {
-  tag: string;
-  url: string;
-  checkedAt: number;
-  newer: boolean;
-} | null;
-
-type BuildInfo = {
-  version: string;
-  builtAt: string | null;
-  stelowVersion: string | null;
-  skills: string[];
-  pluginUpdate: PluginUpdateVerdict;
-  githubRelease: GithubReleaseInfo;
-};
-
-const APPLY_SETTLE_MS = 15_000;
-const UPDATE_RELOAD_NOTICE = "Update applied — Stelow is reloading; the new version appears shortly.";
 
 function useHostToolState() {
   const rpc = useRpc<typeof rpcContract>();
@@ -93,78 +75,7 @@ function useAboutData() {
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [rpc]);
-  return { rpc, buildInfo, setBuildInfo, aboutLogo };
-}
-
-function usePluginUpdateActions(
-  rpc: ReturnType<typeof useRpc<typeof rpcContract>>,
-  setBuildInfo: (update: (previous: BuildInfo | null) => BuildInfo | null) => void,
-) {
-  const [confirming, setConfirming] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  function publish(info: BuildInfo) {
-    setPluginUpdateAvailable(updateAvailableFrom(info));
-  }
-
-  function recheck() {
-    setChecking(true);
-    setError(null);
-    setNotice(null);
-    setConfirming(false);
-    void rpc.call("checkPluginUpdate", {}).then((result) => {
-      setBuildInfo((previous) => previous ? {
-        ...previous,
-        pluginUpdate: result.pluginUpdate,
-        githubRelease: result.githubRelease,
-      } : previous);
-      const info = { pluginUpdate: result.pluginUpdate, githubRelease: result.githubRelease };
-      setPluginUpdateAvailable(updateAvailableFrom(info));
-    }).catch((cause) => {
-      setError(cause instanceof Error ? cause.message : "Update check failed.");
-    }).finally(() => setChecking(false));
-  }
-
-  function apply() {
-    setUpdating(true);
-    setError(null);
-    setNotice(null);
-    let settled = false;
-    let applied = false;
-    const settle = () => {
-      if (settled) return;
-      settled = true;
-      setUpdating(false);
-      setConfirming(false);
-    };
-    const timer = window.setTimeout(() => {
-      setNotice(UPDATE_RELOAD_NOTICE);
-      settle();
-    }, APPLY_SETTLE_MS);
-    void rpc.call("applyPluginUpdate", {}).then((result) => {
-      window.clearTimeout(timer);
-      applied = result.applied;
-      if (!result.applied) {
-        setError(result.detail ?? "BB did not apply an update.");
-        settle();
-        return;
-      }
-      toast.success(`Plugin updated to ${shortRef(result.to, null) ?? "the latest compatible version"}.`);
-      return rpc.call("buildInfo", {}).then((info) => {
-        setBuildInfo(() => info);
-        publish(info);
-      }).catch(() => setNotice(UPDATE_RELOAD_NOTICE));
-    }).catch((cause) => {
-      window.clearTimeout(timer);
-      if (applied) setNotice(UPDATE_RELOAD_NOTICE);
-      else setError(cause instanceof Error ? cause.message : "Plugin update failed.");
-    }).finally(settle);
-  }
-
-  return { confirming, setConfirming, updating, checking, error, notice, recheck, apply };
+  return { buildInfo, setBuildInfo, aboutLogo };
 }
 
 function AboutHeading({ buildInfo, aboutLogo }: { buildInfo: BuildInfo | null; aboutLogo: string | null }) {
@@ -176,30 +87,28 @@ function AboutHeading({ buildInfo, aboutLogo }: { buildInfo: BuildInfo | null; a
           {buildInfo && updateAvailableFrom(buildInfo) ? <UpdateBadge /> : null}
         </div>
       </header>
-      <div className="grid max-w-2xl gap-5">
-        <section className="space-y-2">
-          {aboutLogo ? (
-            <div className="flex justify-center py-1">
-              <img
-                src={aboutLogo}
-                alt="Stelow — Your Product Team"
-                className="w-56 max-w-full object-contain sm:w-64"
-              />
-            </div>
+      <section className="space-y-2">
+        {aboutLogo ? (
+          <div className="flex justify-center py-1">
+            <img
+              src={aboutLogo}
+              alt="Stelow — Your Product Team"
+              className="w-56 max-w-full object-contain sm:w-64"
+            />
+          </div>
+        ) : null}
+        <h2 className="text-base font-semibold text-foreground">
+          Stelow {buildInfo?.stelowVersion ? (
+            <span className="text-[11px] font-normal text-muted-foreground">
+              v{buildInfo.stelowVersion}
+            </span>
           ) : null}
-          <h2 className="text-base font-semibold text-foreground">
-            Stelow {buildInfo?.stelowVersion ? (
-              <span className="text-[11px] font-normal text-muted-foreground">
-                v{buildInfo.stelowVersion}
-              </span>
-            ) : null}
-          </h2>
-          <p className="text-sm leading-6 text-muted-foreground">
-            Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.
-          </p>
-          <RepoLink href="https://github.com/calionauta/stelow">Stelow repo</RepoLink>
-        </section>
-      </div>
+        </h2>
+        <p className="text-sm leading-6 text-muted-foreground">
+          Stelow helps humans and AI agents operate as a cross-functional product team, not just coding assistants, through a structured product workflow.
+        </p>
+        <RepoLink href="https://github.com/calionauta/stelow">Stelow repo</RepoLink>
+      </section>
     </>
   );
 }
@@ -280,6 +189,16 @@ function PluginSummary({ buildInfo, onOpenSkills }: {
             <p>Skills refresh with plugin updates — this pin names the methodology this build carries.</p>
           </div>
         ) : null}
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          Working as a team? bb is single-user —{" "}
+          <UrlLink
+            href="https://calionauta.github.io/stelow/#teams"
+            className="cursor-pointer underline decoration-dotted underline-offset-2 hover:text-foreground"
+          >
+            see the experimental team playbook
+          </UrlLink>
+          : one bb per teammate, GitHub as the team room.
+        </p>
       </div>
     </>
   );
@@ -299,11 +218,25 @@ function ResourcesCard() {
         <RepoLink href="https://github.com/calionauta/bb-plugin-stelow">Plugin repo</RepoLink>
         {confirming ? (
           <>
-            <Button size="sm" variant="destructive" onClick={reset}>Confirm reset</Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={reset}
+              title="Clear onboarding state so every track shows its setup dialog again"
+            >
+              Confirm reset
+            </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
           </>
         ) : (
-          <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>Reset onboarding</Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirming(true)}
+            title="Show the first-visit setup dialogs again"
+          >
+            Reset onboarding
+          </Button>
         )}
       </div>
     </div>
@@ -353,37 +286,39 @@ function SkillsDialog({ open, onOpenChange, buildInfo }: {
 }
 
 export function AboutPanel() {
-  const { rpc, buildInfo, setBuildInfo, aboutLogo } = useAboutData();
+  const { buildInfo, setBuildInfo, aboutLogo } = useAboutData();
   const hostTools = useHostToolState();
-  const update = usePluginUpdateActions(rpc, setBuildInfo);
+  const update = usePluginUpdateActions(buildInfo, setBuildInfo);
   const [skillsOpen, setSkillsOpen] = useState(false);
   return (
     <>
       <div className="flex h-full overflow-hidden bg-background">
         <div className="flex-1 overflow-auto p-4 md:p-6">
           <div className="mx-auto max-w-[1500px] space-y-4">
-            <AboutHeading buildInfo={buildInfo} aboutLogo={aboutLogo} />
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold text-foreground">
-                bb-plugin-stelow {buildInfo ? (
-                  <span
-                    className="text-[11px] font-normal text-muted-foreground"
-                    title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}
-                  >
-                    v{buildInfo.version}
-                  </span>
-                ) : null}
-              </h2>
-              <UpdateCard buildInfo={buildInfo} actions={update} />
-              <PluginSummary buildInfo={buildInfo} onOpenSkills={() => setSkillsOpen(true)} />
-              <ResourcesCard />
-              <HostToolsSection
-                tools={hostTools.tools}
-                onInstall={hostTools.install}
-                installingId={hostTools.installingId}
-                errors={hostTools.errors}
-              />
-            </section>
+            <div className="grid max-w-2xl gap-5">
+              <AboutHeading buildInfo={buildInfo} aboutLogo={aboutLogo} />
+              <section className="space-y-3">
+                <h2 className="text-base font-semibold text-foreground">
+                  bb-plugin-stelow {buildInfo ? (
+                    <span
+                      className="text-[11px] font-normal text-muted-foreground"
+                      title={buildInfo.builtAt ? `Built ${new Date(buildInfo.builtAt).toLocaleString()}` : "Running build"}
+                    >
+                      v{buildInfo.version}
+                    </span>
+                  ) : null}
+                </h2>
+                <UpdateCard buildInfo={buildInfo} actions={update} />
+                <PluginSummary buildInfo={buildInfo} onOpenSkills={() => setSkillsOpen(true)} />
+                <ResourcesCard />
+                <HostToolsSection
+                  tools={hostTools.tools}
+                  onInstall={hostTools.install}
+                  installingId={hostTools.installingId}
+                  errors={hostTools.errors}
+                />
+              </section>
+            </div>
           </div>
         </div>
       </div>

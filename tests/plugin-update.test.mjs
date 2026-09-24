@@ -1,5 +1,20 @@
 import assert from "node:assert/strict";
-import { mapUpdateEntry, selectOwnEntry, shortRef, isPathInstall, applyFailedCheck, updateAvailableFrom } from "../lib/plugin-update.mjs";
+import {
+  applyFailedCheck,
+  beginPluginUpdateApply,
+  beginPluginUpdateCheck,
+  completePluginUpdateApply,
+  completePluginUpdateCheck,
+  failPluginUpdateApply,
+  failPluginUpdateCheck,
+  initialPluginUpdateState,
+  isPathInstall,
+  mapUpdateEntry,
+  selectOwnEntry,
+  shortRef,
+  timeOutPluginUpdateApply,
+  updateAvailableFrom,
+} from "../lib/plugin-update.mjs";
 import {
   markPluginUpdateLoaded,
   markPluginUpdateUnloaded,
@@ -73,6 +88,63 @@ const currentVerdict = applyFailedCheck({ outcome: "current", installed: "v0.25.
 assert.equal(currentVerdict.outcome, "current", "a previous freshness verdict is kept with the failure note");
 assert.equal(currentVerdict.detail, "Update check failed: fetch failed", "failure detail survives on kept verdicts too");
 
+const buildInfo = {
+  version: "0.25.0",
+  builtAt: null,
+  stelowVersion: "0.25.0",
+  skills: [],
+  pluginUpdate: verdict,
+  githubRelease: null,
+};
+const checking = beginPluginUpdateCheck(initialPluginUpdateState());
+assert.deepEqual(
+  { confirming: checking.confirming, checking: checking.checking, error: checking.error },
+  { confirming: false, checking: true, error: null },
+  "a forced check publishes busy state and clears stale messages",
+);
+const fresh = {
+  pluginUpdate: { ...verdict, outcome: "current", candidate: null, candidateDisplay: null },
+  githubRelease: { tag: "v0.25.0", url: "https://example.test/release", checkedAt: 400, newer: false },
+};
+const checked = completePluginUpdateCheck(checking, buildInfo, fresh);
+assert.equal(checked.checking, false, "a completed check always leaves busy state");
+assert.equal(checked.buildInfo.pluginUpdate.outcome, "current", "the latest verdict replaces panel state");
+assert.equal(checked.updateAvailable, false, "a current verdict clears the cross-surface signal");
+const checkFailed = failPluginUpdateCheck(checking, new Error("registry unavailable"));
+assert.equal(checkFailed.checking, false);
+assert.equal(checkFailed.error, "registry unavailable");
+
+const unconfirmed = initialPluginUpdateState();
+assert.equal(beginPluginUpdateApply(unconfirmed), unconfirmed, "apply without confirmation changes no state");
+const confirmed = { ...initialPluginUpdateState(), confirming: true };
+const applying = beginPluginUpdateApply(confirmed);
+assert.equal(applying.updating, true, "apply starts only from an armed confirmation");
+assert.equal(beginPluginUpdateApply(applying), applying, "a second apply cannot run while one is active");
+const refused = completePluginUpdateApply(applying, { applied: false, detail: "pinned range" }, null);
+assert.equal(refused.updating, false, "a refusal settles the busy state");
+assert.equal(refused.confirming, false, "a refusal disarms confirmation");
+assert.equal(refused.error, "pinned range", "the host refusal is shown verbatim");
+const refreshed = completePluginUpdateApply(applying, { applied: true, to: "v0.26.0" }, {
+  ...buildInfo,
+  version: "0.26.0",
+  pluginUpdate: { ...verdict, outcome: "current" },
+});
+assert.equal(refreshed.buildInfo.version, "0.26.0", "post-apply build info refreshes the panel");
+assert.equal(refreshed.notice, null, "a completed refresh needs no reload fallback");
+assert.equal(refreshed.updateAvailable, false, "post-apply info republishes the current signal");
+const reloadPending = completePluginUpdateApply(applying, { applied: true }, null);
+assert.equal(reloadPending.notice, "Update applied — Stelow is reloading; the new version appears shortly.");
+const applyFailed = failPluginUpdateApply(applying, new Error("RPC closed"), false);
+assert.equal(applyFailed.error, "RPC closed");
+assert.equal(applyFailed.confirming, false);
+const applyDisconnected = failPluginUpdateApply(applying, new Error("RPC closed"), true);
+assert.equal(applyDisconnected.error, null, "an applied update is not mislabeled as failed");
+assert.match(applyDisconnected.notice, /reloading/);
+const timedOut = timeOutPluginUpdateApply(applying);
+assert.equal(timedOut.updating, false, "the quiet-channel timeout cannot leave a phantom wait");
+assert.equal(timedOut.confirming, false);
+assert.match(timedOut.notice, /reloading/);
+
 // The shared update signal: every surface (sidebar accessory, About tab
 // badge, About header, status box) reads this one predicate, so a forced
 // check that flips one must flip them all.
@@ -102,4 +174,4 @@ assert.equal(markPluginUpdateLoaded(), false);
 markPluginUpdateUnloaded();
 assert.equal(markPluginUpdateLoaded(), true, "a failed first read allows the next surface to retry");
 
-console.log("plugin update test ok: entry select, map, shortRef, install source, failed-check merge, shared signal");
+console.log("plugin update test ok: mapping, resilient checks, lifecycle transitions, shared signal");

@@ -41,8 +41,9 @@ assert.ok(statSync(assetUrl).size > 10 * 1024, "logo asset is not a placeholder"
 const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
 const about = readFileSync(new URL("../components/settings/about-panel.tsx", import.meta.url), "utf8");
 const hostTools = readFileSync(new URL("../components/settings/host-tools-section.tsx", import.meta.url), "utf8");
+const updateActions = readFileSync(new URL("../components/settings/plugin-update-actions.ts", import.meta.url), "utf8");
 const updateStatus = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
-const aboutUi = `${about}\n${hostTools}\n${updateStatus}`;
+const aboutUi = `${about}\n${hostTools}\n${updateActions}\n${updateStatus}`;
 assert.doesNotMatch(app, /new URL\("\.\/assets\//, "frontend never builds a runtime static-asset URL");
 const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
 assert.match(server, /aboutLogo:\s*\{/, "server exposes the aboutLogo RPC");
