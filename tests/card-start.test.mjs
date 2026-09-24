@@ -116,7 +116,8 @@ assert.doesNotMatch(app, /function DisclosureSection\(/, "no local section copy 
 assert.match(readFileSync(join(root, "components", "isolated-worktree-check.tsx"), "utf8"), /<DetailsDisclosure summary="How it works">/, "the toggle discloses progressively");
 assert.match(githubServer, /presetId = resolveWorktreePreset\(\);/, "isolated import resolves the worktree preset");
 assert.match(githubServer, /Isolated start refused:/, "missing isolation refuses with the redirect, never silent checkout");
-assert.match(githubServer, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)"\)\.run\(created\.cardId, presetId, now\(\)\)/, "parked isolated imports pin their preset for the later Start");
+assert.match(githubServer, /ctx\.presets\.pinCardPreset\(created\.cardId, presetId\)/, "parked isolated imports pin through the preset feature seam");
+assert.doesNotMatch(githubServer, /INSERT OR REPLACE INTO card_presets/, "GitHub imports never write preset tables directly");
 assert.match(githubState, /rpc\.call\("saveAutomationRule", \{[^}]*startImmediate: automationStart/, "rule creation passes the choice");
 assert.match(githubState, /rpc\.call\("previewAutomationRule"/, "rules offer a dry-run preview");
 assert.match(githubState, /rpc\.call\("listAutomationRuleRuns"/, "rules show their run history");

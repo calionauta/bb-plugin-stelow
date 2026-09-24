@@ -12,13 +12,12 @@
 
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { decideAutomationSpawn, describeParkedReason, resolveEffectiveEnvKind } from "../lib/github-automation-gate.mjs";
+import { decideAutomationSpawn, describeParkedReason } from "../lib/github-automation-gate.mjs";
 import { acquireGithubImportClaim, completeGithubImport, liveImportedKeys, releaseGithubClaim } from "../lib/github-claims.mjs";
 import { applyRulePrompt, findRelatedIssues, githubIntentFor, normalizeGithubAuthors, normalizeGithubLabels } from "../lib/github-intent.mjs";
 import { carriesMarker, markerFor } from "../lib/github-writeback.mjs";
 import { matchAutomationIssues, previewAutomationMatches } from "../lib/automation-rules.mjs";
 import { sortedUnion } from "../lib/github-lists.mjs";
-import { bandForKind } from "../lib/tracks.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -38,6 +37,11 @@ export interface GithubAutomationDeps {
   bb: BbPluginApi;
   now: () => number;
   randomId: (prefix: string) => string;
+  presets: {
+    getWorktreePresetId: () => string | null;
+    getEffectiveBuildEnvironmentKind: () => string;
+    pinCardPreset: (cardId: string, presetId: string) => boolean;
+  };
   cards: {
     get: (cardId: string) => GithubCard | undefined;
     create: (args: {
@@ -340,10 +344,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
 
   // Default New-worktree preset for auto-started GitHub workers: default
   // first, then alphabetical. Null means no isolated preset exists.
-  function resolveWorktreePreset(): string | null {
-    const row = db.prepare("SELECT id FROM presets WHERE environment_kind = 'new-worktree' ORDER BY is_default DESC, name ASC LIMIT 1").get() as { id: string } | undefined;
-    return row?.id ?? null;
-  }
+  const resolveWorktreePreset = (): string | null => ctx.presets.getWorktreePresetId();
 
   function seenAutomationKeys(ruleId: string): Set<string> {
     return new Set(
@@ -357,17 +358,9 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
 
   // Effective spawn environment for GitHub-created build cards: the
   // band-routed preset wins over any passed preset at spawn time, so the
-  // gate must check this — never mere preset existence. The resolution
-  // itself is pure and tested (lib/github-automation-gate.mjs); only the
-  // two lookups stay here.
-  function effectiveGithubSpawnEnvKind(): string {
-    const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(bandForKind("build")) as { preset_id: string } | undefined;
-    const bandEnv = bandRow
-      ? (db.prepare("SELECT environment_kind FROM presets WHERE id = ?").get(bandRow.preset_id) as { environment_kind: string } | undefined)?.environment_kind
-      : undefined;
-    const worktreePreset = db.prepare("SELECT id FROM presets WHERE environment_kind = 'new-worktree' ORDER BY is_default DESC, name ASC LIMIT 1").get() as { id: string } | undefined;
-    return resolveEffectiveEnvKind({ bandEnvKind: bandEnv, worktreePresetId: worktreePreset?.id });
-  }
+  // gate must check this — never mere preset existence.
+  const effectiveGithubSpawnEnvKind = (): string =>
+    ctx.presets.getEffectiveBuildEnvironmentKind();
 
   // Backlog guard: record currently-matching issues as seen without
   // creating cards, so enabling a rule only drafts genuinely new issues.
@@ -679,7 +672,8 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       // pin the worktree preset as this card's override now, or the choice
       // evaporates and the worker lands in the checkout it was meant to avoid.
       if (created.cardId && presetId && !start) {
-        db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(created.cardId, presetId, now());
+        const pinned = ctx.presets.pinCardPreset(created.cardId, presetId);
+        if (!pinned) throw new Error("Isolated start refused: the worktree preset no longer exists. Choose a New-worktree preset and try again.");
       }
       if (created.cardId) bb.realtime.publish("card-state", { cardId: created.cardId });
       return { ok: true, cardId: created.cardId, skipped: created.skipped, error: null };

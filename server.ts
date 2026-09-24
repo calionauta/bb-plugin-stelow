@@ -8,7 +8,7 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "./lib/artifact-manifest.mjs";
 import { assignBundleNames, parseBundleManifest, staleBundleEntries, unbundledSources } from "./lib/run-bundle.mjs";
-import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
+import { PHASE_ENTRY_STAGES, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
@@ -29,7 +29,7 @@ import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
 import { discardConfirm, discardEligibility, discardTrail } from "./lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "./lib/github-release.mjs";
-import { stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
+import { stallCount, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
@@ -40,9 +40,8 @@ import { validateArtifact, validateSubstep, validateVariant, validateExplore, bu
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "./lib/delegation-map.mjs";
 import { heuristicDisplayName } from "./lib/draft-burst.mjs";
-import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria, groupCriteriaByKind, parseCriteriaBlock } from "./lib/skill-criteria.mjs";
-import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
+import { bandForCardKindStage } from "./lib/preset-staleness.mjs";
 import {
   resolveDecisionApiKey,
   normalizeDecisionApiModel,
@@ -60,7 +59,7 @@ import { tasksToScoreQuestions, resolveScopeVerdicts, taskVerifyCommand, TASK_EV
 import { resolveScoredVerdicts } from "./lib/score-verdicts.mjs";
 import { countDelegations, summarizeDelegationEvidence } from "./lib/delegation-evidence.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
-import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
+import { BOARD_MOVE_COLUMNS, CARD_KINDS, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
@@ -113,6 +112,12 @@ import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGith
 import { createInboxServer, inboxRpcContract, runInboxMigrations } from "./server/inbox.js";
 import { createDraftingServer } from "./server/drafting.js";
 import { createCardsServer, createCardStore } from "./server/cards.js";
+import {
+  createPresetServer,
+  PRESET_MIGRATION_STATEMENTS,
+  runPresetMigrations,
+  type PresetRow,
+} from "./server/presets.js";
 import {
   createArtifactsPublication,
   publicationRpcContract,
@@ -1293,29 +1298,7 @@ export default async function plugin(bb: BbPluginApi) {
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
     )`,
     `CREATE INDEX IF NOT EXISTS idx_comments_card ON comments(card_id, created_at)`,
-    `CREATE TABLE IF NOT EXISTS presets (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      provider_id TEXT NOT NULL,
-      model_id TEXT NOT NULL,
-      reasoning_level TEXT NOT NULL,
-      permission_mode TEXT NOT NULL CHECK (permission_mode IN ('accept-edits','auto','full')),
-      environment_kind TEXT NOT NULL DEFAULT 'project-default' CHECK (environment_kind IN ('project-default','new-worktree')),
-      base_branch TEXT,
-      machine_id TEXT,
-      instructions TEXT NOT NULL DEFAULT '',
-      is_default INTEGER NOT NULL DEFAULT 0,
-      built_in INTEGER NOT NULL DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )`,
-    `CREATE TABLE IF NOT EXISTS card_presets (
-      card_id TEXT PRIMARY KEY,
-      preset_id TEXT NOT NULL,
-      assigned_at INTEGER NOT NULL,
-      FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
-      FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
-    )`,
+    ...PRESET_MIGRATION_STATEMENTS,
     `CREATE TABLE IF NOT EXISTS expired_questions (
       id TEXT PRIMARY KEY,
       card_id TEXT NOT NULL,
@@ -1447,62 +1430,9 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "split_from")) {
     db.exec("ALTER TABLE cards ADD COLUMN split_from TEXT");
   }
-  // stage_presets may not be applied by bb.storage.migrate on existing DBs,
-  // so ensure it idempotently here as well. Band validity is enforced by
-  // setBandPreset against STAGE_BANDS — the schema carries no band allowlist.
-  db.exec(`CREATE TABLE IF NOT EXISTS stage_presets (
-    band TEXT PRIMARY KEY,
-    preset_id TEXT NOT NULL,
-    assigned_at INTEGER NOT NULL,
-    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
-  )`);
-  // Singleton reviewer designation (id = 1): which preset `bb stelow review`
-  // spends. Explicit only — no default, no band fallback, never inherited.
-  // Deleting the preset clears the designation via cascade.
-  db.exec(`CREATE TABLE IF NOT EXISTS review_preset (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    preset_id TEXT NOT NULL,
-    assigned_at INTEGER NOT NULL,
-    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
-  )`);
-  // Singleton generation preset (id = 1): the cheap model for disposable
-  // Tier G draft bursts. Explicit only — no default, no worker fallback at
-  // this layer (the cascade in lib/draft-burst.mjs decides the fallback at
-  // spawn time). Deleting the preset clears the designation via cascade.
-  db.exec(`CREATE TABLE IF NOT EXISTS generation_preset (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    preset_id TEXT NOT NULL,
-    assigned_at INTEGER NOT NULL,
-    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
-  )`);
-  // Singleton reliable preset (id = 1): the optional board-level override
-  // for reliable-tier spawns (worker starts, restarts, band swaps,
-  // research fan-out, automation drafts). Explicit only — empty means the
-  // band preset (today's behavior). Deleting the preset clears the
-  // designation via cascade.
-  db.exec(`CREATE TABLE IF NOT EXISTS reliable_preset (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    preset_id TEXT NOT NULL,
-    assigned_at INTEGER NOT NULL,
-    FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
-  )`);
   // Decision API and review enforcement policy own their migrations behind
   // one feature seam; server.ts only wires the resulting factory.
   runDecisionApiMigrations(db);
-  // Rebuild tables created with the build-only band allowlist, preserving
-  // rows. Runs once: the rebuilt schema has no CHECK to match against.
-  const stagePresetsSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'stage_presets'").get() as { sql: string } | undefined;
-  if (stagePresetsSql?.sql.includes("CHECK (band IN")) {
-    db.exec(`ALTER TABLE stage_presets RENAME TO stage_presets_rebuild;
-      CREATE TABLE stage_presets (
-        band TEXT PRIMARY KEY,
-        preset_id TEXT NOT NULL,
-        assigned_at INTEGER NOT NULL,
-        FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
-      );
-      INSERT INTO stage_presets (band, preset_id, assigned_at) SELECT band, preset_id, assigned_at FROM stage_presets_rebuild;
-      DROP TABLE stage_presets_rebuild;`);
-  }
   // Inbox tables and their idempotent column migrations remain outside the
   // historical migration array: older local installations have different
   // recorded migration lengths.
@@ -1526,35 +1456,7 @@ export default async function plugin(bb: BbPluginApi) {
   // and RPC behavior are owned by the publication feature module.
   runPublicationMigrations(db);
 
-  const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
-  if (!presetColumns.some((column) => column.name === "environment_kind")) {
-    db.exec("ALTER TABLE presets ADD COLUMN environment_kind TEXT NOT NULL DEFAULT 'project-default'");
-  }
-  if (!presetColumns.some((column) => column.name === "base_branch")) {
-    db.exec("ALTER TABLE presets ADD COLUMN base_branch TEXT");
-  }
-  if (!presetColumns.some((column) => column.name === "machine_id")) {
-    db.exec("ALTER TABLE presets ADD COLUMN machine_id TEXT");
-  }
-
-  const defaultPresetId = "preset_default";
-  const existingDefault = db.prepare("SELECT * FROM presets WHERE id = ?").get(defaultPresetId) as PresetRow | undefined;
-  if (existingDefault) {
-    // Migrate the built-in default preset: codex is not installed on this host;
-    // the pi provider routes to Bifrost harness-coding.
-    if (existingDefault.provider_id === "codex") {
-      db.prepare("UPDATE presets SET provider_id = ?, model_id = ?, permission_mode = ?, updated_at = ? WHERE id = ?").run("pi", "bifrost/harness-coding", "full", now(), defaultPresetId);
-    } else if (existingDefault.permission_mode !== "full" && existingDefault.provider_id === "pi") {
-      // pi only supports full permission mode.
-      db.prepare("UPDATE presets SET permission_mode = ?, updated_at = ? WHERE id = ?").run("full", now(), defaultPresetId);
-    }
-  } else {
-    db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-      defaultPresetId, "Default", "pi", "bifrost/harness-coding", "medium", "full", "project-default", "", 1, 1, now(), now(),
-    );
-  }
-  // Drop non-built-in presets that reference codex (unusable without the Codex CLI).
-  db.prepare("DELETE FROM presets WHERE built_in = 0 AND provider_id = 'codex'").run();
+  runPresetMigrations(db, now);
 
   function now(): number { return Date.now(); }
 
@@ -1881,8 +1783,8 @@ ${prompt}`;
       if (!kind) return;
       const card = getCard(cardId);
       if (!card || card.kind !== "build" || isArchivedCard(card)) return;
-      const designated = db.prepare("SELECT preset_id FROM review_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      const reviewPreset = designated ? getPresetById(designated.preset_id) : null;
+      const designated = getReviewPresetId();
+      const reviewPreset = designated ? getPresetById(designated) : null;
       if (!reviewPreset) return;
       const workspace = await cardWorkspace(card).catch(() => null);
       if (!workspace?.path) return;
@@ -1948,15 +1850,34 @@ ${prompt}`;
 
   type CardRow = WorkerCard;
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
-  type PresetRow = {
-    id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
-    permission_mode: string; environment_kind: string; base_branch: string | null; machine_id: string | null;
-    instructions: string; is_default: number; built_in: number; created_at: number; updated_at: number;
-  };
 
   const cardStore = createCardStore(bb, db);
   const getCard = cardStore.getCard;
   const cardWorkspace = cardStore.cardWorkspace;
+
+  // Shared refusal copy: identical wording everywhere so the same failure
+  // reads the same on every surface, fixed in one place.
+  const ERR_CARD_NOT_FOUND = "Card not found.";
+  const ERR_CARD_ARCHIVED = "This card is archived.";
+  const ERR_WORKSPACE_UNAVAILABLE = "Workspace is unavailable.";
+  const ERR_PRESET_NOT_FOUND = "Preset not found.";
+
+  const presetServer = createPresetServer({
+    db,
+    bb,
+    now,
+    errors: { cardNotFound: ERR_CARD_NOT_FOUND, presetNotFound: ERR_PRESET_NOT_FOUND },
+    getCard,
+  });
+  const getDefaultPreset = presetServer.getDefaultPreset;
+  const getPresetById = presetServer.getPresetById;
+  const getPresetForCard = presetServer.getPresetForCard;
+  const getPresetForBand = presetServer.getPresetForBand;
+  const getReliablePresetForBand = presetServer.getReliablePresetForBand;
+  const presetAttachmentParams = presetServer.presetAttachmentParams;
+  const getReviewPresetId = presetServer.getReviewPresetId;
+  const pinCardPreset = presetServer.pinCardPreset;
+  const removeCardPreset = presetServer.removeCardPreset;
 
   const inbox = createInboxServer({
     db,
@@ -1971,103 +1892,6 @@ ${prompt}`;
     inbox.syncPendingQuestion(card.id, interactionIds, occurredAt);
   const markInboxQuestionsAnswered = (cardId: string, interactionIds: string[]) =>
     inbox.markAnswered(cardId, interactionIds);
-
-  function getDefaultPreset(): PresetRow {
-    const row = db.prepare("SELECT * FROM presets WHERE is_default = 1 ORDER BY created_at ASC LIMIT 1").get() as PresetRow | undefined;
-    if (row) return row;
-    const fallback = db.prepare("SELECT * FROM presets ORDER BY created_at ASC LIMIT 1").get() as PresetRow | undefined;
-    if (fallback) return fallback;
-    db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-      "preset_default", "Default", "pi", "bifrost/harness-coding", "medium", "full", "project-default", "", 1, 1, now(), now(),
-    );
-    return db.prepare("SELECT * FROM presets WHERE id = ?").get("preset_default") as PresetRow;
-  }
-
-  function getPresetById(id: string): PresetRow | null {
-    const row = db.prepare("SELECT * FROM presets WHERE id = ?").get(id) as PresetRow | undefined;
-    return row ?? null;
-  }
-
-  // Reviewer / generation / reliable designations are one singleton row in
-  // one table each, read and written the same way. Written out per tier the
-  // shape drifts; the table name is a literal at every call site here, never
-  // input, so it is interpolated. Returns null when the write succeeded.
-  function readSingletonPreset(table: string): { preset: { id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string } | null } {
-    const row = db.prepare(`SELECT preset_id FROM ${table} WHERE id = 1`).get() as { preset_id: string } | undefined;
-    const preset = row ? getPresetById(row.preset_id) : null;
-    return {
-      preset: preset ? { id: preset.id, name: preset.name, providerId: preset.provider_id, modelId: preset.model_id, reasoningLevel: preset.reasoning_level, permissionMode: preset.permission_mode } : null,
-    };
-  }
-
-  function assignSingletonPreset(table: string, presetId: string | null): { ok: false; error: string } | null {
-    if (presetId) {
-      if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-      db.prepare(`INSERT OR REPLACE INTO ${table} (id, preset_id, assigned_at) VALUES (1, ?, ?)`).run(presetId, now());
-    } else {
-      db.prepare(`DELETE FROM ${table} WHERE id = 1`).run();
-    }
-    return null;
-  }
-
-  function getPresetForCard(cardId: string): PresetRow {
-    const row = db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined;
-    if (!row) return getDefaultPreset();
-    const preset = getPresetById(row.preset_id);
-    return preset ?? getDefaultPreset();
-  }
-
-  // Resolve the worker preset for a stage band. An explicit per-card override
-  // (set in the card's Agent preset section, e.g. to escape a quota error)
-  // wins over the band policy: explicit + later beats phase default. Without
-  // an override, a configured band preset applies, else the card/board default.
-  function getPresetForBand(band: string, cardId: string): PresetRow {
-    const override = db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined;
-    if (override) {
-      const pinned = getPresetById(override.preset_id);
-      if (pinned) return pinned;
-    }
-    const row = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(band) as { preset_id: string } | undefined;
-    if (!row) return getPresetForCard(cardId);
-    const preset = getPresetById(row.preset_id);
-    return preset ?? getPresetForCard(cardId);
-  }
-
-  // Resolve the preset for reliable-tier spawns (worker starts, restarts,
-  // band swaps, research fan-out, automation drafts). The per-card override
-  // still wins; the board-level reliable override replaces the band preset
-  // when set; empty override means the band preset (today's behavior).
-  // Stays beside getPresetForBand — never inside it — so the draft-burst
-  // band fallback keeps resolving the pure band preset.
-  function getReliablePresetForBand(band: string, cardId: string): PresetRow {
-    const override = db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined;
-    const reliable = db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-    const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(band) as { preset_id: string } | undefined;
-    const resolved = resolveReliablePreset({
-      cardPin: override?.preset_id ?? null,
-      reliableOverride: reliable?.preset_id ?? null,
-      bandPreset: bandRow?.preset_id ?? null,
-      defaultPreset: null,
-    });
-    if (resolved.presetId) {
-      const pinned = getPresetById(resolved.presetId);
-      if (pinned) return pinned;
-    }
-    return getPresetForCard(cardId);
-  }
-
-  function presetAttachmentParams(preset: PresetRow): { providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; baseBranch: string | null; machineId: string | null; instructions: string } {
-    return {
-      providerId: preset.provider_id,
-      modelId: preset.model_id,
-      reasoningLevel: preset.reasoning_level,
-      permissionMode: preset.permission_mode,
-      environmentKind: preset.environment_kind,
-      baseBranch: preset.base_branch,
-      machineId: preset.machine_id,
-      instructions: preset.instructions,
-    };
-  }
 
   // Prepare the exact worker continuation; server/workers.ts owns the spawn,
   // old-thread shutdown, ledger rotation, and lineage write.
@@ -2204,10 +2028,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     continuingEnvironment: workers.continuingEnvironment,
     getPreset: (presetId) => getPresetById(presetId),
     getPresetForBand,
-    getGenerationPresetId: () => {
-      const row = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      return row?.preset_id ?? null;
-    },
+    getGenerationPresetId: presetServer.getGenerationPresetId,
     presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
     spawnDisposable,
     stopThread: (threadId) => workers.stop(threadId),
@@ -3167,13 +2988,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
 
 
-  // Shared refusal copy: identical wording everywhere so the same failure
-  // reads the same on every surface, fixed in one place.
-  const ERR_CARD_NOT_FOUND = "Card not found.";
-  const ERR_CARD_ARCHIVED = "This card is archived.";
-  const ERR_WORKSPACE_UNAVAILABLE = "Workspace is unavailable.";
-  const ERR_PRESET_NOT_FOUND = "Preset not found.";
-
   // Single writer for card conversation rows (agent trail, user notes,
   // worker transitions). Returns the comment id for callers that reference it.
   function logCardComment(cardId: string, target: string, targetId: string, author: "user" | "agent", body: string): string {
@@ -3933,6 +3747,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     bb,
     now,
     randomId,
+    presets: {
+      getWorktreePresetId: presetServer.getWorktreePresetId,
+      getEffectiveBuildEnvironmentKind: presetServer.getEffectiveBuildEnvironmentKind,
+      pinCardPreset,
+    },
     cards: {
       get: (cardId) => getCard(cardId),
       create: (args) => createCardInternal(args),
@@ -4606,7 +4425,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         if (stateDir) rmSync(stateDir, { recursive: true, force: true });
       } catch { /* bookkeeping rows below still delete */ }
       db.prepare("DELETE FROM comments WHERE card_id = ?").run(cardId);
-      db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
+      removeCardPreset(cardId);
       db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM ask_contracts WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM inbox_events WHERE card_id = ?").run(cardId);
@@ -4810,7 +4629,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         const found = getPresetById(presetId);
         if (!found) return { reseeded: false, error: ERR_PRESET_NOT_FOUND, reclassified: false };
         preset = found;
-        db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, preset.id, now());
+        if (!pinCardPreset(cardId, preset.id)) {
+          return { reseeded: false, error: ERR_PRESET_NOT_FOUND, reclassified: false };
+        }
       } else {
         // No explicit preset: reseed resolves the reliable-tier preset like
         // any fresh start (card pin, reliable override, band, default) —
@@ -5396,164 +5217,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { stage, stdout: result.stdout, error: null };
     },
 
-    async listPresets() {
-      // Per-card override rows (card-override-*) are implementation detail of
-      // a single card's custom provider/model choice — not reusable presets.
-      // Hide them so neither the board manager nor the card dialog is polluted.
-      const rows = db.prepare("SELECT * FROM presets WHERE id NOT LIKE 'card-override-%' ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[];
-      return {
-        presets: rows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          providerId: row.provider_id,
-          modelId: row.model_id,
-          reasoningLevel: row.reasoning_level,
-          permissionMode: row.permission_mode,
-          environmentKind: row.environment_kind,
-          baseBranch: row.base_branch,
-          machineId: row.machine_id,
-          instructions: row.instructions,
-          isDefault: row.is_default === 1,
-          builtIn: row.built_in === 1,
-        })),
-      };
-    },
-
-    async upsertPreset({ id, name, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch, machineId, instructions }) {
-      const trimmed = name.trim();
-      if (!trimmed) return { preset: { id: "", name: "" } };
-      // Empty-string ids must never reach the database (SQLite accepts "" as
-      // a primary key, but the UI cannot distinguish editing it from creating
-      // a new one). Any falsey id mints a fresh one.
-      const effectiveId = id || `preset_${Math.random().toString(36).slice(2, 10)}`;
-      const collision = db.prepare("SELECT id FROM presets WHERE LOWER(name) = LOWER(?) AND id != ?").get(trimmed, effectiveId) as { id: string } | undefined;
-      if (collision) throw new Error(`A preset named "${trimmed}" already exists.`);
-      const existing = db.prepare("SELECT id, built_in FROM presets WHERE id = ?").get(effectiveId) as { id: string; built_in: number } | undefined;
-      if (existing?.built_in === 1 && (!id || id !== effectiveId)) {
-        throw new Error("Built-in presets cannot be renamed or duplicated; create a new one instead.");
-      }
-      const ts = now();
-      if (existing) {
-        db.prepare("UPDATE presets SET name = ?, provider_id = ?, model_id = ?, reasoning_level = ?, permission_mode = ?, environment_kind = ?, base_branch = ?, machine_id = ?, instructions = ?, updated_at = ? WHERE id = ?").run(
-          trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, effectiveId,
-        );
-      } else {
-        db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(
-          effectiveId, trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, ts,
-        );
-      }
-      return { preset: { id: effectiveId, name: trimmed } };
-    },
-
-    async deletePreset({ id }) {
-      const row = db.prepare("SELECT built_in FROM presets WHERE id = ?").get(id) as { built_in: number } | undefined;
-      if (!row) return { deleted: false, error: ERR_PRESET_NOT_FOUND };
-      if (row.built_in === 1) return { deleted: false, error: "Built-in presets cannot be deleted." };
-      const inUse = db.prepare("SELECT COUNT(*) AS count FROM card_presets WHERE preset_id = ?").get(id) as { count: number };
-      if (inUse.count > 0) return { deleted: false, error: `Preset is assigned to ${inUse.count} card(s). Unassign first.` };
-      db.prepare("DELETE FROM presets WHERE id = ?").run(id);
-      // Band/reliable/reviewer rows cascade silently, so live workers running
-      // under the deleted preset re-evaluate against their new fallback.
-      for (const card of liveWorkerCards(db, null)) {
-        const band = bandForCardKindStage(card.kind, card.stage);
-        refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
-      }
-      return { deleted: true, error: null };
-    },
-
-    async listBandPresets() {
-      const rows = db.prepare("SELECT band, preset_id FROM stage_presets").all() as Array<{ band: string; preset_id: string }>;
-      const map: Record<string, string> = {};
-      for (const row of rows) map[row.band] = row.preset_id;
-      return { bands: Object.keys(STAGE_BANDS).map((band) => ({ band, presetId: map[band] ?? null, stages: STAGE_BANDS[band] })) };
-    },
-
-    async setBandPreset({ band, presetId }) {
-      if (!STAGE_BANDS[band]) return { ok: false, error: `Unknown band: ${band}` };
-      if (presetId) {
-        if (!getPresetById(presetId)) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-        db.prepare("INSERT OR REPLACE INTO stage_presets (band, preset_id, assigned_at) VALUES (?, ?, ?)").run(band, presetId, now());
-      } else {
-        db.prepare("DELETE FROM stage_presets WHERE band = ?").run(band);
-      }
-      // Provider/model are fixed at spawn: only this band's live workers can
-      // run stale after the change, so only they re-evaluate restart-pending.
-      for (const card of liveWorkerCards(db, [band])) {
-        refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
-      }
-      return { ok: true, error: null };
-    },
-
-    async getReviewPreset() {
-      return readSingletonPreset("review_preset");
-    },
-
-    async assignReviewPreset({ presetId }) {
-      const failure = assignSingletonPreset("review_preset", presetId);
-      if (failure) return failure;
-      bb.realtime.publish("board-changed", { presetId });
-      return { ok: true, error: null };
-    },
-
-    async getGenerationPreset() {
-      return readSingletonPreset("generation_preset");
-    },
-
-    async assignGenerationPreset({ presetId }) {
-      const failure = assignSingletonPreset("generation_preset", presetId);
-      if (failure) return failure;
-      bb.realtime.publish("board-changed", { presetId });
-      return { ok: true, error: null };
-    },
-
-    async getReliablePreset() {
-      return readSingletonPreset("reliable_preset");
-    },
-
-    async assignReliablePreset({ presetId }) {
-      const failure = assignSingletonPreset("reliable_preset", presetId);
-      if (failure) return failure;
-      // Provider/model are fixed at spawn: every live worker whose effective
-      // preset changed under it offers Restart instead of a Resume that
-      // changes nothing. Cards with a per-card pin are unaffected (the pin
-      // still wins) — refreshRestartPending recomputes their flag harmlessly.
-      for (const card of liveWorkerCards(db, null)) {
-        const band = bandForCardKindStage(card.kind, card.stage);
-        refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
-      }
-      bb.realtime.publish("board-changed", { presetId });
-      return { ok: true, error: null };
-    },
-
-    async assignPreset({ cardId, presetId }) {
-      const card = getCard(cardId);
-      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-      if (presetId === null) {
-        db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
-        // Drop this card's private override row (if any) so custom choices
-        // don't accumulate dead rows; it is unreferenced after the reset.
-        db.prepare("DELETE FROM presets WHERE id = ?").run(`card-override-${cardId}`);
-      } else {
-        const preset = getPresetById(presetId);
-        if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-        db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
-        // A live worker predating the new preset will never pick it up
-        // (provider/model are fixed at spawn): flag it so the card offers
-        // Restart instead of a Resume that changes nothing.
-        refreshRestartPending(db, cardId, card.worker_thread_id, card.worker_preset_id, presetId);
-      }
-      bb.realtime.publish("card-state", { cardId });
-      return { ok: true, error: null };
-    },
-
-    async setDefaultPreset({ id }) {
-      const preset = getPresetById(id);
-      if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-      db.prepare("UPDATE presets SET is_default = 0").run();
-      db.prepare("UPDATE presets SET is_default = 1 WHERE id = ?").run(id);
-      bb.realtime.publish("board-changed", { presetId: id });
-      return { ok: true, error: null };
-    },
+    ...presetServer.handlers,
 
     async listProviderModels() {
       const providers = await bb.sdk.providers.list().catch(() => []);
@@ -7272,8 +6936,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
         if (!artifactArg && card.kind === "build") return { exitCode: 2, stderr: "Card review covers research and explore cards; for build documents pass --artifact <registered path> (e.g. a spec-product or spec-tech file)." };
         if (card.kind !== "research" && card.kind !== "explore" && card.kind !== "build") return { exitCode: 2, stderr: `Unknown card kind "${card.kind}". Archive this card and start a new one.` };
-        const designated = db.prepare("SELECT preset_id FROM review_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-        const reviewPreset = designated ? getPresetById(designated.preset_id) : null;
+        const designated = getReviewPresetId();
+        const reviewPreset = designated ? getPresetById(designated) : null;
         if (!reviewPreset) {
           return { exitCode: 2, stderr: "No artifact-reviewer preset designated. In Manage presets, mark one preset as the reviewer (a different model family from your workers, low reasoning, restrictive permission) — review never falls back to the worker preset." };
         }
@@ -7703,9 +7367,20 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { exitCode: 1, stderr: "Refused: presets are managed from the card's Agent preset section (or the Presets screen), never by a worker thread. If you need a different brain for this phase, ask for it via `bb stelow ask` instead of reassigning presets yourself." };
         }
         const flag = (name: string, list: string[]) => { const index = list.indexOf(name); return index >= 0 ? list[index + 1] : undefined; };
-        const rows = (db.prepare("SELECT * FROM presets WHERE id NOT LIKE 'card-override-%' ORDER BY is_default DESC, name COLLATE NOCASE ASC").all() as PresetRow[]);
         if (!sub || sub === "list") {
-          return { exitCode: 0, stdout: rows.map((row) => `${row.id}\t${row.is_default === 1 ? "*" : " "}${row.built_in === 1 ? "B" : " "}\t${row.name}\t${row.provider_id}/${row.model_id}\t${row.reasoning_level}\t${row.permission_mode}`).join("\n") };
+          const listed = await presetServer.handlers.listPresets();
+          return {
+            exitCode: 0,
+            stdout: listed.presets.map((row) => [
+              row.id,
+              row.isDefault ? "*" : " ",
+              row.builtIn ? "B" : " ",
+              row.name,
+              `${row.providerId}/${row.modelId}`,
+              row.reasoningLevel,
+              row.permissionMode,
+            ].join("\t")).join("\n"),
+          };
         }
         if (sub === "add") {
           const args = argv.slice(2);
@@ -7718,7 +7393,18 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const instructions = flag("--instructions", args) ?? "";
           if (!name) return { exitCode: 2, stderr: "Usage: bb stelow preset add --name <name> [--provider <id>] [--model <id>] [--reasoning <level>] [--permission <mode>] [--workspace <kind>] [--instructions <text>]" };
           try {
-            const result = await upsertPresetHandler({ id: null, name, providerId, modelId, reasoningLevel, permissionMode: permissionMode as "accept-edits" | "auto" | "full", environmentKind, baseBranch: null, machineId: null, instructions });
+            const result = await presetServer.handlers.upsertPreset({
+              id: null,
+              name,
+              providerId,
+              modelId,
+              reasoningLevel,
+              permissionMode: permissionMode as "accept-edits" | "auto" | "full",
+              environmentKind,
+              baseBranch: null,
+              machineId: null,
+              instructions,
+            });
             return { exitCode: 0, stdout: `OK ${result.preset.id} ${result.preset.name}` };
           } catch (error) {
             return { exitCode: 1, stderr: error instanceof Error ? error.message : "Unable to add preset." };
@@ -7727,7 +7413,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (sub === "remove") {
           const id = argv[2];
           if (!id) return { exitCode: 2, stderr: "Usage: bb stelow preset remove <id>" };
-          const result = await deletePresetHandler({ id });
+          const result = await presetServer.handlers.deletePreset({ id });
           if (!result.deleted) return { exitCode: 1, stderr: result.error ?? "Could not remove preset." };
           return { exitCode: 0, stdout: `Removed ${id}` };
         }
@@ -7736,7 +7422,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const cardId = flag("--card", args);
           const presetId = flag("--preset", args);
           if (!cardId || !presetId) return { exitCode: 2, stderr: "Usage: bb stelow preset assign --card <card_id> --preset <preset_id>" };
-          const result = await assignPresetHandler({ cardId, presetId });
+          const result = await presetServer.handlers.assignPreset({ cardId, presetId });
           if (!result.ok) return { exitCode: 1, stderr: result.error ?? "Could not assign preset." };
           return { exitCode: 0, stdout: `Assigned ${presetId} to ${cardId}` };
         }
@@ -7746,48 +7432,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { exitCode: 2, stderr: `Unknown command "${argv[0] ?? ""}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}\n${cliUsageLine(STELOW_CLI_COMMANDS)}` };
     },
   });
-
-  const upsertPresetHandler = async ({ id, name, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch, machineId, instructions }: { id: string | null; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: "accept-edits" | "auto" | "full"; environmentKind: "project-default" | "new-worktree"; baseBranch: string | null; machineId: string | null; instructions: string }) => {
-    const trimmed = name.trim();
-    if (!trimmed) throw new Error("Preset name is required.");
-    const effectiveId = id ?? `preset_${Math.random().toString(36).slice(2, 10)}`;
-    const collision = db.prepare("SELECT id FROM presets WHERE LOWER(name) = LOWER(?) AND id != ?").get(trimmed, effectiveId) as { id: string } | undefined;
-    if (collision) throw new Error(`A preset named "${trimmed}" already exists.`);
-    const existing = db.prepare("SELECT id, built_in FROM presets WHERE id = ?").get(effectiveId) as { id: string; built_in: number } | undefined;
-    if (existing?.built_in === 1 && (!id || id !== effectiveId)) throw new Error("Built-in presets cannot be renamed or duplicated; create a new one instead.");
-    const ts = now();
-    if (existing) {
-      db.prepare("UPDATE presets SET name = ?, provider_id = ?, model_id = ?, reasoning_level = ?, permission_mode = ?, environment_kind = ?, base_branch = ?, machine_id = ?, instructions = ?, updated_at = ? WHERE id = ?").run(trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, effectiveId);
-    } else {
-      db.prepare("INSERT INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(effectiveId, trimmed, providerId, modelId, reasoningLevel, permissionMode, environmentKind, baseBranch ?? null, machineId ?? null, instructions, ts, ts);
-    }
-    return { preset: { id: effectiveId, name: trimmed } };
-  };
-
-  const deletePresetHandler = async ({ id }: { id: string }) => {
-    const row = db.prepare("SELECT built_in FROM presets WHERE id = ?").get(id) as { built_in: number } | undefined;
-    if (!row) return { deleted: false, error: ERR_PRESET_NOT_FOUND };
-    if (row.built_in === 1) return { deleted: false, error: "Built-in presets cannot be deleted." };
-    const inUse = db.prepare("SELECT COUNT(*) AS count FROM card_presets WHERE preset_id = ?").get(id) as { count: number };
-    if (inUse.count > 0) return { deleted: false, error: `Preset is assigned to ${inUse.count} card(s). Unassign first.` };
-    db.prepare("DELETE FROM presets WHERE id = ?").run(id);
-    return { deleted: true, error: null };
-  };
-
-  const assignPresetHandler = async ({ cardId, presetId }: { cardId: string; presetId: string | null }) => {
-    const card = getCard(cardId);
-    if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-    if (presetId === null) {
-      db.prepare("DELETE FROM card_presets WHERE card_id = ?").run(cardId);
-    } else {
-      const preset = getPresetById(presetId);
-      if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
-      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, presetId, now());
-      refreshRestartPending(db, cardId, card.worker_thread_id, card.worker_preset_id, presetId);
-    }
-    bb.realtime.publish("card-state", { cardId });
-    return { ok: true, error: null };
-  };
 
   bb.ui.registerMentionProvider({
     id: "workflow",
