@@ -543,7 +543,12 @@ assert.match(
 );
 assert.match(
   researchContent,
-  /<InboxEventBanner[\s\S]*<ResearchStatus[\s\S]*<InputFiles[\s\S]*<ResearchSummary[\s\S]*<PreviewSection[\s\S]*<ResearchQualitySection[\s\S]*<ResearchArtifacts[\s\S]*<CardConversation/,
+  new RegExp(
+    "<InboxEventBanner[\\s\\S]*<ResearchStatus[\\s\\S]*<InputFiles[\\s\\S]*"
+      + "<ResearchSummary[\\s\\S]*<PreviewSection[\\s\\S]*"
+      + "<ResearchQualitySection[\\s\\S]*<ResearchArtifacts[\\s\\S]*"
+      + "<CardConversation",
+  ),
   "research detail keeps its original shared-leaf composition order",
 );
 assert.match(
@@ -643,7 +648,12 @@ assert.match(
 );
 assert.match(
   researchDialogs,
-  /if \(!props\.open\) return;\s*setBusy\(false\);\s*setPicked\(\(current\) => openedStrategy\(current, props\.strategies, props\.runIds\)\);[\s\S]*?\}, \[props\.open\]\);/,
+  new RegExp(
+    "if \\(!props\\.open\\) return;\\s*setBusy\\(false\\);\\s*"
+      + "setPicked\\(\\(current\\) => openedStrategy\\(current, "
+      + "props\\.strategies, props\\.runIds\\)\\);"
+      + "[\\s\\S]*?\\}, \\[props\\.open\\]\\);",
+  ),
   "opening a strategy round resets busy state and defaults the pick once per open",
 );
 assert.doesNotMatch(
@@ -951,7 +961,11 @@ assert.match(
 );
 assert.match(
   detailSource,
-  /import \{ ConfirmActionDialog \} from "\.\.\/manage\/confirm-action-dialog"|import \{ ConfirmActionDialog \} from "\.\/components\/manage\/confirm-action-dialog"/,
+  new RegExp(
+    "import \\{ ConfirmActionDialog \\} from \"\\.\\./manage/confirm-action-dialog\""
+      + "|import \\{ ConfirmActionDialog \\} from "
+      + "\"\\./components/manage/confirm-action-dialog\"",
+  ),
   "detail bodies read the shared confirm",
 );
 assert.doesNotMatch(

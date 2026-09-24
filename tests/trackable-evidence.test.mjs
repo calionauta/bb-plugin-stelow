@@ -202,7 +202,6 @@ assert.match(server, /liveClaimsForWorkspace\(/, "claims derive read-only, never
 const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");
 assert.match(gates, /unverified Record — complete every verification checklist/, "done refuses unverified Records with the checklist redirect");
 assert.match(server, /recordTrackableEvent\(/, "decisions trail into the event log");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
 const scopesList = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 assert.match(scopesList, /scope\.conditions/, "scopes render their conditions");
 assert.match(scopesList, /task\.conditions/, "tasks render their conditions through the same machine");

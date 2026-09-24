@@ -7,7 +7,7 @@ const pad = (n) => Array(n).fill("filler").join(" ");
 const hasCode = (result, code) => result.failures.some((failure) => failure.code === code);
 
 assert.deepEqual(
-  [...EXPLORE_CONTRACTS.map((entry) => entry.id)].sort(),
+  EXPLORE_CONTRACTS.map((entry) => entry.id).sort(),
   ["codebase-critique", "execution-critique", "interface-alternatives", "plan-critique", "shape-up", "tech-planning", "testing-ai-code", "ux-critique"].sort(),
   "eight explore contracts",
 );

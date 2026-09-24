@@ -52,7 +52,6 @@ try {
   writeFileSync(join(fixtureRoot, "lib/debt.mjs"), debtFile);
   git("add", "lib/debt.mjs");
   git("commit", "-m", "add inherited debt");
-  const debtCommit = git("rev-parse", "HEAD");
 
   git("switch", "master");
   mkdirSync(join(fixtureRoot, "lib"));
@@ -74,16 +73,7 @@ try {
     join(repositoryRoot, "scripts/check-source-budgets.mjs"),
     join(fixtureRoot, "scripts/check-source-budgets.mjs"),
   );
-  writeFileSync(
-    join(fixtureRoot, "source-shape-baseline.json"),
-    `${JSON.stringify({ commit: debtCommit, reason: "test baseline" }, null, 2)}\n`,
-  );
-  writeFileSync(
-    join(fixtureRoot, "source-shape-budget-baseline.json"),
-    `${JSON.stringify({ commit: debtCommit, reason: "test budget baseline" }, null, 2)}\n`,
-  );
   git("add", "scripts/check-source-shape.mjs", "scripts/check-source-budgets.mjs");
-  git("add", "source-shape-baseline.json", "source-shape-budget-baseline.json");
   git("commit", "-m", "activate source shape gate");
 
   const clean = runChecker();

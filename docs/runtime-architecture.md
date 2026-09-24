@@ -50,10 +50,12 @@ when the current file is no larger than the base version.
 
 Merge commit `0795f04` brought current `origin/master` behavior into this branch,
 including the centralized execution modules and their UI-facing contract fields.
-The branch is now merge-tree clean against the fetched `origin/master` tip.
+The branch is merge-tree clean against the fetched `origin/master` tip.
 
 The remaining large runtime entrypoint is real technical debt. The full
 capability split and line-budget cleanup are not complete: the source-shape gate
-currently reports 331 changed lines over 160 characters, almost all in
-`server/plugin-runtime.ts`. This note is therefore not a claim that the runtime
-is fully decomposed or that `npm run quality:shape` is green.
+currently reports 328 changed lines over 160 characters, all in
+`server/plugin-runtime.ts`. The budget checker also reports the 6,393-line runtime,
+several oversized extracted factories, and the expanded lifecycle contract test.
+This note is therefore not a claim that the runtime is fully decomposed or that
+`npm run quality:shape` is green.

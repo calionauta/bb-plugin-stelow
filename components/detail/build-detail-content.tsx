@@ -1,6 +1,6 @@
 import { isWorkerPresetStale } from "../../lib/preset-staleness.mjs";
 import { CardConversation } from "../conversation/card-conversation";
-import type { BuildDetailView } from "./build-detail-body";
+import type { BuildDetailView } from "./build-detail-view";
 import { BuildReviewHero } from "./build-detail-hero";
 import { BuildArtifacts, BuildProgressSection } from "./build-detail-progress";
 import { ExecutionRunsSection } from "./execution-runs-section";

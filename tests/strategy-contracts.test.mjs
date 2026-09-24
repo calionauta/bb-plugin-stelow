@@ -9,7 +9,7 @@ const hasCode = (result, code) => result.failures.some((failure) => failure.code
 
 // Every research strategy has a primary-file contract citing its skill.
 const STRATEGY_IDS = ["job-to-be-done", "business-models", "evolutionary", "promotions", "market-analysis", "marketplace", "open-source", "opportunity-mapping", "paywall", "pricing", "ads", "discovery", "product-health", "trust-building"];
-assert.deepEqual([...STRATEGY_CONTRACTS.map((entry) => entry.id)].sort(), [...STRATEGY_IDS].sort(), "all strategies contracted");
+assert.deepEqual(STRATEGY_CONTRACTS.map((entry) => entry.id).sort(), [...STRATEGY_IDS].sort(), "all strategies contracted");
 for (const contract of STRATEGY_CONTRACTS) {
   assert.ok(contract.ref.startsWith("skills/"), `${contract.id} cites its skill`);
 }

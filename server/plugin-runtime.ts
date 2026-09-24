@@ -105,9 +105,8 @@ import { formatBytes, threadIdFromWorktreePath, isStaleEnvironment } from "../li
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { recordTrackableEvent } from "../lib/trackable-events.mjs";
 import { enrichEntriesForDetail } from "../lib/trackable-evidence.mjs";
-import { buildRegistry, canStart, dependencyCycles } from "../lib/trackable-relations.mjs";
 import { countScopeDialects, diagnoseScopeSync } from "../lib/spec-scope-reader.mjs";
-import { advanceExecutionGates, doneBuildGates } from "../lib/build-gates.mjs";
+import { doneBuildGates } from "../lib/build-gates.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "../lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "../lib/card-work-resume.mjs";
 import { playbookEntries, renderPlaybook } from "../lib/playbook.mjs";

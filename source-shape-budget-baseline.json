@@ -1,4 +1,0 @@
-{
-  "commit": "f903434f3b51fa39c87d993b381eb23538919e5c",
-  "reason": "Inherited file and function size debt before budget enforcement. New growth over the limits fails."
-}
