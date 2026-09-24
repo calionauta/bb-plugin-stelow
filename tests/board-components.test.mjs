@@ -24,6 +24,7 @@ const filters = readFileSync(join(root, "components/board/board-filters.tsx"), "
 const viewToggle = readFileSync(join(root, "components/board/board-view-toggle.tsx"), "utf8");
 const lists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
 const panelState = readFileSync(join(root, "components/panel/panel-state-hooks.ts"), "utf8");
+const inboxPanel = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 assert.deepEqual(viewsForTrack("build"), ["board", "list", "hill"], "build keeps its three views");
 assert.deepEqual(viewsForTrack("research"), ["board", "list"], "research excludes hill");
@@ -45,7 +46,12 @@ assert.match(app, /<ViewToggle[^>]*track="explore"/, "explore calls the shared t
 assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 3, "all three panels bind persistence to a track");
 assert.equal((app.match(/<ViewToggle/g) ?? []).length, 3, "one shared toggle call site per board");
 assert.match(panelState, /normalizeBoardView\(window\.localStorage\.getItem\(storageKey\), track\)/, "stored views pass through the tested track restriction");
-assert.equal((app.match(/= usePanelData/g) ?? []).length, 4, "all four data-backed panels use the shared loading lifecycle");
+assert.equal(
+  (app.match(/= usePanelData/g) ?? []).length
+    + (inboxPanel.match(/= usePanelData/g) ?? []).length,
+  4,
+  "all four data-backed panels use the shared loading lifecycle",
+);
 assert.equal((app.match(/firstLoadRef/g) ?? []).length, 0, "panel shells no longer own duplicate first-load state");
 
 assert.deepEqual(collapsedGroupsFromStorage(null, false), { archived: true }, "missing column state starts archived");
@@ -67,10 +73,11 @@ assert.deepEqual(
   "a partial board refresh keeps integration state when that RPC is unavailable",
 );
 assert.match(
-  app,
+  inboxPanel,
   /usePanelData\(loadInbox, \{[\s\S]*?notifyOnError: false[\s\S]*?itemCountKey: "notifications"/,
   "Inbox load failures stay in the retry panel instead of adding a toast",
 );
+assert.equal((app.match(/function InboxPanel\(/g) ?? []).length, 0, "the Inbox panel no longer lives in the app shell");
 
 const scopeSummary = { scopesDone: 2, scopesTotal: 5, tasksDone: 3, tasksTotal: 7 };
 assert.equal(

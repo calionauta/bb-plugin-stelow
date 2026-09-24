@@ -13,9 +13,8 @@ import {
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
-import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxEventText, inboxEventTime, inboxFilterEntries, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
+import { inboxBadgeCount } from "./lib/inbox-panel-state.mjs";
 import { joinStrategyLabels } from "./lib/detail-presentation.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
@@ -41,6 +40,7 @@ import {
   StelowCardDetail,
 } from "./components/detail/card-detail-route";
 import { StelowPanel } from "./components/panel/stelow-panel";
+import { InboxPanel } from "./components/panels/inbox-panel";
 import { rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus.mjs";
 import { FiltersBar } from "./components/board/board-filters";
 import { ViewToggle } from "./components/board/board-view-toggle";
@@ -60,7 +60,6 @@ import {
   STELOW_PANEL_ID,
   STELOW_PANEL_PATH,
   cardSubPath,
-  inboxCardSubPath,
   trackRootSubPath,
   trackTitle,
   type ParsedStelowRoute,
@@ -132,8 +131,8 @@ function researchColumnOf(card: Pick<CardItem, "status">): string {
   return researchColumnForStatus(card.status);
 }
 
-// Every navigation flows through goToTrack / goToCard / goToInboxCard, so
-// track roots and card URLs keep one owner in the panel router feature.
+// Every navigation flows through goToTrack / goToCard, so track roots and
+// card URLs keep one owner in the panel router feature.
 type BbNavigate = ReturnType<typeof useBbNavigate>;
 function goToTrack(navigate: BbNavigate, track: StelowTrack): void {
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: trackRootSubPath(track) });
@@ -142,10 +141,6 @@ function goToCard(navigate: BbNavigate, card: Pick<CardItem, "kind">, cardId: st
   rememberStelowReturnFocusCardId(cardId);
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: cardSubPath(card, cardId, eventId) });
 }
-function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): void {
-  navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: inboxCardSubPath(cardId, eventId) });
-}
-
 const FILTER_INTENT_OPTIONS = [{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))];
 const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...VISIBLE_COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
 const FILTER_ACTIVITY_OPTIONS = [
@@ -207,7 +202,7 @@ function useInboxAccessory(): SidebarAccessoryHandle {
       const result = await rpc.call("listNotifications", { includeArchived: false });
       // Badge = live action needed. It deliberately matches the first Inbox
       // filter, so a visible count never opens to an empty state.
-      setCount(result.notifications.filter((entry) => countsForInboxBadge(entry)).length);
+      setCount(inboxBadgeCount(result.notifications));
     } catch {
       /* host will show stale silently */
     }
@@ -308,115 +303,34 @@ function useResearchAccessory(): SidebarAccessoryHandle {
   return { count, tone };
 }
 
-type InboxNotification = {
-  id: string; cardId: string; cardName: string; projectName: string; cardKind: "build" | "research" | "explore";
-  kind: "question" | "error" | "paused" | "completed";
-  summary: string; occurredAt: number; readAt: number | null; resolvedAt: number | null; archivedAt: number | null;
-  severity: number; severityReasons: string[];
-};
-
-const INBOX_COPY: Record<InboxNotification["kind"], { icon: string; label: string; tone: string }> = {
-  question: { icon: "?", label: INBOX_EVENT_LABELS.question, tone: "bg-amber-500/15 text-amber-700" },
-  error: { icon: "!", label: INBOX_EVENT_LABELS.error, tone: "bg-destructive/15 text-destructive" },
-  paused: { icon: "Ⅱ", label: INBOX_EVENT_LABELS.paused, tone: "bg-amber-500/15 text-amber-700" },
-  completed: { icon: "✓", label: INBOX_EVENT_LABELS.completed, tone: "bg-emerald-500/15 text-emerald-700" },
-};
-
-function PanelSkeleton({ rows = 4 }: { rows?: number }) {
-  return <div className="space-y-3" aria-label="Loading" aria-busy="true">
-    {Array.from({ length: rows }, (_, index) => <div key={index} className="h-20 animate-pulse rounded-md border bg-muted/30" />)}
-  </div>;
-}
-
-// First-load placeholder mirrors the real Build/Research hierarchy: header,
-// one compact onboarding row, filters, then cards. Keeping this geometry
-// stable prevents the panel from visibly assembling around late RPC results.
 function TrackSkeleton({ columns = 5 }: { columns?: number }) {
-  return <div className="space-y-4" aria-label="Loading" aria-busy="true">
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="space-y-2"><div className="h-5 w-72 animate-pulse rounded bg-muted/50" /><div className="h-7 w-28 animate-pulse rounded bg-muted/50" /></div>
-      <div className="grid grid-cols-2 gap-2 sm:flex"><div className="h-11 w-28 animate-pulse rounded-md bg-muted/50" /><div className="h-11 w-24 animate-pulse rounded-md bg-muted/50" /></div>
-    </header>
-    <div className="h-11 animate-pulse rounded-md border bg-muted/30" />
-    <div className="flex items-center gap-2 border-b pb-3"><div className="h-9 flex-1 animate-pulse rounded-md bg-muted/50" /><div className="h-9 w-20 animate-pulse rounded-md bg-muted/50" /></div>
-    <div className="grid gap-3 lg:grid-cols-5">
-      {Array.from({ length: columns }, (_, index) => <section key={index} className="min-h-40 rounded-md border bg-muted/20 p-3"><div className="h-4 w-20 animate-pulse rounded bg-muted/50" /><div className="mt-3 h-20 animate-pulse rounded-md bg-muted/50" /></section>)}
-    </div>
-  </div>;
-}
-
-function InboxPanel() {
-  const rpc = useRpc<typeof rpcContract>();
-  const navigate = useBbNavigate();
-  const [filter, setFilter] = useState<"attention" | "resolved" | "archived" | "all">("attention");
-  const [unreadOnly, setUnreadOnly] = useState(false);
-  const loadInbox = useCallback(async () => ({
-    notifications: (await rpc.call("listNotifications", { includeArchived: true })).notifications,
-  }), [rpc]);
-  const {
-    data: { notifications },
-    isInitialLoad: firstLoad,
-    load,
-    loadError,
-    loading,
-  } = usePanelData(loadInbox, {
-    errorMessage: "Unable to load Stelow Inbox.",
-    notifyOnError: false,
-    initialData: { notifications: [] as InboxNotification[] },
-    itemCountKey: "notifications",
-    realtimeChannels: ["card-state", "inbox-changed"],
-  });
-  const entries = unreadInboxEntries(inboxFilterEntries(notifications, filter), unreadOnly);
-  async function open(entry: InboxNotification) {
-    if (!entry.readAt) {
-      try { await rpc.call("markNotificationRead", { notificationId: entry.id }); }
-      catch { /* navigation must remain available if acknowledgement fails */ }
-    }
-    goToInboxCard(navigate, entry.cardId, entry.id);
-  }
-  async function archive(entry: InboxNotification) { await rpc.call("archiveNotification", { notificationId: entry.id }); await load(); }
-  async function restore(entry: InboxNotification) { await rpc.call("restoreNotification", { notificationId: entry.id }); await load(); }
-  const Section = ({ title, entries }: { title: string; entries: InboxNotification[] }) => !entries.length ? null : (
-    <section className="space-y-2" aria-label={title}>
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
-      <div className="divide-y rounded-md border">
-        {entries.map((entry) => {
-          const copy = INBOX_COPY[entry.kind];
-          const presentation = inboxEventPresentation(entry);
-          return <div key={entry.id} className={`flex items-start gap-2 p-3 sm:gap-3 ${entry.readAt ? "bg-background" : "bg-amber-500/5"}`}>
-            <button onClick={() => void open(entry)} className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-              <span aria-hidden className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${presentation.tone ?? copy.tone}`}>{copy.icon}</span>
-              <span className="min-w-0"><span className="flex flex-wrap items-center gap-x-2"><strong className="text-sm">{entry.cardName}</strong>{presentation.stateLabel ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{presentation.label}</span> : null}{entry.severity >= 2 && entry.resolvedAt == null ? <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={entry.severityReasons.join(" · ")}>escalating</span> : null}{!entry.readAt ? <span className="size-1.5 rounded-full bg-primary"><span className="sr-only">Unread</span></span> : null}</span><span className="mt-0.5 block text-sm text-muted-foreground">{inboxEventText(entry)}</span>{entry.severityReasons.length > 0 && entry.resolvedAt == null ? <span className="mt-1 block text-xs text-muted-foreground">{entry.severityReasons.slice(0, 3).join(" · ")}</span> : null}<span className="mt-1 block text-xs text-muted-foreground" title={new Date(inboxEventPresentation(entry).stateAt).toLocaleString()}>{entry.projectName} · {inboxEventTime(entry)}</span></span>
-            </button>
-            <button onClick={() => void (entry.archivedAt ? restore(entry) : archive(entry))} className="cursor-pointer min-h-11 shrink-0 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{entry.archivedAt ? "Restore" : "Archive"}</button>
-          </div>;
-        })}
+  return (
+    <div className="space-y-4" aria-label="Loading" aria-busy="true">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <div className="h-5 w-72 animate-pulse rounded bg-muted/50" />
+          <div className="h-7 w-28 animate-pulse rounded bg-muted/50" />
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <div className="h-11 w-28 animate-pulse rounded-md bg-muted/50" />
+          <div className="h-11 w-24 animate-pulse rounded-md bg-muted/50" />
+        </div>
+      </header>
+      <div className="h-11 animate-pulse rounded-md border bg-muted/30" />
+      <div className="flex items-center gap-2 border-b pb-3">
+        <div className="h-9 flex-1 animate-pulse rounded-md bg-muted/50" />
+        <div className="h-9 w-20 animate-pulse rounded-md bg-muted/50" />
       </div>
-    </section>
+      <div className="grid gap-3 lg:grid-cols-5">
+        {Array.from({ length: columns }, (_, index) => (
+          <section key={index} className="min-h-40 rounded-md border bg-muted/20 p-3">
+            <div className="h-4 w-20 animate-pulse rounded bg-muted/50" />
+            <div className="mt-3 h-20 animate-pulse rounded-md bg-muted/50" />
+          </section>
+        ))}
+      </div>
+    </div>
   );
-  const filters: Array<{ id: typeof filter; label: string; description: string }> = [
-    { id: "attention", label: "Needs attention", description: "Work that needs your decision or recovery." },
-    { id: "resolved", label: "Resolved automatically", description: "These needed you once, then cleared on their own — each says how (answered, resumed, completed…). History is kept here." },
-    { id: "archived", label: "Archived", description: "Archived updates. Restore an item to return it to history." },
-    { id: "all", label: "All", description: "All active Inbox updates, newest first." },
-  ];
-  // One semantic color per tab, from the same status vocabulary the cards
-  // use (amber waits, emerald resolved, zinc archived, primary current):
-  // the dot names the kind at a glance, the active tint only confirms it.
-  const FILTER_DOT: Record<string, string> = { attention: "bg-amber-500", resolved: "bg-emerald-500", archived: "bg-zinc-500", all: "bg-primary" };
-  const FILTER_ACTIVE: Record<string, string> = {
-    attention: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-    resolved: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-    archived: "bg-zinc-500/15 text-zinc-600 dark:text-zinc-300",
-    all: "bg-primary/15 text-primary",
-  };
-  const selected = filters.find((entry) => entry.id === filter)!;
-  // No blank on reload: first mount skeletons, later polls keep stale
-  // content with a quiet updating hint instead of flashing.
-  const fatalError = loadError && notifications.length === 0;
-  const emptyTitle = unreadOnly ? "No unread updates" : filter === "attention" ? "All clear" : `No ${selected.label.toLowerCase()} updates`;
-  const emptyDescription = unreadOnly ? "Everything in this view has been read." : filter === "attention" ? "Stelow will surface work only when it needs you." : selected.description;
-  return <div className="h-full overflow-auto bg-background p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-5"><header><h1 className="text-xl font-semibold tracking-tight">Inbox</h1><p className="mt-1 text-sm text-muted-foreground">{selected.description}{loading && !firstLoad ? " Updating…" : ""}</p></header><div className="flex flex-wrap items-center gap-x-3 gap-y-2"><div className="flex min-h-11 gap-1 overflow-x-auto rounded-md border p-1" aria-label="Inbox filters">{filters.map((entry) => <button key={entry.id} onClick={() => setFilter(entry.id)} aria-pressed={filter === entry.id} title={entry.description} className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded px-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${filter === entry.id ? FILTER_ACTIVE[entry.id] ?? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}><span aria-hidden className={`size-1.5 rounded-full ${FILTER_DOT[entry.id] ?? "bg-primary"}`} />{entry.label}</button>)}</div><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={unreadOnly} onChange={(event) => setUnreadOnly(event.target.checked)} className="size-4 accent-primary" />Unread only</label></div>{firstLoad ? <PanelSkeleton rows={3} /> : fatalError ? <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm"><p>{loadError}</p><button onClick={() => void load()} className="cursor-pointer mt-3 min-h-11 rounded-md border px-3 text-sm font-medium hover:bg-background">Retry</button></section> : entries.length ? <Section title={selected.label} entries={entries} /> : <section className="rounded-md border border-dashed bg-muted/30 p-8 text-center"><h2 className="text-sm font-semibold">{emptyTitle}</h2><p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p></section>}</div></div>;
 }
 
 function BoardPanel({ active }: { active: boolean }) {

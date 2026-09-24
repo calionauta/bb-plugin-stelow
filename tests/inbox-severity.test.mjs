@@ -13,7 +13,7 @@ import { ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshE
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
+const app = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 // Scorer boundaries: fresh actions act, old/repeated escalate, completions
 // review quietly. Reasons ride every tier — never a bare number.
