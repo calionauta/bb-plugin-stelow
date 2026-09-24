@@ -43,7 +43,7 @@ const ordered = Object.entries(sites).map(([site, anchor]) => {
 }).sort((a, b) => a.at - b.at);
 const siteEnds = {
   spawn: "const ts = now();",
-  restart: "return { prompt, projectPath, stateDir, workspace };",
+  restart: "return { prompt, projectPath, workspace };",
   reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const { site, at } of ordered) {
@@ -76,7 +76,7 @@ const doneSites = {
   spawn: { anchor: "Step 1 — verify intent first", end: "const ts = now();" },
   restart: {
     anchor: "const prompt = researchRestart ?? exploreRestart ?? `You are running a Stelow workflow",
-    end: "return { prompt, projectPath, stateDir, workspace };",
+    end: "return { prompt, projectPath, workspace };",
   },
   reseed: { anchor: "in the re-seeded state.md", end: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")" },
   research: { anchor: "NEVER check a box yourself", end: "function exploreWorkerPrompt" },
@@ -138,7 +138,7 @@ const splitSites = {
 };
 const splitEnds = {
   spawn: "const ts = now();",
-  restart: "return { prompt, projectPath, stateDir, workspace };",
+  restart: "return { prompt, projectPath, workspace };",
   reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const [site, anchor] of Object.entries(splitSites)) {

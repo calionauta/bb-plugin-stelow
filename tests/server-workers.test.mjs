@@ -114,11 +114,9 @@ function harness({ spawnError = null, environment = null } = {}) {
       machineId: value.machine_id,
       instructions: value.instructions,
     }),
-    cardWorkspace: async () => ({ path: "/repo", hostId: "host-a" }),
     prepareRespawn: async () => ({
       prompt: "Continue the card",
       projectPath: "/repo",
-      stateDir: "/repo/.stelow/2026-01-01/hash-1",
       workspace: { path: "/repo", hostId: "host-a" },
     }),
     resetAutoContinue: () => ({ count: 0, stage: null }),

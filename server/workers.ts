@@ -85,7 +85,6 @@ export type RespawnPreparation =
     prompt: string;
     input?: SpawnArgs["input"];
     projectPath: string;
-    stateDir: string | null;
     workspace: { path: string; hostId: string | null } | null;
   };
 
@@ -108,7 +107,6 @@ type WorkerDeps = {
   getPreset: (presetId: string) => Preset | null;
   getReliablePreset: (band: string, cardId: string) => Preset;
   presetParams: (preset: Preset) => PresetParams;
-  cardWorkspace: (card: WorkerCard) => Promise<{ path: string; hostId: string | null } | null>;
   prepareRespawn: (card: WorkerCard, preset: Preset, reason: string, options?: RespawnOptions) => Promise<RespawnPreparation>;
   resetAutoContinue: () => { count: number; stage: string | null };
   errors: { cardNotFound: string; cardArchived: string; presetNotFound: string };
@@ -335,7 +333,6 @@ export function createWorkers(deps: WorkerDeps) {
   const history = createWorkerHistory(db, bb);
 
   return {
-    spawn,
     stop,
     recordThread,
     lineage,

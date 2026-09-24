@@ -1740,7 +1740,7 @@ ${prompt}`;
     let threadId: string | null = null;
     try {
       // delegation-site: preset-judge
-      const thread = await workers.spawn({
+      const thread = await bb.sdk.threads.spawn({
         projectId,
         environment: { type: "project-default" },
         visibility: "hidden",
@@ -2145,7 +2145,7 @@ ${prompt}`;
     if (start) {
     try {
       // delegation-site: worker-spawn
-      thread = await workers.spawn({
+      thread = await bb.sdk.threads.spawn({
       projectId: workerProjectId,
       environment: selectedEnvironment,
       visibility: "hidden",
@@ -2463,7 +2463,7 @@ ${DONE_PROTOCOL}
 ${SPLIT_PROTOCOL}
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`;
-    return { prompt, projectPath, stateDir, workspace };
+    return { prompt, projectPath, workspace };
   }
 
   async function cardWorkspace(card: CardRow): Promise<{ path: string; hostId: string | null } | null> {
@@ -2485,7 +2485,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     getPreset: (presetId) => getPresetById(presetId),
     getReliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
     presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
-    cardWorkspace,
     prepareRespawn: (card, preset, reason, options) =>
       prepareWorkerRespawn(card, preset as PresetRow, reason, options),
     resetAutoContinue,
@@ -4360,7 +4359,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async startWorkflow({ projectId, prompt }) {
       // delegation-site: worker-spawn
-      const thread = await workers.spawn({
+      const thread = await bb.sdk.threads.spawn({
         projectId,
         environment: { type: "project-default" },
         title: `Stelow: ${prompt.slice(0, 70)}`,
@@ -5208,7 +5207,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }) : null;
       const nextEnvironment = await workers.continuingEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
       // delegation-site: worker-spawn
-      const newThread = await workers.spawn({
+      const newThread = await bb.sdk.threads.spawn({
         projectId: card.project_id,
         environment: nextEnvironment,
         visibility: "hidden",

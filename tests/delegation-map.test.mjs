@@ -25,8 +25,14 @@ assert.throws(() => assertDisposableSpawn({ site: "preset-judge", args: hiddenRe
 // registered site, and disposable callers pass registered disposable ids.
 // A sixth spawn site — or an unregistered one — fails here first.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
-const directSpawns = server.match(/workers\.spawn\(\{/g) ?? [];
+const serverRoot = readFileSync(join(root, "server.ts"), "utf8");
+const workerSource = readFileSync(join(root, "server", "workers.ts"), "utf8");
+const server = `${serverRoot}\n${workerSource}`;
+const directSpawns = [
+  ...(serverRoot.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []),
+  ...(workerSource.match(/bb\.sdk\.threads\.spawn\(args\)/g) ?? []),
+];
+assert.doesNotMatch(server, /workers\.spawn\(\{/, "the worker facade does not wrap unrelated server spawn sites");
 const markers = [...server.matchAll(/\/\/ delegation-site: (\S+)/g)].map((match) => match[1]);
 assert.equal(markers.length, directSpawns.length, "every direct spawn carries exactly one site marker");
 for (const site of markers) {

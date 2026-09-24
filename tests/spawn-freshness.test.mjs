@@ -20,15 +20,18 @@ const spawnSources = `${server}\n${workerBackend}`;
 // A sixth direct site updates this contract deliberately. A new spawn site
 // is a new brain with its own lifecycle — it must arrive with a tier
 // decision here.
+const directSpawnCount =
+  (server.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length
+  + (workerBackend.match(/bb\.sdk\.threads\.spawn\(args\)/g) ?? []).length;
 assert.equal(
-  (server.match(/workers\.spawn\(\{/g) ?? []).length,
-  4,
-  "four direct worker spawn sites plus the preset judge remain pinned in the worker seam",
+  directSpawnCount,
+  5,
+  "three server worker spawns, the preset judge, and the worker lifecycle implementation are pinned",
 );
 assert.equal(
   (workerBackend.match(/bb\.sdk\.threads\.spawn\(args\)/g) ?? []).length,
   1,
-  "the worker seam has one SDK spawn implementation; a second direct implementation updates this contract deliberately",
+  "the worker seam has one indirect SDK spawn implementation; a second implementation updates this contract deliberately",
 );
 assert.equal(
   (server.match(/await spawnDisposable\(\{/g) ?? []).length,
