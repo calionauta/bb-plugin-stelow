@@ -75,7 +75,10 @@ Any commit that adds, changes, or removes a user-facing feature must
 update `FEATURES.md` in the same commit — a feature without an entry
 does not exist. Deep operator/maintainer guides live in `docs/`
 (e.g. `docs/github-issues.md`) and must be linked from README or
-FEATURES — an unlinked doc does not exist either.
+FEATURES — an unlinked doc does not exist either. The native Workflows
+boundary and the decision-routing policy are documented in
+`docs/native-workflows.md` and `docs/decision-routing.md`; consult them
+before changing execution modes or adding model-backed decisions.
 
 ## Upstream blueprint
 
