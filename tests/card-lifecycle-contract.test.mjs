@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const navigation = readFileSync(join(root, "components/app-support/navigation.ts"), "utf8");
 const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
@@ -103,8 +104,9 @@ assert.match(manageHeader, /rpc\.call\("renameCard", \{ cardId, name: draftName 
 assert.match(server, /void suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
 assert.match(server, /spawnDisposable\(\{[\s\S]*?\}, "card-title"\)/, "titling rides the disposable path as a registered site");
 
-const byThread = rpcMethod("cardByWorkerThread", "getNotification");
+const byThread = rpcMethod("cardByWorkerThread", "readCardFile");
 assert.doesNotMatch(byThread, /row\.status === "archived"/, "an archived card's thread still links back to its card");
+assert.match(serverInbox, /function createGetHandler\(/, "notification detail lives with the extracted inbox feature");
 
 const reseed = rpcMethod("reseedCard", "moveCard");
 assert.match(reseed, /resolveReseedIntent\(card, requestedIntent\)/, "fresh restarts are the only route reclassification path");
