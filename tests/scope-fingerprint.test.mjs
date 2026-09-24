@@ -38,7 +38,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 assert.match(scopeModule, /const prints = new Map<string, string>\(\);/, "one print per live card, closure lifetime");
 assert.match(scopeModule, /async function sync\(cardId: string\)/, "the watch is one named helper");

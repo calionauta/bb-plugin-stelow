@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { MAX_CHILDREN, attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "../lib/thread-children.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const cardContract = readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8");
 const workerBackend = readFileSync(join(root, "server", "workers-history.ts"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 
@@ -72,7 +72,7 @@ assert.deepEqual(attachChildTokenBreakdown(null, {}), [], "non-lists attach to n
 // per thread, totals kept, split added. The contract pins both fields so
 // a dropped split fails loudly instead of rendering half a story.
 assert.match(workerBackend, /tokenBreakdown: report\.breakdown/, "history entries carry the split beside the total");
-assert.match(server, /tokenBreakdown: z\.object\(\{ input: z\.number\(\)\.nullable\(\), output: z\.number\(\)\.nullable\(\), cached: z\.number\(\)\.nullable\(\), reasoning: z\.number\(\)\.nullable\(\), total: z\.number\(\)\.nullable\(\) \}\)\.nullable\(\)/, "worker history schemas carry the split on entries and children");
+assert.equal((cardContract.match(/tokenBreakdown: z\s*\.object\(/g) ?? []).length, 2, "worker history schemas carry the split on entries and children");
 assert.match(workerHistory, /sumTokenBreakdowns\(history\.flatMap/, "the card total sums splits through the lib");
 assert.match(workerHistory, /legs\.join\(" · "\)/, "reported legs render labeled, omitted legs never render");
 

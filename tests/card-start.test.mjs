@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 // today's behavior (spawn on submit); nothing in the server forces an
 // unstarted card — only the human unchecks the box.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const coreMigrations = readFileSync(join(root, "server/core-migrations.ts"), "utf8");
+const cardContract = readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8");
+const lifecycleContract = readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8");
+const contracts = `${cardContract}\n${lifecycleContract}`;
 const cardsCreate = readFileSync(join(root, "server/cards-create.ts"), "utf8");
 const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
 const workers = readFileSync(join(root, "server/workers.ts"), "utf8");
@@ -42,8 +46,8 @@ assert.match(cardsCreate, /input\.start === false/, "creation parks only when th
 const forcedParks = server.match(/start: false/g) ?? [];
 assert.equal(forcedParks.length, 0, "no hardcoded park remains — GitHub start policy comes from the human choice");
 assert.match(githubServer, /start: decision\.start/, "automation passes the worktree-gated start policy through the shared GitHub path");
-assert.match(server, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
-assert.match(server, /startWorker: \{/, "the start trigger is a named RPC");
+assert.match(contracts, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
+assert.match(contracts, /startWorker: \{/, "the start trigger is a named RPC");
 assert.match(server, /async startWorker\(\{ cardId \}\)/, "the handler resolves the card");
 assert.match(workers, /async function fresh\(/, "the worker seam owns the fresh-spawn body");
 assert.match(server, /workers\.fresh\(cardId, "start"\)/, "starting shares the fresh-spawn body");
@@ -136,7 +140,7 @@ assert.match(githubServer, /carriesMarker\(after\.issue\.comments, marker\)/, "p
 assert.match(githubServer, /GitHub issues are disabled on this host \(STELOW_GITHUB_ISSUES=0\)/, "disabled RPCs name the variable");
 assert.match(server, /STELOW_GITHUB_ISSUES/, "server.ts only names the switch, never its logic");
 assert.match(server, /\.\.\.github\.handlers/, "server.ts only spreads the feature handlers");
-assert.match(server, /runGithubMigrations\(db\)/, "server.ts delegates the feature migrations in one call");
+assert.match(coreMigrations, /runGithubMigrations\(db\)/, "the migration composition delegates GitHub migrations once");
 assert.doesNotMatch(githubServer, /card_id, fired_at\) VALUES/, "fires rows always carry their outcome");
 // environment_label is pinned by count in card-insert-contract (25
 // columns); checkout and outcome copy render from contract-typed data,

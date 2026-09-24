@@ -44,7 +44,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 assert.match(server, /name: "verify-delegation", summary: "Count worker subagent delegations/, "the delegation tripwire is listed");
 assert.match(server, /if \(argv\[0\] === "verify-delegation"\) \{/, "the tripwire branch exists");
 assert.match(server, /threads\.timeline\(\{ threadId: delegationCard\.worker_thread_id, segmentLimit: "100" \}\)/, "the tripwire reads the worker timeline, never the provider session");

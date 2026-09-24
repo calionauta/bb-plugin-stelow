@@ -196,7 +196,7 @@ assert.deepEqual(tasklessEnriched[0].contract.acceptanceCriteria, ["AC9"], "defa
 // Wiring pins: the detail composes enrichment through one function (lib
 // owns the topology); the handler only injects SDK and DB.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 assert.match(server, /enrichEntriesForDetail\(/, "card detail enriches through one composition");
 assert.match(server, /liveClaimsForWorkspace\(/, "claims derive read-only, never touching TTL");
 const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");

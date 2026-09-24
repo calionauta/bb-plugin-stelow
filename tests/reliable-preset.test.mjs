@@ -12,9 +12,10 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
+  readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8"),
 ].join("\n");
 const presetAccessors = readFileSync(join(root, "server/preset-accessors.ts"), "utf8");
 const presetHandlers = readFileSync(join(root, "server/preset-handlers.ts"), "utf8");

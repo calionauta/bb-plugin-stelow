@@ -93,11 +93,14 @@ assert.equal(fallback.executionInputSources.providerId, "explicit", "missing pro
 // track, through one shared helper per layer — never pasted per site.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
   readFileSync(join(root, "server/preset-accessors.ts"), "utf8"),
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/contracts.ts"), "utf8"),
 ].join("\n");
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");

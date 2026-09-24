@@ -44,7 +44,7 @@ assert.equal(gateEvidenceGate({ ...bareAtPlanGate, groups: [] }).allowed, false,
 
 // Host wiring: refused before anything persists, on slug truth — decided
 // inside the shared dispatcher (precedence pinned in ask-gate.test.mjs).
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher (evidence gate inside)");
 assert.match(serverSource, /stage: gateCard \? await cardStageSlug\(gateCard\) : null/, "the gate reads slug truth");
 assert.match(serverSource, /async function fallbackGateAskArtifact/, "older gate asks recover their manifest evidence for per-option review");

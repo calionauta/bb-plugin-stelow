@@ -46,8 +46,9 @@ const updateActions = readFileSync(new URL("../components/settings/plugin-update
 const updateStatus = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
 const aboutUi = `${about}\n${hostTools}\n${updateActions}\n${updateStatus}`;
 assert.doesNotMatch(app, /new URL\("\.\/assets\//, "frontend never builds a runtime static-asset URL");
-const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
-assert.match(server, /aboutLogo:\s*\{/, "server exposes the aboutLogo RPC");
+const server = readFileSync(new URL("../server/plugin-runtime.ts", import.meta.url), "utf8");
+const platformContract = readFileSync(new URL("../server/platform-rpc-contract.ts", import.meta.url), "utf8");
+assert.match(platformContract, /aboutLogo:\s*\{/, "the composed server exposes the aboutLogo RPC");
 const syncLib = readFileSync(new URL("../lib/workflow-skills-sync.mjs", import.meta.url), "utf8");
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 assert.equal(manifest.files.includes("assets"), true, "plugin package carries assets for the RPC to read");

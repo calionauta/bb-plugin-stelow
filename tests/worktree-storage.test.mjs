@@ -31,7 +31,7 @@ assert.equal(isStaleEnvironment(null), false, "junk reads live, never condemns")
 // Wiring pins: the storage readout is read-only, bounded per path,
 // attributed by thread, and registered beside metrics.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 assert.match(server, /\{ name: "storage", summary: "[^"]*read-only/, "the command is registered read-only");
 assert.match(server, /if \(argv\[0\] === "storage"\) \{/, "the storage branch exists");
 assert.match(server, /bb\.sdk\.environments\.list\(\)/, "rows come from the host registry, never a hand scan");

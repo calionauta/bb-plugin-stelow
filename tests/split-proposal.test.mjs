@@ -55,7 +55,9 @@ assert.equal(total.archiveParent, true, "full approval archives the parent");
 // while re-asking with the tag is still legal — instead of letting a
 // would-be split die silently. Decided through the shared gate on slug
 // truth, like every other split entry point.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
+const splitContractSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/lifecycle-rpc-contract.ts"), "utf8");
+const cardContractSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-rpc-contract.ts"), "utf8");
 assert.match(serverSource, /recorded as STANDARD — its answer is text only and executes nothing/, "the ask result names the standard consequence");
 assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the reminder gives the exact repair while still in time");
 assert.match(serverSource, /splitEligibility\(\{ kind: askCard\.kind, stage: askStage \}\)/, "the reminder decides through the shared gate");
@@ -94,13 +96,13 @@ assert.match(serverSource, /Never hedge with a standard question/, "the spawn pr
 // The nudge is a pointer to SPLIT_PROTOCOL, never a second copy of it.
 assert.match(serverSource, /const SPLIT_REQUEST_NUDGE = "Split requested/, "the request nudge is a single-source const");
 assert.match(serverSource, /Follow SPLIT_PROTOCOL in your system prompt/, "the nudge points at the protocol instead of re-teaching it");
-assert.match(serverSource, /requestSplitProposal: \{/, "the RPC contract names the trigger");
+assert.match(splitContractSource, /requestSplitProposal: \{/, "the RPC contract names the trigger");
 assert.match(serverSource, /async requestSplitProposal\(\{ cardId \}\)/, "the handler resolves the card");
 assert.match(serverSource, /stage: await cardStageSlug\(card\)/, "the trigger reads slug truth, not the DB cache");
 assert.match(serverSource, /splitActionState\(\{/, "the trigger decides through the shared action state");
 assert.match(serverSource, /openQuestions: live\.length \+ openExpiredQuestionIds\(cardId\)\.length/, "the trigger counts live plus expired questions before nudging");
 assert.match(serverSource, /SPLIT_REQUEST_NUDGE, mentions: \[\]/, "the trigger delivers the shared nudge to the worker thread");
-assert.match(serverSource, /splitAction: z\.object\(\{ show:/, "cardDetail exposes the dumb-UI split flag");
+assert.match(cardContractSource, /splitAction: z\.object\(\{ show:/, "cardDetail exposes the dumb-UI split flag");
 assert.match(serverSource, /const splitAction = splitActionState\(\{/, "cardDetail computes the flag from the shared rule");
 
 const heroSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/build-detail-hero.tsx"), "utf8");

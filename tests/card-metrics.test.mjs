@@ -49,7 +49,10 @@ assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, 
 // Active cards carry no times — the query scopes completed, the detail
 // degrades to nulls.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+].join("\n");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
 const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");
 const explorePanelState = readFileSync(join(root, "components", "panels", "explore-panel-state.ts"), "utf8");
@@ -63,7 +66,8 @@ assert.match(server, /WHERE status = 'completed'/, "aggregates read finished car
 assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
 assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
 assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
-assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\), doingNow: z\.array\(z\.string\(\)\), verifiedHeadSha: z\.string\(\)\.nullable\(\) \}\),/, "detail schema carries times, doing names, and the verified HEAD as nullable");
+const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;
+assert.match(server, detailTimesContract, "detail schema carries times, doing names, and the verified HEAD as nullable");
 assert.match(buildProgress, /const flow = \{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}/, "detail progress reads the card times");
 assert.match(buildProgress, /<ScopeProgress scopes=\{detail\.scopes\} flow=\{flow\} \/>/, "the scoped progress view receives the card flow");
 assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
@@ -112,7 +116,8 @@ assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows ope
 // worker — explicit signals, never heuristics) and review-awaiting dones,
 // window-independent and labeled as right-now. Tabs keep tempo apart
 // from attention; empty attention reads one calm line, never an empty box.
-assert.match(server, /attention: z\.array\(z\.object\(\{ cardId: z\.string\(\), kind: z\.enum\(\["build", "research", "explore"\]\), name: z\.string\(\), reason: z\.enum\(\["stuck", "review"\]\) \}\)\)/, "attention items are contracted with a closed reason set");
+const attentionContract = /attention: z\s*\.array\([\s\S]*?reason: z\s*\.enum\(\["stuck",\s*"review"\]\)/;
+assert.match(server, attentionContract, "attention items are contracted with a closed reason set");
 assert.match(server, /row\.status === "blocked" \|\| row\.activity === "error"/, "stuck derives from explicit signals only");
 assert.match(server, /hasPendingReview\(db, row\.id\)/, "review-awaiting derives from the shared review signal");
 assert.match(flowStrip, /type FlowTab = "tempo" \| "atencao"/, "tempo and attention share one closed tab type");

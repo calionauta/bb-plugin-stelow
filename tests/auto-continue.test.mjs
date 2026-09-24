@@ -114,7 +114,8 @@ assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing"
 
 // Server contract: the idle branch consults the guard and resumes through
 // the shared continue copy; manual recovery paths reset the budget.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
+const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
 assert.match(serverSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
 assert.match(serverSource, /cardStatus: card\.status/, "the audit watchdog receives the persisted card completion state");
 assert.match(serverSource, /bb\.sdk\.threads\.send\(\{ threadId: card\.worker_thread_id, mode: "auto", input: \[\{ type: "text", text: buildContinueNudge\(\), mentions: \[\], visibility: "agent-only" \}\] \}\)/, "auto-continue sends the shared continue nudge privately in place");
@@ -127,7 +128,7 @@ assert.match(serverSource, /expiredCount: openExpiredQuestionIds\(cardRow\.id\)\
 const resets = serverSource.match(/resetAutoContinue\(\)/g) ?? [];
 assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
-assert.match(serverSource, /ensureAutoContinueColumns\(db\)/, "the migration ensures the budget columns");
+assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
 assert.match(serverSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
 assert.match(serverSource, /threads\.events\.list\(\{ threadId: card\.worker_thread_id, order: "desc", limit: "100", types: \["turn\/completed", "turn\/started", "item\/completed"\] \}\)/, "the scan reads turn boundaries and completions only");
 

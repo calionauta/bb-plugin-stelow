@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
 ].join("\n");
 const decisionServer = readFileSync(join(root, "server", "decision-api.ts"), "utf8");

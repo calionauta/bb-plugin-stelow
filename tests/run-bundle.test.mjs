@@ -108,7 +108,7 @@ console.log("run bundle test ok: stable names, manifest round-trip, changed/miss
 // Wiring: every done path refreshes the bundle before completing, export
 // failures refuse with a retry, and --check exists for drift between dones.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 assert.equal(
   (server.match(/await exportRunBundle\(card, \{\}\)/g) ?? []).length,
   3,

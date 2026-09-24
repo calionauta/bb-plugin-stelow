@@ -8,7 +8,7 @@ import { CLAIM_TTL_MS } from "../lib/card-claims.mjs";
 // waiter-resume path all depend on. Upstream (`file-locking.md`) or plugin
 // drift must break this build loudly, not users silently.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const source = readFileSync(join(root, "server.ts"), "utf8");
+const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 
 /** The text between two markers, failing loudly if either is gone. */
 function slice(start, end) {
@@ -24,7 +24,7 @@ function slice(start, end) {
 assert.equal(CLAIM_TTL_MS, 30 * 60 * 1000, "registry TTL is 30 minutes");
 assert.match(
   source,
-  /import \{[^}]*CLAIM_TTL_MS[^}]*\} from "\.\/lib\/card-claims\.mjs"/,
+  /import \{[^}]*CLAIM_TTL_MS[^}]*\} from "\.\.\/lib\/card-claims\.mjs"/,
   "server.ts imports the TTL instead of redefining it",
 );
 assert.doesNotMatch(source, /const CLAIM_TTL_MS =/, "no local TTL shadow");

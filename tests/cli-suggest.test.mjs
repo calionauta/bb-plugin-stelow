@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { cliHelpText, cliUsageLine, nearestCommand } from "../lib/cli-suggest.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 
 // Suggestions: transpositions and missing letters resolve, far strings do not.
 assert.equal(nearestCommand("advnace", ["advance", "ask", "status"]), "advance");

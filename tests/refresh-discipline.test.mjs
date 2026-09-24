@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 // waiting for the next lifecycle event. Check is the only exemption
 // (read-only). Sliced by argv markers: topology, not copy.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 
 function branch(open, close) {

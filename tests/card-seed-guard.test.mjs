@@ -22,7 +22,7 @@ assert.match(noDir, /already seeded/, "the fallback still states the workflow ex
 
 // Server contract: the seed CLI resolves the calling card worker and
 // refuses through the guard instead of minting a project-root workflow.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const seedBlock = serverSource.match(/if \(argv\[0\] === "seed"\) \{[\s\S]*?\n      \}/)?.[0];
 assert.ok(seedBlock, "the seed CLI handler exists");
 assert.match(seedBlock, /getCardByWorkerThread\(ctx\.threadId\)/, "the seed handler resolves the calling card worker like advance/doctor do");

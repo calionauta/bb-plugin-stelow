@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 // are about what the host provides and how the host is torn down. Each
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const source = readFileSync(join(root, "server.ts"), "utf8");
+const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const contractSource = readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8");
 const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
 const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
@@ -88,7 +89,10 @@ assert.match(cli, /--json/, "the CLI must offer machine-readable output to the w
 // The state list has one definition (PREVIEW_STATES); a hand-copied literal
 // here would let the two drift, and the panel would validate a state the view
 // never produces.
-const contract = slice("  previewState: {", "  previewStart: {");
+const contractStart = contractSource.indexOf("  previewState: {");
+const contractEnd = contractSource.indexOf("  previewStart: {", contractStart);
+assert.ok(contractStart >= 0 && contractEnd > contractStart, "the preview contract fragment exposes state before start");
+const contract = contractSource.slice(contractStart, contractEnd);
 assert.match(contract, /state: z\.enum\(\[\.\.\.PREVIEW_STATES\]\)/, "the RPC must validate against the shared state list");
 assert.ok(contract.includes("frameReason: z.string().nullable()"), "why a preview cannot be framed must reach the panel");
 for (const field of ["url", "command", "checkout", "log", "hints"]) {

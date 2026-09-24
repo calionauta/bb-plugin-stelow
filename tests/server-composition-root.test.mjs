@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+const root = join(import.meta.dirname, "..");
+
+test("server.ts is a composition root with no upward slice imports", () => {
+  const source = readFileSync(join(root, "server.ts"), "utf8");
+  assert.ok(source.split("\n").length - 1 <= 600, "composition root stays at or below 600 lines");
+  assert.match(source, /plugin-runtime\.js/, "the root wires the runtime entrypoint");
+  assert.match(source, /rpc-contract\.js/, "the root exports the canonical RPC surface");
+
+  for (const file of readdirSync(join(root, "server")).filter((name) => name.endsWith(".ts"))) {
+    const slice = readFileSync(join(root, "server", file), "utf8");
+    assert.doesNotMatch(slice, /from "\.\.\/server(?:\.ts|\.js)"/, `server/${file} does not import upward`);
+  }
+});
+
+test("the thin root and relocated runtime keep one default plugin entrypoint", () => {
+  const rootSource = readFileSync(join(root, "server.ts"), "utf8");
+  const runtimeSource = readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8");
+  assert.equal((rootSource.match(/export default plugin/g) ?? []).length, 1);
+  assert.equal((runtimeSource.match(/export default async function plugin/g) ?? []).length, 1);
+});

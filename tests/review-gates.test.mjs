@@ -133,7 +133,7 @@ assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
 // and the helper fails silent on every miss — designation, workflow,
 // artifact, thin file. Advance never depends on it.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 assert.match(server, /if \(cliCard\) void requestGatePreReview\(cliCard\.id, stage\)\.catch\(\(\) => undefined\);/, "gate entry triggers without waiting");
 assert.match(server, /async function requestGatePreReview\(cardId: string, stage: string\)/, "the trigger is one named helper");
 const preAt = server.indexOf("async function requestGatePreReview(");

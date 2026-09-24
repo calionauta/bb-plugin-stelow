@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/core-migrations.ts"), "utf8"),
 ].join("\n");
 const serverRecovery = readFileSync(join(root, "server/workspaces-recovery.ts"), "utf8");
 const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
@@ -545,7 +547,7 @@ assert.match(answerExpired, /formatBatchContinuation\(decisions\)/, "recovered a
 assert.doesNotMatch(answerExpired, /question that timed out/, "recovered answer delivery does not leak timeout jargon into the worker thread");
 assert.doesNotMatch(app, />Show<\/span><button/, "no detached Show label explains the read filter");
 assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split question is host-enriched in English before it reaches the user");
-assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");
+assert.match(server, /\["kind", "TEXT NOT NULL DEFAULT 'standard'"\]/, "recovered questions persist an explicit semantic kind");
 assert.match(answerExpired, /cleanAnswerList\(item\.answers\)/, "timed-out answers are cleaned through the shared helper before completeness validation");
 assert.match(answerExpired, /recordSplitAnswer\(db, cardId, decisions\)/, "a timed-out split answer records through the same shared helper as a live answer");
 assert.match(answerExpired, /if \(rows\.size !== openIds\.size\) return \{ ok: false as const, answered: 0, error: "Answer every pending question before submitting\." \}/, "timed-out batches refuse a partial answer at the RPC boundary");

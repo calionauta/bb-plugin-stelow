@@ -21,8 +21,9 @@ assert.deepEqual(doingNowNames(scopes, 1), ["Apple Pay"], "the limit caps caller
 // the summary): tiles and rows read names, never re-derive them.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
 ].join("\n");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
