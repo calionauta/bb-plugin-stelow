@@ -24,6 +24,9 @@ const filters = readFileSync(join(root, "components/board/board-filters.tsx"), "
 const viewToggle = readFileSync(join(root, "components/board/board-view-toggle.tsx"), "utf8");
 const lists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
 const panelState = readFileSync(join(root, "components/panel/panel-state-hooks.ts"), "utf8");
+const buildPanel = readFileSync(join(root, "components/panels/build-panel.tsx"), "utf8");
+const buildPanelState = readFileSync(join(root, "components/panels/build-panel-state.ts"), "utf8");
+const buildPanelView = readFileSync(join(root, "components/panels/build-panel-view.tsx"), "utf8");
 const inboxPanel = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 assert.deepEqual(viewsForTrack("build"), ["board", "list", "hill"], "build keeps its three views");
@@ -40,15 +43,17 @@ assert.match(
   /viewsForTrack\(track\)\.includes\(option\.value\)/,
   "the rendered toggle derives its options from the track restriction",
 );
-assert.match(app, /<ViewToggle[^>]*track="build"/, "build calls the shared toggle as build");
+assert.match(buildPanelView, /<ViewToggle[^>]*track="build"/, "build calls the shared toggle as build");
 assert.match(app, /<ViewToggle[^>]*track="research"/, "research calls the shared toggle as research");
 assert.match(app, /<ViewToggle[^>]*track="explore"/, "explore calls the shared toggle as explore");
-assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 3, "all three panels bind persistence to a track");
-assert.equal((app.match(/<ViewToggle/g) ?? []).length, 3, "one shared toggle call site per board");
+assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 2, "lightweight panels bind persistence to a track");
+assert.equal((buildPanelState.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "build binds persistence to a track");
+assert.equal((app.match(/<ViewToggle/g) ?? []).length + (buildPanelView.match(/<ViewToggle/g) ?? []).length, 3, "one shared toggle call site per board");
 assert.match(panelState, /normalizeBoardView\(window\.localStorage\.getItem\(storageKey\), track\)/, "stored views pass through the tested track restriction");
 assert.equal(
   (app.match(/= usePanelData/g) ?? []).length
-    + (inboxPanel.match(/= usePanelData/g) ?? []).length,
+    + (inboxPanel.match(/= usePanelData/g) ?? []).length
+    + (buildPanelState.match(/return usePanelData/g) ?? []).length,
   4,
   "all four data-backed panels use the shared loading lifecycle",
 );
@@ -78,6 +83,10 @@ assert.match(
   "Inbox load failures stay in the retry panel instead of adding a toast",
 );
 assert.equal((app.match(/function InboxPanel\(/g) ?? []).length, 0, "the Inbox panel no longer lives in the app shell");
+assert.match(app, /<BuildPanel\b/, "the app shell routes Build through the extracted panel");
+assert.match(buildPanel, /useBuildPanelState\(rpc, projectId\)/, "the Build panel consumes its extracted state hook");
+assert.match(buildPanel, /useBucketGallery\(/, "the Build panel composes the shared Bucket gallery hook");
+assert.equal((app.match(/function BuildPanel\(/g) ?? []).length, 0, "the Build panel no longer lives in the app shell");
 
 const scopeSummary = { scopesDone: 2, scopesTotal: 5, tasksDone: 3, tasksTotal: 7 };
 assert.equal(
@@ -145,7 +154,12 @@ assert.match(filters, /event\.key === "Escape"/, "Escape dismisses the filter po
 assert.match(filters, /document\.addEventListener\("pointerdown"/, "outside pointer input dismisses the popover");
 assert.match(filters, /type="checkbox"/, "multi-select filters use keyboard-native checkboxes");
 assert.match(filters, /aria-label={`Remove \$\{facet\.label\} filter \$\{label\}`}/, "selected filter pills expose their facet and value");
-assert.equal((app.match(/<FiltersBar/g) ?? []).length, 3, "all boards use the extracted filter bar");
+assert.equal(
+  (app.match(/<FiltersBar/g) ?? []).length
+    + (buildPanelView.match(/<FiltersBar/g) ?? []).length,
+  3,
+  "all boards use the extracted filter bar",
+);
 assert.equal((app.match(/function FiltersBar\(/g) ?? []).length, 0, "the filter bar no longer lives in the app shell");
 
 console.log("board components test ok: view restrictions, metadata, and shared controls");

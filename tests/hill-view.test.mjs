@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 // fetches anything new — fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const buildPanelState = readFileSync(join(root, "components/panels/build-panel-state.ts"), "utf8");
+const storage = readFileSync(join(root, "lib/panel-storage.mjs"), "utf8");
+const buildPanelView = readFileSync(join(root, "components/panels/build-panel-view.tsx"), "utf8");
 const hillBoard = readFileSync(join(root, "components/board/hill-board.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
 const cardGallery = readFileSync(join(root, "components/board/card-gallery.tsx"), "utf8");
@@ -21,12 +24,12 @@ const manageHeader = readFileSync(join(root, "components", "manage", "card-detai
 // no scopes and non-workflow stages, so a hill there would pile every dot
 // at zero and lie. Their toggles offer board and list alone.
 assert.match(viewToggle, /\{ value: "hill", title: "Hill view"/, "the shared view toggle offers Hill view");
-assert.match(app, /<ViewToggle[^>]*track="build"[^>]*label="Build cards view"/, "build opts into all three track views");
+assert.match(buildPanelView, /<ViewToggle[^>]*track="build"[^>]*label="Build cards view"/, "build opts into all three track views");
 assert.match(app, /<ViewToggle[^>]*track="research"[^>]*label="Research cards view"/, "research opts into the lightweight track restriction");
 assert.match(app, /<ViewToggle[^>]*track="explore"[^>]*label="Explore cards view"/, "explore opts into the lightweight track restriction");
 assert.match(
-  app,
-  /<HillBoard cards=\{Object\.values\(grouped\)\.flat\(\)\} onOpenCard=\{\(card\) => goToCard\(navigate, card, card\.id\)\} \/>/,
+  buildPanelView,
+  /<HillBoard[\s\S]*cards=\{cards\}[\s\S]*onOpenCard=\{\(card\) => onOpenCard\(card, card\.id\)\}/,
   "the lone build hill mounts once and forwards its card through the shared navigator",
 );
 
@@ -91,8 +94,8 @@ assert.ok(
 // View persistence: returning from a card restores the picked view per
 // track (board, list, hill) instead of resetting to board. Unknown stored
 // values degrade — a corrupt key never strands the track.
-assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view against the build restriction");
+assert.match(storage, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
+assert.match(buildPanelState, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view against the build restriction");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view against the lightweight restriction");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view against the lightweight restriction");
 

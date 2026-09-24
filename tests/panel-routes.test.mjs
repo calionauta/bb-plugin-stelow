@@ -77,7 +77,12 @@ assert.equal(inboxCardSubPath("card_abc123", "evt_xyz789"), "inbox/card/card_abc
 const panelSource = readFileSync(new URL("../components/panel/stelow-panel.tsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
 assert.match(panelSource, /renderTrack\(track, track === tab\)/, "only the selected keep-alive track receives active=true");
-for (const component of ["BoardPanel", "ResearchPanel", "ExplorePanel"]) {
+assert.match(
+  appSource,
+  /<BuildPanel[\s\S]*?active=\{active\}/,
+  "BuildPanel must forward the routed active state",
+);
+for (const component of ["ResearchPanel", "ExplorePanel"]) {
   assert.match(
     appSource,
     new RegExp(`<${component} active=\\{active\\} />`),

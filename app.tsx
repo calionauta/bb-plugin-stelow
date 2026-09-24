@@ -6,30 +6,17 @@ import {
   experimental_ProviderModelPicker as ProviderModelPicker,
   useBbContext,
   useBbNavigate,
-  useComposer,
   useRpc,
-  type NewThreadRequest,
   type PluginCommandRegistration,
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
 import { inboxBadgeCount } from "./lib/inbox-panel-state.mjs";
+import { STORAGE_KEYS } from "./lib/panel-storage.mjs";
 import { joinStrategyLabels } from "./lib/detail-presentation.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
-import {
-  BUILD_BOARD_COLUMNS,
-  BUILD_BOARD_COLUMN_LABELS,
-  BUILD_BOARD_VISIBLE_COLUMNS,
-  STAGE_SEQUENCE,
-  STAGE_SKILL,
-  WORKFLOW_PHASES,
-  buildBoardColumnFor,
-  stageInfoUrl,
-  stageLabel,
-} from "./lib/workflow-vocabulary.mjs";
-import { isDoneStatus } from "./lib/trackables.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
@@ -41,14 +28,14 @@ import {
 } from "./components/detail/card-detail-route";
 import { StelowPanel } from "./components/panel/stelow-panel";
 import { InboxPanel } from "./components/panels/inbox-panel";
+import { BuildPanel } from "./components/panels/build-panel";
+import { TrackSkeleton } from "./components/panel/track-skeleton";
 import { rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus.mjs";
 import { FiltersBar } from "./components/board/board-filters";
 import { ViewToggle } from "./components/board/board-view-toggle";
-import { BuildList, ExploreList, ResearchList } from "./components/board/track-lists";
+import { ExploreList, ResearchList } from "./components/board/track-lists";
 import { BoardColumn } from "./components/board/board-column";
-import { BoardCard, ExploreCard, ResearchCard } from "./components/board/board-cards";
-import { FlowStrip } from "./components/board/flow-strip";
-import { HillBoard } from "./components/board/hill-board";
+import { ExploreCard, ResearchCard } from "./components/board/board-cards";
 import { BucketGalleryButton, useBucketGallery } from "./components/board/card-gallery";
 import {
   useBoardView,
@@ -70,9 +57,7 @@ import {
   Pill,
 } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
-import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
-import { WorkflowSettings, sanitizeReviewGates, type Appetite, type ResearchStrategyOption, type ReviewGates } from "./components/creation/creation-settings";
-import { CreateBuildDialog } from "./components/creation/create-build-dialog";
+import type { ResearchStrategyOption } from "./components/creation/creation-settings";
 import { CreateResearchDialog } from "./components/creation/create-research-dialog";
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
 import { registerPendingInteraction } from "./components/conversation/question-form";
@@ -82,7 +67,6 @@ import { StelowQualityDirective } from "./components/messages/stelow-quality-dir
 import { OpenStelowAction } from "./components/thread/open-stelow-action";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
@@ -94,29 +78,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type ProjectList = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
-type ProjectItem = Extract<ProjectList, { projects: unknown }>["projects"][number];
-
-type ProjectsResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>> extends infer R ? Extract<R, { projects?: unknown }> : never;
-
 // Intent mapping lives server-side (lib/github-intent.mjs, single source).
 // The panel no longer guesses intent; the server derives it from live labels.
 // Stages are ordered workflow checkpoints; phases are board-level groups.
 // Explore calls its independent, one-off choices techniques instead.
-// Build board topology is centralized with the workflow vocabulary. The
-// aliases keep component call sites readable; they do not define columns.
-const COLUMNS = BUILD_BOARD_COLUMNS;
-const COLUMN_LABELS: Record<string, string> = BUILD_BOARD_COLUMN_LABELS;
-// Rendered boards skip the Bucket column (header button + gallery own it);
-// grouping, moves, and the status filter keep the full catalog.
-const VISIBLE_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS;
-// workerThreadId is part of the projection (a threadless card waits in the
-// Bucket), so it must survive this pick — dropping it silently returned every
-// parked card to the Analysis phase.
-function boardColumnOf(card: Pick<CardItem, "status" | "stage" | "workerThreadId">): string {
-  return buildBoardColumnFor(card);
-}
-
 // Lightweight-track columns (Research + Explore share them): a deliberately
 // dumb Bucket / Doing / Done flow. Canonical in lib/tracks (shared with the
 // server via lib/card-move) — these aliases keep existing call sites stable.
@@ -141,42 +106,13 @@ function goToCard(navigate: BbNavigate, card: Pick<CardItem, "kind">, cardId: st
   rememberStelowReturnFocusCardId(cardId);
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: cardSubPath(card, cardId, eventId) });
 }
-const FILTER_INTENT_OPTIONS = [{ value: "all", label: "All types" }, ...Object.entries(INTENT_LABEL).map(([value, label]) => ({ value, label }))];
-const FILTER_STATUS_OPTIONS = [{ value: "all", label: "Any status" }, ...VISIBLE_COLUMNS.map((column) => ({ value: column, label: COLUMN_LABELS[column] ?? column }))];
-const FILTER_ACTIVITY_OPTIONS = [
-  { value: "all", label: "Any activity" },
-  { value: "idle", label: "idle" },
-  { value: "running", label: "running" },
-  { value: "awaiting-answer", label: "awaiting-answer" },
-  { value: "error", label: "error" },
-];
-
 type BoardResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
-type Workflow = Extract<BoardResult, { workflows: unknown }>["workflows"][number];
 type ProjectsResponse = Extract<BoardResult, { projects: unknown }>;
 type Project = ProjectsResponse["projects"][number];
 type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
 type BandPresetAssignment = { band: string; presetId: string | null; stages: string[] };
-type BoardPanelData = {
-  boardBandPresets: BandPresetAssignment[];
-  boardPresets: PresetManagerPreset[];
-  cards: CardItem[];
-  githubAutomationEnabled: boolean;
-  githubStatus: GithubStatus | null;
-  projects: Project[];
-};
 
-function statusGlyph(status: string) {
-  if (isDoneStatus(status)) return "✓";
-  if (status === "skipped") return "↷";
-  if (status === "blocked") return "⚠";
-  if (status === "escalated") return "↑";
-  if (status === "failed") return "✗";
-  if (status === "in-progress" || status === "approved") return "●";
-  if (status === "archived") return "○";
-  return "·";
-}
 
 interface SidebarAccessoryHandle {
   count: number;
@@ -301,338 +237,6 @@ function useResearchAccessory(): SidebarAccessoryHandle {
   useDebouncedRealtime(["card-state", "board-changed"], () => void reload());
   const tone = count > 0 ? "bg-muted text-foreground" : "bg-muted text-muted-foreground";
   return { count, tone };
-}
-
-function TrackSkeleton({ columns = 5 }: { columns?: number }) {
-  return (
-    <div className="space-y-4" aria-label="Loading" aria-busy="true">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <div className="h-5 w-72 animate-pulse rounded bg-muted/50" />
-          <div className="h-7 w-28 animate-pulse rounded bg-muted/50" />
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
-          <div className="h-11 w-28 animate-pulse rounded-md bg-muted/50" />
-          <div className="h-11 w-24 animate-pulse rounded-md bg-muted/50" />
-        </div>
-      </header>
-      <div className="h-11 animate-pulse rounded-md border bg-muted/30" />
-      <div className="flex items-center gap-2 border-b pb-3">
-        <div className="h-9 flex-1 animate-pulse rounded-md bg-muted/50" />
-        <div className="h-9 w-20 animate-pulse rounded-md bg-muted/50" />
-      </div>
-      <div className="grid gap-3 lg:grid-cols-5">
-        {Array.from({ length: columns }, (_, index) => (
-          <section key={index} className="min-h-40 rounded-md border bg-muted/20 p-3">
-            <div className="h-4 w-20 animate-pulse rounded bg-muted/50" />
-            <div className="mt-3 h-20 animate-pulse rounded-md bg-muted/50" />
-          </section>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BoardPanel({ active }: { active: boolean }) {
-  const { projectId: routeProjectId } = useBbContext();
-  const navigate = useBbNavigate();
-  const rpc = useRpc<typeof rpcContract>();
-  const [collapsedColumns, setCollapsedColumns] = usePersistentCollapsedGroups(
-    STORAGE_KEYS.boardColumns,
-    false,
-  );
-  const [createBuildOpen, setCreateBuildOpen] = useState(false);
-  // Workflow preferences stay visible under the composer: a collapsed
-  // Settings hides consequential choices (planning depth, review gates)
-  // the user would otherwise never discover. The dialog frame keeps a
-  // fixed max height with inner scroll, so nothing jumps or resizes.
-  const [appetite, setAppetite] = useState<Appetite>("Lean");
-  // Review gates are a pure multi-select (empty ≡ Auto). The composer
-  // remembers the last used selection per surface; board defaults fill
-  // the gap only when nothing was remembered.
-  const [reviewGates, setReviewGates] = useState<ReviewGates>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEYS.reviewGates);
-      if (!raw) return [];
-      return sanitizeReviewGates(JSON.parse(raw));
-    } catch { return []; }
-  });
-  const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
-  const [filterStages, setFilterStages] = useState<string[]>([]);
-  const [filterIntents, setFilterIntents] = useState<string[]>([]);
-  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
-  const [filterActivities, setFilterActivities] = useState<string[]>([]);
-  const [filterAttention, setFilterAttention] = useState(false);
-  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.buildView, "build");
-  const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
-  const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
-  const [githubOpen, setGithubOpen] = useState(false);
-  const loadBoard = useCallback(async (): Promise<Partial<BoardPanelData>> => {
-    const targetId = routeProjectId;
-    const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
-      rpc.call("projects", {}).catch(() => null),
-      rpc.call("listCards", { projectId: targetId, kind: "build" }).catch(() => ({ cards: [] })),
-      rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
-      rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
-      rpc.call("board", { projectId: targetId }).catch(() => null),
-    ]);
-    return {
-      boardBandPresets: bandPresetsResult.bands,
-      boardPresets: presetsResult.presets,
-      cards: cardsResult.cards,
-      projects: projectsResult?.projects ?? [],
-      ...(boardResult?.githubStatus
-        ? { githubStatus: boardResult.githubStatus }
-        : {}),
-      ...(boardResult && "githubAutomationEnabled" in boardResult
-        ? { githubAutomationEnabled: boardResult.githubAutomationEnabled !== false }
-        : {}),
-    };
-  }, [routeProjectId, rpc]);
-  const {
-    data: {
-      boardBandPresets,
-      boardPresets,
-      cards,
-      githubAutomationEnabled,
-      githubStatus,
-      projects,
-    },
-    isInitialLoad,
-    load,
-    loading,
-  } = usePanelData(loadBoard, {
-    errorMessage: "Unable to load Stelow.",
-    initialData: {
-      boardBandPresets: [] as BandPresetAssignment[],
-      boardPresets: [] as PresetManagerPreset[],
-      cards: [] as CardItem[],
-      githubAutomationEnabled: true,
-      githubStatus: null,
-      projects: [] as Project[],
-    },
-    itemCountKey: "cards",
-    realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
-  });
-  useEffect(() => {
-    void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewGates: savedGates }) => {
-      setAppetite(savedAppetite);
-      // Last used wins: only fall back to the board default when the
-      // composer never remembered a selection on this surface.
-      try {
-        if (window.localStorage.getItem(STORAGE_KEYS.reviewGates) === null) {
-          setReviewGates(sanitizeReviewGates(savedGates));
-        }
-      } catch {
-        setReviewGates(sanitizeReviewGates(savedGates));
-      }
-    }).catch(() => {
-      /* Keep Lean/Auto when stored preferences cannot be read. */
-    });
-  }, [rpc]);
-  useEffect(() => {
-    try { window.localStorage.setItem(STORAGE_KEYS.reviewGates, JSON.stringify(reviewGates)); } catch { /* best-effort */ }
-  }, [reviewGates]);
-
-  const activeProjectId = routeProjectId;
-  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
-  const defaultWorkerPreset = boardPresets.find((preset) => preset.isDefault) ?? boardPresets[0] ?? null;
-  const presetForBand = (band: string) => {
-    const assignment = boardBandPresets.find((entry) => entry.band === band);
-    return boardPresets.find((preset) => preset.id === assignment?.presetId) ?? defaultWorkerPreset;
-  };
-  const analysisWorkerPreset = presetForBand("analysis");
-  const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
-  const filteredCards = useMemo(() => cards.filter((card) => {
-    if (!matchesFilterValue(filterProjectIds, card.projectId)) return false;
-    if (!matchesFilterValue(filterIntents, card.intent)) return false;
-    if (!matchesFilterValue(filterStatuses, boardColumnOf(card))) return false;
-    if (!matchesFilterValue(filterActivities, card.activity)) return false;
-    if (!matchesFilterValue(filterStages, card.stage)) return false;
-    if (filterAttention && !card.needsAttention) return false;
-    return true;
-  }), [cards, filterProjectIds, filterIntents, filterStatuses, filterActivities, filterStages, filterAttention]);
-  const stageOptions = useMemo(() => [...STAGE_SEQUENCE], []);
-  const grouped = useMemo(() => {
-    const groups: Record<string, CardItem[]> = Object.fromEntries(COLUMNS.map((column) => [column, []]));
-    for (const card of filteredCards) {
-      (groups[boardColumnOf(card)] ?? groups.analysis).push(card);
-    }
-    for (const column of Object.keys(groups)) {
-      groups[column]!.sort((a, b) => b.updatedAt - a.updatedAt);
-    }
-    return groups;
-  }, [filteredCards]);
-  // Captured pile for the creation checkbox link: same gallery as the
-  // header Bucket button, opened from the "park in Bucket" copy.
-  const openBucketCard = (card: CardItem) => goToCard(navigate, card, card.id);
-  const bucketGallery = useBucketGallery(grouped.inbox ?? [], openBucketCard);
-
-  async function moveCard(cardId: string, target: string) {
-    if (!(COLUMNS as readonly string[]).includes(target)) return;
-    const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "analysis" | "planning" | "execution" | "review" | "completed" | "archived" });
-    if (!result.ok) toast.error(result.error ?? "Move failed");
-  }
-
-
-  return (
-    <div className="flex h-full overflow-hidden bg-background">
-      <div className="flex-1 overflow-auto p-4 md:p-6">
-        <div className="mx-auto max-w-[1500px] space-y-4">
-          {isInitialLoad ? <TrackSkeleton /> : <>
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">Build</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent carries each card through a structured workflow—from triage to scope-by-scope execution—pausing for your decisions wherever your review mode requires it.</p>
-              {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
-                {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
-              </button> : null}
-            </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateBuildOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
-              <BucketGalleryButton
-                cards={grouped.inbox ?? []}
-                onOpenCard={openBucketCard}
-              />
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
-              {githubAutomationEnabled ? (
-                <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setGithubOpen(true)} title="Import GitHub issues now or watch labels automatically"><Icon name="Github" className="h-4 w-4" aria-hidden /> GitHub issues</Button>
-              ) : null}
-            </div>
-          </header>
-          <PresetOnboardingDialog
-            storageKey={STORAGE_KEYS.onboardBuild}
-            title="Choose your agent presets"
-            intro="Set the preset each phase runs with. Planning depth and your review gates are a separate choice — picked per card in New issue, under the description."
-            onOpenPresets={() => setBoardPresetsOpen(true)}
-            active={active}
-            secondTitle="Defaults for new cards"
-            secondBody={<WorkflowSettings appetite={appetite} reviewGates={reviewGates} onAppetiteChange={setAppetite} onReviewGatesChange={setReviewGates} groupNamePrefix="board-default" />}
-          />
-          {githubStatus !== null && githubStatus.pluginAvailable && !githubStatus.ghOk ? (
-            <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
-              <span className="text-amber-700 dark:text-amber-300">Import issues needs a GitHub account linked in the <span className="font-medium">github</span> plugin.</span>
-              <a className="text-primary underline underline-offset-2" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">Set up GitHub auth</a>
-            </div>
-          ) : null}
-
-          <CreateBuildDialog
-            open={createBuildOpen}
-            onOpenChange={setCreateBuildOpen}
-            activeProjectId={activeProjectId}
-            analysisPreset={analysisWorkerPreset}
-            appetite={appetite}
-            reviewGates={reviewGates}
-            onAppetiteChange={setAppetite}
-            onReviewGatesChange={setReviewGates}
-            bucketGallery={bucketGallery}
-            onOpenPresets={() => setBoardPresetsOpen(true)}
-          />
-
-          <GithubIssuesDialog
-            open={githubOpen}
-            onOpenChange={setGithubOpen}
-            projects={projects}
-            activeProjectId={activeProjectId ?? null}
-            activeProjectName={activeProject?.name ?? null}
-            githubStatus={githubStatus}
-            onChanged={() => void load()}
-          />
-          <PresetManagerDialog
-            open={boardPresetsOpen}
-            onOpenChange={setBoardPresetsOpen}
-            rpc={rpc}
-            presets={boardPresets}
-            onChanged={() => load()}
-          />
-
-          <div className="flex items-start gap-2 border-b pb-3">
-            <div className="min-w-0 flex-1">
-              <FiltersBar
-                projects={projects}
-                stageOptions={stageOptions}
-                filterProjectIds={filterProjectIds}
-                filterStages={filterStages}
-                filterIntents={filterIntents}
-                filterStatuses={filterStatuses}
-                filterActivities={filterActivities}
-                intentOptions={FILTER_INTENT_OPTIONS}
-                statusOptions={FILTER_STATUS_OPTIONS}
-                activityOptions={FILTER_ACTIVITY_OPTIONS}
-                filterAttention={filterAttention}
-                onProjectToggle={(value) => setFilterProjectIds((prev) => toggleFilterValue(prev, value))}
-                onStageToggle={(value) => setFilterStages((prev) => toggleFilterValue(prev, value))}
-                onIntentToggle={(value) => setFilterIntents((prev) => toggleFilterValue(prev, value))}
-                onStatusToggle={(value) => setFilterStatuses((prev) => toggleFilterValue(prev, value))}
-                onActivityToggle={(value) => setFilterActivities((prev) => toggleFilterValue(prev, value))}
-                onAttention={setFilterAttention}
-                onReset={() => { setFilterProjectIds([]); setFilterStages([]); setFilterIntents([]); setFilterStatuses([]); setFilterActivities([]); setFilterAttention(false); }}
-              />
-            </div>
-            <ViewToggle view={viewMode} track="build" onChange={setViewMode} label="Build cards view" />
-          </div>
-          {cards.length === 0 && !loading ? (
-            <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
-              <h2 className="text-sm font-semibold text-foreground">Product work, guided end to end</h2>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">Stelow is an opinionated product workflow for humans and AI agents. Start with an outcome or problem; it guides the work through framing, critique, planning, execution, and review.</p>
-              <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
-                <Button onClick={() => setCreateBuildOpen(true)}>Start new issue</Button>
-                <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground">Learn about Stelow <span aria-hidden="true">↗</span></UrlLink>
-              </div>
-            </section>
-          ) : null}
-
-          {viewMode === "board" ? <p className="text-xs text-muted-foreground">
-            <span className="sm:hidden">Swipe sideways to view every stage.</span>
-            <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
-          </p> : null}
-          <FlowStrip
-            rpc={rpc}
-            projectId={filterProjectIds.length === 1 ? filterProjectIds[0] ?? null : null}
-            onOpenCard={(kind, cardId) => goToCard(navigate, { kind }, cardId)}
-          />
-          {viewMode === "list" ? (
-            <BuildList
-              groups={grouped}
-              collapsed={collapsedListGroups}
-              onToggle={(column) => setCollapsedListGroups((current) => ({
-                ...current,
-                [column]: !current[column],
-              }))}
-              onOpenCard={(card) => goToCard(navigate, card, card.id)}
-              onOpenThread={(threadId) => navigate.toThread(threadId)}
-            />
-          ) : viewMode === "hill" ? (
-            <HillBoard cards={Object.values(grouped).flat()} onOpenCard={(card) => goToCard(navigate, card, card.id)} />
-          ) : (
-            <div
-              data-testid="kanban-board"
-              className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
-              style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns) }}
-            >
-              {VISIBLE_COLUMNS.map((column) => (
-                <BoardColumn
-                  key={column}
-                  column={column}
-                  cards={grouped[column]}
-                  collapsed={Boolean(collapsedColumns[column])}
-                  onToggleCollapsed={() => setCollapsedColumns((current) => ({
-                    ...current,
-                    [column]: !current[column],
-                  }))}
-                  onDrop={(cardId) => moveCard(cardId, column)}
-                  labels={COLUMN_LABELS}
-                  renderCard={(card) => <BoardCard card={card} onOpen={() => goToCard(navigate, card, card.id)} />}
-                />
-              ))}
-            </div>
-          )}
-          </>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // Second track beside Build: lightweight research (Bucket / Doing / Done)
@@ -1023,22 +627,7 @@ function ExplorePanel({ active }: { active: boolean }) {
 
 // localStorage keys in one place for board and track preferences. Renaming
 // a key is one line; readers never guess at raw strings scattered through panels.
-const STORAGE_KEYS = {
-  boardColumns: "stelow-columns-collapsed-v1",
-  researchColumns: "stelow-research-columns-collapsed-v1",
-  exploreColumns: "stelow-explore-columns-collapsed-v1",
-  reviewGates: "stelow-review-gates-v1",
-  onboardBuild: "stelow-onboard-build-v1",
-  onboardResearch: "stelow-onboard-research-v1",
-  onboardExplore: "stelow-onboard-explore-v1",
-  onboardPresets: "stelow-onboard-presets-v1",
-  buildListGroups: "stelow-build-list-groups-collapsed-v1",
-  researchListGroups: "stelow-research-list-groups-collapsed-v1",
-  exploreListGroups: "stelow-explore-list-groups-collapsed-v1",
-  buildView: "stelow-build-view-v1",
-  researchView: "stelow-research-view-v1",
-  exploreView: "stelow-explore-view-v1",
-} as const;
+
 
 // Board view and collapsed-state hooks live with the other panel state.
 // Card route adapters live in components/detail/card-detail-route. The app
@@ -1472,7 +1061,15 @@ function AboutPanel() {
 
 function renderTrackPanel(tab: StelowTrack, active: boolean) {
   if (tab === "inbox") return <InboxPanel />;
-  if (tab === "build") return <BoardPanel active={active} />;
+  if (tab === "build") {
+    return (
+      <BuildPanel
+        active={active}
+        renderOnboarding={(props) => <PresetOnboardingDialog {...props} />}
+        renderPresetManager={(props) => <PresetManagerDialog {...props} />}
+      />
+    );
+  }
   if (tab === "research") return <ResearchPanel active={active} />;
   if (tab === "explore") return <ExplorePanel active={active} />;
   return <AboutPanel />;

@@ -51,6 +51,9 @@ assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
+const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
+const storage = readFileSync(join(root, "lib", "panel-storage.mjs"), "utf8");
 const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx"), "utf8");
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
@@ -67,8 +70,8 @@ assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flo
 // View persistence: returning from a card restores the picked view per
 // track (board, list, hill) instead of resetting to board. Unknown stored
 // values degrade — a corrupt key never strands the track.
-assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view");
+assert.match(storage, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
+assert.match(buildPanelState, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");
 
@@ -77,16 +80,16 @@ assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explo
 // nothing — clean stays clean. Project comes from the board filter, so
 // no second picker drifts out of sync with it.
 assert.match(flowStrip, /export function FlowStrip\(\{ rpc, projectId, onOpenCard \}/, "one strip component owns board flow");
-const flowMount = app.match(/<FlowStrip[\s\S]*?\/>/)?.[0] ?? "";
+const flowMount = buildPanelView.match(/<FlowStrip[\s\S]*?\/>/)?.[0] ?? "";
 assert.ok(
   flowMount.includes(
-    "projectId={filterProjectIds.length === 1 ? filterProjectIds[0] ?? null : null}",
+    "projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}",
   ),
   "the strip follows one picked project, or all projects",
 );
 assert.ok(
   flowMount.includes(
-    "onOpenCard={(kind, cardId) => goToCard(navigate, { kind }, cardId)}",
+    "onOpenCard={(kind, cardId) => props.onOpenCard({ kind }, cardId)}",
   ),
   "every flow row forwards through the shared navigator",
 );

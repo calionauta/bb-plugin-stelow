@@ -20,6 +20,8 @@ assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanb
 // through params, so a second modal fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const buildPanel = readFileSync(join(root, "components", "panels", "build-panel.tsx"), "utf8");
+const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
 const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components", "board", "board-cards.tsx"), "utf8");
@@ -28,37 +30,47 @@ const hillBoard = readFileSync(join(root, "components", "board", "hill-board.tsx
 const buildDialogKanban = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
-assert.equal((app.match(/<BucketGalleryButton/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
+assert.equal(
+  (app.match(/<BucketGalleryButton/g) ?? []).length
+    + (buildPanelView.match(/<BucketGalleryButton/g) ?? []).length,
+  3,
+  "build, research, and explore each offer the Bucket gallery",
+);
 // Rendered boards hide the Bucket column (grouping, moves, and filters
 // keep the full catalog): the kanban grids and extracted list adapters
 // iterate the visible lists, so no empty Bucket column renders anywhere.
-assert.match(app, /VISIBLE_COLUMNS\.map\(\(column\) => \(/, "build kanban iterates visible columns");
+assert.match(buildPanelView, /BUILD_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "build kanban iterates visible columns");
 assert.match(app, /VISIBLE_RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanban iterates visible columns");
 assert.match(trackLists, /const BUILD_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS/, "build lists omit the Bucket column");
 assert.match(trackLists, /const LIGHTWEIGHT_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS/, "lightweight lists omit the Bucket column");
 assert.doesNotMatch(app, /{COLUMNS\.map\(\(column\) => \(/, "the build kanban renders no Bucket column");
 assert.doesNotMatch(app, /{RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanbans render no Bucket column");
-assert.ok(app.includes("kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns)"), "the build grid template matches its rendered columns");
+assert.ok(buildPanelView.includes("kanbanGridColumns(BUILD_VISIBLE_COLUMNS, state.collapsedColumns)"), "the build grid template matches its rendered columns");
 assert.ok(app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns)"), "lightweight grid templates match their rendered columns");
 // Order is product: New, then Bucket, then Agent Presets — the pile sits
 // beside creation, before configuration. A drift back fails here.
-for (const label of ["New issue", "New research", "New exploration"]) {
-  const at = app.indexOf(`/> ${label}</Button>`);
+for (const [label, source] of [
+  ["New issue", buildPanelView],
+  ["New research", app],
+  ["New exploration", app],
+]) {
+  const at = source.indexOf(label);
   assert.ok(at >= 0, `${label} button exists`);
-  const window = app.slice(at, at + 700);
+  const window = source.slice(at, at + 900);
   assert.ok(window.includes("<BucketGalleryButton"), `${label} is followed by the Bucket gallery`);
-  assert.ok(window.indexOf("<BucketGalleryButton") < window.indexOf("Agent Presets</Button>"), "Bucket precedes Agent Presets");
+  assert.ok(window.indexOf("<BucketGalleryButton") < window.indexOf("Agent Presets"), "Bucket precedes Agent Presets");
 }
 assert.match(
-  app,
-  /import \{ BucketGalleryButton, useBucketGallery \} from "\.\/components\/board\/card-gallery"/,
-  "the board mounts the extracted gallery feature",
+  buildPanelView,
+  /import \{ BucketGalleryButton \} from "\.\.\/board\/card-gallery"/,
+  "the Build panel mounts the extracted gallery feature",
 );
 assert.equal((cardGallery.match(/export function CardGalleryDialog\(/g) ?? []).length, 1, "one shared gallery dialog implementation");
 assert.equal((hillBoard.match(/<CardGalleryDialog/g) ?? []).length, 1, "only the hill pile mounts the dialog outside the Bucket feature");
 assert.match(cardGallery, /<CardGalleryDialog/, "the Bucket hook mounts the same dialog implementation");
 assert.equal(
-  (app.match(/const bucketGallery = useBucketGallery\(/g) ?? []).length,
+  (app.match(/const bucketGallery = useBucketGallery\(/g) ?? []).length
+    + (buildPanel.match(/useBucketGallery\(/g) ?? []).length,
   3,
   "each track owns one pile opener shared by its header and creation dialog",
 );
@@ -96,7 +108,8 @@ assert.match(cardGallery, /\{cards\.length === 0 \? \(/, "an empty pile reads on
 assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles require an open action through the extracted board card");
 assert.match(boardCards, /const open = useCallback\(\(\) => onOpen\(\), \[onOpen\]\)/, "click and keyboard activation share that open action");
 assert.equal(
-  (app.match(/onOpen=\{\(\) => goToCard\(navigate, card, card\.id\)\}/g) ?? []).length,
+  (app.match(/onOpen=\{\(\) => goToCard\(navigate, card, card\.id\)\}/g) ?? []).length
+    + (buildPanelView.match(/onOpen=\{\(\) => onOpenCard\(card, card\.id\)\}/g) ?? []).length,
   3,
   "Build, Research, and Explore columns each open their card through the panel router",
 );
@@ -106,15 +119,17 @@ assert.match(
   "gallery cards pass their own open-card action instead of a no-op",
 );
 assert.equal(
-  (app.match(/const openBucketCard = \(card: CardItem\) => goToCard\(/g) ?? []).length,
+  (app.match(/const openBucketCard = \(card: CardItem\) => goToCard\(/g) ?? []).length
+    + (buildPanel.match(/openBuildCard\(navigate\)/g) ?? []).length,
   3,
   "each track has one Bucket callback owned by the panel router",
 );
 assert.equal(
   (app.match(/openBucketCard/g) ?? []).length,
-  9,
-  "each track's header and creation gallery share that navigation callback",
+  6,
+  "research and explore share one callback for header and creation gallery",
 );
+assert.match(buildPanel, /openBuildCard\(navigate\)[\s\S]*useBucketGallery\(/, "Build shares one callback for header and creation gallery");
 assert.match(cardGallery, /useBucketGallery\(cards, onOpenCard\)/, "the Bucket hook delegates card navigation to its caller");
 assert.match(cardGallery, /setOpen\(false\);[\s\S]*onOpenCard\(card\)/, "choosing a Bucket card closes before delegated navigation");
 assert.doesNotMatch(
@@ -127,7 +142,11 @@ assert.match(
   /className="min-h-11 w-full cursor-pointer sm:w-auto sm:flex-none"/,
   "the Bucket gallery button has a pointer cursor and responsive target",
 );
-assert.match(app, /const stageOptions = useMemo\(\(\) => \[\.\.\.STAGE_SEQUENCE\], \[\]\)/, "stage filter lists the canonical sequence, never just stages with cards");
+assert.match(
+  readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8"),
+  /stageOptions: STAGE_SEQUENCE/,
+  "stage filter lists the canonical sequence, never just stages with cards",
+);
 assert.match(boardFilters, /export function FilterMultiSelect/, "facets share one checkbox list, never per-field selects");
 assert.match(app, /toggleFilterValue\(prev, value\)/, "pills and checkboxes toggle through one helper");
 assert.doesNotMatch(app, /function FilterSelect\(/, "the single-select is gone");

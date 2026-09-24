@@ -14,6 +14,8 @@ const app = readFileSync(join(root, "app.tsx"), "utf8");
 const githubServer = readFileSync(join(root, "server", "github-issues.ts"), "utf8");
 const githubApp = readFileSync(join(root, "components", "github", "github-issues-dialog.tsx"), "utf8");
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
+const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
+const workflowVocabulary = readFileSync(join(root, "lib", "workflow-vocabulary.mjs"), "utf8");
 const researchDialog = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialog = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
 const githubImport = readFileSync(join(root, "components", "github", "github-import-tab.tsx"), "utf8");
@@ -66,7 +68,7 @@ assert.match(buildDialog, /rpc\.call\("createCard", \{[^}]*start: startImmediate
 // Build creation: one dialog component owns draft, intent, error, and
 // start — the panel keeps the open flag plus board defaults.
 assert.match(buildDialog, /export function CreateBuildDialog\(\{ open, onOpenChange, activeProjectId, analysisPreset/, "the build dialog lives in the creation module");
-assert.match(app, /import \{ CreateBuildDialog \} from "\.\/components\/creation\/create-build-dialog"/, "the board reads the shared dialog");
+assert.match(buildPanelDialogs, /import \{ CreateBuildDialog \} from "\.\.\/creation\/create-build-dialog"/, "the board panel reads the shared dialog");
 assert.doesNotMatch(app, /rpc\.call\("createCard",/, "no local build submit survives in the panel");
 assert.match(buildDialog, /function handleOpenChange\(next: boolean\) \{\s*\n\s*onOpenChange\(next\);\s*\n\s*if \(next\) submit\.resetOnOpen\(\);/, "every open resets to started with a clean error");
 assert.match(buildDialog, /function resetOnOpen\(\) \{\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "reset restores started default and clears the error");
@@ -137,7 +139,7 @@ assert.match(heroActions, /Not started — parked in Bucket/, "a parked card say
 assert.match(server, /const decision = resolveCardMove\(card\.kind, status, \{ hasWorker: Boolean\(card\.worker_thread_id\) \}\)/, "the move policy knows whether the card already started");
 assert.match(server, /if \(!card\.worker_thread_id\) \{\s*const started = await spawnFreshWorker\(cardId, "start"\);/, "entering a build phase starts a parked card");
 assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
-assert.match(app, /function boardColumnOf\(card: Pick<CardItem, "status" \| "stage" \| "workerThreadId">\)/, "the board projection keeps thread state, so a parked card reaches the Bucket");
+assert.match(workflowVocabulary, /export function buildBoardColumnFor\(card\)/, "the board projection keeps thread state, so a parked card reaches the Bucket");
 
 // Leaving the Bucket starts through the same starter on every track, and the
 // starter resolves creation-time choices: the pinned preset override
