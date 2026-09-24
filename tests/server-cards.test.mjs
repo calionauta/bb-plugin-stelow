@@ -129,6 +129,8 @@ test("deferred build creation stores the card kind and never spawns a worker", a
     exploreIds: () => [],
     defaultPreset: () => preset,
     getPreset: () => preset,
+    getBandPresetId: () => "preset_1",
+    getReliablePresetId: () => null,
     presetParams: (value) => ({
       providerId: value.provider_id,
       modelId: value.model_id,
