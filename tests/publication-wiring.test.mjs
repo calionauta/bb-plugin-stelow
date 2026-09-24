@@ -15,6 +15,7 @@ const publicationOperations = readFileSync(
 );
 const server = [
   serverRoot,
+  readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   publicationContract,
   readFileSync(join(root, "server/artifacts-publication-commits.ts"), "utf8"),

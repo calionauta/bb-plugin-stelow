@@ -46,7 +46,11 @@ const updateActions = readFileSync(new URL("../components/settings/plugin-update
 const updateStatus = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
 const aboutUi = `${about}\n${hostTools}\n${updateActions}\n${updateStatus}`;
 assert.doesNotMatch(app, /new URL\("\.\/assets\//, "frontend never builds a runtime static-asset URL");
-const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
+const server = [
+  readFileSync(new URL("../server/plugin-runtime.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("../server/platform-rpc-contract.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("../server/runtime/platform.ts", import.meta.url), "utf8"),
+].join("\n");
 assert.match(server, /aboutLogo:\s*\{/, "server exposes the aboutLogo RPC");
 const syncLib = readFileSync(new URL("../lib/workflow-skills-sync.mjs", import.meta.url), "utf8");
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -57,8 +61,16 @@ assert.equal(manifest.files.includes("assets"), true, "plugin package carries as
 assert.match(syncLib, /readPinnedStelowSource/, "release sync reads a pinned source manifest");
 assert.doesNotMatch(server, /syncHelperScript|syncWorkflowSkills|background\.schedule\("stelow-skills-sync"/, "runtime never mutates vendored Stelow behavior");
 assert.match(server, /bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the installed-plugin update check");
-assert.match(server, /bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the explicit update operation");
-assert.match(server, /async buildInfo\(\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*await refreshPluginUpdate\(\);/, "each UI read obtains a fresh BB-owned update status");
+assert.match(
+  server,
+  /deps\.bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: deps\.bb\.pluginId \}\)/,
+  "BB owns the explicit update operation",
+);
+assert.match(
+  server,
+  /async function buildInfo\(deps: PlatformDeps\) \{\s*await deps\.refreshPluginUpdate\(\);/,
+  "each UI read obtains a fresh BB-owned update status",
+);
 assert.match(aboutUi, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
 // Version story reads top-down across cards: Status (verdict + notices),
 // then Contents (description with the skills pin beside the content it

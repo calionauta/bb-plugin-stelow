@@ -167,9 +167,9 @@ assert.deepEqual(noCard.calls, [{
 assert.deepEqual(noCard.events, [], "a cardless transition does not publish card or board events");
 assert.equal(noCard.trails.length, 0, "a cardless transition cannot record a worker trail");
 
-const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
+const server = readFileSync(new URL("../server/plugin-runtime.ts", import.meta.url), "utf8");
 const scopeModule = readFileSync(new URL("../server/scopes.ts", import.meta.url), "utf8");
-assert.match(server, /from "\.\/server\/scopes\.js"/, "server delegates scope functionality to the extracted module");
+assert.match(server, /from "\.\/scopes\.js"/, "server delegates scope functionality to the extracted module");
 assert.doesNotMatch(server, /function loadCardScopes\(/, "the extracted module owns scope loading rather than a duplicate server implementation");
 assert.doesNotMatch(server, /if \(argv\[0\] === "scope"\)[\s\S]*?runHelper\(\["scope"/, "the scope CLI wrapper is delegated instead of duplicated in server");
 assert.match(

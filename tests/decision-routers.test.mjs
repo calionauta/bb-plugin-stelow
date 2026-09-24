@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
 ].join("\n");
 const decisionServer = readFileSync(join(root, "server", "decision-api.ts"), "utf8");
@@ -210,7 +212,7 @@ assert.ok(decisionSeams.includes("severityBumpQuestions()"), "the bump asks the 
 assert.ok(decisionSeams.includes("SET severity = 2"), "promotion only ever escalates");
 assert.ok(!decisionSeams.includes("resolved_at ="), "the bump never resolves anything");
 assert.ok(bumpBody.includes('inbox-changed", { bumped:'), "promotion publishes for reload");
-assert.match(server, /void maybeBumpSeverity\(\);/, "the reconcile tick runs the bump");
+assert.match(server, /void deps\.maybeBumpSeverity\(\);/, "the reconcile tick runs the bump");
 assert.match(decisionApiUi, /Showing defaults — nothing saved yet/, "fresh installs state that defaults are in effect");
 assert.match(decisionApiUi, /Could not load the Decision API settings\./, "a failed settings load stays answerable");
 assert.match(decisionApiUi, /Decision API is disabled on this host/, "the settings block states the kill switch in place");

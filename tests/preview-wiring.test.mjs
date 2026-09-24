@@ -5,11 +5,15 @@ import { fileURLToPath } from "node:url";
 
 // Preview wiring: the lifecycle itself is NOT tested here — it lives in
 // lib/preview-runtime and is driven for real by preview-runtime.test.mjs. What
-// remains is the handful of invariants only server.ts can break, because they
+// remains is the handful of invariants only server/plugin-runtime.ts can break, because they
 // are about what the host provides and how the host is torn down. Each
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const source = readFileSync(join(root, "server.ts"), "utf8");
+const source = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/platform.ts"), "utf8"),
+].join("\n");
 const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
 const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
@@ -21,7 +25,7 @@ const previewSource = readFileSync(join(root, "components/detail/preview-section
 /** The text between two markers, failing loudly if either is gone. */
 function slice(start, end) {
   const from = source.indexOf(start);
-  assert.notEqual(from, -1, `server.ts no longer contains ${JSON.stringify(start)} — this contract needs updating, not deleting`);
+  assert.notEqual(from, -1, `server/plugin-runtime.ts no longer contains ${JSON.stringify(start)} — this contract needs updating, not deleting`);
   const to = source.indexOf(end, from);
   assert.notEqual(to, -1, `${start} no longer ends at ${end}`);
   return source.slice(from, to);
@@ -45,7 +49,7 @@ assert.match(source, /bb\.onDispose\(\(\) => preview\.dispose\(\)\)/, "dispose m
 // AGENTS.md: new state logic belongs in lib/ with a node test. A second state
 // machine here would be untestable and would drift from the tested one.
 for (const leaked of ["previewSessions", "killPreview", "connectUnexpose", "absorb"]) {
-  assert.ok(!source.includes(leaked), `server.ts must not re-implement the lifecycle (${leaked})`);
+  assert.ok(!source.includes(leaked), `server/plugin-runtime.ts must not re-implement the lifecycle (${leaked})`);
 }
 
 // --- The worker's own checkout wins over the project source. --------------
@@ -96,10 +100,18 @@ for (const field of ["url", "command", "checkout", "log", "hints"]) {
 }
 
 // --- The public surface is reachable from both callers. -------------------
-assert.match(slice("    async previewStart({ cardId }) {", "    async previewStop({ cardId }) {"), /previewStart\(cardId\)/, "the RPC must reach the runtime's start");
-assert.match(slice("    async previewStop({ cardId }) {", "  });"), /previewStop\(cardId\)/, "the RPC must reach the runtime's stop");
+assert.match(
+  slice("    previewStart: ({ cardId }", "    previewStop: ({ cardId }"),
+  /deps\.preview\.start\(cardId\)/,
+  "the RPC must reach the runtime's start",
+);
+assert.match(
+  slice("    previewStop: ({ cardId }", "    previewShare: ({ cardId }"),
+  /deps\.preview\.stop\(cardId\)/,
+  "the RPC must reach the runtime's stop",
+);
 assert.match(source, /\{ name: "preview", summary:/, "the CLI must document the subcommand");
-assert.match(source, /createPreviewRuntime/, "server.ts must construct the runtime");
+assert.match(source, /createPreviewRuntime/, "server/plugin-runtime.ts must construct the runtime");
 
 // --- The extracted panel owns its complete preview seam. ------------------
 // These are topology guards, not snapshots: a copy left in app.tsx would split

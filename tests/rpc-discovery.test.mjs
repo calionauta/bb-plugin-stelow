@@ -10,18 +10,14 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // these without executing code. A method without a description is invisible
 // to discovery, so the contract test fails when one is added bare.
 //
-// The contract is split across server.ts (main contract) and server/*.ts
-// feature slices (github-issues.ts precedent: contract fragment + handlers
-// + migrations + scheduler). Internal feature modules may live beside those
-// contracts, so discovery scans every server module that declares one.
-const contractFiles = readdirSync(join(root, "server"))
+// The composed contract is split across server/*.ts feature fragments (the
+// GitHub issue slice established contract + handlers + migrations + scheduler).
+// Discovery scans every server module that declares one.
+const contracts = readdirSync(join(root, "server"))
   .filter((file) => file.endsWith(".ts"))
   .map((file) => join("server", file))
-  .filter((file) => readFileSync(join(root, file), "utf8").includes("defineRpcContract({"));
-const contracts = [
-  { file: "server.ts", start: "export const rpcContract = defineRpcContract({", end: "export type PreviewInfo" },
-  ...contractFiles.map((file) => ({ file, start: "defineRpcContract({", end: null })),
-];
+  .filter((file) => readFileSync(join(root, file), "utf8").includes("defineRpcContract({"))
+  .map((file) => ({ file, start: "defineRpcContract({", end: null }));
 
 let total = 0;
 for (const { file, start, end } of contracts) {
@@ -44,6 +40,6 @@ for (const { file, start, end } of contracts) {
 
 // The contract opts into host-side discovery: descriptions alone leave
 // bb plugin rpc list empty, so this fails if the opt-in flag is dropped.
-const srv = readFileSync(join(root, "server.ts"), "utf8");
+const srv = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 assert.match(srv, /experimental_discoverable: true/, "register opts into discovery");
 console.log(`rpc discovery test ok: ${total} methods publish descriptions`);

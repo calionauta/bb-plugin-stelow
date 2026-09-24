@@ -53,6 +53,10 @@ assert.equal(workflowStateRelativeDir(keptEntry), ".stelow/2026-09-12/sw-second-
 assert.equal(workflowEntryForOwner([firstCard, secondCard], "card_third"), null, "an unknown owner reads no scopes");
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"),
+    "utf8",
+  ),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards.ts"), "utf8"),
 ].join("\n");
