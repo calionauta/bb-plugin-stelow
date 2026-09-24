@@ -2,6 +2,11 @@
 
 Status: proposal. Scope: `bb-plugin-stelow` (+ mirror edits in `stelow` blueprint only).
 
+Historical note: the `server.ts` line references below identify the server
+layout when this proposal was written. The entry file now delegates to
+`server/plugin-runtime.ts` and capability modules under `server/`; use symbol
+names and current tests when checking whether a proposed change landed.
+
 ## 1. Current state (verified against code)
 
 Two layers, different visibility:

@@ -32,6 +32,9 @@ history). `stelow.json` and `.stelow/` remain the source of truth for the
 workflow itself — the board reads them, never replaces them. Details live in
 [FEATURES.md](./FEATURES.md).
 
+Maintainers can find the current server module map and its open extraction
+work in [docs/runtime-architecture.md](./docs/runtime-architecture.md).
+
 ## Strategies and techniques
 
 The **Research tab** offers 14 product strategies. Each runs one
