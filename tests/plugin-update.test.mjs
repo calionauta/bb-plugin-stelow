@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
 import { mapUpdateEntry, selectOwnEntry, shortRef, isPathInstall, applyFailedCheck, updateAvailableFrom } from "../lib/plugin-update.mjs";
+import {
+  markPluginUpdateLoaded,
+  markPluginUpdateUnloaded,
+  pluginUpdateSnapshot,
+  setPluginUpdateAvailable,
+  subscribePluginUpdate,
+} from "../lib/plugin-update-signal.mjs";
 
 const own = {
   id: "stelow",
@@ -78,5 +85,21 @@ assert.equal(updateAvailableFrom({ pluginUpdate: { outcome: "incompatible" } }),
 assert.equal(updateAvailableFrom(null), false, "null reads as no update, never a throw");
 assert.equal(updateAvailableFrom({}), false, "missing shapes read as no update");
 assert.equal(updateAvailableFrom({ pluginUpdate: "x", githubRelease: 7 }), false, "off-shape fields never throw or lie");
+
+setPluginUpdateAvailable(false);
+let notifications = 0;
+const unsubscribe = subscribePluginUpdate(() => { notifications += 1; });
+setPluginUpdateAvailable("yes");
+assert.equal(pluginUpdateSnapshot(), true, "the shared store normalizes truthy input");
+assert.equal(notifications, 1, "a changed verdict notifies every subscribed surface");
+setPluginUpdateAvailable(true);
+assert.equal(notifications, 1, "an unchanged verdict does not churn React subscribers");
+unsubscribe();
+setPluginUpdateAvailable(false);
+assert.equal(notifications, 1, "unsubscribe stops cross-surface notifications");
+assert.equal(markPluginUpdateLoaded(), true);
+assert.equal(markPluginUpdateLoaded(), false);
+markPluginUpdateUnloaded();
+assert.equal(markPluginUpdateLoaded(), true, "a failed first read allows the next surface to retry");
 
 console.log("plugin update test ok: entry select, map, shortRef, install source, failed-check merge, shared signal");

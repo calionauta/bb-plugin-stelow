@@ -18,6 +18,7 @@ import { STORAGE_KEYS } from "../lib/panel-storage.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const component = readFileSync(join(root, "components/settings/preset-onboarding.tsx"), "utf8");
+const about = readFileSync(join(root, "components/settings/about-panel.tsx"), "utf8");
 
 function sourceBetween(start, end) {
   const startIndex = app.indexOf(start);
@@ -177,8 +178,8 @@ for (const [track, nextTrack] of [
   assert.match(branch, managerRenderer, `${track} retains preset-manager wiring`);
 }
 assert.match(
-  app,
-  /onClick=\{\(\) => \{[\s\S]*resetOnboarding\(window\.localStorage\)/,
+  about,
+  /function reset\(\) \{[\s\S]*resetOnboarding\(window\.localStorage\)/,
   "Manage confirms the behavior-tested reset helper",
 );
 assert.match(
