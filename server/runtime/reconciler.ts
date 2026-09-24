@@ -4,6 +4,7 @@ import { isClaimTerminal } from "../../lib/card-terminal.mjs";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type ReleasedFile = { workspacePath: string; file: string };
+const RECONCILE_MS = 45_000;
 type Scheduler = {
   setInterval: typeof setInterval;
   clearInterval: typeof clearInterval;
@@ -84,6 +85,6 @@ export function startReconciler(deps: ReconcilerDeps) {
     try { releaseExpiredClaims(deps); } catch (error) { deps.onError("release expired claims", error); }
     try { releaseTerminalClaims(deps); } catch (error) { deps.onError("release terminal claims", error); }
   };
-  const timer = scheduler.setInterval(tick, 45_000);
+  const timer = scheduler.setInterval(tick, RECONCILE_MS);
   return { tick, dispose: () => scheduler.clearInterval(timer) };
 }
