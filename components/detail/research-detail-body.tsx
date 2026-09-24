@@ -6,6 +6,7 @@ import type { InboxEventItem } from "./inbox-event-banner";
 import { liveBorderClass } from "../../lib/detail-presentation.mjs";
 import { useInboxEventFocus } from "./inbox-event-banner";
 import { ResearchDetailContent } from "./research-detail-content";
+import { LinkedDiscussionSection } from "../github/github-linked-discussion";
 import type { ResearchCard, ResearchDetail } from "./research-detail-types";
 import { useResearchDetailState } from "./use-research-detail-state";
 
@@ -74,6 +75,7 @@ export function ResearchDetailBody({ cardId, inboxEventId, inboxEvent, card, det
             setViewerFile={state.setViewerFile}
             inboxEventRef={state.inboxEventRef}
           />
+          <LinkedDiscussionSection cardId={cardId} />
         </div>
       </div>
       <ResearchDialogs

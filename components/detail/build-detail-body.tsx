@@ -22,6 +22,7 @@ import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-
 import { useDetailComment } from "../conversation/use-detail-comment";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
 import { GithubCompletionDialog } from "../github/github-completion-dialog";
+import { GithubDoneDraftDialog } from "../github/github-done-draft-dialog";
 import { CardDetailHeader } from "../manage/card-detail-header";
 import { useDebouncedRealtime } from "../use-debounced-realtime";
 import { ArtifactViewerDialog } from "./artifact-viewer-dialog";
@@ -118,6 +119,7 @@ function useAdvanceCard(cardId: string, load: () => Promise<void>) {
 
 function useBuildPresentationState(card: BuildCard | null) {
   const [githubPostOpen, setGithubPostOpen] = useState(false);
+  const [githubDraftOpen, setGithubDraftOpen] = useState(false);
   const [publicationDirty, setPublicationDirty] = useState(false);
   const [publicationBranch, setPublicationBranch] = useState<string | null>(null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -139,6 +141,8 @@ function useBuildPresentationState(card: BuildCard | null) {
   return {
     githubPostOpen,
     setGithubPostOpen,
+    githubDraftOpen,
+    setGithubDraftOpen,
     publicationDirty,
     setPublicationDirty,
     publicationBranch,
@@ -322,6 +326,13 @@ function BuildDetailLayout({
           ? `${detail.githubLink.repo}#${detail.githubLink.number}`
           : null}
         onPosted={load}
+      />
+      <GithubDoneDraftDialog
+        open={view.githubDraftOpen}
+        onOpenChange={view.setGithubDraftOpen}
+        cardId={cardId}
+        artifacts={detail?.artifacts ?? []}
+        issueRef={detail?.githubLink ? { repo: detail.githubLink.repo, number: detail.githubLink.number } : null}
       />
       <BuildLifecycleDialogs
         state={lifecycle}

@@ -69,9 +69,27 @@ coordination on shared checkouts → 10/tick cap.
 
 ## Operations
 
-- Scheduler: every 5 minutes (`stelow-automation-rules`). Persistent
-  config states (repo with no BB project yet) warn once per daemon
-  lifetime and self-heal.
+- Scheduler: every 5 minutes (`stelow-automation-rules` for watchers,
+  `stelow-github-discussion-mirror` for linked-issue comment mirrors).
+  Persistent config states (repo with no BB project yet) warn once per
+  daemon lifetime and self-heal.
+- Card-birth issue creation (`createLinkedGithubIssue`): opt-in checkbox in
+  the Build creation dialog, off by default. The card is always created
+  first; `gh` then posts title plus prompt with a hidden card marker, and
+  the link lands in `github_imports`. Title and body only; a failed creation
+  keeps the card, and an unconfirmed write reports uncertain instead of
+  inviting a double-creating retry.
+- Linked discussion mirror (`getLinkedDiscussion`, `postIssueComment`):
+  read-only, append-only snapshot of the linked issue's comments (identity
+  is a content fingerprint; edits/deletes upstream are not tracked).
+  Fetched live on card open plus the mirror schedule for linked,
+  non-terminal cards; terminal cards serve their frozen snapshot. Mirrored
+  text renders badged and never routes to workers. A composer posts back
+  through `postIssueComment` behind an inline confirm naming the
+  destination — human gesture only, payload validated server-side.
+- Done-note draft (`draftDoneComment`, main contract): cheap generation
+  preset drafts a completion note on dialog open; artifacts ride as a
+  detachable checklist; Post reuses the human-gated comment RPC.
 - Kill switch: `STELOW_GITHUB_ISSUES=0` on the host disables the
   scheduler, every RPC (each refusal names the variable), and the panel
   button. No migration, no UI change.
@@ -83,8 +101,8 @@ coordination on shared checkouts → 10/tick cap.
 ## Module map (for maintainers and agents)
 
 - `server/github-issues.ts` — contract fragment, migrations, matcher
-  wiring, scheduler, all 8 RPCs. `server.ts` only spreads the contract
-  and handlers, calls one migration function, and schedules one line.
+  wiring, scheduler, all 11 RPCs. `server.ts` only spreads the contract
+  and handlers, calls one migration function, and schedules two lines.
   The seam is an explicit deps object (`db`, `bb`, clock, card ops).
 - `components/github/` — the dialog shell (`github-issues-dialog.tsx`),
   one state hook (`github-dialog-state.ts`: all tab state, RPC handlers,
@@ -100,7 +118,23 @@ coordination on shared checkouts → 10/tick cap.
   environment), `lib/tracks.mjs` (`describeCardEnvironment`).
 - Tables: `github_imports` (dedupe + claims + write-back stamp),
   `automation_rules`, `automation_rule_fires` (audit + outcome),
-  `automation_rule_seen` (backlog guard).
+  `automation_rule_seen` (backlog guard), `github_issue_comments`
+  (discussion mirror, fingerprint primary key).
+
+## Removal (decoupling contract)
+
+The integration is one module plus narrow seams so a change of mind is a
+checklist, not archaeology. To remove it entirely: delete
+`server/github-issues.ts`, `lib/github-issue-create.mjs`,
+`lib/github-issue-comments.mjs` (+ tests + `.d.mts` twins),
+`components/github-issues-dialog.tsx`, `components/isolated-worktree-check.tsx`,
+and `docs/github-issues.md`; drop the contract spread, the migration call,
+and the two schedule lines in `server.ts`; delete the `GithubIssuesDialog`
+mount, `GithubCreateRow` + `submitGithubTrailer`, `LinkedDiscussionSection`,
+and the done-draft dialog in `app.tsx`; drop the linked tables
+(`github_imports`, `github_issue_comments`, `automation_*`) with one
+migration. `STELOW_GITHUB_ISSUES=0` already disables everything without
+removing a line — prefer the switch unless the code itself must go.
 
 ## Background
 

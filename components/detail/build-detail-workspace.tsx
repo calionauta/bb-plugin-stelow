@@ -1,6 +1,7 @@
 import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { STAGE_TO_BAND, stageLabel } from "../../lib/workflow-vocabulary.mjs";
 import { checkoutNoteFor, WorkerSection } from "../worker-history/worker-history";
+import { LinkedDiscussionSection } from "../github/github-linked-discussion";
 import type { BuildDetailView } from "./build-detail-body";
 import { InputFiles } from "./input-files";
 import { PreviewSection } from "./preview-section";
@@ -34,10 +35,11 @@ export function BuildWorkspace({ view, presetStale }: BuildWorkspaceProps) {
         presetNote={presetNote(card, detail)}
         pillTitle={presetPillTitle(card)}
         githubLink={detail?.githubLink
-          ? <GithubStatus card={card} detail={detail} open={() => view.setGithubPostOpen(true)} />
+          ? <GithubStatus card={card} detail={detail} open={() => view.setGithubPostOpen(true)} openDraft={() => view.setGithubDraftOpen(true)} />
           : null}
         checkoutNote={checkoutNoteFor(detail?.card.environmentLabel, view.publicationBranch)}
       />
+      <LinkedDiscussionSection cardId={card.id} />
       <InputFiles card={card} detail={detail} onView={view.setViewerFile} />
       <PreviewSection cardId={card.id} />
     </>
@@ -75,10 +77,12 @@ function GithubStatus({
   card,
   detail,
   open,
+  openDraft,
 }: {
   card: BuildCard;
   detail: BuildDetail;
   open: () => void;
+  openDraft: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -99,12 +103,20 @@ function GithubStatus({
             </span>
           )
           : (
+            <>
             <button
               onClick={open}
               className="cursor-pointer min-h-11 font-medium text-primary hover:underline"
             >
               Share completion summary on GitHub…
             </button>
+            <button
+              onClick={openDraft}
+              className="cursor-pointer min-h-11 font-medium text-primary hover:underline"
+            >
+              Draft GitHub comment…
+            </button>
+            </>
           )
         : <span>A completion summary can be posted once this card is Done.</span>}
     </div>

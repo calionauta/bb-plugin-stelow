@@ -84,6 +84,9 @@ export function BuildPanelDialogs(props: Props) {
         analysisPreset={props.analysisWorkerPreset}
         appetite={props.appetite}
         reviewGates={props.reviewGates}
+        githubRepos={(props.data.githubStatus?.repos ?? [])
+          .filter((entry) => entry.projectId === props.projectId)
+          .map((entry) => entry.repo)}
         onAppetiteChange={props.onAppetiteChange}
         onReviewGatesChange={props.onReviewGatesChange}
         bucketGallery={props.bucketGallery}

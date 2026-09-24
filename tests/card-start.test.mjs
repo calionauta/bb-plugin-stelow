@@ -77,7 +77,7 @@ assert.match(buildDialog, /export function CreateBuildDialog\(\{ open, onOpenCha
 assert.match(buildPanelDialogs, /import \{ CreateBuildDialog \} from "\.\.\/creation\/create-build-dialog"/, "the board panel reads the shared dialog");
 assert.doesNotMatch(app, /rpc\.call\("createCard",/, "no local build submit survives in the panel");
 assert.match(buildDialog, /function handleOpenChange\(next: boolean\) \{\s*\n\s*onOpenChange\(next\);\s*\n\s*if \(next\) submit\.resetOnOpen\(\);/, "every open resets to started with a clean error");
-assert.match(buildDialog, /function resetOnOpen\(\) \{\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "reset restores started default and clears the error");
+assert.match(buildDialog, /function resetOnOpen\(\) \{[\s\S]*setStartImmediately\(true\);[\s\S]*setCreateGithubIssue\(false\);[\s\S]*setCreateGithubRepo\(null\);[\s\S]*setError\(null\);/, "reset restores started default, GitHub opt-in state, and clears the error");
 assert.match(researchDialog, /rpc\.call\("createResearchCard", \{[^}]*start: startImmediately/, "research submit passes the choice");
 // Research creation: one dialog component owns draft, strategy, error,
 // and start — the panel keeps the open flag plus the strategy catalog.

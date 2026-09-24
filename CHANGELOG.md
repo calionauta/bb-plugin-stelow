@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to a single-version-per-release tag format
 (`vX.Y.Z`) on the `master` branch.
 
+## [0.48.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.47.1...v0.48.0) (2026-09-23)
+
+
+### Features
+
+* create GitHub issues at card birth and mirror linked discussion ([e4cc098](https://github.com/calionauta/bb-plugin-stelow/commit/e4cc09877158dc4d532c1d9dad585baa8325da11))
+* create GitHub issues at card birth and mirror linked discussion ([fe88887](https://github.com/calionauta/bb-plugin-stelow/commit/fe888874bbd9cd6cff29a4cdee636baecb87d331))
+* linked-issue composer, done-note drafts, link from any card ([99c0c86](https://github.com/calionauta/bb-plugin-stelow/commit/99c0c8680ee5b1e9d338a1866cf1164f7c1918af))
+
+## [0.47.1](https://github.com/calionauta/bb-plugin-stelow/compare/v0.47.0...v0.47.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* Bucket import copy and gallery top-left pin ([f187c67](https://github.com/calionauta/bb-plugin-stelow/commit/f187c67ebdc06161415bfca9838aef074777d2c2))
+* name the import parking spot Bucket, not Inbox ([c4a57d6](https://github.com/calionauta/bb-plugin-stelow/commit/c4a57d69bf01d51056e1a89c588a2483fc7fde27))
+* pin gallery rows to the top-left ([217d36e](https://github.com/calionauta/bb-plugin-stelow/commit/217d36e03f76a0feb440b247340e7bd3a8bef82a))
+
+## [0.47.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.46.0...v0.47.0) (2026-09-22)
+
+
+### Features
+
+* post-merge worktree cleanup suggestion with shared confirm shape ([ddfb6d5](https://github.com/calionauta/bb-plugin-stelow/commit/ddfb6d5671b161b2af78df75d9ff801c73521e84))
+
 ## [0.46.0](https://github.com/calionauta/bb-plugin-stelow/compare/v0.45.2...v0.46.0) (2026-09-22)
 
 

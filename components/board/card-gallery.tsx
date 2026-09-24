@@ -52,7 +52,7 @@ export function CardGalleryDialog({
         ) : (
           <ul
             data-gallery-tiles
-            className="grid items-start justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),320px))]"
+            className="grid content-start items-start justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),320px))]"
           >
             {cards.map((card) => (
               <li key={card.id}>

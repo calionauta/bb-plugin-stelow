@@ -90,6 +90,36 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   comment carries a hidden card marker that is verified back on the issue
   before counting as posted, so retries never double-post and a send
   without a visible comment reports itself instead of succeeding silently.
+- **GitHub issue creation at card birth** (`createLinkedGithubIssue`). The
+  Build creation dialog offers one opt-in checkbox (off by default) when the
+  project has a mapped repo: the card is always created first, then `gh`
+  creates the issue (same auth, no second token — taskboard's pattern) with
+  a hidden card marker in the body, and the link lands in `github_imports`.
+  Title and body only; a failed creation keeps the card and names the cause,
+  and an uncertain write (response lost) reports itself under a
+  machine-detectable `[STELOW_CREATE_OUTCOME_UNCERTAIN]` marker instead of
+  inviting a double-creating retry. Already-linked cards return their link.
+- **Done-note draft for GitHub** (`draftDoneComment`, `postIssueComment`).
+  Completed cards with a linked issue offer "Draft GitHub comment…": the
+  cheap generation preset (band fallback, same cascade as prose bursts)
+  drafts a completion note from the card's scopes, generated on dialog open
+  so tokens spend only on intent. The draft is fully editable, deliverable
+  artifacts ride as a detachable checklist, and Post sends the final text
+  through the human-gated comment RPC. The factual
+  `postGithubCompletion` path stays untouched.
+- **Linked discussion mirror** (`getLinkedDiscussion`, `postIssueComment`).
+  Cards linked to an issue render a read-only Linked discussion section on
+  every track: issue comments as a separate badged stream that never renders
+  as agent chatter and never routes to the worker (external text is context,
+  never instructions). Unlinked cards on a mapped project offer creation
+  from the same section instead. Identity is a content fingerprint (the
+  plugin type carries no comment ids), storage dedupes on it, edits/deletes
+  upstream are not tracked. Fetched live on card open plus a 5-minute mirror
+  poll for linked, non-terminal cards (terminal cards serve their frozen
+  snapshot); new rows publish `github-discussion` so open details refresh.
+  A composer posts back through `postIssueComment` behind an inline confirm
+  naming the destination (`repo#number`, public and hard to undo) — human
+  gesture only, payload validated server-side, mirror refreshed on success.
 - **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
