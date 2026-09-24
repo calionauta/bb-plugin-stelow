@@ -46,20 +46,23 @@ try {
 
   git("switch", "-c", "feature");
   mkdirSync(join(fixtureRoot, "lib"));
-  writeFileSync(join(fixtureRoot, "lib/legacy.mjs"), `export const legacy = "${"x".repeat(170)}";\n`);
   const debtFunction = `export function inherited() {\n${"  void 0;\n".repeat(49)}}\n`;
   const debtFile = `${debtFunction}${"// inherited debt\n".repeat(350)}`;
+  const masterDebtFile = `${debtFile}// master debt\n`;
   writeFileSync(join(fixtureRoot, "lib/debt.mjs"), debtFile);
-  git("add", "lib/legacy.mjs", "lib/debt.mjs");
+  git("add", "lib/debt.mjs");
   git("commit", "-m", "add inherited debt");
   const debtCommit = git("rev-parse", "HEAD");
 
   git("switch", "master");
   mkdirSync(join(fixtureRoot, "lib"));
+  writeFileSync(join(fixtureRoot, "lib/legacy.mjs"), `export const legacy = "${"x".repeat(170)}";\n`);
   writeFileSync(join(fixtureRoot, "lib/upstream.mjs"), `export const upstream = "${"u".repeat(170)}";\n`);
-  git("add", "lib/upstream.mjs");
+  writeFileSync(join(fixtureRoot, "lib/debt.mjs"), masterDebtFile);
+  git("add", "lib/legacy.mjs", "lib/upstream.mjs", "lib/debt.mjs");
   git("commit", "-m", "advance origin master");
   git("update-ref", "refs/remotes/origin/master", "master");
+  comparisonBase = git("rev-parse", "master");
   git("switch", "feature");
 
   mkdirSync(join(fixtureRoot, "scripts"));
@@ -85,9 +88,9 @@ try {
 
   const clean = runChecker();
   assert.equal(clean.status, 0, clean.stderr);
-  assert.match(clean.stdout, new RegExp(`from ${baseCommit}`));
-  assert.match(clean.stdout, /1 inherited legacy line/);
-  assert.match(clean.stdout, /no new line over 160 characters/);
+  assert.match(clean.stdout, new RegExp(`from ${comparisonBase}`));
+  assert.doesNotMatch(clean.stdout, /inherited legacy/);
+  assert.match(clean.stdout, /no changed line over 160 characters/);
   const cleanBudget = runBudgetChecker();
   assert.equal(cleanBudget.status, 0, cleanBudget.stderr);
   assert.match(cleanBudget.stdout, /inherited lib\/debt.mjs: 401 lines/);
@@ -96,7 +99,7 @@ try {
   writeFileSync(join(fixtureRoot, "lib/debt.mjs"), debtFile.replace("  void 0;\n", "  void 0;\n  void 1;\n"));
   const grownDebt = runBudgetChecker();
   assert.equal(grownDebt.status, 1, grownDebt.stdout);
-  assert.match(grownDebt.stderr, /over budget lib\/debt.mjs: 402 lines/);
+  assert.doesNotMatch(grownDebt.stderr, /over budget lib\/debt.mjs: 402 lines/);
   assert.match(grownDebt.stderr, /over budget lib\/debt.mjs:\/inherited#1: 52 lines/);
   git("checkout", "--", "lib/debt.mjs");
 
@@ -109,7 +112,7 @@ try {
   const rewrittenDebt = runChecker();
   assert.equal(rewrittenDebt.status, 1, rewrittenDebt.stdout);
   assert.match(rewrittenDebt.stderr, /lib\/legacy\.mjs:1: \d+ characters/);
-  git("checkout", "--", "lib/legacy.mjs");
+  rmSync(join(fixtureRoot, "lib/legacy.mjs"));
 
   writeFileSync(join(fixtureRoot, "scripts/new-workflow.js"), `const fresh = "${"y".repeat(171)}";\n`);
   const dirty = runChecker();
@@ -120,7 +123,7 @@ try {
   git("commit", "-m", "add a newly minified workflow");
   const cleanCiFailure = runChecker();
   assert.equal(cleanCiFailure.status, 1, cleanCiFailure.stdout);
-  assert.match(cleanCiFailure.stderr, /new changed lines over 160 characters/);
+  assert.match(cleanCiFailure.stderr, /changed lines over 160 characters/);
 } finally {
   rmSync(fixtureRoot, { recursive: true, force: true });
 }

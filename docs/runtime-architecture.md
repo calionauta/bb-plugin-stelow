@@ -1,0 +1,47 @@
+# Server runtime architecture
+
+`server.ts` is a seven-line composition root. It exports the canonical RPC
+contract and delegates startup to `server/plugin-runtime.ts`.
+
+## Current composition
+
+`server/plugin-runtime.ts` constructs the host-facing capabilities and passes
+their handlers to `bb.rpc.register`:
+
+- `server/cards*.ts` owns card contracts, reads, creation, and detail seams.
+- `server/preset*.ts` owns preset persistence and card preset access.
+- `server/drafting.ts` owns draft command behavior and completion-note drafts.
+- `server/inbox.ts`, `server/decision-api.ts`, `server/github-issues.ts`, and
+  `server/artifacts-publication.ts` own their feature contracts, migrations,
+  handlers, and schedules.
+- `server/execution-native.ts` owns adapter selection and native run launch.
+- `server/execution-lifecycle.ts` owns run ownership, cancellation, answers,
+  and resume boundaries.
+- `server/execution-reconcile.ts` owns periodic status and artifact reconciliation.
+- `server/execution-advance.ts` owns stage preflight, route dispatch, and CLI
+  advance behavior.
+- `server/worktree-cleanup.ts` owns cleanup preview and confirmed removal.
+
+Execution migrations run during startup. Reconciliation runs once after
+startup and on a named interval; the timer is cleared on disposal. Worker
+threads are never stopped by plugin disposal, because hot reload is not
+uninstall.
+
+## Contract and test topology
+
+RPC contract fragments are composed in `server/rpc-contract.ts`. Startup tests
+assert that every contract method has a handler and exercise representative
+success, refusal, and disposal paths. The execution and worktree modules also
+have focused behavior tests. The source-shape checker compares changed source
+lines with `origin/master`; it has no inherited-baseline exemption. The budget
+checker applies the same branch comparison and reports inherited debt only
+when the current file is no larger than the base version.
+
+## Known integration boundary
+
+The branch is integrated with current `origin/master` in the worktree
+`/home/deploy/repos/bb-plugin-stelow-integration-20260924`. The centralized
+execution modules and their UI-facing contract fields are preserved. The
+remaining large runtime entrypoint is real technical debt: the full capability
+split and line-budget cleanup are not complete, so this note is not a claim
+that the runtime is fully decomposed.
