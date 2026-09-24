@@ -87,7 +87,7 @@ assert.match(createDialog, /rpc\.call\("createLinkedGithubIssue"/, "the creation
 assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Also create issue\{/, "the opt-in checkbox names the destination");
 assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Pick a repository/, "several mapped repos force an explicit pick, never a silent default");
 assert.match(createDialog, /const \[createGithubIssue, setCreateGithubIssue\] = useState\(false\)/, "creation stays off by default");
-assert.match(readFileSync(join(root, "server.ts"), "utf8"), /draftDoneComment: \{/, "the draft RPC is contracted");
+assert.match(readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"), /draftDoneComment: \{/, "the draft RPC is contracted");
 assert.match(doneDraft, /rpc\.call\("draftDoneComment"/, "the Done dialog drafts through the RPC");
 assert.match(doneDraft, /Draft GitHub comment\?/, "the dialog names the action");
 
