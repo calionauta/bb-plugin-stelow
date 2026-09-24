@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const decisionUi = readFileSync(join(root, "components", "settings", "decision-api.tsx"), "utf8");
 
 function handlerBody(name) {
   const at = server.indexOf(name);
@@ -181,56 +182,64 @@ assert.ok(bumpBody.includes("SET severity = 2"), "promotion only ever escalates"
 assert.ok(!bumpBody.includes("resolved_at ="), "the bump never resolves anything");
 assert.ok(bumpBody.includes('inbox-changed", { bumped:'), "promotion publishes for reload");
 assert.match(server, /void maybeBumpSeverity\(\);/, "the reconcile tick runs the bump");
-assert.match(app, /Showing defaults — nothing saved yet/, "fresh installs state that defaults are in effect");
-assert.match(app, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
-assert.match(app, /has no key — api routers answer with built-in rules/, "keyless api routers state why they degrade");
-assert.match(app, /disabled={busy \|\| !dirty \|\| !valid}/, "threshold saves stay disabled until the value is a 0–1 number");
+assert.match(decisionUi, /Showing defaults — nothing saved yet/, "fresh installs state that defaults are in effect");
+assert.match(decisionUi, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
+assert.match(decisionUi, /has no key — api routers answer with built-in rules/, "keyless api routers state why they degrade");
+assert.match(decisionUi, /disabled={busy \|\| !dirty \|\| !valid}/, "threshold saves stay disabled until the value is a 0–1 number");
 
 // UI: two progressive disclosures in the preset manager — one settings
 // block, one router list. Modes read as outcomes, never mechanisms.
 assert.match(app, /<DisclosureSection title="Decision API" hint="Jev-compatible"/, "the settings block hides behind a disclosure");
-assert.match(app, /Set the provider first — the rest follows its schema/, "the intro stays one short line");
+assert.match(decisionUi, /Set the provider first — the rest follows its schema/, "the intro stays one short line");
 assert.doesNotMatch(app, /any provider speaking that schema works here/, "the wrapping paragraph stays removed");
 assert.match(app, /<DisclosureSection title="Decision routers" hint="per-judgment modes"/, "the routers hide behind a disclosure");
-assert.match(app, /function DecisionApiSection\(/, "the settings section exists");
-assert.match(app, /function DecisionRoutersSection\(/, "the routers section exists");
-assert.match(app, /type="password"/, "the key field masks input");
-assert.match(app, /Test connection/, "the section offers an explicit probe");
-assert.match(app, /Built-in rules: \{point\.rules\}/, "rules-mode rows explain what built-in means for that point");
-assert.match(app, /Needs: \{point\.requires\}/, "provider requirements render per row");
-assert.match(app, /point\.mode === "api"/, "threshold controls render only for api-mode points");
-assert.match(app, /Act at confidence/, "thresholds read as confidence floors");
-assert.match(app, /<span>Model<\/span><Input/, "the Decision API model field is a free-text input (external ids live outside BB's catalog)");
-assert.match(app, /\{DECISION_PROVIDERS\.filter\(\(entry\) => entry\.id !== "jev"\)\.map\(\(entry\) => <option/, "non-default providers render from the registry (adding one is UI-free)");
-assert.match(app, /<option value="jev">TypeSafe AI(&apos;|')s Jev-compatible<\/option>/, "the provider select keeps jev (no one-way door)");
-assert.match(app, /State \+ questions schema — endpoint \+ key \+ model required/, "the jev hint states the schema requirement in one line");
-assert.match(app, /knownDefaults\.includes\(endpoint\)/, "custom endpoint URLs survive provider flips (only pristine defaults swap)");
+assert.match(decisionUi, /export function DecisionApiSection\(/, "the settings section exists");
+assert.match(decisionUi, /export function DecisionRoutersSection\(/, "the routers section exists");
+assert.match(decisionUi, /type="password"/, "the key field masks input");
+assert.match(decisionUi, /Test connection/, "the section offers an explicit probe");
+assert.match(decisionUi, /Built-in rules: \{point\.rules\}/, "rules-mode rows explain what built-in means for that point");
+assert.match(decisionUi, /Needs: \{point\.requires\}/, "provider requirements render per row");
+assert.match(decisionUi, /modeDraft === "api"/, "threshold controls render only for api-mode points");
+assert.match(decisionUi, /Act at confidence/, "thresholds read as confidence floors");
+assert.match(decisionUi, /<span>Model<\/span>\s*<Input/, "the Decision API model field is a free-text input (external ids live outside BB's catalog)");
+assert.match(
+  decisionUi,
+  /DECISION_PROVIDERS\.filter\(\(entry\) => entry\.id !== "jev"\)\.map\(\(entry\) => \(/,
+  "non-default providers render from the registry (adding one is UI-free)",
+);
+assert.match(decisionUi, /<option value="jev">TypeSafe AI(&apos;|')s Jev-compatible<\/option>/, "the provider select keeps jev (no one-way door)");
+assert.match(decisionUi, /State \+ questions schema — endpoint \+ key \+ model required/, "the jev hint states the schema requirement in one line");
+assert.match(decisionUi, /knownDefaults\.includes\(endpoint\)/, "custom endpoint URLs survive provider flips (only pristine defaults swap)");
 assert.ok(seamBody.includes("endpoint: route.endpoint ?? defaultEndpointFor(provider)"), "the seam sends the point route endpoint, defaulting only when blank");
-assert.doesNotMatch(app, /preset-thread/i, "no thread jargon survives in the UI");
+assert.doesNotMatch(decisionUi, /preset-thread/i, "no thread jargon survives in the UI");
 
 // Router rows save explicitly and refresh locally: flipping the mode select
 // stores nothing by itself (preset mode must explain itself first), and a
 // save never pays for a board reload — point state lives nowhere else.
-assert.match(app, /const \[modeDraft, setModeDraft\] = useState\(point\.mode\)/, "mode selection stages locally before saving");
-assert.match(app, /\{modeDirty && modeDraft !== "preset" \? <Button/, "mode flips save through one explicit button");
-assert.doesNotMatch(app, /void setMode\(event\.target\.value\)/, "no immediate save rides the select anymore");
-assert.match(app, /role=\{isError \? "alert" : "status"\}/, "failures announce as alerts, confirmations stay status");
-assert.match(app, /refresh: \(\) => Promise<void>/, "rows refresh their own section after saving");
+assert.match(decisionUi, /const \[modeDraft, setModeDraft\] = useState\(point\.mode\)/, "mode selection stages locally before saving");
+assert.match(decisionUi, /\{modeDirty && modeDraft !== "preset" \? \(/, "mode flips save through one explicit button");
+assert.doesNotMatch(decisionUi, /void setMode\(event\.target\.value\)/, "no immediate save rides the select anymore");
+assert.match(decisionUi, /role=\{isError \? "alert" : "status"\}/, "failures announce as alerts, confirmations stay status");
+assert.match(decisionUi, /refresh: \(\) => Promise<void>/, "rows refresh their own section after saving");
 
 // Touch targets meet the repo's min-h-11 rule inside router rows: the mode
 // select, the threshold input, and the judge-preset select all render h-11.
 // A regression to h-9 fails here before a phone user finds it.
-assert.ok(app.includes('className="cursor-pointer h-11 shrink-0'), "the mode select meets min-h-11");
-assert.ok(app.includes('step="0.05" className="h-11"'), "the threshold input meets min-h-11");
-assert.ok(app.includes('judge preset`} className="cursor-pointer h-11 flex-1'), "the judge-preset select meets min-h-11");
+assert.ok(decisionUi.includes('className="cursor-pointer h-11 shrink-0'), "the mode select meets min-h-11");
+assert.ok(decisionUi.includes('step="0.05" className="h-11"'), "the threshold input meets min-h-11");
+assert.ok(decisionUi.includes('className="cursor-pointer h-11 flex-1'), "the judge-preset select meets min-h-11");
 
 // The decision_points rebuild is one transaction: a crash between DROP and
 // RENAME must never lose the rows. Removing the wrapper fails here.
 assert.match(server, /const rebuildDecisionPoints = db\.transaction\(\(\) => \{/, "the table rebuild is atomic");
-assert.match(app, /function DecisionRoutersSection\(\{ rpc \}/, "the section takes no board reload — router saves stay local");
-assert.match(app, /note\("Saved\.", false\)/, "successful saves confirm instead of going silent");
-assert.match(app, /mode: modeDraft, thresholds: \{ routeAt: Number\(routeAt\) \}/, "threshold saves carry a pending mode flip so refresh never wipes it");
-assert.match(app, /No presets yet — create one under Agent Presets/, "an empty preset catalog guides instead of stranding");
+assert.match(decisionUi, /export function DecisionRoutersSection\(\{ rpc \}/, "the section takes no board reload — router saves stay local");
+assert.match(decisionUi, /note\("Saved\.", false\)/, "successful saves confirm instead of going silent");
+assert.match(
+  decisionUi,
+  /mode: modeDraft,\s*thresholds: \{ routeAt: Number\(routeAt\) \}/,
+  "threshold saves carry a pending mode flip so refresh never wipes it",
+);
+assert.match(decisionUi, /No presets yet — create one under Agent Presets/, "an empty preset catalog guides instead of stranding");
 
 // Criteria command wiring: read-only advisory judging through the router.
 // A branch that writes card state or publishes realtime would fail here.
