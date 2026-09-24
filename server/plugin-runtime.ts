@@ -49,7 +49,6 @@ import { decideAskGate } from "../lib/ask-gate.mjs";
 import { cleanAnswerList } from "../lib/expired-question-answers.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "../lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "../lib/plugin-paths.mjs";
-import { createPluginUpdateChecker } from "./runtime/plugin-update.js";
 import { discardConfirm, discardEligibility, discardTrail } from "../lib/discard-policy.mjs";
 import { stallCount, healPresetStaleness } from "../lib/worker-ledger.mjs";
 import { normalizePromoteName, findAdoptableProject } from "../lib/promote-card.mjs";
@@ -145,7 +144,6 @@ import { tokenBreakdownFromEvents, sumTokenBreakdowns } from "../lib/token-usage
 import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "../lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline } from "../lib/card-metrics.mjs";
 import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
-import { runPluginMigrations } from "./core-migrations.js";
 import { createWorkspacesRecovery, recoveredCheckoutIntegrity } from "./workspaces-recovery.js";
 import { createDecisionApi } from "./decision-api.js";
 import { createGithubAutomation, githubIssuesEnabled } from "./github-issues.js";
@@ -172,11 +170,13 @@ import {
 } from "./scopes.js";
 import { createPlatformHandlers } from "./runtime/platform.js";
 import { createCardPreview } from "./runtime/card-preview.js";
-import { cliHelpResult, cliUnknownResult, stelowCliCommands } from "./runtime/cli-registry.js";
+import { cliUnknownResult, stelowCliCommands } from "./runtime/cli-registry.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
 import { startReconciler } from "./runtime/reconciler.js";
-import { runExecutionMigrations } from "./execution-contract.js";
+import { registerThreadLifecycle, reconcileLiveCardsOnStartup } from "./runtime/thread-lifecycle.js";
+import { createCliDispatch } from "./runtime/cli-dispatch.js";
+import { startRuntimeServices } from "./runtime/lifecycle-startup.js";
 import { createExecutionNative } from "./execution-native.js";
 import { createExecutionLifecycle } from "./execution-lifecycle.js";
 import { createExecutionReconcile } from "./execution-reconcile.js";
@@ -729,11 +729,7 @@ export default async function plugin(bb: BbPluginApi) {
   const REVIEW_PROTOCOL = "Optional paid review: after `bb stelow verify` passes, you may OFFER `bb stelow review` via `bb stelow ask` — never run it unasked, never auto-run it. Review spends reviewer budget and only accepts structurally valid artifacts.";
   const DRAFT_PROTOCOL = "Cheap drafts: for disposable prose bursts (alternative wordings, expansions, taglines — never protocol work, never anything needing tools or exact shapes), run `bb stelow draft --prompt <brief>` — a hidden thread on the generation preset returns text you must judge 100% before using. If no generation preset is set it runs on your band preset; an empty or failed draft means do it yourself, never retry in a loop.";
   const db = bb.storage.database();
-  const pluginUpdates = createPluginUpdateChecker({ bb, installedVersion: BUILD_INFO.version, now: () => Date.now() });
-  bb.background.schedule("stelow-plugin-update-check", "17 6 * * *", () => void pluginUpdates.refresh(true));
-  void pluginUpdates.refresh();
-  runPluginMigrations(bb, db, now);
-  runExecutionMigrations(db);
+  const { updates: pluginUpdates } = startRuntimeServices({ bb, db, now, installedVersion: BUILD_INFO.version });
 
   function now(): number { return Date.now(); }
 
@@ -2790,24 +2786,14 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     escalateIfStalled(cardId);
   }
 
-  bb.events.on("thread.idle", ({ thread }) => {
-    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
-    if (row) void syncThreadState(row.id);
+  registerThreadLifecycle(bb, {
+    db,
+    syncThreadState,
+    applyFailed: (cardId, threadId, error) => workers.applyFailed(cardId, threadId, error),
   });
-  bb.events.on("thread.active", ({ thread }) => {
-    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
-    if (row) void syncThreadState(row.id);
-  });
-  bb.events.on("thread.failed", ({ thread, error }) => {
-    const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
-    if (!row) return;
-    void workers.applyFailed(row.id, thread.id, typeof error === "string" ? error : null);
-  });
-  // Reconcile card states with their worker threads after reloads (events only fire on transitions).
-  const liveCards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
-  const RECONCILE_MS = 45_000;
-  for (const row of liveCards) void syncThreadState(row.id);
+  reconcileLiveCardsOnStartup(db, syncThreadState);
   void executionReconcile.reconcile();
+  const RECONCILE_MS = 45_000;
   const executionReconcileTimer = setInterval(() => {
     if ((db as unknown as { open?: boolean }).open) void executionReconcile.reconcile();
   }, RECONCILE_MS);
@@ -4395,12 +4381,19 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
   // Opt into BB 0.43 RPC discovery so the described methods are listed.
   { experimental_discoverable: true });
 
+  const dispatchCli = createCliDispatch({
+    run: async (argv, ctx) => runCliCommand(argv, ctx),
+  });
   bb.cli.register({
     name: "stelow",
     summary: "Inspect and interact with Stelow workflows",
     commands: stelowCliCommands,
     async run(argv, ctx) {
-      if (argv[0] === "help") return cliHelpResult(argv);
+      return dispatchCli(argv, ctx);
+    },
+  });
+
+  async function runCliCommand(argv: string[], ctx: { projectId?: string | null; threadId?: string | null; signal?: AbortSignal }): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
       if (argv[0] === "status") {
         const projectFlag = argv.indexOf("--project");
         const projectId = projectFlag >= 0 ? argv[projectFlag + 1] : ctx.projectId;
@@ -6219,7 +6212,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { exitCode: 0, stdout: [`Gap triage (${gapJudged.findings.length} escalated gaps judged for genuineness against the critique and the working diff):`, ...gapLines, `Summary: ${gapGenuine} genuine, ${gapNotReal} dismissed, ${gapUncertain} unverifiable — advisory only; routing stays deterministic.${gapBlind}`].join("\n") };
       }
       if (argv[0] === "draft") {
-        const result = await drafting.command(argv, ctx.threadId);
+        const result = await drafting.command(argv, ctx.threadId ?? undefined);
         if (result) return result;
       }
       if (argv[0] === "preset") {
@@ -6294,8 +6287,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
       return cliUnknownResult(argv);
-    },
-  });
+  }
 
   registerMentionProviders(bb, { db, loadBoard: (projectId) => loadBoard(bb, projectId) });
 }
