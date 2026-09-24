@@ -97,6 +97,48 @@ test("platform preview handlers delegate to the shared runtime without rebuildin
   assert.deepEqual(await handlers.previewShare({ cardId: "card-1" }), { ok: true, cardId: "card-1" });
 });
 
+test("tool install dispatch preserves installer-specific failure evidence", async () => {
+  const cases = [
+    { id: "sem", command: "curl", failure: "Download failed." },
+    { id: "ripwire", command: "curl", failure: "Download failed." },
+    { id: "ast-grep", command: "npm", failure: "npm install failed." },
+    { id: "cymbal", command: "go", failure: "go install failed." },
+  ];
+  for (const entry of cases) {
+    const { handlers, calls } = harness({
+      runTool: async (command, args) => {
+        calls.push(["run", command, args]);
+        return { code: command === entry.command ? 1 : 0, out: "" };
+      },
+    });
+    assert.deepEqual(await handlers.installTool({ id: entry.id }), {
+      ok: false,
+      version: null,
+      log: entry.failure,
+    });
+  }
+});
+
+test("script and binary verification failures remain distinguishable", async () => {
+  const installer = harness({
+    runTool: async (command) => ({ code: command === "bash" ? 1 : 0, out: "" }),
+  });
+  assert.deepEqual(await installer.handlers.installTool({ id: "ripwire" }), {
+    ok: false,
+    version: null,
+    log: "\n",
+  });
+
+  const verification = harness({
+    runTool: async (command) => ({ code: command === "npm" ? 0 : 1, out: "" }),
+  });
+  assert.deepEqual(await verification.handlers.installTool({ id: "ast-grep" }), {
+    ok: false,
+    version: null,
+    log: "Installed but the binary did not respond.",
+  });
+});
+
 test("platform exposes the complete public RPC handler set", () => {
   const { handlers } = harness();
   assert.deepEqual(Object.keys(handlers).sort(), [

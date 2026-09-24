@@ -3,9 +3,9 @@ import { readdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { z } from "zod";
+import type { z } from "zod";
 import { loadAboutLogo } from "../../lib/about-logo.mjs";
-import { rpcContract } from "../rpc-contract.js";
+import type { rpcContract } from "../rpc-contract.js";
 
 export type PluginUpdateState = {
   outcome: "checking" | "update-available" | "current" | "incompatible" | "pinned" | "unavailable";
@@ -56,12 +56,25 @@ type PlatformDeps = {
   runTool?: (command: string, args: string[], env?: Record<string, string>) => Promise<ToolRunResult>;
 };
 
+type RunTool = (command: string, args: string[], env?: Record<string, string>) => Promise<ToolRunResult>;
+
 const PI_BIFROST_PRESET_MODELS = [
   { model: "bifrost/harness-coding", displayName: "Harness Coding (Bifrost)" },
   { model: "bifrost/gpt-5.6-sol", displayName: "GPT-5.6 Sol (ChatGPT via Bifrost)" },
   { model: "bifrost/gpt-5.6-terra", displayName: "GPT-5.6 Terra (ChatGPT via Bifrost)" },
   { model: "bifrost/gpt-5.6-luna", displayName: "GPT-5.6 Luna (ChatGPT via Bifrost)" },
 ] as const;
+
+const SCRIPT_INSTALLERS = {
+  sem: {
+    url: "https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh",
+    env: {},
+  },
+  ripwire: {
+    url: "https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh",
+    env: { RIPWIRE_REPO: "redhat-et/ripwire", RIPWIRE_INSTALL_YES: "1", RIPWIRE_NO_ACTIVATE: "1" },
+  },
+} as const;
 
 function defaultProbe(bin: string): Promise<ToolProbeResult> {
   return new Promise((resolve) => {
@@ -112,7 +125,7 @@ function installerBins(deps: PlatformDeps): Record<string, string[]> {
 
 async function toolStatus(deps: PlatformDeps): Promise<{ tools: Array<{ id: string } & ToolProbeResult> }> {
   const probe = deps.probeTool ?? defaultProbe;
-  const candidates: Array<{ id: string; bins: string[] }> = [
+  const candidates = [
     { id: "sem", bins: [deps.resolveLocalBin("sem")] },
     { id: "ast-grep", bins: [deps.resolveLocalBin("ast-grep"), deps.resolveLocalBin("sg")] },
     { id: "cymbal", bins: [deps.resolveLocalBin("cymbal")] },
@@ -128,55 +141,41 @@ async function toolStatus(deps: PlatformDeps): Promise<{ tools: Array<{ id: stri
   return { tools };
 }
 
-async function installTool(deps: PlatformDeps, id: string) {
-  const run = deps.runTool ?? defaultRun;
-  let log = "";
-  const tmpScript = `.stelow-tool-install-${id}-${process.pid}-${Date.now()}.sh`;
-  const tmpPath = nodeJoin(tmpdir(), tmpScript);
-  try {
-    if (id === "sem" || id === "ripwire") {
-      const scripts: Record<string, { url: string; args: string[]; env: Record<string, string> }> = {
-        sem: { url: "https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh", args: [], env: {} },
-        ripwire: {
-          url: "https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh",
-          args: [],
-          env: { RIPWIRE_REPO: "redhat-et/ripwire", RIPWIRE_INSTALL_YES: "1", RIPWIRE_NO_ACTIVATE: "1" },
-        },
-      };
-      const spec = scripts[id]!;
-      const download = await run("curl", ["-fsSL", "--max-time", "120", spec.url, "-o", tmpPath]);
-      log += download.out;
-      if (download.code !== 0) {
-        return { ok: false, version: null, log: tailLines(log) || "Download failed." };
-      }
-      const install = await run("bash", [tmpPath, ...spec.args], spec.env);
-      log += `\n${install.out}`;
-      if (install.code !== 0) {
-        return { ok: false, version: null, log: tailLines(log) || "Installer failed." };
-      }
-    } else if (id === "ast-grep") {
-      const prefix = deps.localBinDir ? nodeJoin(deps.homeDir, ".local") : "";
-      const args = ["install", "-g", ...(prefix ? ["--prefix", prefix] : []), "@ast-grep/cli"];
-      const install = await run("npm", args);
-      log += install.out;
-      if (install.code !== 0) {
-        return { ok: false, version: null, log: tailLines(log) || "npm install failed." };
-      }
-    } else {
-      const env = {
-        ...(deps.localBinDir ? { GOBIN: deps.localBinDir } : {}),
-        CGO_CFLAGS: "-DSQLITE_ENABLE_FTS5",
-      };
-      const install = await run("go", ["install", "github.com/1broseidon/cymbal@latest"], env);
-      log += install.out;
-      if (install.code !== 0) {
-        return { ok: false, version: null, log: tailLines(log) || "go install failed." };
-      }
-    }
-  } finally {
-    try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
-  }
+type InstallOutcome = {
+  result: ToolRunResult;
+  failure: string;
+};
 
+async function installScriptTool(
+  run: RunTool,
+  id: keyof typeof SCRIPT_INSTALLERS,
+  tmpPath: string,
+): Promise<InstallOutcome> {
+  const spec = SCRIPT_INSTALLERS[id];
+  const download = await run("curl", ["-fsSL", "--max-time", "120", spec.url, "-o", tmpPath]);
+  if (download.code !== 0) return { result: download, failure: "Download failed." };
+  const install = await run("bash", [tmpPath], spec.env);
+  return {
+    result: { code: install.code, out: `${download.out}\n${install.out}` },
+    failure: "Installer failed.",
+  };
+}
+
+async function installNpmTool(run: RunTool, deps: PlatformDeps): Promise<InstallOutcome> {
+  const prefix = deps.localBinDir ? nodeJoin(deps.homeDir, ".local") : "";
+  const args = ["install", "-g", ...(prefix ? ["--prefix", prefix] : []), "@ast-grep/cli"];
+  return { result: await run("npm", args), failure: "npm install failed." };
+}
+
+async function installGoTool(run: RunTool, deps: PlatformDeps): Promise<InstallOutcome> {
+  const result = await run("go", ["install", "github.com/1broseidon/cymbal@latest"], {
+    ...(deps.localBinDir ? { GOBIN: deps.localBinDir } : {}),
+    CGO_CFLAGS: "-DSQLITE_ENABLE_FTS5",
+  });
+  return { result, failure: "go install failed." };
+}
+
+async function verifyToolInstall(deps: PlatformDeps, run: RunTool, id: string, log: string) {
   for (const bin of installerBins(deps)[id] ?? []) {
     const check = await run(bin, ["--version"]);
     if (check.code === 0 && check.out.trim()) {
@@ -190,94 +189,113 @@ async function installTool(deps: PlatformDeps, id: string) {
   };
 }
 
-export function createPlatformHandlers(deps: PlatformDeps) {
-  let aboutLogoCache: string | null | undefined;
-
-  async function buildInfo() {
-    await deps.refreshPluginUpdate();
-    let skills: string[] = [];
-    try {
-      skills = readdirSync(deps.pluginSkillsDir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && entry.name.startsWith("stelow-"))
-        .map((entry) => entry.name)
-        .sort();
-    } catch { /* the panel shows an empty list */ }
-    return {
-      version: deps.buildInfo.version,
-      builtAt: deps.buildInfo.builtAt,
-      stelowVersion: deps.readPinnedStelowVersion(),
-      skills,
-      pluginUpdate: deps.getPluginUpdate(),
-      githubRelease: deps.getGithubRelease(),
-    };
-  }
-
-  async function applyPluginUpdate() {
-    try {
-      const result = await deps.bb.sdk.plugins.applyUpdate({ pluginId: deps.bb.pluginId });
-      await deps.refreshPluginUpdate(true);
-      return {
-        applied: result.applied,
-        outcome: result.outcome,
-        detail: result.detail ?? null,
-        from: result.from.version,
-        to: result.to?.version ?? null,
-      };
-    } catch (error) {
-      return {
-        applied: false,
-        outcome: "unavailable" as const,
-        detail: error instanceof Error ? error.message : String(error),
-        from: null,
-        to: null,
-      };
+async function installTool(deps: PlatformDeps, id: string) {
+  const run = deps.runTool ?? defaultRun;
+  const tmpPath = nodeJoin(tmpdir(), `.stelow-tool-install-${id}-${process.pid}-${Date.now()}.sh`);
+  let log = "";
+  try {
+    const outcome = id === "sem" || id === "ripwire"
+      ? await installScriptTool(run, id, tmpPath)
+      : id === "ast-grep"
+        ? await installNpmTool(run, deps)
+        : await installGoTool(run, deps);
+    log = outcome.result.out;
+    if (outcome.result.code !== 0) {
+      return { ok: false, version: null, log: tailLines(log) || outcome.failure };
     }
+  } finally {
+    try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
   }
+  return verifyToolInstall(deps, run, id, log);
+}
 
-  async function checkPluginUpdate() {
-    await deps.refreshPluginUpdate(true);
-    return { pluginUpdate: deps.getPluginUpdate(), githubRelease: deps.getGithubRelease() };
-  }
-
-  async function aboutLogo() {
-    if (aboutLogoCache === undefined) aboutLogoCache = loadAboutLogo(deps.pluginDir);
-    return { dataUri: aboutLogoCache ?? null };
-  }
-
-  async function listProviderModels() {
-    const providers = await deps.bb.sdk.providers.list().catch(() => []);
-    const models: Array<{ providerId: string; model: string; displayName: string }> = [];
-    const availability = new Map<string, boolean>();
-    for (const provider of providers) {
-      const result = await deps.bb.sdk.providers.models({ providerId: provider.id }).catch(() => null);
-      availability.set(provider.id, result !== null);
-      if (provider.id === "pi") {
-        const catalog = new Map((result?.models ?? []).map((model) => [model.model, model.displayName]));
-        for (const model of PI_BIFROST_PRESET_MODELS) {
-          models.push({ providerId: "pi", model: model.model, displayName: catalog.get(model.model) ?? model.displayName });
-        }
-        continue;
-      }
-      for (const model of result?.models ?? []) {
-        models.push({ providerId: provider.id, model: model.model, displayName: model.displayName });
-      }
-    }
-    return {
-      providers: providers.map((provider) => ({
-        id: provider.id,
-        displayName: provider.displayName,
-        modelsAvailable: availability.get(provider.id) ?? false,
-      })),
-      models,
-    };
-  }
-
+async function buildInfo(deps: PlatformDeps) {
+  await deps.refreshPluginUpdate();
+  let skills: string[] = [];
+  try {
+    skills = readdirSync(deps.pluginSkillsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith("stelow-"))
+      .map((entry) => entry.name)
+      .sort();
+  } catch { /* the panel shows an empty list */ }
   return {
-    buildInfo,
-    applyPluginUpdate,
-    checkPluginUpdate,
-    aboutLogo,
-    listProviderModels,
+    version: deps.buildInfo.version,
+    builtAt: deps.buildInfo.builtAt,
+    stelowVersion: deps.readPinnedStelowVersion(),
+    skills,
+    pluginUpdate: deps.getPluginUpdate(),
+    githubRelease: deps.getGithubRelease(),
+  };
+}
+
+async function applyPluginUpdate(deps: PlatformDeps) {
+  try {
+    const result = await deps.bb.sdk.plugins.applyUpdate({ pluginId: deps.bb.pluginId });
+    await deps.refreshPluginUpdate(true);
+    return {
+      applied: result.applied,
+      outcome: result.outcome,
+      detail: result.detail ?? null,
+      from: result.from.version,
+      to: result.to?.version ?? null,
+    };
+  } catch (error) {
+    return {
+      applied: false,
+      outcome: "unavailable" as const,
+      detail: error instanceof Error ? error.message : String(error),
+      from: null,
+      to: null,
+    };
+  }
+}
+
+function createAboutLogoHandler(deps: PlatformDeps) {
+  let cached: string | null | undefined;
+  return async () => {
+    if (cached === undefined) cached = loadAboutLogo(deps.pluginDir);
+    return { dataUri: cached ?? null };
+  };
+}
+
+async function listProviderModels(deps: PlatformDeps) {
+  const providers = await deps.bb.sdk.providers.list().catch(() => []);
+  const models: Array<{ providerId: string; model: string; displayName: string }> = [];
+  const availability = new Map<string, boolean>();
+  for (const provider of providers) {
+    const result = await deps.bb.sdk.providers.models({ providerId: provider.id }).catch(() => null);
+    availability.set(provider.id, result !== null);
+    if (provider.id === "pi") {
+      const catalog = new Map((result?.models ?? []).map((model) => [model.model, model.displayName]));
+      for (const model of PI_BIFROST_PRESET_MODELS) {
+        models.push({ providerId: "pi", model: model.model, displayName: catalog.get(model.model) ?? model.displayName });
+      }
+      continue;
+    }
+    for (const model of result?.models ?? []) {
+      models.push({ providerId: provider.id, model: model.model, displayName: model.displayName });
+    }
+  }
+  return {
+    providers: providers.map((provider) => ({
+      id: provider.id,
+      displayName: provider.displayName,
+      modelsAvailable: availability.get(provider.id) ?? false,
+    })),
+    models,
+  };
+}
+
+export function createPlatformHandlers(deps: PlatformDeps) {
+  return {
+    buildInfo: () => buildInfo(deps),
+    applyPluginUpdate: () => applyPluginUpdate(deps),
+    checkPluginUpdate: async () => {
+      await deps.refreshPluginUpdate(true);
+      return { pluginUpdate: deps.getPluginUpdate(), githubRelease: deps.getGithubRelease() };
+    },
+    aboutLogo: createAboutLogoHandler(deps),
+    listProviderModels: () => listProviderModels(deps),
     toolStatus: () => toolStatus(deps),
     installTool: ({ id }: { id: string }) => installTool(deps, id),
     previewState: ({ cardId, appOrigin }: { cardId: string; appOrigin?: string | null }) =>

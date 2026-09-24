@@ -49,6 +49,18 @@ function harness() {
   return { providers, boardCalls };
 }
 
+test("mention registration publishes exactly the workflow and file providers", () => {
+  const { providers } = harness();
+  assert.deepEqual([...providers.keys()], ["workflow", "file"]);
+  assert.deepEqual(
+    [...providers.values()].map(({ id, label, triggers }) => ({ id, label, triggers })),
+    [
+      { id: "workflow", label: "Stelow workflows", triggers: ["@"] },
+      { id: "file", label: "Workspace files", triggers: ["@"] },
+    ],
+  );
+});
+
 test("workflow mentions include exploratory cards when the project board misses them", async () => {
   const { providers, boardCalls } = harness();
   const result = await providers.get("workflow").search({ query: "idea", projectId: "project-1" });

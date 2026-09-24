@@ -41,7 +41,7 @@ function card(overrides = {}) {
   };
 }
 
-function harness(files = {}) {
+function harness(files = {}, overrides = {}) {
   const reads = [];
   const bb = {
     sdk: {
@@ -62,6 +62,7 @@ function harness(files = {}) {
     joinPath: (root, relative) => `${root}/${relative}`,
     workspaceRelative: (root, path) => path.replace(`${root}/`, ""),
     errors: { workspaceUnavailable: "Workspace is unavailable." },
+    ...overrides,
   });
   return { runtime, reads };
 }
@@ -100,6 +101,19 @@ test("research round projection rejects an index mirror", async () => {
   );
   assert.equal(result.rounds[0].status, "missing");
   assert.deepEqual(result.rounds[0].files, []);
+});
+
+test("explore artifact dispatch resolves workspace state before checking the stage", async () => {
+  let workspaceCalls = 0;
+  const { runtime } = harness({}, {
+    cardWorkspace: async () => {
+      workspaceCalls += 1;
+      return { path: "/repo", hostId: "host-1" };
+    },
+  });
+  const result = await runtime.exploreArtifact(card({ kind: "explore", explore_stage: null }));
+  assert.deepEqual(result, { ready: false, fingerprint: null, failures: [] });
+  assert.equal(workspaceCalls, 1);
 });
 
 test("non-research readiness refuses without reading workspace files", async () => {
