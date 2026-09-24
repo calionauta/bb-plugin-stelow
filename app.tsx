@@ -48,6 +48,7 @@ import { FiltersBar } from "./components/board/board-filters";
 import { ViewToggle } from "./components/board/board-view-toggle";
 import { BuildList, ExploreList, ResearchList } from "./components/board/track-lists";
 import { useReturnFocus } from "./components/board/use-return-focus";
+import { pendingReview } from "./lib/board-list-presentation.mjs";
 import { normalizeBoardView, type BoardTrack } from "./lib/board-views.mjs";
 import {
   STELOW_PANEL_ID,
@@ -176,19 +177,6 @@ function statusGlyph(status: string) {
 }
 
 const buildStatusPillProps = (card: CardItem) => ({ card, statusTone, intentLabel: (intent: string) => INTENT_LABEL[intent] });
-
-// A finished card is work a human has to review, and a Done column that looks
-// inert teaches people to stop opening it. This is deliberately NOT the amber
-// needs-attention treatment: that one means "a worker is blocked on you", which
-// is what the Inbox badge and the attention filter count. Finished work gets
-// its own quieter, emerald signal so neither meaning is diluted.
-function pendingReview(card: Pick<CardItem, "status" | "hasPendingReview">): boolean {
-  return card.status === "completed" && card.hasPendingReview;
-}
-
-function ReviewChip() {
-  return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
-}
 
 interface SidebarAccessoryHandle {
   count: number;

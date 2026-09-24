@@ -74,6 +74,10 @@ const ACTIVITY_GLYPH: Record<string, string> = { running: "●", "awaiting-answe
 const ACTIVITY_LABEL: Record<string, string> = { idle: "Paused", running: "Working", "awaiting-answer": "Waiting for you", error: "Failed" };
 const ACTIVITY_TITLE: Record<string, string> = { running: "Worker is actively working", "awaiting-answer": "Waiting for your answer", error: "Worker failed. Needs attention." };
 
+export function ReviewChip() {
+  return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
+}
+
 export function attentionLabel(activity: string): string {
   if (activity === "awaiting-answer") return "Answer required";
   if (activity === "error") return "Worker failed";

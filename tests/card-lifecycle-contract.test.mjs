@@ -540,7 +540,8 @@ assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplic
 // Finished work is not blocked work. The review signal is its own quieter
 // treatment, derived from ONE predicate, and it is the completion's read state
 // — never the amber attention flag the Inbox badge and attention filter count.
-assert.match(app, /card\.status === "completed" && card\.hasPendingReview/, "only an unopened, completed card asks for review");
+assert.match(app, /import \{ pendingReview \} from "\.\/lib\/board-list-presentation\.mjs"/, "board surfaces share the tested review predicate");
+assert.match(trackLists, /pendingReview\(card\) \? <ReviewChip/, "list rows only ask for review through the shared completion predicate");
 assert.match(server, /hasPendingReview\(db, row\.id\)/, "list rows carry the review signal from the shared Inbox helper");
 assert.match(server, /hasPendingReview\(db, cardId\)/, "card detail carries the same review signal");
 assert.match(server, /current\.kind === "build" && !opts\?\.suppressCompletionEvent/, "exactly one completion notification per finished Build card");

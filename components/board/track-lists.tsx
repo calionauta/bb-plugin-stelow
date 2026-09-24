@@ -3,13 +3,16 @@ import {
   ActivityPill,
   AttentionChip,
   DoingNowPill,
+  ReviewChip,
   ScopeStrip,
   attentionLabel,
 } from "../dashboard/build-status-pills";
 import {
   buildListMeta,
   exploreListMeta,
+  pendingReview,
   researchListMeta,
+  showScopeStrip,
 } from "../../lib/board-list-presentation.mjs";
 import {
   BUILD_BOARD_COLUMN_LABELS,
@@ -97,7 +100,7 @@ function TrackListRow({ card, meta, onOpen, onOpenThread }: {
           <strong className="block break-words text-sm leading-5">{card.displayName}</strong>
           <span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">
             {card.projectName}{meta ? ` · ${meta}` : ""}
-            {card.scopeSummary.scopesTotal > 0 ? (
+            {showScopeStrip(card) ? (
               <> · <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} /></>
             ) : null}
           </span>
@@ -107,7 +110,7 @@ function TrackListRow({ card, meta, onOpen, onOpenThread }: {
         <ActivityPill activity={card.activity} />
         {showAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
         {showDoingNow(card) ? <DoingNowPill names={card.doingNow ?? []} /> : null}
-        {card.hasPendingReview ? <ReviewChip /> : null}
+        {pendingReview(card) ? <ReviewChip /> : null}
         <span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span>
       </span>
     </button>
@@ -116,7 +119,7 @@ function TrackListRow({ card, meta, onOpen, onOpenThread }: {
 
 function rowTone(card: ListCard): string {
   if (card.needsAttention) return "mt-1 size-2 shrink-0 rounded-full bg-amber-500";
-  if (card.hasPendingReview) return "mt-1 size-2 shrink-0 rounded-full bg-emerald-500";
+  if (pendingReview(card)) return "mt-1 size-2 shrink-0 rounded-full bg-emerald-500";
   if (card.activity === "running") return "mt-1 size-2 shrink-0 rounded-full bg-primary";
   return "mt-1 size-2 shrink-0 rounded-full bg-muted-foreground/40";
 }
@@ -128,15 +131,6 @@ function showAttention(card: ListCard): boolean {
 function showDoingNow(card: ListCard): boolean {
   return (card.activity === "running" || card.activity === "awaiting-answer")
     && (card.doingNow?.length ?? 0) > 0;
-}
-
-function ReviewChip() {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-      <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
-      Review
-    </span>
-  );
 }
 
 function TrackGroupList({ groups, collapsed, onToggle, columns, labels, metaFor, onOpenCard, onOpenThread }: {

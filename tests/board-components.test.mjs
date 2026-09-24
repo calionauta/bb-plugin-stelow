@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import {
   buildListMeta,
   exploreListMeta,
+  pendingReview,
   researchListMeta,
+  showScopeStrip,
 } from "../lib/board-list-presentation.mjs";
 import { normalizeBoardView, viewsForTrack } from "../lib/board-views.mjs";
 
@@ -52,6 +54,32 @@ assert.equal(
   "research rows preserve known and fallback strategy labels",
 );
 assert.equal(researchListMeta({}, new Map()), null, "research rows without strategies omit the meta fragment");
+assert.equal(pendingReview({ status: "completed", hasPendingReview: true }), true, "an unopened completion asks for review");
+assert.equal(
+  pendingReview({ status: "in-progress", hasPendingReview: true }),
+  false,
+  "a stale review signal cannot label unfinished work for review",
+);
+assert.equal(
+  showScopeStrip({ kind: "build", scopeSummary }),
+  true,
+  "build list rows retain their scope progress strip",
+);
+assert.equal(
+  showScopeStrip({ kind: "research", scopeSummary }),
+  false,
+  "research list rows do not gain build-only scope progress",
+);
+assert.equal(
+  showScopeStrip({ kind: "explore", scopeSummary }),
+  false,
+  "explore list rows do not gain build-only scope progress",
+);
+assert.equal(
+  showScopeStrip({ kind: "build", scopeSummary: { ...scopeSummary, scopesTotal: 0 } }),
+  false,
+  "scopeless build rows do not render an empty progress strip",
+);
 assert.equal(
   exploreListMeta({ exploreStage: "proto" }, new Map([["proto", "Prototype"]])),
   "Prototype",
@@ -66,6 +94,8 @@ for (const adapter of ["BuildList", "ResearchList", "ExploreList"]) {
 assert.match(lists, /export function BuildList[\s\S]*buildListMeta\(card\)/, "build list uses the tested build metadata adapter");
 assert.match(lists, /export function ResearchList[\s\S]*researchListMeta\(card, strategyLabelById\)/, "research list uses strategy metadata");
 assert.match(lists, /export function ExploreList[\s\S]*exploreListMeta\(card, stageLabelById\)/, "explore list uses technique metadata");
+assert.match(lists, /showScopeStrip\(card\)/, "shared rows apply the tested track-specific progress rule");
+assert.match(lists, /pendingReview\(card\) \? <ReviewChip/, "shared rows apply the tested completion-review rule");
 assert.equal((app.match(/function (?:BuildList|ResearchList|ExploreList)\(/g) ?? []).length, 0, "list adapters no longer live in the app shell");
 
 assert.match(filters, /function optionalFacet\([\s\S]*!options \|\| !values \|\| !onToggle/, "a facet appears only when its complete contract exists");
