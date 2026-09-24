@@ -6,6 +6,7 @@ import {
 } from "../creation/creation-settings";
 import { CreateBuildDialog } from "../creation/create-build-dialog";
 import { GithubIssuesDialog } from "../github/github-issues-dialog";
+import { STORAGE_KEYS } from "../../lib/panel-storage.mjs";
 import type {
   BuildPanelData,
   BuildPreset,
@@ -59,7 +60,7 @@ export function BuildPanelDialogs(props: Props) {
   return (
     <>
       {props.renderOnboarding({
-        storageKey: "stelow-onboard-build-v1",
+        storageKey: STORAGE_KEYS.onboardBuild,
         title: "Choose your agent presets",
         intro: "Set the preset each phase runs with. Planning depth and your review gates "
           + "are a separate choice — picked per card in New issue, under the description.",
@@ -88,7 +89,6 @@ export function BuildPanelDialogs(props: Props) {
         bucketGallery={props.bucketGallery}
         onOpenPresets={props.onOpenPresets}
       />
-      {props.bucketGallery.bucketGallery}
       <GithubIssuesDialog
         open={props.githubOpen}
         onOpenChange={props.onGithubOpenChange}

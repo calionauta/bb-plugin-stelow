@@ -19,12 +19,9 @@ import { BuildPanelView } from "./build-panel-view";
 function buildViewState(state: ReturnType<typeof useBuildPanelState>, rpc: ReturnType<typeof useRpc<typeof rpcContract>>): BuildPanelState {
   return {
     rpc,
-    data: state.data,
     projects: state.data.projects,
     cards: state.data.cards,
     loading: state.loading,
-    isInitialLoad: state.isInitialLoad,
-    load: state.load,
     grouped: state.grouped,
     projectIds: state.projectIds,
     stages: state.stages,
@@ -33,16 +30,13 @@ function buildViewState(state: ReturnType<typeof useBuildPanelState>, rpc: Retur
     activities: state.activities,
     attention: state.attention,
     stageOptions: state.stageOptions,
-    appetite: state.appetite,
-    reviewGates: state.reviewGates,
-    setAppetite: state.setAppetite,
-    setReviewGates: state.setReviewGates,
     viewMode: state.viewMode,
     setViewMode: state.setViewMode,
     collapsedColumns: state.collapsedColumns,
     collapsedListGroups: state.collapsedListGroups,
     githubAuthMissing: state.data.githubStatus?.pluginAvailable === true
       && state.data.githubStatus.ghOk === false,
+    githubAutomationEnabled: state.data.githubAutomationEnabled,
     toggleProject: state.toggleProject,
     toggleStage: state.toggleStage,
     toggleIntent: state.toggleIntent,
@@ -109,34 +103,30 @@ function openBuildCard(navigate: ReturnType<typeof useBbNavigate>) {
   };
 }
 
-export function BuildPanel({
-  active,
-  renderOnboarding,
-  renderPresetManager,
-}: {
+type DialogControllerProps = {
   active: boolean;
-  renderOnboarding: (props: OnboardingProps) => React.ReactNode;
-  renderPresetManager: (props: PresetManagerProps) => React.ReactNode;
-}) {
-  const { projectId } = useBbContext();
-  const navigate = useBbNavigate();
-  const rpc = useRpc<typeof rpcContract>();
-  const state = useBuildPanelState(rpc, projectId);
+  state: ReturnType<typeof useBuildPanelState>;
+  rpc: ReturnType<typeof useRpc<typeof rpcContract>>;
+  projectId: string | null;
+  renderOnboarding: DialogsProps["renderOnboarding"];
+  renderPresetManager: DialogsProps["renderPresetManager"];
+  onOpenCard: ReturnType<typeof openBuildCard>;
+};
+
+function useBuildDialogController(props: DialogControllerProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
-  const openCard = openBuildCard(navigate);
   const bucketGallery = useBucketGallery(
-    state.grouped.inbox ?? [],
-    (card) => openCard(card, card.id),
+    props.state.grouped.inbox ?? [],
+    (card) => props.onOpenCard(card, card.id),
   );
-  const viewState = buildViewState(state, rpc);
   const dialogs = (
     <BuildDialogs
-      active={active}
-      state={state}
-      rpc={rpc}
-      projectId={projectId}
+      active={props.active}
+      state={props.state}
+      rpc={props.rpc}
+      projectId={props.projectId}
       createOpen={createOpen}
       githubOpen={githubOpen}
       presetsOpen={presetsOpen}
@@ -144,10 +134,44 @@ export function BuildPanel({
       setGithubOpen={setGithubOpen}
       setPresetsOpen={setPresetsOpen}
       bucketGallery={bucketGallery}
-      renderOnboarding={renderOnboarding}
-      renderPresetManager={renderPresetManager}
+      renderOnboarding={props.renderOnboarding}
+      renderPresetManager={props.renderPresetManager}
     />
   );
+  return {
+    dialogs,
+    openCreate: () => setCreateOpen(true),
+    openGithub: () => setGithubOpen(true),
+    openPresets: () => setPresetsOpen(true),
+  };
+}
+
+type BuildPanelProps = {
+  active: boolean;
+  renderOnboarding: (props: OnboardingProps) => React.ReactNode;
+  renderPresetManager: (props: PresetManagerProps) => React.ReactNode;
+};
+
+export function BuildPanel({
+  active,
+  renderOnboarding,
+  renderPresetManager,
+}: BuildPanelProps) {
+  const { projectId } = useBbContext();
+  const navigate = useBbNavigate();
+  const rpc = useRpc<typeof rpcContract>();
+  const state = useBuildPanelState(rpc, projectId);
+  const openCard = openBuildCard(navigate);
+  const dialogs = useBuildDialogController({
+    active,
+    state,
+    rpc,
+    projectId,
+    renderOnboarding,
+    renderPresetManager,
+    onOpenCard: openCard,
+  });
+  const viewState = buildViewState(state, rpc);
   return (
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
@@ -155,10 +179,10 @@ export function BuildPanel({
           {state.isInitialLoad ? <TrackSkeleton /> : (
             <BuildPanelView
               state={viewState}
-              dialogs={dialogs}
-              onNewIssue={() => setCreateOpen(true)}
-              onOpenPresets={() => setPresetsOpen(true)}
-              onOpenGithub={() => setGithubOpen(true)}
+              dialogs={dialogs.dialogs}
+              onNewIssue={dialogs.openCreate}
+              onOpenPresets={dialogs.openPresets}
+              onOpenGithub={dialogs.openGithub}
               onOpenCard={openCard}
               onOpenThread={(threadId) => navigate.toThread(threadId)}
               onMoveCard={(cardId, target) => void moveBuildCard(rpc, cardId, target)}

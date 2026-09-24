@@ -2,6 +2,10 @@ import type { ReactNode } from "react";
 import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { INTENT_LABEL } from "../detail/card-detail-route";
 import { kanbanGridColumns } from "../../lib/kanban-layout.mjs";
+import {
+  BUILD_BOARD_COLUMN_LABELS,
+  BUILD_BOARD_VISIBLE_COLUMNS,
+} from "../../lib/workflow-vocabulary.mjs";
 import { FiltersBar } from "../board/board-filters";
 import { ViewToggle } from "../board/board-view-toggle";
 import { BuildList } from "../board/track-lists";
@@ -12,8 +16,8 @@ import { HillBoard } from "../board/hill-board";
 import { BucketGalleryButton } from "../board/card-gallery";
 import { Button } from "../ui/button";
 import { Icon } from "../ui/icon";
+import { cn } from "../../lib/utils";
 import type { BuildPanelState } from "./build-panel-types";
-import { BUILD_COLUMN_LABELS, BUILD_VISIBLE_COLUMNS } from "./build-panel-state";
 
 const INTENT_OPTIONS = [
   { value: "all", label: "All types" },
@@ -21,9 +25,9 @@ const INTENT_OPTIONS = [
 ];
 const STATUS_OPTIONS = [
   { value: "all", label: "Any status" },
-  ...BUILD_VISIBLE_COLUMNS.map((column) => ({
+  ...BUILD_BOARD_VISIBLE_COLUMNS.map((column) => ({
     value: column,
-    label: BUILD_COLUMN_LABELS[column] ?? column,
+    label: BUILD_BOARD_COLUMN_LABELS[column] ?? column,
   })),
 ];
 const ACTIVITY_OPTIONS = [
@@ -69,8 +73,12 @@ function BuildHeaderIntro({ attentionCount, onAttention }: Pick<BuildHeaderProps
         <button
           type="button"
           onClick={onAttention}
-          className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline dark:text-amber-300"
-          aria-label={`Show the ${attentionCount} cards that need attention`}
+          className={cn(
+            "mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4",
+            "hover:underline focus-visible:outline focus-visible:outline-2",
+            "focus-visible:outline-primary dark:text-amber-300",
+          )}
+          aria-label={`Show the ${attentionCount} ${attentionCount === 1 ? "card" : "cards"} that need attention`}
         >
           {attentionCount} {attentionCount === 1 ? "item needs" : "items need"} your attention
         </button>
@@ -128,7 +136,8 @@ function GithubAuthNotice({ enabled }: { enabled: boolean }) {
   return (
     <div className="mb-3 flex flex-col gap-1 rounded-md border p-2 text-xs sm:flex-row sm:items-center sm:gap-2">
       <span className="text-amber-700 dark:text-amber-300">
-        Import issues needs a GitHub account linked in the github plugin.
+        Import issues needs a GitHub account linked in the{" "}
+        <span className="font-medium">github</span> plugin.
       </span>
       <a className="text-primary underline underline-offset-2" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">
         Set up GitHub auth
@@ -148,7 +157,10 @@ function EmptyBuildState({ onNewIssue }: { onNewIssue: () => void }) {
       </p>
       <div className="mt-4 flex flex-col items-center justify-center gap-2 sm:flex-row">
         <Button onClick={onNewIssue}>Start new issue</Button>
-        <UrlLink href="https://github.com/calionauta/stelow" className="text-sm font-medium text-muted-foreground underline underline-offset-4">
+        <UrlLink
+          href="https://github.com/calionauta/stelow"
+          className="text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
           Learn about Stelow <span aria-hidden="true">↗</span>
         </UrlLink>
       </div>
@@ -211,9 +223,9 @@ function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Pr
     <div
       data-testid="kanban-board"
       className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
-      style={{ gridTemplateColumns: kanbanGridColumns(BUILD_VISIBLE_COLUMNS, state.collapsedColumns) }}
+      style={{ gridTemplateColumns: kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns) }}
     >
-      {BUILD_VISIBLE_COLUMNS.map((column) => (
+      {BUILD_BOARD_VISIBLE_COLUMNS.map((column) => (
         <BoardColumn
           key={column}
           column={column}
@@ -221,7 +233,7 @@ function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Pr
           collapsed={Boolean(state.collapsedColumns[column])}
           onToggleCollapsed={() => state.toggleColumn(column)}
           onDrop={(cardId) => onMoveCard(cardId, column)}
-          labels={BUILD_COLUMN_LABELS}
+          labels={BUILD_BOARD_COLUMN_LABELS}
           renderCard={(card) => <BoardCard card={card} onOpen={() => onOpenCard(card, card.id)} />}
         />
       ))}
@@ -231,16 +243,16 @@ function BuildBoardView({ state, onOpenCard, onOpenThread, onMoveCard }: Omit<Pr
 
 export function BuildPanelView(props: Props) {
   const { state } = props;
-  const attentionCount = state.data.cards.filter(
+  const attentionCount = state.cards.filter(
     (card) => card.needsAttention && card.status !== "archived",
   ).length;
   return (
     <>
-      {dialogsWith(props)}
+      {props.dialogs}
       <BuildHeader
         attentionCount={attentionCount}
         groupedInbox={state.grouped.inbox}
-        githubAutomationEnabled={state.data.githubAutomationEnabled}
+        githubAutomationEnabled={state.githubAutomationEnabled}
         onNewIssue={props.onNewIssue}
         onOpenPresets={props.onOpenPresets}
         onOpenGithub={props.onOpenGithub}
@@ -250,6 +262,12 @@ export function BuildPanelView(props: Props) {
       <GithubAuthNotice enabled={state.githubAuthMissing} />
       <BuildFilters state={state} onAttention={() => state.setAttention(true)} />
       {state.cards.length === 0 && !state.loading ? <EmptyBuildState onNewIssue={props.onNewIssue} /> : null}
+      {state.viewMode === "board" ? (
+        <p className="text-xs text-muted-foreground">
+          <span className="sm:hidden">Swipe sideways to view every stage.</span>
+          <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
+        </p>
+      ) : null}
       <FlowStrip
         rpc={state.rpc}
         projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}
@@ -258,8 +276,4 @@ export function BuildPanelView(props: Props) {
       <BuildBoardView {...props} />
     </>
   );
-}
-
-function dialogsWith(props: Props) {
-  return props.dialogs;
 }

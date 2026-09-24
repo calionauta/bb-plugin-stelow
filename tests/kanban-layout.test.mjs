@@ -21,6 +21,7 @@ assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanb
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const buildPanel = readFileSync(join(root, "components", "panels", "build-panel.tsx"), "utf8");
+const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
 const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
 const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
@@ -39,13 +40,18 @@ assert.equal(
 // Rendered boards hide the Bucket column (grouping, moves, and filters
 // keep the full catalog): the kanban grids and extracted list adapters
 // iterate the visible lists, so no empty Bucket column renders anywhere.
-assert.match(buildPanelView, /BUILD_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "build kanban iterates visible columns");
+assert.match(buildPanelView, /BUILD_BOARD_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "build kanban iterates visible columns");
 assert.match(app, /VISIBLE_RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanban iterates visible columns");
 assert.match(trackLists, /const BUILD_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS/, "build lists omit the Bucket column");
 assert.match(trackLists, /const LIGHTWEIGHT_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS/, "lightweight lists omit the Bucket column");
 assert.doesNotMatch(app, /{COLUMNS\.map\(\(column\) => \(/, "the build kanban renders no Bucket column");
 assert.doesNotMatch(app, /{RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanbans render no Bucket column");
-assert.ok(buildPanelView.includes("kanbanGridColumns(BUILD_VISIBLE_COLUMNS, state.collapsedColumns)"), "the build grid template matches its rendered columns");
+assert.ok(
+  buildPanelView.includes(
+    "kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns)",
+  ),
+  "the build grid template matches its rendered columns",
+);
 assert.ok(app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns)"), "lightweight grid templates match their rendered columns");
 // Order is product: New, then Bucket, then Agent Presets — the pile sits
 // beside creation, before configuration. A drift back fails here.
@@ -75,6 +81,17 @@ assert.equal(
   "each track owns one pile opener shared by its header and creation dialog",
 );
 assert.match(buildDialogKanban, /bucketGallery=\{bucketGallery\}/, "the build dialog receives its track pile opener as a prop");
+assert.equal(
+  (buildDialogKanban.match(/bucketGallery\.bucketGallery/g) ?? []).length
+    + (buildPanelDialogs.match(/bucketGallery\.bucketGallery/g) ?? []).length,
+  1,
+  "the shared Build Bucket gallery mounts once inside the creation dialog",
+);
+assert.match(
+  buildPanelView,
+  /Swipe sideways to view every stage\.[\s\S]*Use Shift \+ scroll to move across stages\./,
+  "the Build board keeps its mobile and desktop scroll guidance",
+);
 assert.equal(((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (buildDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (researchDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (exploreDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length), 3, "each creation checkbox links to its pile's gallery");
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
 assert.doesNotMatch(
@@ -129,7 +146,16 @@ assert.equal(
   6,
   "research and explore share one callback for header and creation gallery",
 );
-assert.match(buildPanel, /openBuildCard\(navigate\)[\s\S]*useBucketGallery\(/, "Build shares one callback for header and creation gallery");
+assert.match(
+  buildPanel,
+  /const openCard = openBuildCard\(navigate\)[\s\S]*onOpenCard: openCard/,
+  "the Build controller receives the panel's card-navigation callback",
+);
+assert.match(
+  buildPanel,
+  /useBucketGallery\([\s\S]*props\.onOpenCard\(card, card\.id\)/,
+  "the shared creation gallery delegates through that callback",
+);
 assert.match(cardGallery, /useBucketGallery\(cards, onOpenCard\)/, "the Bucket hook delegates card navigation to its caller");
 assert.match(cardGallery, /setOpen\(false\);[\s\S]*onOpenCard\(card\)/, "choosing a Bucket card closes before delegated navigation");
 assert.doesNotMatch(

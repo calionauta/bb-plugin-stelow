@@ -25,3 +25,9 @@ export function filterAndGroupBuildCards<T extends BuildCard>(
 ): Record<string, T[]>;
 
 export function buildCardMatches(card: BuildCard, filters: BuildFilters): boolean;
+
+export function reviewGatesAfterDefaults<T>(
+  current: T,
+  defaults: T,
+  hasStoredSelection: boolean,
+): T;

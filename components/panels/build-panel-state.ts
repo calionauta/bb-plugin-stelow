@@ -15,12 +15,13 @@ import {
   usePersistentCollapsedGroups,
 } from "../panel/panel-state-hooks";
 import { toggleFilterValue } from "../../lib/kanban-layout.mjs";
-import { filterAndGroupBuildCards } from "../../lib/build-panel-state.mjs";
+import {
+  filterAndGroupBuildCards,
+  reviewGatesAfterDefaults,
+} from "../../lib/build-panel-state.mjs";
 import { STORAGE_KEYS } from "../../lib/panel-storage.mjs";
 import {
   BUILD_BOARD_COLUMNS,
-  BUILD_BOARD_COLUMN_LABELS,
-  BUILD_BOARD_VISIBLE_COLUMNS,
   STAGE_SEQUENCE,
 } from "../../lib/workflow-vocabulary.mjs";
 
@@ -48,35 +49,46 @@ const EMPTY_DATA: BuildPanelData = {
   projects: [],
 };
 
-function readStoredReviewGates(): string | null {
-  try {
-    return window.localStorage.getItem(STORAGE_KEYS.reviewGates);
-  } catch {
-    return null;
-  }
-}
+type StoredReviewGates = {
+  present: boolean;
+  value: ReviewGates;
+};
 
-function readReviewGates(): ReviewGates {
-  const raw = readStoredReviewGates();
-  if (!raw) return [];
+function readStoredReviewGates(): StoredReviewGates {
+  let raw: string | null;
   try {
-    return sanitizeReviewGates(JSON.parse(raw));
+    raw = window.localStorage.getItem(STORAGE_KEYS.reviewGates);
   } catch {
-    return [];
+    return { present: false, value: [] };
+  }
+  if (raw === null) return { present: false, value: [] };
+  if (!raw) return { present: true, value: [] };
+  try {
+    return {
+      present: true,
+      value: sanitizeReviewGates(JSON.parse(raw)),
+    };
+  } catch {
+    return { present: true, value: [] };
   }
 }
 
 function useBuildWorkflowPreferences(rpc: BuildRpc) {
   const [appetite, setAppetite] = useState<Appetite>("Lean");
-  const [reviewGates, setReviewGates] = useState<ReviewGates>(readReviewGates);
+  const [initialReviewGates] = useState(() => readStoredReviewGates());
+  const [reviewGates, setReviewGates] = useState<ReviewGates>(
+    initialReviewGates.value,
+  );
   useEffect(() => {
     void rpc.call("boardWorkflowDefaults", {}).then((defaults) => {
       setAppetite(defaults.appetite);
-      if (readStoredReviewGates() === null) {
-        setReviewGates(sanitizeReviewGates(defaults.reviewGates));
-      }
+      setReviewGates((current) => reviewGatesAfterDefaults(
+        current,
+        sanitizeReviewGates(defaults.reviewGates),
+        initialReviewGates.present,
+      ));
     }).catch(() => undefined);
-  }, [rpc]);
+  }, [initialReviewGates, rpc]);
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEYS.reviewGates, JSON.stringify(reviewGates));
@@ -225,6 +237,3 @@ export async function moveBuildCard(rpc: BuildRpc, cardId: string, target: strin
   const result = await rpc.call("moveCard", { cardId, status });
   if (!result.ok) toast.error(result.error ?? "Move failed");
 }
-
-export const BUILD_COLUMN_LABELS = BUILD_BOARD_COLUMN_LABELS;
-export const BUILD_VISIBLE_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS;

@@ -25,6 +25,7 @@ const viewToggle = readFileSync(join(root, "components/board/board-view-toggle.t
 const lists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
 const panelState = readFileSync(join(root, "components/panel/panel-state-hooks.ts"), "utf8");
 const buildPanel = readFileSync(join(root, "components/panels/build-panel.tsx"), "utf8");
+const buildPanelDialogs = readFileSync(join(root, "components/panels/build-panel-dialogs.tsx"), "utf8");
 const buildPanelState = readFileSync(join(root, "components/panels/build-panel-state.ts"), "utf8");
 const buildPanelView = readFileSync(join(root, "components/panels/build-panel-view.tsx"), "utf8");
 const inboxPanel = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
@@ -86,6 +87,11 @@ assert.equal((app.match(/function InboxPanel\(/g) ?? []).length, 0, "the Inbox p
 assert.match(app, /<BuildPanel\b/, "the app shell routes Build through the extracted panel");
 assert.match(buildPanel, /useBuildPanelState\(rpc, projectId\)/, "the Build panel consumes its extracted state hook");
 assert.match(buildPanel, /useBucketGallery\(/, "the Build panel composes the shared Bucket gallery hook");
+assert.match(
+  buildPanelDialogs,
+  /storageKey: STORAGE_KEYS\.onboardBuild/,
+  "the Build onboarding dialog uses the shared storage-key registry",
+);
 assert.equal((app.match(/function BuildPanel\(/g) ?? []).length, 0, "the Build panel no longer lives in the app shell");
 
 const scopeSummary = { scopesDone: 2, scopesTotal: 5, tasksDone: 3, tasksTotal: 7 };

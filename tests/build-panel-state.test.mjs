@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildCardMatches,
   filterAndGroupBuildCards,
+  reviewGatesAfterDefaults,
 } from "../lib/build-panel-state.mjs";
 
 const filters = {
@@ -58,6 +59,26 @@ test("project filtering keeps unrelated cards out of the board", () => {
   );
 });
 
+test("intent, activity, and stage filters each require a match", () => {
+  const dimensions = [
+    ["intents", "feature", "bug"],
+    ["activities", "idle", "running"],
+    ["stages", "plan", "build"],
+  ];
+  for (const [filterKey, matching, different] of dimensions) {
+    assert.equal(
+      buildCardMatches(card(), { ...filters, [filterKey]: [matching] }),
+      true,
+      `${filterKey} keeps a matching card`,
+    );
+    assert.equal(
+      buildCardMatches(card(), { ...filters, [filterKey]: [different] }),
+      false,
+      `${filterKey} rejects a non-matching card`,
+    );
+  }
+});
+
 test("status filtering uses the derived build column", () => {
   const parked = card({ status: "draft", workerThreadId: null });
   assert.equal(
@@ -66,4 +87,19 @@ test("status filtering uses the derived build column", () => {
     "a threadless card belongs in the Bucket",
   );
   assert.equal(buildCardMatches(parked, { ...filters, statuses: ["analysis"] }), false);
+});
+
+test("server review-gate defaults fill an absent selection without overwriting a stored one", () => {
+  const defaults = ["spec"];
+  const stored = ["code"];
+  assert.deepEqual(
+    reviewGatesAfterDefaults([], defaults, false),
+    defaults,
+    "missing or inaccessible storage still receives the server defaults",
+  );
+  assert.deepEqual(
+    reviewGatesAfterDefaults(stored, defaults, true),
+    stored,
+    "an existing local selection remains authoritative after defaults load",
+  );
 });
