@@ -69,8 +69,6 @@ import { evidenceStatus } from "./lib/research-evidence.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
 import { cliHelpText, cliUsageLine, nearestCommand } from "./lib/cli-suggest.mjs";
-import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
-import { buildSquashScript, parseSquashOutput, squashExitMessage } from "./lib/squash-merge.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, normalizeBuildSeedIntent, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
 import { failureCauseFromEvents, truncateCause } from "./lib/worker-failure.mjs";
@@ -98,7 +96,7 @@ import { formatReviewGates, legacyLabelForGates, normalizeReviewGates, preReview
 import { requiredForStage } from "./lib/question-contracts.mjs";
 import { checkAdvanceContracts } from "./lib/advance-contracts.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
-import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
+import { publicationSource } from "./lib/vcs-publication.mjs";
 import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
 import { detectedTestCommand, sameGitEvidence, verificationReadiness } from "./lib/audit-verification.mjs";
 import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
@@ -111,6 +109,11 @@ import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/car
 import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } from "./server/decision-api.js";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { createInboxServer, inboxRpcContract, runInboxMigrations } from "./server/inbox.js";
+import {
+  createArtifactsPublication,
+  publicationRpcContract,
+  runPublicationMigrations,
+} from "./server/artifacts-publication.js";
 import {
   createScopeProgressSync,
   latestSpecTech,
@@ -326,29 +329,6 @@ const workflowSchema = z.object({
   artifacts: z.array(artifactSchema),
 });
 
-const publicationCapabilitySchema = z.object({ available: z.boolean(), reason: z.string().nullable() });
-const publicationSnapshotSchema = z.object({
-  available: z.boolean(),
-  message: z.string().nullable(),
-  source: z.string().nullable(),
-  environmentId: z.string().nullable(),
-  isWorktree: z.boolean(),
-  branch: z.object({ current: z.string().nullable(), default: z.string().nullable(), headSha: z.string().nullable() }).nullable(),
-  workingTree: z.object({ state: z.string(), hasUncommittedChanges: z.boolean(), files: z.number() }).nullable(),
-  mergeBase: z.object({ branch: z.string(), ahead: z.number(), behind: z.number(), hasCommittedUnmergedChanges: z.boolean() }).nullable(),
-  pullRequest: z.object({ number: z.number(), title: z.string(), url: z.string(), state: z.string(), attention: z.string(), review: z.string(), checks: z.string(), mergeability: z.string() }).nullable(),
-  pullRequestMessage: z.string().nullable(),
-  capabilities: z.object({ commit: publicationCapabilitySchema, squashMerge: publicationCapabilitySchema, markReady: publicationCapabilitySchema, markDraft: publicationCapabilitySchema, mergePullRequest: publicationCapabilitySchema }),
-  events: z.array(z.object({ id: z.string(), action: z.string(), message: z.string(), commitSha: z.string().nullable(), pullRequestUrl: z.string().nullable(), createdAt: z.number() })),
-});
-const publicationCommitDiffSchema = z.object({
-  found: z.boolean(),
-  commitSha: z.string().nullable(),
-  shortstat: z.string().nullable(),
-  files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), binary: z.boolean(), changeKind: z.string(), additions: z.number(), deletions: z.number(), truncated: z.boolean(), loadMode: z.string() })),
-  truncated: z.boolean(),
-  error: z.string().nullable(),
-});
 // BB-native self-update state. Displays ride along because git installs
 // report commit shas as versions — the panel formats those, never raw shas.
 const pluginUpdateSchema = z.object({
@@ -582,46 +562,7 @@ export const rpcContract = defineRpcContract({
       recon: z.object({ state: z.enum(["recorded", "missing", "invalid"]), detail: z.string() }).nullable(),
     }),
   },
-  publicationStatus: {
-    experimental_description: "Git publication snapshot: branch, tree, merge-base, PR, capabilities",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: publicationSnapshotSchema,
-  },
-  publicationCommitDiff: {
-    experimental_description: "Read-only diff of one recorded publication commit",
-    input: z.object({ cardId: z.string(), commitSha: z.string().regex(/^[0-9a-f]{7,64}$/i) }).strict(),
-    output: publicationCommitDiffSchema,
-  },
-  publicationCommit: {
-    experimental_description: "Save a local commit in the card's checkout through BB",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
-  },
-  publicationSquashMerge: {
-    experimental_description: "Squash branch commits into one local commit on the base branch",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
-  },
-  publicationPushTerminal: {
-    experimental_description: "Push the branch in the card's own terminal and stream the result",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
-  },
-  publicationPullPush: {
-    experimental_description: "Pull with rebase then push in the card's checkout, the rejected-push fix",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
-  },
-  publicationPushTerminals: {
-    experimental_description: "Live push shells for a card with readable output tails",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable(), remote: z.object({ owner: z.string(), repo: z.string(), webUrl: z.string() }).nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), pushState: z.enum(["waiting", "running", "succeeded", "failed"]), pushExit: z.number().nullable(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
-  },
-  publicationPullRequestAction: {
-    experimental_description: "Mark a PR ready or draft, or merge it; checks stay authoritative",
-    input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), pullRequestUrl: z.string().nullable() }),
-  },
+  ...publicationRpcContract,
   runResearchStrategy: {
     experimental_description: "Run one more research strategy round on a card",
     input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
@@ -1652,19 +1593,9 @@ export default async function plugin(bb: BbPluginApi) {
     db.exec("ALTER TABLE automation_rules ADD COLUMN autostart INTEGER NOT NULL DEFAULT 0");
   }
 
-  // Publication is intentionally separate from a card's Done state. A card is
-  // workflow-complete before its owner decides whether and how to publish it.
-  db.exec(`CREATE TABLE IF NOT EXISTS publication_events (
-    id TEXT PRIMARY KEY,
-    card_id TEXT NOT NULL,
-    action TEXT NOT NULL,
-    message TEXT NOT NULL,
-    commit_sha TEXT,
-    pull_request_url TEXT,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_publication_events_card ON publication_events(card_id, created_at DESC);`);
+  // Publication remains separate from a card's Done state. Its event history
+  // and RPC behavior are owned by the publication feature module.
+  runPublicationMigrations(db);
 
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
@@ -3136,143 +3067,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       : null;
   }
 
-  type PublicationSnapshot = z.infer<typeof publicationSnapshotSchema>;
-  type PublicationAction = "commit" | "squash_merge" | "push_terminal" | "pull_request_ready" | "pull_request_draft" | "pull_request_merge";
-
-  function unavailablePublication(message: string, events: PublicationSnapshot["events"] = []): PublicationSnapshot {
-    const blocked = { available: false, reason: message };
-    return {
-      available: false, message, source: null, environmentId: null, isWorktree: false,
-      branch: null, workingTree: null, mergeBase: null, pullRequest: null, pullRequestMessage: null,
-      capabilities: { commit: blocked, squashMerge: blocked, markReady: blocked, markDraft: blocked, mergePullRequest: blocked }, events,
-    };
-  }
-
-  function publicationEvents(cardId: string): PublicationSnapshot["events"] {
-    return (db.prepare("SELECT id, action, message, commit_sha, pull_request_url, created_at FROM publication_events WHERE card_id = ? ORDER BY created_at DESC LIMIT 12").all(cardId) as Array<{ id: string; action: string; message: string; commit_sha: string | null; pull_request_url: string | null; created_at: number }>).map((event) => ({
-      id: event.id, action: event.action, message: event.message, commitSha: event.commit_sha, pullRequestUrl: event.pull_request_url, createdAt: event.created_at,
-    }));
-  }
-
-  function recordPublication(cardId: string, action: PublicationAction, message: string, commitSha: string | null = null, pullRequestUrl: string | null = null): void {
-    db.prepare("INSERT INTO publication_events (id, card_id, action, message, commit_sha, pull_request_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("pub"), cardId, action, message, commitSha, pullRequestUrl, now());
-  }
-
-  async function publicationSnapshot(card: CardRow): Promise<PublicationSnapshot> {
-    const events = publicationEvents(card.id);
-    if (normalizeStatus(card.status) !== "completed") return unavailablePublication("Only completed cards can publish changes.", events);
-    const checkout = await cardCheckout(card).catch(() => null);
-    if (!checkout?.environmentId || !checkout.environment) return unavailablePublication("Publishing is available only while this card has a live BB workspace environment.", events);
-    const [status, pullRequest] = await Promise.all([
-      bb.sdk.environments.status({ environmentId: checkout.environmentId }).catch(() => null),
-      bb.sdk.environments.pullRequest({ environmentId: checkout.environmentId }).catch(() => ({ outcome: "unavailable", message: "BB could not read pull-request status." })),
-    ]);
-    if (!status || status.outcome !== "available") return unavailablePublication(status?.outcome === "not_applicable" ? status.message : status?.failure?.message ?? "BB could not inspect this workspace.", events);
-    const blocker = publicationBlocker(status);
-    const commit = canCommitPublication(status);
-    const squashMerge = canSquashMerge(status);
-    const pr = pullRequest.outcome === "available" && "pullRequest" in pullRequest ? pullRequest.pullRequest : null;
-    const capability = ({ ok, reason }: { ok: boolean; reason: string | null }) => ({ available: ok, reason });
-    const markReady = capability(canMarkPullRequestReady(status, pullRequest));
-    const markDraft = capability(canMarkPullRequestDraft(status, pullRequest));
-    const merge = capability(canMergePullRequest(status, pullRequest));
-    return {
-      available: blocker === null,
-      message: blocker,
-      source: checkout.source,
-      environmentId: checkout.environmentId,
-      isWorktree: Boolean(checkout.environment.isWorktree),
-      branch: { current: status.workspace.branch.currentBranch, default: status.workspace.branch.defaultBranch, headSha: status.workspace.checkout.kind === "branch" || status.workspace.checkout.kind === "detached" ? status.workspace.checkout.headSha : null },
-      workingTree: { state: status.workspace.workingTree.state, hasUncommittedChanges: status.workspace.workingTree.hasUncommittedChanges, files: status.workspace.workingTree.files.length },
-      mergeBase: status.workspace.mergeBase ? { branch: status.workspace.mergeBase.mergeBaseBranch, ahead: status.workspace.mergeBase.aheadCount, behind: status.workspace.mergeBase.behindCount, hasCommittedUnmergedChanges: status.workspace.mergeBase.hasCommittedUnmergedChanges } : null,
-      pullRequest: pr ? { number: pr.number, title: pr.title, url: pr.url, state: pr.state, attention: pr.attention, review: pr.review.state, checks: pr.checks.state, mergeability: pr.mergeability.state } : null,
-      pullRequestMessage: pullRequest.outcome === "unavailable" && "message" in pullRequest ? pullRequest.message : null,
-      capabilities: {
-        commit: capability(commit),
-        squashMerge: capability(squashMerge),
-        markReady,
-        markDraft,
-        mergePullRequest: merge,
-      },
-      events,
-    };
-  }
-
-  async function publicationEnvironment(cardId: string): Promise<{ card: CardRow; environmentId: string; snapshot: PublicationSnapshot } | { error: string }> {
-    const card = getCard(cardId);
-    if (!card) return { error: ERR_CARD_NOT_FOUND };
-    const snapshot = await publicationSnapshot(card);
-    if (!snapshot.environmentId) return { error: snapshot.message ?? "Publishing is unavailable." };
-    return { card, environmentId: snapshot.environmentId, snapshot };
-  }
-
-  type PushShellSession = { id: string; title: string; status: string; exitCode: number | null; createdAt: number };
-
-  async function pushShellSessions(environmentId: string): Promise<PushShellSession[]> {
-    const listed = await bb.sdk.terminals.list({ scope: { kind: "environment", environmentId } }).catch(() => null);
-    const sessions = (listed as { sessions?: PushShellSession[] } | null)?.sessions ?? [];
-    return sessions
-      .filter((session) => session.title.startsWith("Stelow push"))
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 5);
-  }
-
-  async function livePushShell(environmentId: string): Promise<PushShellSession | null> {
-    const previous = await pushShellSessions(environmentId);
-    for (const session of previous) {
-      const read = await readPushShell(session);
-      if (!read.unavailable && read.pushState === "running") return session;
-    }
-    return null;
-  }
-
-  async function retirePushShells(environmentId: string): Promise<void> {
-    const previous = await pushShellSessions(environmentId);
-    for (const session of previous) {
-      await bb.sdk.terminals.close({ terminalId: session.id, mode: "if-clean" }).catch(() => null);
-    }
-    for (const session of previous) {
-      const read = await readPushShell(session);
-      // Force only shells that finished (marker), never ran (waiting),
-      // or already ended — never a live run (blocked before this point).
-      if (read.unavailable || read.pushState !== "running") {
-        await bb.sdk.terminals.close({ terminalId: session.id, mode: "force" }).catch(() => null);
-      }
-    }
-  }
-
-  async function readPushShell(session: PushShellSession): Promise<{ text: string | null; unavailable: boolean; pushState: "waiting" | "running" | "succeeded" | "failed"; pushExit: number | null }> {
-    try {
-      const out = await bb.sdk.terminals.output({ terminalId: session.id, tailBytes: 8000 });
-        const text = (out.chunks ?? [])
-          .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
-          .join("")
-          // Collapse carriage-return progress the way a real terminal renders
-          // it: git rewrites one line via \r, so only the final segment is
-          // visible. Drops hundreds of intermediate percentages, keeps errors.
-          // eslint-disable-next-line no-control-regex
-          .replace(/[^\n]*\r(?!\n)/g, "")
-          // Strip ANSI escapes so the panel shows readable output.
-          // eslint-disable-next-line no-control-regex
-          .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
-          // eslint-disable-next-line no-control-regex
-          .replace(/\u001b\][^\u0007]*\u0007/g, "")
-          .slice(-4000);
-      // The exit marker names the outcome. Legacy shells (typed but
-      // never submitted) carry no marker and end with the bare command.
-      const marker = text.match(/STELOW_PUSH_EXIT:(\d+)/);
-      const parsed = marker ? Number.parseInt(marker[1] ?? "", 10) : null;
-      const pushExit = parsed !== null && Number.isNaN(parsed) ? null : parsed;
-      const pushState = marker
-        ? (pushExit === 0 ? "succeeded" as const : "failed" as const)
-        : /git push\s*$/.test(text) ? "waiting" as const : "running" as const;
-      return { text: text || null, unavailable: false, pushState, pushExit };
-    } catch {
-      // output() 409s once the shell exits: an ended shell is never
-      // "running" — the panel renders it as Ended via outputUnavailable.
-      return { text: null, unavailable: true, pushState: "failed" as const, pushExit: null };
-    }
-  }
 
   /**
    * The target for a card, or the one message that explains why there is none.
@@ -4701,10 +4495,24 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // (STELOW_GITHUB_ISSUES=0) stops the ticks along with the RPCs.
   bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => github.runAutomationRules());
 
+  const artifactsPublication = createArtifactsPublication({
+    db,
+    bb,
+    now,
+    randomId,
+    cardNotFound: ERR_CARD_NOT_FOUND,
+    cards: {
+      get: (cardId) => getCard(cardId),
+      checkout: (card) => cardCheckout(card as CardRow),
+    },
+    normalizeStatus,
+  });
+
   bb.rpc.register(rpcContract, {
     ...decisionApi.handlers,
     ...github.handlers,
     ...inbox.handlers,
+    ...artifactsPublication.handlers,
     board: async ({ projectId }) => {
       const board = await loadBoard(bb, projectId);
       const githubStatus = await github.githubStatus().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] }));
@@ -6209,303 +6017,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       };
     },
 
-    async publicationStatus({ cardId }) {
-      const card = getCard(cardId);
-      return card ? await publicationSnapshot(card) : unavailablePublication(ERR_CARD_NOT_FOUND);
-    },
-
-    // Publication history is an audit trail, not an arbitrary Git browser:
-    // a caller can inspect only commits Stelow itself recorded for this card.
-    // BB supplies the diff from the selected environment, so this remains
-    // useful for local-only commits and never shells out to Git on the plugin.
-    async publicationCommitDiff({ cardId, commitSha }) {
-      const empty = { found: false, commitSha: null, shortstat: null, files: [], truncated: false, error: null as string | null };
-      const recorded = db.prepare("SELECT 1 FROM publication_events WHERE card_id = ? AND commit_sha = ? LIMIT 1").get(cardId, commitSha);
-      if (!recorded) return { ...empty, error: "This commit is not recorded in this card's publication history." };
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ...empty, error: prepared.error };
-      try {
-        const result = await bb.sdk.environments.diffFiles({ environmentId: prepared.environmentId, target: "commit", sha: commitSha });
-        if (result.outcome !== "available") {
-          const error = result.outcome === "not_applicable" ? result.message : result.failure.message;
-          return { ...empty, error };
-        }
-        const patches = new Map(result.initialPatches.map((patch) => [patch.path, patch]));
-        // Commit targets carry no inline patches (initialPatches is empty even
-        // with loadMode auto): every file patch needs an explicit diffPatch
-        // fetch. Only too_large is genuinely unrenderable. Fetch bounded and
-        // fail-soft so one bad file never breaks the whole commit view.
-        const missingPaths = result.files
-          .filter((file) => !file.binary && file.loadMode !== "too_large" && !patches.has(file.path))
-          .map((file) => file.path);
-        const MAX_MISSING_PATCHES = 25;
-        let patchesTruncated = false;
-        if (missingPaths.length > 0) {
-          try {
-            const demanded = await bb.sdk.environments.diffPatch({
-              environmentId: prepared.environmentId,
-              paths: missingPaths.slice(0, MAX_MISSING_PATCHES),
-              target: { type: "commit", sha: commitSha },
-            });
-            if (demanded.outcome === "available") {
-              for (const patch of demanded.patches) patches.set(patch.path, patch);
-            } else {
-              const reason = demanded.outcome === "not_applicable" ? demanded.message : demanded.failure.message;
-              bb.log.warn(`stelow commit diff: diffPatch unavailable for ${commitSha} (${missingPaths.length} files): ${reason}`);
-            }
-            patchesTruncated = missingPaths.length > MAX_MISSING_PATCHES;
-          } catch (error) {
-            // Keep the initial patches; the UI states per-file availability.
-            bb.log.warn(`stelow commit diff: diffPatch failed for ${commitSha}: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-        return {
-          found: true,
-          commitSha,
-          shortstat: result.shortstat,
-          files: result.files.map((file) => {
-            const patch = patches.get(file.path);
-            return {
-              path: file.path,
-              display: file.path.split("/").pop() || file.path,
-              patch: patch?.patch ?? null,
-              binary: file.binary,
-              changeKind: file.changeKind,
-              additions: file.additions,
-              deletions: file.deletions,
-              truncated: patch?.truncated ?? file.loadMode !== "auto",
-              loadMode: file.loadMode,
-            };
-          }),
-          truncated: result.truncated || patchesTruncated,
-          error: null,
-        };
-      } catch (error) {
-        return { ...empty, error: error instanceof Error ? error.message : "BB could not load this commit diff." };
-      }
-    },
-
-    async publicationCommit({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
-      if (!prepared.snapshot.capabilities.commit.available) return { ok: false, message: prepared.snapshot.capabilities.commit.reason ?? "Commit is unavailable.", commitSha: null };
-      try {
-        // BB executes this on the environment host and owns staging, identity,
-        // hooks, and commit formatting. Do not substitute a local shell call.
-        const result = await bb.sdk.environments.commit({ environmentId: prepared.environmentId });
-        recordPublication(cardId, "commit", result.message, result.commitSha);
-        return { ok: true, message: result.message, commitSha: result.commitSha };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not commit this workspace.", commitSha: null };
-      }
-    },
-
-    async publicationSquashMerge({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
-      if (!prepared.snapshot.capabilities.squashMerge.available) return { ok: false, message: prepared.snapshot.capabilities.squashMerge.reason ?? "Local squash merge is unavailable.", commitSha: null };
-      const base = prepared.snapshot.mergeBase?.branch;
-      const branch = prepared.snapshot.branch?.current;
-      if (!base) return { ok: false, message: "BB could not determine the merge-base branch.", commitSha: null };
-      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", commitSha: null };
-      // BB exposes no local squash action (only PR squash-merge), so the
-      // panel runs `git merge --squash` in the card's own environment shell —
-      // the same visible-terminal pattern as push/sync. The script
-      // aborts/resets before restoring the branch, so a conflict never
-      // strands the checkout mid-merge (lib/squash-merge.mjs).
-      let script: string;
-      try {
-        script = buildSquashScript({ base, branch, message: `Squash merge ${branch} into ${base} (Stelow)` });
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "Squash refused the branch names.", commitSha: null };
-      }
-      try {
-        const terminal = await bb.sdk.terminals.create({
-          cols: 120,
-          rows: 30,
-          scope: { kind: "environment", environmentId: prepared.environmentId },
-          start: { mode: "shell" },
-          title: `Stelow squash ${branch}`,
-        });
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const live = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
-          if (live?.status === "running") break;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        try {
-          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from(`${script}\r`).toString("base64") });
-        } catch (error) {
-          await bb.sdk.terminals.close({ terminalId: terminal.id, mode: "force" }).catch(() => null);
-          return { ok: false, message: error instanceof Error ? `Squash shell opened (${terminal.id}) but the command could not be sent: ${error.message}` : `Squash shell opened (${terminal.id}) but the command could not be sent.`, commitSha: null };
-        }
-        const deadline = Date.now() + 60_000;
-        for (;;) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const out = await bb.sdk.terminals.output({ terminalId: terminal.id, tailBytes: 8000 }).catch(() => null);
-          const tail = ((out?.chunks ?? []) as Array<{ dataBase64: string }>)
-            .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
-            .join("")
-            .slice(-4000);
-          const verdict = parseSquashOutput(tail);
-          if (verdict.finished) {
-            await bb.sdk.terminals.close({ terminalId: terminal.id, mode: "force" }).catch(() => null);
-            if (verdict.exit === 0 && verdict.sha) {
-              const message = `Squashed ${branch} into ${base} as ${verdict.sha}.`;
-              recordPublication(cardId, "squash_merge", message, verdict.sha);
-              return { ok: true, message, commitSha: verdict.sha };
-            }
-            return { ok: false, message: squashExitMessage(verdict.exit, branch, base), commitSha: null };
-          }
-          if (Date.now() > deadline) {
-            return { ok: false, message: `Squash is still running in shell ${terminal.id} — finish it in BB's terminal panel, then squash again.`, commitSha: null };
-          }
-        }
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not squash merge this workspace.", commitSha: null };
-      }
-    },
-
-    async publicationPushTerminal({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, terminalId: null as string | null };
-      const branch = prepared.snapshot.branch?.current;
-      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
-      try {
-        // BB never auto-reveals a new shell, so "open a terminal" was a
-        // promise the panel could not keep — and typed-but-unsent input left
-        // users unsure whether anything ran. Instead the confirmed action
-        // RUNS git push in the card's own environment (correct host and
-        // checkout by construction) and streams the result into Push shells
-        // below via publicationPushTerminals. The exit marker makes
-        // completion explicit: no marker yet means still running or waiting
-        // on interactive auth (finish it in BB's terminal panel).
-        // Single-active strategy: one push shell per card at a time. A push
-        // already in flight blocks a duplicate; retired predecessors are
-        // closed so runs never accumulate into an unreadable list.
-        const live = await livePushShell(prepared.environmentId);
-        if (live) {
-          return { ok: false, message: `A push is already running in shell ${live.id} — Check result instead of starting another.`, terminalId: live.id };
-        }
-        await retirePushShells(prepared.environmentId);
-        const terminal = await bb.sdk.terminals.create({
-          cols: 120,
-          rows: 30,
-          scope: { kind: "environment", environmentId: prepared.environmentId },
-          start: { mode: "shell" },
-          title: `Stelow push — ${branch}`,
-        });
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const live = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
-          if (live?.status === "running") break;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        // A swallowed input failure used to report success with an empty
-        // shell. Fail loudly instead: no history entry, no success toast.
-        // \r submits the line (verified against the terminal daemon); the
-        // marker reports the push exit so the panel can name the outcome.
-        try {
-          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git push; echo \"STELOW_PUSH_EXIT:$?\"\r").toString("base64") });
-        } catch (error) {
-          return { ok: false, message: error instanceof Error ? `Push shell opened (${terminal.id}) but git push could not be sent: ${error.message}` : `Push shell opened (${terminal.id}) but git push could not be sent.`, terminalId: terminal.id };
-        }
-        recordPublication(cardId, "push_terminal", `Ran git push in shell ${terminal.id} on ${branch}.`, null);
-        return { ok: true, message: `Push running in shell ${terminal.id} — watch Push shells below for the result.`, terminalId: terminal.id };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not open a push terminal.", terminalId: null as string | null };
-      }
-    },
-
-    async publicationPullPush({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, terminalId: null as string | null };
-      const branch = prepared.snapshot.branch?.current;
-      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
-      try {
-        // The decided Git workflow for rejected pushes: pull with rebase
-        // (linear history, no merge commits for lay users), then push — one
-        // confirmed click. A conflicted pull aborts itself (REBASE_HEAD
-        // present): the checkout returns to its pre-pull state, nothing is
-        // lost, and the panel names the manual exit. BB exposes no pull
-        // action, so this runs shell-mediated like push, with sentinels for
-        // each step.
-        const live = await livePushShell(prepared.environmentId);
-        if (live) {
-          return { ok: false, message: `A push is already running in shell ${live.id} — Check result instead of starting another.`, terminalId: live.id };
-        }
-        await retirePushShells(prepared.environmentId);
-        const terminal = await bb.sdk.terminals.create({
-          cols: 120,
-          rows: 30,
-          scope: { kind: "environment", environmentId: prepared.environmentId },
-          start: { mode: "shell" },
-          title: `Stelow push — ${branch}`,
-        });
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const liveTerminal = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
-          if (liveTerminal?.status === "running") break;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        try {
-          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git pull --rebase; echo \"STELOW_SYNC_EXIT:$?\"; if git rev-parse --verify REBASE_HEAD >/dev/null 2>&1; then git rebase --abort; echo \"STELOW_SYNC_ABORTED:1\"; fi; git push; echo \"STELOW_PUSH_EXIT:$?\"\r").toString("base64") });
-        } catch (error) {
-          return { ok: false, message: error instanceof Error ? `Sync shell opened (${terminal.id}) but the command could not be sent: ${error.message}` : `Sync shell opened (${terminal.id}) but the command could not be sent.`, terminalId: terminal.id };
-        }
-        recordPublication(cardId, "push_terminal", `Ran pull --rebase + push in shell ${terminal.id} on ${branch}.`, null);
-        return { ok: true, message: `Sync & push running in shell ${terminal.id} — watch Push shells below for the result.`, terminalId: terminal.id };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not open a sync shell.", terminalId: null as string | null };
-      }
-    },
-
-    async publicationPushTerminals({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, error: prepared.error, remote: null, terminals: [] };
-      try {
-        const pushSessions = await pushShellSessions(prepared.environmentId);
-        const terminals = await Promise.all(pushSessions.map(async (session) => {
-          const read = await readPushShell(session);
-          return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState: read.pushState, pushExit: read.pushExit, outputTail: read.text, outputUnavailable: read.unavailable };
-        }));
-        // The remote lives in git's own `To <url>` line: newest shell first,
-        // first parseable wins. Absent until a push actually ran — links wait.
-        let remote: { owner: string; repo: string; webUrl: string } | null = null;
-        for (const terminal of terminals) {
-          remote = parsePushRemoteUrl(terminal.outputTail);
-          if (remote) break;
-        }
-        return { ok: true, error: null, remote, terminals };
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : "BB could not list push shells.", remote: null, terminals: [] };
-      }
-    },
-
-    async publicationPullRequestAction({ cardId, operation, method }) {      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, pullRequestUrl: null };
-      const url = prepared.snapshot.pullRequest?.url ?? null;
-      const capability = operation === "merge"
-        ? prepared.snapshot.capabilities.mergePullRequest
-        : operation === "ready"
-          ? prepared.snapshot.capabilities.markReady
-          : prepared.snapshot.capabilities.markDraft;
-      if (!capability.available) return { ok: false, message: capability.reason ?? "This pull-request action is unavailable.", pullRequestUrl: url };
-      try {
-        if (operation === "ready") {
-          const result = await bb.sdk.environments.markPullRequestReady({ environmentId: prepared.environmentId });
-          recordPublication(cardId, "pull_request_ready", result.message, null, url);
-          return { ok: true, message: result.message, pullRequestUrl: url };
-        }
-        if (operation === "draft") {
-          const result = await bb.sdk.environments.markPullRequestDraft({ environmentId: prepared.environmentId });
-          recordPublication(cardId, "pull_request_draft", result.message, null, url);
-          return { ok: true, message: result.message, pullRequestUrl: url };
-        }
-        const result = await bb.sdk.environments.mergePullRequest({ environmentId: prepared.environmentId, method: method ?? "squash" });
-        recordPublication(cardId, "pull_request_merge", result.message, null, url);
-        return { ok: true, message: result.message, pullRequestUrl: url };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not apply this pull-request action.", pullRequestUrl: url };
-      }
-    },
 
     async runResearchStrategy({ cardId, strategy }) {
       // Composite research: run another strategy round on the same card.

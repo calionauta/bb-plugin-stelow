@@ -4,7 +4,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/artifacts-publication.ts"), "utf8"),
+  readFileSync(join(root, "server/artifacts-publication-status.ts"), "utf8"),
+  readFileSync(join(root, "server/artifacts-publication-operations.ts"), "utf8"),
+  readFileSync(join(root, "server/artifacts-publication-terminals.ts"), "utf8"),
+].join("\n");
 const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
 const actions = readFileSync(join(root, "components/detail/build-publication-actions.tsx"), "utf8");
 const diff = readFileSync(join(root, "components/detail/build-diff.tsx"), "utf8");
@@ -16,7 +22,8 @@ assert.ok(executeActionStart >= 0 && actionTitleStart > executeActionStart, "pub
 const executeAction = actions.slice(executeActionStart, actionTitleStart);
 
 for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullPush", "publicationPullRequestAction"]) {
-  assert.match(server, new RegExp(`async ${method}\\(`), `${method} RPC exists`);
+  const rpcSites = server.match(new RegExp(`(?:${method}:|async ${method}\\()`, "g")) ?? [];
+  assert.ok(rpcSites.length >= 2, `${method} has one contract and one handler`);
 }
 assert.match(server, /bb\.sdk\.environments\.status/, "publication status is owned by BB");
 assert.match(server, /bb\.sdk\.environments\.commit/, "commit is routed to BB's environment host");
@@ -26,7 +33,7 @@ assert.match(server, /verdict\.finished/, "the squash shell is only closed after
 assert.match(server, /bb\.sdk\.environments\.markPullRequestReady/, "PR ready transition is routed to BB");
 assert.match(server, /bb\.sdk\.environments\.markPullRequestDraft/, "PR draft transition is routed to BB");
 assert.match(server, /bb\.sdk\.environments\.mergePullRequest/, "PR merge is routed to BB");
-assert.match(server, /publicationSnapshot\(card\)/, "each mutating action runs a fresh preflight");
+assert.match(server, /publicationSnapshot\(deps, card\)/, "each mutating action runs a fresh preflight");
 assert.match(server, /canMarkPullRequestReady\(status, pullRequest\)/, "ready transition shares the workspace safety policy");
 assert.match(server, /canMarkPullRequestDraft\(status, pullRequest\)/, "draft transition shares the workspace safety policy");
 assert.match(server, /publication_events/, "publication writes are separately auditable");
@@ -39,7 +46,7 @@ assert.match(server, /terminals\.input/, "git push is sent to the card's own she
 assert.match(server, /STELOW_PUSH_EXIT/, "the shell reports the push exit so the panel can name the outcome");
 assert.match(server, /scope: \{ kind: "environment", environmentId/, "the push terminal runs in the card's own environment, never an assumed host");
 assert.match(server, /push_terminal/, "terminal pushes enter publication history");
-assert.match(server, /Ran pull --rebase \+ push in shell/, "sync runs enter history under the same auditable action");
+assert.match(server, /const action = sync \? "pull --rebase \+ push" : "git push"/, "sync runs enter history under the same auditable action");
 assert.match(server, /publicationPullPush/, "rejected pushes have a one-click pull-rebase-plus-push remediation");
 assert.match(server, /pull --rebase/, "the decided workflow is rebase (linear history, no merge commits for lay users)");
 assert.match(server, /STELOW_SYNC_EXIT/, "the pull step reports its own exit separately from the push");
@@ -81,7 +88,7 @@ assert.match(server, /publicationPushTerminals/, "push shells stay consultable a
 assert.match(server, /terminals\.list/, "consulting push shells lists the card environment's terminals");
 assert.match(server, /terminals\.output/, "consulting push shells reads live terminal output");
 assert.match(server, /outputTail/, "terminal output survives as a readable tail in the panel");
-assert.match(server, /rewrites one line via/, "progress spam collapses the way a real terminal renders it, keeping errors");
+assert.match(server, /replace\(\/\[\^\\n\]\*\\r\(\?!\\n\)\/g, ""\)/, "progress spam collapses the way a real terminal renders it, keeping errors");
 assert.match(publication, /Push shells/, "the panel tracks push shells with live output instead of sending the user to hunt the sidebar");
 assert.match(publication, /Copy terminal ID/, "each push shell names its real BB terminal for sidebar lookup");
 assert.match(publication, /Snapshot — refresh with Check result/, "the embedded output admits it is a snapshot, not an interactive terminal");
@@ -96,9 +103,13 @@ assert.match(actions, /Push branch/, "the push confirmation names the action it 
 assert.match(publication, /✓ Pushed/, "a finished push reads as pushed, not as raw terminal text");
 assert.match(publication, /Waiting — git push typed but NOT sent/, "legacy typed-only shells name what is missing instead of looking executed");
 assert.match(server, /stelow commit diff: diffPatch (unavailable|failed)/, "patch fetch failures are logged for diagnosis instead of swallowed");
-assert.match(server, /initialPatches is empty even/, "commit targets fetch every missing patch, not just on-demand ones");
+assert.match(
+  server,
+  /filter\(\(file\) => !file\.binary[\s\S]*?!patches\.has\(file\.path\)\)/,
+  "commit targets fetch every missing patch, not just on-demand ones",
+);
 assert.match(commitDiff, /commitFileState\(file\)/, "the commit viewer delegates tested file-state labels to presentation logic");
-assert.match(server, /recordPublication\(cardId, "squash_merge", message, verdict\.sha\)/, "only a verified squash SHA enters publication history");
+assert.match(server, /recordPublication\(deps, cardId, "squash_merge", message, verdict\.sha\)/, "only a verified squash SHA enters publication history");
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
 assert.match(server, /selectCardEnvironment\(environment, workerEnvironment/, "a card forwards the BB composer environment instead of replacing it with a preset");
