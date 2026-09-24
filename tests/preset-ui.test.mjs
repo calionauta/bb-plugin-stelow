@@ -15,6 +15,9 @@ const picker = readFileSync(
   join(root, "components/settings/preset-execution-picker.tsx"),
   "utf8",
 );
+const managerShell = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
+const managerForm = readFileSync(join(root, "components/settings/preset-manager-form.tsx"), "utf8");
+const managerList = readFileSync(join(root, "components/settings/preset-manager-list.tsx"), "utf8");
 
 // BB-owned pickers live with the shared settings block, not the app shell.
 assert.match(
@@ -36,7 +39,10 @@ assert.doesNotMatch(
 // One shared block, both preset surfaces — never pasted per dialog.
 const defs = picker.match(/function PresetExecutionPicker\(/g) ?? [];
 assert.equal(defs.length, 1, "PresetExecutionPicker is defined once, not pasted per dialog");
-const uses = app.match(/<PresetExecutionPicker/g) ?? [];
+const uses = [
+  ...managerForm.match(/<PresetExecutionPicker/g) ?? [],
+  ...app.match(/<PresetExecutionPicker/g) ?? [],
+];
 assert.equal(uses.length, 2, "manager form and assign custom row share the picker block");
 assert.doesNotMatch(
   app,
@@ -61,13 +67,11 @@ assert.match(
 // would be wrong there; see decision-routers.test.mjs for its shape pin).
 
 // Manager dialog: bounded frame + disclosed band routing + picker form.
-const managerAt = app.indexOf("function PresetManagerDialog(");
-assert.ok(managerAt >= 0, "the manager dialog exists");
-const managerWindow = app.slice(managerAt, app.indexOf("function PresetAssignDialog("));
-assert.ok(managerWindow.includes("overflow-y-auto sm:max-h-[calc(100dvh-1rem)]"), "the manager frame scrolls instead of overflowing the viewport");
-assert.ok(managerWindow.includes("fullscreenOnMobile"), "the manager stays a real modal on phones");
-assert.match(managerWindow, /<DisclosureSection title="Worker preset per track"/, "band routing hides behind a disclosure");
-assert.match(managerWindow, /<PresetExecutionPicker/, "the New/Edit form uses the shared picker block");
+const managerWindow = `${managerShell}\n${managerForm}`;
+assert.ok(managerShell.includes("overflow-y-auto sm:max-h-[calc(100dvh-1rem)]"), "the manager frame scrolls instead of overflowing the viewport");
+assert.ok(managerShell.includes("fullscreenOnMobile"), "the manager stays a real modal on phones");
+assert.match(managerShell, /title="Worker preset per track"/, "band routing hides behind a disclosure");
+assert.match(managerForm, /<PresetExecutionPicker/, "the New/Edit form uses the shared picker block");
 assert.doesNotMatch(managerWindow, /listProviderModels/, "the manager no longer fetches Stelow's catalog for its form");
 
 // Assign dialog: the custom row uses the shared block; the radio rows stay
@@ -88,13 +92,13 @@ for (const [window, name] of [[managerWindow, "manager"], [assignWindow, "assign
 // New preset beside it, the form renders directly below the list (never
 // under the routing disclosures), and opening scrolls it into view —
 // authoring stays in the context it extends.
-assert.match(app, /<h3 className="text-sm font-semibold">Presets \(\{\s*presets\.length\s*\}\)<\/h3>/, "the list header names its count");
-assert.match(app, /scrollIntoView\(\{ block: "nearest" \}\)/, "opening creation scrolls it into view instead of stranding");
-const presetsHeaderAt = app.indexOf("Presets ({presets.length})");
-const presetFormAt = app.indexOf('ref={formRef} className="mt-3 rounded-md border');
-const routingAt = app.indexOf('title="Worker preset per track"');
+assert.match(managerList, /<h3 className="text-sm font-semibold">Presets \(\{presets\.length\}\)<\/h3>/, "the list header names its count");
+assert.match(managerShell, /scrollIntoView\(\{ block: "nearest" \}\)/, "opening creation scrolls it into view instead of stranding");
+const presetsHeaderAt = managerShell.indexOf("<PresetManagerList");
+const presetFormAt = managerShell.indexOf("<PresetManagerFormView");
+const routingAt = managerShell.indexOf('title="Worker preset per track"');
 assert.ok(presetsHeaderAt >= 0 && presetFormAt > presetsHeaderAt && routingAt > presetFormAt, "order reads list, creation, routing — never creation last");
-assert.equal((app.match(/id="preset-form-body"/g) ?? []).length, 1, "one creation form, not a top/bottom pair");
+assert.equal((managerForm.match(/id="preset-form-body"/g) ?? []).length, 1, "one creation form, not a top/bottom pair");
 }
 
 console.log("preset ui test ok: BB pickers shared, hand-rolled selects gone, manager disclosed and bounded");

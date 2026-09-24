@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const managerShell = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
 const decisionEntry = readFileSync(join(root, "components/settings/decision-api.tsx"), "utf8");
 const decisionApiUi = readFileSync(join(root, "components/settings/decision-api-section.tsx"), "utf8");
 const decisionRouterUi = readFileSync(join(root, "components/settings/decision-router-row.tsx"), "utf8");
@@ -193,11 +194,11 @@ assert.match(decisionRouterUi, /disabled={busy \|\| !dirty \|\| !valid}/, "thres
 
 // UI: two progressive disclosures in the preset manager — one settings
 // block, one router list. Modes read as outcomes, never mechanisms.
-assert.match(app, /<DisclosureSection title="Decision API" hint="Jev-compatible"/, "the settings block hides behind a disclosure");
+assert.match(managerShell, /title="Decision API"[\s\S]*?Jev-compatible/, "the settings block hides behind a disclosure");
 assert.match(decisionApiUi, /Set the provider first — the rest follows its schema/, "the intro stays one short line");
 assert.doesNotMatch(app, /any provider speaking that schema works here/, "the wrapping paragraph stays removed");
-assert.match(app, /<DisclosureSection title="Decision routers" hint="per-judgment modes"/, "the routers hide behind a disclosure");
-assert.match(app, /from "\.\/components\/settings\/decision-api"/, "settings consume the extracted decision boundary");
+assert.match(managerShell, /title="Decision routers"[\s\S]*?per-judgment modes/, "the routers hide behind a disclosure");
+assert.match(managerShell, /from "\.\/decision-api"/, "settings consume the extracted decision boundary");
 assert.match(decisionEntry, /export \{ DecisionApiSection \} from "\.\/decision-api-section"/, "the settings section keeps one stable entry");
 assert.match(decisionEntry, /export \{ DecisionRoutersSection \} from "\.\/decision-routers-section"/, "the routers section keeps one stable entry");
 assert.match(decisionApiUi, /export function DecisionApiSection\(/, "the settings section owns the API controls");

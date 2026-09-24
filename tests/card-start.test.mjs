@@ -102,7 +102,8 @@ assert.doesNotMatch(githubImport, /separate copy/, "the toggle copy lives in one
 const disclosure = readFileSync(join(root, "components", "disclosure.tsx"), "utf8");
 assert.match(disclosure, /export function DisclosureChevron/, "the chevron lives in one shared module");
 assert.match(disclosure, /export function DetailsDisclosure/, "progressive disclosure is one convention, not ad-hoc details");
-assert.match(app, /import \{ DisclosureChevron, DisclosureSection \} from "\.\/components\/disclosure"/, "the panel reads the shared disclosure set");
+const managerShell = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
+assert.match(managerShell, /import \{ DisclosureSection \} from "\.\.\/disclosure"/, "the manager shell reads the shared disclosure section");
 assert.doesNotMatch(app, /function DisclosureChevron\(/, "no local chevron copy survives in the panel");
 assert.match(disclosure, /export function DisclosureSection/, "the section lives in the shared disclosure module");
 assert.doesNotMatch(disclosure, /CardDisclosure/, "the legacy card name is migrated, never aliased");

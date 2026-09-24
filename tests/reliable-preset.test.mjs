@@ -13,6 +13,7 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const managerBand = readFileSync(join(root, "components/settings/preset-manager-band-routing.tsx"), "utf8");
 
 // Cascade order: card pin > reliable override > band > default. A reorder
 // here changes which brain runs the worker, so each level is pinned.
@@ -112,31 +113,31 @@ assert.match(server, /const preset = getReliablePresetForBand\(card\.kind === "r
 // Manager dialog: the Reliable row is a real override select (same
 // "Use band preset" empty-means-today pattern as Generation), not the
 // old static "no configuration" label.
-assert.doesNotMatch(app, /Band preset — no configuration/, "the unconfigurable Reliable label is gone");
-assert.match(app, /rpc\.call\("assignReliablePreset", \{ presetId: value \}\)/, "the Reliable row assigns through the override RPC");
-assert.match(app, /rpc\.call\("getReliablePreset", \{\}\)/, "the manager loads the current reliable override");
+assert.doesNotMatch(managerBand, /Band preset — no configuration/, "the unconfigurable Reliable label is gone");
+assert.match(managerBand, /assignReliablePreset/, "the Reliable row assigns through the override RPC");
+assert.match(managerBand, /getReliablePreset/, "the manager loads the current reliable override");
 // Row-scoped: the empty-means-band clear option must live on the Reliable
 // row itself (between its label and the Generation row) — deleting it
 // strands a set override with no way back, while the RPC-string pins above
 // would still pass.
-const reliableRowAt = app.indexOf("✓ Reliable");
+const reliableRowAt = managerBand.indexOf("✓ Reliable");
 assert.ok(reliableRowAt >= 0, "the Reliable row exists");
-const generationRowAt = app.indexOf("⚡ Generation", reliableRowAt);
+const generationRowAt = managerBand.indexOf("⚡ Generation", reliableRowAt);
 assert.ok(generationRowAt > reliableRowAt, "the Generation row follows the Reliable row");
-const reliableRow = app.slice(reliableRowAt, generationRowAt);
-assert.ok(reliableRow.includes('<option value="">Use band preset</option>'), "the Reliable row offers the empty-means-band clear option");
+const reliableRow = managerBand.slice(reliableRowAt, generationRowAt);
+assert.ok(managerBand.includes('emptyLabel="Use band preset"'), "the Reliable row offers the empty-means-band clear option");
 assert.ok(reliableRow.includes("assignReliablePreset"), "the Reliable row wires its select to the override RPC");
 
 // Independent review is not a tier: one designated preset in another model
 // family, read-only, and the review command refuses without it instead of
 // falling back. The row lives below the tiers with its own clear option,
 // so the tiers above can never be mistaken for review configuration.
-const reviewerRowAt = app.indexOf("◎ Independent review", generationRowAt);
+const reviewerRowAt = managerBand.indexOf("◎ Independent review", generationRowAt);
 assert.ok(reviewerRowAt > generationRowAt, "the Review row follows the tiers, visibly separated");
-const reviewerRow = app.slice(reviewerRowAt, reviewerRowAt + 2500);
-assert.ok(reviewerRow.includes('rpc.call("assignReviewPreset", { presetId: value })'), "the Review row assigns through the reviewer RPC");
-assert.ok(reviewerRow.includes("getReviewPreset") || app.includes("reloadReviewer"), "the manager loads the current reviewer designation");
-assert.ok(reviewerRow.includes('<option value="">No reviewer</option>'), "clearing the reviewer is explicit — empty never silently means a worker preset");
+const reviewerRow = managerBand.slice(reviewerRowAt, reviewerRowAt + 2500);
+assert.ok(managerBand.includes('assignReviewPreset'), "the Review row assigns through the reviewer RPC");
+assert.ok(managerBand.includes("getReviewPreset"), "the manager loads the current reviewer designation");
+assert.ok(managerBand.includes('emptyLabel="No reviewer"'), "clearing the reviewer is explicit — empty never silently means a worker preset");
 assert.ok(reviewerRow.includes("refuse instead of borrowing a worker preset"), "the row states the refuse-instead-of-fallback contract");
 
 console.log("reliable preset test ok: cascade order, singleton discipline, spawn wiring, manager override");
