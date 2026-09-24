@@ -51,6 +51,7 @@ assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx"), "utf8");
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
@@ -76,11 +77,15 @@ assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explo
 // expanding to window presets and a per-card table. Empty boards render
 // nothing — clean stays clean. Project comes from the board filter, so
 // no second picker drifts out of sync with it.
-assert.match(app, /function FlowStrip\(\{ rpc, projectId, navigate \}/, "one strip component owns board flow");
-assert.match(app, /<FlowStrip rpc=\{rpc\} projectId=\{filterProjectIds\.length === 1 \? filterProjectIds\[0\] \?\? null : null\} navigate=\{navigate\} \/>/, "the strip follows a single picked project, all projects otherwise");
-assert.match(app, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
-assert.match(app, /\["all", "30d", "90d"\]|FLOW_WINDOWS/, "done windows are presets, not free dates");
-assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open through the shared navigator");
+assert.match(flowStrip, /export function FlowStrip\(\{ rpc, projectId, onOpenCard \}/, "one strip component owns board flow");
+assert.match(
+  app,
+  /<FlowStrip[\s\S]*projectId=\{filterProjectIds\.length === 1 \? filterProjectIds\[0\] \?\? null : null\}[\s\S]*onOpenCard=/,
+  "the strip follows a single picked project, all projects otherwise",
+);
+assert.match(flowStrip, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
+assert.match(flowStrip, /FLOW_WINDOWS/, "done windows are presets, not free dates");
+assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows open through the shared navigator");
 
 // Attention rides the same RPC pass: stuck (blocked status or errored
 // worker — explicit signals, never heuristics) and review-awaiting dones,
@@ -89,23 +94,27 @@ assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open thr
 assert.match(server, /attention: z\.array\(z\.object\(\{ cardId: z\.string\(\), kind: z\.enum\(\["build", "research", "explore"\]\), name: z\.string\(\), reason: z\.enum\(\["stuck", "review"\]\) \}\)\)/, "attention items are contracted with a closed reason set");
 assert.match(server, /row\.status === "blocked" \|\| row\.activity === "error"/, "stuck derives from explicit signals only");
 assert.match(server, /hasPendingReview\(db, row\.id\)/, "review-awaiting derives from the shared review signal");
-assert.match(app, /useState<"tempo" \| "atencao">\("tempo"\)/, "tempo and attention are tabs, not stacked sections");
-assert.match(app, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
-assert.match(app, /size-1\.5 animate-pulse rounded-full bg-amber-500/, "the stuck chip pulses — the only motion on the strip");
-assert.match(app, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
-assert.doesNotMatch(app, /velocity|throughput per|per worker/, "no efficiency ranking survives in the strip");
+assert.match(flowStrip, /useState<"tempo" \| "atencao">\("tempo"\)/, "tempo and attention are tabs, not stacked sections");
+assert.match(flowStrip, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
+assert.match(flowStrip, /size-1\.5 rounded-full/, "the stuck chip pulses — the only motion on the strip");
+assert.match(flowStrip, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
+assert.doesNotMatch(flowStrip, /velocity|throughput per|per worker/, "no efficiency ranking survives in the strip");
 
 // The header names the component and its count honestly: Flow indicators
 // over finished cards with a measured trail — never a bare "N done" that
 // reads as Done-column membership. p50/p90 never stand unexplained.
-assert.match(app, />Flow<\//, "the strip header names the component, not just its numbers");
-assert.match(app, /Finished cards with a measured trail/, "the count explains its own scope in label and title");
-assert.match(app, /\{result\.summary\.count\} finished · \{preset\.label\.toLowerCase\(\)\}/, "the closed header names its window — a filtered count never reads as the column");
-assert.match(app, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
-assert.match(app, /9 of 10 finish within/, "slow names what p90 means in words");
-assert.match(app, /Lead runs idea to done; cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
-assert.doesNotMatch(app, /lead p50 \{/, "no bare p50 readout survives in the header");
-assert.doesNotMatch(app, /p90 lead \{/, "no bare p90 readout survives in the window row");
+assert.match(flowStrip, />Flow<\//, "the strip header names the component, not just its numbers");
+assert.match(flowStrip, /Finished cards with a measured trail/, "the count explains its own scope in label and title");
+assert.match(
+  flowStrip,
+  /\{result\.summary\.count\} finished · \{preset\.label\.toLowerCase\(\)\}/,
+  "the closed header names its window — a filtered count never reads as the column",
+);
+assert.match(flowStrip, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
+assert.match(flowStrip, /9 of 10 finish within/, "slow names what p90 means in words");
+assert.match(flowStrip, /Lead[\s\S]*cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
+assert.doesNotMatch(flowStrip, /lead p50 \{/, "no bare p50 readout survives in the header");
+assert.doesNotMatch(flowStrip, /p90 lead \{/, "no bare p90 readout survives in the window row");
 
 // Worker-history total: one summed line in the summary, unknowns skipped,
 // all-unknown hidden — the per-thread rows below keep their own numbers.

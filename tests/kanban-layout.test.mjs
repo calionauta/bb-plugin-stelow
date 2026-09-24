@@ -24,6 +24,7 @@ const boardFilters = readFileSync(join(root, "components", "board", "board-filte
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components", "board", "board-cards.tsx"), "utf8");
 const cardGallery = readFileSync(join(root, "components", "board", "card-gallery.tsx"), "utf8");
+const hillBoard = readFileSync(join(root, "components", "board", "hill-board.tsx"), "utf8");
 const buildDialogKanban = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
@@ -50,11 +51,11 @@ for (const label of ["New issue", "New research", "New exploration"]) {
 }
 assert.match(
   app,
-  /import \{ BucketGalleryButton, CardGalleryDialog, useBucketGallery \} from "\.\/components\/board\/card-gallery"/,
+  /import \{ BucketGalleryButton, useBucketGallery \} from "\.\/components\/board\/card-gallery"/,
   "the board mounts the extracted gallery feature",
 );
 assert.equal((cardGallery.match(/export function CardGalleryDialog\(/g) ?? []).length, 1, "one shared gallery dialog implementation");
-assert.equal((app.match(/<CardGalleryDialog/g) ?? []).length, 1, "only the hill pile mounts the dialog outside the Bucket feature");
+assert.equal((hillBoard.match(/<CardGalleryDialog/g) ?? []).length, 1, "only the hill pile mounts the dialog outside the Bucket feature");
 assert.match(cardGallery, /<CardGalleryDialog/, "the Bucket hook mounts the same dialog implementation");
 assert.equal(
   (app.match(/const bucketGallery = useBucketGallery\(/g) ?? []).length,

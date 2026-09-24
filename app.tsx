@@ -30,9 +30,7 @@ import {
   stageInfoUrl,
   stageLabel,
 } from "./lib/workflow-vocabulary.mjs";
-import { formatDuration } from "./lib/card-metrics.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
-import { hillPoint, hillCurvePoints, hillDotPercent, hillSvgY, clusterHillDots, hillTally, isOnHill } from "./lib/hill-position.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
@@ -49,7 +47,9 @@ import { ViewToggle } from "./components/board/board-view-toggle";
 import { BuildList, ExploreList, ResearchList } from "./components/board/track-lists";
 import { BoardColumn } from "./components/board/board-column";
 import { BoardCard, ExploreCard, ResearchCard } from "./components/board/board-cards";
-import { BucketGalleryButton, CardGalleryDialog, useBucketGallery } from "./components/board/card-gallery";
+import { FlowStrip } from "./components/board/flow-strip";
+import { HillBoard } from "./components/board/hill-board";
+import { BucketGalleryButton, useBucketGallery } from "./components/board/card-gallery";
 import { normalizeBoardView, type BoardTrack } from "./lib/board-views.mjs";
 import {
   STELOW_PANEL_ID,
@@ -64,7 +64,6 @@ import {
 import { useDebouncedRealtime } from "./components/use-debounced-realtime";
 import {
   Pill,
-  activityDotTone,
 } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
@@ -667,7 +666,11 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="sm:hidden">Swipe sideways to view every stage.</span>
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
-          <FlowStrip rpc={rpc} projectId={filterProjectIds.length === 1 ? filterProjectIds[0] ?? null : null} navigate={navigate} />
+          <FlowStrip
+            rpc={rpc}
+            projectId={filterProjectIds.length === 1 ? filterProjectIds[0] ?? null : null}
+            onOpenCard={(kind, cardId) => goToCard(navigate, { kind }, cardId)}
+          />
           {viewMode === "list" ? (
             <BuildList
               groups={grouped}
@@ -680,7 +683,7 @@ function BoardPanel({ active }: { active: boolean }) {
               onOpenThread={(threadId) => navigate.toThread(threadId)}
             />
           ) : viewMode === "hill" ? (
-            <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} />
+            <HillBoard cards={Object.values(grouped).flat()} onOpenCard={(card) => goToCard(navigate, card, card.id)} />
           ) : (
             <div
               data-testid="kanban-board"
@@ -1673,208 +1676,6 @@ function StelowPanelRoute({ subPath }: { subPath: string }) {
       )}
       renderTrack={renderTrackPanel}
     />
-  );
-}
-
-// Hill view: one dot per card on a figuring-out/executing curve (Shape Up
-// hill-chart reading). Position comes from data the board already carries
-// (task/scope fractions, stage checkpoint) via lib/hill-position — no new
-// fetch, no layout shift (lanes hash from the card id). Dots are real
-// buttons opening the same card surface as tiles and rows.
-// Hill region in product words: position never reads as a number anywhere
-// on this surface — counts and work states, never percentages.
-function hillRegionLabel(region: string): string {
-  return region === "uphill" ? "Figuring out" : "Executing";
-}
-
-function HillBoard({ cards, navigate }: { cards: CardItem[]; navigate: ReturnType<typeof useBbNavigate> }) {
-  // The open cluster is identified by its x, not its index: board updates
-  // re-sort clusters, and an index would silently point at another pile.
-  // Click-only: hover previews fired while sweeping across piles and the
-  // floating panel anchored to the frame edge, not the dot — a modal
-  // gallery names its cards instead of floating near them.
-  const [openX, setOpenX] = useState<number | null>(null);
-  // Archived cards are not work and have no position (see isOnHill): only
-  // cards still in the workflow get dots. The tally counts the same way, so
-  // the line can never claim execution for a card that already landed.
-  const onHill = useMemo(() => cards.filter(isOnHill), [cards]);
-  const tally = useMemo(() => hillTally(cards), [cards]);
-  const dots = useMemo(() => onHill.map((card) => ({ card, point: hillPoint(card) })), [onHill]);
-  const clusters = useMemo(() => clusterHillDots(dots), [dots]);
-  const curvePath = useMemo(() => hillCurvePoints(41).map((entry, index) => `${index === 0 ? "M" : "L"} ${(entry.x * 100).toFixed(2)} ${(36 - entry.y * 24.8).toFixed(2)}`).join(" "), []);
-  if (cards.length === 0) return <p className="text-sm text-muted-foreground">No cards in this view.</p>;
-  if (tally.onHill === 0) return <p className="text-sm text-muted-foreground">Nothing on the hill — {tally.archived} archived {tally.archived === 1 ? "card is" : "cards are"} off it.</p>;
-  const openCluster = openX === null ? null : clusters.find((cluster) => cluster.x === openX) ?? null;
-  return (
-    <div>
-      <p className="text-xs text-muted-foreground" role="status">{tally.onHill} {tally.onHill === 1 ? "card" : "cards"} on the hill — {tally.uphill} figuring out, {tally.executing} executing, {tally.done} done.{tally.archived > 0 ? ` ${tally.archived} archived, off the hill.` : ""}</p>
-      <div className="relative mt-2 h-64 w-full sm:h-80">
-        <svg aria-hidden className="absolute inset-0 h-full w-full text-muted-foreground/40" viewBox="0 0 100 40" preserveAspectRatio="none">
-          <path d={curvePath} pathLength={100} className="stelow-hill-draw" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-          <line x1="50" y1="2" x2="50" y2="38" stroke="currentColor" strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
-        </svg>
-        {clusters.map((cluster) => {
-          const pos = hillDotPercent({ x: cluster.x, y: hillPoint(cluster.cards[0]).y });
-          const multi = cluster.cards.length > 1;
-          const attention = cluster.cards.some((card) => card.needsAttention);
-          const isOpen = openX === cluster.x;
-          // Fluidity without lying: x stays exact (shared ratios genuinely
-          // coincide — that pile-up IS the bottleneck signal), but dot area
-          // grows with slice size, so a 10-scope slice reads bigger than a
-          // 1-scope one at the same position.
-          const biggest = Math.max(...cluster.cards.map((card) => card.scopeSummary?.scopesTotal ?? 0));
-          const dotSize = biggest >= 8 ? "size-5" : biggest >= 4 ? "size-4" : "size-3";
-          return multi ? (
-            <button
-              key={`cluster-${cluster.x}`}
-              onClick={() => setOpenX(isOpen ? null : cluster.x)}
-              title={`${cluster.cards.length} cards here`}
-              aria-label={`${cluster.cards.length} cards, ${hillRegionLabel(hillPoint(cluster.cards[0]).region)}. Open the list.`}
-              aria-expanded={isOpen}
-              style={{ left: `${pos.left}%`, bottom: `${pos.bottom}%` }}
-              className={`stelow-hill-dot absolute flex size-5 -translate-x-1/2 translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-muted-foreground/30 text-[10px] font-semibold text-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${attention ? "stelow-hill-attn" : ""}`}
-            >{cluster.cards.length}</button>
-          ) : (
-            <button
-              key={cluster.cards[0].id}
-              onClick={() => goToCard(navigate, cluster.cards[0], cluster.cards[0].id)}
-              title={biggest > 0 ? `${cluster.cards[0].displayName} · ${biggest} scopes` : cluster.cards[0].displayName}
-              aria-label={`Open card ${cluster.cards[0].displayName}.`}
-              style={{ left: `${pos.left}%`, bottom: `${pos.bottom}%`, animationDelay: `${Math.min(Math.round(cluster.x * 900), 900)}ms` }}
-              className={`stelow-hill-dot absolute ${dotSize} -translate-x-1/2 translate-y-1/2 cursor-pointer rounded-full before:absolute before:-inset-2 before:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${activityDotTone(cluster.cards[0])}${attention ? " stelow-hill-attn" : ""}`}
-            />
-          );
-        })}
-        {openCluster ? (
-          <CardGalleryDialog
-            open
-            title={`${openCluster.cards.length} cards · ${hillRegionLabel(hillPoint(openCluster.cards[0]).region)}`}
-            description="Cards sharing this hill position. Pick one to open it."
-            cards={openCluster.cards}
-            emptyText="No cards here."
-            onOpenCard={(card) => { setOpenX(null); goToCard(navigate, card, card.id); }}
-            onClose={() => setOpenX(null)}
-          />
-        ) : null}
-      </div>
-      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground" aria-hidden><span>Figuring out</span><span>Executing</span></div>
-      <ul aria-label="Hill legend" className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-amber-500" />Needs you</li>
-        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-primary" />Working</li>
-        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-emerald-500" />Done</li>
-        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-destructive" />Failed</li>
-        <li className="flex items-center gap-1"><span aria-hidden className="size-2 rounded-full bg-muted-foreground/40" />Resting</li>
-      </ul>
-    </div>
-  );
-}
-
-// Phase rail: the four workflow phases with the card's current one filled.
-// A glanceable "you are here" for the open card; research/explore cards
-// (no workflow stage) render no marker rather than a wrong one.
-// Flow strip: finished-work lead/cycle reading on the Build board. One
-// Flow indicators over finished cards: a named header (finished count with
-// a measured trail, typical/median and slow/p90 lead/cycle), expanding to
-// window presets and a per-card table. Reads the flowMetrics RPC — the same
-// math as gap summaries and card detail, never a third implementation. Empty
-// boards render nothing: clean stays clean.
-type FlowWindow = "all" | "30d" | "90d";
-const FLOW_WINDOWS: Array<{ id: FlowWindow; label: string; days: number | null }> = [
-  { id: "all", label: "All time", days: null },
-  { id: "30d", label: "30d", days: 30 },
-  { id: "90d", label: "90d", days: 90 },
-];
-function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: string | null; navigate: ReturnType<typeof useBbNavigate> }) {
-  const [open, setOpen] = useState(false);
-  const [window, setWindow] = useState<FlowWindow>("all");
-  const [tab, setTab] = useState<"tempo" | "atencao">("tempo");
-  const [result, setResult] = useState<{ items: Array<{ cardId: string; kind: string; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }>; summary: { count: number; leadP50Ms: number | null; leadP90Ms: number | null; cycleP50Ms: number | null; cycleP90Ms: number | null }; attention: Array<{ cardId: string; kind: string; name: string; reason: "stuck" | "review" }> } | null>(null);
-  const preset = FLOW_WINDOWS.find((entry) => entry.id === window) ?? FLOW_WINDOWS[0]!;
-  const since = preset.days === null ? null : Date.now() - preset.days * 86400000;
-  useEffect(() => {
-    let cancelled = false;
-    void rpc.call("flowMetrics", { projectId, since }).then((next) => { if (!cancelled) setResult(next); }).catch(() => { if (!cancelled) setResult(null); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rpc, projectId, window]);
-  if (!result || result.summary.count === 0) return null;
-  const rows = [...result.items].sort((a, b) => (b.leadMs ?? -1) - (a.leadMs ?? -1));
-  const stuck = result.attention.filter((entry) => entry.reason === "stuck");
-  const review = result.attention.filter((entry) => entry.reason === "review");
-  const leadTypical = result.summary.leadP50Ms !== null ? formatDuration(result.summary.leadP50Ms) : "—";
-  const cycleTypical = result.summary.cycleP50Ms !== null ? formatDuration(result.summary.cycleP50Ms) : "—";
-  const label = `${result.summary.count} finished · ${preset.label.toLowerCase()} · lead typical ${leadTypical} · cycle typical ${cycleTypical}`;
-  return (
-    <div className="rounded-md border bg-muted/20 px-3 py-2">
-      <button onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-label={`Flow indicators: ${label}. Finished cards with a measured trail in this scope and window.`} title="Finished cards with a measured trail in this scope and window — a Done-column card without one reads here only after its trail records." className="flex min-h-11 w-full cursor-pointer flex-wrap items-center gap-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-        <DisclosureChevron open={open} />
-        <span className="font-medium text-foreground">Flow</span>
-        <span className="whitespace-nowrap text-muted-foreground">{result.summary.count} finished · {preset.label.toLowerCase()}</span>
-        <span className="whitespace-nowrap text-muted-foreground">lead typical {leadTypical}</span>
-        <span className="whitespace-nowrap text-muted-foreground">cycle typical {cycleTypical}</span>
-        {stuck.length > 0 ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300" title="Blocked status or errored worker — needs unblocking, right now">
-            <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-            {stuck.length} stuck
-          </span>
-        ) : null}
-        {review.length > 0 ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300" title="Finished cards awaiting your read">
-            <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
-            {review.length} to review
-          </span>
-        ) : null}
-      </button>
-      {open ? (
-        <div className="mt-2 space-y-2">
-          <div className="flex items-center gap-1" role="group" aria-label="Flow view">
-            {(["tempo", "atencao"] as const).map((entry) => (
-              <button key={entry} onClick={() => setTab(entry)} aria-pressed={tab === entry} className={`min-h-9 cursor-pointer rounded-md px-2 text-xs font-medium ${tab === entry ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{entry === "tempo" ? "Tempo" : `Atenção${stuck.length + review.length > 0 ? ` (${stuck.length + review.length})` : ""}`}</button>
-            ))}
-            <span className="ml-auto text-xs tabular-nums text-muted-foreground">slow: lead {result.summary.leadP90Ms !== null ? formatDuration(result.summary.leadP90Ms) : "—"} · cycle {result.summary.cycleP90Ms !== null ? formatDuration(result.summary.cycleP90Ms) : "—"}</span>
-          </div>
-          {tab === "tempo" ? (
-          <div className="space-y-2">
-          <p className="text-xs leading-5 text-muted-foreground">Typical is the median (p50); slow is p90 — 9 of 10 finish within. Lead runs idea to done; cycle runs first real movement to done.</p>
-          <div className="flex items-center gap-1" role="group" aria-label="Done window">
-            {FLOW_WINDOWS.map((entry) => (
-              <button key={entry.id} onClick={() => setWindow(entry.id)} aria-pressed={window === entry.id} className={`min-h-9 cursor-pointer rounded-md px-2 text-xs font-medium ${window === entry.id ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted"}`}>{entry.label}</button>
-            ))}
-          </div>
-          <ul className="max-h-56 space-y-0.5 overflow-auto">
-            {rows.map((item) => (
-              <li key={item.cardId}>
-                <button onClick={() => goToCard(navigate, { kind: item.kind as "build" | "research" | "explore" }, item.cardId)} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-                  <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">lead {item.leadMs !== null ? formatDuration(item.leadMs) : "—"}</span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">cycle {item.cycleMs !== null ? formatDuration(item.cycleMs) : "—"}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          </div>
-          ) : (
-          <div className="space-y-2">
-          <p className="text-xs leading-5 text-muted-foreground">Right now — not in the selected window. Stuck means blocked status or an errored worker; review means finished and awaiting your read.</p>
-          {stuck.length + review.length === 0 ? (
-            <p className="text-xs text-muted-foreground">All clear — nothing stuck, nothing awaiting review.</p>
-          ) : (
-          <ul className="max-h-56 space-y-0.5 overflow-auto">
-            {[...stuck.map((entry) => ({ ...entry, tone: "text-amber-700 dark:text-amber-300", mark: "stuck" })), ...review.map((entry) => ({ ...entry, tone: "text-emerald-700 dark:text-emerald-300", mark: "to review" }))].map((entry) => (
-              <li key={entry.cardId}>
-                <button onClick={() => goToCard(navigate, { kind: entry.kind as "build" | "research" | "explore" }, entry.cardId)} className="flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-xs hover:bg-muted/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                  <span className={`shrink-0 font-medium ${entry.tone}`}>{entry.mark}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          )}
-          </div>
-          )}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
