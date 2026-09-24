@@ -13,9 +13,18 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-migrations.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-accessors.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-handlers.ts"), "utf8"),
+  readFileSync(join(root, "server", "platform-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
 ].join("\n");
+const presetMigrations = readFileSync(join(root, "server", "preset-migrations.ts"), "utf8");
+const presetHandlers = readFileSync(join(root, "server", "preset-handlers.ts"), "utf8");
+const presetAccessors = readFileSync(join(root, "server", "preset-accessors.ts"), "utf8");
+const cardsCreate = readFileSync(join(root, "server", "cards-create.ts"), "utf8");
 const executionAdvance = readFileSync(join(root, "server", "execution-advance.ts"), "utf8");
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const workerBackend = readFileSync(join(root, "server/workers.ts"), "utf8");
@@ -51,52 +60,34 @@ assert.deepEqual(
 
 // Singleton table mirrors the generation_preset discipline: one row,
 // cascade-cleared when its preset is deleted.
-assert.match(server, /CREATE TABLE IF NOT EXISTS reliable_preset \(\s*\n\s*id INTEGER PRIMARY KEY CHECK \(id = 1\)/, "the reliable designation is a singleton row");
-assert.match(server, /FOREIGN KEY \(preset_id\) REFERENCES presets\(id\) ON DELETE CASCADE\s*\n\s*\)`\);[\s\S]*reliable_preset/, "deleting the preset clears the reliable designation");
+assert.match(presetMigrations, /for \(const table of \["review_preset", "generation_preset", "reliable_preset"\]/, "the singleton tables share one migration");
+assert.match(presetMigrations, /id INTEGER PRIMARY KEY CHECK \(id = 1\)/, "the reliable designation is a singleton row");
+assert.match(presetMigrations, /FOREIGN KEY \(preset_id\) REFERENCES presets\(id\) ON DELETE CASCADE/, "deleting the preset clears the reliable designation");
 
 // Changing the override must flag live workers running under it: provider/
 // model are fixed at spawn, so a worker predating the change offers Restart
 // instead of a Resume that changes nothing (same contract as assignPreset).
-const assignAt = server.indexOf("async assignReliablePreset({ presetId }) {");
-assert.ok(assignAt >= 0, "the reliable setter body is found");
-const assignEnd = server.indexOf("\n    },\n", assignAt);
-assert.ok(assignEnd > assignAt, "the reliable setter body is bounded");
-const assignBody = server.slice(assignAt, assignEnd);
-assert.ok(assignBody.includes("liveWorkerCards(db, null)"), "all live workers are re-evaluated through the shared fan-out helper");
-assert.ok(assignBody.includes("refreshRestartPending(db, card.id,"), "live workers recompute restart-pending against the new effective preset");
-// Both the zod contract and the handler must exist — a handler without a
-// contract entry fails typecheck, a contract entry without a handler fails
-// at runtime.
-assert.match(server, /  getReliablePreset: \{\s*\n\s*(?:experimental_description: "[^"]+",\n\s*)?input: z\.object\(\{\}\)\.strict\(\),/, "the reliable getter is in the RPC contract");
-assert.match(server, /  assignReliablePreset: \{\s*\n\s*(?:experimental_description: "[^"]+",\n\s*)?input: z\.object\(\{ presetId: z\.string\(\)\.nullable\(\) \}\)\.strict\(\),/, "the reliable setter is in the RPC contract");
-assert.match(server, /async getReliablePreset\(\) \{/, "the reliable getter RPC exists");
-assert.match(server, /async assignReliablePreset\(\{ presetId \}\) \{/, "the reliable setter RPC exists");
-// The upsert/delete SQL lives in the shared singleton helper now that the
-// three tiers stopped each spelling it out. The invariant is unchanged, so
-// the assertion follows it: the helper owns the SQL, each caller names its
-// own table.
-const singletonAt = server.indexOf("function assignSingletonPreset(");
-assert.ok(singletonAt >= 0, "the shared singleton setter exists");
-const singletonBody = server.slice(singletonAt, server.indexOf("\n  }\n", singletonAt));
-assert.ok(singletonBody.includes("INSERT OR REPLACE INTO ${table} (id, preset_id, assigned_at) VALUES (1, ?, ?)"), "the setter upserts the singleton row");
-assert.ok(singletonBody.includes("DELETE FROM ${table} WHERE id = 1"), "clearing the override deletes the singleton row");
-assert.ok(server.includes('assignSingletonPreset("reliable_preset", presetId)'), "the reliable setter names the reliable table");
+assert.match(presetHandlers, /if \(table === "reliable_preset"\) accessors\.refreshLiveWorkers\(null\)/, "all live workers are re-evaluated through the shared fan-out helper");
+assert.match(presetHandlers, /assignReliablePreset: async \(\{ presetId \}: SingletonInput\) =>\n\s*designate\("reliable_preset", presetId\)/, "the reliable setter names the reliable table");
+assert.match(presetHandlers, /INSERT OR REPLACE INTO \$\{table\} \(id, preset_id, assigned_at\)/, "the setter upserts the singleton row");
+assert.match(presetHandlers, /DELETE FROM \$\{table\} WHERE id = 1/, "clearing the override deletes the singleton row");
+assert.match(presetAccessors, /reliableOverride: singletonPresetId\(db, "reliable_preset"\)/, "the resolver reads the reliable singleton");
+assert.match(presetAccessors, /resolveReliablePreset\(/, "the resolver calls the lib cascade");
 
 // The resolver lives beside getPresetForBand — never inside it — so the
 // draft-burst band fallback keeps resolving the pure band preset.
-assert.match(server, /function getReliablePresetForBand\(band: string, cardId: string\): PresetRow \{/, "the reliable resolver exists beside the band resolver");
-const reliableDefAt = server.indexOf("function getReliablePresetForBand(band: string, cardId: string): PresetRow {");
-assert.ok(reliableDefAt >= 0, "the reliable resolver definition is found");
-const reliableBodyEnd = server.indexOf("\n  }\n", reliableDefAt);
-assert.ok(reliableBodyEnd > reliableDefAt, "the reliable resolver body is bounded");
-const reliableBody = server.slice(reliableDefAt, reliableBodyEnd);
-assert.ok(reliableBody.includes("resolveReliablePreset({"), "the resolver calls the lib cascade — a body gutted to pure band delegation fails here");
-const bandDefAt = server.indexOf("function getPresetForBand(band: string, cardId: string): PresetRow {");
-assert.ok(bandDefAt >= 0, "the pure band resolver still exists");
-const bandBodyEnd = server.indexOf("\n  }\n", bandDefAt);
-assert.ok(bandBodyEnd > bandDefAt, "the pure band resolver body is bounded");
-const bandBody = server.slice(bandDefAt, bandBodyEnd);
-assert.ok(!bandBody.includes("reliable"), "the pure band resolver never consults the override");
+assert.match(presetAccessors, /getReliablePresetForBand = \(band: string, cardId: string\): PresetRow =>/, "the reliable resolver exists beside the band resolver");
+assert.match(presetAccessors, /getPresetForBand = \(band: string, cardId: string\): PresetRow =>/, "the pure band resolver still exists");
+const reliableResolver = presetAccessors.slice(
+  presetAccessors.indexOf("getReliablePresetForBand ="),
+  presetAccessors.indexOf("const presetAttachmentParams"),
+);
+assert.ok(reliableResolver.includes("resolveReliablePreset({"), "the resolver calls the lib cascade — a body gutted to pure band delegation fails here");
+const bandResolver = presetAccessors.slice(
+  presetAccessors.indexOf("getPresetForBand ="),
+  presetAccessors.indexOf("getReliablePresetForBand ="),
+);
+assert.ok(!bandResolver.includes("reliable"), "the pure band resolver never consults the override");
 const draftBandFallback = /const band = deps\.getPresetForBand\(bandForCardKindStage\(card\.kind, card\.stage\), card\.id\);/;
 assert.match(drafting, draftBandFallback, "the draft-burst fallback still resolves the pure band preset");
 
@@ -114,8 +105,8 @@ assert.match(
   /const currentPresetId = card\.worker_preset_id \?\? deps\.getCardPresetId\(card\.id\);/,
   "the advance band swap honors the card pin before respawning",
 );
-assert.match(server, /const reliablePreset = reliable \? deps\.getPreset\(reliable\.preset_id\) : null;/, "the initial spawn consults the reliable row");
-assert.match(server, /const base = reliablePreset \?\? bandPreset \?\? selected;/, "the initial spawn prefers reliable over band over default");
+assert.match(cardsCreate, /const reliablePreset = reliableId \? deps\.getPreset\(reliableId\) : null;/, "the initial spawn consults the reliable row");
+assert.match(cardsCreate, /const base = reliablePreset \?\? bandPreset \?\? selected;/, "the initial spawn prefers reliable over band over default");
 
 // Board and card detail show the effective preset, so the panel never
 // claims the band preset while a reliable override runs the worker.
