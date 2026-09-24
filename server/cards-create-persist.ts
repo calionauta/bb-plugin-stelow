@@ -67,7 +67,8 @@ function cardValues(
     input.start === false ? "idle" : "running",
     thread?.id ?? null,
     preset.id, track.seed.dirHash, JSON.stringify(input.attachments), workspace.exploratory ? "exploratory" : "project",
-    workspace.exploratory ? workspace.rootPath : null, workspace.exploratory ? workspace.source.hostId : null, stage,
+    workspace.exploratory ? workspace.rootPath : null, workspace.exploratory ? workspace.source.hostId : null,
+    track.research ? "research" : track.explore ? "explore" : "build",
     track.researchStrategy?.id ?? null,
     track.researchStrategy
       ? JSON.stringify([{ id: track.researchStrategy.id, at: createdAt, file: prepared.roundFile }])

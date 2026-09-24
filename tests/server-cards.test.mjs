@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createCardsServer, createCardStore } from "../server/cards.ts";
+import { createCardInternal } from "../server/cards-create.ts";
+import { CARD_COLUMNS } from "../server/cards-create-persist.ts";
 
 const card = {
   id: "card_1",
@@ -31,7 +33,7 @@ function harness() {
   const db = {
     prepare(sql) {
       return {
-        all: (...values) => sql.includes("ORDER BY updated_at") ? rows : [],
+        all: (..._values) => sql.includes("ORDER BY updated_at") ? rows : [],
         get: () => rows[0],
       };
     },
@@ -82,4 +84,89 @@ test("read card files rejects workspace escapes and reads text", async () => {
   const { cards } = harness();
   assert.equal((await cards.handlers.readCardFile({ cardId: card.id, path: "../secret" })).error, "Path escapes the workspace.");
   assert.equal((await cards.handlers.readCardFile({ cardId: card.id, path: "notes.md" })).content, "artifact");
+});
+
+test("deferred build creation stores the card kind and never spawns a worker", async () => {
+  let inserted;
+  const db = {
+    prepare(sql) {
+      return {
+        get: () => sql.includes("stage_presets")
+          ? { preset_id: "preset_1" }
+          : undefined,
+        run: (...values) => { inserted = values; },
+      };
+    },
+  };
+  const bb = {
+    sdk: { projects: { get: async () => ({ id: "proj_1", sources: [{ path: "/workspace", hostId: "host_1" }] }) } },
+    storage: { kv: { set: async () => undefined } },
+    realtime: { publish: () => undefined },
+  };
+  const preset = {
+    id: "preset_1",
+    provider_id: "pi",
+    model_id: "model",
+    reasoning_level: "medium",
+    permission_mode: "auto",
+    environment_kind: "project",
+    base_branch: "main",
+    machine_id: null,
+    instructions: "follow the workflow",
+  };
+  let spawned = false;
+  const create = createCardInternal({
+    db,
+    bb,
+    now: () => 100,
+    randomId: () => "card_created",
+    roundTimestamp: () => "stamp",
+    seedBuildIntent: async () => "feature",
+    seedWorkflow: async () => ({ error: null, dirHash: "hash", stateDir: ".stelow/state" }),
+    researchStrategy: () => null,
+    exploreStage: () => null,
+    researchIds: () => [],
+    exploreIds: () => [],
+    defaultPreset: () => preset,
+    getPreset: () => preset,
+    presetParams: (value) => ({
+      providerId: value.provider_id,
+      modelId: value.model_id,
+      reasoningLevel: value.reasoning_level,
+      permissionMode: value.permission_mode,
+      environmentKind: value.environment_kind,
+      machineId: value.machine_id,
+      instructions: value.instructions,
+    }),
+    spawnInitial: async () => { spawned = true; return { id: "thread_1" }; },
+    recordThread: () => undefined,
+    lineage: async () => undefined,
+    roundPath: (stateDir) => stateDir,
+    roundFile: () => "round.md",
+    ensureParent: async () => undefined,
+    researchPrompt: () => "research",
+    explorePrompt: () => "explore",
+    rules: {
+      cardOwnerRules: "owner", neverSeed: "never", cliEquivalents: "cli", reconProtocol: "recon",
+      draftProtocol: "draft", turnDiscipline: "turn", commitStyle: "commit", interfacePick: "pick",
+      doneProtocol: "done", splitProtocol: "split",
+    },
+    describeManagedWorktree: () => false,
+    recordStageEvent: () => undefined,
+    comment: () => undefined,
+    suggestCardName: async () => undefined,
+  });
+
+  const result = await create({
+    projectId: "proj_1",
+    prompt: "Improve the thing",
+    attachments: [],
+    intent: "feature",
+    appetite: "Lean",
+    reviewMode: "Auto",
+    start: false,
+  });
+  assert.deepEqual(result, { cardId: "card_created", threadId: null });
+  assert.equal(spawned, false);
+  assert.equal(inserted[CARD_COLUMNS.indexOf("kind")], "build");
 });
