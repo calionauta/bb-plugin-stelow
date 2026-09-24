@@ -71,8 +71,18 @@ assert.doesNotMatch(app, /grid-flow-col/, "gallery flow is row-major: rightwards
 assert.match(app, /sm:w-\[70vw\]/, "the gallery takes seventy percent of the viewport width");
 assert.match(app, /className="h-\[85dvh\] overflow-y-auto sm:w-\[70vw\]/, "the gallery height is fixed at 85dvh with internal scroll, never content-sized");
 assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
-assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook through the extracted board card");
-assert.match(boardCards, /onClick=\{open\}/, "the extracted tile opens through its injected navigation hook");
+assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles require an open action through the extracted board card");
+assert.match(boardCards, /const open = useCallback\(\(\) => onOpen\(\), \[onOpen\]\)/, "click and keyboard activation share that open action");
+assert.equal(
+  (app.match(/onOpen=\{\(\) => goToCard\(navigate, card, card\.id\)\}/g) ?? []).length,
+  3,
+  "Build, Research, and Explore columns each open their card through the panel router",
+);
+assert.match(
+  app,
+  /<BoardCard card=\{card\} onOpen=\{\(\) => onOpenCard\(card\)\} \/>/,
+  "gallery cards pass their own open-card action instead of a no-op",
+);
 assert.match(app, /const stageOptions = useMemo\(\(\) => \[\.\.\.STAGE_SEQUENCE\], \[\]\)/, "stage filter lists the canonical sequence, never just stages with cards");
 assert.match(boardFilters, /export function FilterMultiSelect/, "facets share one checkbox list, never per-field selects");
 assert.match(app, /toggleFilterValue\(prev, value\)/, "pills and checkboxes toggle through one helper");

@@ -73,10 +73,11 @@ assert.ok(app.includes("function hillRegionLabel("), "region words come from one
 assert.ok(app.includes("function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }"), "one gallery dialog serves buckets and hill piles through params");
 assert.ok(app.includes("<Dialog open={open} onOpenChange="), "dismissal rides the shared Dialog primitive");
 assert.ok(app.includes("<DialogTitle>{title}</DialogTitle>"), "the dialog titles from params — pile count plus region, never a number");
-assert.ok(
-  boardCards.includes("<BoardCard card={card} onOpen={() => onOpenCard(card)}")
-    || app.includes("<BoardCard card={card} onOpen={() => onOpenCard(card)}"),
-  "gallery rows are the board tiles themselves — tint, borders, and activity read identically",
+assert.match(boardCards, /export function BoardCard\(/, "the gallery reuses the extracted board tile component");
+assert.match(
+  app,
+  /<BoardCard card=\{card\} onOpen=\{\(\) => onOpenCard\(card\)\} \/>/,
+  "the gallery mount passes its real open-card action into that component",
 );
 assert.ok(
   boardCards.includes("✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes"),
