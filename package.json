@@ -97,7 +97,7 @@
     "security:production": "npm audit --omit=dev --audit-level=high",
     "security:full": "npm audit --audit-level=high",
     "test:question-staleness": "node tests/question-staleness.test.mjs",
-    "test:draft": "node tests/draft-burst.test.mjs",
+    "test:draft": "node tests/draft-burst.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/server-drafting.test.mjs",
     "test:spawn-freshness": "node tests/spawn-freshness.test.mjs"
   },
   "files": [

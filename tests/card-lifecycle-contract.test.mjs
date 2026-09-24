@@ -55,6 +55,7 @@ const buildStatusPills = readFileSync(join(root, "components/dashboard/build-sta
 const conversation = readFileSync(join(root, "components", "conversation", "question-batch.tsx"), "utf8");
 const cardConversation = readFileSync(join(root, "components", "conversation", "card-conversation.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
+const drafting = readFileSync(join(root, "server", "drafting.ts"), "utf8");
 const disclosureModule = readFileSync(join(root, "components", "disclosure.tsx"), "utf8");
 const artifactModule = readFileSync(join(root, "components", "artifacts", "artifact-inventory.tsx"), "utf8");
 const creationModule = readFileSync(join(root, "components", "creation", "creation-settings.tsx"), "utf8");
@@ -95,7 +96,7 @@ const rename = rpcMethod("renameCard", "addCardComment");
 assert.match(rename, /heuristicDisplayName\(card\.prompt, card\.name\)/, "blank restores the heuristic, never a blank title");
 assert.match(rename, /UPDATE cards SET display_name = \?, updated_at = \? WHERE id = \?/, "rename writes display_name, nothing else");
 assert.match(rename, /publish\("card-state", \{ cardId \}\)/, "rename refreshes open card surfaces");
-assert.match(server, /void suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
+assert.match(server, /void drafting\.suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
 assert.match(manageHeader, /aria-label="Rename card"/, "the header offers inline rename beside the title");
 assert.match(manageHeader, /aria-label="Card title"/, "the rename input is labelled");
 assert.match(manageHeader, /rpc\.call\("renameCard", \{ cardId, name: draftName \}\)/, "save rides the rename RPC, cancel just closes");
@@ -103,8 +104,8 @@ assert.match(manageHeader, /rpc\.call\("renameCard", \{ cardId, name: draftName 
 // Fire-and-forget titling: creation keeps the instant heuristic and the
 // Generation burst upgrades it when it lands — never blocking, never
 // overwriting a human rename that landed mid-flight.
-assert.match(server, /void suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
-assert.match(server, /spawnDisposable\(\{[\s\S]*?\}, "card-title"\)/, "titling rides the disposable path as a registered site");
+assert.match(server, /void drafting\.suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
+assert.match(drafting, /spawnDisposable\(\{[\s\S]*?\}, "card-title"\)/, "titling rides the disposable path as a registered site");
 
 const byThread = rpcMethod("cardByWorkerThread", "readCardFile");
 assert.doesNotMatch(byThread, /row\.status === "archived"/, "an archived card's thread still links back to its card");

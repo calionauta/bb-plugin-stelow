@@ -12,6 +12,7 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const workerBackend = readFileSync(join(root, "server/workers.ts"), "utf8");
 const managerBand = readFileSync(join(root, "components/settings/preset-manager-band-routing.tsx"), "utf8");
 
@@ -91,7 +92,8 @@ const bandBodyEnd = server.indexOf("\n  }\n", bandDefAt);
 assert.ok(bandBodyEnd > bandDefAt, "the pure band resolver body is bounded");
 const bandBody = server.slice(bandDefAt, bandBodyEnd);
 assert.ok(!bandBody.includes("reliable"), "the pure band resolver never consults the override");
-assert.match(server, /const bandPreset = getPresetForBand\(band, cardId\);/, "the draft-burst fallback still resolves the pure band preset");
+const draftBandFallback = /const band = deps\.getPresetForBand\(bandForCardKindStage\(card\.kind, card\.stage\), card\.id\);/;
+assert.match(drafting, draftBandFallback, "the draft-burst fallback still resolves the pure band preset");
 
 // Every reliable-tier spawn resolves through the override-aware resolver:
 // fresh starts, promotion handoff, research fan-out, both band swaps, and

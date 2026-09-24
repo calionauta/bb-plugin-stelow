@@ -95,6 +95,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
+  readFileSync(join(root, "server/drafting.ts"), "utf8"),
 ].join("\n");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const composerHelper = readFileSync(join(root, "components", "creation", "composer-execution.ts"), "utf8");
@@ -111,7 +112,10 @@ for (const method of ["createCard", "createResearchCard", "createExploreCard"]) 
 }
 assert.match(server, /composerPresetOverride\(/, "creation resolves the override through the shared helper");
 assert.match(server, /composerSpawnInput\(/, "the spawn carries the shared spawn input");
-assert.equal((server.match(/executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g) ?? []).length, 5, "only restart/reseed/review/draft/gate-pre-review keep the hardcoded preset-explicit sources; the initial spawn forwards the composer's");
+const explicitSources = /executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g;
+assert.equal((server.match(explicitSources) ?? []).length, 4, "restart/reseed/review/gate-pre-review keep hardcoded explicit sources");
+assert.match(server, /function executionArgs\(params: DraftingParams\)/, "draft and title share one explicit-provenance helper");
+assert.match(server, /providerId: "explicit" as const,[\s\S]*permissionMode: "explicit" as const/, "draft and title preserve every explicit source field");
 assert.match(server, /card-override-\$\{cardId\}/, "a divergent choice pins a card-override row");
 assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)/, "the override is pinned through card_presets");
 

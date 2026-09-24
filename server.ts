@@ -39,7 +39,7 @@ import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, 
 import { validateArtifact, validateSubstep, validateVariant, validateExplore, buildDocDepths, sealStatus } from "./lib/artifact-validation.mjs";
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "./lib/delegation-map.mjs";
-import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput, buildCardNamePrompt, validateCardName, heuristicDisplayName, CARD_NAME_MAX_CHARS } from "./lib/draft-burst.mjs";
+import { heuristicDisplayName } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria, groupCriteriaByKind, parseCriteriaBlock } from "./lib/skill-criteria.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
@@ -111,6 +111,7 @@ import {
 import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } from "./server/decision-api.js";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { createInboxServer, inboxRpcContract, runInboxMigrations } from "./server/inbox.js";
+import { createDraftingServer } from "./server/drafting.js";
 import {
   createArtifactsPublication,
   publicationRpcContract,
@@ -1870,64 +1871,6 @@ ${prompt}`;
     });
   });
 
-  // Fire-and-forget card titling on the Generation tier: a short hidden
-  // burst proposes a better title than the prompt-derived heuristic, then
-  // the human renames inline. Silent on every failure path — creation
-  // already succeeded with the heuristic, and a title is never worth an
-  // error. Registered as delegation site "card-title".
-  async function suggestCardName(cardId: string): Promise<void> {
-    try {
-      const card = getCard(cardId);
-      if (!card) return;
-      const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
-      const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      const boardDefault = designated ? getPresetById(designated.preset_id) : null;
-      const bandPreset = getPresetForBand(band, cardId);
-      const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
-      const titlePreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
-      if (!titlePreset) return;
-      const params = presetAttachmentParams(titlePreset);
-      let titleThread: { id: string };
-      try {
-        titleThread = await spawnDisposable({
-          projectId: card.project_id,
-          environment: { type: "project-default" },
-          visibility: "hidden",
-          title: `Stelow title: ${card.display_name ?? card.name}`,
-          providerId: params.providerId,
-          model: params.modelId,
-          reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-          permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
-          input: [{ type: "text", mentions: [], text: buildCardNamePrompt({ prompt: card.prompt, kind: card.kind }) }],
-        }, "card-title");
-      } catch {
-        return;
-      }
-      const TITLE_POLLS = 12;
-      for (let poll = 0; poll < TITLE_POLLS; poll++) {
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        const thread = await bb.sdk.threads.get({ threadId: titleThread.id }).catch(() => null);
-        const status = (thread as { status?: unknown } | null)?.status;
-        if (status === "idle" || status === "stopping" || status === "archived" || status === "deleted") break;
-        if (status === "failed" || status === "error" || poll === TITLE_POLLS - 1) {
-          await workers.stop(titleThread.id).catch(() => undefined);
-          return;
-        }
-      }
-      const output = await bb.sdk.threads.output({ threadId: titleThread.id }).then((result) => result.output ?? "").catch(() => "");
-      await workers.stop(titleThread.id).catch(() => undefined);
-      const validated = validateCardName(output);
-      if (!validated.ok || !validated.name) return;
-      const live = getCard(cardId);
-      // Never overwrite a human rename that landed while judging.
-      if (!live || (live.display_name ?? live.name) !== (card.display_name ?? card.name)) return;
-      db.prepare("UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?").run(validated.name, now(), cardId);
-      bb.realtime.publish("card-state", { cardId });
-    } catch {
-      // Titles never break creation.
-    }
-  }
-
   // Independent pre-review on gate entry (see advance hook): same reviewer
   // machinery as the review command, but advisory-only — findings land as
   // a card comment, never a reviews/ file, and every miss is silent.
@@ -2238,7 +2181,7 @@ ${prompt}` }, ...workerAttachments],
     bb.realtime.publish("card-state", { cardId });
     // Title suggestion rides along, never blocking: creation already
     // succeeded with the heuristic, the burst upgrades it when it lands.
-    void suggestCardName(cardId).catch(() => undefined);
+    void drafting.suggestCardName(cardId).catch(() => undefined);
     return { cardId, threadId: thread?.id ?? null };
   }
 
@@ -2492,6 +2435,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       cardArchived: "This card is archived.",
       presetNotFound: "Preset not found.",
     },
+  });
+  const drafting = createDraftingServer({
+    db,
+    bb,
+    now,
+    timestamp: roundTimestamp,
+    getCard,
+    getCardByWorkerThread,
+    isArchivedCard,
+    cardWorkspace,
+    continuingEnvironment: workers.continuingEnvironment,
+    getPreset: (presetId) => getPresetById(presetId),
+    getPresetForBand,
+    getGenerationPresetId: () => {
+      const row = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+      return row?.preset_id ?? null;
+    },
+    presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
+    spawnDisposable,
+    stopThread: (threadId) => workers.stop(threadId),
+    comment: (cardId, body) => { logCardComment(cardId, "card", cardId, "agent", body); },
+    publish: (event, payload) => bb.realtime.publish(event, payload),
+    stateDir: (card, workspace) => workflowStateDir(bb, workspace.path, card.id, card.dir_hash!),
+    workspaceRelative,
   });
 
   type RecoveryGitEvidence = { isGit: boolean; gitRoot: string | null; branch: string | null; headSha: string | null; changedFiles: number };
@@ -8033,108 +8000,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { exitCode: 0, stdout: [`Gap triage (${gapJudged.findings.length} escalated gaps judged for genuineness against the critique and the working diff):`, ...gapLines, `Summary: ${gapGenuine} genuine, ${gapNotReal} dismissed, ${gapUncertain} unverifiable — advisory only; routing stays deterministic.${gapBlind}`].join("\n") };
       }
       if (argv[0] === "draft") {
-        // Disposable Tier G burst: text-in/text-out on the generation
-        // preset, judged 100% by the caller. The draft thread writes
-        // nothing, asks nothing, advances nothing — a cheap model is safe
-        // exactly because the leash is short. Anything needing tools,
-        // exact shapes, or multi-step work stays Tier R (do it yourself
-        // on your band preset, never here).
-        const args = argv.slice(1);
-        const json = args.includes("--json");
-        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
-        let brief: string | null = null;
-        for (let i = 0; i < args.length; i++) {
-          if (args[i] === "--prompt") { brief = args[i + 1] ?? null; i++; continue; }
-          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
-          if (args[i] === "--json") continue;
-          return { exitCode: 2, stderr: "Usage: bb stelow draft --prompt <brief> [--json] [--card <card_id>]" };
-        }
-        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
-        if (!brief || !brief.trim()) return { exitCode: 2, stderr: "Pass --prompt <brief>: one disposable draft request (prose only, never protocol work)." };
-        const card = getCard(cardId);
-        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
-        if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
-        const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
-        const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-        const boardDefault = designated ? getPresetById(designated.preset_id) : null;
-        const bandPreset = getPresetForBand(band, cardId);
-        const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
-        const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
-        if (!draftPreset) return { exitCode: 1, stderr: "No preset available for the draft burst (no generation preset, no band preset). Assign presets first." };
-        const params = presetAttachmentParams(draftPreset);
-        const permissionNote = params.permissionMode === "full"
-          ? " (preset permission coerced full → accept-edits: drafts read, never write)"
-          : "";
-        const fallbackNote = resolved.source === "band" ? " (generation preset unset — ran on the band preset)" : "";
-        const draftWorkspace = await cardWorkspace(card);
-        if (!draftWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
-        const draftSource = draftWorkspace.hostId ? { path: draftWorkspace.path, hostId: draftWorkspace.hostId } : null;
-        const draftFallback = draftSource
-          ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory")
-          : { type: "project-default" as const };
-        const draftEnvironment = await workers.continuingEnvironment(card, draftFallback);
-        const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
-        let draftThread: { id: string };
-        try {
-          draftThread = await spawnDisposable({
-            projectId: card.project_id,
-            environment: draftEnvironment,
-            visibility: "hidden",
-            // Disposable draft: archiving the worker archives the draft with
-            // it (BB 0.43 dependent threads). Lifecycle only — the text still
-            // travels through the draft record, never thread history.
-            ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
-            title: `Stelow draft: ${card.display_name ?? card.name}`,
-            providerId: params.providerId,
-            model: params.modelId,
-            reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-            permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
-            executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-            prompt,
-          }, "draft-burst");
-        } catch (error) {
-          return { exitCode: 1, stderr: `Draft spawn failed: ${error instanceof Error ? error.message : "unknown error"}.${permissionNote}` };
-        }
-        const DRAFT_POLL_MS = 5000;
-        const DRAFT_POLLS = 36;
-        for (let poll = 0; poll < DRAFT_POLLS; poll++) {
-          await new Promise((resolve) => setTimeout(resolve, DRAFT_POLL_MS));
-          const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
-          const status = (thread as { status?: unknown } | null)?.status;
-          if (status === "idle" || status === "stopping") break;
-          // The worker may be archived mid-draft (dependent lifecycle above):
-          // stop polling and fall through to the empty-draft path below.
-          if (status === "archived" || status === "deleted") break;
-          if (status === "failed" || status === "error") {
-            await workers.stop(draftThread.id).catch(() => undefined);
-            return { exitCode: 1, stderr: `Draft thread ${draftThread.id} ended with status ${String(status)} — do the draft yourself.` };
-          }
-          if (poll === DRAFT_POLLS - 1) {
-            await workers.stop(draftThread.id).catch(() => undefined);
-            return { exitCode: 1, stderr: `Draft thread ${draftThread.id} still running after 3 minutes — stopped; do the draft yourself.` };
-          }
-        }
-        const output = await bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => "");
-        await workers.stop(draftThread.id).catch(() => undefined);
-        const validated = validateDraftOutput(output);
-        if (!validated.ok) return { exitCode: 1, stderr: validated.error ?? "Empty draft." };
-        const stamp = roundTimestamp();
-        const draftStateDir = card.dir_hash ? await workflowStateDir(bb, draftWorkspace.path, card.id, card.dir_hash).catch(() => null) : null;
-        let draftPath: string | null = null;
-        if (draftStateDir) {
-          const full = join(draftStateDir, `drafts/draft-${stamp}.md`);
-          try {
-            await bb.sdk.files.mkdir({ path: dirname(full), rootPath: draftWorkspace.path, recursive: true });
-            await bb.sdk.files.write({
-              path: full,
-              content: `# Draft ${stamp} (${resolved.source})\n\nCard: ${card.display_name ?? card.name}\nThread: ${draftThread.id}\nPreset: ${draftPreset.name}\n\n${validated.text}\n`,
-            });
-            draftPath = workspaceRelative(draftWorkspace.path, full) ?? `drafts/draft-${stamp}.md`;
-          } catch { /* draft still returned via stdout */ }
-        }
-        logCardComment(cardId, "card", cardId, "agent", `Draft burst (${draftPreset.name}${fallbackNote}) — judge every word before using it.${draftPath ? ` Record: ${draftPath}.` : ""}${permissionNote}`);
-        if (json) return { exitCode: 0, stdout: JSON.stringify({ draft: validated.text, truncated: validated.truncated ?? false, threadId: draftThread.id, path: draftPath, source: resolved.source }, null, 2) };
-        return { exitCode: 0, stdout: validated.text };
+        const result = await drafting.command(argv, ctx.threadId);
+        if (result) return result;
       }
       if (argv[0] === "preset") {
         const sub = argv[1];
