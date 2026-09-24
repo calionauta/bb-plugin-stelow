@@ -18,6 +18,10 @@ test("About owns one tool lifecycle and delegates update lifecycle", () => {
   assert.match(about, /usePluginUpdateActions\(buildInfo, setBuildInfo\)/);
   assert.match(actions, /rpc\.call\("checkPluginUpdate", \{\}\)/);
   assert.match(actions, /rpc\.call\("applyPluginUpdate", \{\}\)/);
+  assert.match(actions, /setPluginUpdateAvailable\(updateAvailableFrom\(result\)\)/,
+    "a fresh check publishes its verdict to every update surface");
+  assert.match(actions, /setPluginUpdateAvailable\(updateAvailableFrom\(info\)\)/,
+    "post-apply build info republishes the refreshed verdict");
   assert.match(actions, /if \(started === state\) return/,
     "the lifecycle guard owns refusal of unconfirmed or duplicate apply calls");
   assert.equal((about.match(/rpc\.call\("toolStatus"/g) ?? []).length, 2,
