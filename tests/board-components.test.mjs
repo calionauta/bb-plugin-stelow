@@ -30,6 +30,8 @@ const buildPanelState = readFileSync(join(root, "components/panels/build-panel-s
 const buildPanelView = readFileSync(join(root, "components/panels/build-panel-view.tsx"), "utf8");
 const researchPanelState = readFileSync(join(root, "components/panels/research-panel-state.ts"), "utf8");
 const researchPanelView = readFileSync(join(root, "components/panels/research-panel-view.tsx"), "utf8");
+const explorePanelState = readFileSync(join(root, "components/panels/explore-panel-state.ts"), "utf8");
+const explorePanelView = readFileSync(join(root, "components/panels/explore-panel-view.tsx"), "utf8");
 const inboxPanel = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 assert.deepEqual(viewsForTrack("build"), ["board", "list", "hill"], "build keeps its three views");
@@ -48,14 +50,14 @@ assert.match(
 );
 assert.match(buildPanelView, /<ViewToggle[^>]*track="build"/, "build calls the shared toggle as build");
 assert.match(researchPanelView, /<ViewToggle[\s\S]*?track="research"/, "research calls the shared toggle as research");
-assert.match(app, /<ViewToggle[^>]*track="explore"/, "explore calls the shared toggle as explore");
-assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "the remaining lightweight panel binds persistence to a track");
+assert.match(explorePanelView, /<ViewToggle[\s\S]*?track="explore"/, "explore calls the shared toggle as explore");
+assert.equal((explorePanelState.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "explore binds persistence to a track");
 assert.equal((researchPanelState.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "research binds persistence to a track");
 assert.equal((buildPanelState.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "build binds persistence to a track");
 assert.equal(
-  (app.match(/<ViewToggle/g) ?? []).length
-    + (buildPanelView.match(/<ViewToggle/g) ?? []).length
-    + (researchPanelView.match(/<ViewToggle/g) ?? []).length,
+  (buildPanelView.match(/<ViewToggle/g) ?? []).length
+    + (researchPanelView.match(/<ViewToggle/g) ?? []).length
+    + (explorePanelView.match(/<ViewToggle/g) ?? []).length,
   3,
   "one shared toggle call site per board",
 );
@@ -64,7 +66,8 @@ assert.equal(
   (app.match(/= usePanelData/g) ?? []).length
     + (inboxPanel.match(/= usePanelData/g) ?? []).length
     + (buildPanelState.match(/return usePanelData/g) ?? []).length
-    + (researchPanelState.match(/= usePanelData/g) ?? []).length,
+    + (researchPanelState.match(/= usePanelData/g) ?? []).length
+    + (explorePanelState.match(/= usePanelData/g) ?? []).length,
   4,
   "all four data-backed panels use the shared loading lifecycle",
 );
@@ -171,9 +174,9 @@ assert.match(filters, /document\.addEventListener\("pointerdown"/, "outside poin
 assert.match(filters, /type="checkbox"/, "multi-select filters use keyboard-native checkboxes");
 assert.match(filters, /aria-label={`Remove \$\{facet\.label\} filter \$\{label\}`}/, "selected filter pills expose their facet and value");
 assert.equal(
-  (app.match(/<FiltersBar/g) ?? []).length
-    + (buildPanelView.match(/<FiltersBar/g) ?? []).length
-    + (researchPanelView.match(/<FiltersBar/g) ?? []).length,
+  (buildPanelView.match(/<FiltersBar/g) ?? []).length
+    + (researchPanelView.match(/<FiltersBar/g) ?? []).length
+    + (explorePanelView.match(/<FiltersBar/g) ?? []).length,
   3,
   "all boards use the extracted filter bar",
 );

@@ -32,8 +32,10 @@ const buildPanel = readFileSync(join(root, "components", "panels", "build-panel.
 const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
 const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
 const researchPanel = readFileSync(join(root, "components", "panels", "research-panel.tsx"), "utf8");
+const explorePanel = readFileSync(join(root, "components", "panels", "explore-panel.tsx"), "utf8");
 const researchPanelDialogs = readFileSync(join(root, "components", "panels", "research-panel-dialogs.tsx"), "utf8");
 const researchPanelView = readFileSync(join(root, "components", "panels", "research-panel-view.tsx"), "utf8");
+const explorePanelView = readFileSync(join(root, "components", "panels", "explore-panel-view.tsx"), "utf8");
 const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components", "board", "board-cards.tsx"), "utf8");
@@ -43,9 +45,9 @@ const buildDialogKanban = readFileSync(join(root, "components", "creation", "cre
 const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
 assert.equal(
-  (app.match(/<BucketGalleryButton/g) ?? []).length
-    + (buildPanelView.match(/<BucketGalleryButton/g) ?? []).length
-    + (researchPanelView.match(/<BucketGalleryButton/g) ?? []).length,
+  (buildPanelView.match(/<BucketGalleryButton/g) ?? []).length
+    + (researchPanelView.match(/<BucketGalleryButton/g) ?? []).length
+    + (explorePanelView.match(/<BucketGalleryButton/g) ?? []).length,
   3,
   "build, research, and explore each offer the Bucket gallery",
 );
@@ -54,13 +56,13 @@ assert.equal(
 // iterate the visible lists, so no empty Bucket column renders anywhere.
 assert.match(buildPanelView, /BUILD_BOARD_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "build kanban iterates visible columns");
 assert.match(researchPanelView, /LIGHTWEIGHT_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "research kanban iterates visible columns");
-assert.match(app, /VISIBLE_RESEARCH_COLUMNS\.map\(\(column\) => \(/, "explore kanban iterates visible columns");
+assert.match(explorePanelView, /LIGHTWEIGHT_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "explore kanban iterates visible columns");
 assert.match(trackLists, /const BUILD_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS/, "build lists omit the Bucket column");
 assert.match(trackLists, /const LIGHTWEIGHT_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS/, "lightweight lists omit the Bucket column");
 for (const [track, source] of [
   ["build", buildPanelView],
   ["research", researchPanelView],
-  ["explore", app],
+  ["explore", explorePanelView],
 ]) {
   assert.doesNotMatch(
     source,
@@ -81,7 +83,7 @@ assert.ok(
   "the research grid template matches its rendered columns",
 );
 assert.ok(
-  app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns)"),
+  explorePanelView.includes("kanbanGridColumns(LIGHTWEIGHT_VISIBLE_COLUMNS, state.collapsedColumns)"),
   "the explore grid template matches its rendered columns",
 );
 // Order is product: New, then Bucket, then Agent Presets — the pile sits
@@ -89,7 +91,7 @@ assert.ok(
 for (const [label, source] of [
   ["New issue", buildPanelView],
   ["New research", researchPanelView],
-  ["New exploration", app],
+  ["New exploration", explorePanelView],
 ]) {
   const at = source.indexOf(label);
   assert.ok(at >= 0, `${label} button exists`);
@@ -106,9 +108,9 @@ assert.equal((cardGallery.match(/export function CardGalleryDialog\(/g) ?? []).l
 assert.equal((hillBoard.match(/<CardGalleryDialog/g) ?? []).length, 1, "only the hill pile mounts the dialog outside the Bucket feature");
 assert.match(cardGallery, /<CardGalleryDialog/, "the Bucket hook mounts the same dialog implementation");
 assert.equal(
-  (app.match(/const bucketGallery = useBucketGallery\(/g) ?? []).length
-    + (buildPanel.match(/useBucketGallery\(/g) ?? []).length
-    + (researchPanel.match(/useBucketGallery\(/g) ?? []).length,
+  (buildPanel.match(/useBucketGallery\(/g) ?? []).length
+    + (researchPanel.match(/useBucketGallery\(/g) ?? []).length
+    + (explorePanel.match(/useBucketGallery\(/g) ?? []).length,
   3,
   "each track owns one pile opener shared by its header and creation dialog",
 );
@@ -116,9 +118,10 @@ assert.match(buildDialogKanban, /bucketGallery=\{bucketGallery\}/, "the build di
 assert.equal(
   (buildDialogKanban.match(/bucketGallery\.bucketGallery/g) ?? []).length
     + (buildPanelDialogs.match(/bucketGallery\.bucketGallery/g) ?? []).length
-    + (researchDialogKanban.match(/bucketGallery\.bucketGallery/g) ?? []).length,
-  2,
-  "the Build and Research galleries mount once inside their creation dialogs",
+    + (researchDialogKanban.match(/bucketGallery\.bucketGallery/g) ?? []).length
+    + (exploreDialogKanban.match(/bucketGallery\.bucketGallery/g) ?? []).length,
+  3,
+  "the Build, Research, and Explore galleries mount once inside their creation dialogs",
 );
 assert.match(
   buildPanelView,
@@ -158,9 +161,9 @@ assert.match(cardGallery, /\{cards\.length === 0 \? \(/, "an empty pile reads on
 assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles require an open action through the extracted board card");
 assert.match(boardCards, /const open = useCallback\(\(\) => onOpen\(\), \[onOpen\]\)/, "click and keyboard activation share that open action");
 assert.equal(
-  (app.match(/onOpen=\{\(\) => goToCard\(navigate, card, card\.id\)\}/g) ?? []).length
-    + (buildPanelView.match(/onOpen=\{\(\) => onOpenCard\(card, card\.id\)\}/g) ?? []).length
-    + (researchPanelView.match(/onOpen=\{\(\) => props\.onOpenCard\(card, card\.id\)\}/g) ?? []).length,
+  (buildPanelView.match(/onOpen=\{\(\) => onOpenCard\(card, card\.id\)\}/g) ?? []).length
+    + (researchPanelView.match(/onOpen=\{\(\) => props\.onOpenCard\(card, card\.id\)\}/g) ?? []).length
+    + (explorePanelView.match(/onOpen=\{\(\) => props\.onOpenCard\(card, card\.id\)\}/g) ?? []).length,
   3,
   "Build, Research, and Explore columns each open their card through the panel router",
 );
@@ -170,15 +173,15 @@ assert.match(
   "gallery cards pass their own open-card action instead of a no-op",
 );
 assert.equal(
-  (app.match(/const openBucketCard = \(card: CardItem\) => goToCard\(/g) ?? []).length
-    + (buildPanel.match(/openBuildCard\(navigate\)/g) ?? []).length
-    + (researchPanel.match(/openResearchCard\(navigate\)/g) ?? []).length,
+  (buildPanel.match(/openBuildCard\(navigate\)/g) ?? []).length
+    + (researchPanel.match(/openResearchCard\(navigate\)/g) ?? []).length
+    + (explorePanel.match(/openExploreCard\(navigate\)/g) ?? []).length,
   3,
   "each track has one Bucket callback owned by the panel router",
 );
 assert.equal(
-  (app.match(/openBucketCard/g) ?? []).length,
-  3,
+  (explorePanel.match(/const openCard = openExploreCard\(navigate\)/g) ?? []).length,
+  1,
   "explore shares one callback for its header and creation gallery",
 );
 assert.match(
@@ -209,7 +212,15 @@ assert.match(
   "stage filter lists the canonical sequence, never just stages with cards",
 );
 assert.match(boardFilters, /export function FilterMultiSelect/, "facets share one checkbox list, never per-field selects");
-assert.match(app, /toggleFilterValue\(prev, value\)/, "pills and checkboxes toggle through one helper");
+const explorePanelState = readFileSync(
+  join(root, "components", "panels", "explore-panel-state.ts"),
+  "utf8",
+);
+assert.match(
+  explorePanelState,
+  /toggleFilterValue\(current, value\)/,
+  "explore filters toggle through one helper",
+);
 assert.doesNotMatch(app, /function FilterSelect\(/, "the single-select is gone");
 assert.deepEqual(toggleFilterValue([], "a"), ["a"], "empty toggles on");
 assert.deepEqual(toggleFilterValue(["a", "b"], "a"), ["b"], "present toggles off, order kept");

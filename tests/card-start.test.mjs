@@ -16,6 +16,7 @@ const githubApp = readFileSync(join(root, "components", "github", "github-issues
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
 const researchPanelDialogs = readFileSync(join(root, "components", "panels", "research-panel-dialogs.tsx"), "utf8");
+const explorePanelDialogs = readFileSync(join(root, "components", "panels", "explore-panel-dialogs.tsx"), "utf8");
 const workflowVocabulary = readFileSync(join(root, "lib", "workflow-vocabulary.mjs"), "utf8");
 const researchDialog = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialog = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
@@ -88,7 +89,10 @@ assert.match(exploreDialog, /rpc\.call\("createExploreCard", \{[^}]*start: start
 // Explore creation: one dialog component owns draft, stage, error, and
 // start — the panel keeps the open flag plus the technique catalog.
 assert.match(exploreDialog, /export function CreateExploreDialog\(\{ open, onOpenChange, activeProjectId, stages, explorePreset/, "the explore dialog lives in the creation module");
-assert.match(app, /import \{ CreateExploreDialog \} from "\.\/components\/creation\/create-explore-dialog"/, "the board reads the shared dialog");
+assert.ok(
+  explorePanelDialogs.includes('import { CreateExploreDialog } from "../creation/create-explore-dialog"'),
+  "the board panel reads the shared explore dialog",
+);
 assert.doesNotMatch(app, /rpc\.call\("createExploreCard",/, "no local explore submit survives in the panel");
 assert.match(exploreDialog, /function resetOnOpen\(\) \{\s*\n\s*setStage\(null\);\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "every open resets stage, start, and error");
 assert.match(githubState, /rpc\.call\("importGithubIssue", \{[^}]*start: importStart/, "import submit passes the choice");

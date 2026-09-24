@@ -79,7 +79,7 @@ assert.match(app, /agent-reach/, "fetch-router skill is disclosed with its conse
 assert.match(app, /thermo-nuclear/, "nuclear review gate skill is disclosed");
 assert.match(
   app,
-  /thermo-nuclear", repo: "https:\/\/github\.com\/cursor\/plugins\/tree\/main\/cursor-team-kit\/skills\/thermo-nuclear-code-quality-review"/,
+  /thermo-nuclear[\s\S]*?repo: "https:\/\/github\.com\/cursor\/plugins\/tree\/main\/cursor-team-kit\/skills\/thermo-nuclear-code-quality-review"/,
   "thermo-nuclear links the original skill, never an embedded copy",
 );
 assert.doesNotMatch(app, /npx skills add|npx @vedanth/, "About shows no runnable commands — workers resolve everything");

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   definePluginApp,
   UrlLink,
   experimental_PermissionModePicker as PermissionModePicker,
   experimental_ProviderModelPicker as ProviderModelPicker,
-  useBbContext,
   useBbNavigate,
   useRpc,
   type PluginCommandRegistration,
@@ -15,10 +14,7 @@ import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
 import { inboxBadgeCount } from "./lib/inbox-panel-state.mjs";
 import { STORAGE_KEYS } from "./lib/panel-storage.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
-import { researchColumnForStatus } from "./lib/card-question-state.mjs";
-import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
-import { kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "./lib/kanban-layout.mjs";
 import {
   BareCardRoute,
   CardDrawerAdapter,
@@ -29,26 +25,13 @@ import { StelowPanel } from "./components/panel/stelow-panel";
 import { InboxPanel } from "./components/panels/inbox-panel";
 import { BuildPanel } from "./components/panels/build-panel";
 import { ResearchPanel } from "./components/panels/research-panel";
-import { TrackSkeleton } from "./components/panel/track-skeleton";
+import { ExplorePanel } from "./components/panels/explore-panel";
 import { rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus.mjs";
-import { FiltersBar } from "./components/board/board-filters";
-import { ViewToggle } from "./components/board/board-view-toggle";
-import { ExploreList } from "./components/board/track-lists";
-import { BoardColumn } from "./components/board/board-column";
-import { ExploreCard } from "./components/board/board-cards";
-import { BucketGalleryButton, useBucketGallery } from "./components/board/card-gallery";
-import {
-  useBoardView,
-  useCollapsedGroups,
-  usePanelData,
-  usePersistentCollapsedGroups,
-} from "./components/panel/panel-state-hooks";
 import {
   STELOW_PANEL_ID,
   STELOW_PANEL_PATH,
   cardSubPath,
   trackRootSubPath,
-  trackTitle,
   type ParsedStelowRoute,
   type StelowTrack,
 } from "./components/panel/stelow-route.mjs";
@@ -57,8 +40,6 @@ import {
   Pill,
 } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
-import type { ResearchStrategyOption } from "./components/creation/creation-settings";
-import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
 import { registerPendingInteraction } from "./components/conversation/question-form";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { StelowArtifactDirective } from "./components/messages/stelow-artifact-directive";
@@ -88,13 +69,6 @@ import {
 // archived) so no migration or guard changes are needed; the mapping lives
 // in lib/card-question-state (shared with the server) so a waiting question
 // — activity, never status — can never push a Doing card back to the Bucket.
-const RESEARCH_COLUMNS = LIGHTWEIGHT_COLUMNS as unknown as readonly ["inbox", "doing", "done", "archived"];
-const RESEARCH_COLUMN_LABELS: Record<string, string> = LIGHTWEIGHT_COLUMN_LABELS;
-const VISIBLE_RESEARCH_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS as unknown as readonly ["doing", "done", "archived"];
-function researchColumnOf(card: Pick<CardItem, "status">): string {
-  return researchColumnForStatus(card.status);
-}
-
 // Every navigation flows through goToTrack / goToCard, so track roots and
 // card URLs keep one owner in the panel router feature.
 type BbNavigate = ReturnType<typeof useBbNavigate>;
@@ -106,12 +80,8 @@ function goToCard(navigate: BbNavigate, card: Pick<CardItem, "kind">, cardId: st
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: cardSubPath(card, cardId, eventId) });
 }
 type BoardResult = Awaited<ReturnType<ReturnType<typeof useRpc<typeof rpcContract>>["call"]>>;
-type ProjectsResponse = Extract<BoardResult, { projects: unknown }>;
-type Project = ProjectsResponse["projects"][number];
 type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
-type BandPresetAssignment = { band: string; presetId: string | null; stages: string[] };
-
 
 interface SidebarAccessoryHandle {
   count: number;
@@ -238,208 +208,6 @@ function useResearchAccessory(): SidebarAccessoryHandle {
   return { count, tone };
 }
 
-function ExplorePanel({ active }: { active: boolean }) {
-  const { projectId: routeProjectId } = useBbContext();
-  const navigate = useBbNavigate();
-  const rpc = useRpc<typeof rpcContract>();
-  const [researchPresetsOpen, setResearchPresetsOpen] = useState(false);
-  const [collapsedColumns, setCollapsedColumns] = usePersistentCollapsedGroups(
-    STORAGE_KEYS.exploreColumns,
-    false,
-  );
-  const [createOpen, setCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView, "explore");
-  const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
-  const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
-  const [filterAttention, setFilterAttention] = useState(false);
-  const loadExplore = useCallback(async () => {
-    const targetId = routeProjectId;
-    const [projectsResult, cardsResult, stagesResult, presetsResult, bandPresetsResult] = await Promise.all([
-      rpc.call("projects", {}).catch(() => null),
-      rpc.call("listCards", { projectId: targetId, kind: "explore" }).catch(() => ({ cards: [] })),
-      rpc.call("stageCatalog", {}).catch(() => ({ stages: [] })),
-      rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
-      rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
-    ]);
-    return {
-      cards: cardsResult.cards,
-      presets: presetsResult.presets,
-      projects: projectsResult?.projects ?? [],
-      researchBandPresets: bandPresetsResult.bands,
-      stages: stagesResult.stages,
-    };
-  }, [routeProjectId, rpc]);
-  const {
-    data: { cards, presets, projects, researchBandPresets, stages },
-    isInitialLoad,
-    load,
-  } = usePanelData(loadExplore, {
-    errorMessage: "Unable to load explore.",
-    initialData: {
-      cards: [] as CardItem[],
-      presets: [] as PresetManagerPreset[],
-      projects: [] as Project[],
-      researchBandPresets: [] as BandPresetAssignment[],
-      stages: [] as ResearchStrategyOption[],
-    },
-    itemCountKey: "cards",
-    realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
-  });
-
-  const activeProjectId = routeProjectId;
-  const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
-  const exploreBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "explore")?.presetId) ?? null;
-  const effectiveExplorePreset = exploreBandPreset ?? defaultPreset;
-  const stageLabelById = useMemo(() => new Map(stages.map((entry) => [entry.id, entry.label])), [stages]);
-  const filteredCards = useMemo(() => cards.filter((card) => {
-    if (!matchesFilterValue(filterProjectIds, card.projectId)) return false;
-    if (filterAttention && !card.needsAttention) return false;
-    return true;
-  }), [cards, filterProjectIds, filterAttention]);
-  const grouped = useMemo(() => {
-    const groups: Record<string, CardItem[]> = Object.fromEntries(RESEARCH_COLUMNS.map((column) => [column, []]));
-    for (const card of filteredCards) {
-      (groups[researchColumnOf(card)] ?? groups.inbox).push(card);
-    }
-    for (const column of Object.keys(groups)) {
-      groups[column]!.sort((a, b) => b.updatedAt - a.updatedAt);
-    }
-    return groups;
-  }, [filteredCards]);
-  // Captured pile for the creation checkbox link: same gallery as the
-  // header Bucket button, opened from the "park in Bucket" copy.
-  const openBucketCard = (card: CardItem) => goToCard(navigate, card, card.id);
-  const bucketGallery = useBucketGallery(grouped.inbox ?? [], openBucketCard);
-  const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
-
-  async function moveCard(cardId: string, target: string) {
-    if (!(RESEARCH_COLUMNS as readonly string[]).includes(target)) return;
-    const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "doing" | "done" | "archived" });
-    if (!result.ok) toast.error(result.error ?? "Move failed");
-  }
-
-  return (
-    <div className="flex h-full overflow-hidden bg-background">
-      <div className="flex-1 overflow-auto p-4 md:p-6">
-        <div className="mx-auto max-w-[1500px] space-y-4">
-          {isInitialLoad ? <TrackSkeleton columns={4} /> : <>
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Choose a single technique from the {trackTitle("build")} workflow — an AI agent runs it on your input, returning a focused result on the card.</p>
-              {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
-                {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
-              </button> : null}
-            </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New exploration</Button>
-              <BucketGalleryButton
-                cards={grouped.inbox ?? []}
-                onOpenCard={openBucketCard}
-              />
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the band default"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
-            </div>
-          </header>
-
-          <PresetOnboardingDialog
-            storageKey={STORAGE_KEYS.onboardExplore}
-            title="Choose your exploration agent preset"
-            intro="Explorations run on the explore band preset — set it once here, or pin a different preset per card in Manage."
-            onOpenPresets={() => setResearchPresetsOpen(true)}
-            active={active}
-          />
-
-          <CreateExploreDialog
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            activeProjectId={activeProjectId}
-            stages={stages}
-            explorePreset={effectiveExplorePreset}
-            hasBandPreset={Boolean(exploreBandPreset)}
-            bucketGallery={bucketGallery}
-            onOpenPresets={() => setResearchPresetsOpen(true)}
-          />
-
-          <PresetManagerDialog
-            open={researchPresetsOpen}
-            onOpenChange={setResearchPresetsOpen}
-            rpc={rpc}
-            presets={presets}
-            onChanged={() => load()}
-          />
-
-          <div className="flex items-start gap-2 border-b pb-3">
-            <div className="min-w-0 flex-1">
-              <FiltersBar
-                projects={projects}
-                filterProjectIds={filterProjectIds}
-                filterAttention={filterAttention}
-                onProjectToggle={(value) => setFilterProjectIds((prev) => toggleFilterValue(prev, value))}
-                onAttention={setFilterAttention}
-                onReset={() => { setFilterProjectIds([]); setFilterAttention(false); }}
-              />
-            </div>
-            <ViewToggle view={viewMode} track="explore" onChange={setViewMode} label="Explore cards view" />
-          </div>
-          {viewMode === "board" ? (
-          <p className="text-xs text-muted-foreground">
-            <span className="sm:hidden">Swipe sideways to view every stage.</span>
-            <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
-          </p>
-          ) : null}
-          {viewMode === "list" ? (
-            <ExploreList
-              groups={grouped}
-              stageLabelById={stageLabelById}
-              collapsed={collapsedListGroups}
-              onToggle={(column) => setCollapsedListGroups((current) => ({
-                ...current,
-                [column]: !current[column],
-              }))}
-              onOpenCard={(card) => goToCard(navigate, card, card.id)}
-              onOpenThread={(threadId) => navigate.toThread(threadId)}
-            />
-          ) : (
-          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns) }}>
-            {VISIBLE_RESEARCH_COLUMNS.map((column) => (
-              <BoardColumn
-                key={column}
-                column={column}
-                cards={grouped[column]}
-                collapsed={Boolean(collapsedColumns[column])}
-                onToggleCollapsed={() => setCollapsedColumns((current) => ({ ...current, [column]: !current[column] }))}
-                onDrop={(cardId) => moveCard(cardId, column)}
-                labels={RESEARCH_COLUMN_LABELS}
-                renderCard={(card) => (
-                  <ExploreCard
-                    card={card}
-                    stageLabel={card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null}
-                    onOpen={() => goToCard(navigate, card, card.id)}
-                  />
-                )}
-              />
-            ))}
-          </div>
-          )}
-          </>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// localStorage keys in one place for board and track preferences. Renaming
-// a key is one line; readers never guess at raw strings scattered through panels.
-
-
-// Board view and collapsed-state hooks live with the other panel state.
-// Card route adapters live in components/detail/card-detail-route. The app
-// supplies navigation and the preset dialog factory so route behavior stays
-// independent from the panel shell.
-
-// About track: what Stelow is vs what this plugin adds — one section each,
-// each with its own repo link and its own version, so the two releases can
-// never be mistaken for each other. No cards live here.
 // Optional host binaries the workflow knows how to use. Presence is probed
 // live on the host (toolStatus); install commands are the canonical
 // one-liners from the upstream README's External Dependencies section.
@@ -458,11 +226,37 @@ const HOST_TOOLS: Array<{ id: "ast-grep" | "cymbal" | "ripwire" | "sem"; name: s
 // each entry names who consumes it and under which consent. No commands
 // shown: you never run anything here, workers resolve it automatically.
 const NPX_TOOLS: Array<{ name: string; repo?: string; plain: string; tech: string }> = [
-  { name: "npx skills", repo: "https://github.com/vercel-labs/skills", plain: "The skills hub workers use to fetch playbooks and stack-matched skills on demand.", tech: "Ships with Node.js; invoked per use, never installed globally by the plugin." },
-  { name: "ctx7", repo: "https://github.com/upstash/context7", plain: "Current, version-specific library docs while writing code — never for choosing the stack.", tech: "Auto-installs on first npx invocation; guided OAuth setup (terminal) only raises limits." },
-  { name: "last30days", repo: "https://github.com/mvanhorn/last30days-skill", plain: "Social recency signal for market research — complementary source only.", tech: "Agent skill, never a binary; workers add it per use, only with your confirmation." },
-  { name: "agent-reach", repo: "https://github.com/Panniantong/agent-reach", plain: "Fetch router for platform evidence (incl. Bilibili/Xiaohongshu) — fetch only, never synthesis.", tech: "Agent skill + local CLIs; workers add it per use, only with your confirmation. Login channels need your browser session or cookies — use a secondary account, never the primary." },
-  { name: "thermo-nuclear", repo: "https://github.com/cursor/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review", plain: "Optional ultra-strict final code review, gated by appetite and risk.", tech: "Agent skill from the cursor/plugins hub package; documented manual checks apply when absent." },
+  {
+    name: "npx skills",
+    repo: "https://github.com/vercel-labs/skills",
+    plain: "The skills hub workers use to fetch playbooks and stack-matched skills on demand.",
+    tech: "Ships with Node.js; invoked per use, never installed globally by the plugin.",
+  },
+  {
+    name: "ctx7",
+    repo: "https://github.com/upstash/context7",
+    plain: "Current, version-specific library docs while writing code — never for choosing the stack.",
+    tech: "Auto-installs on first npx invocation; guided OAuth setup (terminal) only raises limits.",
+  },
+  {
+    name: "last30days",
+    repo: "https://github.com/mvanhorn/last30days-skill",
+    plain: "Social recency signal for market research — complementary source only.",
+    tech: "Agent skill, not a binary; workers add it per use, only with your confirmation.",
+  },
+  {
+    name: "agent-reach",
+    repo: "https://github.com/Panniantong/agent-reach",
+    plain: "Fetch router for platform evidence (incl. Bilibili/Xiaohongshu) — fetch only, never synthesis.",
+    tech: "Agent skill + local CLIs; workers add it per use, only with your confirmation. "
+      + "Login channels need your browser session or cookies — use a secondary account, never the primary.",
+  },
+  {
+    name: "thermo-nuclear",
+    repo: "https://github.com/cursor/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review",
+    plain: "Optional ultra-strict final code review, gated by appetite and risk.",
+    tech: "Agent skill from the cursor/plugins hub package; documented manual checks apply when absent.",
+  },
 ];
 
 function HostToolsSection({ tools, onInstall, installingId, errors }: {
@@ -882,7 +676,15 @@ function renderTrackPanel(tab: StelowTrack, active: boolean) {
       />
     );
   }
-  if (tab === "explore") return <ExplorePanel active={active} />;
+  if (tab === "explore") {
+    return (
+      <ExplorePanel
+        active={active}
+        renderOnboarding={(props) => <PresetOnboardingDialog {...props} />}
+        renderPresetManager={(props) => <PresetManagerDialog {...props} />}
+      />
+    );
+  }
   return <AboutPanel />;
 }
 

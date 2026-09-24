@@ -11,9 +11,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const buildPanelState = readFileSync(join(root, "components/panels/build-panel-state.ts"), "utf8");
 const researchPanelState = readFileSync(join(root, "components/panels/research-panel-state.ts"), "utf8");
+const explorePanelState = readFileSync(join(root, "components/panels/explore-panel-state.ts"), "utf8");
 const storage = readFileSync(join(root, "lib/panel-storage.mjs"), "utf8");
 const buildPanelView = readFileSync(join(root, "components/panels/build-panel-view.tsx"), "utf8");
 const researchPanelView = readFileSync(join(root, "components/panels/research-panel-view.tsx"), "utf8");
+const explorePanelView = readFileSync(join(root, "components/panels/explore-panel-view.tsx"), "utf8");
 const hillBoard = readFileSync(join(root, "components/board/hill-board.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
 const cardGallery = readFileSync(join(root, "components/board/card-gallery.tsx"), "utf8");
@@ -32,7 +34,7 @@ assert.match(
   /<ViewToggle[\s\S]*?track="research"[\s\S]*?label="Research cards view"/,
   "research opts into the lightweight track restriction",
 );
-assert.match(app, /<ViewToggle[^>]*track="explore"[^>]*label="Explore cards view"/, "explore opts into the lightweight track restriction");
+assert.match(explorePanelView, /<ViewToggle[\s\S]*?track="explore"[\s\S]*?label="Explore cards view"/, "explore opts into the lightweight track restriction");
 assert.match(
   buildPanelView,
   /<HillBoard[\s\S]*cards=\{cards\}[\s\S]*onOpenCard=\{\(card\) => onOpenCard\(card, card\.id\)\}/,
@@ -103,7 +105,7 @@ assert.ok(
 assert.match(storage, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
 assert.match(buildPanelState, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view against the build restriction");
 assert.match(researchPanelState, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view against the lightweight restriction");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view against the lightweight restriction");
+assert.match(explorePanelState, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view against the lightweight restriction");
 
 // Dot area grows with slice size (never x jitter): a 10-scope slice reads
 // bigger than a 1-scope one at the same honest position.

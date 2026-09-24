@@ -50,9 +50,9 @@ assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, 
 // degrades to nulls.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
 const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");
+const explorePanelState = readFileSync(join(root, "components", "panels", "explore-panel-state.ts"), "utf8");
 const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
 const storage = readFileSync(join(root, "lib", "panel-storage.mjs"), "utf8");
 const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx"), "utf8");
@@ -84,7 +84,7 @@ assert.match(
   /useCollapsedGroups\([\s\S]*STORAGE_KEYS\.researchListGroups/,
   "research list groups restore their own collapsed state",
 );
-assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");
+assert.match(explorePanelState, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");
 
 // Flow strip: one glanceable line on finished work (count + p50s),
 // expanding to window presets and a per-card table. Empty boards render
