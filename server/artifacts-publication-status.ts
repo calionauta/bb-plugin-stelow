@@ -137,6 +137,44 @@ async function availableSnapshot(
   );
 }
 
+function projectPullRequest(
+  pullRequest: PullRequestStatus,
+): PublicationSnapshot["pullRequest"] {
+  if (
+    pullRequest.outcome !== "available"
+    || !("pullRequest" in pullRequest)
+    || !pullRequest.pullRequest
+  ) return null;
+  const pr = pullRequest.pullRequest;
+  return {
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    state: pr.state,
+    attention: pr.attention,
+    review: pr.review.state,
+    checks: pr.checks.state,
+    mergeability: pr.mergeability.state,
+  };
+}
+
+function projectCapabilities(
+  status: Extract<EnvironmentStatus, { outcome: "available" }>,
+  pullRequest: PullRequestStatus,
+): PublicationSnapshot["capabilities"] {
+  const capability = ({ ok, reason }: { ok: boolean; reason: string | null }) => ({
+    available: ok,
+    reason,
+  });
+  return {
+    commit: capability(canCommitPublication(status)),
+    squashMerge: capability(canSquashMerge(status)),
+    markReady: capability(canMarkPullRequestReady(status, pullRequest)),
+    markDraft: capability(canMarkPullRequestDraft(status, pullRequest)),
+    mergePullRequest: capability(canMergePullRequest(status, pullRequest)),
+  };
+}
+
 function projectSnapshot(
   source: string,
   environmentId: string,
@@ -146,10 +184,6 @@ function projectSnapshot(
   events: PublicationSnapshot["events"],
 ): PublicationSnapshot {
   const blocker = publicationBlocker(status);
-  const capability = ({ ok, reason }: { ok: boolean; reason: string | null }) => ({ available: ok, reason });
-  const pr = pullRequest.outcome === "available" && "pullRequest" in pullRequest
-    ? pullRequest.pullRequest
-    : null;
   const checkout = status.workspace.checkout;
   return {
     available: blocker === null,
@@ -160,7 +194,9 @@ function projectSnapshot(
     branch: {
       current: status.workspace.branch.currentBranch,
       default: status.workspace.branch.defaultBranch,
-      headSha: checkout.kind === "branch" || checkout.kind === "detached" ? checkout.headSha : null,
+      headSha: checkout.kind === "branch" || checkout.kind === "detached"
+        ? checkout.headSha
+        : null,
     },
     workingTree: {
       state: status.workspace.workingTree.state,
@@ -173,26 +209,11 @@ function projectSnapshot(
       behind: status.workspace.mergeBase.behindCount,
       hasCommittedUnmergedChanges: status.workspace.mergeBase.hasCommittedUnmergedChanges,
     } : null,
-    pullRequest: pr ? {
-      number: pr.number,
-      title: pr.title,
-      url: pr.url,
-      state: pr.state,
-      attention: pr.attention,
-      review: pr.review.state,
-      checks: pr.checks.state,
-      mergeability: pr.mergeability.state,
-    } : null,
+    pullRequest: projectPullRequest(pullRequest),
     pullRequestMessage: pullRequest.outcome === "unavailable" && "message" in pullRequest
       ? pullRequest.message
       : null,
-    capabilities: {
-      commit: capability(canCommitPublication(status)),
-      squashMerge: capability(canSquashMerge(status)),
-      markReady: capability(canMarkPullRequestReady(status, pullRequest)),
-      markDraft: capability(canMarkPullRequestDraft(status, pullRequest)),
-      mergePullRequest: capability(canMergePullRequest(status, pullRequest)),
-    },
+    capabilities: projectCapabilities(status, pullRequest),
     events,
   };
 }

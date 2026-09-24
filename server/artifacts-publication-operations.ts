@@ -173,8 +173,13 @@ async function openPushShell(
     try {
       await sendShellCommand(deps.bb, terminal.id, command);
     } catch (error) {
-      const label = sync ? "command" : "git push";
-      return { ok: false, message: errorMessage(error, `${label} could not be sent.`), terminalId: terminal.id };
+      const action = sync ? "the command" : "git push";
+      const detail = error instanceof Error ? `: ${error.message}` : ".";
+      return {
+        ok: false,
+        message: `${sync ? "Sync" : "Push"} shell opened (${terminal.id}) but ${action} could not be sent${detail}`,
+        terminalId: terminal.id,
+      };
     }
     const action = sync ? "pull --rebase + push" : "git push";
     recordPublication(deps, cardId, "push_terminal", `Ran ${action} in shell ${terminal.id} on ${branch}.`);

@@ -4,12 +4,21 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const serverRoot = readFileSync(join(root, "server.ts"), "utf8");
+const publicationContract = readFileSync(
+  join(root, "server/artifacts-publication.ts"),
+  "utf8",
+);
+const publicationOperations = readFileSync(
+  join(root, "server/artifacts-publication-operations.ts"),
+  "utf8",
+);
 const server = [
-  readFileSync(join(root, "server.ts"), "utf8"),
-  readFileSync(join(root, "server/artifacts-publication.ts"), "utf8"),
+  serverRoot,
+  publicationContract,
   readFileSync(join(root, "server/artifacts-publication-commits.ts"), "utf8"),
   readFileSync(join(root, "server/artifacts-publication-status.ts"), "utf8"),
-  readFileSync(join(root, "server/artifacts-publication-operations.ts"), "utf8"),
+  publicationOperations,
   readFileSync(join(root, "server/artifacts-publication-terminals.ts"), "utf8"),
 ].join("\n");
 const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
@@ -23,8 +32,17 @@ assert.ok(executeActionStart >= 0 && actionTitleStart > executeActionStart, "pub
 const executeAction = actions.slice(executeActionStart, actionTitleStart);
 
 for (const method of ["publicationStatus", "publicationCommitDiff", "publicationCommit", "publicationSquashMerge", "publicationPushTerminal", "publicationPushTerminals", "publicationPullPush", "publicationPullRequestAction"]) {
-  const rpcSites = server.match(new RegExp(`(?:${method}:|async ${method}\\()`, "g")) ?? [];
-  assert.ok(rpcSites.length >= 2, `${method} has one contract and one handler`);
+  assert.match(publicationContract, new RegExp(`${method}:`), `${method} contract is owned by the feature root`);
+  assert.match(
+    publicationOperations,
+    new RegExp(`(?:async\\s+)?${method}\\s*[:(]`),
+    `${method} handler is owned by operations`,
+  );
+  assert.doesNotMatch(
+    serverRoot,
+    new RegExp(`(?:async )?${method}\\s*[:(]`),
+    `${method} has no publication clone in server.ts`,
+  );
 }
 assert.match(server, /bb\.sdk\.environments\.status/, "publication status is owned by BB");
 assert.match(server, /bb\.sdk\.environments\.commit/, "commit is routed to BB's environment host");

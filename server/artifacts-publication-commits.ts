@@ -124,12 +124,13 @@ async function demandCommitPatches(
         `stelow commit diff: diffPatch unavailable for ${commitSha} (${missingPaths.length} files): ${reason}`,
       );
     }
+    return missingPaths.length > limit;
   } catch (error) {
     deps.bb.log.warn(
       `stelow commit diff: diffPatch failed for ${commitSha}: ${errorMessage(error, "Unknown error")}`,
     );
+    return false;
   }
-  return missingPaths.length > limit;
 }
 
 function commitDiffResult(
