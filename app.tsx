@@ -12,7 +12,7 @@ import {
 import { toast } from "sonner";
 import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
 import { inboxBadgeCount } from "./lib/inbox-panel-state.mjs";
-import { STORAGE_KEYS } from "./lib/panel-storage.mjs";
+import { resetOnboarding } from "./lib/preset-onboarding-state.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { shortRef, isPathInstall, updateAvailableFrom } from "./lib/plugin-update.mjs";
 import {
@@ -476,16 +476,6 @@ function AboutPanel() {
     void rpc.call("toolStatus", {}).then((result) => { if (!cancelled) setHostTools(result.tools); }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [rpc]);
-  function resetOnboarding() {
-    try {
-      window.localStorage.removeItem(STORAGE_KEYS.onboardBuild);
-      window.localStorage.removeItem(STORAGE_KEYS.onboardResearch);
-      window.localStorage.removeItem(STORAGE_KEYS.onboardExplore);
-      window.localStorage.removeItem(STORAGE_KEYS.onboardPresets);
-    } catch { /* best-effort */ }
-    setConfirmReset(false);
-    toast.success("Onboarding reset — Build, Research, and Explore open their setup dialogs again on visit.");
-  }
   function applyPluginUpdate() {
     setUpdatingPlugin(true); setPluginUpdateError(null); setPluginUpdateNotice(null);
     // Applying swaps the server bundle and reloads the plugin. That reload can
@@ -609,7 +599,18 @@ function AboutPanel() {
                 <UrlLink href="https://github.com/calionauta/bb-plugin-stelow" className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md border bg-card px-3 text-xs font-medium shadow-sm hover:border-primary/50"><Icon name="Github" className="h-3.5 w-3.5" aria-hidden />Plugin repo <span aria-hidden="true">↗</span></UrlLink>
                 {confirmReset ? (
                   <>
-                    <Button size="sm" variant="destructive" onClick={resetOnboarding} title="Clear onboarding state so every track shows its setup dialog again">Confirm reset</Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => {
+                        resetOnboarding(window.localStorage);
+                        setConfirmReset(false);
+                        toast.success("Onboarding reset — Build, Research, and Explore open their setup dialogs again on visit.");
+                      }}
+                      title="Clear onboarding state so every track shows its setup dialog again"
+                    >
+                      Confirm reset
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={() => setConfirmReset(false)}>Cancel</Button>
                   </>
                 ) : (

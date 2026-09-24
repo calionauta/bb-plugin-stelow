@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { STORAGE_KEYS } from "../../lib/panel-storage.mjs";
 import {
-  onboardingInitialState,
+  onboardingInitialDialogState,
   onboardingStepAfterBack,
   onboardingStepAfterNext,
   onboardingTotal,
+  acknowledgeSharedOnboarding,
   persistOnboardingComplete,
   readOnboardingComplete,
 } from "../../lib/preset-onboarding-state.mjs";
@@ -30,8 +31,6 @@ export type PresetOnboardingProps = {
   secondBody?: ReactNode;
 };
 
-export { onboardingTotal };
-
 type OnboardingBodyProps = {
   step: number;
   total: number;
@@ -39,7 +38,7 @@ type OnboardingBodyProps = {
   children?: ReactNode;
 };
 
-export function PresetOnboardingBody({ step, total, secondBody, children }: OnboardingBodyProps) {
+function PresetOnboardingBody({ step, total, secondBody, children }: OnboardingBodyProps) {
   if (step === total - 1) return <StayInTouchStep />;
   if (step === 1 && secondBody) return <div className="min-w-0">{secondBody}</div>;
   return (
@@ -64,7 +63,7 @@ type OnboardingFooterProps = {
   onDone: () => void;
 };
 
-export function PresetOnboardingFooter({ step, total, hasSecond, onOpenPresets, onNext, onBack, onDone }: OnboardingFooterProps) {
+function PresetOnboardingFooter({ step, total, hasSecond, onOpenPresets, onNext, onBack, onDone }: OnboardingFooterProps) {
   if (step === total - 1) {
     return (
       <>
@@ -89,30 +88,27 @@ export function PresetOnboardingFooter({ step, total, hasSecond, onOpenPresets, 
   );
 }
 
-export function PresetOnboardingDialog({
-  storageKey,
-  title,
-  intro,
-  children,
-  onOpenPresets,
-  active,
-  secondTitle,
-  secondBody,
-}: PresetOnboardingProps) {
+type OnboardingStateInput = Pick<PresetOnboardingProps, "storageKey" | "active"> & {
+  hasSecond: boolean;
+};
+
+function usePresetOnboardingState({ storageKey, active, hasSecond }: OnboardingStateInput) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [singleStep, setSingleStep] = useState(false);
-  const hasSecond = !!secondTitle;
-  const total = onboardingTotal(hasSecond);
-  const lastStep = total - 1;
 
   useEffect(() => {
-    if (!active || open) return;
     try {
-      if (readOnboardingComplete(window.localStorage, storageKey)) return;
-      const sharedDone = readOnboardingComplete(window.localStorage, STORAGE_KEYS.onboardPresets);
-      const initial = onboardingInitialState(hasSecond, sharedDone);
-      if (sharedDone && !hasSecond) return;
+      const trackComplete = readOnboardingComplete(window.localStorage, storageKey);
+      const sharedComplete = readOnboardingComplete(window.localStorage, STORAGE_KEYS.onboardPresets);
+      const initial = onboardingInitialDialogState({
+        active,
+        open,
+        trackComplete,
+        sharedComplete,
+        hasSecond,
+      });
+      if (!initial) return;
       setStep(initial.step);
       setSingleStep(initial.singleStep);
       setOpen(true);
@@ -125,44 +121,69 @@ export function PresetOnboardingDialog({
     setOpen(false);
     setStep(0);
     setSingleStep(false);
-    try {
-      persistOnboardingComplete(window.localStorage, storageKey, STORAGE_KEYS.onboardPresets);
-    } catch {
-      // Dismissal still closes the dialog when storage is unavailable.
-    }
+    persistOnboardingComplete(window.localStorage, storageKey, STORAGE_KEYS.onboardPresets);
   }
 
+  return {
+    open,
+    step,
+    singleStep,
+    dismiss,
+    next: () => setStep((current) => onboardingStepAfterNext(current, onboardingTotal(hasSecond))),
+    back: () => setStep((current) => onboardingStepAfterBack(current)),
+  };
+}
+
+export function PresetOnboardingDialog({
+  storageKey,
+  title,
+  intro,
+  children,
+  onOpenPresets,
+  active,
+  secondTitle,
+  secondBody,
+}: PresetOnboardingProps) {
+  const hasSecond = !!secondTitle;
+  const total = onboardingTotal(hasSecond);
+  const lastStep = total - 1;
+  const onboarding = usePresetOnboardingState({ storageKey, active, hasSecond });
+
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
+    <Dialog open={onboarding.open} onOpenChange={(next) => { if (!next) onboarding.dismiss(); }}>
       <DialogContent className={`${hasSecond ? "sm:max-w-2xl" : "sm:max-w-lg"} sm:max-h-[calc(100dvh-1rem)] sm:overflow-y-auto`}>
         <DialogHeader>
-          <DialogTitle>{step === lastStep ? "Stay in touch" : step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
+          <DialogTitle>{onboarding.step === lastStep ? "Stay in touch" : onboarding.step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
           <DialogDescription>
-            {step === lastStep
+            {onboarding.step === lastStep
               ? "Feedback and follow-ups."
-              : step === 1 && secondTitle
+              : onboarding.step === 1 && secondTitle
                 ? "Defaults new cards start from."
                 : intro}
           </DialogDescription>
         </DialogHeader>
-        {!singleStep && total > 1 ? <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of {total}</p> : null}
-        <PresetOnboardingBody step={step} total={total} secondBody={secondBody}>{children}</PresetOnboardingBody>
+        {!onboarding.singleStep && total > 1 ? (
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Step {onboarding.step + 1} of {total}
+          </p>
+        ) : null}
+        <PresetOnboardingBody step={onboarding.step} total={total} secondBody={secondBody}>{children}</PresetOnboardingBody>
         <DialogFooter>
           <PresetOnboardingFooter
-            step={step}
+            step={onboarding.step}
             total={total}
             hasSecond={hasSecond}
-            onOpenPresets={() => {
-              try { window.localStorage.setItem(STORAGE_KEYS.onboardPresets, "onboarded"); } catch { /* best-effort */ }
-              onOpenPresets();
-            }}
-            onNext={() => setStep((current) => onboardingStepAfterNext(current, total))}
-            onBack={() => setStep((current) => onboardingStepAfterBack(current))}
-            onDone={dismiss}
+            onOpenPresets={() => acknowledgeSharedOnboarding(
+              window.localStorage,
+              STORAGE_KEYS.onboardPresets,
+              onOpenPresets,
+            )}
+            onNext={onboarding.next}
+            onBack={onboarding.back}
+            onDone={onboarding.dismiss}
           />
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-
