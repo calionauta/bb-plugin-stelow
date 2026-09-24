@@ -3,8 +3,8 @@
  *
  * Everything about bringing GitHub issues into Stelow — manual import,
  * automation rules, dry-run preview, run history, completion write-back —
- * lives here behind one seam: createGithubAutomation(ctx). server.ts only
- * wires the contract, the migrations, and the scheduler.
+ * lives here behind one seam: createGithubAutomation(ctx). Core migrations
+ * call runGithubMigrations; the runtime registers handlers and schedules work.
  *
  * Kill switch: STELOW_GITHUB_ISSUES=0 disables the scheduler and every
  * RPC (each refusal names the variable). No migration, no UI change.

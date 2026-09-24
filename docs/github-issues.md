@@ -82,9 +82,10 @@ coordination on shared checkouts → 10/tick cap.
 
 ## Module map (for maintainers and agents)
 
-- `server/github-issues.ts` — contract fragment, migrations, matcher
-  wiring, scheduler, all 8 RPCs. `server.ts` only spreads the contract
-  and handlers, calls one migration function, and schedules one line.
+- `server/github-issues.ts` — contract fragment, migration logic, matcher
+  wiring, and all 8 RPC handlers. `server/core-migrations.ts` runs its
+  migrations; `server/plugin-runtime.ts` supplies dependencies, registers
+  handlers, and schedules automation runs.
   The seam is an explicit deps object (`db`, `bb`, clock, card ops).
 - `components/github/` — the dialog shell (`github-issues-dialog.tsx`),
   one state hook (`github-dialog-state.ts`: all tab state, RPC handlers,
