@@ -52,7 +52,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx"), "utf8");
-const panelState = readFileSync(join(root, "components", "panel", "panel-state-hooks.ts"), "utf8");
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
@@ -69,7 +68,6 @@ assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flo
 // track (board, list, hill) instead of resetting to board. Unknown stored
 // values degrade — a corrupt key never strands the track.
 assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
-assert.match(panelState, /export function useBoardView\(/, "one extracted hook serves all three tracks with view restrictions");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");

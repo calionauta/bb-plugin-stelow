@@ -361,6 +361,7 @@ function InboxPanel() {
     loading,
   } = usePanelData(loadInbox, {
     errorMessage: "Unable to load Stelow Inbox.",
+    notifyOnError: false,
     initialData: { notifications: [] as InboxNotification[] },
     itemCountKey: "notifications",
     realtimeChannels: ["card-state", "inbox-changed"],
@@ -453,7 +454,7 @@ function BoardPanel({ active }: { active: boolean }) {
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
-  const loadBoard = useCallback(async (): Promise<BoardPanelData> => {
+  const loadBoard = useCallback(async (): Promise<Partial<BoardPanelData>> => {
     const targetId = routeProjectId;
     const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
       rpc.call("projects", {}).catch(() => null),
@@ -466,11 +467,13 @@ function BoardPanel({ active }: { active: boolean }) {
       boardBandPresets: bandPresetsResult.bands,
       boardPresets: presetsResult.presets,
       cards: cardsResult.cards,
-      githubAutomationEnabled: boardResult && "githubAutomationEnabled" in boardResult
-        ? boardResult.githubAutomationEnabled !== false
-        : true,
-      githubStatus: boardResult?.githubStatus ?? null,
       projects: projectsResult?.projects ?? [],
+      ...(boardResult?.githubStatus
+        ? { githubStatus: boardResult.githubStatus }
+        : {}),
+      ...(boardResult && "githubAutomationEnabled" in boardResult
+        ? { githubAutomationEnabled: boardResult.githubAutomationEnabled !== false }
+        : {}),
     };
   }, [routeProjectId, rpc]);
   const {

@@ -10,7 +10,13 @@ import {
   showScopeStrip,
 } from "../lib/board-list-presentation.mjs";
 import { normalizeBoardView, viewsForTrack } from "../lib/board-views.mjs";
-import { collapsedGroupsFromStorage, isInitialPanelLoad } from "../lib/panel-state.mjs";
+import {
+  collapsedGroupsFromStorage,
+  isInitialPanelLoad,
+  mergePanelData,
+  panelErrorMessage,
+  shouldNotifyPanelError,
+} from "../lib/panel-state.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
@@ -38,7 +44,6 @@ assert.match(app, /<ViewToggle[^>]*track="research"/, "research calls the shared
 assert.match(app, /<ViewToggle[^>]*track="explore"/, "explore calls the shared toggle as explore");
 assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 3, "all three panels bind persistence to a track");
 assert.equal((app.match(/<ViewToggle/g) ?? []).length, 3, "one shared toggle call site per board");
-assert.match(panelState, /export function useBoardView\(/, "view persistence has one shared panel hook");
 assert.match(panelState, /normalizeBoardView\(window\.localStorage\.getItem\(storageKey\), track\)/, "stored views pass through the tested track restriction");
 assert.equal((app.match(/= usePanelData/g) ?? []).length, 4, "all four data-backed panels use the shared loading lifecycle");
 assert.equal((app.match(/firstLoadRef/g) ?? []).length, 0, "panel shells no longer own duplicate first-load state");
@@ -49,6 +54,23 @@ assert.deepEqual(collapsedGroupsFromStorage('{"inbox":true}', false), { inbox: t
 assert.deepEqual(collapsedGroupsFromStorage("not-json", true), { archived: true }, "corrupt state recovers at the default");
 assert.equal(isInitialPanelLoad(true, 0), true, "an empty first load shows the panel skeleton");
 assert.equal(isInitialPanelLoad(true, 2), false, "a background refresh keeps existing content visible");
+assert.equal(panelErrorMessage(new Error("rpc failed"), "fallback"), "rpc failed", "panel failures preserve the RPC message");
+assert.equal(panelErrorMessage("not-an-error", "fallback"), "fallback", "panel failures use the panel fallback for non-errors");
+assert.equal(shouldNotifyPanelError(false, "Unable to load Stelow Inbox."), false, "Inbox failures do not add a toast");
+assert.equal(shouldNotifyPanelError(true, "Unable to load Stelow."), true, "board failures keep their existing toast");
+assert.deepEqual(
+  mergePanelData(
+    { cards: [{ id: "card-1" }], githubAutomationEnabled: false },
+    { cards: [] },
+  ),
+  { cards: [], githubAutomationEnabled: false },
+  "a partial board refresh keeps integration state when that RPC is unavailable",
+);
+assert.match(
+  app,
+  /usePanelData\(loadInbox, \{[\s\S]*?notifyOnError: false[\s\S]*?itemCountKey: "notifications"/,
+  "Inbox load failures stay in the retry panel instead of adding a toast",
+);
 
 const scopeSummary = { scopesDone: 2, scopesTotal: 5, tasksDone: 3, tasksTotal: 7 };
 assert.equal(

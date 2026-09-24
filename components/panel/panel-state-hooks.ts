@@ -4,6 +4,9 @@ import { normalizeBoardView, type BoardTrack } from "../../lib/board-views.mjs";
 import {
   collapsedGroupsFromStorage,
   isInitialPanelLoad,
+  mergePanelData,
+  panelErrorMessage,
+  shouldNotifyPanelError,
 } from "../../lib/panel-state.mjs";
 import { useDebouncedRealtime } from "../use-debounced-realtime";
 
@@ -78,11 +81,18 @@ type PanelDataOptions<T> = {
   errorMessage: string | null;
   initialData: T;
   itemCountKey: keyof T;
+  notifyOnError?: boolean;
 };
 
-export function usePanelData<T>(
-  loadData: () => Promise<T>,
-  { realtimeChannels, errorMessage, initialData, itemCountKey }: PanelDataOptions<T>,
+export function usePanelData<T extends object>(
+  loadData: () => Promise<Partial<T>>,
+  {
+    realtimeChannels,
+    errorMessage,
+    initialData,
+    itemCountKey,
+    notifyOnError = true,
+  }: PanelDataOptions<T>,
 ) {
   const [data, setData] = useState<T>(initialData);
   const [loading, setLoading] = useState(true);
@@ -92,17 +102,18 @@ export function usePanelData<T>(
   const load = useCallback(async () => {
     if (firstLoadRef.current) setLoading(true);
     try {
-      setData(await loadData());
+      const update = await loadData();
+      setData((current) => mergePanelData(current, update));
       setLoadError(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : errorMessage;
-      setLoadError(message ?? "Unable to load panel data.");
-      if (errorMessage) toast.error(message ?? errorMessage);
+      const message = panelErrorMessage(error, errorMessage ?? "Unable to load panel data.");
+      setLoadError(message);
+      if (shouldNotifyPanelError(notifyOnError, errorMessage)) toast.error(message);
     } finally {
       setLoading(false);
       firstLoadRef.current = false;
     }
-  }, [errorMessage, loadData]);
+  }, [errorMessage, loadData, notifyOnError]);
 
   useEffect(() => {
     void load();
