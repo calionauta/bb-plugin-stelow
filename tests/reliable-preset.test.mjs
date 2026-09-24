@@ -12,7 +12,6 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
 const managerBand = readFileSync(join(root, "components/settings/preset-manager-band-routing.tsx"), "utf8");
 
 // Cascade order: card pin > reliable override > band > default. A reorder
@@ -125,19 +124,94 @@ assert.ok(reliableRowAt >= 0, "the Reliable row exists");
 const generationRowAt = managerBand.indexOf("⚡ Generation", reliableRowAt);
 assert.ok(generationRowAt > reliableRowAt, "the Generation row follows the Reliable row");
 const reliableRow = managerBand.slice(reliableRowAt, generationRowAt);
-assert.ok(managerBand.includes('emptyLabel="Use band preset"'), "the Reliable row offers the empty-means-band clear option");
+assert.ok(reliableRow.includes('emptyLabel="Use band preset"'), "the Reliable row offers the empty-means-band clear option");
 assert.ok(reliableRow.includes("assignReliablePreset"), "the Reliable row wires its select to the override RPC");
+
+// Mutation success and post-mutation refresh have separate failure edges.
+// Otherwise a failed list refresh reports that the persisted assignment failed.
+const setBandAt = managerBand.indexOf("const setBand =");
+const setBandEnd = managerBand.indexOf("  const extra =", setBandAt);
+const setBandHandler = managerBand.slice(setBandAt, setBandEnd);
+assert.ok(setBandAt >= 0 && setBandEnd > setBandAt, "the phase assignment handler is bounded");
+const refreshAt = setBandHandler.indexOf("void onChanged()");
+const listAt = setBandHandler.indexOf('call("listBandPresets"');
+assert.ok(
+  refreshAt >= 0 && listAt > refreshAt,
+  "a successful assignment starts the parent refresh",
+);
+assert.match(
+  setBandHandler,
+  /\.catch\(\(\) => onBandsChange\(\[\]\)\)/,
+  "a failed list refresh clears stale routing without claiming the assignment failed",
+);
+assert.match(
+  setBandHandler,
+  /Failed to set phase preset\./,
+  "only the mutation failure owns the phase failure message",
+);
 
 // Independent review is not a tier: one designated preset in another model
 // family, read-only, and the review command refuses without it instead of
 // falling back. The row lives below the tiers with its own clear option,
 // so the tiers above can never be mistaken for review configuration.
-const reviewerRowAt = managerBand.indexOf("◎ Independent review", generationRowAt);
-assert.ok(reviewerRowAt > generationRowAt, "the Review row follows the tiers, visibly separated");
-const reviewerRow = managerBand.slice(reviewerRowAt, reviewerRowAt + 2500);
-assert.ok(managerBand.includes('assignReviewPreset'), "the Review row assigns through the reviewer RPC");
-assert.ok(managerBand.includes("getReviewPreset"), "the manager loads the current reviewer designation");
-assert.ok(managerBand.includes('emptyLabel="No reviewer"'), "clearing the reviewer is explicit — empty never silently means a worker preset");
-assert.ok(reviewerRow.includes("refuse instead of borrowing a worker preset"), "the row states the refuse-instead-of-fallback contract");
+const reviewerRowAt = managerBand.indexOf(
+  "◎ Independent review",
+  generationRowAt,
+);
+assert.ok(
+  reviewerRowAt > generationRowAt,
+  "the Review row follows the tiers, visibly separated",
+);
+const reviewerRow = managerBand.slice(reviewerRowAt);
+assert.ok(
+  reviewerRow.includes("assignReviewPreset"),
+  "the Review row assigns through the reviewer RPC",
+);
+assert.ok(
+  reviewerRow.includes('emptyLabel="No reviewer"'),
+  "clearing the reviewer is explicit — empty never silently means a worker preset",
+);
+assert.ok(
+  managerBand.includes("reviews refuse instead of ") &&
+    managerBand.includes("borrowing a worker preset."),
+  "the row states the refuse-instead-of-fallback contract",
+);
+
+const setDelegatedAt = managerBand.indexOf("function assignDelegatedPreset");
+const setDelegatedEnd = managerBand.indexOf(
+  "export function PresetManagerDelegatedWork",
+  setDelegatedAt,
+);
+const setDelegatedHandler = managerBand.slice(setDelegatedAt, setDelegatedEnd);
+assert.ok(
+  setDelegatedAt >= 0 && setDelegatedEnd > setDelegatedAt,
+  "the delegated assignment handler is bounded",
+);
+const delegatedRefreshAt = setDelegatedHandler.indexOf("void actions.onChanged()");
+const delegatedReloadAt = setDelegatedHandler.indexOf(
+  'call("getReliablePreset"',
+);
+assert.ok(
+  delegatedRefreshAt >= 0 && delegatedReloadAt > delegatedRefreshAt,
+  "a successful designation starts refresh and local reload independently",
+);
+assert.ok(
+  setDelegatedHandler.includes('call("getReviewPreset"'),
+  "the manager reloads the current reviewer designation",
+);
+const failuresAt = managerBand.indexOf("const DELEGATED_FAILURES");
+const failuresEnd = managerBand.indexOf("function PresetSelect", failuresAt);
+const failureMessages = managerBand.slice(failuresAt, failuresEnd);
+for (const message of [
+  "Failed to set reliable preset.",
+  "Failed to set generation preset.",
+  "Failed to set reviewer preset.",
+]) {
+  const tier = message.split(" ")[3];
+  assert.ok(
+    failureMessages.includes(message),
+    `the ${tier} failure stays action-specific`,
+  );
+}
 
 console.log("reliable preset test ok: cascade order, singleton discipline, spawn wiring, manager override");

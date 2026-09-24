@@ -99,6 +99,11 @@ const presetFormAt = managerShell.indexOf("<PresetManagerFormView");
 const routingAt = managerShell.indexOf('title="Worker preset per track"');
 assert.ok(presetsHeaderAt >= 0 && presetFormAt > presetsHeaderAt && routingAt > presetFormAt, "order reads list, creation, routing — never creation last");
 assert.equal((managerForm.match(/id="preset-form-body"/g) ?? []).length, 1, "one creation form, not a top/bottom pair");
+const openEffectAt = managerShell.indexOf("useEffect(() => {", managerShell.indexOf("function PresetManagerDialog"));
+const openEffectEnd = managerShell.indexOf("  const startNew =", openEffectAt);
+const openEffect = managerShell.slice(openEffectAt, openEffectEnd);
+assert.ok(openEffectAt >= 0 && openEffectEnd > openEffectAt, "the open-state initialization effect is bounded");
+assert.doesNotMatch(openEffect, /\[open,\s*presets,/, "a parent preset refresh cannot reset the active create or edit form");
 }
 
 console.log("preset ui test ok: BB pickers shared, hand-rolled selects gone, manager disclosed and bounded");

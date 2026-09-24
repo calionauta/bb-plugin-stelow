@@ -96,7 +96,7 @@ export function PresetManagerDialog({
     reloadGeneration();
     reloadReliable();
     reloadReviewer();
-  }, [open, presets, rpc, reloadGeneration, reloadReliable, reloadReviewer]);
+  }, [open, rpc, reloadGeneration, reloadReliable, reloadReviewer]);
 
   const startNew = () => {
     setForm(defaultForm(presets));
