@@ -45,8 +45,17 @@ import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput, buildCardNam
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria, groupCriteriaByKind, parseCriteriaBlock } from "./lib/skill-criteria.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
-import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, meetsDecisionThreshold, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, defaultModelFor, DECISION_PROVIDERS } from "./lib/decision-api.mjs";
-import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, DECISION_POINT_INBOX_SEVERITY, TRIAGE_INTENT_CRITERIA, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, normalizePointRoute, resolvePointRoute, pointSupportsPresetJudge, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue, severityBumpQuestions } from "./lib/decision-points.mjs";
+import {
+  resolveDecisionApiKey,
+  normalizeDecisionApiModel,
+  evaluateDecisionCall,
+  isDecisionApiDisabled,
+  normalizeDecisionProvider,
+  providerRequiresKey,
+  defaultEndpointFor,
+  defaultModelFor,
+} from "./lib/decision-api.mjs";
+import { DECISION_POINT_ARTIFACT_CRITERIA, normalizePointMode, defaultThresholdsFor, normalizeThresholds } from "./lib/decision-points.mjs";
 import { doingNowNames } from "./lib/doing-now.mjs";
 import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
@@ -103,6 +112,7 @@ import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents, tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "./lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
+import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } from "./server/decision-api.js";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "./lib/thread-children.mjs";
 
@@ -385,6 +395,7 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
   },
   ...githubRpcContract,
+  ...decisionApiRpcContract,
   listCards: {
     experimental_description: "Cards with status, worker state, and scope progress, optionally by track",
     input: z.object({ projectId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable().optional() }).strict(),
@@ -765,46 +776,6 @@ export const rpcContract = defineRpcContract({
   assignReliablePreset: {
     experimental_description: "Set the reliable-tier preset override; null clears",
     input: z.object({ presetId: z.string().nullable() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  getDecisionApiConfig: {
-    experimental_description: "Decision API endpoint, model, and key presence, never the key",
-    input: z.object({}).strict(),
-    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), keyRequired: z.boolean(), disabled: z.boolean(), provider: z.string(), configured: z.boolean() }),
-  },
-  setDecisionApiConfig: {
-    experimental_description: "Configure the shared decision endpoint: endpoint, key, model",
-    input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional(), provider: z.string().max(20).nullable().optional() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  testDecisionApi: {
-    experimental_description: "Probe the decision endpoint with one fixed call and latency",
-    input: z.object({}).strict(),
-    output: z.object({ ok: z.boolean(), latencyMs: z.number().nullable(), model: z.string().nullable(), error: z.string().nullable() }),
-  },
-  getDecisionPoint: {
-    experimental_description: "One decision router's mode, thresholds, route override, and judge preset",
-    input: z.object({ point: z.string() }).strict(),
-    output: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()), route: z.object({ provider: z.string().nullable(), endpoint: z.string().nullable(), apiKey: z.string().nullable(), model: z.string().nullable() }).nullable(), presetId: z.string().nullable() }),
-  },
-  listDecisionPoints: {
-    experimental_description: "Every decision router with rules, modes, and current settings",
-    input: z.object({}).strict(),
-    output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), rules: z.string(), requires: z.string().nullable(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()), route: z.object({ provider: z.string().nullable(), endpoint: z.string().nullable(), apiKey: z.string().nullable(), model: z.string().nullable() }).nullable(), presetId: z.string().nullable() })) }),
-  },
-  setDecisionPoint: {
-    experimental_description: "Set a decision router's mode, thresholds, route override, and judge preset",
-    input: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()).optional(), route: z.object({ provider: z.string().max(40).nullable().optional(), endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional() }).strict().nullable().optional(), presetId: z.string().max(200).nullable().optional() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  getReviewPolicy: {
-    experimental_description: "Independent-review gate policy: off or required",
-    input: z.object({}).strict(),
-    output: z.object({ mode: z.enum(["off", "required"]) }),
-  },
-  setReviewPolicy: {
-    experimental_description: "Set the independent-review gate policy",
-    input: z.object({ mode: z.enum(["off", "required"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   assignPreset: {
@@ -1759,69 +1730,9 @@ export default async function plugin(bb: BbPluginApi) {
     assigned_at INTEGER NOT NULL,
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
   )`);
-  // Decision API: one Jev-compatible endpoint for every decision point.
-  // Endpoint + key + model live here once, never per point. An absent row
-  // means unconfigured — points fall back to built-in rules.
-  db.exec(`CREATE TABLE IF NOT EXISTS decision_api_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    endpoint TEXT NOT NULL,
-    api_key TEXT NOT NULL DEFAULT '',
-    model TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`);
-  // Provider column for installs created before provider adapters: jev is
-  // the wire-compatible default, so old rows keep working unchanged.
-  const decisionApiColumns = db.prepare("PRAGMA table_info(decision_api_config)").all() as Array<{ name: string }>;
-  if (!decisionApiColumns.some((column) => column.name === "provider")) {
-    db.exec("ALTER TABLE decision_api_config ADD COLUMN provider TEXT NOT NULL DEFAULT 'jev'");
-  }
-  // Per-point router modes + thresholds as free-form JSON. Absent rows mean
-  // registry defaults (built-in rules), so new points need no migration.
-  db.exec(`CREATE TABLE IF NOT EXISTS decision_points (
-    point TEXT PRIMARY KEY,
-    mode TEXT NOT NULL CHECK (mode IN ('rules', 'api', 'preset')),
-    thresholds TEXT NOT NULL DEFAULT '{}',
-    provider TEXT,
-    endpoint TEXT,
-    api_key TEXT,
-    model TEXT,
-    preset_id TEXT,
-    updated_at INTEGER NOT NULL
-  )`);
-  // Per-point routing (route override columns + preset judge pin) arrived
-  // after the table: older rows also carry CHECK(mode IN ('rules', 'api')),
-  // which would refuse preset mode. Rebuild once to widen it, preserving
-  // rows — guarded by the new column so reruns are no-ops.
-  const pointColumns = db.prepare("PRAGMA table_info(decision_points)").all() as Array<{ name: string }>;
-  if (!pointColumns.some((column) => column.name === "preset_id")) {
-    // One transaction: a crash between DROP and RENAME must never lose the
-    // four rows — half a migration is worse than none.
-    const rebuildDecisionPoints = db.transaction(() => {
-      db.exec(`CREATE TABLE IF NOT EXISTS decision_points_new (
-      point TEXT PRIMARY KEY,
-      mode TEXT NOT NULL CHECK (mode IN ('rules', 'api', 'preset')),
-      thresholds TEXT NOT NULL DEFAULT '{}',
-      provider TEXT,
-      endpoint TEXT,
-      api_key TEXT,
-      model TEXT,
-      preset_id TEXT,
-      updated_at INTEGER NOT NULL
-    )`);
-      db.exec(`INSERT OR IGNORE INTO decision_points_new (point, mode, thresholds, updated_at) SELECT point, mode, thresholds, updated_at FROM decision_points`);
-      db.exec(`DROP TABLE decision_points`);
-      db.exec(`ALTER TABLE decision_points_new RENAME TO decision_points`);
-    });
-    rebuildDecisionPoints();
-  }
-  // Review enforcement policy (default off): when required, research/explore
-  // done refuses without a passing review stamped with the current
-  // fingerprint. Mechanism only — calibration stays a documented prerequisite.
-  db.exec(`CREATE TABLE IF NOT EXISTS review_policy (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    mode TEXT NOT NULL CHECK (mode IN ('off', 'required')),
-    assigned_at INTEGER NOT NULL
-  )`);
+  // Decision API and review enforcement policy own their migrations behind
+  // one feature seam; server.ts only wires the resulting factory.
+  runDecisionApiMigrations(db);
   // Rebuild tables created with the build-only band allowlist, preserving
   // rows. Runs once: the rebuilt schema has no CHECK to match against.
   const stagePresetsSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'stage_presets'").get() as { sql: string } | undefined;
@@ -2106,18 +2017,6 @@ ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
 
-  // One route for every api-mode judgment: the point's stored override wins
-  // field by field, the shared endpoint row fills the rest. An empty
-  // override resolves exactly to today's global behavior.
-  type PointRouteRow = { provider: string | null; endpoint: string | null; api_key: string | null; model: string | null };
-  type GlobalRouteRow = { endpoint: string; api_key: string; model: string; provider: string | null };
-  function pointRouteConfig(point: PointRouteRow | undefined | null, cfg: GlobalRouteRow | undefined) {
-    return resolvePointRoute({
-      override: point ? { provider: point.provider, endpoint: point.endpoint, apiKey: point.api_key, model: point.model } : null,
-      fallback: { provider: cfg?.provider ?? null, endpoint: cfg?.endpoint ?? null, apiKey: cfg?.api_key ?? null, model: cfg?.model ?? null },
-    });
-  }
-
   // Preset judgment runner: one hidden thread on the pinned preset answers a
   // strict-JSON question. Always cleans up (stop + archive); every failure
   // returns ok:false so callers fall back to built-in rules or refuse with
@@ -2383,103 +2282,14 @@ ${prompt}`;
     }
   }
 
-  // Triage-intent router: seed a build card's intent from the Decision API
-  // when the point runs in api mode. Advisory only — the worker always
-  // re-settles intent in triage — and fail-soft: any missing config, key,
-  // error, or low-confidence answer leaves "unknown", exactly as today.
-  async function seedBuildIntentFromRouter(promptText: string, projectId: string | null): Promise<string> {
-    try {
-      if (isDecisionApiDisabled(process.env)) return "unknown";
-      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_TRIAGE_INTENT) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      const mode = normalizePointMode(point?.mode, "rules");
-      if (mode !== "api" && mode !== "preset") return "unknown";
-      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      let stored: unknown = null;
-      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
-      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_TRIAGE_INTENT));
-      if (mode === "preset") {
-        const presetId = point?.preset_id ?? null;
-        if (!presetId) return "unknown";
-        const prompt = buildPresetJudgePrompt({ kind: "choice", state: promptText, questions: triageIntentQuestions() });
-        const judged = await judgeViaPreset({ presetId, projectId, title: "Stelow judge: triage intent", prompt });
-        if (!judged.ok || !judged.text) {
-          bb.log.warn(`triage intent router fell back to built-in rules: ${judged.error ?? "judge failed"}`);
-          return "unknown";
-        }
-        const parsed = parsePresetJudgeOutput({ kind: "choice", text: judged.text, validChoices: Object.keys(TRIAGE_INTENT_CRITERIA) });
-        if (!parsed.ok || !("choice" in parsed)) {
-          bb.log.warn(`triage intent router fell back to built-in rules: ${!parsed.ok ? parsed.error : "verdict shape mismatch"}`);
-          return "unknown";
-        }
-        const resolved = resolveSeedIntent({ apiAnswers: { intent: { type: "choice", choice: parsed.choice, confidence: parsed.confidence } }, routeAt: thresholds.routeAt });
-        if (resolved.source !== "api") return "unknown";
-        bb.log.info(`triage intent seeded from preset judge (${presetId}): ${resolved.intent} (confidence ${resolved.confidence})`);
-        return resolved.intent;
-      }
-      const route = pointRouteConfig(point, cfg);
-      const provider = normalizeDecisionProvider(route.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return "unknown";
-      const result = await evaluateDecisionCall({
-        provider,
-        endpoint: route.endpoint ?? defaultEndpointFor(provider),
-        apiKey: key ?? "",
-        model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
-        state: promptText,
-        questions: triageIntentQuestions(),
-      });
-      if (!result.ok) {
-        bb.log.warn(`triage intent router fell back to built-in rules: ${result.error ?? "call failed"}`);
-        return "unknown";
-      }
-      const resolved = resolveSeedIntent({ apiAnswers: result.answers, routeAt: thresholds.routeAt });
-      if (resolved.source === "api") bb.log.info(`triage intent seeded from Decision API: ${resolved.intent} (confidence ${resolved.confidence})`);
-      return resolved.intent;
-    } catch {
-      return "unknown";
-    }
+  // Decision API execution seams live in the server/decision-api-* modules. These thin
+  // adapters keep call sites explicit while the feature owns its behavior.
+  function seedBuildIntentFromRouter(promptText: string, projectId: string | null): Promise<string> {
+    return decisionApi.seedBuildIntent(promptText, projectId);
   }
 
-  // Auto-continue veto: when the point runs in api mode and the heuristic
-  // already cleared a resume, ask one Noul whether the last output shows
-  // real progress. A confident "no" vetoes the resume (the card falls
-  // through to the paused path); everything else keeps the heuristic
-  // standing. Tool-only turns carry no output text — the advance scan
-  // already proved them, so they skip the call entirely.
-  async function vetAutoContinueNudge(stateText: string | null): Promise<boolean> {
-    try {
-      if (!stateText || !stateText.trim()) return true;
-      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_AUTO_CONTINUE) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      if (normalizePointMode(point?.mode, "rules") === "preset") bb.log.warn("auto-continue ignores preset mode: hot paths stay on rules/api so judgments never burn worker turns.");
-      if (normalizePointMode(point?.mode, "rules") !== "api") return true;
-      if (isDecisionApiDisabled(process.env)) return true;
-      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const route = pointRouteConfig(point, cfg);
-      const provider = normalizeDecisionProvider(route.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return true;
-      let stored: unknown = null;
-      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
-      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_AUTO_CONTINUE));
-      const result = await evaluateDecisionCall({
-        provider,
-        endpoint: route.endpoint ?? defaultEndpointFor(provider),
-        apiKey: key ?? "",
-        model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
-        state: stateText,
-        questions: autoContinueQuestions(),
-      });
-      if (!result.ok) {
-        bb.log.warn(`auto-continue veto skipped, heuristic stands: ${result.error ?? "call failed"}`);
-        return true;
-      }
-      const answer = result.answers?.progress ?? null;
-      const resolved = resolveAutoContinue({ apiNoul: answer && answer.type === "noul" ? answer.noul : null, routeAt: thresholds.routeAt });
-      if (!resolved.proceed) bb.log.info(`auto-continue vetoed by Decision API (progress ${answer && answer.type === "noul" ? answer.noul : "n/a"})`);
-      return resolved.proceed;
-    } catch {
-      return true;
-    }
+  function vetAutoContinueNudge(stateText: string | null): Promise<boolean> {
+    return decisionApi.vetAutoContinue(stateText);
   }
 
   async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, start = true, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string | string[]; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; start?: boolean; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string | null }> {
@@ -4921,60 +4731,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // this long (two reconcile cycles). A worker that just finished a turn is
   // idle for a few seconds before being resumed — not an attention item.
   const IDLE_ATTENTION_MS = 90_000;
-  // Semantic severity bump (inbox-severity point): at most a few unjudged
-  // routine items per tick get one yes/no — "does this block the worker?" —
-  // and confident yeses promote to escalating with a model-judged chip.
-  // Never demotes, never resolves, never re-judges a checked item; items
-  // too fresh to have settled (under 5 minutes) wait for a later tick.
-  // Everything else (mode, key, kill switch, failures) keeps deterministic
-  // tiers standing. Advisory ordering only — the badge never moves on it.
-  const SEVERITY_BUMP_PER_TICK = 3;
-  const SEVERITY_BUMP_MIN_AGE_MS = 5 * 60 * 1000;
-  async function maybeBumpSeverity(): Promise<void> {
-    try {
-      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_INBOX_SEVERITY) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      if (normalizePointMode(point?.mode, "rules") === "preset") bb.log.warn("inbox severity ignores preset mode: hot paths stay on rules/api so judgments never burn worker turns.");
-      if (normalizePointMode(point?.mode, "rules") !== "api") return;
-      if (isDecisionApiDisabled(process.env)) return;
-      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const route = pointRouteConfig(point, cfg);
-      const provider = normalizeDecisionProvider(route.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return;
-      let stored: unknown = null;
-      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
-      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_INBOX_SEVERITY));
-      const cutoff = now() - SEVERITY_BUMP_MIN_AGE_MS;
-      // Card context rides the state — a bare summary ("Idle…", "Round 3
-      // failed…") judges poorly alone; name, kind, and stage disambiguate
-      // without extra calls.
-      const rows = db.prepare(
-        "SELECT inbox_events.id, inbox_events.summary, inbox_events.severity_reasons, cards.display_name, cards.name, cards.kind AS card_kind, cards.stage FROM inbox_events JOIN cards ON cards.id = inbox_events.card_id WHERE inbox_events.resolved_at IS NULL AND inbox_events.archived_at IS NULL AND inbox_events.severity = 1 AND inbox_events.occurred_at <= ? AND inbox_events.severity_reasons NOT LIKE '%model-judged%' ORDER BY inbox_events.occurred_at ASC LIMIT 3",
-      ).all(cutoff) as Array<{ id: string; summary: string; severity_reasons: string | null; display_name: string | null; name: string; card_kind: string | null; stage: string }>;
-      const candidates = rows.slice(0, SEVERITY_BUMP_PER_TICK);
-      let changed = 0;
-      for (const row of candidates) {
-        const state = `Card "${row.display_name ?? row.name}" (${row.card_kind ?? "build"}, stage ${row.stage}): ${row.summary}`;
-        const result = await evaluateDecisionCall({
-          provider,
-          endpoint: route.endpoint ?? defaultEndpointFor(provider),
-          apiKey: key ?? "",
-          model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
-          state,
-          questions: severityBumpQuestions(),
-        }).catch(() => null);
-        if (!result || !result.ok) continue;
-        const answer = result.answers?.blocking ?? null;
-        if (!answer || answer.type !== "noul" || typeof answer.noul !== "number") continue;
-        const reasons = [...parseSeverityReasons(row.severity_reasons), "model-judged"];
-        if (meetsDecisionThreshold(answer.noul, thresholds.routeAt)) {
-          changed += db.prepare("UPDATE inbox_events SET severity = 2, severity_reasons = ? WHERE id = ? AND resolved_at IS NULL").run(JSON.stringify(reasons), row.id).changes;
-        } else {
-          changed += db.prepare("UPDATE inbox_events SET severity_reasons = ? WHERE id = ? AND resolved_at IS NULL").run(JSON.stringify(reasons), row.id).changes;
-        }
-      }
-      if (changed > 0) bb.realtime.publish("inbox-changed", { bumped: changed });
-    } catch { /* advisory only — tiers stand without the bump */ }
+  function maybeBumpSeverity(): Promise<void> {
+    return decisionApi.maybeBumpSeverity();
   }
   // Last-seen scope prints per live card. Module-closure lifetime is
   // correct: a reload re-baselines silently instead of inheriting stale
@@ -5083,6 +4841,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. Only a visible structured form on the card counts as a pending question — a prior chat message or split-proposal record does not. If the user cannot see a form and the stage needs input, submit the same bb stelow ask once; the host refuses duplicates when a real form is open. Never claim to be waiting based on memory alone. ${INTERFACE_PICK} Unselected gates approve and advance themselves; selected gates use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
   }
 
+  // Decision API, review policy, migrations, handlers, and execution seams
+  // live behind one factory. Preset judging remains host-owned and injected.
+  const decisionApi = createDecisionApi({
+    db,
+    bb,
+    now,
+    judgeViaPreset,
+    presetExists: (id) => getPresetById(id) !== null,
+  });
+
   // GitHub issues live decoupled in server/github-issues.ts: tables,
   // backfills, matcher wiring, scheduler, and RPCs. One seam in, one out.
   const github = createGithubAutomation({
@@ -5106,6 +4874,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => github.runAutomationRules());
 
   bb.rpc.register(rpcContract, {
+    ...decisionApi.handlers,
     ...github.handlers,
     board: async ({ projectId }) => {
       const board = await loadBoard(bb, projectId);
@@ -7212,138 +6981,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { ok: true, error: null };
     },
 
-    // The key itself never leaves the host: reads report presence + source
-    // only, so panels and logs cannot leak it.
-    async getDecisionApiConfig() {
-      const row = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const { key, source } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
-      const provider = normalizeDecisionProvider(row?.provider ?? "jev");
-      return {
-        endpoint: row?.endpoint ?? defaultEndpointFor(provider),
-        model: normalizeDecisionApiModel(row?.model, defaultModelFor(provider)),
-        hasKey: key !== null,
-        keySource: source,
-        keyRequired: providerRequiresKey(provider),
-        disabled: isDecisionApiDisabled(process.env),
-        provider,
-        configured: row !== undefined,
-      };
-    },
-
-    async setDecisionApiConfig({ endpoint, apiKey, model, provider }) {
-      const current = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const nextProvider = provider === undefined ? normalizeDecisionProvider(current?.provider ?? "jev") : normalizeDecisionProvider(provider, "");
-      if (!nextProvider) return { ok: false, error: `Unknown provider "${provider}". Available: ${DECISION_PROVIDERS.map((entry) => entry.id).join(", ")}.` };
-      const nextEndpoint = endpoint === undefined ? (current?.endpoint ?? defaultEndpointFor(nextProvider)) : (endpoint ?? defaultEndpointFor(nextProvider));
-      if (!isDecisionApiEndpointValid(nextEndpoint)) return { ok: false, error: "Endpoint must be an http(s) URL (e.g. https://api.typesafe.ai/v1/systemone)." };
-      const nextModel = model === undefined ? (current?.model ?? defaultModelFor(nextProvider)) : normalizeDecisionApiModel(model, defaultModelFor(nextProvider));
-      if (!nextModel) return { ok: false, error: "Model must name a version (e.g. jev-latest)." };
-      const nextKey = apiKey === undefined ? (current?.api_key ?? "") : (apiKey ?? "");
-      db.prepare("INSERT OR REPLACE INTO decision_api_config (id, endpoint, api_key, model, provider, updated_at) VALUES (1, ?, ?, ?, ?, ?)").run(nextEndpoint.trim(), nextKey, nextModel, nextProvider, now());
-      return { ok: true, error: null };
-    },
-
-    // Explicit probe: one fixed Noul question, reported with latency. The
-    // only place the host spends Decision API budget on demand — background
-    // paths fail soft to built-in rules instead.
-    async testDecisionApi() {
-      if (isDecisionApiDisabled(process.env)) return { ok: false, latencyMs: null, model: null, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
-      const row = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const provider = normalizeDecisionProvider(row?.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return { ok: false, latencyMs: null, model: null, error: "No key: set one in Decision API settings or export DECISION_API_KEY." };
-      const probe = buildProbeCall(provider);
-      const result = await evaluateDecisionCall({
-        provider,
-        endpoint: row?.endpoint ?? defaultEndpointFor(provider),
-        apiKey: key ?? "",
-        model: normalizeDecisionApiModel(row?.model, defaultModelFor(provider)),
-        state: probe.state,
-        questions: probe.questions,
-      });
-      if (!result.ok) return { ok: false, latencyMs: null, model: null, error: result.error ?? "the Decision API call failed" };
-      return { ok: true, latencyMs: result.latencyMs ?? null, model: result.model ?? null, error: null };
-    },
-
-    async getDecisionPoint({ point }) {
-      const def = getDecisionPointDef(point);
-      const row = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(point) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      const fallback = def?.defaultThresholds ?? { routeAt: 0.6 };
-      let stored: unknown = null;
-      try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
-      const route = row ? normalizePointRoute({ provider: row.provider, endpoint: row.endpoint, apiKey: row.api_key, model: row.model }) : null;
-      return {
-        point,
-        mode: normalizePointMode(row?.mode, def?.defaultMode ?? "rules"),
-        thresholds: normalizeThresholds(stored, fallback),
-        route: route && (route.provider ?? route.endpoint ?? route.apiKey ?? route.model) ? route : null,
-        presetId: row?.preset_id ?? null,
-      };
-    },
-
-    async listDecisionPoints() {
-      const rows = db.prepare("SELECT point, mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points").all() as Array<{ point: string; mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null }>;
-      const byId = new Map(rows.map((row) => [row.point, row]));
-      return {
-        points: DECISION_POINTS.map((def) => {
-          const row = byId.get(def.id);
-          let stored: unknown = null;
-          try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
-          const route = row ? normalizePointRoute({ provider: row.provider, endpoint: row.endpoint, apiKey: row.api_key, model: row.model }) : null;
-          return {
-            id: def.id,
-            label: def.label,
-            description: def.description,
-            rules: def.rules,
-            requires: def.requires ?? null,
-            modes: [...def.modes],
-            mode: normalizePointMode(row?.mode, def.defaultMode),
-            thresholds: normalizeThresholds(stored, def.defaultThresholds),
-            route: route && (route.provider ?? route.endpoint ?? route.apiKey ?? route.model) ? route : null,
-            presetId: row?.preset_id ?? null,
-          };
-        }),
-      };
-    },
-
-    async setDecisionPoint({ point, mode, thresholds, route, presetId }) {
-      const def = getDecisionPointDef(point);
-      if (!def) return { ok: false, error: `Unknown decision point "${point}". Available: ${DECISION_POINTS.map((entry) => entry.id).join(", ")}.` };
-      if (!def.modes.includes(mode)) return { ok: false, error: `Unknown mode "${mode}" for ${point}. Available: ${def.modes.join(", ")}.` };
-      if (mode === "api" && isDecisionApiDisabled(process.env)) return { ok: false, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
-      const existing = db.prepare("SELECT provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(point) as { provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      // Absent params preserve the stored row; explicit null clears. Flipping
-      // modes never silently drops a configured route or preset.
-      const nextRoute = route === undefined
-        ? normalizePointRoute({ provider: existing?.provider ?? null, endpoint: existing?.endpoint ?? null, apiKey: existing?.api_key ?? null, model: existing?.model ?? null })
-        : normalizePointRoute(route);
-      let presetRow: string | null = presetId === undefined ? (existing?.preset_id ?? null) : presetId;
-      // Preset judging burns a full provider turn per judgment: only points
-      // that allow it accept the mode, and only with a preset that exists.
-      // Anything else refuses at save time — a misconfigured point never
-      // silently degrades at use time.
-      if (mode === "preset") {
-        if (!pointSupportsPresetJudge(point)) return { ok: false, error: `"${point}" cannot judge via preset: hot paths stay on rules/api so judgments never burn worker turns.` };
-        if (typeof presetRow !== "string" || presetRow.length === 0) return { ok: false, error: `Preset mode needs a judge preset — pick any preset, including one no stage uses.` };
-        if (!getPresetById(presetRow)) return { ok: false, error: `Unknown preset "${presetRow}".` };
-      }
-      const next = normalizeThresholds(thresholds ?? null, def.defaultThresholds);
-      db.prepare("INSERT OR REPLACE INTO decision_points (point, mode, thresholds, provider, endpoint, api_key, model, preset_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(point, mode, JSON.stringify(next), nextRoute.provider, nextRoute.endpoint, nextRoute.apiKey, nextRoute.model, presetRow, now());
-      bb.realtime.publish("board-changed", { point });
-      return { ok: true, error: null };
-    },
-
-    async getReviewPolicy() {
-      const row = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
-      return { mode: row?.mode === "required" ? "required" as const : "off" as const };
-    },
-
-    async setReviewPolicy({ mode }) {
-      db.prepare("INSERT OR REPLACE INTO review_policy (id, mode, assigned_at) VALUES (1, ?, ?)").run(mode, now());
-      bb.realtime.publish("board-changed", { reviewPolicy: mode });
-      return { ok: true, error: null };
-    },
-
     async assignPreset({ cardId, presetId }) {
       const card = getCard(cardId);
       if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
@@ -8531,8 +8168,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const textOut = researchVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the rounds above, then run done again." };
           }
-          const policyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
-          if (policyRow?.mode === "required" && !(await passingReviewCovers(card, readiness.fingerprint).catch(() => false))) {
+          if (decisionApi.reviewPolicy().mode === "required" && !(await passingReviewCovers(card, readiness.fingerprint).catch(() => false))) {
             return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current index — run `bb stelow review`, then run done again. (Enable only with a reviewer you trust on adversarial spot-checks; see docs/phase6-independent-review-plan.md.)" };
           }
           const researchBundle = await exportRunBundle(card, {});
@@ -8555,8 +8191,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const textOut = exploreVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the artifact above, then run done again." };
           }
-          const explorePolicyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
-          if (explorePolicyRow?.mode === "required" && !(await passingReviewCovers(card, artifact.fingerprint).catch(() => false))) {
+          if (decisionApi.reviewPolicy().mode === "required" && !(await passingReviewCovers(card, artifact.fingerprint).catch(() => false))) {
             return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current artifact — run `bb stelow review`, then run done again. (Enable only with a reviewer you trust on adversarial spot-checks; see docs/phase6-independent-review-plan.md.)" };
           }
           const exploreBundle = await exportRunBundle(card, {});
@@ -9274,7 +8909,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
         if (typeof content !== "string" || !content.trim()) return { exitCode: 1, stderr: `Artifact "${artifactArg}" is missing or empty — write it first, then judge.` };
         const criteriaCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const criteriaRoute = pointRouteConfig(criteriaPoint, criteriaCfg);
+        const criteriaRoute = decisionApi.routeConfig(criteriaPoint, criteriaCfg);
         const criteriaProvider = normalizeDecisionProvider(criteriaRoute.provider ?? "jev");
         const { key: criteriaKey } = resolveDecisionApiKey({ storedKey: criteriaRoute.apiKey ?? null, env: process.env });
         if (!criteriaKey && providerRequiresKey(criteriaProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
@@ -9336,7 +8971,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const doneTasks = taskScopes.flatMap((scope) => (Array.isArray(scope.tasks) ? scope.tasks : []).filter((task) => isDoneStatus(task.status)).map((task) => ({ id: task.id, name: task.name, scope: scope.name, verify: taskVerifyCommand(task) })));
         if (doneTasks.length === 0) return { exitCode: 0, stdout: "No completed tasks to evidence — pending tasks are openly pending, nothing to judge." };
         const taskCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const taskRoute = pointRouteConfig(taskPoint, taskCfg);
+        const taskRoute = decisionApi.routeConfig(taskPoint, taskCfg);
         const taskProvider = normalizeDecisionProvider(taskRoute.provider ?? "jev");
         const { key: taskKey } = resolveDecisionApiKey({ storedKey: taskRoute.apiKey ?? null, env: process.env });
         if (!taskKey && providerRequiresKey(taskProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
@@ -9474,7 +9109,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { exitCode: 1, stderr: "Gap triage needs the Artifact criteria router in Decision API or preset mode. Set it in Manage agent presets → Decision routers." };
         }
         const gapCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const gapRoute = pointRouteConfig(gapPoint, gapCfg);
+        const gapRoute = decisionApi.routeConfig(gapPoint, gapCfg);
         const gapProvider = normalizeDecisionProvider(gapRoute.provider ?? "jev");
         const { key: gapKey } = resolveDecisionApiKey({ storedKey: gapRoute.apiKey ?? null, env: process.env });
         if (!gapKey && providerRequiresKey(gapProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };

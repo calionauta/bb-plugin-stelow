@@ -12,13 +12,15 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 //
 // The contract is split across server.ts (main contract) and server/*.ts
 // feature slices (github-issues.ts precedent: contract fragment + handlers
-// + migrations + scheduler). Discovery scans the whole surface so a moved
-// method never goes blind.
+// + migrations + scheduler). Internal feature modules may live beside those
+// contracts, so discovery scans every server module that declares one.
+const contractFiles = readdirSync(join(root, "server"))
+  .filter((file) => file.endsWith(".ts"))
+  .map((file) => join("server", file))
+  .filter((file) => readFileSync(join(root, file), "utf8").includes("defineRpcContract({"));
 const contracts = [
   { file: "server.ts", start: "export const rpcContract = defineRpcContract({", end: "export type PreviewInfo" },
-  ...readdirSync(join(root, "server"))
-    .filter((file) => file.endsWith(".ts"))
-    .map((file) => ({ file: join("server", file), start: "defineRpcContract({", end: null })),
+  ...contractFiles.map((file) => ({ file, start: "defineRpcContract({", end: null })),
 ];
 
 let total = 0;
