@@ -92,7 +92,10 @@ function harness(options = {}) {
     getCard: () => structuredClone(current),
     getCardByWorkerThread: () => structuredClone(current),
     isArchivedCard: (value) => value.status === "archived",
-    cardWorkspace: async () => options.workspace ?? { path: "/repo", hostId: "host-1" },
+    cardWorkspace: async () => {
+      if (options.workspaceError) throw new Error(options.workspaceError);
+      return options.workspace ?? { path: "/repo", hostId: "host-1" };
+    },
     continuingEnvironment: async (_value, fallback) => options.environment ?? fallback,
     getPreset: (id) => [generation, band].find((value) => value?.id === id) ?? null,
     getPresetForBand: () => band,
@@ -152,6 +155,15 @@ test("the command seam ignores non-draft commands and refuses missing context", 
   assert.equal(archived.spawns.length, 0, "archived cards never spend a generation turn");
 });
 
+test("workspace lookup failures preserve the existing command rejection", async () => {
+  const fixture = harness({ workspaceError: "workspace lookup exploded" });
+  await assert.rejects(
+    fixture.server.command(["draft", "--prompt", "copy"], "worker-1"),
+    /workspace lookup exploded/,
+  );
+  assert.equal(fixture.spawns.length, 0, "failed workspace resolution never spends a generation turn");
+});
+
 test("a successful draft follows the generation, environment, lifecycle, and record cascade", async () => {
   const fixture = harness({ environment: { type: "reuse", environmentId: "env-1" } });
   const result = await fixture.server.command(
@@ -169,6 +181,12 @@ test("a successful draft follows the generation, environment, lifecycle, and rec
   assert.equal(fixture.spawns[0].site, "draft-burst");
   assert.equal(fixture.spawns[0].args.visibility, "hidden");
   assert.equal(fixture.spawns[0].args.lifecycleOwnerThreadId, "worker-1");
+  assert.deepEqual(fixture.spawns[0].args.executionInputSources, {
+    providerId: "explicit",
+    model: "explicit",
+    reasoningLevel: "explicit",
+    permissionMode: "explicit",
+  });
   assert.deepEqual(fixture.spawns[0].args.environment, { type: "reuse", environmentId: "env-1" });
   assert.match(fixture.spawns[0].args.prompt, /Three taglines/);
   assert.deepEqual(fixture.stops, ["draft-1"]);
@@ -211,6 +229,7 @@ test("title suggestion is advisory and never overwrites a concurrent human renam
   assert.equal(fixture.spawns[0].site, "card-title");
   assert.equal(fixture.spawns[0].args.visibility, "hidden");
   assert.equal("lifecycleOwnerThreadId" in fixture.spawns[0].args, false);
+  assert.equal("executionInputSources" in fixture.spawns[0].args, false, "title provenance stays unchanged by the draft extraction");
   assert.equal(fixture.row().display_name, "Fix Safari login loop");
   assert.deepEqual(fixture.events, [{ event: "card-state", payload: { cardId: "card-1" } }]);
 
@@ -218,4 +237,18 @@ test("title suggestion is advisory and never overwrites a concurrent human renam
   await raced.server.suggestCardName("card-1");
   assert.equal(raced.row().display_name, "Human title");
   assert.deepEqual(raced.events, []);
+});
+
+test("title failure and timeout stop the hidden thread without changing the card", async () => {
+  const failed = harness({ statuses: ["failed"] });
+  await failed.server.suggestCardName("card-1");
+  assert.deepEqual(failed.stops, ["draft-1"]);
+  assert.equal(failed.row().display_name, "Login loop");
+  assert.deepEqual(failed.events, []);
+
+  const timedOut = harness({ statuses: Array(12).fill("running") });
+  await timedOut.server.suggestCardName("card-1");
+  assert.deepEqual(timedOut.stops, ["draft-1"]);
+  assert.equal(timedOut.row().display_name, "Login loop");
+  assert.deepEqual(timedOut.events, []);
 });

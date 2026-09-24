@@ -15,7 +15,7 @@ type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
 type ThreadEnvironment = SpawnArgs["environment"];
 
-export type DraftingPreset = {
+type DraftingPreset = {
   id: string;
   name: string;
   provider_id: string;
@@ -26,7 +26,7 @@ export type DraftingPreset = {
   machine_id: string | null;
 };
 
-export type DraftingParams = {
+type DraftingParams = {
   providerId: string;
   modelId: string;
   reasoningLevel: string;
@@ -99,18 +99,20 @@ function permissionNote(params: DraftingParams): string {
     : "";
 }
 
-function executionArgs(params: DraftingParams) {
+function executionArgs(params: DraftingParams, includeInputSources = false) {
   return {
     providerId: params.providerId,
     model: params.modelId,
     reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
     permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
-    executionInputSources: {
-      providerId: "explicit" as const,
-      model: "explicit" as const,
-      reasoningLevel: "explicit" as const,
-      permissionMode: "explicit" as const,
-    },
+    ...(includeInputSources ? {
+      executionInputSources: {
+        providerId: "explicit" as const,
+        model: "explicit" as const,
+        reasoningLevel: "explicit" as const,
+        permissionMode: "explicit" as const,
+      },
+    } : {}),
   };
 }
 
@@ -210,7 +212,7 @@ async function spawnDraft(
     visibility: "hidden",
     ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
     title: `Stelow draft: ${titleOf(card)}`,
-    ...executionArgs(params),
+    ...executionArgs(params, true),
     prompt: buildDraftPrompt({ cardName: titleOf(card), brief }),
   }, "draft-burst");
 }
@@ -256,7 +258,7 @@ async function runDraft(
   if (deps.isArchivedCard(card)) return { exitCode: 1, stderr: "This card is archived." };
   const resolution = resolveGenerationPreset(deps, card);
   const params = deps.presetParams(resolution.preset);
-  const workspace = await deps.cardWorkspace(card).catch(() => null);
+  const workspace = await deps.cardWorkspace(card);
   if (!workspace?.path) return { exitCode: 1, stderr: "Workspace is unavailable." };
   const environment = await environmentFor(deps, card, workspace, params);
   let thread: { id: string };
@@ -351,6 +353,5 @@ export function createDraftingServer(deps: DraftingDeps) {
   return {
     command: (args: string[], threadId?: string) => command(deps, sleep, args, threadId),
     suggestCardName: (cardId: string) => suggestCardName(deps, sleep, cardId),
-    resolveGenerationPreset: (card: DraftingCard) => resolveGenerationPreset(deps, card),
   };
 }

@@ -95,8 +95,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
-  readFileSync(join(root, "server/drafting.ts"), "utf8"),
 ].join("\n");
+const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const composerHelper = readFileSync(join(root, "components", "creation", "composer-execution.ts"), "utf8");
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
@@ -112,10 +112,22 @@ for (const method of ["createCard", "createResearchCard", "createExploreCard"]) 
 }
 assert.match(server, /composerPresetOverride\(/, "creation resolves the override through the shared helper");
 assert.match(server, /composerSpawnInput\(/, "the spawn carries the shared spawn input");
-const explicitSources = /executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g;
-assert.equal((server.match(explicitSources) ?? []).length, 4, "restart/reseed/review/gate-pre-review keep hardcoded explicit sources");
-assert.match(server, /function executionArgs\(params: DraftingParams\)/, "draft and title share one explicit-provenance helper");
-assert.match(server, /providerId: "explicit" as const,[\s\S]*permissionMode: "explicit" as const/, "draft and title preserve every explicit source field");
+const directExplicitSources = /executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g;
+assert.equal(
+  (server.match(directExplicitSources) ?? []).length,
+  4,
+  "restart/reseed/review/gate-pre-review keep hardcoded explicit sources",
+);
+assert.match(
+  drafting,
+  /function executionArgs\(params: DraftingParams, includeInputSources = false\)/,
+  "draft and title share execution coercion without changing provenance",
+);
+assert.match(
+  drafting,
+  /executionArgs\(params, true\)/,
+  "only the draft burst marks preset execution sources as explicit",
+);
 assert.match(server, /card-override-\$\{cardId\}/, "a divergent choice pins a card-override row");
 assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)/, "the override is pinned through card_presets");
 
