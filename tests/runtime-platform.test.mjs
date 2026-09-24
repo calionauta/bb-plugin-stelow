@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createPlatformHandlers, defaultRun } from "../server/runtime/platform.ts";
 
 function previewHandler(calls, method) {
@@ -212,6 +214,28 @@ test("subprocess runner passes an explicit environment without daemon secrets", 
   } finally {
     if (secret === undefined) delete process.env.STELOW_INSTALL_TEST_SECRET;
     else process.env.STELOW_INSTALL_TEST_SECRET = secret;
+  }
+});
+
+test("tool status probes cannot read daemon credentials", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "stelow-probe-"));
+  const binary = join(directory, "probe");
+  const previous = process.env.STELOW_INSTALL_TEST_SECRET;
+  process.env.STELOW_INSTALL_TEST_SECRET = "must-not-leak";
+  try {
+    writeFileSync(binary, [
+      `#!${process.execPath}`,
+      "process.stdout.write(process.env.STELOW_INSTALL_TEST_SECRET ? 'leaked' : 'probe 1.0')",
+    ].join("\n"));
+    chmodSync(binary, 0o700);
+    const { handlers } = harness({ resolveLocalBin: () => binary, probeTool: undefined });
+    const result = await handlers.toolStatus();
+    assert.equal(result.tools.length, 4);
+    assert.ok(result.tools.every((tool) => tool.version === "probe 1.0"));
+  } finally {
+    if (previous === undefined) delete process.env.STELOW_INSTALL_TEST_SECRET;
+    else process.env.STELOW_INSTALL_TEST_SECRET = previous;
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 

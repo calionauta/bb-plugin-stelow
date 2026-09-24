@@ -89,7 +89,11 @@ const CYMBAL_VERSION = "v0.17.0";
 
 function defaultProbe(bin: string): Promise<ToolProbeResult> {
   return new Promise((resolve) => {
-    execFile(bin, ["--version"], { timeout: 8000, maxBuffer: 64 * 1024 }, (error, stdout) => {
+    execFile(bin, ["--version"], {
+      timeout: 8000,
+      maxBuffer: 64 * 1024,
+      env: isolatedToolEnvironment(),
+    }, (error, stdout) => {
       if (!error && typeof stdout === "string" && stdout.trim()) {
         resolve({ present: true, version: stdout.trim().split("\n")[0]?.slice(0, 60) ?? null });
         return;
@@ -97,6 +101,15 @@ function defaultProbe(bin: string): Promise<ToolProbeResult> {
       resolve({ present: false, version: null });
     });
   });
+}
+
+function isolatedToolEnvironment(overrides: Record<string, string> = {}): Record<string, string> {
+  return {
+    HOME: overrides.HOME ?? tmpdir(),
+    PATH: "/usr/local/bin:/usr/bin:/bin",
+    TMPDIR: overrides.HOME ?? tmpdir(),
+    ...overrides,
+  };
 }
 
 export function defaultRun(
@@ -111,12 +124,7 @@ export function defaultRun(
       {
         timeout: 300000,
         maxBuffer: 1024 * 1024,
-        env: {
-          HOME: env.HOME ?? tmpdir(),
-          PATH: "/usr/local/bin:/usr/bin:/bin",
-          TMPDIR: env.HOME ?? tmpdir(),
-          ...env,
-        },
+        env: isolatedToolEnvironment(env),
       },
       (error, stdout, stderr) => {
         const out = `${typeof stdout === "string" ? stdout : ""}\n${typeof stderr === "string" ? stderr : ""}`.trim();
