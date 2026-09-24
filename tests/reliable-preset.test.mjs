@@ -16,6 +16,7 @@ const server = [
   readFileSync(join(root, "server/cards.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
 ].join("\n");
+const executionAdvance = readFileSync(join(root, "server", "execution-advance.ts"), "utf8");
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const workerBackend = readFileSync(join(root, "server/workers.ts"), "utf8");
 const managerBand = readFileSync(join(root, "components/settings/preset-manager-band-routing.tsx"), "utf8");
@@ -107,8 +108,12 @@ const freshReliable = /const effective = deps\.getReliablePreset\(bandForCardKin
 assert.match(workerBackend, freshReliable, "fresh starts resolve reliable-aware");
 assert.match(server, /const effective = getReliablePresetForBand\("research", cardId\);/, "research fan-out resolves reliable-aware");
 assert.match(server, /\? getReliablePresetForBand\(STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\)/, "promotion handoff resolves reliable-aware");
-assert.match(server, /const bandPreset = band \? getReliablePresetForBand\(band, card\.id\) : null;/, "the advance band swap resolves reliable-aware");
-assert.match(server, /const bandPreset = getReliablePresetForBand\(band, cliCard\.id\);/, "the CLI advance band swap resolves reliable-aware");
+assert.match(executionAdvance, /const preset = deps\.getReliablePreset\(band, card\.id\);/, "the advance band swap resolves reliable-aware");
+assert.match(
+  executionAdvance,
+  /const currentPresetId = card\.worker_preset_id \?\? deps\.getCardPresetId\(card\.id\);/,
+  "the advance band swap honors the card pin before respawning",
+);
 assert.match(server, /const reliablePreset = reliable \? deps\.getPreset\(reliable\.preset_id\) : null;/, "the initial spawn consults the reliable row");
 assert.match(server, /const base = reliablePreset \?\? bandPreset \?\? selected;/, "the initial spawn prefers reliable over band over default");
 

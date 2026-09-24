@@ -21,23 +21,33 @@ for (const value of ["inbox", "/research/", "explore", "/about/"]) {
 for (const origin of ["inbox", "build", "research", "explore"]) {
   assert.deepEqual(
     parseStelowSubPath(`${origin}/card/card_abc123`),
-    { kind: "card", cardId: "card_abc123", eventId: null, origin },
+    { kind: "card", cardId: "card_abc123", eventId: null, executionRunId: null, origin },
     `${origin} card without an event keeps the route answerable`,
   );
 }
 assert.deepEqual(
   parseStelowSubPath("research/card/card_abc123/event/evt_xyz789"),
-  { kind: "card", cardId: "card_abc123", eventId: "evt_xyz789", origin: "research" },
+  { kind: "card", cardId: "card_abc123", eventId: "evt_xyz789", executionRunId: null, origin: "research" },
   "a prefixed card preserves its event and return track",
 );
 assert.deepEqual(
+  parseStelowSubPath("build/card/card_abc123/run/exec_run1"),
+  { kind: "card", cardId: "card_abc123", eventId: null, executionRunId: "exec_run1", origin: "build" },
+  "a prefixed run route preserves the local run identity",
+);
+assert.deepEqual(
+  parseStelowSubPath("card/card_abc123/event/evt_xyz/run/exec_run1"),
+  { kind: "bare-card", cardId: "card_abc123", eventId: "evt_xyz", executionRunId: "exec_run1" },
+  "a bare event-plus-run route remains answerable",
+);
+assert.deepEqual(
   parseStelowSubPath("card/card_abc123"),
-  { kind: "bare-card", cardId: "card_abc123", eventId: null },
+  { kind: "bare-card", cardId: "card_abc123", eventId: null, executionRunId: null },
   "a trackless card route remains supported",
 );
 assert.deepEqual(
   parseStelowSubPath("/card/card_abc123/event/evt_xyz789/"),
-  { kind: "bare-card", cardId: "card_abc123", eventId: "evt_xyz789" },
+  { kind: "bare-card", cardId: "card_abc123", eventId: "evt_xyz789", executionRunId: null },
   "padding around a trackless card route does not change its identity",
 );
 for (const value of [
@@ -46,6 +56,7 @@ for (const value of [
   "build/card/not-a-card",
   "build/card/card_abc/event/not-an-event",
   "card/card_abc/event/evt_xyz/extra",
+  "build/card/card_abc/run/wfr_native",
 ]) {
   assert.deepEqual(parseStelowSubPath(value), track("build"), `invalid path falls back safely: ${value}`);
 }

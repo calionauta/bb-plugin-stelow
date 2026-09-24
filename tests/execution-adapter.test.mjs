@@ -84,7 +84,13 @@ assert.deepEqual(await native.cancel({}), { state: "cancelled", status: "cancele
 assert.deepEqual(normalizeRun({ status: "needs input" }), { state: "needs_input", status: "needs input" });
 assert.throws(() => assertCapabilities(["resume"], report), /missing capabilities: resume/);
 
-const serverSource = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "server.ts"), "utf8");
-for (const operation of ["run", "status", "resume", "cancel"]) assert.match(serverSource, new RegExp(`adapter\\.${operation}\\(`), `production lifecycle uses adapter.${operation}()`);
+const root = fileURLToPath(new URL("..", import.meta.url));
+const nativeSource = readFileSync(join(root, "server", "execution-native.ts"), "utf8");
+const lifecycleSource = readFileSync(join(root, "server", "execution-lifecycle.ts"), "utf8");
+const reconcileSource = readFileSync(join(root, "server", "execution-reconcile.ts"), "utf8");
+assert.match(nativeSource, /adapterFor\(run\)\.run\(/, "native launch uses adapter.run()");
+assert.match(reconcileSource, /native\.adapterFor\(run\)\.status\(/, "reconciliation uses adapter.status()");
+assert.match(lifecycleSource, /native\.adapterFor\(run\)\.resume\(/, "boundary answers use adapter.resume()");
+assert.match(lifecycleSource, /native\.adapterFor\(run\)\.cancel\(/, "owned-run cancellation uses adapter.cancel()");
 
 console.log("execution adapter test ok: capabilities, normalization, explicit refusal, production wiring");

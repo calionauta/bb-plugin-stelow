@@ -1,5 +1,5 @@
 export type ExecutionRouteMode = "native" | "coordinator-sequential" | "refused";
-export type ExecutionRefusalCode = "fallback-missing" | "fallback-refused" | "fallback-unknown";
+export type ExecutionRefusalCode = "fallback-missing" | "fallback-refused" | "fallback-unknown" | "unknown-recipe";
 export interface ExecutionRoute {
   mode: ExecutionRouteMode;
   reason?: string;

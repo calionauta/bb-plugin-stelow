@@ -93,7 +93,8 @@ function LiveQuestionSection({
 }) {
   if (!questions[0]) return null;
   return (
-    <QuestionFrame withSpace>
+    <div id="execution-needs-input-questions" tabIndex={-1}>
+      <QuestionFrame withSpace>
       <QuestionBatch
         cardId={cardId}
         mode="live"
@@ -101,7 +102,8 @@ function LiveQuestionSection({
         onAnswered={onAnswered}
         onOpenArtifact={onOpenArtifact}
       />
-    </QuestionFrame>
+      </QuestionFrame>
+    </div>
   );
 }
 

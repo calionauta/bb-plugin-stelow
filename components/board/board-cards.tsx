@@ -5,6 +5,8 @@ import { INTENT_LABEL } from "@/components/detail/card-detail-route";
 import { useReturnFocus } from "./use-return-focus";
 import { liveBorderClass, statusTone } from "../../lib/detail-presentation.mjs";
 import { cardCanResume, cardNeedsReview, cardShowsAttention } from "../../lib/card-attention.mjs";
+import { formatDuration } from "../../lib/card-metrics.mjs";
+import { orderedDoingNow } from "../../lib/doing-now.mjs";
 import {
   ActivityPill,
   AttentionChip,
@@ -64,7 +66,7 @@ export function CardMetaRows({ card }: { card: BoardCardItem }) {
         <div className="mt-2"><AttentionChip label={attentionLabel(card.activity)} /></div>
       ) : null}
       {card.activity === "running" || card.activity === "awaiting-answer" ? (
-        <div className="mt-2 max-w-full"><DoingNowPill names={card.doingNow ?? []} /></div>
+        <div className="mt-2 max-w-full"><DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /></div>
       ) : null}
       {cardNeedsReview(card) ? (
         <div
@@ -107,7 +109,8 @@ export function BoardCard({ card, onOpen }: { card: BoardCardItem; onOpen: () =>
   ) : null;
   const progressTitle =
     `${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · `
-    + `${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`;
+    + `${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`
+    + (card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : "");
   return (
     <div
       role="button"
@@ -135,6 +138,7 @@ export function BoardCard({ card, onOpen }: { card: BoardCardItem; onOpen: () =>
           <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
           <span className="whitespace-nowrap text-muted-foreground" title={progressTitle}>
             ✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks
+            {card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : ""}
           </span>
         </div>
       ) : null}

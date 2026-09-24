@@ -1,3 +1,5 @@
+import { parseExecutionRunSubPath } from "../../lib/execution-deep-link.mjs";
+
 export const STELOW_PANEL_ID = "stelow";
 export const STELOW_PANEL_PATH = "stelow";
 
@@ -75,16 +77,35 @@ export function parseStelowSubPath(subPath) {
   if (normalized === "research") return { kind: "track", track: "research" };
   if (normalized === "explore") return { kind: "track", track: "explore" };
   if (normalized === "about") return { kind: "track", track: "about" };
+  const executionRoute = parseExecutionRunSubPath(normalized);
+  if (executionRoute?.track) {
+    return {
+      kind: "card",
+      cardId: executionRoute.cardId,
+      eventId: executionRoute.eventId,
+      executionRunId: executionRoute.localRunId,
+      origin: executionRoute.track,
+    };
+  }
+  if (executionRoute) {
+    return {
+      kind: "bare-card",
+      cardId: executionRoute.cardId,
+      eventId: executionRoute.eventId,
+      executionRunId: executionRoute.localRunId,
+    };
+  }
   let match = normalized.match(/^(inbox|build|research|explore)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
   if (match) {
     return {
       kind: "card",
       cardId: match[2],
       eventId: match[3] ?? null,
+      executionRunId: null,
       origin: match[1],
     };
   }
   match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
-  if (match) return { kind: "bare-card", cardId: match[1], eventId: match[2] ?? null };
+  if (match) return { kind: "bare-card", cardId: match[1], eventId: match[2] ?? null, executionRunId: null };
   return { kind: "track", track: "build" };
 }

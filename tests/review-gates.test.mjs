@@ -134,7 +134,12 @@ assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
 // artifact, thin file. Advance never depends on it.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-assert.match(server, /if \(cliCard\) void requestGatePreReview\(cliCard\.id, stage\)\.catch\(\(\) => undefined\);/, "gate entry triggers without waiting");
+const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+assert.match(
+  executionAdvance,
+  /void deps\.requestGatePreReview\(card\.id, parsed\.stage\)\.catch\(\(\) => undefined\);/,
+  "gate entry triggers without waiting",
+);
 assert.match(server, /async function requestGatePreReview\(cardId: string, stage: string\)/, "the trigger is one named helper");
 const preAt = server.indexOf("async function requestGatePreReview(");
 const preEnd = server.indexOf("\n  }\n", preAt);

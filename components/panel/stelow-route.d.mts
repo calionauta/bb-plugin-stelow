@@ -4,8 +4,8 @@ export type StelowTrack = "inbox" | "build" | "research" | "explore" | "about";
 export type StelowTrackCounts = Record<StelowTrack, number>;
 export type ParsedStelowRoute =
   | { kind: "track"; track: StelowTrack }
-  | { kind: "card"; cardId: string; eventId: string | null; origin: StelowTrack }
-  | { kind: "bare-card"; cardId: string; eventId: string | null };
+  | { kind: "card"; cardId: string; eventId: string | null; executionRunId: string | null; origin: StelowTrack }
+  | { kind: "bare-card"; cardId: string; eventId: string | null; executionRunId: string | null };
 
 export type StelowTrackEntry = {
   key: StelowTrack;

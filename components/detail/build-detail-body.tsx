@@ -29,6 +29,7 @@ import { BuildDetailContent } from "./build-detail-content";
 import { BuildLifecycleDialogs } from "./build-lifecycle-dialogs";
 import { useInboxEventFocus, type InboxEventItem } from "./inbox-event-banner";
 import { useBuildDetailLifecycle } from "./use-build-detail-lifecycle";
+import { useExecutionRuns } from "./use-execution-runs";
 
 type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 type RpcResult = Awaited<ReturnType<Rpc["call"]>>;
@@ -53,6 +54,7 @@ type PresetDialogRenderer = (state: {
 type BuildDetailBodyProps = {
   cardId: string;
   inboxEventId: string | null;
+  executionRunId: string | null;
   onClose: () => void;
   onBack?: () => void;
   intentLabels: Record<string, string>;
@@ -184,18 +186,23 @@ function useBuildInteractions(
 
 export type BuildDetailView = ReturnType<typeof useBuildDetailData> &
   ReturnType<typeof useBuildInteractions> &
-  ReturnType<typeof useAdvanceCard> &
-  Pick<BuildDetailBodyProps, "renderPresetDialog">;
+  ReturnType<typeof useAdvanceCard> & {
+    execution: ReturnType<typeof useExecutionRuns>;
+    focusRunId: string | null;
+  } & Pick<BuildDetailBodyProps, "renderPresetDialog">;
 
 export function BuildDetailBody(props: BuildDetailBodyProps) {
   const { cardId, inboxEventId, renderPresetDialog } = props;
   const data = useBuildDetailData(cardId, inboxEventId);
   const interactions = useBuildInteractions(props, data.card, data.load);
   const advance = useAdvanceCard(cardId, data.load);
+  const execution = useExecutionRuns(cardId, props.executionRunId);
   const view: BuildDetailView = {
     ...data,
     ...interactions,
     ...advance,
+    execution,
+    focusRunId: props.executionRunId,
     renderPresetDialog,
   };
   return <BuildDetailLayout {...props} view={view} />;

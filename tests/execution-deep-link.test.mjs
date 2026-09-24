@@ -4,11 +4,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { executionRunDeepLink, executionRunFocus, executionRunSubPath, parseExecutionRunSubPath } from "../lib/execution-deep-link.mjs";
 
-const appSource = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "app.tsx"), "utf8");
-assert.match(appSource, /localRunId:\s*run\.id/, "run rows use the tested in-app route builder");
-assert.doesNotMatch(appSource, /localRunId:\s*run\.runId/, "native run identity never becomes in-app navigation");
-assert.match(appSource, /executionRunFocus\(/, "deep-open focus uses the shared state mapping");
-assert.match(appSource, /execution-needs-input-questions/, "needs_input deep-open names the real card question target");
+const root = fileURLToPath(new URL("..", import.meta.url));
+const navigationSource = readFileSync(join(root, "components", "app-support", "navigation.ts"), "utf8");
+const runsSource = readFileSync(join(root, "components", "detail", "execution-runs-section.tsx"), "utf8");
+const focusSource = readFileSync(join(root, "lib", "execution-deep-link.mjs"), "utf8");
+const uiSource = [navigationSource, runsSource, focusSource].join("\n");
+assert.match(uiSource, /localRunId:\s*run\.id/, "run rows use the tested in-app route builder");
+assert.doesNotMatch(uiSource, /localRunId:\s*run\.runId/, "native run identity never becomes in-app navigation");
+assert.match(uiSource, /executionRunFocus\(/, "deep-open focus uses the shared state mapping");
+assert.match(focusSource, /execution-needs-input-questions/, "needs_input deep-open names the real card question target");
 
 const expectedFocus = {
   queued: "run",

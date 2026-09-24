@@ -3,16 +3,29 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const server = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "server.ts"), "utf8");
-const cliStart = server.indexOf('if (argv[0] === "advance")');
-const cliEnd = server.indexOf('if (argv[0] === "gap-scopes")', cliStart);
-const cli = server.slice(cliStart, cliEnd);
-const routeIndex = cli.indexOf("resolveStageExecutionRoute");
-const mutateIndex = cli.indexOf("runHelper(helperArgs");
-const coordinatorIndex = cli.indexOf("recordCoordinatorSequentialRoute");
-const nativeIndex = cli.indexOf("startNativeStageForCard");
+const root = fileURLToPath(new URL("..", import.meta.url));
+const source = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+const server = readFileSync(join(root, "server.ts"), "utf8");
 
-assert.ok(cliStart >= 0 && cliEnd > cliStart, "CLI advance block exists");
-assert.ok(routeIndex >= 0 && routeIndex < mutateIndex, "CLI route resolves before state mutation");
-assert.ok(coordinatorIndex > mutateIndex && nativeIndex > coordinatorIndex, "coordinator route is recorded before native dispatch");
+const prepareStart = source.indexOf("async function prepareAdvance");
+const prepareEnd = source.indexOf("async function dispatchAdvance", prepareStart);
+const prepare = source.slice(prepareStart, prepareEnd);
+const dispatchStart = prepareEnd;
+const dispatchEnd = source.indexOf("async function applyBand", dispatchStart);
+const dispatch = source.slice(dispatchStart, dispatchEnd);
+const cliStart = source.indexOf("async function advanceCli");
+const cli = source.slice(cliStart);
+
+const prepareRoute = prepare.indexOf("resolveStageExecutionRoute");
+const coordinator = dispatch.indexOf("recordCoordinatorSequentialRoute");
+const native = dispatch.indexOf("startNativeStageForCard");
+const cliPrepare = cli.indexOf("prepareAdvance");
+const cliMutate = cli.indexOf("deps.runHelper(helperArgs");
+const cliDispatch = cli.indexOf("dispatchAdvance");
+
+assert.ok(prepareStart >= 0 && prepareEnd > prepareStart, "advance preflight owns a bounded module section");
+assert.ok(prepareRoute >= 0, "advance preflight resolves the canonical execution route");
+assert.ok(coordinator >= 0 && native > coordinator, "coordinator fallback is recorded before native dispatch");
+assert.ok(cliPrepare >= 0 && cliPrepare < cliMutate && cliMutate < cliDispatch, "CLI route preflight precedes helper mutation and dispatch");
+assert.match(server, /argv\[0\] === "advance"\) return executionAdvance\.cli\(argv, ctx\)/, "the thin server delegates CLI advance to the module");
 console.log("execution dispatch contract ok: route, mutation, coordinator, native order");

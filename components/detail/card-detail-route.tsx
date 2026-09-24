@@ -33,6 +33,7 @@ type PresetDialogRenderer = (cardId: string, props: PresetDialogProps) => ReactN
 type CardDetailProps = {
   cardId: string;
   eventId: string | null;
+  executionRunId: string | null;
   backTrack: StelowTrack;
   navigate: Navigate;
   intentLabels: Record<string, string>;
@@ -52,6 +53,7 @@ function CardRouteSkeleton() {
 export function StelowCardDetail({
   cardId,
   eventId,
+  executionRunId,
   backTrack,
   navigate,
   intentLabels,
@@ -63,6 +65,7 @@ export function StelowCardDetail({
     <BuildDetailBody
       cardId={cardId}
       inboxEventId={eventId}
+      executionRunId={executionRunId}
       onClose={back}
       onBack={back}
       intentLabels={intentLabels}
@@ -77,6 +80,7 @@ type BareCardRouteProps = Omit<CardDetailProps, "backTrack">;
 export function BareCardRoute({
   cardId,
   eventId,
+  executionRunId,
   navigate,
   intentLabels,
   onOpenRecoveryAudit,
@@ -103,6 +107,7 @@ export function BareCardRoute({
     <StelowCardDetail
       cardId={cardId}
       eventId={eventId}
+      executionRunId={executionRunId}
       backTrack={trackOfCard({ kind })}
       navigate={navigate}
       intentLabels={intentLabels}
@@ -156,6 +161,7 @@ export function CardDrawerAdapter({
     <BuildDetailBody
       cardId={cardId}
       inboxEventId={null}
+      executionRunId={null}
       onClose={() => { /* host tab close */ }}
       intentLabels={intentLabels}
       onOpenRecoveryAudit={onOpenRecoveryAudit}

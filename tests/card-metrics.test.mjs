@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "../lib/card-metrics.mjs";
+import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 
 const HOUR = 3_600_000;
 
@@ -43,13 +44,22 @@ assert.deepEqual(summarizeDurations([100, 200, 300, 400]), { count: 4, p50: 200,
 assert.deepEqual(summarizeDurations([150]), { count: 1, p50: 150, p90: 150, max: 150 }, "a single value is its own percentile");
 assert.deepEqual(summarizeDurations([]), { count: 0, p50: null, p90: null, max: null }, "empty sets resolve nulls, never zero");
 assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, p90: 100, max: 100 }, "junk never enters the ranking");
+assert.equal(
+  totalScopeElapsedMs([{ status: "done", startedAt: "2026-01-01T00:00:00Z", record: { completedAt: "2026-01-01T00:01:00Z" } }]),
+  60000,
+  "completed scope time is bounded",
+);
+assert.equal(totalScopeElapsedMs([{ status: "pending" }]), null, "unstarted scope has no elapsed time");
 
 // Server wiring: one batched flow RPC (finished cards only, project +
 // done-window filters, p50/p90 summary) plus per-card times on detail.
 // Active cards carry no times — the query scopes completed, the detail
 // degrades to nulls.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server", "cards.ts"), "utf8"),
+].join("\n");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
 const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");
 const explorePanelState = readFileSync(join(root, "components", "panels", "explore-panel-state.ts"), "utf8");
@@ -62,8 +72,11 @@ assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
 assert.match(server, /WHERE status = 'completed'/, "aggregates read finished cards, never actives");
 assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
 assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
-assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
-assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\), doingNow: z\.array\(z\.string\(\)\), verifiedHeadSha: z\.string\(\)\.nullable\(\) \}\),/, "detail schema carries times, doing names, and the verified HEAD as nullable");
+assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs/, "detail reuses the one helper for lead time");
+assert.match(server, /cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper for cycle time");
+assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\)/, "detail schema carries nullable lead and cycle times");
+assert.match(server, /doingNow: z\.array\(z\.string\(\)\), executingScope: z\.string\(\)\.nullable\(\)/, "detail schema carries doing names and active scope");
+assert.match(server, /verifiedHeadSha: z\.string\(\)\.nullable\(\)/, "detail schema carries nullable verified HEAD");
 assert.match(buildProgress, /const flow = \{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}/, "detail progress reads the card times");
 assert.match(buildProgress, /<ScopeProgress scopes=\{detail\.scopes\} flow=\{flow\} \/>/, "the scoped progress view receives the card flow");
 assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
