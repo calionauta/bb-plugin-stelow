@@ -78,10 +78,18 @@ assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explo
 // nothing — clean stays clean. Project comes from the board filter, so
 // no second picker drifts out of sync with it.
 assert.match(flowStrip, /export function FlowStrip\(\{ rpc, projectId, onOpenCard \}/, "one strip component owns board flow");
-assert.match(
-  app,
-  /<FlowStrip[\s\S]*projectId=\{filterProjectIds\.length === 1 \? filterProjectIds\[0\] \?\? null : null\}[\s\S]*onOpenCard=/,
-  "the strip follows a single picked project, all projects otherwise",
+const flowMount = app.match(/<FlowStrip[\s\S]*?\/>/)?.[0] ?? "";
+assert.ok(
+  flowMount.includes(
+    "projectId={filterProjectIds.length === 1 ? filterProjectIds[0] ?? null : null}",
+  ),
+  "the strip follows one picked project, or all projects",
+);
+assert.ok(
+  flowMount.includes(
+    "onOpenCard={(kind, cardId) => goToCard(navigate, { kind }, cardId)}",
+  ),
+  "every flow row forwards through the shared navigator",
 );
 assert.match(flowStrip, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
 assert.match(flowStrip, /FLOW_WINDOWS/, "done windows are presets, not free dates");
@@ -94,9 +102,14 @@ assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows ope
 assert.match(server, /attention: z\.array\(z\.object\(\{ cardId: z\.string\(\), kind: z\.enum\(\["build", "research", "explore"\]\), name: z\.string\(\), reason: z\.enum\(\["stuck", "review"\]\) \}\)\)/, "attention items are contracted with a closed reason set");
 assert.match(server, /row\.status === "blocked" \|\| row\.activity === "error"/, "stuck derives from explicit signals only");
 assert.match(server, /hasPendingReview\(db, row\.id\)/, "review-awaiting derives from the shared review signal");
-assert.match(flowStrip, /useState<"tempo" \| "atencao">\("tempo"\)/, "tempo and attention are tabs, not stacked sections");
+assert.match(flowStrip, /type FlowTab = "tempo" \| "atencao"/, "tempo and attention share one closed tab type");
+assert.match(flowStrip, /useState<FlowTab>\("tempo"\)/, "tempo is the default tab, not a second stacked section");
 assert.match(flowStrip, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
-assert.match(flowStrip, /size-1\.5 rounded-full/, "the stuck chip pulses — the only motion on the strip");
+assert.match(
+  flowStrip,
+  /isStuck \? "animate-pulse bg-amber-500" : "bg-emerald-500"/,
+  "only the stuck indicator pulses; the review indicator stays still",
+);
 assert.match(flowStrip, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
 assert.doesNotMatch(flowStrip, /velocity|throughput per|per worker/, "no efficiency ranking survives in the strip");
 
