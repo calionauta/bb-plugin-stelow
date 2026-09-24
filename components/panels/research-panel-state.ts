@@ -13,6 +13,8 @@ import { LIGHTWEIGHT_COLUMNS } from "../../lib/tracks.mjs";
 import { toggleFilterValue } from "../../lib/kanban-layout.mjs";
 import {
   filterAndGroupResearchCards,
+  moveResearchCard as moveResearchCardWithRpc,
+  researchCardListRequest,
   researchPresetFor,
   strategyLabelsById,
 } from "../../lib/research-panel-state.mjs";
@@ -47,7 +49,7 @@ async function loadResearchData(
 ): Promise<ResearchPanelData> {
   const [projects, cards, strategies, presets, bands] = await Promise.all([
     rpc.call("projects", {}).catch(() => null),
-    rpc.call("listCards", { projectId, kind: "research" }).catch(() => ({ cards: [] })),
+    rpc.call("listCards", researchCardListRequest(projectId)).catch(() => ({ cards: [] })),
     rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
     rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
     rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
@@ -72,7 +74,7 @@ export function useResearchPanelState(rpc: ResearchRpc, projectId: string | null
     itemCountKey: "cards",
     realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
   });
-  return useResearchPresentation(panel, projectId);
+  return useResearchPresentation(panel);
 }
 
 function useResearchFilters(cards: ResearchCard[]) {
@@ -112,7 +114,6 @@ function useResearchLabels(data: ResearchPanelData) {
 
 function useResearchPresentation(
   panel: ReturnType<typeof usePanelData<ResearchPanelData>>,
-  projectId: string | null,
 ) {
   const filters = useResearchFilters(panel.data.cards);
   const labelsAndPreset = useResearchLabels(panel.data);
@@ -136,7 +137,6 @@ function useResearchPresentation(
     ...panel,
     ...filters,
     ...labelsAndPreset,
-    activeProjectId: projectId,
     attentionCount: panel.data.cards.filter(
       (card) => card.needsAttention && card.status !== "archived",
     ).length,
@@ -154,8 +154,10 @@ export async function moveResearchCard(
   cardId: string,
   target: string,
 ) {
-  if (!(LIGHTWEIGHT_COLUMNS as readonly string[]).includes(target)) return;
-  const status = target as "inbox" | "doing" | "done" | "archived";
-  const result = await rpc.call("moveCard", { cardId, status });
-  if (!result.ok) toast.error(result.error ?? "Move failed");
+  await moveResearchCardWithRpc(
+    (movingCardId, status) => rpc.call("moveCard", { cardId: movingCardId, status }),
+    cardId,
+    target,
+    (message) => toast.error(message),
+  );
 }

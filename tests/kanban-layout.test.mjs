@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { KANBAN_COLUMN_WIDTHS, kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "../lib/kanban-layout.mjs";
 import {
   filterAndGroupResearchCards,
+  moveResearchCard,
+  researchCardListRequest,
   researchCardMatches,
   researchPresetFor,
   strategyLabelsById,
@@ -55,15 +57,33 @@ assert.match(researchPanelView, /LIGHTWEIGHT_VISIBLE_COLUMNS\.map\(\(column\) =>
 assert.match(app, /VISIBLE_RESEARCH_COLUMNS\.map\(\(column\) => \(/, "explore kanban iterates visible columns");
 assert.match(trackLists, /const BUILD_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS/, "build lists omit the Bucket column");
 assert.match(trackLists, /const LIGHTWEIGHT_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS/, "lightweight lists omit the Bucket column");
-assert.doesNotMatch(app, /{COLUMNS\.map\(\(column\) => \(/, "the build kanban renders no Bucket column");
-assert.doesNotMatch(app, /{RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanbans render no Bucket column");
+for (const [track, source] of [
+  ["build", buildPanelView],
+  ["research", researchPanelView],
+  ["explore", app],
+]) {
+  assert.doesNotMatch(
+    source,
+    /{COLUMNS\.map\(\(column\) => \(|{RESEARCH_COLUMNS\.map\(\(column\) => \(/,
+    `${track} renders no Bucket column`,
+  );
+}
 assert.ok(
   buildPanelView.includes(
     "kanbanGridColumns(BUILD_BOARD_VISIBLE_COLUMNS, state.collapsedColumns)",
   ),
   "the build grid template matches its rendered columns",
 );
-assert.ok(app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns)"), "lightweight grid templates match their rendered columns");
+assert.ok(
+  researchPanelView.includes(
+    "kanbanGridColumns(LIGHTWEIGHT_VISIBLE_COLUMNS, state.collapsedColumns)",
+  ),
+  "the research grid template matches its rendered columns",
+);
+assert.ok(
+  app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns)"),
+  "the explore grid template matches its rendered columns",
+);
 // Order is product: New, then Bucket, then Agent Presets — the pile sits
 // beside creation, before configuration. A drift back fails here.
 for (const [label, source] of [
@@ -211,6 +231,16 @@ const researchCard = (overrides = {}) => ({
   updatedAt: 1,
   ...overrides,
 });
+assert.deepEqual(
+  researchCardListRequest("project-2"),
+  { projectId: "project-2", kind: "research" },
+  "a project switch scopes the card request to that project and track",
+);
+assert.match(
+  readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8"),
+  /loadResearchData\(rpc, projectId\)[\s\S]*\[projectId, rpc\]/,
+  "the Research loader reloads when the routed project changes",
+);
 const researchGroups = filterAndGroupResearchCards([
   researchCard({ id: "unknown", status: "unexpected", updatedAt: 1 }),
   researchCard({ id: "archived", status: "archived", updatedAt: 2 }),
@@ -243,6 +273,55 @@ assert.equal(
   ),
   false,
   "project and attention filters both apply",
+);
+const moveCalls = [];
+const moveErrors = [];
+await moveResearchCard(
+  async (cardId, status) => {
+    moveCalls.push([cardId, status]);
+    return { ok: true };
+  },
+  "card_1",
+  "done",
+  (message) => moveErrors.push(message),
+);
+await moveResearchCard(
+  async (cardId, status) => {
+    moveCalls.push([cardId, status]);
+    return { ok: false };
+  },
+  "card_2",
+  "doing",
+  (message) => moveErrors.push(message),
+);
+await moveResearchCard(
+  async (cardId, status) => {
+    moveCalls.push([cardId, status]);
+    return { ok: true };
+  },
+  "card_3",
+  "shape",
+  (message) => moveErrors.push(message),
+);
+assert.deepEqual(
+  moveCalls,
+  [["card_1", "done"], ["card_2", "doing"]],
+  "valid lightweight drops move the card and reject cross-track targets",
+);
+assert.deepEqual(
+  moveErrors,
+  ["Move failed"],
+  "a refused move reaches the panel's failure surface",
+);
+assert.match(
+  researchPanel,
+  /onMoveCard=\{\(cardId, target\) => void moveResearchCard\(rpc, cardId, target\)\}/,
+  "the Research board delegates drops to the tested move policy",
+);
+assert.match(
+  researchPanel,
+  /onOpenThread=\{\(threadId\) => navigate\.toThread\(threadId\)\}/,
+  "Research list thread actions reach the host thread router",
 );
 const strategyLabels = strategyLabelsById([
   { id: "strategy-a", label: "Jobs to be Done" },

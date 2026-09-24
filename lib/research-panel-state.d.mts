@@ -11,6 +11,10 @@ export type ResearchFilters = {
   attention: boolean;
 };
 
+export function researchCardListRequest(
+  projectId: string | null,
+): { projectId: string | null; kind: "research" };
+
 export function researchCardMatches(
   card: ResearchCard,
   filters: ResearchFilters,
@@ -29,3 +33,13 @@ export function researchPresetFor<T, B extends { band: string; presetId: string 
   presets: T[],
   assignments: B[],
 ): { preset: T | null; hasBandPreset: boolean };
+
+export function moveResearchCard(
+  moveCard: (
+    cardId: string,
+    status: "inbox" | "doing" | "done" | "archived",
+  ) => Promise<{ ok: boolean; error?: string | null }>,
+  cardId: string,
+  target: string,
+  onError: (message: string) => void,
+): Promise<void>;

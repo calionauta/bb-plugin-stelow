@@ -74,6 +74,16 @@ assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flo
 assert.match(storage, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
 assert.match(buildPanelState, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view");
 assert.match(researchPanelState, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view");
+assert.match(
+  researchPanelState,
+  /usePersistentCollapsedGroups\([\s\S]*STORAGE_KEYS\.researchColumns/,
+  "research board columns restore their own collapsed state",
+);
+assert.match(
+  researchPanelState,
+  /useCollapsedGroups\([\s\S]*STORAGE_KEYS\.researchListGroups/,
+  "research list groups restore their own collapsed state",
+);
 assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");
 
 // Flow strip: one glanceable line on finished work (count + p50s),
