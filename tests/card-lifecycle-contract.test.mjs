@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
 const openStelowAction = readFileSync(join(root, "components/thread/open-stelow-action.tsx"), "utf8");
 const routeAdapters = readFileSync(join(root, "components/detail/card-detail-route.tsx"), "utf8");
 const researchDetail = readFileSync(join(root, "components/detail/research-detail-body.tsx"), "utf8");
@@ -390,14 +391,14 @@ assert.match(promote, /workspace_kind = 'exploratory'/, "failed handoff restores
 assert.match(promote, /The card remains exploratory; its existing worker is still active/, "failed handoff explains the safe state");
 
 // One list row for all tracks: Build geometry standard, context per meta.
-assert.match(app, /function TrackListRow\(\{ card, meta, summary, onOpen \}/, "all three list views share one row");
-assert.match(app, /<TrackListRow key=\{card\.id\} card=\{card\} meta=\{metaFor\(card\)\}/, "lightweight lists render the shared row");
+assert.match(trackLists, /function TrackListRow\(\{ card, meta, onOpen, onOpenThread \}/, "all three list views share one row");
+assert.match(trackLists, /<TrackListRow[\s\S]*meta=\{metaFor\(card\)\}/, "every list adapter renders the shared row");
 
 // Attention chip parity: tiles and rows share one component, and the chip
 // renders only when the activity pill doesn't already say it — "Waiting
 // for you" plus "Answer required" read as the same state twice.
 assert.match(buildStatusPills, /export function AttentionChip\(\{ label \}/, "one attention chip serves tiles and rows");
-assert.match(app, /<AttentionChip label=\{attentionLabel\(card\)\} \/>/, "both surfaces render the shared chip");
+assert.match(app, /<AttentionChip label=\{attentionLabel\(card\.activity\)\} \/>/, "tiles render the shared chip");
 const metaRows = appFunction("CardMetaRows", "function BoardCard(");
 assert.match(metaRows, /attention && card\.activity !== "error" && card\.activity !== "awaiting-answer"/, "tiles chip only what the pill doesn't already state");
 
@@ -409,9 +410,18 @@ assert.match(boardCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens t
 assert.match(boardCard, /navigate\.toThread\(card\.workerThreadId\)/, "W navigates to the card's own worker thread");
 const lightweightCard = appFunction("LightweightTrackCard", "function ResearchCard(");
 assert.match(lightweightCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused research/explore card");
-const listRow = appFunction("TrackListRow", "function BoardColumn(");
-assert.match(listRow, /card\.needsAttention && card\.activity !== "awaiting-answer" && card\.activity !== "error" \? <AttentionChip/, "rows follow the same rule — no duplicate state pair");
-assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from list-view rows too");
+const listRow = trackLists.slice(trackLists.indexOf("function TrackListRow"), trackLists.indexOf("function rowTone"));
+assert.match(
+  listRow,
+  /showAttention\(card\) \? <AttentionChip label=\{attentionLabel\(card\.activity\)\}/,
+  "rows follow the same rule — no duplicate state pair",
+);
+assert.match(
+  trackLists,
+  /!\[(?:"|')awaiting-answer(?:"|'), (?:"|')error(?:"|')\]\.includes\(card\.activity\)/,
+  "row attention suppression covers both terminal wait and error states",
+);
+assert.match(trackLists, /event\.key !== "w" && event\.key !== "W"/, "W opens the worker thread from list-view rows too");
 // Esc/Back returns to the board with the card focused: opening remembers the
 // card, each card surface restores focus to it on return.
 assert.match(app, /rememberStelowReturnFocusCardId\(cardId\)/, "opening a card remembers it for focus return");

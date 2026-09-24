@@ -43,7 +43,12 @@ import {
   StelowCardDetail,
 } from "./components/detail/card-detail-route";
 import { StelowPanel } from "./components/panel/stelow-panel";
-import { consumeStelowReturnFocusCardId, rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus.mjs";
+import { rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus.mjs";
+import { FiltersBar } from "./components/board/board-filters";
+import { ViewToggle } from "./components/board/board-view-toggle";
+import { BuildList, ExploreList, ResearchList } from "./components/board/track-lists";
+import { useReturnFocus } from "./components/board/use-return-focus";
+import { normalizeBoardView, type BoardTrack } from "./lib/board-views.mjs";
 import {
   STELOW_PANEL_ID,
   STELOW_PANEL_PATH,
@@ -55,7 +60,17 @@ import {
   type StelowTrack,
 } from "./components/panel/stelow-route.mjs";
 import { useDebouncedRealtime } from "./components/use-debounced-realtime";
-import { ActivityPill, AttentionChip, BuildStatusPills, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
+import {
+  ActivityPill,
+  AttentionChip,
+  BuildStatusPills,
+  DoingNowPill,
+  LightweightStatusPills,
+  Pill,
+  ScopeStrip,
+  activityDotTone,
+  attentionLabel,
+} from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
 import { WorkflowSettings, sanitizeReviewGates, type Appetite, type ResearchStrategyOption, type ReviewGates } from "./components/creation/creation-settings";
@@ -161,16 +176,6 @@ function statusGlyph(status: string) {
 }
 
 const buildStatusPillProps = (card: CardItem) => ({ card, statusTone, intentLabel: (intent: string) => INTENT_LABEL[intent] });
-
-// Unified attention: ONE flag (needsAttention) + the reason (kind). All four
-// Attention label derived from the card's own activity/status — no separate
-// kind enum. One flag (needsAttention) says "a human is needed"; the label
-// comes from state the card already carries.
-function attentionLabel(card: CardItem): string {
-  if (card.activity === "awaiting-answer") return "Answer required";
-  if (card.activity === "error") return "Worker failed";
-  return "Paused. Resume it.";
-}
 
 // A finished card is work a human has to review, and a Done column that looks
 // inert teaches people to stop opening it. This is deliberately NOT the amber
@@ -471,7 +476,7 @@ function BoardPanel({ active }: { active: boolean }) {
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [filterActivities, setFilterActivities] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
-  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.buildView);
+  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.buildView, "build");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
   const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
   const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
@@ -648,6 +653,9 @@ function BoardPanel({ active }: { active: boolean }) {
                 filterIntents={filterIntents}
                 filterStatuses={filterStatuses}
                 filterActivities={filterActivities}
+                intentOptions={FILTER_INTENT_OPTIONS}
+                statusOptions={FILTER_STATUS_OPTIONS}
+                activityOptions={FILTER_ACTIVITY_OPTIONS}
                 filterAttention={filterAttention}
                 onProjectToggle={(value) => setFilterProjectIds((prev) => toggleFilterValue(prev, value))}
                 onStageToggle={(value) => setFilterStages((prev) => toggleFilterValue(prev, value))}
@@ -658,7 +666,7 @@ function BoardPanel({ active }: { active: boolean }) {
                 onReset={() => { setFilterProjectIds([]); setFilterStages([]); setFilterIntents([]); setFilterStatuses([]); setFilterActivities([]); setFilterAttention(false); }}
               />
             </div>
-            <ViewToggle view={viewMode} onChange={setViewMode} label="Build cards view" />
+            <ViewToggle view={viewMode} track="build" onChange={setViewMode} label="Build cards view" />
           </div>
           {cards.length === 0 && !loading ? (
             <section className="rounded-md border border-dashed bg-muted/30 p-6 text-center">
@@ -676,18 +684,40 @@ function BoardPanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p> : null}
           <FlowStrip rpc={rpc} projectId={filterProjectIds.length === 1 ? filterProjectIds[0] ?? null : null} navigate={navigate} />
-          {viewMode === "list" ? <BuildList groups={grouped} navigate={navigate} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : viewMode === "hill" ? <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} /> : <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns) }}>
-            {VISIBLE_COLUMNS.map((column) => (
-              <BoardColumn
-                key={column}
-                column={column}
-                cards={grouped[column]}
-                collapsed={Boolean(collapsedColumns[column])}
-                onToggleCollapsed={() => setCollapsedColumns((current) => ({ ...current, [column]: !current[column] }))}
-                onDrop={(cardId) => moveCard(cardId, column)}
-              />
-            ))}
-          </div>}
+          {viewMode === "list" ? (
+            <BuildList
+              groups={grouped}
+              collapsed={collapsedListGroups}
+              onToggle={(column) => setCollapsedListGroups((current) => ({
+                ...current,
+                [column]: !current[column],
+              }))}
+              onOpenCard={(card) => goToCard(navigate, card, card.id)}
+              onOpenThread={(threadId) => navigate.toThread(threadId)}
+            />
+          ) : viewMode === "hill" ? (
+            <HillBoard cards={Object.values(grouped).flat()} navigate={navigate} />
+          ) : (
+            <div
+              data-testid="kanban-board"
+              className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden"
+              style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns) }}
+            >
+              {VISIBLE_COLUMNS.map((column) => (
+                <BoardColumn
+                  key={column}
+                  column={column}
+                  cards={grouped[column]}
+                  collapsed={Boolean(collapsedColumns[column])}
+                  onToggleCollapsed={() => setCollapsedColumns((current) => ({
+                    ...current,
+                    [column]: !current[column],
+                  }))}
+                  onDrop={(cardId) => moveCard(cardId, column)}
+                />
+              ))}
+            </div>
+          )}
           </>}
         </div>
       </div>
@@ -726,7 +756,7 @@ function ResearchPanel({ active }: { active: boolean }) {
   // Background refreshes must never flash loading UI (see BoardPanel).
   const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView);
+  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView, "research");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
   const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
@@ -853,7 +883,7 @@ function ResearchPanel({ active }: { active: boolean }) {
                 onReset={() => { setFilterProjectIds([]); setFilterAttention(false); }}
               />
             </div>
-            <ViewToggle view={viewMode} onChange={setViewMode} label="Research cards view" views={["board", "list"]} />
+            <ViewToggle view={viewMode} track="research" onChange={setViewMode} label="Research cards view" />
           </div>
           {viewMode === "board" ? (
           <p className="text-xs text-muted-foreground">
@@ -861,7 +891,19 @@ function ResearchPanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ResearchList groups={grouped} navigate={navigate} strategyLabelById={strategyLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
+          {viewMode === "list" ? (
+            <ResearchList
+              groups={grouped}
+              strategyLabelById={strategyLabelById}
+              collapsed={collapsedListGroups}
+              onToggle={(column) => setCollapsedListGroups((current) => ({
+                ...current,
+                [column]: !current[column],
+              }))}
+              onOpenCard={(card) => goToCard(navigate, card, card.id)}
+              onOpenThread={(threadId) => navigate.toThread(threadId)}
+            />
+          ) : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns) }}>
             {VISIBLE_RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -912,7 +954,7 @@ function ExplorePanel({ active }: { active: boolean }) {
   // Background refreshes must never flash loading UI (see BoardPanel).
   const firstLoadRef = useRef(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView);
+  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView, "explore");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
   const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
@@ -1036,7 +1078,7 @@ function ExplorePanel({ active }: { active: boolean }) {
                 onReset={() => { setFilterProjectIds([]); setFilterAttention(false); }}
               />
             </div>
-            <ViewToggle view={viewMode} onChange={setViewMode} label="Explore cards view" views={["board", "list"]} />
+            <ViewToggle view={viewMode} track="explore" onChange={setViewMode} label="Explore cards view" />
           </div>
           {viewMode === "board" ? (
           <p className="text-xs text-muted-foreground">
@@ -1044,7 +1086,19 @@ function ExplorePanel({ active }: { active: boolean }) {
             <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
           </p>
           ) : null}
-          {viewMode === "list" ? <ExploreList groups={grouped} navigate={navigate} stageLabelById={stageLabelById} collapsed={collapsedListGroups} onToggle={(column) => setCollapsedListGroups((current) => ({ ...current, [column]: !current[column] }))} /> : (
+          {viewMode === "list" ? (
+            <ExploreList
+              groups={grouped}
+              stageLabelById={stageLabelById}
+              collapsed={collapsedListGroups}
+              onToggle={(column) => setCollapsedListGroups((current) => ({
+                ...current,
+                [column]: !current[column],
+              }))}
+              onOpenCard={(card) => goToCard(navigate, card, card.id)}
+              onOpenThread={(threadId) => navigate.toThread(threadId)}
+            />
+          ) : (
           <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns) }}>
             {VISIBLE_RESEARCH_COLUMNS.map((column) => (
               <BoardColumn
@@ -1092,14 +1146,13 @@ const STORAGE_KEYS = {
 type BoardView = "board" | "list" | "hill";
 
 // The board forgets nothing: returning from a card restores the view the
-// human picked (board, list, or hill), per track. Unknown stored values
-// degrade to board — a corrupt key must never strand the track.
-function useBoardView(storageKey: string): [BoardView, (view: BoardView) => void] {
+// human picked, per track. Values outside that track's supported views
+// degrade to board, including a stale hill value on lightweight tracks.
+function useBoardView(storageKey: string, track: BoardTrack): [BoardView, (view: BoardView) => void] {
   const [viewMode, setViewMode] = useState<BoardView>(() => {
     if (typeof window === "undefined") return "board";
     try {
-      const raw = window.localStorage.getItem(storageKey);
-      return raw === "board" || raw === "list" || raw === "hill" ? raw : "board";
+      return normalizeBoardView(window.localStorage.getItem(storageKey), track);
     } catch { return "board"; }
   });
   useEffect(() => {
@@ -1617,169 +1670,6 @@ function StelowPanelRoute({ subPath }: { subPath: string }) {
   );
 }
 
-// One filter bar for both boards (Archetype A: same components, same
-// affordances). Project + attention are the shared facets; build adds
-// Facets are multi-select arrays (empty means all) shared by every board:
-// stage/type/status/activity by passing values + toggle handler. Facets
-// without a handler are not rendered — Research gets the identical popover,
-// pills, and checkboxes without a forked filter row. Selected values render
-// as removable pills beside the Filters button (attention-pill pattern);
-// the popover holds checkbox lists (native inputs, keyboard-first) instead
-// of single selects and autocomplete widgets.
-type FilterFacet = { values: string[]; options: Array<{ value: string; label: string }>; onToggle: (value: string) => void };
-function FiltersBar({ projects, filterProjectIds, filterAttention, onProjectToggle, onAttention, onReset, stageOptions, filterStages, onStageToggle, filterIntents, onIntentToggle, filterStatuses, onStatusToggle, filterActivities, onActivityToggle }: {
-  projects: Project[];
-  filterProjectIds: string[];
-  filterAttention: boolean;
-  onProjectToggle: (v: string) => void;
-  onAttention: (v: boolean) => void;
-  onReset: () => void;
-  stageOptions?: string[];
-  filterStages?: string[];
-  onStageToggle?: (v: string) => void;
-  filterIntents?: string[];
-  onIntentToggle?: (v: string) => void;
-  filterStatuses?: string[];
-  onStatusToggle?: (v: string) => void;
-  filterActivities?: string[];
-  onActivityToggle?: (v: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  // The popover is a lightweight dialog, not a modal: clicking outside or
-  // pressing Escape dismisses it, like Done does. Selections apply live,
-  // so dismissing never loses filter state.
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: PointerEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-  const projectOptions = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects]);
-  const stageOptionsList = useMemo(() => (stageOptions ?? []).map((stage) => ({ value: stage, label: stageLabel(stage) })), [stageOptions]);
-  const facets: Array<{ label: string } & FilterFacet> = [
-    { label: "Project", values: filterProjectIds, options: projectOptions, onToggle: onProjectToggle },
-    ...(onIntentToggle && filterIntents ? [{ label: "Type", values: filterIntents, options: FILTER_INTENT_OPTIONS, onToggle: onIntentToggle }] : []),
-    ...(onStatusToggle && filterStatuses ? [{ label: "Status", values: filterStatuses, options: FILTER_STATUS_OPTIONS, onToggle: onStatusToggle }] : []),
-    ...(onStageToggle && filterStages ? [{ label: "Stage", values: filterStages, options: stageOptionsList, onToggle: onStageToggle }] : []),
-    ...(onActivityToggle && filterActivities ? [{ label: "Activity", values: filterActivities, options: FILTER_ACTIVITY_OPTIONS, onToggle: onActivityToggle }] : []),
-  ];
-  const activeCount = facets.reduce((total, facet) => total + facet.values.length, 0) + (filterAttention ? 1 : 0);
-  const removePill = (facet: { label: string } & FilterFacet, value: string) => facet.onToggle(value);
-  return (
-    <div ref={wrapRef} className="relative flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className={`inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition ${activeCount > 0 ? "border-primary bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground"}`}
-      >
-        <span aria-hidden>⚙</span>
-        <span>Filters</span>
-        {activeCount > 0 ? <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground" aria-label={`${activeCount} active filter${activeCount === 1 ? "" : "s"}`}>{activeCount}</span> : null}
-      </button>
-      {facets.flatMap((facet) => facet.values.map((value) => {
-        const option = facet.options.find((entry) => entry.value === value);
-        return (
-          <button key={`${facet.label}:${value}`} onClick={() => removePill(facet, value)} className="cursor-pointer inline-flex h-7 items-center gap-1 rounded-full border border-primary bg-primary/10 px-3 text-xs font-medium text-foreground hover:text-foreground" aria-label={`Remove ${facet.label} filter ${option?.label ?? value}`}>
-            <span>{option?.label ?? value}</span>
-            <span aria-hidden className="ml-1">×</span>
-          </button>
-        );
-      }))}
-      {filterAttention ? <button onClick={() => onAttention(!filterAttention)} className="cursor-pointer inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-500 bg-amber-500/15 px-3 text-xs font-medium text-amber-700 dark:text-amber-300" aria-label="Remove attention filter" aria-pressed="true">
-        <span aria-hidden className="size-1.5 rounded-full bg-amber-500" />
-        Needs attention
-        <span aria-hidden className="ml-1">×</span>
-      </button> : null}
-      {activeCount > 0 ? <button onClick={onReset} className="cursor-pointer inline-flex h-7 items-center rounded-full border bg-background px-3 text-xs text-muted-foreground hover:text-foreground">Clear</button> : null}
-      {open ? (
-        <div role="dialog" aria-label="Filters" className="absolute left-0 top-10 z-20 w-[min(36rem,calc(100vw-2rem))] rounded-md border bg-card p-3 shadow-lg">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FilterMultiSelect label="Project" values={filterProjectIds} options={projectOptions} onToggle={onProjectToggle} />
-            {onIntentToggle && filterIntents ? <FilterMultiSelect label="Type" values={filterIntents} options={FILTER_INTENT_OPTIONS} onToggle={onIntentToggle} /> : null}
-            {onStatusToggle && filterStatuses ? <FilterMultiSelect label="Status" values={filterStatuses} options={FILTER_STATUS_OPTIONS} onToggle={onStatusToggle} /> : null}
-            {onStageToggle && filterStages ? <FilterMultiSelect label="Stage" values={filterStages} options={stageOptionsList} onToggle={onStageToggle} /> : null}
-            {onActivityToggle && filterActivities ? <FilterMultiSelect label="Activity" values={filterActivities} options={FILTER_ACTIVITY_OPTIONS} onToggle={onActivityToggle} /> : null}
-            <label className="flex items-center gap-2 self-end text-sm">
-              <input type="checkbox" checked={filterAttention} onChange={(event) => onAttention(event.target.checked)} aria-label="Needs attention" />
-              <span className="text-xs text-muted-foreground">Needs attention</span>
-            </label>
-          </div>
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={onReset}>Reset</Button>
-            <Button size="sm" onClick={() => setOpen(false)}>Done</Button>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function FilterMultiSelect({ label, values, options, onToggle }: { label: string; values: string[]; options: Array<{ value: string; label: string }>; onToggle: (value: string) => void }) {
-  const active = values.length > 0;
-  return (
-    <fieldset className="min-w-0">
-      <legend className="text-xs text-muted-foreground">{label}{active ? ` (${values.length})` : ""}</legend>
-      <div className={`mt-1 max-h-56 space-y-0.5 overflow-auto rounded-md border px-2 py-1 ${active ? "border-primary bg-primary/10" : "border-border bg-background"}`}>
-        {options.length === 0 ? <p className="px-1 py-1 text-xs text-muted-foreground">No options.</p> : null}
-        {options.map((option) => (
-          <label key={option.value} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm text-foreground hover:bg-muted/60">
-            <input type="checkbox" checked={values.includes(option.value)} onChange={() => onToggle(option.value)} className="size-4 shrink-0 cursor-pointer accent-primary" />
-            <span className="truncate">{option.label}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-// Quiet view switcher shared by both boards. Icon-only and chromeless on
-// purpose: changing how the cards below render is a view preference, not an
-// action — so it lives beside the filters, never in the CTA row, and never
-// looks like a primary button.
-function ViewToggle({ view, onChange, label, views }: { view: "board" | "list" | "hill"; onChange: (view: "board" | "list" | "hill") => void; label: string; views?: Array<"board" | "list" | "hill"> }) {
-  const options = [
-    { value: "board" as const, title: "Board view", icon: "GridView" as const },
-    { value: "list" as const, title: "List view", icon: "ListView" as const },
-    { value: "hill" as const, title: "Hill view", icon: "ChartColumn" as const },
-  ].filter((option) => (views ?? ["board", "list", "hill"]).includes(option.value));
-  return (
-    <div role="group" aria-label={label} className="flex shrink-0 items-center">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          aria-pressed={view === option.value}
-          title={option.title}
-          aria-label={option.title}
-          className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${view === option.value ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
-        >
-          <Icon name={option.icon} className="h-4 w-4" aria-hidden />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ResearchList({ groups, navigate, strategyLabelById, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; strategyLabelById: Map<string, string>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} metaFor={(card) => joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById) || null} />;
-}
-
-function ExploreList({ groups, navigate, stageLabelById, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; stageLabelById: Map<string, string>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <LightweightTrackList groups={groups} navigate={navigate} collapsed={collapsed} onToggle={onToggle} metaFor={(card) => (card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null)} />;
-}
-
 // Hill view: one dot per card on a figuring-out/executing curve (Shape Up
 // hill-chart reading). Position comes from data the board already carries
 // (task/scope fractions, stage checkpoint) via lib/hill-position — no new
@@ -1982,31 +1872,6 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
   );
 }
 
-function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <div className="space-y-5">{VISIBLE_COLUMNS.map((column) => {
-    const cards = groups[column] ?? [];
-    if (!cards.length) return null;
-    const isCollapsed = collapsed[column] === true;
-    const label = COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} summary={{ scopesDone: card.scopeSummary.scopesDone, scopesTotal: card.scopeSummary.scopesTotal }} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
-  })}</div>;
-}
-
-// One list row for all three tracks (convention over configuration):
-// Build's row geometry is the standard; per-track context rides the meta
-// line (stage + scopes, strategy, technique). Kanban tiles stay rich;
-// list rows stay dense and keyboard-native.
-function TrackListRow({ card, meta, summary, onOpen }: {
-  card: CardItem;
-  meta: string | null;
-  summary?: { scopesDone: number; scopesTotal: number } | null;
-  onOpen: () => void;
-}) {
-  const navigate = useBbNavigate();
-  const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
-  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}{summary && summary.scopesTotal > 0 ? <> · <ScopeStrip done={summary.scopesDone} total={summary.scopesTotal} /></> : null}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention && card.activity !== "awaiting-answer" && card.activity !== "error" ? <AttentionChip label={attentionLabel(card)} /> : null}{(card.activity === "running" || card.activity === "awaiting-answer") && (card.doingNow ?? []).length > 0 ? <DoingNowPill names={card.doingNow ?? []} /> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
-}
-
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
   const [over, setOver] = useState(false);
   return (
@@ -2064,19 +1929,6 @@ function CardRetryButton({ cardId, label }: { cardId: string; label: string }) {
   );
 }
 
-// Return focus: opening a card remembers it; the board restores focus to
-// that card when the user comes back (Esc / Back button), so keyboard users
-// never lose their place. One module slot — a board shows one track at a time.
-function useReturnFocus<T extends HTMLElement>(cardId: string) {
-  const ref = useRef<T | null>(null);
-  useEffect(() => {
-    if (ref.current && consumeStelowReturnFocusCardId(cardId)) {
-      ref.current.focus();
-    }
-  }, [cardId]);
-  return ref;
-}
-
 // Tiles signal; the open card explains. A failure's full text and its
 // retry live in the detail hero — never on the tile — so board columns stay
 // scannable. The Failed chip keeps the reason one hover away via title.
@@ -2086,7 +1938,7 @@ function CardMetaRows({ card }: { card: CardItem }) {
     <>
       <div className="mt-1 truncate text-[11px] text-muted-foreground" title={`Project: ${card.projectName}`}>{card.projectName}</div>
       {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
-        <div className="mt-2"><AttentionChip label={attentionLabel(card)} /></div>
+        <div className="mt-2"><AttentionChip label={attentionLabel(card.activity)} /></div>
       ) : null}
       {card.activity === "running" || card.activity === "awaiting-answer" ? (
         <div className="mt-2 max-w-full"><DoingNowPill names={card.doingNow ?? []} /></div>
@@ -2288,18 +2140,6 @@ function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: 
 // and activity reuse the same pieces as the other tracks.
 function ExploreCard({ card, stageLabel }: { card: CardItem; stageLabel: string | null }) {
   return <LightweightTrackCard card={card} kind="explore" tagLabel={stageLabel ?? card.exploreStage} tagTitle="Technique — the focused approach this exploration runs." ariaNoun="exploration" />;
-}
-
-// Lightweight list view (Research + Explore share it): same grouping as the
-// board, one card per row. tagFor resolves the card's tag pill label.
-function LightweightTrackList({ groups, navigate, metaFor, collapsed, onToggle }: { groups: Record<string, CardItem[]>; navigate: ReturnType<typeof useBbNavigate>; metaFor: (card: CardItem) => string | null; collapsed: Record<string, boolean>; onToggle: (column: string) => void }) {
-  return <div className="space-y-5">{VISIBLE_RESEARCH_COLUMNS.map((column) => {
-    const cards = groups[column] ?? [];
-    if (cards.length === 0) return null;
-    const isCollapsed = collapsed[column] === true;
-    const label = RESEARCH_COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} meta={metaFor(card)} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
-  })}</div>;
 }
 
 // Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a

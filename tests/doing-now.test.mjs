@@ -22,6 +22,7 @@ assert.deepEqual(doingNowNames(scopes, 1), ["Apple Pay"], "the limit caps caller
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const scopesList = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
 assert.match(server, /doingNow: z\.array\(z\.string\(\)\)/, "list cards contract the doing names");
 assert.match(server, /doingNow: doingNowNames\(scopes\)/, "the cached summary computes names once per card");
@@ -30,7 +31,12 @@ assert.match(server, /doingNow: summary\.doingNow/, "list rows carry the cached 
 // One shared pill on tiles and rows, live execution only: idle cards show
 // no pill (paused speaks for itself), and empty sets render nothing.
 assert.match(app, /<DoingNowPill names=\{card\.doingNow \?\? \[\]\} \/>/, "tiles name the executing scope");
-assert.match(app, /\(card\.activity === "running" \|\| card\.activity === "awaiting-answer"\)/, "the pill marks live execution, never idle");
+assert.match(trackLists, /<DoingNowPill names=\{card\.doingNow \?\? \[\]\} \/>/, "rows name the executing scope");
+assert.match(
+  trackLists,
+  /card\.activity === "running" \|\| card\.activity === "awaiting-answer"/,
+  "the row pill marks live execution, never idle",
+);
 
 // Scope rows disclose through the same chevron as every other surface:
 // the explicit open prop drives rotation, never the group-open variant,

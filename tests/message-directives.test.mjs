@@ -86,6 +86,7 @@ assert.equal(consumeStelowReturnFocusCardId("card_123"), true, "the opened card 
 assert.equal(consumeStelowReturnFocusCardId("card_123"), false, "return focus is consumed only once");
 
 const appSource = readFileSync("app.tsx", "utf8");
+const returnFocusSource = readFileSync("components/board/use-return-focus.ts", "utf8");
 const artifactSource = readFileSync("components/messages/stelow-artifact-directive.tsx", "utf8");
 const qualitySource = readFileSync("components/messages/stelow-quality-directive.tsx", "utf8");
 const linkSource = readFileSync("components/messages/directive-link-button.tsx", "utf8");
@@ -106,6 +107,6 @@ assert.match(
 assert.match(linkSource, /setState\(attemptWorkspaceFileOpen\(openWorkspaceFile, path\)\)/, "the shared link control stores host acceptance or refusal");
 assert.match(linkSource, /unavailable \?\? children/, "a refused link replaces the normal chip content with an unavailable label");
 assert.match(linkSource, /disabled=\{blocked\}/, "a refused link cannot be clicked again as if it were live");
-assert.match(appSource, /ref\.current && consumeStelowReturnFocusCardId\(cardId\)/, "return focus survives a card surface without a mounted element");
+assert.match(returnFocusSource, /ref\.current && consumeStelowReturnFocusCardId\(cardId\)/, "return focus survives a card surface without a mounted element");
 
 console.log("message directives test ok: malformed attributes, host refusals, and worker targets");

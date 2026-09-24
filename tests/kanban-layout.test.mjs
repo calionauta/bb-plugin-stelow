@@ -20,16 +20,19 @@ assert.doesNotMatch(columns, /\bfr\b/, "extra canvas space must not stretch Kanb
 // through params, so a second modal fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");
+const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const buildDialogKanban = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
 assert.equal((app.match(/<BucketGalleryButton cards=\{grouped\.inbox \?\? \[\]\} \/>/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
 // Rendered boards hide the Bucket column (grouping, moves, and filters
-// keep the full catalog): the kanban grids and both list views iterate
-// the visible lists, so no empty Bucket column renders anywhere.
-for (const token of ["VISIBLE_COLUMNS.map((column) => (", "VISIBLE_COLUMNS.map((column) => {", "VISIBLE_RESEARCH_COLUMNS.map((column) => (", "VISIBLE_RESEARCH_COLUMNS.map((column) => {"]) {
-  assert.ok(app.includes(token), `board render iterates ${token.split(".")[0]} lists`);
-}
+// keep the full catalog): the kanban grids and extracted list adapters
+// iterate the visible lists, so no empty Bucket column renders anywhere.
+assert.match(app, /VISIBLE_COLUMNS\.map\(\(column\) => \(/, "build kanban iterates visible columns");
+assert.match(app, /VISIBLE_RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanban iterates visible columns");
+assert.match(trackLists, /const BUILD_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS/, "build lists omit the Bucket column");
+assert.match(trackLists, /const LIGHTWEIGHT_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS/, "lightweight lists omit the Bucket column");
 assert.doesNotMatch(app, /{COLUMNS\.map\(\(column\) => \(/, "the build kanban renders no Bucket column");
 assert.doesNotMatch(app, /{RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanbans render no Bucket column");
 assert.ok(app.includes("kanbanGridColumns(VISIBLE_COLUMNS, collapsedColumns)"), "the build grid template matches its rendered columns");
@@ -70,7 +73,7 @@ assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, 
 assert.match(app, /function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook without changing default navigation");
 assert.ok(app.includes("onOpen?.()"), "the hook is optional — every existing tile behaves exactly as before");
 assert.match(app, /const stageOptions = useMemo\(\(\) => \[\.\.\.STAGE_SEQUENCE\], \[\]\)/, "stage filter lists the canonical sequence, never just stages with cards");
-assert.match(app, /function FilterMultiSelect/, "facets share one checkbox list, never per-field selects");
+assert.match(boardFilters, /export function FilterMultiSelect/, "facets share one checkbox list, never per-field selects");
 assert.match(app, /toggleFilterValue\(prev, value\)/, "pills and checkboxes toggle through one helper");
 assert.doesNotMatch(app, /function FilterSelect\(/, "the single-select is gone");
 assert.deepEqual(toggleFilterValue([], "a"), ["a"], "empty toggles on");

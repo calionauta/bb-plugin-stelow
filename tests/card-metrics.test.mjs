@@ -67,10 +67,10 @@ assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flo
 // track (board, list, hill) instead of resetting to board. Unknown stored
 // values degrade — a corrupt key never strands the track.
 assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
-assert.match(app, /function useBoardView\(storageKey: string\)/, "one hook serves all three tracks");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView\)/, "build restores its view");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView\)/, "research restores its view");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores its view");
+assert.match(app, /function useBoardView\(storageKey: string, track: BoardTrack\)/, "one hook serves all three tracks with view restrictions");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");
 
 // Flow strip: one glanceable line on finished work (count + p50s),
 // expanding to window presets and a per-card table. Empty boards render

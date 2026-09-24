@@ -74,6 +74,12 @@ const ACTIVITY_GLYPH: Record<string, string> = { running: "●", "awaiting-answe
 const ACTIVITY_LABEL: Record<string, string> = { idle: "Paused", running: "Working", "awaiting-answer": "Waiting for you", error: "Failed" };
 const ACTIVITY_TITLE: Record<string, string> = { running: "Worker is actively working", "awaiting-answer": "Waiting for your answer", error: "Worker failed. Needs attention." };
 
+export function attentionLabel(activity: string): string {
+  if (activity === "awaiting-answer") return "Answer required";
+  if (activity === "error") return "Worker failed";
+  return "Paused. Resume it.";
+}
+
 // One component owns the transient activity vocabulary everywhere it appears.
 // Build summaries choose only the human-waiting state; active work is a live
 // border, while lightweight cards can opt into their compact activity pill.

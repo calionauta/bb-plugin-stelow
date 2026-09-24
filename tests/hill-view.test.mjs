@@ -9,16 +9,18 @@ import { fileURLToPath } from "node:url";
 // fetches anything new — fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const viewToggle = readFileSync(join(root, "components", "board", "board-view-toggle.tsx"), "utf8");
+const lists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const pills = readFileSync(join(root, "components", "dashboard", "build-status-pills.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
 // Third view mode on the Build track only: research/explore cards carry
 // no scopes and non-workflow stages, so a hill there would pile every dot
 // at zero and lie. Their toggles offer board and list alone.
-assert.match(app, /\{ value: "hill" as const, title: "Hill view"/, "the view toggle offers Hill view");
-assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label="Build cards view" \/>/, "build offers all three views");
-assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label="Research cards view" views=\{\["board", "list"\]\} \/>/, "research hides the meaningless hill");
-assert.match(app, /<ViewToggle view=\{viewMode\} onChange=\{setViewMode\} label="Explore cards view" views=\{\["board", "list"\]\} \/>/, "explore hides the meaningless hill");
+assert.match(viewToggle, /\{ value: "hill", title: "Hill view"/, "the shared view toggle offers Hill view");
+assert.match(app, /<ViewToggle[^>]*track="build"[^>]*label="Build cards view"/, "build opts into all three track views");
+assert.match(app, /<ViewToggle[^>]*track="research"[^>]*label="Research cards view"/, "research opts into the lightweight track restriction");
+assert.match(app, /<ViewToggle[^>]*track="explore"[^>]*label="Explore cards view"/, "explore opts into the lightweight track restriction");
 assert.equal((app.match(/<HillBoard cards=\{Object\.values\(grouped\)\.flat\(\)\} navigate=\{navigate\} \/>/g) ?? []).length, 1, "one hill render, on the build board");
 
 // Dots sit ON one shared curve (hillCurvePoints draws the path, dots read
@@ -77,10 +79,10 @@ assert.ok(app.includes("✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.sc
 // track (board, list, hill) instead of resetting to board. Unknown stored
 // values degrade — a corrupt key never strands the track.
 assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
-assert.match(app, /function useBoardView\(storageKey: string\)/, "one hook serves all three tracks");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView\)/, "build restores its view");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView\)/, "research restores its view");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores its view");
+assert.match(app, /function useBoardView\(storageKey: string, track: BoardTrack\)/, "one hook serves all three tracks with their restrictions");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view against the build restriction");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view against the lightweight restriction");
+assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view against the lightweight restriction");
 
 // Dot area grows with slice size (never x jitter): a 10-scope slice reads
 // bigger than a 1-scope one at the same honest position.
@@ -91,7 +93,7 @@ assert.match(app, /biggest >= 8 \? "size-5" : biggest >= 4 \? "size-4" : "size-3
 // never a pasted shape per surface, never rendered for scopeless cards.
 assert.match(pills, /export function ScopeStrip\(\{ done, total \}/, "one strip component serves every surface");
 assert.match(app, /<ScopeStrip done=\{card\.scopeSummary\.scopesDone\} total=\{card\.scopeSummary\.scopesTotal\} \/>/, "tiles render the shared strip");
-assert.match(app, /<ScopeStrip done=\{summary\.scopesDone\} total=\{summary\.scopesTotal\} \/>/, "rows render the shared strip");
+assert.match(lists, /<ScopeStrip done=\{card\.scopeSummary\.scopesDone\} total=\{card\.scopeSummary\.scopesTotal\} \/>/, "rows render the shared strip");
 assert.ok(pills.includes("if (!(total > 0)) return null"), "scopeless cards render nothing, not an empty bar");
 
 // Phase rail: the four workflow phases with the card's own checkpoint
