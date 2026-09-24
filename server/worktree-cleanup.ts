@@ -46,65 +46,65 @@ function unavailable(reason: string): PreviewResult {
   };
 }
 
-export function createWorktreeCleanup(deps: CleanupDeps) {
-  async function preview(cardId: string): Promise<PreviewResult> {
-    const card = deps.getCard(cardId);
-    if (!card) return unavailable("Card not found.");
-    const evidence = await deps.evidence(card);
-    const decision = cleanupEligibility(evidence);
-    if (!decision.eligible) {
-      return {
-        ...unavailable(decision.reason ?? "This checkout cannot be cleaned up."),
-        branch: evidence.branch,
-      };
-    }
-    const confirm = cleanupConfirm(evidence);
+async function preview(deps: CleanupDeps, cardId: string): Promise<PreviewResult> {
+  const card = deps.getCard(cardId);
+  if (!card) return unavailable("Card not found.");
+  const evidence = await deps.evidence(card);
+  const decision = cleanupEligibility(evidence);
+  if (!decision.eligible) {
     return {
-      eligible: true,
-      reason: null,
+      ...unavailable(decision.reason ?? "This checkout cannot be cleaned up."),
       branch: evidence.branch,
-      fileCount: evidence.changed.length + evidence.untracked.length,
-      commitCount: evidence.unpushedCommits,
-      confirmTitle: confirm.title,
-      confirmBody: confirm.body,
     };
   }
-
-  async function cleanup(cardId: string): Promise<CleanupResult> {
-    const card = deps.getCard(cardId);
-    if (!card) return { ok: false, summary: null, error: "Card not found." };
-    const before = cleanupEligibility(await deps.evidence(card));
-    if (!before.eligible) {
-      return { ok: false, summary: null, error: before.reason ?? "Nothing safe to clean up." };
-    }
-    if (card.worker_thread_id) await deps.stopWorker(card.worker_thread_id);
-    const evidence = await deps.evidence(card);
-    const confirmed = cleanupEligibility(evidence);
-    if (!confirmed.eligible) {
-      return { ok: false, summary: null, error: confirmed.reason ?? "Review the checkout again." };
-    }
-    if (!evidence.checkoutPath || !evidence.branch) {
-      return { ok: false, summary: null, error: "The linked worktree identity is unavailable." };
-    }
-    try {
-      await deps.dropWorktree(evidence.checkoutPath, evidence.branch);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Cleanup failed.";
-      return { ok: false, summary: null, error: message };
-    }
-    const summary = cleanupTrail(evidence);
-    deps.log(cardId, summary);
-    deps.publish("card-state", { cardId });
-    deps.publish("board-changed", { cardId });
-    return { ok: true, summary, error: null };
-  }
-
+  const confirm = cleanupConfirm(evidence);
   return {
-    preview,
-    cleanup,
+    eligible: true,
+    reason: null,
+    branch: evidence.branch,
+    fileCount: evidence.changed.length + evidence.untracked.length,
+    commitCount: evidence.unpushedCommits,
+    confirmTitle: confirm.title,
+    confirmBody: confirm.body,
+  };
+}
+
+async function cleanup(deps: CleanupDeps, cardId: string): Promise<CleanupResult> {
+  const card = deps.getCard(cardId);
+  if (!card) return { ok: false, summary: null, error: "Card not found." };
+  const before = cleanupEligibility(await deps.evidence(card));
+  if (!before.eligible) {
+    return { ok: false, summary: null, error: before.reason ?? "Nothing safe to clean up." };
+  }
+  if (card.worker_thread_id) await deps.stopWorker(card.worker_thread_id);
+  const evidence = await deps.evidence(card);
+  const confirmed = cleanupEligibility(evidence);
+  if (!confirmed.eligible) {
+    return { ok: false, summary: null, error: confirmed.reason ?? "Review the checkout again." };
+  }
+  if (!evidence.checkoutPath || !evidence.branch) {
+    return { ok: false, summary: null, error: "The linked worktree identity is unavailable." };
+  }
+  try {
+    await deps.dropWorktree(evidence.checkoutPath, evidence.branch);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Cleanup failed.";
+    return { ok: false, summary: null, error: message };
+  }
+  const summary = cleanupTrail(evidence);
+  deps.log(cardId, summary);
+  deps.publish("card-state", { cardId });
+  deps.publish("board-changed", { cardId });
+  return { ok: true, summary, error: null };
+}
+
+export function createWorktreeCleanup(deps: CleanupDeps) {
+  return {
+    preview: (cardId: string) => preview(deps, cardId),
+    cleanup: (cardId: string) => cleanup(deps, cardId),
     handlers: {
-      cleanupWorktreePreview: ({ cardId }: { cardId: string }) => preview(cardId),
-      cleanupWorktree: ({ cardId }: { cardId: string }) => cleanup(cardId),
+      cleanupWorktreePreview: ({ cardId }: { cardId: string }) => preview(deps, cardId),
+      cleanupWorktree: ({ cardId }: { cardId: string }) => cleanup(deps, cardId),
     },
   };
 }

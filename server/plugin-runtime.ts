@@ -5,7 +5,14 @@ import { basename, dirname, isAbsolute, join as nodeJoin, relative } from "node:
 import { fileURLToPath } from "node:url";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "../lib/artifact-manifest.mjs";
+import {
+  buildArtifactTrailer,
+  isPublishableArtifactContent,
+  parseArtifactManifest,
+  renderBundleManifest,
+  resolveArtifactPath,
+  unregisteredArtifactPaths,
+} from "../lib/artifact-manifest.mjs";
 import { assignBundleNames, parseBundleManifest, staleBundleEntries, unbundledSources } from "../lib/run-bundle.mjs";
 import { PHASE_ENTRY_STAGES, STAGE_SEQUENCE, STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "../lib/diff-split.mjs";
@@ -29,7 +36,15 @@ import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { resolveClaimKey } from "../lib/card-claim-key.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../lib/ask-cancel.mjs";
 import { questionWaitUpdates, askFinishedUpdates } from "../lib/card-question-state.mjs";
-import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "../lib/question-batch.mjs";
+import {
+  cleanOptions,
+  expandInteractionQuestions,
+  formatBatchContinuation,
+  groupBatchAnswers,
+  inheritAskArtifact,
+  normalizeAskArtifactPath,
+  parseAskGroups,
+} from "../lib/question-batch.mjs";
 import { decideAskGate } from "../lib/ask-gate.mjs";
 import { cleanAnswerList } from "../lib/expired-question-answers.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "../lib/ask-contracts.mjs";
@@ -40,7 +55,14 @@ import { fetchLatestPluginRelease, isNewerRelease } from "../lib/github-release.
 import { stallCount, healPresetStaleness } from "../lib/worker-ledger.mjs";
 import { normalizePromoteName, findAdoptableProject } from "../lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "../lib/state-template.mjs";
-import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "../lib/workflow-state-identity.mjs";
+import {
+  ownsWorkflowState,
+  upsertWorkflowEntry,
+  workflowDirHash,
+  workflowEntryForOwner,
+  workflowIdForName,
+  workflowStateRelativeDir,
+} from "../lib/workflow-state-identity.mjs";
 import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, mergeStrategyContracts } from "../lib/research-strategies.mjs";
 import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "../lib/research-rounds.mjs";
 import {
@@ -3097,7 +3119,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         recordSplitAnswer(db, cardId, decisions);
         // A structured interaction resumes the waiting command but not a new
         // agent turn. Exactly one continuation for the whole batch.
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
+        await bb.sdk.threads.send({
+          threadId: card.worker_thread_id,
+          mode: "auto",
+          input: [{
+            type: "text",
+            text: formatBatchContinuation(decisions),
+            mentions: [],
+          }],
+        });
         const unansweredIds = [...pendingById.keys()].filter((id) => !answeredInteractionIds.has(id));
         const openQuestionIds = [...unansweredIds, ...openExpiredQuestionIds(cardId)];
         // Name the answered ones BEFORE the sync: disappearance alone would
@@ -4394,8 +4424,20 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const card = getCard(cardId);
       if (!card) return { ok: false, stdout: "", error: ERR_CARD_NOT_FOUND };
       if (isArchivedCard(card)) return { ok: false, stdout: "", error: ERR_CARD_ARCHIVED };
-      if (card.kind === "research") return { ok: false, stdout: "", error: "Research cards don't use stages — a completed index moves them to Done automatically." };
-      if (card.kind === "explore") return { ok: false, stdout: "", error: "Explore cards don't use stages — a completed artifact moves them to Done automatically." };
+      if (card.kind === "research") {
+        return {
+          ok: false,
+          stdout: "",
+          error: "Research cards don't use stages — a completed index moves them to Done automatically.",
+        };
+      }
+      if (card.kind === "explore") {
+        return {
+          ok: false,
+          stdout: "",
+          error: "Explore cards don't use stages — a completed artifact moves them to Done automatically.",
+        };
+      }
       const workspace = await cardWorkspace(card);
       if (!workspace?.path) return { ok: false, stdout: "", error: ERR_WORKSPACE_UNAVAILABLE };
       const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash) : null;

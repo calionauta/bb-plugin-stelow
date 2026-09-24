@@ -74,7 +74,7 @@ function createBaseTables(bb: BbPluginApi, db: Db): void {
   ]);
 }
 
-function createFeatureTables(db: Db): void {
+function createQuestionTables(db: Db): void {
   db.exec(`CREATE TABLE IF NOT EXISTS ask_contracts (
     id TEXT PRIMARY KEY,
     card_id TEXT NOT NULL,
@@ -85,6 +85,19 @@ function createFeatureTables(db: Db): void {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
   db.exec("CREATE INDEX IF NOT EXISTS idx_ask_contracts_card ON ask_contracts(card_id, consumed_at, asked_at)");
+  db.exec(`CREATE TABLE IF NOT EXISTS question_evidence (
+    card_id TEXT NOT NULL,
+    artifact_path TEXT NOT NULL,
+    artifact_sha256 TEXT NOT NULL,
+    git_root TEXT,
+    head_sha TEXT,
+    asked_at INTEGER NOT NULL,
+    PRIMARY KEY (card_id, artifact_path),
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  )`);
+}
+
+function createExecutionTables(db: Db): void {
   db.exec(`CREATE TABLE IF NOT EXISTS split_proposals (
     card_id TEXT PRIMARY KEY,
     question TEXT NOT NULL DEFAULT '',
@@ -115,16 +128,11 @@ function createFeatureTables(db: Db): void {
     FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
   db.exec("CREATE INDEX IF NOT EXISTS idx_card_stage_events_card ON card_stage_events(card_id, entered_at)");
-  db.exec(`CREATE TABLE IF NOT EXISTS question_evidence (
-    card_id TEXT NOT NULL,
-    artifact_path TEXT NOT NULL,
-    artifact_sha256 TEXT NOT NULL,
-    git_root TEXT,
-    head_sha TEXT,
-    asked_at INTEGER NOT NULL,
-    PRIMARY KEY (card_id, artifact_path),
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  )`);
+}
+
+function createFeatureTables(db: Db): void {
+  createQuestionTables(db);
+  createExecutionTables(db);
 }
 
 export function runPluginMigrations(bb: BbPluginApi, db: Db, now: () => number): void {

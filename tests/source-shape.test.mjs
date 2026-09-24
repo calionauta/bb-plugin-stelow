@@ -39,13 +39,21 @@ try {
   git("config", "user.email", "source-shape@example.invalid");
   git("config", "user.name", "Source Shape Test");
   writeFileSync(join(fixtureRoot, "README.md"), "fixture\n");
-  git("add", "README.md");
+  mkdirSync(join(fixtureRoot, "lib"));
+  writeFileSync(
+    join(fixtureRoot, "lib", "copy-source.mjs"),
+    `export const copied = "${"z".repeat(170)}";\n`,
+  );
+  writeFileSync(
+    join(fixtureRoot, "lib", "budget-copy-source.mjs"),
+    "export const value = 1;\n".repeat(401),
+  );
+  git("add", "README.md", "lib/copy-source.mjs", "lib/budget-copy-source.mjs");
   git("commit", "-m", "base");
   const baseCommit = git("rev-parse", "HEAD");
   comparisonBase = baseCommit;
 
   git("switch", "-c", "feature");
-  mkdirSync(join(fixtureRoot, "lib"));
   const debtFunction = `export function inherited() {\n${"  void 0;\n".repeat(49)}}\n`;
   const debtFile = `${debtFunction}${"// inherited debt\n".repeat(350)}`;
   const masterDebtFile = `${debtFile}// master debt\n`;
@@ -54,7 +62,6 @@ try {
   git("commit", "-m", "add inherited debt");
 
   git("switch", "master");
-  mkdirSync(join(fixtureRoot, "lib"));
   writeFileSync(join(fixtureRoot, "lib/legacy.mjs"), `export const legacy = "${"x".repeat(170)}";\n`);
   writeFileSync(join(fixtureRoot, "lib/upstream.mjs"), `export const upstream = "${"u".repeat(170)}";\n`);
   writeFileSync(join(fixtureRoot, "lib/debt.mjs"), masterDebtFile);
@@ -85,6 +92,23 @@ try {
   assert.equal(cleanBudget.status, 0, cleanBudget.stderr);
   assert.match(cleanBudget.stdout, /inherited lib\/debt.mjs: 401 lines/);
   assert.match(cleanBudget.stdout, /inherited lib\/debt.mjs:\/inherited#1: 51 lines/);
+
+  copyFileSync(
+    join(fixtureRoot, "lib/copy-source.mjs"),
+    join(fixtureRoot, "lib/copied-long-source.mjs"),
+  );
+  copyFileSync(
+    join(fixtureRoot, "lib/budget-copy-source.mjs"),
+    join(fixtureRoot, "lib/copied-budget-debt.mjs"),
+  );
+  const copiedShapeDebt = runChecker();
+  assert.equal(copiedShapeDebt.status, 1, copiedShapeDebt.stdout);
+  assert.match(copiedShapeDebt.stderr, /copied-long-source\.mjs:1: \d+ characters/);
+  const copiedBudgetDebt = runBudgetChecker();
+  assert.equal(copiedBudgetDebt.status, 1, copiedBudgetDebt.stdout);
+  assert.match(copiedBudgetDebt.stderr, /over budget lib\/copied-budget-debt\.mjs: 401 lines/);
+  rmSync(join(fixtureRoot, "lib/copied-long-source.mjs"));
+  rmSync(join(fixtureRoot, "lib/copied-budget-debt.mjs"));
 
   writeFileSync(join(fixtureRoot, "lib/debt.mjs"), debtFile.replace("  void 0;\n", "  void 0;\n  void 1;\n"));
   const grownDebt = runBudgetChecker();

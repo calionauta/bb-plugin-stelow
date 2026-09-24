@@ -54,8 +54,10 @@ The branch is merge-tree clean against the fetched `origin/master` tip.
 
 The remaining large runtime entrypoint is real technical debt. The full
 capability split and line-budget cleanup are not complete: the source-shape gate
-currently reports 328 changed lines over 160 characters, all in
-`server/plugin-runtime.ts`. The budget checker also reports the 6,393-line runtime,
-several oversized extracted factories, and the expanded lifecycle contract test.
-This note is therefore not a claim that the runtime is fully decomposed or that
+currently reports 322 changed lines over 160 characters, all in
+`server/plugin-runtime.ts`. The budget checker also reports the 6,434-line runtime,
+numerous oversized runtime or handler functions, and the expanded 2,084-line
+lifecycle contract test. Copy detection does not exempt debt
+when old oversized code is moved into a new extraction slice. This note is
+therefore not a claim that the runtime is fully decomposed or that
 `npm run quality:shape` is green.

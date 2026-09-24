@@ -13,6 +13,40 @@ function migrationHost(db) {
   };
 }
 
+function assertMigratedSchema(db) {
+  for (const name of [
+    "display_name",
+    "last_idle_at",
+    "workspace_kind",
+    "workspace_path",
+    "workspace_host_id",
+    "kind",
+    "research_strategy",
+    "research_strategies",
+    "explore_stage",
+    "split_from",
+  ]) {
+    const columns = new Set(db.prepare("PRAGMA table_info(cards)").all().map((row) => row.name));
+    assert.equal(columns.has(name), true, `cards.${name} exists`);
+  }
+  assert.equal(new Set(db.prepare("PRAGMA table_info(expired_questions)").all().map((row) => row.name)).has("kind"), true);
+  assert.equal(new Set(db.prepare("PRAGMA table_info(expired_questions)").all().map((row) => row.name)).has("locale"), true);
+  assert.equal(new Set(db.prepare("PRAGMA table_info(automation_rules)").all().map((row) => row.name)).has("autostart"), true);
+
+  const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
+  for (const name of [
+    "ask_contracts",
+    "split_proposals",
+    "verification_runs",
+    "card_stage_events",
+    "question_evidence",
+    "card_claims",
+    "inbox_events",
+  ]) {
+    assert.equal(tables.has(name), true, `${name} exists`);
+  }
+}
+
 test("core migrations preserve legacy cards while creating the current schema", () => {
   const db = new Database(":memory:");
   db.exec(`
@@ -59,35 +93,5 @@ test("core migrations preserve legacy cards while creating the current schema", 
     prompt: "prompt",
   });
   assert.equal(db.prepare("SELECT body FROM comments WHERE id = 'comment-1'").get().body, "keep me");
-
-  for (const name of [
-    "display_name",
-    "last_idle_at",
-    "workspace_kind",
-    "workspace_path",
-    "workspace_host_id",
-    "kind",
-    "research_strategy",
-    "research_strategies",
-    "explore_stage",
-    "split_from",
-  ]) {
-    assert.equal(new Set(db.prepare("PRAGMA table_info(cards)").all().map((row) => row.name)).has(name), true, `cards.${name} exists`);
-  }
-  assert.equal(new Set(db.prepare("PRAGMA table_info(expired_questions)").all().map((row) => row.name)).has("kind"), true);
-  assert.equal(new Set(db.prepare("PRAGMA table_info(expired_questions)").all().map((row) => row.name)).has("locale"), true);
-  assert.equal(new Set(db.prepare("PRAGMA table_info(automation_rules)").all().map((row) => row.name)).has("autostart"), true);
-
-  const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((row) => row.name));
-  for (const name of [
-    "ask_contracts",
-    "split_proposals",
-    "verification_runs",
-    "card_stage_events",
-    "question_evidence",
-    "card_claims",
-    "inbox_events",
-  ]) {
-    assert.equal(tables.has(name), true, `${name} exists`);
-  }
+  assertMigratedSchema(db);
 });
