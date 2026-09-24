@@ -6,7 +6,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { CardDrawerAdapter, INTENT_LABEL } from "./components/detail/card-detail-route";
 import { StelowPanelRoute } from "./components/app-support/panel-route";
-import { PillsyStyles } from "./components/app-support/stelow-styles";
+import "./components/app-support/stelow-styles.css";
 import { StelowInboxSidebarAccessory } from "./components/app-support/sidebar-accessories";
 import { STELOW_PANEL_ID, STELOW_PANEL_PATH } from "./components/panel/stelow-route.mjs";
 import { goToCard } from "./components/app-support/navigation";
@@ -52,10 +52,7 @@ export default definePluginApp((app) => {
     title: "Stelow • Product Hub",
     icon: "Star",
     path: STELOW_PANEL_PATH,
-    component: (props) => {
-      PillsyStyles();
-      return <StelowPanelRoute subPath={props.subPath} />;
-    },
+    component: (props) => <StelowPanelRoute subPath={props.subPath} />,
     experimental_sidebarAccessory: StelowInboxSidebarAccessory,
   });
   registerPendingInteraction(app);

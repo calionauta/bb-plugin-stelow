@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { UpdateBadge } from "../settings/update-badge";
 import { inboxBadgeCount } from "../../lib/inbox-panel-state.mjs";
-import { activeCardCount } from "../../lib/app-support-state.mjs";
+import { accessoryTone, activeCardCount } from "../../lib/app-support-state.mjs";
 import { usePanelData } from "../panel/panel-state-hooks";
 import { usePluginUpdateSignal } from "./plugin-update-signal";
 import type { rpcContract } from "../../server";
@@ -23,20 +23,32 @@ export function SidebarCount({ count, tone, label }: SidebarAccessoryHandle & { 
   );
 }
 
+function useCountAccessory(
+  load: () => Promise<{ count: number }>,
+  realtimeChannels: readonly string[],
+  activeTone: string,
+): SidebarAccessoryHandle {
+  const { data } = usePanelData(load, {
+    realtimeChannels,
+    errorMessage: null,
+    initialData: { count: 0 },
+    itemCountKey: "count",
+    notifyOnError: false,
+  });
+  return { count: data.count, tone: accessoryTone(data.count, activeTone) };
+}
+
 export function useInboxAccessory(): SidebarAccessoryHandle {
   const rpc = useRpc<typeof rpcContract>();
   const load = useCallback(async () => {
     const result = await rpc.call("listNotifications", { includeArchived: false });
     return { count: inboxBadgeCount(result.notifications) };
   }, [rpc]);
-  const { data } = usePanelData(load, {
-    realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
-    errorMessage: null,
-    initialData: { count: 0 },
-    itemCountKey: "count",
-    notifyOnError: false,
-  });
-  return { count: data.count, tone: data.count > 0 ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground" };
+  return useCountAccessory(
+    load,
+    ["card-state", "board-changed", "inbox-changed"],
+    "bg-primary/15 text-primary",
+  );
 }
 
 function useTrackCardAccessory(kind: "build" | "research"): SidebarAccessoryHandle {
@@ -45,14 +57,11 @@ function useTrackCardAccessory(kind: "build" | "research"): SidebarAccessoryHand
     const result = await rpc.call("listCards", { projectId: null, kind });
     return { count: activeCardCount(result.cards) };
   }, [kind, rpc]);
-  const { data } = usePanelData(load, {
-    realtimeChannels: ["card-state", "board-changed"],
-    errorMessage: null,
-    initialData: { count: 0 },
-    itemCountKey: "count",
-    notifyOnError: false,
-  });
-  return { count: data.count, tone: data.count > 0 ? "bg-muted text-foreground" : "bg-muted text-muted-foreground" };
+  return useCountAccessory(
+    load,
+    ["card-state", "board-changed"],
+    "bg-muted text-foreground",
+  );
 }
 
 export function StelowInboxSidebarAccessory() {

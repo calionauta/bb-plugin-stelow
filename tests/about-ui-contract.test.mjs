@@ -10,7 +10,9 @@ const tools = readFileSync(new URL("../components/settings/host-tools-section.ts
 const status = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
 
 test("app mounts About through the focused settings module", () => {
+  assert.match(app, /<StelowPanelRoute\b/, "the app shell mounts the extracted panel route");
   assert.match(rendering, /import \{ AboutPanel \} from "\.\.\/settings\/about-panel"/);
+  assert.match(rendering, /return <AboutPanel \/>/, "the About track renders the focused settings module");
   assert.doesNotMatch(app, /function (AboutPanel|HostToolsSection|PluginUpdateStatus)\(/);
 });
 
