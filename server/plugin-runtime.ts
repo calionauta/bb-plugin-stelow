@@ -2770,7 +2770,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // Deterministic sweep (bb 0.40 removed system/thread/interrupted from the
   // plugin event API): periodically reconcile live cards so interrupts,
   // missed transitions and stale states self-heal without event delivery.
-  const RECONCILE_MS = 45_000;
   // An idle card needs attention only after it has sat idle continuously for
   // this long (two reconcile cycles). A worker that just finished a turn is
   // idle for a few seconds before being resumed — not an attention item.
