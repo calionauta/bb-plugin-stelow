@@ -189,7 +189,7 @@ for (let index = 0; index < slices.length; index += 1) {
     label: `implement:${slice.id}`,
     phase: "Implement",
     provider: "acp-opencode",
-    model: "acp-default",
+    model: "opencode-go/space-bunny-free",
     reasoningLevel: "medium",
   });
 
@@ -199,7 +199,7 @@ for (let index = 0; index < slices.length; index += 1) {
     label: `review:${slice.id}`,
     phase: "Review",
     provider: "acp-opencode",
-    model: "acp-default",
+    model: "opencode-go/space-bunny-free",
     reasoningLevel: "medium",
   });
 
@@ -209,7 +209,7 @@ for (let index = 0; index < slices.length; index += 1) {
     label: `finalize:${slice.id}`,
     phase: "Finalize",
     provider: "acp-opencode",
-    model: "acp-default",
+    model: "opencode-go/space-bunny-free",
     reasoningLevel: "medium",
   });
 
@@ -223,7 +223,7 @@ const audit = await agent(`${common}\nYou are the final completeness critic for 
   label: "completeness-audit",
   phase: "Audit",
   provider: "acp-opencode",
-  model: "acp-default",
+  model: "opencode-go/space-bunny-free",
   reasoningLevel: "medium",
   schema: {
     type: "object",
@@ -246,7 +246,7 @@ for (let round = 1; round <= 3 && finalAudit && finalAudit.complete === false; r
     label: `repair-round-${round}`,
     phase: "Repair",
     provider: "acp-opencode",
-    model: "acp-default",
+    model: "opencode-go/space-bunny-free",
     reasoningLevel: "medium",
   });
   phase("Audit");
@@ -254,7 +254,7 @@ for (let round = 1; round <= 3 && finalAudit && finalAudit.complete === false; r
     label: `reaudit-${round}`,
     phase: "Audit",
   provider: "acp-opencode",
-  model: "acp-default",
+  model: "opencode-go/space-bunny-free",
   reasoningLevel: "medium",
     schema: {
       type: "object",
@@ -276,7 +276,7 @@ const report = await agent(`${common}\nProduce the final user-facing completion 
   label: "final-report",
   phase: "Report",
   provider: "acp-opencode",
-  model: "acp-default",
+  model: "opencode-go/space-bunny-free",
   reasoningLevel: "medium",
 });
 

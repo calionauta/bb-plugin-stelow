@@ -1,0 +1,4 @@
+{
+  "commit": "96a85e70c3bbd418c7163012fac86a30a9053e25",
+  "reason": "Grandfather source lines inherited before readable-shape enforcement; every subsequent changed line is checked against this baseline."
+}
