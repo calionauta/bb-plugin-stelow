@@ -124,7 +124,7 @@ import { RECON_RECEIPT_FILE, reconReceiptStatus } from "../lib/recon-receipt.mjs
 import { stalenessOf } from "../lib/question-staleness.mjs";
 import { tokenBreakdownFromEvents, sumTokenBreakdowns } from "../lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "../lib/gap-registry.mjs";
-import { formatDuration, summarizeTimeline, summarizeDurations } from "../lib/card-metrics.mjs";
+import { formatDuration, summarizeTimeline } from "../lib/card-metrics.mjs";
 import { runPluginMigrations } from "./core-migrations.js";
 import { createWorkspacesRecovery, recoveredCheckoutIntegrity } from "./workspaces-recovery.js";
 import { createDecisionApi } from "./decision-api.js";
@@ -154,6 +154,7 @@ import { createPlatformHandlers } from "./runtime/platform.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
 import { startReconciler } from "./runtime/reconciler.js";
+import { flowMetrics } from "./runtime/flow-metrics.js";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -2894,60 +2895,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
     },
-    async flowMetrics({ projectId, since, until }) {
-      // Board-level flow reading over finished cards only: active cards
-      // have age, not lead. One query per dimension (cards, done events),
-      // then pure math — no per-card round trips.
-      const rows = (projectId
-        ? db.prepare("SELECT id, kind, name, created_at FROM cards WHERE status = 'completed' AND project_id = ?").all(projectId)
-        : db.prepare("SELECT id, kind, name, created_at FROM cards WHERE status = 'completed'").all()) as Array<{ id: string; kind: string; name: string; created_at: number }>;
-      const ids = rows.map((row) => row.id);
-      const doneByCard = new Map<string, number>();
-      const eventsByCard = new Map<string, Array<{ stage: string; entered_at: number }>>();
-      if (ids.length > 0) {
-        const placeholders = ids.map(() => "?").join(",");
-        const doneRows = db.prepare(`SELECT card_id, MAX(entered_at) AS done_at FROM card_stage_events WHERE stage = 'done' AND card_id IN (${placeholders}) GROUP BY card_id`).all(...ids) as Array<{ card_id: string; done_at: number }>;
-        for (const row of doneRows) doneByCard.set(row.card_id, row.done_at);
-        const eventRows = db.prepare(`SELECT card_id, stage, entered_at FROM card_stage_events WHERE card_id IN (${placeholders}) ORDER BY card_id ASC, entered_at ASC, id ASC`).all(...ids) as Array<{ card_id: string; stage: string; entered_at: number }>;
-        for (const row of eventRows) {
-          const list = eventsByCard.get(row.card_id) ?? [];
-          list.push({ stage: row.stage, entered_at: row.entered_at });
-          eventsByCard.set(row.card_id, list);
-        }
-      }
-      const cards: Array<{ cardId: string; kind: "build" | "research" | "explore"; name: string; leadMs: number | null; cycleMs: number | null; doneAt: number | null }> = [];
-      for (const row of rows) {
-        const doneAt = doneByCard.get(row.id) ?? null;
-        if (doneAt === null) continue;
-        if (since != null && doneAt < since) continue;
-        if (until != null && doneAt > until) continue;
-        const timeline = summarizeTimeline(eventsByCard.get(row.id) ?? [], { createdAt: row.created_at, endAt: doneAt });
-        cards.push({ cardId: row.id, kind: normalizeKind(row.kind), name: row.name, leadMs: timeline.leadMs, cycleMs: timeline.cycleMs, doneAt });
-      }
-      const leads = summarizeDurations(cards.map((card) => card.leadMs));
-      const cycles = summarizeDurations(cards.map((card) => card.cycleMs));
-      // Present-state attention rides the same pass: stuck (blocked status
-      // or errored worker — explicit signals, never heuristics) and
-      // review-awaiting dones. Window-independent by design: attention is
-      // about right now, and the UI labels it as such.
-      const openRows = (projectId
-        ? db.prepare("SELECT id, kind, display_name, name, status, activity FROM cards WHERE status != 'archived' AND project_id = ?").all(projectId)
-        : db.prepare("SELECT id, kind, display_name, name, status, activity FROM cards WHERE status != 'archived'").all()) as Array<{ id: string; kind: string; display_name: string | null; name: string; status: string; activity: string }>;
-      const attention: Array<{ cardId: string; kind: "build" | "research" | "explore"; name: string; reason: "stuck" | "review" }> = [];
-      for (const row of openRows) {
-        const name = row.display_name ?? row.name;
-        if (row.status === "blocked" || row.activity === "error") {
-          attention.push({ cardId: row.id, kind: normalizeKind(row.kind), name, reason: "stuck" });
-        } else if (row.status === "completed" && hasPendingReview(db, row.id)) {
-          attention.push({ cardId: row.id, kind: normalizeKind(row.kind), name, reason: "review" });
-        }
-      }
-      return {
-        items: cards,
-        summary: { count: cards.length, leadP50Ms: leads.p50, leadP90Ms: leads.p90, cycleP50Ms: cycles.p50, cycleP90Ms: cycles.p90 },
-        attention,
-      };
-    },
+    flowMetrics: (input) => flowMetrics(db, input),
     async boardWorkflowDefaults() {
       const stored = await bb.storage.kv.get<unknown>("board-workflow-defaults");
       const parsed = boardWorkflowDefaultsSchema.safeParse(stored);

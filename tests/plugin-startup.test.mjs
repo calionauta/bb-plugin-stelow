@@ -52,6 +52,7 @@ test("plugin startup registers dispatch and disposes without touching live threa
     assert.deepEqual(await host.registrations.rpc.handlers.projects(), {
       projects: [{ id: "project-1", name: "Fixture" }],
     });
+    assert.deepEqual((await host.registrations.rpc.handlers.flowMetrics({})).items, []);
     assert.equal((await host.registrations.rpc.handlers.buildInfo()).pluginUpdate.outcome, "unavailable");
     assert.equal((await host.registrations.cli.run(["help"], {})).exitCode, 0);
     const unknown = await host.registrations.cli.run(["no-such-command"], {});

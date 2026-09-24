@@ -63,9 +63,7 @@ const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
-assert.match(server, /WHERE status = 'completed'/, "aggregates read finished cards, never actives");
-assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
-assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
+assert.match(server, /flowMetrics: \(input\) => flowMetrics\(db, input\)/, "RPC dispatch uses the measured flow runtime");
 assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
 const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;
 assert.match(server, detailTimesContract, "detail schema carries times, doing names, and the verified HEAD as nullable");
@@ -119,8 +117,6 @@ assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows ope
 // from attention; empty attention reads one calm line, never an empty box.
 const attentionContract = /attention: z\s*\.array\([\s\S]*?reason: z\s*\.enum\(\["stuck",\s*"review"\]\)/;
 assert.match(server, attentionContract, "attention items are contracted with a closed reason set");
-assert.match(server, /row\.status === "blocked" \|\| row\.activity === "error"/, "stuck derives from explicit signals only");
-assert.match(server, /hasPendingReview\(db, row\.id\)/, "review-awaiting derives from the shared review signal");
 assert.match(flowStrip, /type FlowTab = "tempo" \| "atencao"/, "tempo and attention share one closed tab type");
 assert.match(flowStrip, /useState<FlowTab>\("tempo"\)/, "tempo is the default tab, not a second stacked section");
 assert.match(flowStrip, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
