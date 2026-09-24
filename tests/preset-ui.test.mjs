@@ -23,6 +23,10 @@ const assignOptions = readFileSync(
   join(root, "components/settings/preset-assign-options.tsx"),
   "utf8",
 );
+const panelRoute = readFileSync(
+  join(root, "components/app-support/panel-route.tsx"),
+  "utf8",
+);
 const picker = readFileSync(
   join(root, "components/settings/preset-execution-picker.tsx"),
   "utf8",
@@ -94,7 +98,8 @@ assert.match(assignOptions, /<PresetExecutionPicker/, "the custom row uses the s
 assert.match(assignOptions, /value=\{`model:\$\{provider\.id\}\/\$\{model\.model\}`\}/, "one-click model rows survive below the picker");
 assert.match(assignDialog, /<PresetAssignOptions[\s\S]*onSelect=\{setSelected\}/, "the dialog owns selection while options own catalog presentation");
 assert.equal(
-  (app.match(/<PresetAssignDialog/g) ?? []).length,
+  (app.match(/<PresetAssignDialog/g) ?? []).length
+  + (panelRoute.match(/<PresetAssignDialog/g) ?? []).length,
   2,
   "panel and thread-drawer adapters share the extracted dialog without duplicating it",
 );

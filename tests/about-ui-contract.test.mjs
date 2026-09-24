@@ -3,13 +3,14 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
+const rendering = readFileSync(new URL("../components/app-support/panel-rendering.tsx", import.meta.url), "utf8");
 const about = readFileSync(new URL("../components/settings/about-panel.tsx", import.meta.url), "utf8");
 const actions = readFileSync(new URL("../components/settings/plugin-update-actions.ts", import.meta.url), "utf8");
 const tools = readFileSync(new URL("../components/settings/host-tools-section.tsx", import.meta.url), "utf8");
 const status = readFileSync(new URL("../components/settings/plugin-update-status.tsx", import.meta.url), "utf8");
 
 test("app mounts About through the focused settings module", () => {
-  assert.match(app, /import \{ AboutPanel \} from "\.\/components\/settings\/about-panel"/);
+  assert.match(rendering, /import \{ AboutPanel \} from "\.\.\/settings\/about-panel"/);
   assert.doesNotMatch(app, /function (AboutPanel|HostToolsSection|PluginUpdateStatus)\(/);
 });
 

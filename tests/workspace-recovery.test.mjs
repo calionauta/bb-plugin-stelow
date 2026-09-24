@@ -8,6 +8,7 @@ const app = readFileSync(join(root, "app.tsx"), "utf8");
 const body = readFileSync(join(root, "components/detail/build-detail-body.tsx"), "utf8");
 const reviewTools = readFileSync(join(root, "components/detail/build-detail-review-tools.tsx"), "utf8");
 const recovery = readFileSync(join(root, "components/detail/build-recovery.tsx"), "utf8");
+const panelRoute = readFileSync(join(root, "components/app-support/panel-route.tsx"), "utf8");
 
 assert.deepEqual(reportedCheckoutPaths("Changes are uncommitted in `/home/deploy/repos/bb-plugin-stelow`."), ["/home/deploy/repos/bb-plugin-stelow"], "an explicit worker report yields a candidate path");
 assert.deepEqual(reportedCheckoutPaths("I edited /tmp/guess without reporting it as a checkout."), [], "bare paths never become recovery candidates");
@@ -69,7 +70,8 @@ for (const [prop, wiring] of [
   assert.match(recoveryPanelCall, wiring, `recovery ${prop} action remains wired after extraction`);
 }
 assert.equal(
-  (app.match(/goToCard\(navigate, \{ kind: "build" \}, cardId\)/g) ?? []).length,
+  (app.match(/goToCard\(/g) ?? []).length
+  + (panelRoute.match(/goToCard\(/g) ?? []).length,
   2,
   "both Build detail entry points route recovery audits back to the Build track",
 );

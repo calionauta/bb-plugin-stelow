@@ -20,6 +20,7 @@ import {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const appRendering = readFileSync(join(root, "components/app-support/panel-rendering.tsx"), "utf8");
 const filters = readFileSync(join(root, "components/board/board-filters.tsx"), "utf8");
 const viewToggle = readFileSync(join(root, "components/board/board-view-toggle.tsx"), "utf8");
 const lists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
@@ -97,7 +98,7 @@ assert.match(
   "Inbox load failures stay in the retry panel instead of adding a toast",
 );
 assert.equal((app.match(/function InboxPanel\(/g) ?? []).length, 0, "the Inbox panel no longer lives in the app shell");
-assert.match(app, /<BuildPanel\b/, "the app shell routes Build through the extracted panel");
+assert.match(appRendering, /<BuildPanel\b/, "the app-support renderer mounts Build through the extracted panel");
 assert.match(buildPanel, /useBuildPanelState\(rpc, projectId\)/, "the Build panel consumes its extracted state hook");
 assert.match(buildPanel, /useBucketGallery\(/, "the Build panel composes the shared Bucket gallery hook");
 assert.match(

@@ -39,6 +39,7 @@ assert.ok(statSync(assetUrl).size > 10 * 1024, "logo asset is not a placeholder"
 // (bb serves only the built app.js/app.css, so it always 404s); the server
 // must expose the logo over RPC instead.
 const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
+const supportSidebar = readFileSync(new URL("../components/app-support/sidebar-accessories.tsx", import.meta.url), "utf8");
 const about = readFileSync(new URL("../components/settings/about-panel.tsx", import.meta.url), "utf8");
 const hostTools = readFileSync(new URL("../components/settings/host-tools-section.tsx", import.meta.url), "utf8");
 const updateActions = readFileSync(new URL("../components/settings/plugin-update-actions.ts", import.meta.url), "utf8");
@@ -74,7 +75,7 @@ assert.match(aboutUi, /"Up to date"/, "the current verdict names no version — 
 assert.match(aboutUi, /Update plugin…/, "About offers an explicit, confirmed plugin update");
 assert.match(aboutUi, /APPLY_SETTLE_MS/, "applying timeboxes the quiet phase so “Updating…” can’t spin forever when the reload severs the RPC channel");
 assert.match(aboutUi, /showing the last known verdict/, "a failed fresh check keeps the last verdict visible instead of erasing it");
-assert.match(app, /Stelow plugin update available/, "sidebar exposes a separate update indicator");
+assert.match(supportSidebar, /Stelow plugin update available/, "sidebar exposes a separate update indicator");
 assert.match(aboutUi, /setSkillsOpen\(true\)/, "sync status opens the vendored-skills dialog");
 assert.match(aboutUi, /Vendored Stelow skills/, "dialog names the vendored skill inventory");
 assert.match(aboutUi, /Reinstall .* at its latest release/, "installed tools offer reinstall-as-update");

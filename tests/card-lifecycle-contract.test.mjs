@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const navigation = readFileSync(join(root, "components/app-support/navigation.ts"), "utf8");
 const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
 const openStelowAction = readFileSync(join(root, "components/thread/open-stelow-action.tsx"), "utf8");
@@ -454,7 +455,7 @@ assert.match(
 assert.match(trackLists, /event\.key !== "w" && event\.key !== "W"/, "W opens the worker thread from list-view rows too");
 // Esc/Back returns to the board with the card focused: opening remembers the
 // card, each card surface restores focus to it on return.
-assert.match(app, /rememberStelowReturnFocusCardId\(cardId\)/, "opening a card remembers it for focus return");
+assert.match(navigation, /rememberStelowReturnFocusCardId\(cardId\)/, "opening a card remembers it for focus return");
 assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build board cards restore focus on return");
 assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
 assert.doesNotMatch(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "a generic Status label does not duplicate the self-describing state pills");

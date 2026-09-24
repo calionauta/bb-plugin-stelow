@@ -75,10 +75,10 @@ assert.equal(inboxCardSubPath("card_abc123", "evt_xyz789"), "inbox/card/card_abc
 // React has no mounted renderer in this repository. These wiring pins catch
 // hidden keep-alive panels becoming active, which would restart subscriptions.
 const panelSource = readFileSync(new URL("../components/panel/stelow-panel.tsx", import.meta.url), "utf8");
-const appSource = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
+const renderingSource = readFileSync(new URL("../components/app-support/panel-rendering.tsx", import.meta.url), "utf8");
 assert.match(panelSource, /renderTrack\(track, track === tab\)/, "only the selected keep-alive track receives active=true");
 for (const component of ["BuildPanel", "ResearchPanel", "ExplorePanel"]) {
-  const openTag = appSource.match(new RegExp(`<${component}\\b[\\s\\S]*?>`));
+  const openTag = renderingSource.match(new RegExp(`<${component}\\b[\\s\\S]*?>`));
   assert.ok(openTag, `${component} must be mounted by the track renderer`);
   assert.match(
     openTag[0],

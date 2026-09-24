@@ -16,7 +16,9 @@ import {
 import { STORAGE_KEYS } from "../lib/panel-storage.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
+const appShell = readFileSync(join(root, "app.tsx"), "utf8");
+const rendering = readFileSync(join(root, "components/app-support/panel-rendering.tsx"), "utf8");
+const app = `${appShell}\n${rendering}`;
 const component = readFileSync(join(root, "components/settings/preset-onboarding.tsx"), "utf8");
 const about = readFileSync(join(root, "components/settings/about-panel.tsx"), "utf8");
 
@@ -155,8 +157,8 @@ assert.equal(
 );
 
 assert.match(
-  app,
-  /import \{ PresetOnboardingDialog \} from "\.\/components\/settings\/preset-onboarding"/,
+  rendering,
+  /import \{ PresetOnboardingDialog \} from "\.\.\/settings\/preset-onboarding"/,
   "the app shell consumes the settings onboarding component",
 );
 assert.doesNotMatch(app, /function PresetOnboardingDialog\(/, "onboarding dialog no longer lives in the app shell");
