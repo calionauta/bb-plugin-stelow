@@ -49,9 +49,8 @@ import { decideAskGate } from "../lib/ask-gate.mjs";
 import { cleanAnswerList } from "../lib/expired-question-answers.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "../lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "../lib/plugin-paths.mjs";
-import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "../lib/plugin-update.mjs";
+import { createPluginUpdateChecker } from "./runtime/plugin-update.js";
 import { discardConfirm, discardEligibility, discardTrail } from "../lib/discard-policy.mjs";
-import { fetchLatestPluginRelease, isNewerRelease } from "../lib/github-release.mjs";
 import { stallCount, healPresetStaleness } from "../lib/worker-ledger.mjs";
 import { normalizePromoteName, findAdoptableProject } from "../lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "../lib/state-template.mjs";
@@ -265,7 +264,6 @@ function readPinnedStelowVersion(): string | null {
 import {
   attachmentSchema,
   boardWorkflowDefaultsSchema,
-  pluginUpdateSchema,
   workflowSchema,
 } from "./contracts.js";
 export { rpcContract } from "./rpc-contract.js";
@@ -730,54 +728,9 @@ export default async function plugin(bb: BbPluginApi) {
   const REVIEW_PROTOCOL = "Optional paid review: after `bb stelow verify` passes, you may OFFER `bb stelow review` via `bb stelow ask` — never run it unasked, never auto-run it. Review spends reviewer budget and only accepts structurally valid artifacts.";
   const DRAFT_PROTOCOL = "Cheap drafts: for disposable prose bursts (alternative wordings, expansions, taglines — never protocol work, never anything needing tools or exact shapes), run `bb stelow draft --prompt <brief>` — a hidden thread on the generation preset returns text you must judge 100% before using. If no generation preset is set it runs on your band preset; an empty or failed draft means do it yourself, never retry in a loop.";
   const db = bb.storage.database();
-  // BB is the source of truth for the installed plugin and its update range.
-  // This read-only check never changes the helper or an active workflow.
-  // Mount-time reads share one in-flight check and reuse a fresh result for
-  // a minute, so the sidebar and About never double-hit upstream resolution.
-  type PluginUpdateState = z.infer<typeof pluginUpdateSchema>;
-  let pluginUpdate: PluginUpdateState = { outcome: "checking", installed: null, installedDisplay: null, candidate: null, candidateDisplay: null, detail: null, checkedAt: null };
-  // Newest GitHub release the panel knows, for installs BB cannot update.
-  // Supplement only: while BB offers a candidate this stays null so two
-  // "new version" sources never compete. A failed lookup keeps the previous
-  // value — stale discovery beats none, and the next check refreshes it.
-  let githubRelease: { tag: string; url: string; checkedAt: number; newer: boolean } | null = null;
-  let updateCheckAt = 0;
-  let updateCheckInflight: Promise<void> | null = null;
-  async function refreshPluginUpdate(force = false) {
-    if (!force && pluginUpdate.outcome !== "checking" && Date.now() - updateCheckAt < 60_000) return;
-    if (updateCheckInflight) {
-      await updateCheckInflight;
-      return;
-    }
-    updateCheckInflight = (async () => {
-      try {
-        const entries = await bb.sdk.plugins.checkUpdates({ pluginId: bb.pluginId });
-        pluginUpdate = { ...mapUpdateEntry(selectOwnEntry(entries, bb.pluginId)), checkedAt: Date.now() };
-        if (pluginUpdate.outcome === "update-available") {
-          githubRelease = null;
-        } else {
-          const latest = await fetchLatestPluginRelease();
-          if (latest) githubRelease = { ...latest, checkedAt: Date.now(), newer: isNewerRelease(BUILD_INFO.version, latest.tag) };
-        }
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        // A transient failure keeps the last known verdict (a real candidate
-        // button must not vanish on a network blip) — applyFailedCheck only
-        // falls back to "unavailable" when there was no verdict yet.
-        pluginUpdate = applyFailedCheck(pluginUpdate, detail);
-        bb.log.warn(`plugin update check failed: ${detail}`);
-      } finally {
-        updateCheckAt = Date.now();
-      }
-    })();
-    try {
-      await updateCheckInflight;
-    } finally {
-      updateCheckInflight = null;
-    }
-  }
-  bb.background.schedule("stelow-plugin-update-check", "17 6 * * *", () => void refreshPluginUpdate(true));
-  void refreshPluginUpdate();
+  const pluginUpdates = createPluginUpdateChecker({ bb, installedVersion: BUILD_INFO.version, now: () => Date.now() });
+  bb.background.schedule("stelow-plugin-update-check", "17 6 * * *", () => void pluginUpdates.refresh(true));
+  void pluginUpdates.refresh();
   runPluginMigrations(bb, db, now);
   runExecutionMigrations(db);
 
@@ -1870,9 +1823,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     pluginSkillsDir: PLUGIN_SKILLS_DIR,
     buildInfo: BUILD_INFO,
     readPinnedStelowVersion,
-    refreshPluginUpdate,
-    getPluginUpdate: () => pluginUpdate,
-    getGithubRelease: () => githubRelease,
+    refreshPluginUpdate: pluginUpdates.refresh,
+    getPluginUpdate: pluginUpdates.getState,
+    getGithubRelease: pluginUpdates.getRelease,
     resolveLocalBin,
     homeDir,
     localBinDir,

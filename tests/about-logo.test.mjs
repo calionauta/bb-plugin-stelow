@@ -50,6 +50,7 @@ const server = [
   readFileSync(new URL("../server/plugin-runtime.ts", import.meta.url), "utf8"),
   readFileSync(new URL("../server/platform-rpc-contract.ts", import.meta.url), "utf8"),
   readFileSync(new URL("../server/runtime/platform.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("../server/runtime/plugin-update.ts", import.meta.url), "utf8"),
 ].join("\n");
 assert.match(server, /aboutLogo:\s*\{/, "server exposes the aboutLogo RPC");
 const syncLib = readFileSync(new URL("../lib/workflow-skills-sync.mjs", import.meta.url), "utf8");
@@ -60,7 +61,11 @@ assert.equal(manifest.files.includes("assets"), true, "plugin package carries as
 // that evidence from upstream main, and About names the pinned version.
 assert.match(syncLib, /readPinnedStelowSource/, "release sync reads a pinned source manifest");
 assert.doesNotMatch(server, /syncHelperScript|syncWorkflowSkills|background\.schedule\("stelow-skills-sync"/, "runtime never mutates vendored Stelow behavior");
-assert.match(server, /bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the installed-plugin update check");
+assert.match(
+  server,
+  /deps\.bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: deps\.bb\.pluginId \}\)/,
+  "BB owns the installed-plugin update check",
+);
 assert.match(
   server,
   /deps\.bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: deps\.bb\.pluginId \}\)/,
