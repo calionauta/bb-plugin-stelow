@@ -60,7 +60,6 @@ const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server", "cards.ts"), "utf8"),
 ].join("\n");
-const cardDetailServer = server.slice(server.indexOf("  cardDetail: {"), server.indexOf("  addCardComment: {"));
 const executionContract = readFileSync(join(root, "server", "execution-contract.ts"), "utf8");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
 const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");
