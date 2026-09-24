@@ -39,7 +39,7 @@ import { useDebouncedRealtime } from "./components/use-debounced-realtime";
 import {
   Pill,
 } from "./components/dashboard/build-status-pills";
-import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
+import { PresetOnboardingDialog } from "./components/settings/preset-onboarding";
 import { registerPendingInteraction } from "./components/conversation/question-form";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { StelowArtifactDirective } from "./components/messages/stelow-artifact-directive";
@@ -774,131 +774,6 @@ const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "",
 // storageKey so it shows exactly once. All panels stay mounted for
 // keep-alive, so the dialog opens only while its own track is active —
 // otherwise first visit would stack three dialogs at once.
-function onboardingTotal(hasSecond: boolean) {
-  return hasSecond ? 3 : 2;
-}
-
-function PresetOnboardingBody({ step, total, secondBody, children }: {
-  step: number;
-  total: number;
-  secondBody?: React.ReactNode;
-  children?: React.ReactNode;
-}) {
-  if (step === total - 1) return <StayInTouchStep />;
-  if (step === 1 && secondBody) return <div className="min-w-0">{secondBody}</div>;
-  return (
-    <div className="grid gap-3 py-1 text-sm leading-6 text-muted-foreground">
-      <p>Agent presets decide which provider, model, reasoning, and permission each worker runs with. Each track has its own band default; cards without one fall back to the board default, and any card can pin its own preset in Manage.</p>
-      {children}
-    </div>
-  );
-}
-
-function PresetOnboardingFooter({ step, total, hasSecond, onOpenPresets, onNext, onBack, onDone }: {
-  step: number;
-  total: number;
-  hasSecond: boolean;
-  onOpenPresets: () => void;
-  onNext: () => void;
-  onBack: () => void;
-  onDone: () => void;
-}) {
-  if (step === total - 1) {
-    return (
-      <>
-        <Button variant="outline" onClick={onBack}>Back</Button>
-        <Button onClick={onDone}>Done</Button>
-      </>
-    );
-  }
-  if (step === 0) {
-    return (
-      <>
-        <Button variant="outline" onClick={onOpenPresets}>Open Agent Presets</Button>
-        {hasSecond || total > 1 ? <Button onClick={onNext}>Next</Button> : <Button onClick={onDone}>Got it</Button>}
-      </>
-    );
-  }
-  return (
-    <>
-      <Button variant="outline" onClick={onBack}>Back</Button>
-      <Button onClick={onNext}>Next</Button>
-    </>
-  );
-}
-
-function PresetOnboardingDialog({ storageKey, title, intro, children, onOpenPresets, active, secondTitle, secondBody }: {
-  storageKey: string;
-  title: string;
-  intro: string;
-  children?: React.ReactNode;
-  onOpenPresets: () => void;
-  active: boolean;
-  secondTitle?: string;
-  secondBody?: React.ReactNode;
-}) {
-  const [open, setOpen] = useState<boolean>(false);
-  const [step, setStep] = useState(0);
-  // When the shared presets step was already acknowledged on another track,
-  // the dialog opens straight at the second panel — the step counter
-  // would reference a step the user never saw, so it stays hidden.
-  const [singleStep, setSingleStep] = useState(false);
-  function showStep(next: number, single: boolean) { setStep(next); setSingleStep(single); }
-  const hasSecond = !!secondTitle;
-  const total = onboardingTotal(hasSecond);
-  const lastStep = total - 1;
-  // Shared presets onboarding: configuring (or acknowledging) presets on
-  // any track counts for all tracks — Research/Explore stay silent, Build
-  // still opens straight into its defaults step.
-  const isSharedDone = () => {
-    try { return window.localStorage.getItem(STORAGE_KEYS.onboardPresets) === "onboarded"; } catch { return false; }
-  };
-  const markSharedDone = () => {
-    try { window.localStorage.setItem(STORAGE_KEYS.onboardPresets, "onboarded"); } catch { /* best-effort */ }
-  };
-  useEffect(() => {
-    if (!active || open) return;
-    try {
-      if (window.localStorage.getItem(storageKey) === "onboarded") return;
-      if (isSharedDone()) {
-        if (hasSecond) { showStep(1, true); setOpen(true); }
-        return;
-      }
-      showStep(0, false);
-      setOpen(true);
-    } catch { /* best-effort */ }
-  }, [active, open, storageKey, hasSecond]);
-  function dismiss() {
-    setOpen(false);
-    showStep(0, false);
-    try { window.localStorage.setItem(storageKey, "onboarded"); } catch { /* best-effort */ }
-    markSharedDone();
-  }
-  return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
-      <DialogContent className={`${hasSecond ? "sm:max-w-2xl" : "sm:max-w-lg"} sm:max-h-[calc(100dvh-1rem)] sm:overflow-y-auto`}>
-        <DialogHeader>
-          <DialogTitle>{step === lastStep ? "Stay in touch" : step === 1 && secondTitle ? secondTitle : title}</DialogTitle>
-          <DialogDescription>{step === lastStep ? "Feedback and follow-ups." : step === 1 && secondTitle ? "Defaults new cards start from." : intro}</DialogDescription>
-        </DialogHeader>
-        {!singleStep && total > 1 ? <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Step {step + 1} of {total}</p> : null}
-        <PresetOnboardingBody step={step} total={total} secondBody={secondBody}>{children}</PresetOnboardingBody>
-        <DialogFooter>
-          <PresetOnboardingFooter
-            step={step}
-            total={total}
-            hasSecond={hasSecond}
-            onOpenPresets={() => { markSharedDone(); onOpenPresets(); }}
-            onNext={() => setStep(step + 1)}
-            onBack={() => setStep(step - 1)}
-            onDone={dismiss}
-          />
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 const PRESET_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max", "none", "ultra", "ultracode"] as const;
 type PresetReasoningLevel = (typeof PRESET_REASONING_LEVELS)[number];
 type PresetExecution = { providerId: string; modelId: string; reasoningLevel: string; permissionMode: "accept-edits" | "auto" | "full" };
