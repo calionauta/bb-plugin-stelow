@@ -581,10 +581,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the worker.
 - **Thread embeds.** Card drawer inside threads
   (`stelow-card-detail`), "Open Stelow" header action,
-  `stelow-artifact` message chips, blocking question form.
-  The command palette offers Stelow: open card for this thread from any
-  worker thread — the drawer resolves the thread to its owning card, and
-  says plainly when the thread is not a Stelow worker.
+  `stelow-artifact` and `stelow-quality` message chips, blocking question
+  form. Chips validate untrusted paths, show the original directive when
+  malformed, and mark host-refused file links unavailable instead of
+  pretending they opened. The command palette offers Stelow: open card for
+  this thread from any worker thread — the drawer resolves the thread to its
+  owning card, and says plainly when the thread is not a Stelow worker.
 
 ## 5. Recover
 *When the worker stalls or fails, I want one obvious fix.*

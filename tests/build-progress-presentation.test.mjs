@@ -58,7 +58,7 @@ assert.equal(
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const qualityDirective = readFileSync(
-  join(root, "components/detail/stelow-quality-directive.tsx"),
+  join(root, "components/messages/stelow-quality-directive.tsx"),
   "utf8",
 );
 assert.match(

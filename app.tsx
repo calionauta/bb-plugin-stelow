@@ -10,7 +10,6 @@ import {
   useRpc,
   type NewThreadRequest,
   type PluginCommandRegistration,
-  type PluginMessageDirectiveProps,
   type PluginThreadPanelProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
@@ -44,6 +43,7 @@ import {
   StelowCardDetail,
 } from "./components/detail/card-detail-route";
 import { StelowPanel } from "./components/panel/stelow-panel";
+import { consumeStelowReturnFocusCardId, rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus.mjs";
 import {
   STELOW_PANEL_ID,
   STELOW_PANEL_PATH,
@@ -64,7 +64,9 @@ import { CreateResearchDialog } from "./components/creation/create-research-dial
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
 import { registerPendingInteraction } from "./components/conversation/question-form";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
-import { StelowQualityDirective } from "./components/detail/stelow-quality-directive";
+import { StelowArtifactDirective } from "./components/messages/stelow-artifact-directive";
+import { StelowQualityDirective } from "./components/messages/stelow-quality-directive";
+import { OpenStelowAction } from "./components/thread/open-stelow-action";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -123,7 +125,7 @@ function goToTrack(navigate: BbNavigate, track: StelowTrack): void {
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: trackRootSubPath(track) });
 }
 function goToCard(navigate: BbNavigate, card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): void {
-  stelowReturnFocusCardId = cardId;
+  rememberStelowReturnFocusCardId(cardId);
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: cardSubPath(card, cardId, eventId) });
 }
 function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): void {
@@ -2065,13 +2067,10 @@ function CardRetryButton({ cardId, label }: { cardId: string; label: string }) {
 // Return focus: opening a card remembers it; the board restores focus to
 // that card when the user comes back (Esc / Back button), so keyboard users
 // never lose their place. One module slot — a board shows one track at a time.
-let stelowReturnFocusCardId: string | null = null;
-
 function useReturnFocus<T extends HTMLElement>(cardId: string) {
   const ref = useRef<T | null>(null);
   useEffect(() => {
-    if (stelowReturnFocusCardId === cardId && ref.current) {
-      stelowReturnFocusCardId = null;
+    if (ref.current && consumeStelowReturnFocusCardId(cardId)) {
       ref.current.focus();
     }
   }, [cardId]);
@@ -3178,46 +3177,6 @@ function PillsyStyles() {
   ].join("\n");
   document.head.appendChild(style);
   return null;
-}
-
-function OpenStelowAction({ threadId }: { threadId: string }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const navigate = useBbNavigate();
-  const [target, setTarget] = useState<{ cardId: string; kind: "build" | "research" | "explore" } | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setTarget(null);
-    void rpc.call("cardByWorkerThread", { threadId }).then((result) => {
-      if (!cancelled && result.cardId) setTarget({ cardId: result.cardId, kind: result.kind ?? "build" });
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [rpc, threadId]);
-  // Not a card worker thread: render nothing instead of a generic shortcut.
-  if (!target) return null;
-  // Host header chrome: the same small outline button as every in-panel
-  // "Open thread" affordance (h-8), never a taller custom button — the slot
-  // stretches its children, so a touch-target height here filled the bar.
-  return <Button size="sm" variant="outline" className="shrink-0 self-center" onClick={() => goToCard(navigate, { kind: target.kind }, target.cardId)} title="Open this card">Stelow card ↗</Button>;
-}
-
-function StelowArtifactDirective({ attributes, source, openWorkspaceFile }: PluginMessageDirectiveProps) {
-  const rawPath = attributes.path ?? "";
-  const display = attributes.display || rawPath.split("/").pop() || "artifact";
-  const path = rawPath.replace(/^\.\//, "");
-  if (!path) return <span className="text-sm text-destructive">{source}</span>;
-  const openFile = () => { openWorkspaceFile?.(path); };
-  return (
-    <button
-      onClick={openFile}
-      disabled={!openWorkspaceFile}
-      className="cursor-pointer inline-flex items-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-foreground hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-      title={path}
-    >
-      <span>📎</span>
-      <span className="text-muted-foreground">artefato</span>
-      <span className="font-medium">{display}</span>
-    </button>
-  );
 }
 
 export default definePluginApp((app) => {

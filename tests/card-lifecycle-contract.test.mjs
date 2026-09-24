@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const openStelowAction = readFileSync(join(root, "components/thread/open-stelow-action.tsx"), "utf8");
 const routeAdapters = readFileSync(join(root, "components/detail/card-detail-route.tsx"), "utf8");
 const researchDetail = readFileSync(join(root, "components/detail/research-detail-body.tsx"), "utf8");
 const researchContent = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
@@ -413,7 +414,7 @@ assert.match(listRow, /card\.needsAttention && card\.activity !== "awaiting-answ
 assert.match(listRow, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from list-view rows too");
 // Esc/Back returns to the board with the card focused: opening remembers the
 // card, each card surface restores focus to it on return.
-assert.match(app, /stelowReturnFocusCardId = cardId/, "opening a card remembers it for focus return");
+assert.match(app, /rememberStelowReturnFocusCardId\(cardId\)/, "opening a card remembers it for focus return");
 assert.match(boardCard, /useReturnFocus<HTMLDivElement>\(card\.id\)/, "build board cards restore focus on return");
 assert.match(listRow, /useReturnFocus<HTMLButtonElement>\(card\.id\)/, "list-view rows restore focus on return");
 assert.doesNotMatch(app, /<span className="font-medium text-muted-foreground\/80">Status<\/span>/, "a generic Status label does not duplicate the self-describing state pills");
@@ -504,8 +505,7 @@ assert.doesNotMatch(detailSource, /function CardConversation\(/, "no local threa
 assert.match(cardConversation, /disabled=\{!draft\.trim\(\)\} onClick=\{\(\) => onSend\(\)\}>Send to agent/, "empty drafts cannot send");
 assert.match(cardConversation, /event\.metaKey \|\| event\.ctrlKey/, "keyboard send rides Cmd/Ctrl+Enter");
 
-const threadAction = app.slice(app.indexOf("function OpenStelowAction"), app.indexOf("function StelowArtifactDirective"));
-assert.doesNotMatch(threadAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
+assert.doesNotMatch(openStelowAction, /min-h-11/, "the thread-header button never forces bar height in a stretching host slot");
 assert.match(server, /hasRecoveryCheckout[\s\S]*fileEnvironmentId = !hasRecoveryCheckout/, "recovered exploratory cards use a host file target instead of a stale worker environment");
 // One progress section, one artifact home, one reference. The doc buttons that
 // duplicated Artifacts are gone, counts are counts, and the reference map is a
