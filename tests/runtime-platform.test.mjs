@@ -5,17 +5,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPlatformHandlers, defaultRun } from "../server/runtime/platform.ts";
 
-function harness(overrides = {}) {
-  const calls = [];
-  const previewHandler = (method) => async (cardId, appOrigin) => {
+function previewHandler(calls, method) {
+  return async (cardId, appOrigin) => {
     calls.push(["preview", method, cardId, ...(method === "view" ? [appOrigin] : [])]);
     return method === "view" ? { cardId, appOrigin } : { ok: true, cardId };
   };
-  const state = {
+}
+
+function platformState() {
+  return {
     update: { outcome: "current", installed: "0.46.0", installedDisplay: "0.46.0", candidate: null, candidateDisplay: null, detail: null, checkedAt: 10 },
     release: { tag: "v0.46.0", url: "https://example.test/release", checkedAt: 10, newer: false },
   };
-  const bb = {
+}
+
+function platformHost() {
+  return {
     pluginId: "stelow",
     sdk: {
       plugins: {
@@ -29,8 +34,13 @@ function harness(overrides = {}) {
       },
     },
   };
+}
+
+function harness(overrides = {}) {
+  const calls = [];
+  const state = platformState();
   const deps = {
-    bb,
+    bb: platformHost(),
     pluginDir: "/plugin",
     pluginSkillsDir: "/plugin/skills",
     buildInfo: { version: "0.46.0", builtAt: "2026-09-24T00:00:00Z" },
@@ -42,10 +52,10 @@ function harness(overrides = {}) {
     homeDir: "/home/test",
     localBinDir: "/home/test/.local/bin",
     preview: {
-      view: previewHandler("view"),
-      start: previewHandler("start"),
-      stop: previewHandler("stop"),
-      share: previewHandler("share"),
+      view: previewHandler(calls, "view"),
+      start: previewHandler(calls, "start"),
+      stop: previewHandler(calls, "stop"),
+      share: previewHandler(calls, "share"),
     },
     probeTool: async (bin) => {
       calls.push(["probe", bin]);
