@@ -7,6 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/artifacts-publication.ts"), "utf8"),
+  readFileSync(join(root, "server/artifacts-publication-commits.ts"), "utf8"),
   readFileSync(join(root, "server/artifacts-publication-status.ts"), "utf8"),
   readFileSync(join(root, "server/artifacts-publication-operations.ts"), "utf8"),
   readFileSync(join(root, "server/artifacts-publication-terminals.ts"), "utf8"),
@@ -105,7 +106,7 @@ assert.match(publication, /Waiting — git push typed but NOT sent/, "legacy typ
 assert.match(server, /stelow commit diff: diffPatch (unavailable|failed)/, "patch fetch failures are logged for diagnosis instead of swallowed");
 assert.match(
   server,
-  /filter\(\(file\) => !file\.binary[\s\S]*?!patches\.has\(file\.path\)\)/,
+  /filter\(\(file\) => \(\s*!file\.binary[\s\S]*?!patches\.has\(file\.path\)\s*\)\)/,
   "commit targets fetch every missing patch, not just on-demand ones",
 );
 assert.match(commitDiff, /commitFileState\(file\)/, "the commit viewer delegates tested file-state labels to presentation logic");

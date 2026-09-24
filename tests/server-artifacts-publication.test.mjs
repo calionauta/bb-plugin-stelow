@@ -180,6 +180,68 @@ function harness() {
   };
 }
 
+test("publication status projects the card environment and its latest event", async () => {
+  const app = harness();
+  app.db.prepare(`
+    INSERT INTO publication_events
+      (id, card_id, action, message, commit_sha, pull_request_url, created_at)
+    VALUES ('owned', 'card-1', 'commit', 'Saved.', 'deadbee', NULL, 10)
+  `).run();
+
+  const result = await app.handlers.publicationStatus({ cardId: CARD_ID });
+
+  assert.equal(result.available, true);
+  assert.equal(result.source, "Worker worktree");
+  assert.equal(result.environmentId, ENVIRONMENT_ID);
+  assert.equal(result.branch.current, "feature/publication");
+  assert.equal(result.workingTree.files, 1);
+  assert.equal(result.capabilities.commit.available, true);
+  assert.deepEqual(result.events.map((event) => event.id), ["owned"]);
+  app.db.close();
+});
+
+test("push runs in the card environment and records the submitted command", async () => {
+  const app = harness();
+
+  const result = await app.handlers.publicationPushTerminal({ cardId: CARD_ID });
+
+  assert.equal(result.ok, true);
+  const create = app.calls.find(([name]) => name === "create");
+  assert.deepEqual(create[1].scope, {
+    kind: "environment",
+    environmentId: ENVIRONMENT_ID,
+  });
+  const input = app.calls.find(([name]) => name === "input");
+  const command = Buffer.from(input[1].dataBase64, "base64").toString("utf8");
+  assert.match(command, /^git push; echo "STELOW_PUSH_EXIT:\$\?"\r$/);
+  assert.equal(app.events().length, 1);
+  assert.match(app.events()[0].message, /Ran git push in shell terminal-1/);
+  app.db.close();
+});
+
+test("PR actions preflight capability and record the verified transition", async () => {
+  const app = harness();
+
+  const result = await app.handlers.publicationPullRequestAction({
+    cardId: CARD_ID,
+    operation: "draft",
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(app.calls.map(([name]) => name), [
+    "status",
+    "pullRequest",
+    "draft",
+  ]);
+  assert.equal(app.events().length, 1);
+  assert.equal(app.events()[0].action, "pull_request_draft");
+  assert.equal(
+    app.events()[0].pull_request_url,
+    "https://github.com/acme/project/pull/42",
+  );
+  app.db.close();
+});
+
 test("publication migration is repeatable and preserves durable history", () => {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");

@@ -1,22 +1,13 @@
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   buildSquashScript,
   parseSquashOutput,
   squashExitMessage,
 } from "../lib/squash-merge.mjs";
-
-const PUSH_COMMAND = 'git push; echo "STELOW_PUSH_EXIT:$?"';
-const SYNC_COMMAND = [
-  "git pull --rebase",
-  'echo "STELOW_SYNC_EXIT:$?"',
-  "if git rev-parse --verify REBASE_HEAD >/dev/null 2>&1; then",
-  "  git rebase --abort",
-  '  echo "STELOW_SYNC_ABORTED:1"',
-  "fi",
-  "git push",
-  'echo "STELOW_PUSH_EXIT:$?"',
-].join("; ");
 import type { ArtifactsPublicationDeps } from "./artifacts-publication.js";
+import {
+  publicationCommit,
+  publicationCommitDiff,
+} from "./artifacts-publication-commits.js";
 import {
   preparedEnvironment,
   publicationSnapshot,
@@ -31,146 +22,20 @@ import {
   sendShellCommand,
 } from "./artifacts-publication-terminals.js";
 
-type CommitDiffFile = {
-  path: string;
-  display: string;
-  patch: string | null;
-  binary: boolean;
-  changeKind: string;
-  additions: number;
-  deletions: number;
-  truncated: boolean;
-  loadMode: string;
-};
-
-type CommitDiff = {
-  found: boolean;
-  commitSha: string | null;
-  shortstat: string | null;
-  files: CommitDiffFile[];
-  truncated: boolean;
-  error: string | null;
-};
+const PUSH_COMMAND = 'git push; echo "STELOW_PUSH_EXIT:$?"';
+const SYNC_COMMAND = [
+  "git pull --rebase",
+  'echo "STELOW_SYNC_EXIT:$?"',
+  "if git rev-parse --verify REBASE_HEAD >/dev/null 2>&1; then",
+  "  git rebase --abort",
+  '  echo "STELOW_SYNC_ABORTED:1"',
+  "fi",
+  "git push",
+  'echo "STELOW_PUSH_EXIT:$?"',
+].join("; ");
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
-}
-
-async function commitDiff(
-  deps: ArtifactsPublicationDeps,
-  cardId: string,
-  commitSha: string,
-): Promise<CommitDiff> {
-  const empty: CommitDiff = {
-    found: false,
-    commitSha: null,
-    shortstat: null,
-    files: [],
-    truncated: false,
-    error: null as string | null,
-  };
-  const recorded = deps.db.prepare(`
-    SELECT 1 FROM publication_events WHERE card_id = ? AND commit_sha = ? LIMIT 1
-  `).get(cardId, commitSha);
-  if (!recorded) return { ...empty, error: "This commit is not recorded in this card's publication history." };
-  const prepared = await preparedEnvironment(deps, cardId);
-  if ("error" in prepared) return { ...empty, error: prepared.error };
-  return loadCommitDiff(deps, prepared.environmentId, commitSha, empty);
-}
-
-async function loadCommitDiff(
-  deps: ArtifactsPublicationDeps,
-  environmentId: string,
-  commitSha: string,
-  empty: CommitDiff,
-): Promise<CommitDiff> {
-  try {
-    const result = await deps.bb.sdk.environments.diffFiles({ environmentId, target: "commit", sha: commitSha });
-    if (result.outcome !== "available") {
-      const error = result.outcome === "not_applicable" ? result.message : result.failure.message;
-      return { ...empty, error };
-    }
-    const patches = new Map(result.initialPatches.map((patch) => [patch.path, patch]));
-    const missingPaths = result.files
-      .filter((file) => !file.binary && file.loadMode !== "too_large" && !patches.has(file.path))
-      .map((file) => file.path);
-    const patchesTruncated = await demandCommitPatches(deps, environmentId, commitSha, missingPaths, patches);
-    return commitDiffResult(commitSha, result, patches, patchesTruncated);
-  } catch (error) {
-    return { ...empty, error: errorMessage(error, "BB could not load this commit diff.") };
-  }
-}
-
-async function demandCommitPatches(
-  deps: ArtifactsPublicationDeps,
-  environmentId: string,
-  commitSha: string,
-  missingPaths: string[],
-  patches: Map<string, { patch?: string; truncated?: boolean }>,
-): Promise<boolean> {
-  const limit = 25;
-  if (missingPaths.length === 0) return false;
-  try {
-    const result = await deps.bb.sdk.environments.diffPatch({
-      environmentId,
-      paths: missingPaths.slice(0, limit),
-      target: { type: "commit", sha: commitSha },
-    });
-    if (result.outcome === "available") {
-      for (const patch of result.patches) patches.set(patch.path, patch);
-    } else {
-      const reason = result.outcome === "not_applicable" ? result.message : result.failure.message;
-      deps.bb.log.warn(`stelow commit diff: diffPatch unavailable for ${commitSha} (${missingPaths.length} files): ${reason}`);
-    }
-  } catch (error) {
-    deps.bb.log.warn(`stelow commit diff: diffPatch failed for ${commitSha}: ${errorMessage(error, "Unknown error")}`);
-  }
-  return missingPaths.length > limit;
-}
-
-function commitDiffResult(
-  commitSha: string,
-  result: Extract<Awaited<ReturnType<BbPluginApi["sdk"]["environments"]["diffFiles"]>>, { outcome: "available" }>,
-  patches: Map<string, { patch?: string; truncated?: boolean }>,
-  patchesTruncated: boolean,
-) {
-  return {
-    found: true,
-    commitSha,
-    shortstat: result.shortstat,
-    files: result.files.map((file) => {
-      const patch = patches.get(file.path);
-      return {
-        path: file.path,
-        display: file.path.split("/").pop() || file.path,
-        patch: patch?.patch ?? null,
-        binary: file.binary,
-        changeKind: file.changeKind,
-        additions: file.additions,
-        deletions: file.deletions,
-        truncated: patch?.truncated ?? file.loadMode !== "auto",
-        loadMode: file.loadMode,
-      };
-    }),
-    truncated: result.truncated || patchesTruncated,
-    error: null,
-  };
-}
-
-async function commit(deps: ArtifactsPublicationDeps, cardId: string) {
-  const prepared = await preparedEnvironment(deps, cardId);
-  if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
-  const capability = prepared.snapshot.capabilities.commit;
-  if (!capability.available) {
-    return { ok: false, message: capability.reason ?? "Commit is unavailable.", commitSha: null };
-  }
-  try {
-    const result = await deps.bb.sdk.environments.commit({ environmentId: prepared.environmentId });
-    recordPublication(deps, cardId, "commit", result.message, result.commitSha);
-    return { ok: true, message: result.message, commitSha: result.commitSha };
-  } catch (error) {
-    return { ok: false, message: errorMessage(error, "BB could not commit this workspace."), commitSha: null };
-  }
 }
 
 type SquashResult = { ok: boolean; message: string; commitSha: string | null };
@@ -394,8 +259,8 @@ export function createPublicationOperations(deps: ArtifactsPublicationDeps) {
       return card ? publicationSnapshot(deps, card) : unavailablePublication(deps.cardNotFound);
     },
     publicationCommitDiff: ({ cardId, commitSha }: { cardId: string; commitSha: string }) =>
-      commitDiff(deps, cardId, commitSha),
-    publicationCommit: ({ cardId }: { cardId: string }) => commit(deps, cardId),
+      publicationCommitDiff(deps, cardId, commitSha),
+    publicationCommit: ({ cardId }: { cardId: string }) => publicationCommit(deps, cardId),
     publicationSquashMerge: ({ cardId }: { cardId: string }) => squashMerge(deps, cardId),
     publicationPushTerminal: ({ cardId }: { cardId: string }) =>
       startPush(deps, cardId, PUSH_COMMAND, false),
