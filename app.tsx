@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import {
   definePluginApp,
   UrlLink,
-  experimental_PermissionModePicker as PermissionModePicker,
-  experimental_ProviderModelPicker as ProviderModelPicker,
   useBbNavigate,
   useRpc,
   type PluginCommandRegistration,
@@ -40,6 +38,8 @@ import {
   Pill,
 } from "./components/dashboard/build-status-pills";
 import { PresetOnboardingDialog } from "./components/settings/preset-onboarding";
+import { PresetExecutionPicker } from "./components/settings/preset-execution-picker";
+import { modeLabel } from "./components/settings/preset-execution-values.mjs";
 import { registerPendingInteraction } from "./components/conversation/question-form";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
 import { StelowArtifactDirective } from "./components/messages/stelow-artifact-directive";
@@ -775,54 +775,11 @@ const EMPTY_PRESET_FORM = { id: null as string | null, name: "", providerId: "",
 // storageKey so it shows exactly once. All panels stay mounted for
 // keep-alive, so the dialog opens only while its own track is active —
 // otherwise first visit would stack three dialogs at once.
-const PRESET_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max", "none", "ultra", "ultracode"] as const;
-type PresetReasoningLevel = (typeof PRESET_REASONING_LEVELS)[number];
-type PresetExecution = { providerId: string; modelId: string; reasoningLevel: string; permissionMode: "accept-edits" | "auto" | "full" };
-// Legacy rows may carry a reasoning string outside the host catalog: coerce
-// to the shared level set instead of handing the picker an unknown value.
-function asPresetReasoningLevel(value: string): PresetReasoningLevel {
-  return (PRESET_REASONING_LEVELS as readonly string[]).includes(value) ? (value as PresetReasoningLevel) : "medium";
-}
-
-// BB owns provider/model/reasoning/permission selection on every preset
-// surface: the same host pickers as the new-card composer, with the live
-// catalog and its own search. One shared block for the manager form and the
-// assign dialog's custom row — never hand-rolled provider/model selects.
-function PresetExecutionPicker({ value, onChange }: {
-  value: PresetExecution;
-  onChange: (next: PresetExecution) => void;
-}) {
-  if (!value.providerId || !value.modelId) {
-    return <p className="py-2 text-xs text-muted-foreground">Pick or create a preset to configure its provider and model.</p>;
-  }
-  return (
-    <div className="grid gap-2">
-      <ProviderModelPicker
-        value={{ providerId: value.providerId, model: value.modelId, reasoningLevel: asPresetReasoningLevel(value.reasoningLevel) }}
-        onChange={(next) => onChange({ ...value, providerId: next.providerId, modelId: next.model, reasoningLevel: next.reasoningLevel })}
-      />
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground"><span>Permission mode</span>
-        <PermissionModePicker
-          providerId={value.providerId}
-          value={value.permissionMode}
-          onChange={(next) => onChange({ ...value, permissionMode: next })}
-        />
-      </label>
-    </div>
-  );
-}
-
 type DecisionApiConfig = { endpoint: string; model: string; hasKey: boolean; keySource: string | null; keyRequired: boolean; disabled: boolean; provider: string; configured: boolean };
 type DecisionPointRoute = { provider: string | null; endpoint: string | null; apiKey: string | null; model: string | null };
 type DecisionRouterPoint = { id: string; label: string; description: string; rules: string; requires: string | null; modes: string[]; mode: string; thresholds: Record<string, number>; route: DecisionPointRoute | null; presetId: string | null };
 type RouterPresetOption = { id: string; name: string };
 type ManagerRpc = ReturnType<typeof useRpc<typeof rpcContract>>;
-
-function modeLabel(mode: string): string {
-  if (mode === "api") return "Decision API";
-  if (mode === "preset") return "Preset judge";
-  return "Built-in rules (default)";
-}
 
 // One Jev-compatible endpoint for every router below. Endpoint, key, and
 // model live here once as the shared default — points may override fields

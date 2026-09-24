@@ -196,7 +196,6 @@ assert.match(app, /function DecisionApiSection\(/, "the settings section exists"
 assert.match(app, /function DecisionRoutersSection\(/, "the routers section exists");
 assert.match(app, /type="password"/, "the key field masks input");
 assert.match(app, /Test connection/, "the section offers an explicit probe");
-assert.match(app, /Built-in rules \(default\)/, "rules read as the default outcome");
 assert.match(app, /Built-in rules: \{point\.rules\}/, "rules-mode rows explain what built-in means for that point");
 assert.match(app, /Needs: \{point\.requires\}/, "provider requirements render per row");
 assert.match(app, /point\.mode === "api"/, "threshold controls render only for api-mode points");

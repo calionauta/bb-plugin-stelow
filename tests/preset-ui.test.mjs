@@ -11,17 +11,48 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const picker = readFileSync(
+  join(root, "components/settings/preset-execution-picker.tsx"),
+  "utf8",
+);
 
-// BB-owned pickers, imported once from the SDK app entry.
-assert.match(app, /experimental_ProviderModelPicker as ProviderModelPicker/, "the host provider/model picker is imported");
-assert.match(app, /experimental_PermissionModePicker as PermissionModePicker/, "the host permission-mode picker is imported");
+// BB-owned pickers live with the shared settings block, not the app shell.
+assert.match(
+  picker,
+  /experimental_ProviderModelPicker as ProviderModelPicker/,
+  "the settings picker imports the host provider/model picker",
+);
+assert.match(
+  picker,
+  /experimental_PermissionModePicker as PermissionModePicker/,
+  "the settings picker imports the host permission-mode picker",
+);
+assert.doesNotMatch(
+  app,
+  /experimental_(?:ProviderModel|PermissionMode)Picker/,
+  "the app shell no longer owns preset-picker implementation details",
+);
 
 // One shared block, both preset surfaces — never pasted per dialog.
-const defs = app.match(/function PresetExecutionPicker\(/g) ?? [];
+const defs = picker.match(/function PresetExecutionPicker\(/g) ?? [];
 assert.equal(defs.length, 1, "PresetExecutionPicker is defined once, not pasted per dialog");
 const uses = app.match(/<PresetExecutionPicker/g) ?? [];
-assert.ok(uses.length >= 2, "manager form and assign custom row share the picker block");
-assert.match(app, /same host pickers as the new-card composer/, "the shared block names its BB source");
+assert.equal(uses.length, 2, "manager form and assign custom row share the picker block");
+assert.doesNotMatch(
+  app,
+  /function PresetExecutionPicker\(/,
+  "the app shell no longer defines a second picker",
+);
+assert.match(
+  picker,
+  /reasoningLevel: asPresetReasoningLevel\(value\.reasoningLevel\)/,
+  "the host picker receives the normalized reasoning level",
+);
+assert.match(
+  picker,
+  /permissionMode: next/,
+  "permission changes flow back through the shared settings contract",
+);
 
 // The hand-rolled controls are gone from the preset surfaces (manager
 // New/Edit form, assign dialog custom row) — scoped, not app-wide: the
