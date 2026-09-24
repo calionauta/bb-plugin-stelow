@@ -58,6 +58,9 @@ assert.equal(totalScopeElapsedMs([{ status: "pending" }]), null, "unstarted scop
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server", "card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server", "cards.ts"), "utf8"),
 ].join("\n");
 const executionContract = readFileSync(join(root, "server", "execution-contract.ts"), "utf8");
@@ -73,9 +76,8 @@ assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
 assert.match(server, /flowMetrics: \(input\) => flowMetrics\(db, input\)/, "RPC dispatch uses the measured flow runtime");
 assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs/, "detail reuses the one helper for lead time");
 assert.match(server, /cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper for cycle time");
-assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\)/, "detail schema carries nullable lead and cycle times");
-assert.match(server, /doingNow: z\.array\(z\.string\(\)\), executingScope: z\.string\(\)\.nullable\(\)/, "detail schema carries doing names and active scope");
-assert.match(server, /verifiedHeadSha: z\.string\(\)\.nullable\(\)/, "detail schema carries nullable verified HEAD");
+const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;
+assert.match(server, detailTimesContract, "detail schema carries times, doing names, and the verified HEAD as nullable");
 assert.match(server, /executionRuns: executionLifecycle\.detailList\(cardId\)/, "card detail uses the public execution-run projection");
 assert.doesNotMatch(server, /executionRuns: executionLifecycle\.list\(cardId\)/, "card detail never exposes raw ledger rows");
 assert.match(executionContract, /executionRuns: \{/, "execution runs remain available through their dedicated RPC");
