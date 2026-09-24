@@ -183,6 +183,7 @@ import { createExecutionReconcile } from "./execution-reconcile.js";
 import { createExecutionAdvance } from "./execution-advance.js";
 import { createWorktreeCleanup } from "./worktree-cleanup.js";
 import { flowMetrics } from "./runtime/flow-metrics.js";
+import { createPendingQuestions } from "./runtime/pending-questions.js";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -2090,6 +2091,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return commentId;
   }
 
+  let fetchPendingQuestions: (
+    threadId: string | null,
+  ) => Promise<
+    Awaited<
+      ReturnType<typeof rpcContract.cardDetail.output.parse>
+    >["pendingQuestions"]
+  > = async () => [];
   const cards = createCardsServer({
     db,
     bb,
@@ -2436,31 +2444,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return manifestEntry ? resolveAskArtifact(card, manifestEntry.path) : null;
   }
 
-  async function fetchPendingQuestions(threadId: string | null): Promise<Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"]> {
-    if (!threadId) return [];
-    const asks = await fetchPendingAsks(threadId);
-    if (asks === null) return [];
-    try {
-      const card = getCardByWorkerThread(threadId);
-      const out: Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["pendingQuestions"] = [];
-      for (const entry of asks) {
-        const expanded = expandInteractionQuestions({ id: entry.id, title: entry.payload?.title, payload: entry.payload });
-        for (const question of expanded) {
-          const options = await resolveAskOptions(card ?? null, question.options);
-          out.push({
-            id: question.questionId,
-            title: question.title,
-            question: question.question,
-            multiple: question.multiple,
-            kind: question.kind,
-            options,
-            expiresAt: typeof entry.expiresAt === "number" ? entry.expiresAt : null,
-          });
-        }
-      }
-      return out;
-    } catch { return []; }
-  }
+
+  fetchPendingQuestions = createPendingQuestions({
+    fetchPendingAsks,
+    getCardByWorkerThread,
+    resolveAskOptions,
+  });
+
 
   const executionNative = createExecutionNative({
     db,
