@@ -33,6 +33,16 @@ assert.equal(hasWorkspaceSource([]), false);
 assert.equal(hasWorkspaceSource(null), false);
 
 assert.match(reviewTools, /import \{ WorkspaceRecoveryPanel \} from "\.\/build-recovery";/, "Build review tools import one recovery presentation feature");
+assert.doesNotMatch(
+  recovery,
+  /useRpc|rpc\.call|useBuildDetailLifecycle/,
+  "the recovery panel stays a presentation boundary with no host or lifecycle ownership",
+);
+assert.match(
+  reviewTools,
+  /card\.status === "completed"[\s\S]*card\.workspaceKind === "exploratory"[\s\S]*<BuildRecoveryContent/,
+  "only completed exploratory Build publications mount recovery controls",
+);
 assert.doesNotMatch(`${app}\n${body}`, /function WorkspaceRecoveryPanel/, "Build detail no longer owns recovery presentation markup");
 for (const [action, wiring] of [
   ["refresh", /<RecoveryHeader[\s\S]*onRefresh=\{onRefresh\}/],

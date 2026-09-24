@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   definePluginApp,
   UrlLink,
@@ -34,7 +34,8 @@ import {
 } from "./components/panel/stelow-route.mjs";
 import { useDebouncedRealtime } from "./components/use-debounced-realtime";
 import { PresetOnboardingDialog } from "./components/settings/preset-onboarding";
-import { PresetExecutionPicker } from "./components/settings/preset-execution-picker";
+import { PresetAssignDialog } from "./components/settings/preset-assign-dialog";
+import { PresetManagerDialog } from "./components/settings/preset-manager-shell";
 import { registerPendingInteraction } from "./components/conversation/question-form";
 import { DisclosureChevron } from "./components/disclosure";
 import { StelowArtifactDirective } from "./components/messages/stelow-artifact-directive";
@@ -47,7 +48,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -756,144 +756,6 @@ function StelowCardDrawer(props: PluginThreadPanelProps) {
       onOpenRecoveryAudit={(cardId) => goToCard(navigate, { kind: "build" }, cardId)}
       renderPresetDialog={renderPresetDialog}
     />
-  );
-}
-import { PresetManagerDialog } from "./components/settings/preset-manager-shell";
-
-// Hybrid (A+D+E): single contextual hero derived from card state. One plain
-// sentence + one primary action. Replaces the scattered error / paused /
-// decision banners with one ordered attention model:
-// decision > error > paused > working > calm.
-function PresetAssignDialog({ open, onOpenChange, cardId, onChanged }: { open: boolean; onOpenChange: (next: boolean) => void; cardId: string; onChanged: () => void }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [presets, setPresets] = useState<Array<{ id: string; name: string; providerId: string; modelId: string; reasoningLevel: string; permissionMode: string; environmentKind: string; isDefault: boolean }>>([]);
-  const [catalog, setCatalog] = useState<{ providers: { id: string; displayName: string; modelsAvailable: boolean }[]; models: { providerId: string; model: string; displayName: string }[] }>({ providers: [], models: [] });
-  const [customProvider, setCustomProvider] = useState("");
-  const [customModel, setCustomModel] = useState("");
-  const [customReasoning, setCustomReasoning] = useState("");
-  const [customPermission, setCustomPermission] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const [canScrollDown, setCanScrollDown] = useState(false);
-  const updateFade = () => {
-    const el = listRef.current;
-    if (el) setCanScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
-  };
-  useEffect(() => {
-    if (!open) return;
-    setSelected(null); setError(null); setCustomProvider(""); setCustomModel(""); setCustomReasoning(""); setCustomPermission("");
-    void rpc.call("listPresets", {}).then((result) => setPresets(result.presets)).catch(() => setPresets([]));
-    void rpc.call("listProviderModels", {}).then(setCatalog).catch(() => setCatalog({ providers: [], models: [] }));
-  }, [open, rpc]);
-  useEffect(() => { updateFade(); }, [open, presets, catalog]);
-  const defaultPreset = presets.find((preset) => preset.isDefault) ?? null;
-  const customPresets = presets.filter((preset) => !preset.isDefault);
-  const optionCount = customPresets.length + catalog.models.length + 2; // default + custom rows
-  async function apply() {
-    if (!selected) return;
-    setBusy(true); setError(null);
-    try {
-      if (selected === "default") {
-        const result = await rpc.call("assignPreset", { cardId, presetId: null });
-        if (!result.ok) setError(result.error ?? "Could not reset preset.");
-        else { onOpenChange(false); onChanged(); toast.success("Preset reset to board default."); }
-      } else if (selected.startsWith("preset:")) {
-        const result = await rpc.call("assignPreset", { cardId, presetId: selected.slice("preset:".length) });
-        if (!result.ok) setError(result.error ?? "Could not change preset.");
-        else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this card. Resume only continues the current worker — use Restart worker to switch to the new preset now."); }
-      } else if (selected.startsWith("model:")) {
-        const [providerId, ...modelParts] = selected.slice("model:".length).split("/");
-        await applyCustom(providerId ?? "", modelParts.join("/"));
-      } else if (selected === "custom") {
-        await applyCustom(
-          customProvider || defaultPreset?.providerId || "",
-          customModel.trim() || defaultPreset?.modelId || "",
-          customReasoning || defaultPreset?.reasoningLevel || "medium",
-          (customPermission || defaultPreset?.permissionMode || "full") as "accept-edits" | "auto" | "full",
-        );
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function applyCustom(providerId: string, modelId: string, reasoningLevel?: string, permissionMode?: "accept-edits" | "auto" | "full") {
-    if (!providerId || !modelId) { setError("Pick a provider and type a model id."); return; }
-    const base = defaultPreset;
-    const upserted = await rpc.call("upsertPreset", {
-      id: `card-override-${cardId}`,
-      name: `Card override ${cardId}`,
-      providerId,
-      modelId,
-      reasoningLevel: reasoningLevel ?? base?.reasoningLevel ?? "medium",
-      permissionMode: permissionMode ?? (base?.permissionMode as "accept-edits" | "auto" | "full" | undefined) ?? "full",
-      environmentKind: (base?.environmentKind as "project-default" | "new-worktree" | undefined) ?? "project-default",
-    });
-    const result = await rpc.call("assignPreset", { cardId, presetId: upserted.preset.id });
-    if (!result.ok) setError(result.error ?? "Could not change preset.");
-    else { onOpenChange(false); onChanged(); toast.success("Preset overridden for this card. Resume only continues the current worker — use Restart worker to switch to the new preset now."); }
-  }
-  const radioRow = (value: string, title: React.ReactNode, sub?: string) => (
-    <label key={value} className={`flex cursor-pointer items-center gap-2 rounded-md border p-2 text-sm ${selected === value ? "border-primary bg-primary/10" : "border-border"}`}>
-      <input type="radio" name="card-preset" checked={selected === value} onChange={() => setSelected(value)} className="accent-primary" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">{title}</span>
-        {sub ? <span className="block truncate font-mono text-[11px] text-muted-foreground">{sub}</span> : null}
-      </span>
-    </label>
-  );
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Agent preset for this card</DialogTitle>
-          <DialogDescription>Takes effect when the worker (re)starts.</DialogDescription>
-        </DialogHeader>
-        <p className="text-[11px] text-muted-foreground">{optionCount} options · {catalog.providers.length} providers — scroll for more below.</p>
-        <div className="relative">
-          <div ref={listRef} onScroll={updateFade} className="max-h-64 space-y-1 overflow-auto">
-          <div>
-            <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Custom provider + model</p>
-            <label className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm ${selected === "custom" ? "border-primary bg-primary/10" : "border-border"}`}>
-              <input type="radio" name="card-preset" checked={selected === "custom"} onChange={() => setSelected("custom")} className="accent-primary mt-1" />
-              <span className="min-w-0 flex-1" onClick={(event) => event.stopPropagation()}>
-                <PresetExecutionPicker
-                  value={{
-                    providerId: customProvider || defaultPreset?.providerId || "",
-                    modelId: customModel || defaultPreset?.modelId || "",
-                    reasoningLevel: customReasoning || defaultPreset?.reasoningLevel || "medium",
-                    permissionMode: (customPermission || defaultPreset?.permissionMode || "full") as "accept-edits" | "auto" | "full",
-                  }}
-                  onChange={(next) => { setCustomProvider(next.providerId); setCustomModel(next.modelId); setCustomReasoning(next.reasoningLevel); setCustomPermission(next.permissionMode); setSelected("custom"); }}
-                />
-              </span>
-            </label>
-          </div>
-          {radioRow("default", <>Board default{defaultPreset ? ` · ${defaultPreset.name}` : ""}</>, defaultPreset ? `${defaultPreset.providerId}/${defaultPreset.modelId}` : undefined)}
-          {customPresets.map((preset) => radioRow(`preset:${preset.id}`, preset.name, `${preset.providerId}/${preset.modelId}`))}
-          {catalog.providers.map((provider) => {
-            const providerModels = catalog.models.filter((model) => model.providerId === provider.id);
-            return (
-              <div key={provider.id} className="pt-1">
-                <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{provider.displayName} · {providerModels.length}</p>
-                <div className="space-y-1">
-                  {providerModels.map((model) => radioRow(`model:${provider.id}/${model.model}`, model.displayName, `${provider.id}/${model.model}`))}
-                  {providerModels.length === 0 ? <p className="px-1 text-[11px] text-muted-foreground">{provider.modelsAvailable ? "No models listed for this provider." : "Couldn't load models — use Custom below."}</p> : null}
-                </div>
-              </div>
-            );
-          })}
-          {presets.length === 0 && catalog.providers.length === 0 ? <p className="text-xs text-muted-foreground">No presets or providers available.</p> : null}
-          </div>
-          {canScrollDown ? <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent" /> : null}
-        </div>
-        {error ? <p className="text-xs text-destructive">{error}</p> : null}
-        <DialogFooter>
-          <Button disabled={busy || !selected || (selected === "custom" && (!customProvider || !customModel.trim()))} onClick={() => void apply()}>{busy ? "Applying…" : "Apply"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

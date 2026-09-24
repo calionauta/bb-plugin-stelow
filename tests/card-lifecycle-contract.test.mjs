@@ -10,6 +10,7 @@ const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), 
 const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
 const openStelowAction = readFileSync(join(root, "components/thread/open-stelow-action.tsx"), "utf8");
 const routeAdapters = readFileSync(join(root, "components/detail/card-detail-route.tsx"), "utf8");
+const assignDialog = readFileSync(join(root, "components/settings/preset-assign-dialog.tsx"), "utf8");
 const researchDetail = readFileSync(join(root, "components/detail/research-detail-body.tsx"), "utf8");
 const researchContent = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
 const researchState = readFileSync(join(root, "components/detail/use-research-detail-state.ts"), "utf8");
@@ -173,7 +174,39 @@ assert.match(researchContent, /<DetailQuestionSections[\s\S]*onAnswered=\{onQues
 assert.match(detailQuestions, /<QuestionBatch[\s\S]*onAnswered=\{onAnswered\}/, "pending questions refresh the index after an answer");
 assert.match(detailQuestions, /<ExpiredQuestionsSection[\s\S]*onAnswered=\{onAnswered\}/, "expired questions refresh the index after an answer");
 assert.match(researchContent, /<InboxEventBanner[\s\S]*<ResearchStatus[\s\S]*<InputFiles[\s\S]*<ResearchSummary[\s\S]*<PreviewSection[\s\S]*<ResearchQualitySection[\s\S]*<ResearchArtifacts[\s\S]*<CardConversation/, "research detail keeps its original shared-leaf composition order");
-assert.match(researchDetail, /<ConfirmActionDialog[\s\S]*renderPresetDialog[\s\S]*<ArtifactViewerDialog[\s\S]*<FanOutDialog[\s\S]*<StrategyRunDialog/, "research detail composes its confirm, preset, viewer, fan-out, and strategy leaves in order");
+assert.match(
+  researchDetail,
+  /<ConfirmActionDialog[\s\S]*<PresetAssignDialog[\s\S]*<ArtifactViewerDialog[\s\S]*<FanOutDialog[\s\S]*<StrategyRunDialog/,
+  "research composes its confirm, preset, viewer, fan-out, and strategy leaves in order",
+);
+assert.match(
+  researchDetail,
+  /<PresetAssignDialog[\s\S]*cardId=\{cardId\}[\s\S]*onChanged=\{state\.onQuestionsChanged\}/,
+  "research preset changes refresh the index-backed question state",
+);
+assert.doesNotMatch(researchDetail, /renderPresetDialog/, "research no longer receives a preset renderer from the Build shell");
+assert.match(
+  exploreDetail,
+  /<PresetAssignDialog[\s\S]*cardId=\{cardId\}[\s\S]*onChanged=\{onChanged\}/,
+  "explore preset changes refresh its detail state",
+);
+assert.doesNotMatch(exploreDetail, /renderPresetDialog/, "explore no longer receives a preset renderer from the Build shell");
+assert.doesNotMatch(buildContent, /renderPresetDialog=/, "the Build content shell no longer forwards preset rendering into lightweight cards");
+assert.equal((researchDetail.match(/<PresetAssignDialog/g) ?? []).length, 1, "research mounts exactly one assign dialog");
+assert.equal((exploreDetail.match(/<PresetAssignDialog/g) ?? []).length, 1, "explore mounts exactly one assign dialog");
+assert.match(buildDetail, /<PresetDialogs cardId=\{cardId\} view=\{view\}/, "Build keeps its card-bound preset dialog seam");
+assert.match(
+  buildDetail,
+  /view\.renderPresetDialog\(\{[\s\S]*cardId=\{cardId\}/,
+  "Build renders its injected preset dialog with the current card",
+);
+assert.match(
+  routeAdapters,
+  /<BuildDetailBody[\s\S]*renderPresetDialog=\{\(props\) => renderPresetDialog\(cardId, props\)\}/,
+  "panel and drawer adapters bind Build preset assignment to the current card",
+);
+assert.equal((assignDialog.match(/export function PresetAssignDialog/g) ?? []).length, 1, "the assign dialog has one focused implementation");
+assert.doesNotMatch(app, /function PresetAssignDialog/, "the app shell no longer owns assign dialog behavior");
 assert.match(researchDetail, /onFanned=\{\(\) => \{ onChanged\(\); state\.refreshIndex\(\); \}\}/, "fan-out refreshes card detail and the research index");
 assert.match(researchDetail, /onStarted=\{\(\) => \{ onChanged\(\); state\.refreshIndex\(\); \}\}/, "a strategy round refreshes card detail and the research index");
 assert.match(researchDialogs, /rpc\.call\("fanOutResearch", \{ cardId: props\.cardId, opportunityIds: chosen\.map\(\(item\) => item\.id\) \}\)/, "fan-out reaches the host through its single owned RPC seam");

@@ -40,7 +40,6 @@ function CardKindContent({ cardId, inboxEventId, view }: BuildContentProps) {
         card={card}
         detail={detail}
         onChanged={() => void load()}
-        renderPresetDialog={view.renderPresetDialog}
       />
     );
   }
@@ -53,7 +52,6 @@ function CardKindContent({ cardId, inboxEventId, view }: BuildContentProps) {
         card={card}
         detail={detail}
         onChanged={() => void load()}
-        renderPresetDialog={view.renderPresetDialog}
       />
     );
   }

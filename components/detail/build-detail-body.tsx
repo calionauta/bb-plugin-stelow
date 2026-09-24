@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../../server";
@@ -28,7 +28,6 @@ import { ArtifactViewerDialog } from "./artifact-viewer-dialog";
 import { BuildDetailContent } from "./build-detail-content";
 import { BuildLifecycleDialogs } from "./build-lifecycle-dialogs";
 import { useInboxEventFocus, type InboxEventItem } from "./inbox-event-banner";
-import type { PresetDialogRenderer } from "./research-detail-body";
 import { useBuildDetailLifecycle } from "./use-build-detail-lifecycle";
 
 type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
@@ -44,6 +43,12 @@ type ViewerFile = {
   target: WorkspaceFileTarget | HostFileTarget | null;
   mode?: ArtifactViewerMode;
 } | null;
+
+type PresetDialogRenderer = (state: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  onChanged: () => void;
+}) => ReactNode;
 
 type BuildDetailBodyProps = {
   cardId: string;

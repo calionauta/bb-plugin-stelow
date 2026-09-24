@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifyPresetSelection } from "../lib/preset-assignment.mjs";
 
 // Preset surfaces (manager New/Edit form, assign dialog custom row) reuse
 // BB's host-owned pickers instead of hand-rolled provider/model selects:
@@ -11,6 +12,14 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const assignDialog = readFileSync(
+  join(root, "components/settings/preset-assign-dialog.tsx"),
+  "utf8",
+);
+const assignOptions = readFileSync(
+  join(root, "components/settings/preset-assign-options.tsx"),
+  "utf8",
+);
 const picker = readFileSync(
   join(root, "components/settings/preset-execution-picker.tsx"),
   "utf8",
@@ -41,7 +50,7 @@ const defs = picker.match(/function PresetExecutionPicker\(/g) ?? [];
 assert.equal(defs.length, 1, "PresetExecutionPicker is defined once, not pasted per dialog");
 const uses = [
   ...managerForm.match(/<PresetExecutionPicker/g) ?? [],
-  ...app.match(/<PresetExecutionPicker/g) ?? [],
+  ...assignOptions.match(/<PresetExecutionPicker/g) ?? [],
 ];
 assert.equal(uses.length, 2, "manager form and assign custom row share the picker block");
 assert.doesNotMatch(
@@ -76,13 +85,18 @@ assert.doesNotMatch(managerWindow, /listProviderModels/, "the manager no longer 
 
 // Assign dialog: the custom row uses the shared block; the radio rows stay
 // for one-click picks across the full catalog.
-const assignAt = app.indexOf("function PresetAssignDialog(");
-assert.ok(assignAt >= 0, "the assign dialog exists");
-const assignWindow = app.slice(assignAt);
-assert.match(assignWindow, /<PresetExecutionPicker/, "the custom row uses the shared picker block");
-assert.match(assignWindow, /radioRow\(`model:\$\{provider\.id\}\/\$\{model\.model\}`/, "one-click model rows survive below the picker");
+assert.doesNotMatch(app, /function PresetAssignDialog\(/, "the assign dialog no longer lives in the app shell");
+assert.match(assignDialog, /export function PresetAssignDialog\(/, "the focused assign component owns the dialog boundary");
+assert.match(assignOptions, /<PresetExecutionPicker/, "the custom row uses the shared picker block");
+assert.match(assignOptions, /value=\{`model:\$\{provider\.id\}\/\$\{model\.model\}`\}/, "one-click model rows survive below the picker");
+assert.match(assignDialog, /<PresetAssignOptions[\s\S]*onSelect=\{setSelected\}/, "the dialog owns selection while options own catalog presentation");
+assert.equal(
+  (app.match(/<PresetAssignDialog/g) ?? []).length,
+  2,
+  "panel and thread-drawer adapters share the extracted dialog without duplicating it",
+);
 
-for (const [window, name] of [[managerWindow, "manager"], [assignWindow, "assign"]]) {
+for (const [window, name] of [[managerWindow, "manager"], [assignOptions, "assign"]]) {
   assert.doesNotMatch(window, /function CustomModelCombobox\(/, `the hand-rolled model combobox is removed (${name})`);
   assert.doesNotMatch(window, /<span>Provider<\/span>/, `no hand-rolled provider select label survives (${name})`);
   assert.doesNotMatch(window, /<span>Model<\/span>/, `no hand-rolled model select label survives (${name})`);
@@ -105,5 +119,24 @@ const openEffect = managerShell.slice(openEffectAt, openEffectEnd);
 assert.ok(openEffectAt >= 0 && openEffectEnd > openEffectAt, "the open-state initialization effect is bounded");
 assert.doesNotMatch(openEffect, /\[open,\s*presets,/, "a parent preset refresh cannot reset the active create or edit form");
 }
+
+assert.equal(classifyPresetSelection(null), null, "no selection never starts an assignment");
+assert.deepEqual(classifyPresetSelection("default"), { kind: "default" }, "board default resets the card override");
+assert.deepEqual(
+  classifyPresetSelection("preset:reviewer"),
+  { kind: "preset", presetId: "reviewer" },
+  "a saved preset keeps its full identifier",
+);
+assert.deepEqual(
+  classifyPresetSelection("model:openai/vendor/model-v2"),
+  { kind: "model", providerId: "openai", modelId: "vendor/model-v2" },
+  "catalog model ids may contain slashes after the provider",
+);
+assert.deepEqual(classifyPresetSelection("custom"), { kind: "custom" }, "picker values stay on the custom upsert path");
+assert.throws(
+  () => classifyPresetSelection("unknown:value"),
+  /Unsupported preset selection/,
+  "an unknown selection fails instead of silently doing nothing",
+);
 
 console.log("preset ui test ok: BB pickers shared, hand-rolled selects gone, manager disclosed and bounded");

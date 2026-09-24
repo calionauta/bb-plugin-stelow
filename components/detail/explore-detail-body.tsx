@@ -1,12 +1,16 @@
-import type { ReactNode } from "react";
 import { liveBorderClass } from "../../lib/detail-presentation.mjs";
 import { ConfirmActionDialog } from "../manage/confirm-action-dialog";
+import { PresetAssignDialog } from "../settings/preset-assign-dialog";
 import { ArtifactViewerDialog } from "./artifact-viewer-dialog";
 import { ExploreDetailContent } from "./explore-detail-content";
 import type { ExploreCard, ExploreDetail } from "./explore-detail-types";
 import type { InboxEventItem } from "./inbox-event-banner";
 import { useInboxEventFocus } from "./inbox-event-banner";
 import { useExploreDetailState } from "./use-explore-detail-state";
+
+const RESTART_DESCRIPTION =
+  "Stops the running worker and starts a fresh one on this card's preset, " +
+  "continuing the exploration (not from scratch). Use this to apply a preset change.";
 
 type ExploreDetailBodyProps = {
   cardId: string;
@@ -15,49 +19,9 @@ type ExploreDetailBodyProps = {
   card: ExploreCard;
   detail: ExploreDetail | null;
   onChanged: () => void;
-  renderPresetDialog: (state: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    onChanged: () => void;
-  }) => ReactNode;
 };
 
-function ExploreDialogs({ cardId, state, onChanged, renderPresetDialog }: {
-  cardId: string;
-  state: ReturnType<typeof useExploreDetailState>;
-  onChanged: () => void;
-  renderPresetDialog: ExploreDetailBodyProps["renderPresetDialog"];
-}) {
-  return (
-    <>
-      <ConfirmActionDialog
-        open={state.restartWorkerOpen}
-        onOpenChange={state.setRestartWorkerOpen}
-        title="Restart the worker on the current preset?"
-        description="Stops the running worker and starts a fresh one on this card's preset, continuing the exploration (not from scratch). Use this to apply a preset change."
-        confirmLabel="Restart worker"
-        confirmTone="default"
-        onConfirm={state.restartWorker}
-      />
-      {renderPresetDialog({
-        open: state.presetDialogOpen,
-        onOpenChange: state.setPresetDialogOpen,
-        onChanged,
-      })}
-      <ArtifactViewerDialog
-        open={state.viewerFile !== null}
-        onOpenChange={(next) => { if (!next) state.setViewerFile(null); }}
-        cardId={cardId}
-        file={state.viewerFile}
-        editorTarget={state.viewerFile?.target ?? null}
-        mode={state.viewerFile?.mode}
-        onCommented={onChanged}
-      />
-    </>
-  );
-}
-
-export function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, card, detail, onChanged, renderPresetDialog }: ExploreDetailBodyProps) {
+export function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, card, detail, onChanged }: ExploreDetailBodyProps) {
   const state = useExploreDetailState(cardId, card.status, onChanged);
   useInboxEventFocus(inboxEventId, inboxEvent, state.inboxEventRef);
   const stageLabel = card.exploreStage
@@ -79,7 +43,30 @@ export function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, card, deta
           />
         </div>
       </div>
-      <ExploreDialogs cardId={cardId} state={state} onChanged={onChanged} renderPresetDialog={renderPresetDialog} />
+      <ConfirmActionDialog
+        open={state.restartWorkerOpen}
+        onOpenChange={state.setRestartWorkerOpen}
+        title="Restart the worker on the current preset?"
+        description={RESTART_DESCRIPTION}
+        confirmLabel="Restart worker"
+        confirmTone="default"
+        onConfirm={state.restartWorker}
+      />
+      <PresetAssignDialog
+        cardId={cardId}
+        open={state.presetDialogOpen}
+        onOpenChange={state.setPresetDialogOpen}
+        onChanged={onChanged}
+      />
+      <ArtifactViewerDialog
+        open={state.viewerFile !== null}
+        onOpenChange={(next) => { if (!next) state.setViewerFile(null); }}
+        cardId={cardId}
+        file={state.viewerFile}
+        editorTarget={state.viewerFile?.target ?? null}
+        mode={state.viewerFile?.mode}
+        onCommented={onChanged}
+      />
     </div>
   );
 }
