@@ -9,6 +9,11 @@ export type OpenCardTarget = {
   kind: "build" | "research" | "explore";
 };
 
+export type LoadedOpenCardTarget = {
+  threadId: string;
+  target: OpenCardTarget;
+};
+
 export function workspaceDirectivePath(value: unknown): string | null;
 export function artifactDirectiveView(
   attributes: unknown,
@@ -18,3 +23,7 @@ export function attemptWorkspaceFileOpen(
   path: string,
 ): WorkspaceLinkState;
 export function normalizeOpenCardTarget(result: unknown): OpenCardTarget | null;
+export function openCardTargetForThread(
+  loaded: LoadedOpenCardTarget | null | undefined,
+  threadId: string,
+): OpenCardTarget | null;

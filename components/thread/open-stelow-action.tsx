@@ -3,7 +3,11 @@ import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { STELOW_PANEL_ID, cardSubPath } from "../panel/stelow-route.mjs";
 import { rememberStelowReturnFocusCardId } from "../panel/stelow-focus.mjs";
-import { normalizeOpenCardTarget, type OpenCardTarget } from "../../lib/message-directives.mjs";
+import {
+  openCardTargetForThread,
+  normalizeOpenCardTarget,
+  type LoadedOpenCardTarget,
+} from "../../lib/message-directives.mjs";
 import type { rpcContract } from "../../server";
 
 type OpenStelowActionProps = {
@@ -13,17 +17,19 @@ type OpenStelowActionProps = {
 export function OpenStelowAction({ threadId }: OpenStelowActionProps) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [target, setTarget] = useState<OpenCardTarget | null>(null);
+  const [loadedTarget, setLoadedTarget] = useState<LoadedOpenCardTarget | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setTarget(null);
+    setLoadedTarget(null);
     void rpc.call("cardByWorkerThread", { threadId })
       .then((result) => {
-        if (!cancelled) setTarget(normalizeOpenCardTarget(result));
+        const target = normalizeOpenCardTarget(result);
+        if (!cancelled && target) setLoadedTarget({ threadId, target });
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [rpc, threadId]);
+  const target = openCardTargetForThread(loadedTarget, threadId);
   if (!target) return null;
   return (
     <Button

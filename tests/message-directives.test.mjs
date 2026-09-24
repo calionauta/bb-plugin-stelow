@@ -4,6 +4,7 @@ import {
   artifactDirectiveView,
   attemptWorkspaceFileOpen,
   normalizeOpenCardTarget,
+  openCardTargetForThread,
   workspaceDirectivePath,
 } from "../lib/message-directives.mjs";
 import { consumeStelowReturnFocusCardId, rememberStelowReturnFocusCardId } from "../components/panel/stelow-focus.mjs";
@@ -20,6 +21,8 @@ for (const value of [
   "C:\\tmp\\brief.md",
   "C:brief.md",
   "\\\\server\\share\\brief.md",
+  "\\secret.txt",
+  "\\?\\C:\\secret.txt",
   "file:///etc/passwd",
   "../brief.md",
   "docs/../brief.md",
@@ -65,6 +68,17 @@ assert.deepEqual(
   "an unknown track safely defaults to build",
 );
 assert.equal(normalizeOpenCardTarget({ cardId: "not-a-card" }), null, "a malformed worker target never navigates");
+const loadedTarget = { threadId: "thread_a", target: { cardId: "card_123", kind: "build" } };
+assert.deepEqual(
+  openCardTargetForThread(loadedTarget, "thread_a"),
+  loadedTarget.target,
+  "the card target is available for the thread that loaded it",
+);
+assert.equal(
+  openCardTargetForThread(loadedTarget, "thread_b"),
+  null,
+  "a stale target from the previous thread cannot be clicked in the new thread header",
+);
 
 rememberStelowReturnFocusCardId("card_123");
 assert.equal(consumeStelowReturnFocusCardId("card_456"), false, "another card cannot consume the remembered focus");
@@ -84,6 +98,11 @@ assert.match(
   "only an invalid artifact view renders the original directive",
 );
 assert.match(qualitySource, /if \(!path\) return <InvalidDirective source=\{source\} \/>/, "only a malformed quality path renders the original directive");
+assert.match(
+  linkSource,
+  /<span className="text-sm text-destructive">\{source\}<\/span>/,
+  "the malformed-directive fallback displays the original source instead of disappearing",
+);
 assert.match(linkSource, /setState\(attemptWorkspaceFileOpen\(openWorkspaceFile, path\)\)/, "the shared link control stores host acceptance or refusal");
 assert.match(linkSource, /unavailable \?\? children/, "a refused link replaces the normal chip content with an unavailable label");
 assert.match(linkSource, /disabled=\{blocked\}/, "a refused link cannot be clicked again as if it were live");
