@@ -8,7 +8,7 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "./lib/artifact-manifest.mjs";
 import { assignBundleNames, parseBundleManifest, staleBundleEntries, unbundledSources } from "./lib/run-bundle.mjs";
-import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
+import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_BY_ID, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
@@ -107,6 +107,13 @@ import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, b
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "./lib/thread-children.mjs";
+import { activeExecutionRun, createExecutionRun, ensureExecutionRunTable, getExecutionRun, listExecutionRuns, markExecutionNeedsInputSent, markExecutionResumeRequested, resetExecutionBoundary, transitionExecutionRun } from "./lib/execution-run-ledger.mjs";
+import { BB_NATIVE_CAPABILITIES, missingNativeCapabilities, nativeNeedsInput, nativeStatusOf, nativeWorkflowAvailable, nativeWorkflowStatus, renderInlineWorkflowScript, runNativeWorkflow, stopNativeWorkflow } from "./server/bb-workflow-bridge.js";
+import { createBbWorkflowAdapter } from "./server/bb-workflow-adapter.js";
+import { recipeById } from "./lib/recipe-catalog.mjs";
+import { resolveExecutionRoute } from "./lib/execution-route.mjs";
+import { requiredOutputPaths, validateExecutionArtifacts } from "./lib/execution-artifacts.mjs";
+export { createBbWorkflowAdapter };
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -212,6 +219,9 @@ const statusSchema = z.enum([
   "escalated",
   "failed",
 ]);
+
+const executionStateSchema = z.enum(["queued", "running", "needs_input", "succeeded", "failed", "cancelled"]);
+const executionRunSchema = z.object({ id: z.string(), cardId: z.string(), runId: z.string().nullable(), recipeId: z.string(), stage: z.string(), sourceHash: z.string(), adapter: z.string(), workspaceId: z.string(), originThreadId: z.string(), nativeStatus: z.string().nullable(), normalizedStatus: executionStateSchema, startedAt: z.number(), completedAt: z.number().nullable(), resumeOf: z.string().nullable(), errorCode: z.string().nullable(), previewDirective: z.string().nullable(), completionEventId: z.string().nullable(), createdAt: z.number() });
 
 const appetiteSchema = z.enum(["Lean", "Core", "Complete"]);
 const reviewModeSchema = z.enum([
@@ -390,7 +400,7 @@ export const rpcContract = defineRpcContract({
   listCards: {
     experimental_description: "Cards with status, worker state, and scope progress, optionally by track",
     input: z.object({ projectId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable().optional() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), doingNow: z.array(z.string()) })) }),
+    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number(), elapsedMs: z.number().nullable() }), doingNow: z.array(z.string()), executingScope: z.string().nullable() })) }),
   },
   listNotifications: {
     experimental_description: "Inbox events: needs-attention first, then completions, history, archived",
@@ -421,6 +431,26 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Find the card that owns a worker thread",
     input: z.object({ threadId: z.string() }).strict(),
     output: z.object({ cardId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable() }),
+  },
+  startExecutionRun: {
+    experimental_description: "Start a pinned native Workflows recipe through the card coordinator",
+    input: z.object({ cardId: z.string(), recipeId: z.string().regex(/^[a-z][a-z0-9-]*$/), context: z.object({ prompt: z.string().min(1).max(20_000), intent: z.string().max(40).optional(), stage: z.string().max(40).optional(), reviewMode: z.string().max(80).optional() }).strict() }).strict(),
+    output: z.object({ ok: z.boolean(), run: executionRunSchema.nullable(), error: z.string().nullable() }),
+  },
+  executionRuns: {
+    experimental_description: "Native execution runs owned by a Stelow card",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ runs: z.array(executionRunSchema) }),
+  },
+  executionRunStatus: {
+    experimental_description: "Normalized status and native identity for one execution run",
+    input: z.object({ runId: z.string() }).strict(),
+    output: z.object({ run: executionRunSchema.nullable(), error: z.string().nullable() }),
+  },
+  cancelExecutionRun: {
+    experimental_description: "Cancel an active native run and keep the card answerable",
+    input: z.object({ runId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), run: executionRunSchema.nullable(), error: z.string().nullable() }),
   },
   getNotification: {
     experimental_description: "One inbox event for a card",
@@ -486,7 +516,7 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()), verifiedHeadSha: z.string().nullable() }),
+      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number(), elapsedMs: z.number().nullable() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()), executingScope: z.string().nullable(), verifiedHeadSha: z.string().nullable() }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("scope"), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), record: z.object({ verified: z.boolean().optional(), filesCount: z.number().optional(), commandsCount: z.number().optional(), completedAt: z.string().optional(), startedAt: z.string().optional(), suggestedCommit: z.string().optional() }).optional(), startedAt: z.string().optional(), targetFiles: z.array(z.string()).optional(), contract: z.object({ acceptanceCriteria: z.array(z.string()), verifyCommands: z.array(z.string()), targetFiles: z.array(z.string()) }).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })), claimed: z.boolean().nullable(), tasks: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("task"), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })) })), })),
@@ -503,6 +533,7 @@ export const rpcContract = defineRpcContract({
       scopeSync: z.object({ state: z.enum(["ok", "no-spec", "no-blocks", "human-dialect", "unsynced"]), syncedScopes: z.number(), machineBlocks: z.number(), humanBlocks: z.number(), specFile: z.string().nullable() }).nullable(),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), role: z.enum(["deliverable", "evidence"]), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable() })) })),
+      executionRuns: z.array(executionRunSchema),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
       // exploratory workspaces, which live outside provisioned environments.
@@ -1268,6 +1299,31 @@ async function readJson(files: FilesApi, path: string): Promise<LooseRecord | nu
   }
 }
 
+function timestampMs(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = typeof value === "number" ? value : Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function scopeElapsedMs(scope: { status: string; startedAt?: string; record?: { completedAt?: string } }, nowMs = Date.now()): number | null {
+  const startedAt = timestampMs(scope.startedAt);
+  if (startedAt === null) return null;
+  const completedAt = timestampMs(scope.record?.completedAt);
+  if (completedAt !== null) return Math.max(0, completedAt - startedAt);
+  return ["in-progress", "blocked", "failed", "escalated"].includes(scope.status) ? Math.max(0, nowMs - startedAt) : null;
+}
+
+function totalScopeElapsedMs(scopes: Array<{ status: string; startedAt?: string; record?: { completedAt?: string } }>, nowMs = Date.now()): number | null {
+  const intervals = scopes.flatMap((scope) => {
+    const startedAt = timestampMs(scope.startedAt);
+    if (startedAt === null) return [];
+    const completedAt = timestampMs(scope.record?.completedAt);
+    return [{ startedAt, completedAt: completedAt ?? (["in-progress", "blocked", "failed", "escalated"].includes(scope.status) ? nowMs : null) }];
+  }).filter((interval): interval is { startedAt: number; completedAt: number } => interval.completedAt !== null);
+  if (intervals.length === 0) return null;
+  return Math.max(...intervals.map((interval) => interval.completedAt)) - Math.min(...intervals.map((interval) => interval.startedAt));
+}
+
 function workflowScopes(raw: LooseRecord): Workflow["scopes"] {
   return array(raw.scopes).map((entry, index) => {
     const scope = record(entry);
@@ -1654,6 +1710,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Auto-continue budget for chatty workers (lib/auto-continue): consecutive
   // resumes without a stage advance, reset whenever the stage moves.
   ensureAutoContinueColumns(db);
+  ensureExecutionRunTable(db);
   // Card-split proposals (lib/split-proposal): one recorded, human-approved
   // proposal per card. The host executes it on `bb stelow split` — workers
   // never create cards, so there is no worker verb that takes card content.
@@ -4339,6 +4396,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return commentId;
   }
 
+  function recordCoordinatorSequentialRoute(cardId: string, stage: string, recipeId: string, route: { reason?: string; missingCapabilities?: string[]; preserves?: string[] }): void {
+    const marker = `[stelow-execution-route:${cardId}:${stage}:${recipeId}]`;
+    const exists = db.prepare("SELECT 1 FROM comments WHERE card_id = ? AND body LIKE ? LIMIT 1").get(cardId, `%${marker}%`);
+    if (exists) return;
+    const missing = route.missingCapabilities?.length ? ` Missing native capabilities: ${route.missingCapabilities.join(", ")}.` : "";
+    const preserves = route.preserves?.length ? ` Preserved: ${route.preserves.join(", ")}.` : "";
+    logCardComment(cardId, "card", cardId, "agent", `Coordinator-sequential execution selected for ${stage} (${recipeId}). ${route.reason ?? "Native execution was not selected."}${missing}${preserves} ${marker}`);
+  }
+
   // ::name{...} directives are bb's thread renderer syntax (the worker emits
   // ::stelow-artifact chips per produced file). Card comments are rendered as
   // plain Markdown, so strip the directive syntax there — the file names it
@@ -4718,6 +4784,145 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   const INTENT_VALUES = ["new-product", "feature", "bugfix", "refactor", "investigate"] as const;
 
+  type NativeAdapterTransport = { workspaceId: string; projectId: string; threadId: string };
+
+  function createNativeExecutionAdapter(transport: NativeAdapterTransport, sourceText: string, argsText: string) {
+    const fallbackArgs = (() => {
+      try { return record(JSON.parse(argsText)); } catch { return {}; }
+    })();
+    return createBbWorkflowAdapter({
+      run: async ({ recipe, context }) => {
+        const values = record(context);
+        const source = typeof values.workflowSource === "string" ? values.workflowSource : sourceText;
+        const args = record(values.workflowArgs);
+        return runNativeWorkflow({ ...transport, source, args: Object.keys(args).length > 0 ? args : fallbackArgs });
+      },
+      status: async (handle) => nativeWorkflowStatus({ ...transport, runId: String(record(handle).runId ?? "") }),
+      resume: async (handle, input) => {
+        const values = record(input);
+        const args = record(values.args);
+        return runNativeWorkflow({ ...transport, source: sourceText, args: Object.keys(args).length > 0 ? args : fallbackArgs, resumeRunId: String(record(handle).runId ?? "") });
+      },
+      cancel: async (handle) => {
+        await stopNativeWorkflow({ ...transport, runId: String(record(handle).runId ?? "") });
+        return { state: "cancelled" };
+      },
+      result: async (handle) => nativeWorkflowStatus({ ...transport, runId: String(record(handle).runId ?? "") }),
+    })!;
+  }
+
+  async function resolveStageExecutionRoute(card: CardRow, stageId: string, workspacePath: string) {
+    const recipeId = STAGE_BY_ID[stageId]?.execution?.recipe;
+    if (!recipeId) return null;
+    const recipe = recipeById(recipeId);
+    if (!recipe) return { recipeId, recipe: null, route: { mode: "refused" as const, code: "unknown-recipe" as const, reason: `Unknown recipe ${recipeId}.`, redirect: "Fix the canonical recipe catalog." } };
+    const requiredCapabilities = [...new Set([...(STAGE_BY_ID[stageId]?.execution?.required_capabilities ?? []), ...(recipe.required_capabilities ?? []), ...(recipe.tasks ?? []).flatMap((task) => task.requirements ?? [])])];
+    const nativeAvailable = recipe.write_policy !== "workspace" && recipe.id !== "scope-batch" && card.worker_thread_id
+      ? await nativeWorkflowAvailable({ projectId: card.project_id, threadId: card.worker_thread_id, workspaceId: workspacePath })
+      : false;
+    return { recipeId, recipe, route: resolveExecutionRoute({ recipe, requiredCapabilities, nativeCapabilities: BB_NATIVE_CAPABILITIES, nativeAvailable }) };
+  }
+
+  async function startNativeStageForCard(card: CardRow, recipeId: string, context: { prompt: string }, expectedStage?: string): Promise<{ ok: boolean; run: ReturnType<typeof getExecutionRun>; error: string | null }> {
+    if (!card.worker_thread_id) return { ok: false, run: null, error: "This card has no coordinator thread." };
+    const existing = activeExecutionRun(db, card.id);
+    if (existing) return { ok: false, run: existing, error: "This card already owns an active execution run." };
+    const recipe = recipeById(recipeId);
+    if (!recipe) return { ok: false, run: null, error: `Unknown recipe ${recipeId}.` };
+    const stage = expectedStage ? STAGE_BY_ID[expectedStage] : Object.values(STAGE_BY_ID).find((entry) => entry.execution?.recipe === recipeId);
+    if (!stage || stage.execution?.recipe !== recipeId) return { ok: false, run: null, error: `Recipe ${recipeId} is not the current stage's canonical recipe.` };
+    if (recipeId === "scope-batch" || recipe.write_policy === "workspace" || stage.execution?.write_policy === "workspace") return { ok: false, run: null, error: "Workspace-writing execution is coordinator-sequential until host file claims and parent merge are proven." };
+    const requiredCapabilities = [...new Set([...(stage.execution?.required_capabilities ?? []), ...(recipe.required_capabilities ?? []), ...(recipe.tasks ?? []).flatMap((task) => task.requirements ?? [])])];
+    const missingCapabilities = missingNativeCapabilities(requiredCapabilities);
+    if (missingCapabilities.length > 0) return { ok: false, run: null, error: `BB Workflows cannot provide required capabilities: ${missingCapabilities.join(", ")}.` };
+    const workspace = await cardWorkspace(card);
+    if (!workspace?.path) return { ok: false, run: null, error: "The card workspace is unavailable." };
+    if (!await nativeWorkflowAvailable({ projectId: card.project_id, threadId: card.worker_thread_id, workspaceId: workspace.path })) return { ok: false, run: null, error: "BB Workflows is unavailable for this card thread; use the coordinator fallback." };
+    const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null) : null;
+    if (card.dir_hash && !stateDir) return { ok: false, run: null, error: "Workflow state ownership cannot be verified for native execution." };
+    const localId = randomId("exec");
+    const artifactRoot = nodeJoin(stateDir ?? nodeJoin(workspace.path, ".stelow"), "runs", localId);
+    try {
+      await bb.sdk.files.mkdir({ path: artifactRoot, rootPath: workspace.path, recursive: true });
+    } catch (error) {
+      return { ok: false, run: null, error: error instanceof Error ? error.message : "Unable to create the run staging directory." };
+    }
+    let source: string;
+    try {
+      source = renderInlineWorkflowScript(recipe, { ...context, localRunId: localId });
+    } catch (error) {
+      return { ok: false, run: null, error: error instanceof Error ? error.message : "Unable to render workflow source." };
+    }
+    const sourceHash = createHash("sha256").update(source).digest("hex");
+    const workflowConfig = stateDir
+      ? await bb.sdk.files.read({ path: nodeJoin(stateDir, "state.md") }).then((file) => ({ ...parseWorkflowConfig(file.content), productType: file.content.match(/^\s*product_type:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "") ?? null })).catch(() => ({ appetite: "Lean", reviewMode: "Auto", reviewGates: [], productType: null }))
+      : { appetite: "Lean", reviewMode: "Auto", reviewGates: [], productType: null };
+    if (skippedStages({ kind: card.kind, intent: card.intent, reviewMode: workflowConfig.reviewMode, reviewGates: workflowConfig.reviewGates, sequence: STAGE_SEQUENCE }).skipped.some((entry) => entry.stage === stage.id)) {
+      return { ok: false, run: null, error: `Stage ${stage.id} is skipped by the active review route.` };
+    }
+    const args = { context: { ...context, ...workflowConfig, uiScopePresent: workflowConfig.productType === "software", intent: card.intent, stage: stage.id, artifactRoot }, localRunId: localId, recipeId };
+    let run: ReturnType<typeof getExecutionRun>;
+    try {
+      run = createExecutionRun(db, { id: localId, cardId: card.id, projectId: card.project_id, recipeId, stage: stage.id, sourceHash, sourceText: source, argsText: JSON.stringify(args), adapter: "bb-workflows", workspaceId: workspace.path, artifactRoot, originThreadId: card.worker_thread_id, nativeStatus: "requested" });
+    } catch (error) {
+      return { ok: false, run: null, error: error instanceof Error ? error.message : "Unable to claim the card execution slot." };
+    }
+    try {
+      const adapter = createNativeExecutionAdapter({ workspaceId: workspace.path, projectId: card.project_id, threadId: card.worker_thread_id }, source, JSON.stringify(args));
+      const native = await adapter.run(recipe, { ...context, workflowSource: source, workflowArgs: args });
+      const started = transitionExecutionRun(db, localId, native.state, { runId: String(record(native).runId ?? ""), nativeStatus: native.state, previewDirective: record(native).previewDirective as string | null });
+      void bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `Native Stelow execution ${native.runId} now owns the ${stage.id} stage workspace. Pause stage work and wait for its result; do not edit state.md or gates while it runs.`, mentions: [], visibility: "agent-only" }] }).catch(() => undefined);
+      return { ok: true, run: started, error: null };
+    } catch (error) {
+      const failed = transitionExecutionRun(db, localId, "failed", { errorCode: "native-start-failed" });
+      return { ok: false, run: failed, error: error instanceof Error ? error.message : "Unable to start the native workflow." };
+    }
+  }
+
+  async function resumeNativeAfterCardAnswer(run: NonNullable<ReturnType<typeof activeExecutionRun>>, answers: Array<{ question: string; answers: string[] }>): Promise<string | null> {
+    const childId = `${run.id}-resume-${randomId("run")}`;
+    const childRoot = nodeJoin(run.artifactRoot, "resume", childId);
+    const childArgs = JSON.parse(run.argsText) as { context: Record<string, unknown>; localRunId: string; recipeId: string };
+    childArgs.context = { ...childArgs.context, artifactRoot: childRoot, resumeAnswers: answers };
+    childArgs.localRunId = childId;
+    try {
+      await bb.sdk.files.mkdir({ path: childRoot, rootPath: run.workspaceId, recursive: true });
+      createExecutionRun(db, { id: childId, cardId: run.cardId, projectId: run.projectId, recipeId: run.recipeId, stage: run.stage, sourceHash: run.sourceHash, sourceText: run.sourceText, argsText: JSON.stringify(childArgs), adapter: run.adapter, workspaceId: run.workspaceId, artifactRoot: childRoot, originThreadId: run.originThreadId, resumeOf: run.id, nativeStatus: "resume-requested" });
+      markExecutionResumeRequested(db, run.id);
+      const recipe = recipeById(run.recipeId);
+      const adapter = createNativeExecutionAdapter({ workspaceId: run.workspaceId, projectId: run.projectId, threadId: run.originThreadId }, run.sourceText, run.argsText);
+      const resumed = await adapter.resume({ runId: run.runId }, { args: childArgs, required_capabilities: recipe?.required_capabilities ?? [] });
+      const resumedRecord = record(resumed);
+      transitionExecutionRun(db, childId, resumed.state, { runId: String(resumedRecord.runId ?? ""), nativeStatus: resumed.state });
+      transitionExecutionRun(db, run.id, "cancelled", { errorCode: "resumed-by-child" });
+      return null;
+    } catch (error) {
+      try { transitionExecutionRun(db, childId, "failed", { errorCode: "resume-start-failed" }); } catch { /* child may not have been created */ }
+      resetExecutionBoundary(db, run.id);
+      const card = getCard(run.cardId);
+      if (card?.worker_thread_id && run.boundaryId) void bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The native resume failed. Re-create the card question with marker [Stelow boundary ${run.boundaryId}] and wait for the answer; do not mark it answered or resume without a new answer.`, mentions: [] }] }).catch(() => undefined);
+      return error instanceof Error ? error.message : "Unable to resume the native workflow.";
+    }
+  }
+
+  async function stopOwnedExecutionRuns(cardId: string, reason: string): Promise<boolean> {
+    const active = listExecutionRuns(db, cardId).filter((run) => ["queued", "running", "needs_input"].includes(run.normalizedStatus));
+    let stopped = true;
+    for (const run of active) {
+      if (run.adapter === "bb-workflows" && run.runId) {
+        try {
+          const adapter = createNativeExecutionAdapter({ workspaceId: run.workspaceId, projectId: run.projectId, threadId: run.originThreadId }, run.sourceText, run.argsText);
+          await adapter.cancel({ runId: run.runId });
+        } catch {
+          stopped = false;
+          continue;
+        }
+      }
+      transitionExecutionRun(db, run.id, "cancelled", { errorCode: reason });
+    }
+    return stopped;
+  }
+
   async function syncThreadState(cardId: string): Promise<void> {
     const card = getCard(cardId);
     // Done is terminal for background sync too: a completed/blocked card must
@@ -4806,8 +5011,17 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           updateCard(cardId, updates);
         }
       } else if (status === "idle" || status === "stopping") {
+        const nativeRun = activeExecutionRun(db, cardId);
+        if (nativeRun && ["queued", "running"].includes(nativeRun.normalizedStatus)) {
+          updateCard(cardId, { activity: "running" });
+          return;
+        }
         const questionIds = await syncOpenQuestionInbox(card);
         if (questionIds === null) return;
+        if (nativeRun?.normalizedStatus === "needs_input" && questionIds.length === 0) {
+          updateCard(cardId, { activity: "running" });
+          return;
+        }
         const transitioningIntoIdle = card.activity !== "idle";
         if (questionIds.length > 0) {
           // The worker stopped (likely a timed-out ask) but a question is
@@ -5055,6 +5269,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }
   const reconcileTimer = setInterval(() => {
     if (!(db as unknown as { open?: boolean }).open) return;
+    void reconcileExecutionRuns();
+    void reconcileStageEntries();
     try {
       const rows = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
       for (const row of rows) void syncThreadState(row.id);
@@ -5168,6 +5384,105 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => github.runAutomationRules());
   bb.background.schedule("stelow-github-discussion-mirror", "*/5 * * * *", () => { void github.refreshLinkedDiscussions(); });
 
+  async function reconcileStageEntries() {
+    const cards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status NOT IN ('completed','archived','blocked')").all() as Array<{ id: string }>;
+    for (const { id } of cards) {
+      const card = getCard(id);
+      if (!card || !card.worker_thread_id) continue;
+      const workspace = await cardWorkspace(card);
+      if (!workspace?.path) continue;
+      const routeInfo = await resolveStageExecutionRoute(card, card.stage, workspace.path);
+      if (!routeInfo || routeInfo.route.mode === "refused") continue;
+      if (routeInfo.route.mode === "coordinator-sequential") {
+        recordCoordinatorSequentialRoute(card.id, card.stage, routeInfo.recipeId, routeInfo.route);
+        continue;
+      }
+      const hasStageRun = listExecutionRuns(db, id).some((run) => run.stage === card.stage && run.recipeId === routeInfo.recipeId);
+      if (!hasStageRun) await startNativeStageForCard(card, routeInfo.recipeId, { prompt: card.prompt }, card.stage).catch(() => undefined);
+    }
+  }
+
+  async function reconcileExecutionRuns() {
+    const cards = db.prepare("SELECT DISTINCT card_id FROM execution_runs WHERE normalized_status IN ('queued','running','needs_input')").all() as Array<{ card_id: string }>;
+    for (const { card_id: cardId } of cards) {
+      const card = getCard(cardId);
+      if (!card || isArchivedCard(card)) {
+        await stopOwnedExecutionRuns(cardId, "origin-unavailable");
+        continue;
+      }
+      for (const run of listExecutionRuns(db, cardId).filter((entry) => ["queued", "running", "needs_input"].includes(entry.normalizedStatus))) {
+        const current = getExecutionRun(db, run.id);
+        if (!current) continue;
+        const beforeState = `${current.normalizedStatus}:${current.runId ?? ""}:${current.completionEventId ?? ""}:${current.needsInputSentAt ?? ""}:${current.boundaryId ?? ""}`;
+        if (!current.runId) {
+          if (Date.now() - current.createdAt > 60_000) transitionExecutionRun(db, run.id, "failed", { errorCode: "native-start-timeout" });
+          continue;
+        }
+        if (!card.worker_thread_id) continue;
+        try {
+          const adapter = createNativeExecutionAdapter({ workspaceId: current.workspaceId, projectId: current.projectId, threadId: current.originThreadId }, current.sourceText, current.argsText);
+          const native = await adapter.status({ runId: current.runId });
+          const nativeStatus = nativeStatusOf(native);
+          const normalized = native.state;
+          const boundary = normalized === "succeeded" ? nativeNeedsInput(native) : null;
+          if (boundary) {
+            if (current.normalizedStatus !== "needs_input") {
+              const boundaryId = randomId("boundary");
+              const question = boundary.question;
+              transitionExecutionRun(db, run.id, "needs_input", { nativeStatus, boundaryId, boundaryQuestion: question });
+              await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The native ${run.recipeId} run is waiting for input. Ask this exact question on the card with the structured question tool, include the marker [Stelow boundary ${boundaryId}] in the question text, then stop. Do not invent an answer or resume the run yourself: ${question}`, mentions: [] }] });
+            } else if (!current.needsInputSentAt) {
+              const marker = current.boundaryId;
+              if (marker) await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `Create the pending card question for native ${run.recipeId} and include the marker [Stelow boundary ${marker}]. Do not resume until it is answered.`, mentions: [] }] });
+            }
+            const pending = await fetchPendingQuestions(card.worker_thread_id);
+            const marker = getExecutionRun(db, run.id)?.boundaryId;
+            if (marker && pending.some((question) => question.question.includes(`[Stelow boundary ${marker}]`))) markExecutionNeedsInputSent(db, run.id);
+            continue;
+          }
+          if (normalized === "succeeded" && current.normalizedStatus !== "needs_input") {
+            const recipe = recipeById(current.recipeId);
+            if (!recipe) continue;
+            const runContext = (JSON.parse(current.argsText).context ?? {}) as Record<string, unknown>;
+            const paths = requiredOutputPaths(recipe, runContext);
+            const contents = Object.fromEntries(await Promise.all(paths.map(async (path) => [path, (await bb.sdk.files.read({ path: nodeJoin(current.artifactRoot, path) }).catch(() => null))?.content ?? ""])));
+            const validation = validateExecutionArtifacts({ recipe, contents, context: runContext });
+            if (!validation.ok) {
+              transitionExecutionRun(db, run.id, "failed", { nativeStatus, errorCode: validation.missing.length ? "artifact-missing" : "artifact-malformed" });
+              logCardComment(cardId, "card", run.id, "agent", `Native ${run.recipeId} failed artifact validation. Missing: ${validation.missing.join(", ") || "none"}. Malformed: ${validation.malformed.join(", ") || "none"}.`);
+              await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The native ${run.recipeId} run finished but its required artifacts are not valid. Do not advance the card. Missing: ${validation.missing.join(", ") || "none"}. Malformed: ${validation.malformed.join(", ") || "none"}.`, mentions: [] }] });
+            } else {
+              const receipt = await bb.sdk.files.read({ path: nodeJoin(current.artifactRoot, ".registered.json") }).then((file) => { try { return JSON.parse(file.content); } catch { return null; } }).catch(() => null);
+              const registered = receipt?.runId === current.id && Array.isArray(receipt.outputs) && paths.every((path) => receipt.outputs.includes(path));
+              if (registered) {
+                transitionExecutionRun(db, run.id, "succeeded", { nativeStatus, completionEventId: `registered:${run.id}` });
+              } else if (!current.completionEventId) {
+                transitionExecutionRun(db, run.id, current.normalizedStatus, { nativeStatus, completionEventId: `registration-requested:${run.id}` });
+                await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The native ${run.recipeId} run produced validated staging artifacts under ${current.artifactRoot}. Register them at their canonical paths, then write ${nodeJoin(current.artifactRoot, ".registered.json")} with {"runId":"${current.id}","outputs":${JSON.stringify(paths)}}. Do not advance the card before that receipt exists.`, mentions: [] }] });
+              }
+            }
+          } else if (normalized !== current.normalizedStatus) {
+            transitionExecutionRun(db, run.id, normalized, { nativeStatus, errorCode: normalized === "failed" ? "unknown-native-state" : null });
+            if (normalized === "failed") logCardComment(cardId, "card", run.id, "agent", `Native ${run.recipeId} failed with native status ${nativeStatus}. The card remains available for retry.`);
+          }
+          if (normalized === "needs_input" && !getExecutionRun(db, run.id)?.needsInputSentAt && !getExecutionRun(db, run.id)?.resumeRequestedAt) {
+            const boundary = nativeNeedsInput(native);
+            const question = boundary?.question ?? `The ${run.recipeId} workflow needs a human decision before it can continue.`;
+            await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The native ${run.recipeId} run is waiting for input. Ask this question on the card with the structured question tool, then stop. Do not invent an answer or resume the run yourself: ${question}`, mentions: [] }] });
+            markExecutionNeedsInputSent(db, run.id);
+          }
+          const after = getExecutionRun(db, run.id);
+          if (after && `${after.normalizedStatus}:${after.runId ?? ""}:${after.completionEventId ?? ""}:${after.needsInputSentAt ?? ""}:${after.boundaryId ?? ""}` !== beforeState) bb.realtime.publish("card-state", { cardId });
+        } catch {
+          // The next reconciliation retries; the card remains visible and owned.
+        }
+      }
+    }
+  }
+
+  void reconcileExecutionRuns();
+  void reconcileStageEntries();
+
   bb.rpc.register(rpcContract, {
     ...github.handlers,
     board: async ({ projectId }) => {
@@ -5178,6 +5493,53 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     projects: async () => {
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
+    },
+    async startExecutionRun({ cardId, recipeId, context }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, run: null, error: "Card not found." };
+      if (isArchivedCard(card)) return { ok: false, run: null, error: ERR_CARD_ARCHIVED };
+      return startNativeStageForCard(card, recipeId, context);
+    },
+    executionRuns: async ({ cardId }) => ({ runs: listExecutionRuns(db, cardId) }),
+    async executionRunStatus({ runId }) {
+      let run = getExecutionRun(db, runId);
+      if (!run) return { run: null, error: "Execution run not found." };
+      if (!run.runId || run.adapter !== "bb-workflows") return { run, error: null };
+      try {
+        const adapter = createNativeExecutionAdapter({ workspaceId: run.workspaceId, projectId: run.projectId, threadId: run.originThreadId }, run.sourceText, run.argsText);
+        const native = await adapter.status({ runId: run.runId });
+        const nativeStatus = nativeStatusOf(native);
+        const normalized = native.state;
+        const boundary = normalized === "succeeded" ? nativeNeedsInput(native) : null;
+        if (boundary && run.normalizedStatus !== "needs_input") {
+          const card = getCard(run.cardId);
+          if (card?.worker_thread_id) {
+            const boundaryId = randomId("boundary");
+            run = transitionExecutionRun(db, run.id, "needs_input", { nativeStatus, boundaryId, boundaryQuestion: boundary.question });
+            await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: `The native ${run.recipeId} run is waiting for input. Ask this exact question on the card with the structured question tool, include the marker [Stelow boundary ${boundaryId}] in the question text, then stop: ${boundary.question}`, mentions: [] }] });
+            return { run, error: null };
+          }
+        }
+        if (normalized === "succeeded") return { run, error: null };
+        if (normalized !== run.normalizedStatus) run = transitionExecutionRun(db, run.id, normalized, { nativeStatus, errorCode: normalized === "failed" ? "unknown-native-state" : null });
+        return { run, error: null };
+      } catch (error) {
+        return { run, error: error instanceof Error ? error.message : "Unable to read native workflow status." };
+      }
+    },
+    async cancelExecutionRun({ runId }) {
+      const run = getExecutionRun(db, runId);
+      if (!run) return { ok: false, run: null, error: "Execution run not found." };
+      if (["succeeded", "failed", "cancelled"].includes(run.normalizedStatus)) return { ok: true, run, error: null };
+      if (run.adapter === "bb-workflows" && run.runId) {
+        try {
+          const adapter = createNativeExecutionAdapter({ workspaceId: run.workspaceId, projectId: run.projectId, threadId: run.originThreadId }, run.sourceText, run.argsText);
+          await adapter.cancel({ runId: run.runId });
+        } catch (error) {
+          return { ok: false, run, error: error instanceof Error ? error.message : "Unable to stop native workflow." };
+        }
+      }
+      return { ok: true, run: transitionExecutionRun(db, run.id, "cancelled", { errorCode: "user-cancelled" }), error: null };
     },
     async flowMetrics({ projectId, since, until }) {
       // Board-level flow reading over finished cards only: active cards
@@ -5312,14 +5674,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // Split proposals answered on the card land here instead of the
         // blocking call above — one shared recording (lib/split-proposal).
         recordSplitAnswer(db, cardId, decisions);
-        // A structured interaction resumes the waiting command but not a new
-        // agent turn. Exactly one continuation for the whole batch.
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
+        const activeRun = activeExecutionRun(db, cardId);
+        const boundaryAnswer = Boolean(activeRun?.normalizedStatus === "needs_input" && activeRun.boundaryId && decisions.some((decision) => decision.question.includes(`[Stelow boundary ${activeRun.boundaryId}]`)));
+        // A native needs_input boundary resumes through the adapter, not a
+        // second worker turn. Other question paths keep one normal continuation.
+        if (!(activeRun?.normalizedStatus === "needs_input" && boundaryAnswer)) {
+          await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
+        }
         const unansweredIds = [...pendingById.keys()].filter((id) => !answeredInteractionIds.has(id));
         const openQuestionIds = [...unansweredIds, ...openExpiredQuestionIds(cardId)];
         // Name the answered ones BEFORE the sync: disappearance alone would
         // mislabel them superseded.
         markQuestionsAnswered(db, { cardId, interactionIds: [...answeredInteractionIds], occurredAt: now() });
+        if (activeRun?.normalizedStatus === "needs_input" && boundaryAnswer && activeRun.runId) {
+          const resumeError = await resumeNativeAfterCardAnswer(activeRun, decisions);
+          if (resumeError) return { ok: false as const, answered: decisions.length, error: resumeError };
+        }
         syncPendingQuestionInbox(card, openQuestionIds);
         // Contract provenance: answers that match a declared contract id
         // name it in the trail. Undeclared answers behave exactly as before.
@@ -5374,8 +5744,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
       // One parse per card: stelow.json parsing is pure local IO, but a shared
       // workspace must never mean a shared summary.
-      const scopeCache = new Map<string, { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number; doingNow: string[] }>();
-      const emptySummary = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0, doingNow: [] as string[] };
+      const scopeCache = new Map<string, { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number; elapsedMs: number | null; doingNow: string[]; executingScope: string | null }>();
+      const emptySummary: { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number; elapsedMs: number | null; doingNow: string[]; executingScope: string | null } = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0, elapsedMs: null, doingNow: [], executingScope: null };
       async function scopeSummary(row: CardRow): Promise<typeof emptySummary> {
         try {
           const workspace = await cardWorkspace(row);
@@ -5389,7 +5759,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
             scopesDone: scopes.filter((scope) => done(scope.status)).length,
             tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0),
             tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => done(task.status)).length, 0),
+            elapsedMs: totalScopeElapsedMs(scopes),
             doingNow: doingNowNames(scopes),
+            executingScope: scopes.find((scope) => scope.status === "in-progress")?.name ?? null,
           };
           scopeCache.set(row.id, summary);
           return summary;
@@ -5456,7 +5828,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           stallCount: stallCount(db, row.id),
           ...(await (async () => {
             const summary = await scopeSummary(row);
-            return { scopeSummary: { scopesTotal: summary.scopesTotal, scopesDone: summary.scopesDone, tasksTotal: summary.tasksTotal, tasksDone: summary.tasksDone }, doingNow: summary.doingNow };
+            return { scopeSummary: { scopesTotal: summary.scopesTotal, scopesDone: summary.scopesDone, tasksTotal: summary.tasksTotal, tasksDone: summary.tasksDone, elapsedMs: summary.elapsedMs }, doingNow: summary.doingNow, executingScope: summary.executingScope };
           })()),
         };
       }));
@@ -5948,7 +6320,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
         questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs, doingNow: doingNowNames(scopes), verifiedHeadSha: verifiedHeadShaForCard(card.id) },
+        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0), elapsedMs: totalScopeElapsedMs(scopes) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs, doingNow: doingNowNames(scopes), executingScope: scopes.find((scope) => scope.status === "in-progress")?.name ?? null, verifiedHeadSha: verifiedHeadShaForCard(card.id) },
         attachments,
         mentionedFiles,
         scopes: enrichedScopes,
@@ -5960,6 +6332,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         scopeSync,
         artifacts,
         workerHistory,
+        executionRuns: listExecutionRuns(db, cardId),
         fileEnvironmentId,
         nextStages,
         githubLink,
@@ -6023,6 +6396,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card) return { archived: false };
       await stopWorkerThread(card.worker_thread_id);
+      if (!await stopOwnedExecutionRuns(cardId, "card-archived")) return { archived: false };
       updateCard(cardId, { status: "archived", activity: "idle" });
       await releaseCardClaimsAndNotify(cardId);
       bb.realtime.publish("card-state", { cardId });
@@ -6039,6 +6413,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       if (!card) return { deleted: false, error: ERR_CARD_NOT_FOUND };
       if (card.status !== "archived") return { deleted: false, error: "Only archived cards can be deleted. Archive it first." };
       await stopWorkerThread(card.worker_thread_id);
+      if (!await stopOwnedExecutionRuns(cardId, "card-deleted")) return { deleted: false, error: "The native workflow could not be stopped; the card was not deleted." };
       await releaseCardClaimsAndNotify(cardId);
       // Files follow the row: the card's workflow state dir (.stelow run
       // artifacts) is removed too, or orphaned runs pile up on disk.
@@ -7205,6 +7580,24 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // card at the same stage.
       const questionGuard = await questionContractsGate(card, stateDir);
       if (questionGuard) return { ok: false, stdout: "", error: questionGuard };
+      let executionNote = "";
+      if (stage === "execution" && card.kind === "build") {
+        let syncedCount: number | null = null;
+        try {
+          const sync = await runHelper(["sync-scopes", "--json"], source.path, stateDir ?? undefined);
+          const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
+          if (typeof parsed.synced === "number") syncedCount = parsed.synced;
+        } catch { /* best-effort */ }
+        const synced = loadCardScopes(source.path, card.id);
+        const spec = latestSpecTech(source.path, card.id)?.content ?? null;
+        const entryRegistry = buildRegistry(synced, { defaultKind: "scope" });
+        const pendingScopes = synced.filter((scope) => scope.status === "pending");
+        const gate = advanceExecutionGates({ kind: card.kind, stage, specContent: spec, syncedCount: synced.length, cycles: dependencyCycles(entryRegistry), hasUnstartablePending: pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus)) });
+        if (gate.refusal) return { ok: false, stdout: "", error: gate.refusal };
+        executionNote = `${syncedCount !== null && syncedCount > 0 ? `\n(sync-scopes: synced ${syncedCount} scopes)` : ""}${gate.note ? `\n(${gate.note})` : ""}`;
+      }
+      const routeInfo = await resolveStageExecutionRoute(card, stage, source.path);
+      if (routeInfo?.route.mode === "refused") return { ok: false, stdout: "", error: routeInfo.route.redirect ?? routeInfo.route.reason ?? "Execution route refused." };
       const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
       if (result.code !== 0) return { ok: false, stdout: result.stdout, error: result.stderr || "stelow advance failed" };
       // Band-preset swap, mirroring the CLI advance path: if the phase of the
@@ -7221,6 +7614,23 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // A manual advance is therefore never a way to bypass that invariant.
       const nextStatus = stage === "triage" ? "draft" : "in-progress";
       updateCard(cardId, { stage, status: nextStatus, activity: "running" });
+      if (stage === "execution") {
+        try { recordTrackableEvent(db, { cardId, kind: "scope", trackableId: "all", transition: "execution-entered", actor: "host", evidence: executionNote || "execution preflight passed" }); } catch { /* trail never blocks */ }
+      }
+      const recipeId = routeInfo?.recipeId ?? STAGE_BY_ID[stage]?.execution?.recipe;
+      if (routeInfo?.route.mode === "coordinator-sequential") {
+        recordCoordinatorSequentialRoute(cardId, stage, routeInfo.recipeId, routeInfo.route);
+        bb.realtime.publish("card-state", { cardId });
+        return { ok: true, stdout: result.stdout + "\n(coordinator-sequential fallback selected)", error: null };
+      }
+      if (recipeId && routeInfo?.route.mode === "native") {
+        const nativeStart = await startNativeStageForCard(card, recipeId, { prompt: card.prompt }, stage);
+        if (nativeStart.run) {
+          const note = nativeStart.ok ? `\n(native run: ${nativeStart.run.runId})` : `\n(native execution deferred: ${nativeStart.error ?? "unavailable"})`;
+          bb.realtime.publish("card-state", { cardId });
+          return { ok: true, stdout: result.stdout + note, error: null };
+        }
+      }
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, stdout: result.stdout, error: null };
     },
@@ -8043,6 +8453,43 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const questionGuard = await questionContractsGate(cliCard, stateDir);
           if (questionGuard) return { exitCode: 1, stderr: questionGuard };
         }
+        let executionNote = "";
+        if (!dryRun && stage === "execution" && cliCard) {
+          let loopNote = "";
+          if (cliCard.stage === "audit") {
+            const gapState = await critiqueGapState(cliCard).catch(() => null);
+            if (gapState?.matched) {
+              const open = gapState.auditGapScopes.filter((scope) => !isDoneStatus(scope.status));
+              loopNote = open.length > 0
+                ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`
+                : "\n(rework loop: back to execution from audit — no open audit-gap scopes)";
+            }
+          }
+          let syncedCount: number | null = null;
+          try {
+            const sync = await runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
+            const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
+            if (typeof parsed.synced === "number") syncedCount = parsed.synced;
+          } catch { /* best-effort only */ }
+          if (cliCard.kind === "build") {
+            const synced = loadCardScopes(rootPath, cliCard.id);
+            const spec = latestSpecTech(rootPath, cliCard.id)?.content ?? null;
+            const entryRegistry = buildRegistry(synced, { defaultKind: "scope" });
+            const pendingScopes = synced.filter((scope) => scope.status === "pending");
+            const gate = advanceExecutionGates({
+              kind: cliCard.kind, stage, specContent: spec, syncedCount: synced.length,
+              cycles: dependencyCycles(entryRegistry),
+              hasUnstartablePending: pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus)),
+            });
+            if (gate.refusal) return { exitCode: 1, stderr: gate.refusal };
+            const syncedNote = syncedCount !== null && syncedCount > 0 ? `\n(sync-scopes: synced ${syncedCount} scopes)` : "";
+            executionNote = `${syncedNote}${gate.note ? `\n(${gate.note})` : ""}${loopNote}`;
+          } else {
+            executionNote = loopNote;
+          }
+        }
+        const routeInfo = !dryRun && cliCard ? await resolveStageExecutionRoute(cliCard, stage, rootPath) : null;
+        if (routeInfo?.route.mode === "refused") return { exitCode: 1, stderr: routeInfo.route.redirect ?? routeInfo.route.reason ?? "Execution route refused." };
         const helperArgs = ["advance", stage, ...(dryRun ? ["--dry-run"] : []), ...(json ? ["--json"] : [])];
         const result = await runHelper(helperArgs, rootPath, stateDir ?? undefined);
         // Helper exit codes are meaningful (2 = usage, 1 = invalid transition):
@@ -8050,6 +8497,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         if (result.code !== 0) return { exitCode: result.code ?? 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
         // --dry-run validates only: no card writes, no band swap, no auto-sync.
         if (dryRun) return { exitCode: 0, stdout: result.stdout };
+        let advanceOutput = result.stdout;
         if (cliCard) updateCard(cliCard.id, { stage, status: "in-progress", activity: "running", last_error: null });
         if (cliCard) recordStageEvent(cliCard.id, stage);
         // Band-preset swap: if the band of the stage just advanced to defines a
@@ -8067,53 +8515,25 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             }
           }
         }
-        // Entering execution seeds scope tracking best-effort: the vendored
-        // Step 2e (`scripts/stelow sync-scopes`) has no binary in a bb
-        // workspace, so the host performs the same call here. Explicit worker
-        // calls remain canonical; failures never block the advance.
-        if (stage === "execution") {
-          // Loop-back transparency: audit → execution is the rework loop,
-          // so the advance names the open rework it picks up (or its
-          // absence) instead of moving silently. cliCard is a pre-write
-          // snapshot, so its stage is still the stage we came from.
-          let loopNote = "";
-          if (cliCard && cliCard.stage === "audit") {
-            const gapState = await critiqueGapState(cliCard).catch(() => null);
-            if (gapState?.matched) {
-              const open = gapState.auditGapScopes.filter((scope) => !isDoneStatus(scope.status));
-              loopNote = open.length > 0
-                ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`
-                : "\n(rework loop: back to execution from audit — no open audit-gap scopes)";
-            }
-          }
-          let syncedCount: number | null = null;
+        if (stage === "execution" && cliCard) {
           try {
-            const sync = await runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
-            const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
-            if (typeof parsed.synced === "number") syncedCount = parsed.synced;
-          } catch { /* best-effort only */ }
-          // Fail-closed scope gates (build only): the sync above had its
-          // chance — refusals preempt entry, notes compose with its report.
-          // Gate order lives in lib/build-gates (first refusal wins).
-          if (cliCard?.kind === "build") {
-            const synced = loadCardScopes(rootPath, cliCard.id);
-            const spec = latestSpecTech(rootPath, cliCard.id)?.content ?? null;
-            const entryRegistry = buildRegistry(synced, { defaultKind: "scope" });
-            const pendingScopes = synced.filter((scope) => scope.status === "pending");
-            const gate = advanceExecutionGates({
-              kind: cliCard.kind, stage, specContent: spec, syncedCount: synced.length,
-              cycles: dependencyCycles(entryRegistry),
-              hasUnstartablePending: pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus)),
-            });
-            const syncedNote = syncedCount !== null && syncedCount > 0 ? `\n(sync-scopes: synced ${syncedCount} scopes)` : "";
-            // Trail the entry decision (fail-open): refused or entered with N.
-            try {
-              recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: "all", transition: gate.refusal ? "execution-refused" : "execution-entered", actor: "host", evidence: gate.refusal ?? `${synced.length} synced scope(s)` });
-            } catch { /* trail never blocks */ }
-            if (gate.refusal) return { exitCode: 1, stderr: gate.refusal };
-            if (gate.note || syncedNote) return { exitCode: 0, stdout: result.stdout + syncedNote + (gate.note ? `\n(${gate.note})` : "") + loopNote };
+            recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: "all", transition: "execution-entered", actor: "host", evidence: executionNote || "execution preflight passed" });
+          } catch { /* trail never blocks */ }
+          if (executionNote) advanceOutput += executionNote;
+        }
+        const recipeId = routeInfo?.recipeId ?? STAGE_BY_ID[stage]?.execution?.recipe;
+        if (cliCard && routeInfo?.route.mode === "coordinator-sequential") {
+          recordCoordinatorSequentialRoute(cliCard.id, stage, routeInfo.recipeId, routeInfo.route);
+          return { exitCode: 0, stdout: advanceOutput + "\n(coordinator-sequential fallback selected)" };
+        }
+        if (cliCard && recipeId && routeInfo?.route.mode === "native") {
+          const nativeStart = await startNativeStageForCard(cliCard, recipeId, { prompt: cliCard.prompt }, stage);
+          if (nativeStart.run) {
+            const note = nativeStart.ok ? `
+(native run: ${nativeStart.run.runId})` : `
+(native execution deferred: ${nativeStart.error ?? "unavailable"})`;
+            return { exitCode: 0, stdout: advanceOutput + note };
           }
-          if (loopNote) return { exitCode: 0, stdout: result.stdout + loopNote };
         }
         // Independent pre-review on gate entry (advisory, never blocking):
         // when a build card advances into gate/int-gate/plan-gate with a
@@ -8125,7 +8545,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // artifact, thin artifact. diff-gate stays out (no single file;
         // deterministic diff checks already run there).
         if (cliCard) void requestGatePreReview(cliCard.id, stage).catch(() => undefined);
-        return { exitCode: 0, stdout: result.stdout };
+        return { exitCode: 0, stdout: advanceOutput };
       }
       if (argv[0] === "gap-scopes") {
         // Deterministic ESCALATED → scopes conversion (upstream criteria 9).

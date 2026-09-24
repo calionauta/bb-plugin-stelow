@@ -1,0 +1,15 @@
+{
+  "name": "delete",
+  "card": {
+    "id": "card_delete",
+    "kind": "build",
+    "status": "archived",
+    "stage": "execution",
+    "workerThreadId": null,
+    "dirHash": "sw-card_delete",
+    "spawnRetryCount": 0,
+    "spawnRetryThread": null
+  },
+  "action": "delete",
+  "state": "---\nworkflow_id: card_delete\nname: Delete an archived run\nintent: feature\ncurrent_stage: execution\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\nstages:\n  execution: completed\nartifacts: []\nhistory: []\n---\n"
+}

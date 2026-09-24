@@ -28,7 +28,7 @@ assert.match(server, /doingNow: summary\.doingNow/, "list rows carry the cached 
 
 // One shared pill on tiles and rows, live execution only: idle cards show
 // no pill (paused speaks for itself), and empty sets render nothing.
-assert.match(app, /<DoingNowPill names=\{card\.doingNow \?\? \[\]\} \/>/, "tiles name the executing scope");
+assert.match(app, /<DoingNowPill names=\{doingNow\} \/>/, "tiles name the executing scope before unrelated task names");
 assert.match(app, /\(card\.activity === "running" \|\| card\.activity === "awaiting-answer"\)/, "the pill marks live execution, never idle");
 
 // Scope rows disclose through the same chevron as every other surface:

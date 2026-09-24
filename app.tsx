@@ -47,7 +47,8 @@ import { canEditWorkflowIntent, canReclassifyWorkflow } from "./lib/workflow-int
 import { archivedCardDetailPresentation } from "./lib/card-detail-presentation.mjs";
 import { formatTokenUsage, totalTokenUsage, sumTokenBreakdowns } from "./lib/token-usage.mjs";
 import { previewAction } from "./lib/preview-session.mjs";
-import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
+import { executionRunFocus, executionRunSubPath, parseExecutionRunSubPath } from "./lib/execution-deep-link.mjs";
+import { ActivityPill, AttentionChip, BuildStatusPills, CURRENT_STAGE_PILL_CLASS, CurrentStagePill, DoingNowPill, LightweightStatusPills, Pill, ScopeProgressTrack, ScopeStrip, activityDotTone } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github-issues-dialog";
 import { WorktreeCleanupSuggestion } from "./components/worktree-cleanup-suggestion";
@@ -153,7 +154,7 @@ function trackTitle(track: StelowTrack): string {
 function trackRootSubPath(track: StelowTrack): string {
   return STELOW_TRACKS.find((entry) => entry.key === track)?.rootSubPath ?? "";
 }
-function trackOfCard(card: Pick<CardItem, "kind">): StelowTrack {
+function trackOfCard(card: Pick<CardItem, "kind">): Exclude<StelowTrack, "about"> {
   return card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "build";
 }
 function cardSubPath(card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): string {
@@ -176,6 +177,13 @@ function goToTrack(navigate: BbNavigate, track: StelowTrack): void {
 function goToCard(navigate: BbNavigate, card: Pick<CardItem, "kind">, cardId: string, eventId?: string | null): void {
   stelowReturnFocusCardId = cardId;
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: cardSubPath(card, cardId, eventId) });
+}
+function goToExecutionRun(navigate: BbNavigate, card: Pick<CardItem, "id" | "kind">, run: CardDetailResponse["executionRuns"][number]): boolean {
+  const subPath = executionRunSubPath({ track: trackOfCard(card), cardId: card.id, localRunId: run.id, status: run.normalizedStatus });
+  if (!subPath) return false;
+  stelowReturnFocusCardId = card.id;
+  navigate.toPluginPanel(STELOW_PANEL_ID, { subPath });
+  return true;
 }
 function goToInboxCard(navigate: BbNavigate, cardId: string, eventId: string): void {
   navigate.toPluginPanel(STELOW_PANEL_ID, { subPath: inboxCardSubPath(cardId, eventId) });
@@ -1525,8 +1533,8 @@ function useCollapsedGroups(storageKey: string) {
 
 type ParsedStelowRoute =
   | { kind: "track"; track: StelowTrack }
-  | { kind: "card"; cardId: string; eventId: string | null; origin: StelowTrack }
-  | { kind: "bare-card"; cardId: string; eventId: string | null };
+  | { kind: "card"; cardId: string; eventId: string | null; executionRunId: string | null; origin: StelowTrack }
+  | { kind: "bare-card"; cardId: string; eventId: string | null; executionRunId: string | null };
 
 // One panel, five tracks. Grammar (routes are panel-relative):
 //   "" | "build"                 -> Build board ("" reopens the last tab)
@@ -1534,9 +1542,9 @@ type ParsedStelowRoute =
 //   "research"                   -> Research board
 //   "explore"                    -> Explore board
 //   "about"                      -> About Stelow (no cards live here)
-//   "<track>/card/<id>[/event/]" -> card detail, back returns to <track>
-//   "card/<id>[/event/]"         -> trackless link: kind is resolved
-//                                  live, then rendered with back to its track.
+//   "<track>/card/<id>[/event/][/run/<local-id>]" -> card detail, back returns to <track>
+//   "card/<id>[/event/][/run/<local-id>]"         -> trackless link: kind is resolved
+//                                                      live, then rendered with back to its track.
 function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   const normalized = subPath.replace(/^\/+|\/+$/g, "");
   if (normalized === "" || normalized === "build") return { kind: "track", track: "build" };
@@ -1544,10 +1552,13 @@ function parseStelowSubPath(subPath: string): ParsedStelowRoute {
   if (normalized === "research") return { kind: "track", track: "research" };
   if (normalized === "explore") return { kind: "track", track: "explore" };
   if (normalized === "about") return { kind: "track", track: "about" };
+  const executionRoute = parseExecutionRunSubPath(normalized);
+  if (executionRoute?.track) return { kind: "card", cardId: executionRoute.cardId, eventId: executionRoute.eventId, executionRunId: executionRoute.localRunId, origin: executionRoute.track };
+  if (executionRoute) return { kind: "bare-card", cardId: executionRoute.cardId, eventId: executionRoute.eventId, executionRunId: executionRoute.localRunId };
   let match = normalized.match(/^(inbox|build|research|explore)\/card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
-  if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, origin: match[1] as StelowTrack };
+  if (match) return { kind: "card", cardId: match[2]!, eventId: match[3] ?? null, executionRunId: null, origin: match[1] as StelowTrack };
   match = normalized.match(/^card\/(card_[A-Za-z0-9]+)(?:\/event\/(evt_[A-Za-z0-9]+))?$/);
-  if (match) return { kind: "bare-card", cardId: match[1]!, eventId: match[2] ?? null };
+  if (match) return { kind: "bare-card", cardId: match[1]!, eventId: match[2] ?? null, executionRunId: null };
   return { kind: "track", track: "build" };
 }
 
@@ -1587,20 +1598,20 @@ function StelowTabBar({ tab, counts, aboutAlert, onSelect }: {
   );
 }
 
-function StelowCardDetail({ cardId, eventId, backTrack, navigate }: {
-  cardId: string; eventId: string | null; backTrack: StelowTrack; navigate: ReturnType<typeof useBbNavigate>;
+function StelowCardDetail({ cardId, eventId, executionRunId, backTrack, navigate }: {
+  cardId: string; eventId: string | null; executionRunId: string | null; backTrack: StelowTrack; navigate: ReturnType<typeof useBbNavigate>;
 }) {
   const back = () => goToTrack(navigate, backTrack);
   return (
-    <CardDetailBody cardId={cardId} inboxEventId={eventId} onClose={back} onBack={back} navigate={navigate} />
+    <CardDetailBody cardId={cardId} inboxEventId={eventId} executionRunId={executionRunId} onClose={back} onBack={back} navigate={navigate} />
   );
 }
 
 // Bare card link (card/<id> without a track prefix): the track is unknown until
 // the card loads, so resolve the kind live and render with back to its
 // track. New code always links track-prefixed routes instead.
-function BareCardRoute({ cardId, eventId, navigate }: {
-  cardId: string; eventId: string | null; navigate: ReturnType<typeof useBbNavigate>;
+function BareCardRoute({ cardId, eventId, executionRunId, navigate }: {
+  cardId: string; eventId: string | null; executionRunId: string | null; navigate: ReturnType<typeof useBbNavigate>;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [kind, setKind] = useState<"build" | "research" | "explore" | null>(null);
@@ -1615,7 +1626,7 @@ function BareCardRoute({ cardId, eventId, navigate }: {
     return () => { cancelled = true; };
   }, [cardId, rpc]);
   if (!kind) return <div className="p-4"><PanelSkeleton rows={4} /></div>;
-  return <StelowCardDetail cardId={cardId} eventId={eventId} backTrack={trackOfCard({ kind })} navigate={navigate} />;
+  return <StelowCardDetail cardId={cardId} eventId={eventId} executionRunId={executionRunId} backTrack={trackOfCard({ kind })} navigate={navigate} />;
 }
 
 // About track: what Stelow is vs what this plugin adds — one section each,
@@ -2088,10 +2099,10 @@ function StelowPanel({ subPath }: { subPath: string }) {
   const aboutAlert = usePluginUpdateSignal();
 
   if (route.kind === "card") {
-    return <StelowCardDetail cardId={route.cardId} eventId={route.eventId} backTrack={route.origin} navigate={navigate} />;
+    return <StelowCardDetail cardId={route.cardId} eventId={route.eventId} executionRunId={route.executionRunId} backTrack={route.origin} navigate={navigate} />;
   }
   if (route.kind === "bare-card") {
-    return <BareCardRoute cardId={route.cardId} eventId={route.eventId} navigate={navigate} />;
+    return <BareCardRoute cardId={route.cardId} eventId={route.eventId} executionRunId={route.executionRunId} navigate={navigate} />;
   }
   // The bare root reopens the last visited track; explicit track routes
   // always win (otherwise clicking Build while lastTab is Research would
@@ -2819,7 +2830,7 @@ function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<s
     if (!cards.length) return null;
     const isCollapsed = collapsed[column] === true;
     const label = COLUMN_LABELS[column] ?? column;
-    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} summary={{ scopesDone: card.scopeSummary.scopesDone, scopesTotal: card.scopeSummary.scopesTotal }} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
+    return <section key={column} className="space-y-2"><div className="flex items-center gap-2"><button type="button" onClick={() => onToggle(column)} aria-expanded={!isCollapsed} aria-label={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} title={isCollapsed ? `Expand ${label}` : `Collapse ${label}`} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm font-semibold hover:bg-foreground/5 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><DisclosureChevron open={!isCollapsed} className="text-foreground/60" />{label}</button><span className="text-xs text-muted-foreground">{cards.length}</span></div>{!isCollapsed ? <div className="overflow-hidden rounded-md border">{cards.map((card) => <TrackListRow key={card.id} card={card} summary={{ scopesDone: card.scopeSummary.scopesDone, scopesTotal: card.scopeSummary.scopesTotal, elapsedMs: card.scopeSummary.elapsedMs }} meta={`${card.status === "completed" ? "Completed" : stageLabel(card.stage)}${card.scopeSummary.scopesTotal > 0 ? ` · ✓ ${card.scopeSummary.scopesDone}/${card.scopeSummary.scopesTotal} scopes · ${card.scopeSummary.tasksDone}/${card.scopeSummary.tasksTotal} tasks${card.scopeSummary.elapsedMs != null ? ` · ${elapsedLabel(card.scopeSummary.elapsedMs)} elapsed` : ""}` : ""}`} onOpen={() => goToCard(navigate, card, card.id)} />)}</div> : null}</section>;
   })}</div>;
 }
 
@@ -2830,12 +2841,13 @@ function BuildList({ groups, navigate, collapsed, onToggle }: { groups: Record<s
 function TrackListRow({ card, meta, summary, onOpen }: {
   card: CardItem;
   meta: string | null;
-  summary?: { scopesDone: number; scopesTotal: number } | null;
+  summary?: { scopesDone: number; scopesTotal: number; elapsedMs?: number | null } | null;
   onOpen: () => void;
 }) {
   const navigate = useBbNavigate();
   const returnFocusRef = useReturnFocus<HTMLButtonElement>(card.id);
-  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}{summary && summary.scopesTotal > 0 ? <> · <ScopeStrip done={summary.scopesDone} total={summary.scopesTotal} /></> : null}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention && card.activity !== "awaiting-answer" && card.activity !== "error" ? <AttentionChip label={attentionLabel(card)} /> : null}{(card.activity === "running" || card.activity === "awaiting-answer") && (card.doingNow ?? []).length > 0 ? <DoingNowPill names={card.doingNow ?? []} /> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
+  const doingNow = card.executingScope ? [...new Set([card.executingScope, ...(card.doingNow ?? [])])] : (card.doingNow ?? []);
+  return <button ref={returnFocusRef} onClick={onOpen} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "w" || event.key === "W") { event.preventDefault(); if (card.workerThreadId) navigate.toThread(card.workerThreadId); } }} title={card.workerThreadId ? "Open card · W opens the worker thread" : "Open card"} aria-label={`Open card ${card.displayName}.`} className="cursor-pointer flex min-h-11 w-full flex-col items-stretch gap-1.5 border-b p-3 text-left last:border-b-0 hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:flex-row sm:items-center sm:gap-3"><span className="flex min-w-0 flex-1 items-start gap-2"><span className={`mt-1 size-2 shrink-0 rounded-full ${card.needsAttention ? "bg-amber-500" : pendingReview(card) ? "bg-emerald-500" : card.activity === "running" ? "bg-primary" : "bg-muted-foreground/40"}`} /><span className="min-w-0 flex-1"><strong className="block break-words text-sm leading-5">{card.displayName}</strong><span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">{card.projectName}{meta ? ` · ${meta}` : ""}{summary && summary.scopesTotal > 0 ? <> · <ScopeStrip done={summary.scopesDone} total={summary.scopesTotal} />{summary.elapsedMs != null ? ` · ${elapsedLabel(summary.elapsedMs)} elapsed` : ""}</> : null}</span></span></span><span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><ActivityPill activity={card.activity} />{card.needsAttention && card.activity !== "awaiting-answer" && card.activity !== "error" ? <AttentionChip label={attentionLabel(card)} /> : null}{(card.activity === "running" || card.activity === "awaiting-answer") && doingNow.length > 0 ? <DoingNowPill names={doingNow} /> : null}{pendingReview(card) ? <ReviewChip /> : null}<span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span></span></button>;
 }
 
 function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
@@ -2937,6 +2949,7 @@ function HeroErrorNote({ card }: { card: Pick<CardItem, "activity" | "lastError"
 // scannable. The Failed chip keeps the reason one hover away via title.
 function CardMetaRows({ card }: { card: CardItem }) {
   const attention = card.needsAttention;
+  const doingNow = card.executingScope ? [...new Set([card.executingScope, ...(card.doingNow ?? [])])] : (card.doingNow ?? []);
   return (
     <>
       <div className="mt-1 truncate text-[11px] text-muted-foreground" title={`Project: ${card.projectName}`}>{card.projectName}</div>
@@ -2944,7 +2957,7 @@ function CardMetaRows({ card }: { card: CardItem }) {
         <div className="mt-2"><AttentionChip label={attentionLabel(card)} /></div>
       ) : null}
       {card.activity === "running" || card.activity === "awaiting-answer" ? (
-        <div className="mt-2 max-w-full"><DoingNowPill names={card.doingNow ?? []} /></div>
+        <div className="mt-2 max-w-full"><DoingNowPill names={doingNow} /></div>
       ) : null}
       {pendingReview(card) ? (
         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
@@ -3015,7 +3028,7 @@ function BoardCard({ card, onOpen }: { card: CardItem; onOpen?: () => void }) {
       />
       {card.scopeSummary.scopesTotal > 0 ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
-        <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span>
+        <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks{card.scopeSummary.elapsedMs != null ? ` · ${elapsedLabel(card.scopeSummary.elapsedMs)} elapsed` : ""}</span>
       </div> : null}
       <CardMetaRows card={card} />
     </div>
@@ -3560,7 +3573,7 @@ function CardDrawerAdapter(props: PluginThreadPanelProps) {
     if (threadId) return <p className="p-4 text-sm text-muted-foreground">This thread is not a Stelow worker thread.</p>;
     return <p className="p-4 text-sm text-muted-foreground">Pick a card from Stelow {trackTitle("build")} to see its details here.</p>;
   }
-  return <CardDetailBody cardId={cardId} inboxEventId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
+  return <CardDetailBody cardId={cardId} inboxEventId={null} executionRunId={null} onClose={() => { /* host tab close */ }} navigate={navigate} />;
 }
 
 function CardActionsMenu({ card, onRestartFresh, onArchive, onDiscard, onDelete, onReclassify }: {
@@ -3879,15 +3892,39 @@ function CardChecksSection({ cardId, card, detail }: { cardId: string; card: Car
   );
 }
 
+function scopeElapsedMs(scope: { status?: string; startedAt?: string; record?: { completedAt?: string } | null }, nowMs: number): number | null {
+  const startedAt = scope.startedAt ? Date.parse(scope.startedAt) : NaN;
+  if (!Number.isFinite(startedAt)) return null;
+  const completedAt = scope.record?.completedAt ? Date.parse(scope.record.completedAt) : NaN;
+  if (Number.isFinite(completedAt)) return Math.max(0, completedAt - startedAt);
+  return ["in-progress", "blocked", "failed", "escalated"].includes(scope.status ?? "") ? Math.max(0, nowMs - startedAt) : null;
+}
+
+function totalScopeElapsedMs(scopes: Array<{ status?: string; startedAt?: string; record?: { completedAt?: string } | null }>, nowMs: number): number | null {
+  const intervals = scopes.flatMap((scope) => {
+    const startedAt = scope.startedAt ? Date.parse(scope.startedAt) : NaN;
+    if (!Number.isFinite(startedAt)) return [];
+    const completedAt = scope.record?.completedAt ? Date.parse(scope.record.completedAt) : NaN;
+    return [{ startedAt, completedAt: Number.isFinite(completedAt) ? completedAt : ["in-progress", "blocked", "failed", "escalated"].includes(scope.status ?? "") ? nowMs : NaN }];
+  }).filter((interval) => Number.isFinite(interval.completedAt));
+  if (!intervals.length) return null;
+  return Math.max(...intervals.map((interval) => interval.completedAt)) - Math.min(...intervals.map((interval) => interval.startedAt));
+}
+
+function elapsedLabel(ms: number | null | undefined): string {
+  return ms == null ? "—" : formatDuration(Math.max(0, ms));
+}
+
 function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"]; flow?: { leadMs: number | null; cycleMs: number | null } | null }) {
+  const now = Date.now();
   const isDone = (status: string | undefined) => isDoneStatus(status ?? "");
   const scopesDone = scopes.filter((scope) => isDone(scope.status)).length;
   const tasksAll = scopes.flatMap((scope) => scope.tasks);
   const tasksDone = tasksAll.filter((task) => isDone(task.status)).length;
   const doingScopes = scopes.filter((scope) => scope.status === "in-progress");
   const doingTasks = tasksAll.filter((task) => task.status === "in-progress");
+  const activeScope = doingScopes[0];
   const blockedScopes = scopes.filter((scope) => ["blocked", "failed", "escalated"].includes(scope.status ?? ""));
-  const scopePct = scopes.length > 0 ? Math.round((scopesDone / scopes.length) * 100) : 0;
   const taskPct = tasksAll.length > 0 ? Math.round((tasksDone / tasksAll.length) * 100) : 0;
   const bar = (pct: number, tone: string) => (
     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
@@ -3895,7 +3932,12 @@ function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, {
     </div>
   );
   return (
-    <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+    <div className="space-y-3 rounded-lg border bg-card/60 p-3 shadow-sm">
+      <div className="flex items-center gap-2">
+        <Icon name="Layers" className="size-4 text-muted-foreground" aria-hidden />
+        <span className="text-sm font-semibold">Scope execution</span>
+        <span className="ml-auto text-xs tabular-nums text-muted-foreground">{scopesDone}/{scopes.length} scopes · {elapsedLabel(totalScopeElapsedMs(scopes, now))} total</span>
+      </div>
       {flow && (flow.leadMs !== null || flow.cycleMs !== null) ? (
         <p className="text-xs text-muted-foreground" title="Lead runs idea to done; cycle runs first real movement to done. Unfinished cards show no times.">
           <span className="font-semibold text-foreground">Lead {flow.leadMs !== null ? formatDuration(flow.leadMs) : "—"}</span>
@@ -3904,8 +3946,8 @@ function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, {
         </p>
       ) : null}
       <div className="flex items-center gap-2 text-xs">
-        <span className="font-semibold">✓ {scopesDone}/{scopes.length} scopes</span>
-        {bar(scopePct, "bg-emerald-500")}
+        <span className="font-semibold">Scopes</span>
+        <ScopeProgressTrack items={scopes} done={scopesDone} total={scopes.length} className="flex-1" />
       </div>
       {tasksAll.length > 0 ? (
         <div className="flex items-center gap-2 text-xs">
@@ -3924,6 +3966,7 @@ function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, {
       ) : scopesDone === scopes.length && scopes.length > 0 ? (
         <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">✓ All scopes complete</p>
       ) : null}
+      {activeScope ? <p className="text-xs"><span className="font-semibold">Executing scope: </span><span className="text-primary">{activeScope.name}</span></p> : null}
       {blockedScopes.length > 0 ? (
         <p className="text-xs"><span className="font-semibold text-destructive">⚠ Blocked: </span><span className="text-muted-foreground">{blockedScopes.map((scope) => scope.name).slice(0, 3).join(" · ")}</span></p>
       ) : null}
@@ -3933,6 +3976,7 @@ function ScopeProgress({ scopes, flow }: { scopes: Extract<CardDetailResponse, {
 
 function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: unknown }>["scopes"] }) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set(scopes.filter((scope) => scope.status === "in-progress").map((scope) => scope.id)));
+  const now = Date.now();
   const { ordered, waitingOn } = orderScopes(scopes);
   const byId = new Map(scopes.map((s) => [s.id, s]));
   const finished = (id: string) => isDoneStatus(byId.get(id)?.status ?? "");
@@ -3957,6 +4001,7 @@ function ScopesList({ scopes }: { scopes: Extract<CardDetailResponse, { scopes: 
                 {scope.source === "audit-gap" ? <Pill tone="bg-amber-500/15 text-amber-700 dark:text-amber-300" title={scope.gap ? `Rework for escalated gap: ${scope.gap}` : "Rework scope from an escalated gap"}>↻ rework</Pill> : null}
                 <Pill tone={statusTone(scope.status)}><span className="mr-1">{statusGlyph(scope.status)}</span>{statusLabel(scope.status)}</Pill>
                 {scope.tasks.length > 0 ? <span className="text-[11px] text-muted-foreground" title={`${tasksDone} of ${scope.tasks.length} tasks done`}>{tasksDone}/{scope.tasks.length} tasks</span> : null}
+                {scopeElapsedMs(scope, now) !== null ? <span className="text-[11px] tabular-nums text-muted-foreground" title="Elapsed wall-clock time for this scope">{elapsedLabel(scopeElapsedMs(scope, now))}</span> : null}
                 {blockedNow ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={wait.join(", ")}>⛔ waiting on {wait.length}</span> : null}
               </div>
               {(scope.blockedBy?.length || scope.dependsOn?.length) ? (
@@ -6183,6 +6228,34 @@ function checkoutNoteFor(environmentLabel: string | null | undefined, branch?: s
   return <>Checkout: {label}{branch ? <> · branch <code>{branch}</code></> : null}</>;
 }
 
+function ExecutionRunsSection({ card, runs, focusRunId, onOpen, onCancel, stopping }: { card: Pick<CardItem, "id" | "kind">; runs: CardDetailResponse["executionRuns"]; focusRunId: string | null; onOpen: (run: CardDetailResponse["executionRuns"][number]) => void; onCancel: (runId: string) => void; stopping: string | null }) {
+  if (!runs.length) return null;
+  return (
+    <section aria-label="Native execution" className="rounded-lg border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Native execution</h3>
+        <span className="text-xs text-muted-foreground">{runs.filter((run) => ["queued", "running", "needs_input"].includes(run.normalizedStatus)).length} active</span>
+      </div>
+      <div className="mt-2 space-y-2">
+        {runs.map((run) => {
+          const openable = Boolean(executionRunSubPath({ track: trackOfCard(card), cardId: card.id, localRunId: run.id, status: run.normalizedStatus }));
+          return (
+            <div id={`execution-run-${run.id}`} key={run.id} tabIndex={-1} className={`flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 text-xs outline-none ${focusRunId === run.id ? "border-primary ring-2 ring-primary/30" : ""}`}>
+              <span className="font-medium">{run.recipeId}</span>
+              <span className="text-muted-foreground">{run.stage}</span>
+              <span className={run.normalizedStatus === "failed" ? "text-destructive" : run.normalizedStatus === "succeeded" ? "text-emerald-700 dark:text-emerald-300" : "text-muted-foreground"}>{run.normalizedStatus.replace("_", " ")}</span>
+              {run.errorCode ? <span className="text-[10px] text-destructive" title="Execution failure code">{run.errorCode}</span> : null}
+              {run.runId ? <code className="text-[10px] text-muted-foreground" title="Native Workflows run id">{run.runId}</code> : null}
+              {openable ? <Button size="sm" variant="ghost" onClick={() => onOpen(run)} className="cursor-pointer">Open run ↗</Button> : null}
+              {["queued", "running", "needs_input"].includes(run.normalizedStatus) ? <Button size="sm" variant="outline" disabled={stopping === run.id} onClick={() => onCancel(run.id)} className="cursor-pointer">{stopping === run.id ? "Stopping…" : "Stop"}</Button> : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function WorkerSection({ card, detail, presetStale, restarting, onRestartWorker, onPreset, presetPill, presetNote, pillTitle, githubLink, checkoutNote }: {
   card: CardItem | null;
   detail: CardDetailResponse | null;
@@ -6940,7 +7013,7 @@ function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, onClose, navigate
   );
 }
 
-function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { cardId: string; inboxEventId: string | null; onClose: () => void; onBack?: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
+function CardDetailBody({ cardId, inboxEventId, executionRunId, onClose, onBack, navigate }: { cardId: string; inboxEventId: string | null; executionRunId: string | null; onClose: () => void; onBack?: () => void; navigate: ReturnType<typeof useBbNavigate> }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<CardItem | null>(null);
   const [detail, setDetail] = useState<CardDetailResponse | null>(null);
@@ -6952,6 +7025,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   const [repairOpen, setRepairOpen] = useState(false);
   const [restartWorkerOpen, setRestartWorkerOpen] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [stoppingRunId, setStoppingRunId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [starting, setStarting] = useState(false);
   const [splitting, setSplitting] = useState(false);
@@ -7040,6 +7114,18 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
   }, [card?.workspaceKind, cardId, rpc]);
 
   useEffect(() => { void load(); }, [load, detailRefresh]);
+  useEffect(() => {
+    if (!executionRunId || !detail) return;
+    const run = detail.executionRuns.find((entry) => entry.id === executionRunId);
+    if (!run) return;
+    const targetId = executionRunFocus({ localRunId: run.id, status: run.normalizedStatus, hasQuestion: detail.pendingQuestions.length > 0 });
+    if (!targetId) return;
+    requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      target?.scrollIntoView({ block: "center" });
+      target?.focus({ preventScroll: true });
+    });
+  }, [detail, executionRunId]);
   useEffect(() => { void loadWorkspaceRecovery(); }, [loadWorkspaceRecovery]);
   useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
   // Viewing a completed card marks its completion seen (read, never
@@ -7221,6 +7307,18 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
       await load();
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function doCancelRun(runId: string) {
+    setStoppingRunId(runId);
+    try {
+      const result = await rpc.call("cancelExecutionRun", { runId });
+      if (!result.ok) toast.error(result.error ?? "Could not stop the native run.");
+      else toast.success("Native execution stopped; the card remains available.");
+      await load();
+    } finally {
+      setStoppingRunId(null);
     }
   }
 
@@ -7522,7 +7620,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
                   </div>
                 </div>
                 {pendingFirst ? (
-                  <div className="mt-3 space-y-2 border-t border-amber-500/20 pt-3">
+                  <div id="execution-needs-input-questions" tabIndex={-1} className="mt-3 space-y-2 border-t border-amber-500/20 pt-3 outline-none">
                     <QuestionBatch cardId={card.id} mode="live" questions={detail?.pendingQuestions.map((q) => ({ id: q.id, title: q.title, prompt: q.question, multiple: q.multiple, kind: q.kind, options: q.options, staleness: q.staleness ?? null })) ?? []} onAnswered={() => void load()} onOpenArtifact={(a, mode) => openAskArtifact(card, detail?.fileEnvironmentId ?? null, setViewerFile, a, mode)} />
                   </div>
                 ) : null}
@@ -7543,6 +7641,7 @@ function CardDetailBody({ cardId, inboxEventId, onClose, onBack, navigate }: { c
               </section>
             ) : null}
 
+            <ExecutionRunsSection card={card} runs={detail?.executionRuns ?? []} focusRunId={executionRunId} onOpen={(run) => goToExecutionRun(navigate, card, run)} stopping={stoppingRunId} onCancel={(runId) => void doCancelRun(runId)} />
             <WorkerSection
               card={card}
               detail={detail}

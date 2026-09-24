@@ -1,0 +1,14 @@
+{
+  "name": "reopen",
+  "card": {
+    "id": "card_reopen",
+    "kind": "build",
+    "status": "completed",
+    "stage": "audit",
+    "workerThreadId": "thr_reopen",
+    "dirHash": "sw-card_reopen",
+    "spawnRetryCount": 0,
+    "spawnRetryThread": null
+  },
+  "state": "---\nworkflow_id: card_reopen\nname: Reopen after Done\nintent: feature\ncurrent_stage: audit\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\nstages:\n  audit: in-progress\nartifacts: []\nhistory: []\n---\n"
+}
