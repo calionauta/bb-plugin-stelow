@@ -160,7 +160,11 @@ assert.equal((detailStartSource.match(/rpc\.call\("startWorker"/g) ?? []).length
 assert.match(heroActions, /Not started — parked in Bucket/, "a parked card says plainly that nothing runs");
 // The Bucket is the board's first column on every track, and leaving it is
 // what starts a parked card (a build phase move spawns instead of lying).
-assert.match(server, /const decision = resolveCardMove\(card\.kind, status, \{ hasWorker: Boolean\(card\.worker_thread_id\) \}\)/, "the move policy knows whether the card already started");
+assert.match(
+  server,
+  /const decision = resolveCardMove\(\s*card\.kind,\s*status,\s*\{\s*hasWorker: Boolean\(card\.worker_thread_id\),\s*\}\s*\)/,
+  "the move policy knows whether the card already started",
+);
 const parkedStart = /if \(!card\.worker_thread_id\) \{\s*const started = await workers\.fresh\(cardId, "start"\);/;
 assert.match(server, parkedStart, "entering a build phase starts a parked card");
 assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
@@ -172,13 +176,21 @@ assert.match(workflowVocabulary, /export function buildBoardColumnFor\(card\)/, 
 assert.match(server, /const effective = getReliablePresetForBand\(/, "Bucket exits spawn through the override-aware preset resolution");
 assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choice pinned at creation wins over band defaults at spawn");
 assert.match(server, /const workspace = await cardWorkspace\(row\);/, "respawns run in the card's own project workspace");
-assert.match(server, /if \(decision\.move\.status === "in-progress" && !card\.worker_thread_id\)/, "dragging a lightweight card to Doing starts it too");
+assert.match(
+  server,
+  /if \(\s*decision\.move\.status === "in-progress" &&\s*!card\.worker_thread_id\s*\)/,
+  "dragging a lightweight card to Doing starts it too",
+);
 
 // A Build workflow is code work: a Personal/exploratory folder only holds
 // Stelow state and cannot truthfully produce a diff, branch, or commit.
 assert.match(cardsCreate, /Build cards require a project workspace with a Git source/, "new Build cards refuse an exploratory workspace");
 assert.match(server, /Cannot split a Build workflow from an exploratory workspace/, "split cannot recreate an unverifiable Build child");
-assert.match(server, /auditReceiptReadiness\(receiptContent/, "Build done checks the durable audit receipt before becoming Done");
+assert.match(
+  server,
+  /auditReceiptReadiness\(\s*receiptContent/,
+  "Build done checks the durable audit receipt before becoming Done",
+);
 
 // Automation rules live on the picker's project, not the board's: the Auto
 // tab offers every project (the dialog opens from boards with none active),

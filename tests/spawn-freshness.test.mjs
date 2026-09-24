@@ -33,7 +33,7 @@ assert.equal(
 );
 assert.doesNotMatch(server, /delegation-site: worker-spawn/, "server.ts owns no direct worker spawn");
 assert.equal(
-  (spawnSources.match(/(?:await )?(?:deps\.)?spawnDisposable\(\{/g) ?? []).length,
+  (spawnSources.match(/(?:await )?(?:deps\.)?spawnDisposable\(\s*\{/g) ?? []).length,
   4,
   "four disposable spawns pinned (review, draft, card-title, gate pre-review); a fifth updates this contract deliberately",
 );
@@ -55,7 +55,7 @@ for (const match of spawnSources.matchAll(/workers\.spawn\(\{|bb\.sdk\.threads\.
 // Disposable blocks route through the helper: same history bans. The helper
 // itself owns the only other spawn calls (with-owner, then the strict-host
 // fallback without) — lifecycle ownership travels there, never history.
-for (const match of spawnSources.matchAll(/(?:await )?(?:deps\.)?spawnDisposable\(\{/g)) {
+for (const match of spawnSources.matchAll(/(?:await )?(?:deps\.)?spawnDisposable\(\s*\{/g)) {
   const block = spawnSources.slice(match.index, match.index + 900);
   for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {
     assert.ok(!block.includes(token), `disposable spawn block inherits no history (${token})`);
@@ -72,6 +72,7 @@ for (const line of server.split("\n")) {
     || line.includes("Previous worker thread:")
     || line.includes("previousThreadId: null")
     || line.includes("previousThreadId,")
+    || line.trim() === "previousThreadId"
     || line.includes("}, previousThreadId)")
     || line.includes("previousThreadId }")
     || line.includes("const previousThreadId = card.worker_thread_id")
@@ -85,24 +86,24 @@ for (const line of server.split("\n")) {
 // Disposable spawns build their prompt through the leashed lib builders —
 // the leash (no files, no commands, no questions) is tested where it lives,
 // and this pins the wiring: no hand-rolled draft/review prompt may bypass it.
-assert.match(server, /buildReviewPrompt\(\{ cardName:/, "review prompts go through the lib builder");
-assert.match(drafting, /buildDraftPrompt\(\{ cardName:/, "draft prompts go through the lib builder");
+assert.match(server, /buildReviewPrompt\(\{\s*cardName:/, "review prompts go through the lib builder");
+assert.match(drafting, /buildDraftPrompt\(\{\s*cardName:/, "draft prompts go through the lib builder");
 for (const [source, name] of [
-  [server, "reviewThread = await spawnDisposable({"],
-  [drafting, "return deps.spawnDisposable({"],
-  [server, "preThread = await spawnDisposable({"],
+  [server, "reviewThread = await spawnDisposable("],
+  [drafting, "return deps.spawnDisposable("],
+  [server, "preThread = await spawnDisposable("],
 ]) {
   const at = source.indexOf(name);
   assert.ok(at >= 0, `${name} exists`);
   assert.ok(source.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
 }
 assert.ok(drafting.includes("lifecycleOwnerThreadId: card.worker_thread_id"), "drafts die with their worker");
-assert.ok(drafting.includes('return deps.spawnDisposable({'), "drafting owns delegated draft spawns");
+assert.match(drafting, /return deps\.spawnDisposable\(\s*\{/, "drafting owns delegated draft spawns");
 // Card titles are ownerless by design: they need no worker, and the
 // rename-guard plus silent failure cover every race — an owner link would
 // add lifecycle without meaning.
 const titleAt = drafting.indexOf(
-  "return deps.spawnDisposable({",
+  "return deps.spawnDisposable(",
   drafting.indexOf("async function spawnTitle"),
 );
 assert.ok(titleAt >= 0, "titling rides the disposable path as a registered site");
@@ -112,7 +113,11 @@ assert.ok(drafting.slice(titleAt, titleAt + 1200).includes('"card-title"'), "tit
 // fork, resume inside spawn blocks) still stand untouched.
 // Older daemons that reject the field instead of stripping it get one retry
 // without it, so disposables never break on strict hosts.
-assert.match(server, /async function spawnDisposable\(args: SpawnArgs, site: string\)/, "disposable spawns go through the registry-validated helper");
+assert.match(
+  server,
+  /async function spawnDisposable\(\s*args: SpawnArgs,\s*site: string,/,
+  "disposable spawns go through the registry-validated helper",
+);
 assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-field rejection retries once without the owner");
 
 // The owner rule teaches fresh delegation: full task in the call, never a

@@ -126,7 +126,11 @@ const server = [
 const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
 assert.match(executionAdvance, /advanceExecutionGates\(/, "advance consults the gates module");
 assert.match(server, /doneBuildGates\(/, "done consults the gates module");
-assert.match(server, /diagnoseScopeSync\(\{ specContent/, "card detail reports scope-sync health from the spec against synced scopes");
+assert.match(
+  server,
+  /diagnoseScopeSync\(\{\s*specContent:/,
+  "card detail reports scope-sync health from the spec against synced scopes",
+);
 assert.match(server, /scopeSync: z\s*\.object\(\{\s*state: z\.enum\(/, "the card detail contract carries the sync state");
 const buildProgress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
 assert.match(buildProgress, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the checks section names missing scope tracking from live card state");

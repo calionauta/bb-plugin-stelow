@@ -36,6 +36,7 @@ assert.ok(parseScopeArgs(["done", "--scope", "scope-1", "--json", "--json"]).err
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
+const cliRegistry = readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8");
 const start = server.indexOf('if (argv[0] === "scope") {');
 assert.ok(start >= 0, "the scope branch exists");
 const end = server.indexOf('if (argv[0] === "lock") {', start);
@@ -49,6 +50,10 @@ assert.match(
   /export async function runScopeCommand(?:<[^>]+>)?\(/,
   "the extracted module owns the command behavior",
 );
-assert.match(server, /\{ name: "scope", summary: "Validated scope transitions/, "the command is registered with its usage");
+assert.match(
+  cliRegistry,
+  /"scope",[\s\S]*?Validated scope transitions/,
+  "the command is registered with its usage",
+);
 
 console.log("scope command test ok: parsing, extraction wiring, registration");

@@ -98,7 +98,7 @@ assert.match(serverSource, /Never hedge with a standard question/, "the spawn pr
 // by the shared splitActionState (lib) on slug truth — the same rule the
 // card UI reads — so the button can never promise what `split` refuses.
 // The nudge is a pointer to SPLIT_PROTOCOL, never a second copy of it.
-assert.match(serverSource, /const SPLIT_REQUEST_NUDGE = "Split requested/, "the request nudge is a single-source const");
+assert.match(serverSource, /const\s+SPLIT_REQUEST_NUDGE\s*=\s*["']Split requested/, "the request nudge is a single-source const");
 assert.match(serverSource, /Follow SPLIT_PROTOCOL in your system prompt/, "the nudge points at the protocol instead of re-teaching it");
 assert.match(serverSource, /requestSplitProposal: \{/, "the RPC contract names the trigger");
 assert.match(serverSource, /async requestSplitProposal\(\{ cardId \}\)/, "the handler resolves the card");

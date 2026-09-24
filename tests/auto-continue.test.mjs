@@ -118,10 +118,22 @@ const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
 assert.match(serverSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
 assert.match(serverSource, /cardStatus: card\.status/, "the audit watchdog receives the persisted card completion state");
-assert.match(serverSource, /bb\.sdk\.threads\.send\(\{ threadId: card\.worker_thread_id, mode: "auto", input: \[\{ type: "text", text: buildContinueNudge\(\), mentions: \[\], visibility: "agent-only" \}\] \}\)/, "auto-continue sends the shared continue nudge privately in place");
-assert.match(serverSource, /auto_continue_count: autoNext\.count, auto_continue_stage: autoNext\.stage/, "a resume records its budget use");
+assert.match(
+  serverSource,
+  /bb\.sdk\.threads\s*\n?\s*\.send\(\{[\s\S]*?threadId: card\.worker_thread_id,[\s\S]*?mode: "auto",[\s\S]*?input: \[[\s\S]*?text: buildContinueNudge\(\),[\s\S]*?mentions: \[\],[\s\S]*?visibility: "agent-only"/,
+  "auto-continue sends the shared continue nudge privately in place",
+);
+assert.match(
+  serverSource,
+  /auto_continue_count:\s*autoNext\.count,\s*auto_continue_stage:\s*autoNext\.stage/,
+  "a resume records its budget use",
+);
 assert.match(serverSource, /function buildContinueNudge\(\): string/, "manual Retry and auto-continue share one nudge");
-assert.match(serverSource, /Only a visible structured form on the card counts as a pending question/, "the recovery nudge cannot wait on an invisible question");
+assert.match(
+  serverSource,
+  /a visible structured form on the card counts as a pending question/,
+  "the recovery nudge cannot wait on an invisible question",
+);
 assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
 assert.match(serverSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
 assert.match(serverSource, /expiredCount: openExpiredQuestionIds\(cardRow\.id\)\.length,/, "the dispatcher receives the recoverable expired count");
@@ -130,6 +142,10 @@ assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${re
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
 assert.match(serverSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
-assert.match(serverSource, /threads\.events\.list\(\{ threadId: card\.worker_thread_id, order: "desc", limit: "100", types: \["turn\/completed", "turn\/started", "item\/completed"\] \}\)/, "the scan reads turn boundaries and completions only");
+assert.match(
+  serverSource,
+  /threads\.events\.list\(\{[\s\S]*?threadId: card\.worker_thread_id,[\s\S]*?order: "desc",[\s\S]*?limit: "100",[\s\S]*?types: \["turn\/completed", "turn\/started", "item\/completed"\]/,
+  "the scan reads turn boundaries and completions only",
+);
 
 console.log("auto-continue test ok: decision matrix, budget, migration, advance scan, shared nudge, prompt discipline");

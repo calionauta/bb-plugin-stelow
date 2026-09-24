@@ -34,7 +34,11 @@ assert.match(scopeModule, /deps\.bb\.realtime\.publish\("board-changed"/, "scope
 assertRefresh("gap-scopes", 'if (argv[0] === "gap-scopes") {', 'if (argv[0] === "metrics") {');
 
 const lock = branch('if (argv[0] === "lock") {', 'if (argv[0] === "config") {');
-assert.match(lock, /\(op === "acquire" \|\| op === "release"\) && result\.code === 0/, "only mutating lock ops refresh");
+assert.match(
+  lock,
+  /\(op === "acquire" \|\| op === "release"\)\s*&&\s*result\.code === 0/,
+  "only mutating lock ops refresh",
+);
 assert.match(lock, /bb\.realtime\.publish\("card-state"/, "lock refreshes the card");
 assert.match(lock, /bb\.realtime\.publish\("board-changed"/, "lock refreshes the board");
 

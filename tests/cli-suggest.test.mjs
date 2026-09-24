@@ -8,6 +8,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli-dispatch.ts"), "utf8"),
 ].join("\n");
 
 // Suggestions: transpositions and missing letters resolve, far strings do not.

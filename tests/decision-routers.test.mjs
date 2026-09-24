@@ -23,6 +23,7 @@ const managerShell = readFileSync(join(root, "components/settings/preset-manager
 const decisionEntry = readFileSync(join(root, "components/settings/decision-api.tsx"), "utf8");
 const decisionApiUi = readFileSync(join(root, "components/settings/decision-api-section.tsx"), "utf8");
 const decisionRouterUi = readFileSync(join(root, "components/settings/decision-router-row.tsx"), "utf8");
+const cliRegistry = readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8");
 const decisionRoutersUi = readFileSync(join(root, "components/settings/decision-routers-section.tsx"), "utf8");
 
 function handlerBody(name) {
@@ -285,7 +286,11 @@ assert.match(decisionRouterUi, /No presets yet — create one under Agent Preset
 
 // Criteria command wiring: read-only advisory judging through the router.
 // A branch that writes card state or publishes realtime would fail here.
-assert.match(server, /name: "criteria", summary: "Score an artifact against its skill's semantic criteria/, "the command is listed");
+assert.match(
+  cliRegistry,
+  /"criteria",[\s\S]*?Score an artifact against its skill's semantic criteria/,
+  "the command is listed in the extracted CLI registry",
+);
 const criteriaAt = server.indexOf('if (argv[0] === "criteria") {');
 assert.ok(criteriaAt >= 0, "the criteria branch exists");
 const criteriaEnd = server.indexOf('if (argv[0] === "draft") {', criteriaAt);
@@ -305,14 +310,22 @@ assert.ok(!criteriaBody.includes("logCardComment"), "the branch leaves no card c
 // asks a judge per completed task whether the working diff shows evidence,
 // through the artifact-criteria point. Advisory only: findings guide the
 // worker, done decides separately. Same read-only contract as criteria.
-assert.match(server, /name: "verify-tasks", summary: "Judge completed tasks against the working diff/, "the command is listed");
+assert.match(
+  cliRegistry,
+  /"verify-tasks",[\s\S]*?Judge completed tasks against the working diff/,
+  "the command is listed in the extracted CLI registry",
+);
 const taskAt = server.indexOf('if (argv[0] === "verify-tasks") {');
 assert.ok(taskAt >= 0, "the verify-tasks branch exists");
 const taskEnd = server.indexOf('if (argv[0] === "draft") {', taskAt);
 assert.ok(taskEnd > taskAt, "the verify-tasks branch is bounded");
 const taskBody = server.slice(taskAt, taskEnd);
 assert.ok(taskBody.includes("judgeScoredBatch({"), "verdicts resolve through the shared Score-batch judge");
-assert.ok(taskBody.includes("resolveScopeVerdicts({ scopes: taskScopes, taskFindings })"), "scopes roll up deterministically from task verdicts");
+assert.match(
+  taskBody,
+  /resolveScopeVerdicts\(\{[\s\S]*?scopes: taskScopes,[\s\S]*?taskFindings,[\s\S]*?\}\)/,
+  "scopes roll up deterministically from task verdicts",
+);
 // Tasks with their own verify command run deterministically first (exit 0
 // reads met), and when every task verifies, no judge is consulted at all —
 // no preset or key required for a fully-declared board.
@@ -336,22 +349,38 @@ assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(batchBody), "the 
 
 // One working-diff extractor for both advisory judges: verify-tasks and
 // gap-triage cannot drift into two different notions of "the evidence".
-assert.equal(server.match(/git", \["diff", "HEAD"/g)?.length, 1, "exactly one working-diff extractor exists");
+assert.equal(server.match(/"git",\s*\n\s*\["diff", "HEAD"/g)?.length, 1, "exactly one working-diff extractor exists");
 assert.ok(server.slice(server.indexOf("const workingDiffFor")).includes("workingDiffFor"), "the extractor is shared, not inlined per command");
-assert.match(server, /const taskDiff = await workingDiffFor\(taskWorkspace\.path, TASK_EVIDENCE_DIFF_CHARS\)/, "verify-tasks reads its evidence through the shared helper");
+assert.match(
+  server,
+  /const taskDiff = await workingDiffFor\(\s*taskWorkspace\.path,\s*TASK_EVIDENCE_DIFF_CHARS,?\s*\)/,
+  "verify-tasks reads its evidence through the shared helper",
+);
 
 // Gap triage: escalated gaps are the worker's classification; the judge
 // second-opinions genuineness only, never the deterministic routing.
-assert.match(server, /name: "gap-triage", summary: "Second-opinion escalated critique gaps/, "the gap-triage command is listed");
+assert.match(
+  cliRegistry,
+  /"gap-triage",[\s\S]*?Second-opinion escalated critique gaps/,
+  "the gap-triage command is listed in the extracted CLI registry",
+);
 const gapAt = server.indexOf('if (argv[0] === "gap-triage") {');
 assert.ok(gapAt >= 0, "the gap-triage branch exists");
 const gapBody = server.slice(gapAt, server.indexOf('if (argv[0] === "draft") {', gapAt));
 assert.ok(gapBody.includes("critiqueGapState(gapCard)"), "escalated gaps come from the shared registry reader");
 assert.ok(gapBody.includes("gapsToTriageBatch(gapState.escalated)"), "the batch maps ids and questions once");
 assert.ok(gapBody.includes("judgeScoredBatch({"), "gap triage reuses the shared Score-batch judge");
-assert.ok(/const gapEvidence = buildGapTriageState\(\{ critiqueText: gapState\.critiqueText, diff: gapDiff \}\)/.test(gapBody), "the judge state is exactly the critique plus the diff");
+assert.match(
+  gapBody,
+  /const gapEvidence = buildGapTriageState\(\{[\s\S]*?critiqueText: gapState\.critiqueText,[\s\S]*?diff: gapDiff,[\s\S]*?\}\)/,
+  "the judge state is exactly the critique plus the diff",
+);
 assert.ok(gapBody.includes("state: gapEvidence,"), "the evidence reaches the judge, not a bare list of gap wordings");
-assert.ok(gapBody.includes("workingDiffFor(gapWorkspace.path"), "genuineness is judged against the working diff");
+assert.match(
+  gapBody,
+  /workingDiffFor\(\s*gapWorkspace\.path/,
+  "genuineness is judged against the working diff",
+);
 assert.ok(gapBody.includes("no working-tree diff"), "a missing diff is named, never silently ignored");
 assert.ok(gapBody.includes("routing stays deterministic"), "the report states routing is untouched");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(gapBody), "gap-triage makes zero database writes");
