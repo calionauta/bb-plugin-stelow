@@ -25,6 +25,7 @@ import { HostToolsSection } from "./host-tools-section";
 import { usePluginUpdateActions } from "./plugin-update-actions";
 import { PluginUpdateStatus } from "./plugin-update-status";
 import { UpdateBadge } from "./update-badge";
+import { WorkflowDependencyCard } from "./workflow-dependency-card";
 
 function useHostToolState() {
   const rpc = useRpc<typeof rpcContract>();
@@ -310,6 +311,7 @@ export function AboutPanel() {
                 </h2>
                 <UpdateCard buildInfo={buildInfo} actions={update} />
                 <PluginSummary buildInfo={buildInfo} onOpenSkills={() => setSkillsOpen(true)} />
+                <WorkflowDependencyCard />
                 <ResourcesCard />
                 <HostToolsSection
                   tools={hostTools.tools}

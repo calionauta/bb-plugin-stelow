@@ -313,7 +313,11 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   step). Dismissing (Got it/Done, Esc, or backdrop) never
   nags again; only the active track opens its dialog.
   Every step may carry its own primary action, so configuration
-  surfaces where it is explained. Inbox teaches with a ghost sample
+  surfaces where it is explained. Setup also checks the optional BB
+  Workflows integration: it reports whether the built-in plugin is
+  installed, enabled, and ready, explains the native-execution benefit,
+  and offers an explicit install or enable action without hiding the
+  sequential fallback. Inbox teaches with a ghost sample
   row instead of a seeded notification — no badge or history pollution.
 - **Sidebar badge.** Unresolved actions and unread completions; it always
   agrees with the Inbox's primary **Needs attention** list. A completion is
@@ -337,6 +341,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   team pointer (experimental): single-user bb, one bb per teammate,
   GitHub as the team room, linking the site team section and
   `docs/team-playbook.md`.
+- **BB Workflows status.** The About tab and first-visit setup identify the
+  built-in Workflows plugin as installed, disabled, starting, or ready. The
+  English explanation names durable native execution, resume, cancellation,
+  structured outputs, and safe fan-out; explicit install or enable actions
+  are shown only when the host needs them, while the sequential fallback stays
+  visible.
 - **Build stamp** (`buildInfo`). Both versions on the About tab so reloads are
   checkable instead of vibes.
 

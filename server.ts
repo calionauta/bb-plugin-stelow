@@ -6,6 +6,72 @@ import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } fr
 import { fileURLToPath } from "node:url";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+
+const bbCli = process.env.BB_CLI || "bb";
+type WorkflowDependencyStatus = {
+  id: "workflows";
+  name: "BB Workflows";
+  installed: boolean;
+  enabled: boolean;
+  running: boolean;
+  available: boolean;
+  version: string | null;
+  action: "install" | "enable" | null;
+  detail: string;
+};
+
+function runBbCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(bbCli, args, { timeout: 30_000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+      resolve({
+        code: error ? 1 : 0,
+        stdout: typeof stdout === "string" ? stdout : "",
+        stderr: typeof stderr === "string" ? stderr : "",
+      });
+    });
+  });
+}
+
+async function readWorkflowDependencyStatus(): Promise<WorkflowDependencyStatus> {
+  const result = await runBbCli(["plugin", "list", "--json"]);
+  if (result.code !== 0) {
+    return {
+      id: "workflows", name: "BB Workflows", installed: false, enabled: false, running: false,
+      available: false, version: null, action: "install",
+      detail: result.stderr.trim() || "BB Workflows status could not be read.",
+    };
+  }
+  try {
+    const parsed = JSON.parse(result.stdout) as { plugins?: unknown[] } | unknown[];
+    const plugins = Array.isArray(parsed) ? parsed : parsed.plugins;
+    const row = Array.isArray(plugins)
+      ? plugins.find((entry): entry is Record<string, unknown> =>
+        Boolean(entry) && typeof entry === "object" && (entry as { id?: unknown }).id === "workflows",
+      )
+      : undefined;
+    const installed = Boolean(row);
+    const enabled = row?.enabled === true;
+    const running = row?.status === "running";
+    return {
+      id: "workflows", name: "BB Workflows", installed, enabled, running,
+      available: enabled && running, version: typeof row?.version === "string" ? row.version : null,
+      action: !installed ? "install" : !enabled ? "enable" : null,
+      detail: !installed
+        ? "Install BB Workflows to unlock durable native execution."
+        : !enabled
+          ? "Enable BB Workflows to unlock durable native execution."
+          : running
+            ? "BB Workflows is installed, enabled, and ready."
+            : "BB Workflows is installed and enabled; the host is still starting it.",
+    };
+  } catch (error) {
+    return {
+      id: "workflows", name: "BB Workflows", installed: false, enabled: false, running: false,
+      available: false, version: null, action: "install",
+      detail: error instanceof Error ? error.message : "BB Workflows status could not be read.",
+    };
+  }
+}
 import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "./lib/artifact-manifest.mjs";
 import { assignBundleNames, parseBundleManifest, staleBundleEntries, unbundledSources } from "./lib/run-bundle.mjs";
 import { PHASE_ENTRY_STAGES, STAGE_BANDS, STAGE_SEQUENCE, STAGE_TO_BAND } from "./lib/workflow-vocabulary.mjs";
@@ -365,6 +431,17 @@ const pluginUpdateSchema = z.object({
 // the BB verdict, never a competitor): shared by buildInfo and
 // checkPluginUpdate so a forced re-check delivers both halves together.
 const githubReleaseSchema = z.object({ tag: z.string(), url: z.string(), checkedAt: z.number(), newer: z.boolean() });
+const workflowDependencyStatusSchema = z.object({
+  id: z.literal("workflows"),
+  name: z.literal("BB Workflows"),
+  installed: z.boolean(),
+  enabled: z.boolean(),
+  running: z.boolean(),
+  available: z.boolean(),
+  version: z.string().nullable(),
+  action: z.enum(["install", "enable"]).nullable(),
+  detail: z.string(),
+});
 
 export const rpcContract = defineRpcContract({
   board: {
@@ -781,6 +858,21 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Host binaries the workflow can use: sem, cymbal, ripwire, ast-grep",
     input: z.object({}).strict(),
     output: z.object({ tools: z.array(z.object({ id: z.string(), present: z.boolean(), version: z.string().nullable() })) }),
+  },
+  workflowDependencyStatus: {
+    experimental_description: "Report whether BB Workflows is installed, enabled, and available for Stelow execution",
+    input: z.object({}).strict(),
+    output: workflowDependencyStatusSchema,
+  },
+  installWorkflowDependency: {
+    experimental_description: "Install the built-in BB Workflows plugin on explicit user request",
+    input: z.object({}).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: workflowDependencyStatusSchema }),
+  },
+  enableWorkflowDependency: {
+    experimental_description: "Enable the installed BB Workflows plugin on explicit user request",
+    input: z.object({}).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable(), status: workflowDependencyStatusSchema }),
   },
   installTool: {
     experimental_description: "Install one optional host tool with the official installer",
@@ -5821,6 +5913,30 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     async aboutLogo() {
       if (aboutLogoCache === undefined) aboutLogoCache = loadAboutLogo(pluginDir);
       return { dataUri: aboutLogoCache ?? null };
+    },
+
+    async workflowDependencyStatus() {
+      return await readWorkflowDependencyStatus();
+    },
+
+    async installWorkflowDependency() {
+      const result = await runBbCli(["plugin", "install", "builtin:workflows", "--yes", "--json"]);
+      const status = await readWorkflowDependencyStatus();
+      return {
+        ok: result.code === 0 && status.installed,
+        error: result.code === 0 ? null : result.stderr.trim() || result.stdout.trim() || "BB Workflows installation failed.",
+        status,
+      };
+    },
+
+    async enableWorkflowDependency() {
+      const result = await runBbCli(["plugin", "enable", "workflows", "--json"]);
+      const status = await readWorkflowDependencyStatus();
+      return {
+        ok: result.code === 0 && status.enabled,
+        error: result.code === 0 ? null : result.stderr.trim() || result.stdout.trim() || "BB Workflows could not be enabled.",
+        status,
+      };
     },
 
     // Presence probe for the optional host binaries the workflow knows how
