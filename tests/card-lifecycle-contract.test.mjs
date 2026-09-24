@@ -4,10 +4,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/cards.ts"), "utf8"),
+].join("\n");
 const serverRecovery = readFileSync(join(root, "server/workspaces-recovery.ts"), "utf8");
 const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
 const serverWorkerRetry = readFileSync(join(root, "server/workers-retry.ts"), "utf8");
+const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const navigation = readFileSync(join(root, "components/app-support/navigation.ts"), "utf8");
 const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
@@ -96,7 +100,7 @@ const rename = rpcMethod("renameCard", "addCardComment");
 assert.match(rename, /heuristicDisplayName\(card\.prompt, card\.name\)/, "blank restores the heuristic, never a blank title");
 assert.match(rename, /UPDATE cards SET display_name = \?, updated_at = \? WHERE id = \?/, "rename writes display_name, nothing else");
 assert.match(rename, /publish\("card-state", \{ cardId \}\)/, "rename refreshes open card surfaces");
-assert.match(server, /void drafting\.suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
+assert.match(cardsPersist, /void deps\.suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
 assert.match(manageHeader, /aria-label="Rename card"/, "the header offers inline rename beside the title");
 assert.match(manageHeader, /aria-label="Card title"/, "the rename input is labelled");
 assert.match(manageHeader, /rpc\.call\("renameCard", \{ cardId, name: draftName \}\)/, "save rides the rename RPC, cancel just closes");
@@ -104,10 +108,10 @@ assert.match(manageHeader, /rpc\.call\("renameCard", \{ cardId, name: draftName 
 // Fire-and-forget titling: creation keeps the instant heuristic and the
 // Generation burst upgrades it when it lands — never blocking, never
 // overwriting a human rename that landed mid-flight.
-assert.match(server, /void drafting\.suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
+assert.match(cardsPersist, /void deps\.suggestCardName\(cardId\)\.catch\(\(\) => undefined\);/, "creation triggers titling without waiting");
 assert.match(drafting, /spawnDisposable\(\{[\s\S]*?\}, "card-title"\)/, "titling rides the disposable path as a registered site");
 
-const byThread = rpcMethod("cardByWorkerThread", "readCardFile");
+const byThread = rpcMethod("cardByWorkerThread", "gapSummary");
 assert.doesNotMatch(byThread, /row\.status === "archived"/, "an archived card's thread still links back to its card");
 assert.match(serverInbox, /function createGetHandler\(/, "notification detail lives with the extracted inbox feature");
 

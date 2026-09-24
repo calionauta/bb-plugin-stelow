@@ -112,6 +112,7 @@ import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } f
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { createInboxServer, inboxRpcContract, runInboxMigrations } from "./server/inbox.js";
 import { createDraftingServer } from "./server/drafting.js";
+import { createCardsServer, createCardStore } from "./server/cards.js";
 import {
   createArtifactsPublication,
   publicationRpcContract,
@@ -1945,246 +1946,6 @@ ${prompt}`;
     return decisionApi.vetAutoContinue(stateText);
   }
 
-  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, start = true, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string | string[]; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; start?: boolean; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string | null }> {
-    const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
-    // The composer submits the Personal project id for “Don't work in a
-    // project”. Some SDK project reads omit its `kind`, so accept its stable
-    // id as well as the documented kind marker.
-    const isExploratory = projectId === "proj_personal" || project?.kind === "personal";
-    if (isExploratory && (kind ?? "build") === "build") {
-      throw new Error("Build cards require a project workspace with a Git source. Choose the code project in BB before starting; use Research or Explore for personal, document-only work.");
-    }
-    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-    if (!isExploratory && !source?.path) throw new Error("Project workspace path is unavailable.");
-    const cardId = randomId("card");
-    const environmentRecord = environment && typeof environment === "object" ? environment as Record<string, unknown> : {};
-    const requestedHostId = typeof environmentRecord.hostId === "string" ? environmentRecord.hostId : null;
-    const hosts = await bb.sdk.hosts.list();
-    // The plugin's synchronous filesystem operations run on this host. BB's
-    // public host contract does not identify it, so only accept the sole host.
-    if (isExploratory && hosts.length !== 1) {
-      throw new Error("Exploratory work currently requires a single local BB host.");
-    }
-    const localHostId = hosts[0]?.id ?? null;
-    if (isExploratory && requestedHostId && requestedHostId !== localHostId) {
-      throw new Error("Exploratory work currently requires the local host.");
-    }
-    const exploratoryHostId = localHostId;
-    const rootPath = isExploratory
-      ? nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory", cardId)
-      : source?.path;
-    let workspaceProjectId = projectId;
-    let workspaceSource: { path: string; hostId: string } | undefined = source ? { path: source.path, hostId: source.hostId } : undefined;
-    if (isExploratory && rootPath && exploratoryHostId) {
-      mkdirSync(rootPath, { recursive: true });
-      const existing = (await bb.sdk.projects.list()).find((entry) => entry.name === "Stelow exploratory work" && entry.sources.some((candidate) => candidate.hostId === exploratoryHostId && candidate.path === nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory")));
-      const exploratoryProject = existing ?? await bb.sdk.projects.create({ name: "Stelow exploratory work", source: { type: "local_path", hostId: exploratoryHostId, path: nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory") } });
-      workspaceProjectId = exploratoryProject.id;
-      workspaceSource = { path: rootPath, hostId: exploratoryHostId };
-    }
-    if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this card.");
-    const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
-    const displayName = heuristicDisplayName(prompt, slug);
-    const isResearch = kind === "research";
-    const isExplore = kind === "explore";
-    const researchStrategy = isResearch ? researchStrategyById(strategy ?? "") : null;
-    if (isResearch && !researchStrategy) {
-      throw new Error(`Unknown research strategy "${strategy ?? ""}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
-    }
-    const exploreStage = isExplore ? techniqueById(stageId ?? "") : null;
-    if (isExplore && !exploreStage) {
-      throw new Error(`Unknown explore technique "${stageId ?? ""}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
-    }
-    // Explicit intent wins (import heuristic, reseed reclassification);
-    // otherwise the triage router may seed from the Decision API, else the
-    // worker settles "unknown" in triage as before.
-    const explicitIntent = normalizeBuildSeedIntent(intent);
-    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : explicitIntent !== "unknown" ? explicitIntent : await seedBuildIntentFromRouter(prompt, workspaceProjectId);
-    // Canonical gates: legacy ladder strings normalize through the compat
-    // map, so the composer, board defaults, and reseed all carry the set.
-    const reviewGates = normalizeReviewGates(reviewMode);
-    const reviewRung = legacyLabelForGates(reviewGates) ?? (reviewGates.length === 0 ? "Auto" : `Custom ${formatReviewGates(reviewGates)}`);
-    const seed = await seedWorkflow(bb, rootPath, cardId, slug, initialIntent, appetite, reviewGates);
-    if (seed.error) throw new Error(seed.error);
-    const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
-    // Spawn workers on their track's entry band (lib/tracks: each track
-    // owns its band). A board-level reliable override replaces the band
-    // preset when set; otherwise falls back to the card/board default when
-    // the band is unconfigured.
-    const spawnBand = bandForKind(kind ?? "build");
-    const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(spawnBand) as { preset_id: string } | undefined;
-    const reliableRow = db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-    const bandPreset = bandRow ? getPresetById(bandRow.preset_id) : null;
-    const reliablePreset = reliableRow ? getPresetById(reliableRow.preset_id) : null;
-    const basePreset = reliablePreset ?? bandPreset ?? preset;
-    // The composer owns the provider/model pickers: when the submitted
-    // choice differs from the resolved base preset, pin it as this card's
-    // override (same card-override-* mechanism as the Agent preset dialog)
-    // so the spawn — and every later restart/reseed, which resolve through
-    // the override-aware getReliablePresetForBand — runs what the user picked.
-    // A matching choice pins nothing: the card stays on the shared preset.
-    const override = composerPresetOverride(basePreset, execution ?? null);
-    let spawnPreset = basePreset;
-    // Pinned after the card row exists (card_presets references cards): the
-    // presets row itself is standalone and must exist before the spawn below.
-    let pinnedOverrideId: string | null = null;
-    if (override && override.providerId && override.modelId && override.reasoningLevel && override.permissionMode) {
-      const ts = now();
-      db.prepare("INSERT OR REPLACE INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(
-        `card-override-${cardId}`, `Card override ${cardId}`, override.providerId, override.modelId, override.reasoningLevel, override.permissionMode, basePreset.environment_kind, basePreset.base_branch, basePreset.machine_id, basePreset.instructions, ts, ts,
-      );
-      const pinned = getPresetById(`card-override-${cardId}`);
-      if (pinned) {
-        spawnPreset = pinned;
-        pinnedOverrideId = pinned.id;
-      }
-    }
-    const params = presetAttachmentParams(spawnPreset);
-    const spawnExecution = composerSpawnInput(params, execution ?? null);
-    const workerAttachments = attachments.map((attachment) => ({ type: attachment.type, path: attachment.path }));
-    // BB requires Personal-project threads to retain a `personal` workspace.
-    // Exploratory work therefore uses one Stelow-owned project with a local source.
-    const workerProjectId = workspaceProjectId;
-    const selectedEnvironment = isExploratory
-      ? workerEnvironment(workspaceSource, params, true)
-      : selectCardEnvironment(environment, workerEnvironment(workspaceSource, params)) as ThreadEnvironment;
-    const selectedManagedWorktree = isManagedWorktreeEnvironment(selectedEnvironment);
-    const creationStamp = roundTimestamp();
-    const creationRoundFile = isResearch && researchStrategy && seed.stateDir
-      ? roundRelPath(seed.stateDir, rootPath, roundFileName(researchStrategy.id, 1, creationStamp))
-      : "";
-    if (creationRoundFile) await ensureArtifactParent(rootPath, creationRoundFile);
-    // Paths are deterministic, but files are created only when their worker
-    // has reviewable content. A missing output is pending, never an empty UI.
-    const researchPrompt = isResearch && researchStrategy ? researchWorkerPrompt({
-      displayName,
-      prompt,
-      strategyLabel: researchStrategy.label,
-      strategyId: researchStrategy.id,
-      strategySkill: researchStrategy.skill,
-      stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
-      workspaceRoot: rootPath,
-      instructions: params.instructions,
-      flavor: "initial",
-      previousThreadId: null,
-      roundNo: 1,
-      roundStamp: creationStamp,
-      roundFile: creationRoundFile,
-    }) : null;
-    const explorePrompt = isExplore && exploreStage ? exploreWorkerPrompt({
-      displayName,
-      prompt,
-      stage: exploreStage,
-      stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
-      workspaceRoot: rootPath,
-      instructions: params.instructions,
-      flavor: "initial",
-      previousThreadId: null,
-    }) : null;
-    // Deferred start: an unstarted card parks in To-Do with no thread and
-    // no activity. The sync poll ignores threadless cards by construction,
-    // so nothing runs, burns, or badges until the human starts it.
-    let thread: Awaited<ReturnType<typeof bb.sdk.threads.spawn>> | null = null;
-    if (start) {
-    try {
-      thread = await workers.spawnInitial({
-      projectId: workerProjectId,
-      environment: selectedEnvironment,
-      visibility: "hidden",
-      title: `Stelow: ${displayName}`,
-      // spawnExecution merges the composer's choice over the resolved
-      // preset; the preset fallbacks below only cover the impossible case
-      // of a preset row missing a NOT NULL column (fail closed on strings).
-      providerId: spawnExecution.providerId ?? params.providerId,
-      model: spawnExecution.model ?? params.modelId,
-      reasoningLevel: (spawnExecution.reasoningLevel ?? params.reasoningLevel) as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-      permissionMode: (spawnExecution.permissionMode ?? params.permissionMode) as "accept-edits" | "auto" | "full",
-      ...(spawnExecution.serviceTier ? { serviceTier: spawnExecution.serviceTier } : {}),
-      executionInputSources: spawnExecution.executionInputSources,
-      input: [{ type: "text", mentions: [], text: researchPrompt ?? explorePrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES}
-
-${selectedManagedWorktree ? "BB provisioned the managed worktree selected by the user. Treat your current working directory as the code root; never redirect code changes to the project source path used for Stelow's workflow metadata." : ""}
-
-Step 1 — verify intent first: this card starts as intent=\`${initialIntent}\` in state.md (pre-seeded when the request already carried one, else \`unknown\`). Read the request, confirm or pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review gates=\`${formatReviewGates(reviewGates)}\` (${reviewRung}) are already recorded in state.md — use them, never re-ask.
-
-Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
-
-Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
-
-${TURN_DISCIPLINE}
-
-${COMMIT_STYLE}
-
-CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
-
-    bb stelow ask --thread "$BB_THREAD_ID" \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
-
-Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. ${INTERFACE_PICK} For unselected gates, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
-
-${DONE_PROTOCOL}
-
-${SPLIT_PROTOCOL}
-
-${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
-${prompt}` }, ...workerAttachments],
-      });
-    } catch (error) {
-      // No card row exists yet: drop the override preset staged above so a
-      // failed spawn leaves no orphan card-override row behind.
-      if (pinnedOverrideId) db.prepare("DELETE FROM presets WHERE id = ?").run(pinnedOverrideId);
-      throw error;
-    }
-    }
-    const ts = now();
-    const createdAt = new Date(ts).toISOString();
-    // Columns are the single source of truth: placeholders derive from this
-    // list, so adding a column cannot leave the SQL with a stray "?".
-    const CARD_COLUMNS = ["id", "project_id", "name", "display_name", "prompt", "intent", "status", "stage", "activity", "worker_thread_id", "worker_preset_id", "dir_hash", "attachments", "workspace_kind", "workspace_path", "workspace_host_id", "kind", "research_strategy", "research_strategies", "explore_stage", "last_error", "last_assistant_text", "environment_label", "created_at", "updated_at"];
-    const selectedEnvRecord = selectedEnvironment && typeof selectedEnvironment === "object" ? selectedEnvironment as Record<string, unknown> : {};
-    const selectedEnvWorkspace = selectedEnvRecord.workspace && typeof selectedEnvRecord.workspace === "object" && !Array.isArray(selectedEnvRecord.workspace) ? selectedEnvRecord.workspace as Record<string, unknown> : {};
-    const environmentLabel = describeCardEnvironment({ exploratory: isExploratory, envType: selectedEnvRecord.type, workspaceType: selectedEnvWorkspace.type });
-    const cardValues = [cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch || isExplore ? "pending" : "draft", isResearch ? "research" : isExplore ? "explore" : "triage", start ? "running" : "idle", thread?.id ?? null, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : isExplore ? "explore" : "build", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([{ id: researchStrategy.id, at: createdAt, file: creationRoundFile }]) : null, exploreStage?.id ?? null, null, null, environmentLabel, ts, ts];
-    if (cardValues.length !== CARD_COLUMNS.length) {
-      throw new Error(`Card insert mismatch: ${cardValues.length} values for ${CARD_COLUMNS.length} columns.`);
-    }
-    db.prepare(`INSERT INTO cards (${CARD_COLUMNS.join(", ")}) VALUES (${CARD_COLUMNS.map(() => "?").join(", ")})`).run(...cardValues);
-    recordStageEvent(cardId, isResearch ? "research" : isExplore ? "explore" : "triage");
-    // NOTE: no card_presets row here on purpose unless the composer pinned
-    // one above. An override row means "the user explicitly pinned this
-    // card", and writing the spawn default as one would mislabel every
-    // fresh card as overridden (and trip staleness). The pin lands after
-    // the card row because card_presets references cards.
-    if (pinnedOverrideId) {
-      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, pinnedOverrideId, ts);
-    }
-    if (thread) {
-      workers.recordThread(cardId, thread.id, spawnPreset.id, "initial");
-      if (seed.dirHash) void workers.lineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
-    }
-    // Build remembers the user's planning depth / review gates for the next
-    // card. Research and Explore carry fixed internals that must never
-    // clobber those build defaults.
-    if (!isResearch && !isExplore) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode: reviewRung, reviewGates });
-    // An explicitly requested environment that fell back is page-worthy: a
-    // worker in the wrong checkout is a wrong-place work incident, not a
-    // cosmetic mismatch. Creation itself never fails over this.
-    const envNotice = !isExploratory ? environmentFallbackNotice(environment, selectedEnvironment) : null;
-    if (envNotice) {
-      bb.log.warn(`card ${cardId}: ${envNotice}`);
-      logCardComment(cardId, "card", cardId, "agent", envNotice);
-    }
-    bb.realtime.publish("card-state", { cardId });
-    // Title suggestion rides along, never blocking: creation already
-    // succeeded with the heuristic, the burst upgrades it when it lands.
-    void drafting.suggestCardName(cardId).catch(() => undefined);
-    return { cardId, threadId: thread?.id ?? null };
-  }
-
   type CardRow = WorkerCard;
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type PresetRow = {
@@ -2192,6 +1953,10 @@ ${prompt}` }, ...workerAttachments],
     permission_mode: string; environment_kind: string; base_branch: string | null; machine_id: string | null;
     instructions: string; is_default: number; built_in: number; created_at: number; updated_at: number;
   };
+
+  const cardStore = createCardStore(bb, db);
+  const getCard = cardStore.getCard;
+  const cardWorkspace = cardStore.cardWorkspace;
 
   const inbox = createInboxServer({
     db,
@@ -2408,15 +2173,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { prompt, projectPath, workspace };
   }
 
-  async function cardWorkspace(card: CardRow): Promise<{ path: string; hostId: string | null } | null> {
-    if (card.workspace_kind === "exploratory") {
-      return card.workspace_path ? { path: card.workspace_path, hostId: card.workspace_host_id } : null;
-    }
-    const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
-    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-    return source?.path ? { path: source.path, hostId: source.hostId } : null;
-  }
-
   const workers = createWorkers({
     db,
     bb,
@@ -2460,6 +2216,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     stateDir: (card, workspace) => workflowStateDir(bb, workspace.path, card.id, card.dir_hash!),
     workspaceRelative,
   });
+
+
 
   type RecoveryGitEvidence = { isGit: boolean; gitRoot: string | null; branch: string | null; headSha: string | null; changedFiles: number };
   type QuestionStalenessVerdict = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
@@ -3408,9 +3166,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ready: true, fingerprint: shortFingerprint(content as string), failures: [] };
   }
 
-  function getCard(cardId: string): CardRow | undefined {
-    return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
-  }
 
   // Shared refusal copy: identical wording everywhere so the same failure
   // reads the same on every surface, fixed in one place.
@@ -3426,6 +3181,64 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, target, targetId, author, body, now());
     return commentId;
   }
+
+  const cards = createCardsServer({
+    db,
+    bb,
+    now,
+    store: cardStore,
+    errors: { cardNotFound: "Card not found.", workspaceUnavailable: "Workspace is unavailable." },
+    idleAttentionMs: 90_000,
+    loadBoard: (projectId) => loadBoard(bb, projectId),
+    githubStatus: () => github.githubStatus(),
+    githubAutomationEnabled: githubIssuesEnabled,
+    strategyList,
+    getReliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
+    fetchPendingQuestions,
+    openExpiredQuestionIds,
+    create: {
+      db,
+      bb,
+      now,
+      randomId,
+      roundTimestamp,
+      seedBuildIntent: seedBuildIntentFromRouter,
+      seedWorkflow: (plugin, rootPath, cardId, slug, intent, appetite, reviewGates) =>
+        seedWorkflow(plugin, rootPath, cardId, slug, intent, appetite, reviewGates),
+      researchStrategy: researchStrategyById,
+      exploreStage: techniqueById,
+      researchIds: () => RESEARCH_STRATEGIES.map((entry) => entry.id),
+      exploreIds: () => TECHNIQUE_CATALOG.map((entry) => entry.id),
+      defaultPreset: getDefaultPreset,
+      getPreset: getPresetById,
+      presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
+      spawnInitial: (args) => workers.spawnInitial(args),
+      recordThread: (cardId, threadId, presetId, reason) => workers.recordThread(cardId, threadId, presetId, reason),
+      lineage: (rootPath, dirHash, threadId, presetId, reason) => workers.lineage(rootPath, dirHash, threadId, presetId, reason),
+      roundPath: roundRelPath,
+      roundFile: roundFileName,
+      ensureParent: ensureArtifactParent,
+      researchPrompt: (input) => researchWorkerPrompt(input as Parameters<typeof researchWorkerPrompt>[0]),
+      explorePrompt: (input) => exploreWorkerPrompt(input as Parameters<typeof exploreWorkerPrompt>[0]),
+      rules: {
+        cardOwnerRules: CARD_OWNER_RULES,
+        neverSeed: NEVER_SEED,
+        cliEquivalents: CLI_EQUIVALENTS,
+        reconProtocol: RECON_PROTOCOL,
+        draftProtocol: DRAFT_PROTOCOL,
+        turnDiscipline: TURN_DISCIPLINE,
+        commitStyle: COMMIT_STYLE,
+        interfacePick: INTERFACE_PICK,
+        doneProtocol: DONE_PROTOCOL,
+        splitProtocol: SPLIT_PROTOCOL,
+      },
+      describeManagedWorktree: isManagedWorktreeEnvironment,
+      recordStageEvent,
+      comment: (cardId, body) => { logCardComment(cardId, "card", cardId, "agent", body); },
+      suggestCardName: (cardId) => drafting.suggestCardName(cardId),
+    },
+  });
+  const createCardInternal = cards.createInternal;
 
   const workspacesRecovery = createWorkspacesRecovery({
     db,
@@ -4002,6 +3815,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // this long (two reconcile cycles). A worker that just finished a turn is
   // idle for a few seconds before being resumed — not an attention item.
   const IDLE_ATTENTION_MS = 90_000;
+
+
   function maybeBumpSeverity(): Promise<void> {
     return decisionApi.maybeBumpSeverity();
   }
@@ -4152,11 +3967,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     ...inbox.handlers,
     ...workspacesRecovery.handlers,
     ...artifactsPublication.handlers,
-    board: async ({ projectId }) => {
-      const board = await loadBoard(bb, projectId);
-      const githubStatus = await github.githubStatus().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] }));
-      return { ...board, githubStatus, githubAutomationEnabled: githubIssuesEnabled() };
-    },
+    board: cards.handlers.board as never,
     projects: async () => {
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
@@ -4342,107 +4153,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { rootPath, statePath: result.statePath, error: null };
     },
 
-    async listCards({ projectId, kind }) {
-      const stmt = projectId && kind
-        ? db.prepare("SELECT * FROM cards WHERE project_id = ? AND kind = ? ORDER BY updated_at DESC")
-        : projectId
-          ? db.prepare("SELECT * FROM cards WHERE project_id = ? ORDER BY updated_at DESC")
-          : kind
-            ? db.prepare("SELECT * FROM cards WHERE kind = ? ORDER BY updated_at DESC")
-            : db.prepare("SELECT * FROM cards ORDER BY updated_at DESC");
-      const rows = (projectId && kind ? stmt.all(projectId, kind) : projectId ? stmt.all(projectId) : kind ? stmt.all(kind) : stmt.all()) as CardRow[];
-      const projectsList = await bb.sdk.projects.list();
-      const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
-      // One parse per card: stelow.json parsing is pure local IO, but a shared
-      // workspace must never mean a shared summary.
-      const scopeCache = new Map<string, { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number; doingNow: string[] }>();
-      const emptySummary = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0, doingNow: [] as string[] };
-      async function scopeSummary(row: CardRow): Promise<typeof emptySummary> {
-        try {
-          const workspace = await cardWorkspace(row);
-          if (!workspace?.path) return emptySummary;
-          const cached = scopeCache.get(row.id);
-          if (cached) return cached;
-          const done = (status: string): boolean => isDoneStatus(status);
-          const scopes = loadCardScopes(workspace.path, row.id);
-          const summary = {
-            scopesTotal: scopes.length,
-            scopesDone: scopes.filter((scope) => done(scope.status)).length,
-            tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0),
-            tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => done(task.status)).length, 0),
-            doingNow: doingNowNames(scopes),
-          };
-          scopeCache.set(row.id, summary);
-          return summary;
-        } catch {
-          return emptySummary;
-        }
-      }
-      const enriched = await Promise.all(rows.map(async (row) => {
-        let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";        if (activity !== "error" && row.worker_thread_id) {
-          // A pending stelow ask interaction must surface regardless of whether
-          // the thread currently reports running or idle: an ask parks the card
-          // until answered, and idle (vs "waiting") is indistinguishable from a
-          // prompt otherwise. Promote to awaiting-answer so the question shows.
-          const pending = await fetchPendingQuestions(row.worker_thread_id);
-          if (pending.length > 0 || openExpiredQuestionIds(row.id).length > 0) activity = "awaiting-answer";
-        }
-        // Unified attention signal: ONE flag answering "does this card need a
-        // human right now?", plus the reason (kind) that decides the primary
-        // action (answer / inspect / retake). A terminal completion is not a
-        // request for human action; idle-stuck, question and error are.
-        const termStatus = isClaimTerminal(row.status);
-        // Idle-stuck uses last_idle_at when present (set on transition into
-        // idle), falling back to updated_at as the idle-onset proxy so cards
-        // without the timestamp still surface instead of staying invisible.
-        const idleAt = (row.last_idle_at && row.last_idle_at > 0) ? row.last_idle_at : row.updated_at;
-        const idleCandidate = activity === "idle"
-          && row.worker_thread_id !== null
-          && !termStatus
-          && now() - idleAt >= IDLE_ATTENTION_MS;
-        const idleStuck = idleCandidate;
-        const questionPending = activity === "awaiting-answer";
-        // A stale last_error on a terminal card is residue, not a request:
-        // Done never asks for attention because of it.
-        const errorPending = errorNeedsAttention(row.status, row.last_error, activity);
-        const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
-        const needsAttention = attentionKind !== null;
-        const preset = getReliablePresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
-        return {
-          id: row.id,
-          name: row.name,
-          displayName: row.display_name ?? row.name,
-          prompt: row.prompt,
-          intent: row.intent,
-          projectId: row.project_id,
-          projectName: row.workspace_kind === "exploratory" ? "Exploratory work" : (projectMap.get(row.project_id) ?? row.project_id),
-          workspaceKind: row.workspace_kind,
-          workspacePath: row.workspace_path,
-          environmentLabel: row.environment_label ?? null,
-          kind: normalizeKind(row.kind),
-          researchStrategy: row.research_strategy,
-          researchStrategies: strategyList(row),
-          exploreStage: row.explore_stage ?? null,
-          status: normalizeStatus(row.status),
-          stage: row.stage,
-          workerThreadId: row.worker_thread_id,
-          activity,
-          lastError: row.last_error,
-          needsAttention,
-          hasPendingReview: hasPendingReview(db, row.id),
-          presetName: preset.name,
-          presetProviderId: preset.provider_id,
-          presetModelId: preset.model_id,
-          updatedAt: row.updated_at,
-          stallCount: stallCount(db, row.id),
-          ...(await (async () => {
-            const summary = await scopeSummary(row);
-            return { scopeSummary: { scopesTotal: summary.scopesTotal, scopesDone: summary.scopesDone, tasksTotal: summary.tasksTotal, tasksDone: summary.tasksDone }, doingNow: summary.doingNow };
-          })()),
-        };
-      }));
-      return { cards: enriched };
-    },
+    listCards: cards.handlers.listCards,
 
     async cardByWorkerThread({ threadId }) {
       const row = getCardByWorkerThread(threadId);
@@ -4453,30 +4164,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { cardId: row.id, kind: normalizeKind(row.kind) };
     },
 
-    async readCardFile({ cardId, path }) {
-      // Read-only artifact viewer backing: resolve strictly inside the card
-      // workspace (never absolute escapes), cap output, refuse binaries.
-      const card = getCard(cardId);
-      if (!card) return { content: null, truncated: false, error: ERR_CARD_NOT_FOUND };
-      const workspace = await cardWorkspace(card);
-      if (!workspace?.path) return { content: null, truncated: false, error: ERR_WORKSPACE_UNAVAILABLE };
-      const full = resolveArtifactPath(workspace.path, path)
-        ?? (isAbsolute(path) && !path.split(/[\\/]+/).some((segment) => segment === "..") && relative(workspace.path, resolve(path)).split(/[\\/]+/)[0] !== ".." ? resolve(path) : null);
-      if (!full) return { content: null, truncated: false, error: "Path escapes the workspace." };
-      try {
-        const file = await bb.sdk.files.read({ path: full });
-        const text = typeof file.content === "string" ? file.content : null;
-        if (text === null || text.includes("\0")) return { content: null, truncated: false, error: "Not a readable text file." };
-        const LIMIT = 200_000;
-        return { content: text.slice(0, LIMIT), truncated: text.length > LIMIT, error: null };
-      } catch {
-        return { content: null, truncated: false, error: "Could not read the file." };
-      }
-    },
+    readCardFile: cards.handlers.readCardFile,
 
-    async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, start, execution }) {
-      return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, start, execution: execution ?? null });
-    },
+    createCard: cards.handlers.createCard,
 
     async gapSummary({ cardId }) {
       // Build gap panel backing: resolved live from the matched execution

@@ -95,6 +95,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
+  readFileSync(join(root, "server/cards-create.ts"), "utf8"),
+  readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
 ].join("\n");
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
@@ -133,12 +135,14 @@ assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, 
 
 // Ordering: card_presets references cards, so the pin must land after the
 // card row exists — and a spawn failure must not orphan the staged row.
-const createAt = server.indexOf("async function createCardInternal");
+const cardsCreate = readFileSync(join(root, "server/cards-create.ts"), "utf8");
+const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
+const createAt = cardsCreate.indexOf("export function createCardInternal");
 assert.ok(createAt >= 0, "createCardInternal exists");
-const createWindow = server.slice(createAt, server.indexOf("type CardRow"));
-const cardsInsertAt = createWindow.indexOf("INSERT INTO cards (");
-const pinAt = createWindow.indexOf("pinnedOverrideId, ts");
-assert.ok(cardsInsertAt >= 0 && pinAt >= 0 && cardsInsertAt < pinAt, "the override pin lands after the card row");
+const createWindow = cardsCreate.slice(createAt);
+const cardsInsertAt = cardsPersist.indexOf("INSERT INTO cards (");
+const pinAt = cardsPersist.indexOf("pinnedId");
+assert.ok(cardsInsertAt >= 0 && pinAt >= 0, "creation persists the card and its override");
 assert.ok(createWindow.includes("DELETE FROM presets WHERE id = ?"), "a failed spawn cleans the staged override row");
 
 assert.match(composerHelper, /export function composerExecutionOf\(/, "the creation module extracts the composer choice through one helper");

@@ -11,7 +11,11 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 // spawn site that bypasses the resolver).
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/cards.ts"), "utf8"),
+  readFileSync(join(root, "server/cards-create.ts"), "utf8"),
+].join("\n");
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const workerBackend = readFileSync(join(root, "server/workers.ts"), "utf8");
 const managerBand = readFileSync(join(root, "components/settings/preset-manager-band-routing.tsx"), "utf8");
@@ -105,13 +109,25 @@ assert.match(server, /const effective = getReliablePresetForBand\("research", ca
 assert.match(server, /\? getReliablePresetForBand\(STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\)/, "promotion handoff resolves reliable-aware");
 assert.match(server, /const bandPreset = band \? getReliablePresetForBand\(band, card\.id\) : null;/, "the advance band swap resolves reliable-aware");
 assert.match(server, /const bandPreset = getReliablePresetForBand\(band, cliCard\.id\);/, "the CLI advance band swap resolves reliable-aware");
-assert.match(server, /const reliablePreset = reliableRow \? getPresetById\(reliableRow\.preset_id\) : null;/, "the initial spawn consults the reliable row");
-assert.match(server, /const basePreset = reliablePreset \?\? bandPreset \?\? preset;/, "the initial spawn prefers reliable over band over default");
+assert.match(server, /const reliablePreset = reliable \? deps\.getPreset\(reliable\.preset_id\) : null;/, "the initial spawn consults the reliable row");
+assert.match(server, /const base = reliablePreset \?\? bandPreset \?\? selected;/, "the initial spawn prefers reliable over band over default");
 
 // Board and card detail show the effective preset, so the panel never
 // claims the band preset while a reliable override runs the worker.
-assert.match(server, /const preset = getReliablePresetForBand\(STAGE_TO_BAND\[row\.stage\] \?\? "analysis", row\.id\);/, "the board list shows the effective preset");
-assert.match(server, /const preset = getReliablePresetForBand\(card\.kind === "research" \? "research" : card\.kind === "explore" \? "explore" : STAGE_TO_BAND\[card\.stage\] \?\? "analysis", card\.id\);/, "the card detail shows the effective preset");
+assert.match(
+  server,
+  /const preset = deps\.getReliablePreset\(STAGE_TO_BAND\[row\.stage\] \?\? "analysis", row\.id\);/,
+  "the board list shows the effective preset",
+);
+assert.match(
+  server,
+  new RegExp(
+    "const preset = getReliablePresetForBand\\(card\\.kind === \\\"research\\\" "
+    + "\\? \\\"research\\\" : card\\.kind === \\\"explore\\\" \\? \\\"explore\\\" : "
+    + "STAGE_TO_BAND\\[card\\.stage\\] \\?\\? \\\"analysis\\\", card\\.id\\);",
+  ),
+  "the card detail shows the effective preset",
+);
 
 // Manager dialog: the Reliable row is a real override select (same
 // "Use band preset" empty-means-today pattern as Generation), not the

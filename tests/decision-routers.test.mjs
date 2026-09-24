@@ -9,7 +9,10 @@ import { fileURLToPath } from "node:url";
 // or acts on unconfigured points.
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/cards-create.ts"), "utf8"),
+].join("\n");
 const decisionServer = readFileSync(join(root, "server", "decision-api.ts"), "utf8");
 const decisionSeams = readFileSync(join(root, "server", "decision-api-seams.ts"), "utf8");
 const decisionContract = readFileSync(join(root, "server", "decision-api-contract.ts"), "utf8");
@@ -125,7 +128,11 @@ assert.ok(listBody.includes("requires: def.requires ?? null"), "the list exposes
 // Execution seam: build creations consult the router exactly once, and the
 // router fails soft to "unknown" on every path (mode gate, missing key,
 // catch-all) so creation never breaks for a misconfigured point.
-assert.match(server, /explicitIntent !== "unknown" \? explicitIntent : await seedBuildIntentFromRouter\(prompt, workspaceProjectId\)/, "explicit caller intent wins; otherwise the router seeds with the card project, else triage settles");
+assert.match(
+  server,
+  /explicitIntent !== "unknown" \? explicitIntent\s*:\s*await deps\.seedBuildIntent\(input\.prompt, workspace\.projectId\)/,
+  "explicit caller intent wins; otherwise the router seeds with the card project, else triage settles",
+);
 const seamAt = decisionSeams.indexOf("async function seedBuildIntent(\n");
 assert.ok(seamAt >= 0, "the router seam exists in the decision API module");
 const seamEnd = decisionSeams.indexOf("\n  }\n", seamAt);

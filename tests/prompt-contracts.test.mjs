@@ -10,7 +10,11 @@ import { fileURLToPath } from "node:url";
 // consts, and every spawn site must reference them: a new spawn path that
 // forgets a clause fails here instead of shipping a weaker worker.
 
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create-prompt.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
+].join("\n");
 
 // Each clause is defined exactly once: pasted duplicates are drift.
 const neverSeedDefs = serverSource.match(/const NEVER_SEED = "/g) ?? [];
@@ -20,7 +24,8 @@ assert.equal(turnDisciplineDefs.length, 1, "TURN_DISCIPLINE is defined once, not
 assert.equal((serverSource.match(/const COMMIT_STYLE = "/g) ?? []).length, 1, "COMMIT_STYLE is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/const INTERFACE_PICK = "/g) ?? []).length, 1, "INTERFACE_PICK is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/Interface-pick discipline: check review_gates/g) ?? []).length, 1, "the interface-pick prose lives in the const only");
-assert.equal((serverSource.match(/\$\{INTERFACE_PICK\}/g) ?? []).length, 4, "spawn, restart, nudge, and ask copy reference INTERFACE_PICK");
+assert.equal((serverSource.match(/\$\{INTERFACE_PICK\}/g) ?? []).length, 3, "restart, nudge, and ask copy reference INTERFACE_PICK");
+assert.match(serverSource, /%INTERFACE_PICK%/, "the initial creation template references INTERFACE_PICK");
 assert.equal((serverSource.match(/orphans a second workflow outside your card/g) ?? []).length, 1, "the seed-ban prose lives in the const only");
 assert.equal((serverSource.match(/never end a turn with a bare progress report/g) ?? []).length, 1, "the turn-discipline prose lives in the const only");
 assert.equal((serverSource.match(/Never commit empty or `wip` messages/g) ?? []).length, 1, "the commit-style prose lives in the const only");
@@ -42,7 +47,7 @@ const ordered = Object.entries(sites).map(([site, anchor]) => {
   return { site, at };
 }).sort((a, b) => a.at - b.at);
 const siteEnds = {
-  spawn: "const ts = now();",
+  spawn: "%REQUEST%`;",
   restart: "return { prompt, projectPath, workspace };",
   reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
@@ -50,10 +55,12 @@ for (const { site, at } of ordered) {
   const stop = serverSource.indexOf(siteEnds[site], at);
   assert.ok(stop > at, `the ${site} prompt has its end marker`);
   const window = serverSource.slice(at, stop);
-  assert.ok(window.includes("${NEVER_SEED}"), `the ${site} prompt references NEVER_SEED`);
-  assert.ok(window.includes("${TURN_DISCIPLINE}"), `the ${site} prompt references TURN_DISCIPLINE`);
-  assert.ok(window.includes("${COMMIT_STYLE}"), `the ${site} prompt references COMMIT_STYLE`);
-  assert.ok(window.includes("${RECON_PROTOCOL}"), `the ${site} prompt references RECON_PROTOCOL`);
+  const token = site === "spawn" ? "%" : "${";
+  const suffix = site === "spawn" ? "%" : "}";
+  assert.ok(window.includes(`${token}NEVER_SEED${suffix}`), `the ${site} prompt references NEVER_SEED`);
+  assert.ok(window.includes(`${token}TURN_DISCIPLINE${suffix}`), `the ${site} prompt references TURN_DISCIPLINE`);
+  assert.ok(window.includes(`${token}COMMIT_STYLE${suffix}`), `the ${site} prompt references COMMIT_STYLE`);
+  assert.ok(window.includes(`${token}RECON_PROTOCOL${suffix}`), `the ${site} prompt references RECON_PROTOCOL`);
 }
 
 // The shared CLI copy must never invite a card worker to seed: that exact
@@ -73,14 +80,14 @@ const doneSites = {
   // single giant lines, so fixed char windows either miss or bleed, and
   // next-anchor bounding breaks where a template closes after the next
   // anchor opens (research closes past explore's first line).
-  spawn: { anchor: "Step 1 — verify intent first", end: "const ts = now();" },
+  spawn: { anchor: "Step 1 — verify intent first", end: "%REQUEST%`;" },
   restart: {
     anchor: "const prompt = researchRestart ?? exploreRestart ?? `You are running a Stelow workflow",
     end: "return { prompt, projectPath, workspace };",
   },
   reseed: { anchor: "in the re-seeded state.md", end: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")" },
   research: { anchor: "NEVER check a box yourself", end: "function exploreWorkerPrompt" },
-  explore: { anchor: "SINGLE-STAGE Stelow exploration", end: "async function createCardInternal" },
+  explore: { anchor: "SINGLE-STAGE Stelow exploration", end: "export function createCardInternal" },
 };
 // Paid review is offered, never auto-run: both lightweight prompts reference
 // the single REVIEW_PROTOCOL const.
@@ -96,7 +103,8 @@ for (const [site, { anchor, end }] of Object.entries(doneSites)) {
   const stop = serverSource.indexOf(end, at);
   assert.ok(stop > at, `the ${site} prompt has its end marker`);
   const window = serverSource.slice(at, stop);
-  assert.ok(window.includes("${DONE_PROTOCOL}"), `the ${site} prompt references DONE_PROTOCOL`);
+  const doneToken = site === "spawn" ? "%DONE_PROTOCOL%" : "${DONE_PROTOCOL}";
+  assert.ok(window.includes(doneToken), `the ${site} prompt references DONE_PROTOCOL`);
 }
 
 // Worker verbs: done + playbook are registered, card-resolved, and listed;
@@ -137,7 +145,7 @@ const splitSites = {
   reseed: "researchReseed ?? exploreReseed ??",
 };
 const splitEnds = {
-  spawn: "const ts = now();",
+  spawn: "%REQUEST%`;",
   restart: "return { prompt, projectPath, workspace };",
   reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
@@ -147,7 +155,8 @@ for (const [site, anchor] of Object.entries(splitSites)) {
   const stop = serverSource.indexOf(splitEnds[site], at);
   assert.ok(stop > at, `the ${site} prompt has its end marker`);
   const window = serverSource.slice(at, stop);
-  assert.ok(window.includes("${SPLIT_PROTOCOL}"), `the ${site} prompt references SPLIT_PROTOCOL`);
+  const splitToken = site === "spawn" ? "%SPLIT_PROTOCOL%" : "${SPLIT_PROTOCOL}";
+  assert.ok(window.includes(splitToken), `the ${site} prompt references SPLIT_PROTOCOL`);
 }
 
 // Worker verbs: split is registered, card-resolved, content-free, and listed;

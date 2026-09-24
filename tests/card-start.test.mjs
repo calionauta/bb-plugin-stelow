@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 // unstarted card — only the human unchecks the box.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const cardsCreate = readFileSync(join(root, "server/cards-create.ts"), "utf8");
+const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
 const workers = readFileSync(join(root, "server/workers.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 // GitHub issues live decoupled: the feature module owns matching,
@@ -36,7 +38,7 @@ const detailStartSource = `${app}\n${researchState}\n${exploreState}\n${buildLif
 // chose it. The automation path carries the rule's autostart flag (default
 // off) instead of a literal — the human opts in per rule, the server never
 // assumes.
-assert.match(server, /start = true/, "creation spawns by default");
+assert.match(cardsCreate, /input\.start === false/, "creation parks only when the human opts out");
 const forcedParks = server.match(/start: false/g) ?? [];
 assert.equal(forcedParks.length, 0, "no hardcoded park remains — GitHub start policy comes from the human choice");
 assert.match(githubServer, /start: decision\.start/, "automation passes the worktree-gated start policy through the shared GitHub path");
@@ -47,7 +49,7 @@ assert.match(workers, /async function fresh\(/, "the worker seam owns the fresh-
 assert.match(server, /workers\.fresh\(cardId, "start"\)/, "starting shares the fresh-spawn body");
 assert.match(server, /return workers\.fresh\(cardId, "restart"\)/, "restart shares the same body — one spawn, never pasted");
 assert.match(server, /Drag-to-Doing on a threadless card starts it/, "dragging inbox to Doing spawns instead of lying");
-assert.match(server, /thread\?\.id \?\? null/, "an unstarted card stores a null thread, never a placeholder");
+assert.match(cardsPersist, /thread\?\.id \?\? null/, "an unstarted card stores a null thread, never a placeholder");
 
 // Split children are approved work: they inherit the spawn default and
 // never park. The split spawn call carries no start key at all.
@@ -164,7 +166,7 @@ assert.match(server, /if \(decision\.move\.status === "in-progress" && !card\.wo
 
 // A Build workflow is code work: a Personal/exploratory folder only holds
 // Stelow state and cannot truthfully produce a diff, branch, or commit.
-assert.match(server, /Build cards require a project workspace with a Git source/, "new Build cards refuse an exploratory workspace");
+assert.match(cardsCreate, /Build cards require a project workspace with a Git source/, "new Build cards refuse an exploratory workspace");
 assert.match(server, /Cannot split a Build workflow from an exploratory workspace/, "split cannot recreate an unverifiable Build child");
 assert.match(server, /auditReceiptReadiness\(receiptContent/, "Build done checks the durable audit receipt before becoming Done");
 
