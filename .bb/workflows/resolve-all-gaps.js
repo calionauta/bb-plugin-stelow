@@ -34,8 +34,8 @@ and merge safety with current master. Run every practical gate.
 Fix only tiny safe issues, then return structured findings and exact next actions.`, {
   label: "complete-gap-audit",
   phase: "Audit",
-  provider: "claude-code",
-  model: "claude-sonnet-5",
+  provider: "codex",
+  model: "gpt-6-luna",
   reasoningLevel: "medium",
   schema: {
     type: "object",
@@ -63,8 +63,8 @@ create/use it without resetting this checkout, preserve newer master functionali
 and report the exact branch/worktree evidence. Do not merely document unresolved code as complete.`, {
     label: `repair-round-${round}`,
     phase: "Repair",
-    provider: "claude-code",
-    model: "claude-sonnet-5",
+    provider: "codex",
+    model: "gpt-6-luna",
     reasoningLevel: "medium",
   });
 
@@ -77,8 +77,8 @@ Run mutation-style negative controls where possible. Fix all real issues, commit
 and return a structured re-audit.`, {
     label: `review-round-${round}`,
     phase: "Review",
-    provider: "claude-code",
-    model: "claude-sonnet-5",
+    provider: "codex",
+    model: "gpt-6-luna",
     reasoningLevel: "medium",
     schema: {
       type: "object",
@@ -106,8 +106,8 @@ Fix any small remaining issue, commit and push. If a major gap remains, return i
 instead of claiming completion.`, {
   label: "finalize-all-gaps",
   phase: "Finalize",
-  provider: "claude-code",
-  model: "claude-sonnet-5",
+  provider: "codex",
+  model: "gpt-6-luna",
   reasoningLevel: "medium",
 });
 
@@ -119,8 +119,8 @@ security results, workflow validation, docs status, untracked artifact classific
 and integration status with origin/master. State clearly whether all pending work is resolved.`, {
   label: "final-report-all-gaps",
   phase: "Report",
-  provider: "claude-code",
-  model: "claude-sonnet-5",
+  provider: "codex",
+  model: "gpt-6-luna",
   reasoningLevel: "medium",
 });
 
