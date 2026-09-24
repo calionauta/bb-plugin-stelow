@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 // fetches anything new — fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
+const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
 const viewToggle = readFileSync(join(root, "components", "board", "board-view-toggle.tsx"), "utf8");
 const lists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const pills = readFileSync(join(root, "components", "dashboard", "build-status-pills.tsx"), "utf8");
@@ -72,8 +73,15 @@ assert.ok(app.includes("function hillRegionLabel("), "region words come from one
 assert.ok(app.includes("function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }"), "one gallery dialog serves buckets and hill piles through params");
 assert.ok(app.includes("<Dialog open={open} onOpenChange="), "dismissal rides the shared Dialog primitive");
 assert.ok(app.includes("<DialogTitle>{title}</DialogTitle>"), "the dialog titles from params — pile count plus region, never a number");
-assert.ok(app.includes("<BoardCard card={card} onOpen={() => onOpenCard(card)}"), "gallery rows are the board tiles themselves — tint, borders, and activity read identically");
-assert.ok(app.includes("✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes"), "tiles read scope counts, never percentages");
+assert.ok(
+  boardCards.includes("<BoardCard card={card} onOpen={() => onOpenCard(card)}")
+    || app.includes("<BoardCard card={card} onOpen={() => onOpenCard(card)}"),
+  "gallery rows are the board tiles themselves — tint, borders, and activity read identically",
+);
+assert.ok(
+  boardCards.includes("✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes"),
+  "tiles read scope counts, never percentages",
+);
 
 // View persistence: returning from a card restores the picked view per
 // track (board, list, hill) instead of resetting to board. Unknown stored
@@ -92,7 +100,7 @@ assert.match(app, /biggest >= 8 \? "size-5" : biggest >= 4 \? "size-4" : "size-3
 // Scope strips: one shared bar in tiles and rows, fed by summary counts —
 // never a pasted shape per surface, never rendered for scopeless cards.
 assert.match(pills, /export function ScopeStrip\(\{ done, total \}/, "one strip component serves every surface");
-assert.match(app, /<ScopeStrip done=\{card\.scopeSummary\.scopesDone\} total=\{card\.scopeSummary\.scopesTotal\} \/>/, "tiles render the shared strip");
+assert.match(boardCards, /<ScopeStrip done=\{card\.scopeSummary\.scopesDone\} total=\{card\.scopeSummary\.scopesTotal\} \/>/, "tiles render the shared strip");
 assert.match(lists, /<ScopeStrip done=\{card\.scopeSummary\.scopesDone\} total=\{card\.scopeSummary\.scopesTotal\} \/>/, "rows render the shared strip");
 assert.ok(pills.includes("if (!(total > 0)) return null"), "scopeless cards render nothing, not an empty bar");
 

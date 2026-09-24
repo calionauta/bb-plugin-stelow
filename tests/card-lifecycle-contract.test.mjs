@@ -7,6 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
+const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
 const openStelowAction = readFileSync(join(root, "components/thread/open-stelow-action.tsx"), "utf8");
 const routeAdapters = readFileSync(join(root, "components/detail/card-detail-route.tsx"), "utf8");
 const researchDetail = readFileSync(join(root, "components/detail/research-detail-body.tsx"), "utf8");
@@ -76,13 +77,6 @@ function rpcMethod(name, nextName) {
   return server.slice(start, end);
 }
 
-function appFunction(name, nextMarker) {
-  const start = app.indexOf(`function ${name}(`);
-  const end = app.indexOf(nextMarker, start + 1);
-  assert.notEqual(start, -1, `${name} UI function exists`);
-  assert.notEqual(end, -1, `${nextMarker} marks the end of ${name}`);
-  return app.slice(start, end);
-}
 
 const updateIntent = rpcMethod("updateCardIntent", "addCardComment");
 assert.match(updateIntent, /if \(!canEditWorkflowIntent\(card\)\)/, "only triage Build cards can edit their workflow type");
@@ -398,17 +392,17 @@ assert.match(trackLists, /<TrackListRow[\s\S]*meta=\{metaFor\(card\)\}/, "every 
 // renders only when the activity pill doesn't already say it — "Waiting
 // for you" plus "Answer required" read as the same state twice.
 assert.match(buildStatusPills, /export function AttentionChip\(\{ label \}/, "one attention chip serves tiles and rows");
-assert.match(app, /<AttentionChip label=\{attentionLabel\(card\.activity\)\} \/>/, "tiles render the shared chip");
-const metaRows = appFunction("CardMetaRows", "function BoardCard(");
-assert.match(metaRows, /attention && card\.activity !== "error" && card\.activity !== "awaiting-answer"/, "tiles chip only what the pill doesn't already state");
+assert.match(boardCards, /<AttentionChip label=\{attentionLabel\(card\.activity\)\} \/>/, "tiles render the shared chip");
+const metaRows = boardCards.slice(boardCards.indexOf("export function CardMetaRows"), boardCards.indexOf("export function CardHeading"));
+assert.match(metaRows, /cardShowsAttention\(card\)/, "tiles chip only what the pill doesn't already state");
 
 // Focused-card keyboard: Enter/Space opens the card, W opens its worker
 // thread. Guarded to the card surface so typing elsewhere never navigates.
-const boardCard = appFunction("BoardCard", "function LightweightTrackCard(");
+const boardCard = boardCards.slice(boardCards.indexOf("export function BoardCard"), boardCards.indexOf("export function LightweightTrackCard"));
 assert.match(boardCard, /event\.target !== event\.currentTarget/, "card keys ignore events from nested controls");
 assert.match(boardCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused build card");
 assert.match(boardCard, /navigate\.toThread\(card\.workerThreadId\)/, "W navigates to the card's own worker thread");
-const lightweightCard = appFunction("LightweightTrackCard", "function ResearchCard(");
+const lightweightCard = boardCards.slice(boardCards.indexOf("export function LightweightTrackCard"), boardCards.indexOf("export function ResearchCard"));
 assert.match(lightweightCard, /event\.key === "w" \|\| event\.key === "W"/, "W opens the worker thread from a focused research/explore card");
 const listRow = trackLists.slice(trackLists.indexOf("function TrackListRow"), trackLists.indexOf("function rowTone"));
 assert.match(
@@ -431,10 +425,10 @@ assert.doesNotMatch(app, /<span className="font-medium text-muted-foreground\/80
 assert.match(buildStatusPills, /Workflow stage[\s\S]*stageLabel\(card\.stage\)[\s\S]*Workflow type/, "Build cards identify their specific workflow stage before their workflow type");
 assert.match(buildStatusPills, /card\.activity === "awaiting-answer"[\s\S]*ActivityPill/, "Build summaries surface human waiting consistently");
 assert.doesNotMatch(buildStatusPills, /Board location|Lifecycle state/, "Build summaries do not duplicate column or lifecycle labels");
-assert.match(boardCard, /BuildStatusPills \{\.\.\.buildStatusPillProps\(card\)\}/, "Kanban tiles use the shared Build state presentation");
+assert.match(boardCard, /BuildStatusPills card=\{card\}/, "Kanban tiles use the shared Build state presentation");
 assert.match(manageHeader, /<BuildStatusPills card=\{card\} statusTone=\{statusTone\} intentLabel=\{intentLabel\} \/>/, "open Build cards use the same state presentation as Kanban tiles");
-assert.match(boardCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "build tiles offer heading recovery for idle stalls only, never for failures");
-assert.match(lightweightCard, /action=\{stuck && card\.activity !== "error" \? <CardRetryButton cardId=\{card\.id\} label="Resume work"/, "research/explore tiles match: heading recovery is idle-only");
+assert.match(boardCard, /cardCanResume\(card\) && card\.activity !== "error"/, "build tiles offer heading recovery for idle stalls only, never for failures");
+assert.match(lightweightCard, /cardCanResume\(card\) && card\.activity !== "error"/, "research/explore tiles match: heading recovery is idle-only");
 assert.doesNotMatch(boardCard, /bg-destructive\/10/, "build tiles render no failure body — the open card explains");
 assert.doesNotMatch(lightweightCard, /bg-destructive\/10/, "research/explore tiles render no failure body either");
 assert.match(boardCard, /liveBorderClass\(card\)/, "a Build card needing attention uses its shared live attention border");
@@ -450,7 +444,11 @@ assert.match(buildProgress, /<CurrentStagePill stage=\{card\.stage\} \/>/, "the 
 // icon for the playbook tag, statusTone for state, muted for the tag. Tiles
 // show identity (tag) while open cards add position (column) — the board
 // already gives tiles their position, so only open cards need it.
-assert.match(app, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{null\}/, "tiles show identity only — position comes from the board section");
+assert.match(
+  boardCards,
+  /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{null\}/,
+  "tiles show identity only — position comes from the board section",
+);
 assert.match(detailSource, /<LightweightStatusPills card=\{card\} statusTone=\{statusTone\} columnLabel=\{LIGHTWEIGHT_COLUMN_LABELS\[researchColumnForStatus\(card\.status\)\]/, "open lightweight cards add the position pill the board cannot show them");
 assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Research strategy/, "the open research tag no longer out-colors its tile twin");
 assert.doesNotMatch(app, /tone="bg-primary\/15 text-primary" title="Technique/, "the open explore tag no longer out-colors its tile twin");
@@ -474,8 +472,8 @@ const retry = rpcMethod("retryWorker", "restartWorker");
 assert.match(retry, /card\.status === "completed" \|\| card\.status === "blocked"/, "completed cards refuse Retry instead of nudging a finished worker");
 assert.match(server, /status: "in-progress", last_error: null \}\);/, "answering a question clears the interrupted turn's failure");
 assert.match(server, /supersede it at birth/, "an error arriving with an open question counts once, in history");
-assert.match(boardCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "build board cards never offer Retry on terminal cards");
-assert.match(lightweightCard, /const terminal = card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked";/, "research/explore cards never offer Retry on terminal cards");
+assert.match(boardCard, /cardCanResume\(card\)/, "build board cards use the shared terminal retry guard");
+assert.match(lightweightCard, /cardCanResume\(card\)/, "research/explore cards use the shared terminal retry guard");
 
 // Creation settings stay visible under the composer: collapsing them hid
 // consequential choices users never discovered. A fixed-height dialog with
@@ -540,7 +538,7 @@ assert.doesNotMatch(app, /Fresh card — still in triage/, "no Draft pill duplic
 // Finished work is not blocked work. The review signal is its own quieter
 // treatment, derived from ONE predicate, and it is the completion's read state
 // — never the amber attention flag the Inbox badge and attention filter count.
-assert.match(app, /import \{ pendingReview \} from "\.\/lib\/board-list-presentation\.mjs"/, "board surfaces share the tested review predicate");
+assert.match(boardCards, /cardNeedsReview\(card\)/, "board surfaces share the tested review predicate");
 assert.match(trackLists, /pendingReview\(card\) \? <ReviewChip/, "list rows only ask for review through the shared completion predicate");
 assert.match(server, /hasPendingReview\(db, row\.id\)/, "list rows carry the review signal from the shared Inbox helper");
 assert.match(server, /hasPendingReview\(db, cardId\)/, "card detail carries the same review signal");

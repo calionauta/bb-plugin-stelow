@@ -1,4 +1,4 @@
-import { Children, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   definePluginApp,
   UrlLink,
@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { countsForInboxBadge } from "./lib/inbox-events.mjs";
 import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
 import { INBOX_EVENT_LABELS, inboxEventPresentation, inboxEventText, inboxEventTime, inboxFilterEntries, unreadInboxEntries } from "./lib/inbox-event-presentation.mjs";
-import { joinStrategyLabels, liveBorderClass, statusTone } from "./lib/detail-presentation.mjs";
+import { joinStrategyLabels } from "./lib/detail-presentation.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import {
@@ -47,8 +47,8 @@ import { rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus
 import { FiltersBar } from "./components/board/board-filters";
 import { ViewToggle } from "./components/board/board-view-toggle";
 import { BuildList, ExploreList, ResearchList } from "./components/board/track-lists";
-import { useReturnFocus } from "./components/board/use-return-focus";
-import { pendingReview } from "./lib/board-list-presentation.mjs";
+import { BoardColumn } from "./components/board/board-column";
+import { BoardCard, ExploreCard, ResearchCard } from "./components/board/board-cards";
 import { normalizeBoardView, type BoardTrack } from "./lib/board-views.mjs";
 import {
   STELOW_PANEL_ID,
@@ -62,15 +62,8 @@ import {
 } from "./components/panel/stelow-route.mjs";
 import { useDebouncedRealtime } from "./components/use-debounced-realtime";
 import {
-  ActivityPill,
-  AttentionChip,
-  BuildStatusPills,
-  DoingNowPill,
-  LightweightStatusPills,
   Pill,
-  ScopeStrip,
   activityDotTone,
-  attentionLabel,
 } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import { GithubIssuesDialog, type GithubStatus } from "./components/github/github-issues-dialog";
@@ -175,8 +168,6 @@ function statusGlyph(status: string) {
   if (status === "archived") return "○";
   return "·";
 }
-
-const buildStatusPillProps = (card: CardItem) => ({ card, statusTone, intentLabel: (intent: string) => INTENT_LABEL[intent] });
 
 interface SidebarAccessoryHandle {
   count: number;
@@ -702,6 +693,8 @@ function BoardPanel({ active }: { active: boolean }) {
                     [column]: !current[column],
                   }))}
                   onDrop={(cardId) => moveCard(cardId, column)}
+                  labels={COLUMN_LABELS}
+                  renderCard={(card) => <BoardCard card={card} onOpen={() => goToCard(navigate, card, card.id)} />}
                 />
               ))}
             </div>
@@ -902,7 +895,13 @@ function ResearchPanel({ active }: { active: boolean }) {
                 onToggleCollapsed={() => setCollapsedColumns((current) => ({ ...current, [column]: !current[column] }))}
                 onDrop={(cardId) => moveCard(cardId, column)}
                 labels={RESEARCH_COLUMN_LABELS}
-                renderCard={(card) => <ResearchCard card={card} strategyLabel={joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById)} />}
+                renderCard={(card) => (
+                  <ResearchCard
+                    card={card}
+                    strategyLabel={joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById)}
+                    onOpen={() => goToCard(navigate, card, card.id)}
+                  />
+                )}
               />
             ))}
           </div>
@@ -1097,7 +1096,13 @@ function ExplorePanel({ active }: { active: boolean }) {
                 onToggleCollapsed={() => setCollapsedColumns((current) => ({ ...current, [column]: !current[column] }))}
                 onDrop={(cardId) => moveCard(cardId, column)}
                 labels={RESEARCH_COLUMN_LABELS}
-                renderCard={(card) => <ExploreCard card={card} stageLabel={card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null} />}
+                renderCard={(card) => (
+                  <ExploreCard
+                    card={card}
+                    stageLabel={card.exploreStage ? (stageLabelById.get(card.exploreStage) ?? card.exploreStage) : null}
+                    onOpen={() => goToCard(navigate, card, card.id)}
+                  />
+                )}
               />
             ))}
           </div>
@@ -1860,145 +1865,6 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
   );
 }
 
-function BoardColumn({ column, cards, collapsed, onToggleCollapsed, onDrop, labels = COLUMN_LABELS, renderCard = (card) => <BoardCard card={card} /> }: { column: string; cards: CardItem[]; collapsed: boolean; onToggleCollapsed: () => void; onDrop: (cardId: string) => void; labels?: Record<string, string>; renderCard?: (card: CardItem) => React.ReactNode }) {
-  const [over, setOver] = useState(false);
-  return (
-    <section onDragOver={(event) => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(event) => { event.preventDefault(); setOver(false); const id = event.dataTransfer.getData("text/stelow-card"); if (id) onDrop(id); }} className={`flex min-h-40 flex-col rounded-lg border bg-muted/30 p-2 transition md:h-full md:min-h-0 ${over ? "border-primary bg-primary/5" : "border-border"} ${collapsed ? "items-center" : ""}`}>
-      <button onClick={onToggleCollapsed} className={`${collapsed ? "flex h-full w-full cursor-pointer flex-col items-center gap-2 py-2 hover:bg-foreground/5" : "mb-2 flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-md px-1 py-0.5 hover:bg-foreground/5"} text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground`} title={collapsed ? `Expand ${labels[column]}` : `Collapse ${labels[column]}`} aria-label={collapsed ? `Expand ${labels[column]}` : `Collapse ${labels[column]}`}>
-        {collapsed ? (
-          <>
-            <span className="rounded-md bg-foreground/10 px-1.5 text-foreground">{cards.length}</span>
-            <span style={{ writingMode: "vertical-rl" }} className="text-[10px] tracking-widest text-foreground/80">{labels[column]}</span>
-            <DisclosureChevron open={false} className="text-foreground/60" />
-          </>
-        ) : (
-          <>
-            <span className="flex items-center gap-1.5">
-              <DisclosureChevron open />
-              <span>{labels[column]}</span>
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="rounded-md bg-foreground/10 px-2 text-foreground">{cards.length}</span>
-            </span>
-          </>
-        )}
-      </button>
-      {!collapsed ? (
-        <div className="space-y-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-y-contain md:pr-1" role="list" aria-label={`${labels[column]} cards`}>
-          {cards.map((card) => <div key={card.id}>{renderCard(card)}</div>)}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-// Shared card leaves. BoardCard and ResearchCard render identical worker
-// chrome (inline retry, attention/error/idle rows) — one definition serves
-// both tracks instead of drifting copies.
-function CardRetryButton({ cardId, label }: { cardId: string; label: string }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [retrying, setRetrying] = useState(false);
-  async function retry(event: React.MouseEvent) {
-    event.stopPropagation();
-    if (retrying) return;
-    setRetrying(true);
-    try {
-      const result = await rpc.call("retryWorker", { cardId });
-      if (!result.ok) toast.error(result.error ?? "Retry failed. Open the card to restart fresh.");
-      else toast.success("Worker retried.");
-    } finally {
-      setRetrying(false);
-    }
-  }
-  return (
-    <button onClick={(event) => void retry(event)} disabled={retrying} title="Retry the worker in place" className="min-h-11 disabled:cursor-not-allowed cursor-pointer rounded-md border border-primary/40 px-3 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50">
-      {retrying ? "Resuming…" : `↻ ${label}`}
-    </button>
-  );
-}
-
-// Tiles signal; the open card explains. A failure's full text and its
-// retry live in the detail hero — never on the tile — so board columns stay
-// scannable. The Failed chip keeps the reason one hover away via title.
-function CardMetaRows({ card }: { card: CardItem }) {
-  const attention = card.needsAttention;
-  return (
-    <>
-      <div className="mt-1 truncate text-[11px] text-muted-foreground" title={`Project: ${card.projectName}`}>{card.projectName}</div>
-      {attention && card.activity !== "error" && card.activity !== "awaiting-answer" ? (
-        <div className="mt-2"><AttentionChip label={attentionLabel(card.activity)} /></div>
-      ) : null}
-      {card.activity === "running" || card.activity === "awaiting-answer" ? (
-        <div className="mt-2 max-w-full"><DoingNowPill names={card.doingNow ?? []} /></div>
-      ) : null}
-      {pendingReview(card) ? (
-        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-          <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
-          <span>Review</span>
-        </div>
-      ) : null}
-      {card.activity === "idle" ? <div className="mt-1 text-[10px] text-muted-foreground">Idle since {new Date(card.updatedAt).toLocaleString()}</div> : null}
-    </>
-  );
-}
-
-// All board tiles share this header geometry. Identity, state and recovery
-// actions are deliberately distinct rows: a narrow board column must never
-// make a title look like a tiny label among controls, or make state look like
-// an action. The pills are self-describing through their canonical order, so
-// a generic "Status" label would only add noise.
-function CardHeading({ title, status, action }: { title: string; status: React.ReactNode; action?: React.ReactNode }) {
-  const statusItems = Children.toArray(status);
-  return (
-    <header className="min-w-0 space-y-2.5">
-      <h3 className="min-w-0 break-all text-sm font-semibold leading-5 text-foreground">{title}</h3>
-      {statusItems.length ? <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">{statusItems}</div> : null}
-      {action ? <div className="border-t border-border/70 pt-2">{action}</div> : null}
-    </header>
-  );
-}
-
-function BoardCard({ card, onOpen }: { card: CardItem; onOpen?: () => void }) {
-  const navigate = useBbNavigate();
-  const attention = card.needsAttention;
-  // Retry is for active workers only: a Done card never offers it, even if a
-  // stale error survived underneath.
-  const terminal = card.status === "completed" || card.status === "archived" || card.status === "blocked";
-  const stuck = !terminal && Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
-  const borderClass = liveBorderClass(card) || "border-border hover:border-primary/60";
-  const open = useCallback(() => { onOpen?.(); goToCard(navigate, card, card.id); }, [navigate, card, onOpen]);
-  const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
-  const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      ref={returnFocusRef}
-      draggable
-      onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
-      onClick={open}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
-        else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
-      }}
-      title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
-      className={`stelow-live-surface stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
-      aria-label={`Open card ${card.displayName}.`}
-    >
-      <CardHeading title={card.displayName}
-        action={stuck && card.activity !== "error" ? <CardRetryButton cardId={card.id} label="Resume work" /> : null}
-        status={<BuildStatusPills {...buildStatusPillProps(card)} />}
-      />
-      {card.scopeSummary.scopesTotal > 0 ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
-        <span className="whitespace-nowrap text-muted-foreground" title={`${card.scopeSummary.scopesDone} of ${card.scopeSummary.scopesTotal} scopes done · ${card.scopeSummary.tasksDone} of ${card.scopeSummary.tasksTotal} tasks done`}>✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes · {card.scopeSummary.tasksDone}/{card.scopeSummary.tasksTotal} tasks</span>
-      </div> : null}
-      <CardMetaRows card={card} />
-    </div>
-  );
-}
-
 // Card gallery dialog: one expanded modal listing cards as the same tiles
 // the board shows — near-fullscreen (70vw), tiles at the board's own column
 // bounds (240–320px, the shared KANBAN_COLUMN_WIDTHS pair) and the board's
@@ -2072,62 +1938,6 @@ function BucketGalleryButton({ cards }: { cards: CardItem[] }) {
       {gallery.bucketGallery}
     </>
   );
-}
-
-// Lightweight-track card (Research + Explore share it — convention over
-// configuration): identical worker chrome, one tag pill whose label comes
-// from the track catalog (strategy for research, stage for explore).
-function LightweightTrackCard({ card, kind, tagLabel, tagTitle, ariaNoun }: { card: CardItem; kind: "research" | "explore"; tagLabel: string | null; tagTitle: string; ariaNoun: string }) {
-  const navigate = useBbNavigate();
-  const attention = card.needsAttention;
-  // Retry is for active workers only: a Done card never offers it, even if a
-  // stale error survived underneath.
-  const terminal = card.status === "completed" || card.status === "archived" || card.status === "blocked";
-  const stuck = !terminal && Boolean(card.workerThreadId) && (card.activity === "error" || (card.activity === "idle" && attention));
-  const borderClass = liveBorderClass(card) || "border-border hover:border-primary/60";
-  const open = useCallback(() => goToCard(navigate, card, card.id), [navigate, card]);
-  const returnFocusRef = useReturnFocus<HTMLDivElement>(card.id);
-  const openThread = useCallback(() => { if (card.workerThreadId) navigate.toThread(card.workerThreadId); }, [navigate, card.workerThreadId]);
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      ref={returnFocusRef}
-      draggable
-      onDragStart={(event) => { event.dataTransfer.setData("text/stelow-card", card.id); event.dataTransfer.effectAllowed = "move"; }}
-      onClick={open}
-      onKeyDown={(event) => {
-        if (event.target !== event.currentTarget) return;
-        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); }
-        else if (event.key === "w" || event.key === "W") { event.preventDefault(); openThread(); }
-      }}
-      title={card.workerThreadId ? "Click to inspect · W opens the worker thread" : "Click to inspect"}
-      className={`stelow-live-surface stelow-board-card relative block w-full cursor-pointer overflow-hidden rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${borderClass}`}
-      aria-label={`Open ${ariaNoun} ${card.displayName}.`}
-    >
-      <CardHeading title={card.displayName}
-        action={stuck && card.activity !== "error" ? <CardRetryButton cardId={card.id} label="Resume work" /> : null}
-        status={<ActivityPill activity={card.activity} detail={card.lastError} />}
-      />
-      {tagLabel ? <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-        <LightweightStatusPills card={card} statusTone={statusTone} columnLabel={null} tagLabel={tagLabel} tagTitle={tagTitle} kind={kind} />
-      </div> : null}
-      <CardMetaRows card={card} />
-    </div>
-  );
-}
-
-// Research-track card: strategy instead of stage/intent, opens in the
-// Research panel. Retry, attention, and activity reuse the build pieces.
-function ResearchCard({ card, strategyLabel }: { card: CardItem; strategyLabel: string | null }) {
-  return <LightweightTrackCard card={card} kind="research" tagLabel={strategyLabel} tagTitle="Research strategy — the playbook driving this investigation." ariaNoun="research" />;
-}
-
-// Explore-track card: a single technique (one isolated Build-workflow skill)
-// instead of strategy/intent, opens in the Explore panel. Retry, attention,
-// and activity reuse the same pieces as the other tracks.
-function ExploreCard({ card, stageLabel }: { card: CardItem; stageLabel: string | null }) {
-  return <LightweightTrackCard card={card} kind="explore" tagLabel={stageLabel ?? card.exploreStage} tagTitle="Technique — the focused approach this exploration runs." ariaNoun="exploration" />;
 }
 
 // Timeline of the 17 workflow stages, grouped by phase (band). Each stage is a

@@ -22,6 +22,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
+const boardCards = readFileSync(join(root, "components", "board", "board-cards.tsx"), "utf8");
 const buildDialogKanban = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
@@ -70,8 +71,8 @@ assert.doesNotMatch(app, /grid-flow-col/, "gallery flow is row-major: rightwards
 assert.match(app, /sm:w-\[70vw\]/, "the gallery takes seventy percent of the viewport width");
 assert.match(app, /className="h-\[85dvh\] overflow-y-auto sm:w-\[70vw\]/, "the gallery height is fixed at 85dvh with internal scroll, never content-sized");
 assert.match(app, /\{cards\.length === 0 \? \(/, "an empty pile reads one line, never a dead modal");
-assert.match(app, /function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook without changing default navigation");
-assert.ok(app.includes("onOpen?.()"), "the hook is optional — every existing tile behaves exactly as before");
+assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles accept an open hook through the extracted board card");
+assert.match(boardCards, /onClick=\{open\}/, "the extracted tile opens through its injected navigation hook");
 assert.match(app, /const stageOptions = useMemo\(\(\) => \[\.\.\.STAGE_SEQUENCE\], \[\]\)/, "stage filter lists the canonical sequence, never just stages with cards");
 assert.match(boardFilters, /export function FilterMultiSelect/, "facets share one checkbox list, never per-field selects");
 assert.match(app, /toggleFilterValue\(prev, value\)/, "pills and checkboxes toggle through one helper");
