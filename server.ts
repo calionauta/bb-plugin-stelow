@@ -4724,7 +4724,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         scopeSync,
         artifacts,
         workerHistory,
-        executionRuns: executionLifecycle.list(cardId),
+        executionRuns: executionLifecycle.detailList(cardId),
         fileEnvironmentId,
         nextStages,
         githubLink,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { createExecutionRun, ensureExecutionRunTable, getExecutionRun, activeExecutionRun, recordExecutionCompletion, transitionExecutionRun, cancelExecutionRuns } from "../lib/execution-run-ledger.mjs";
+import { createExecutionRun, ensureExecutionRunTable, getExecutionRun, activeExecutionRun, projectExecutionRun, recordExecutionCompletion, transitionExecutionRun, cancelExecutionRuns } from "../lib/execution-run-ledger.mjs";
 
 const db = new Database(":memory:");
 db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
@@ -25,4 +25,12 @@ const second = createExecutionRun(db, { ...base, id: "local-2", runId: "run-2", 
 assert.equal(cancelExecutionRuns(db, "card-1", "origin-deleted"), 1);
 assert.equal(activeExecutionRun(db, "card-1"), null);
 assert.equal(second.normalizedStatus, "queued");
-console.log("execution run ledger test ok: ownership, transitions, completion dedupe, terminal cancel");
+const detailRun = projectExecutionRun(second);
+const detailRunKeys = [
+  "adapter", "cardId", "completedAt", "completionEventId", "createdAt", "errorCode", "id", "nativeStatus",
+  "normalizedStatus", "originThreadId", "previewDirective", "recipeId", "resumeOf", "runId", "sourceHash", "stage",
+  "startedAt", "workspaceId",
+].sort();
+assert.deepEqual(Object.keys(detailRun).sort(), detailRunKeys, "card detail receives only the public execution-run projection");
+assert.equal("sourceText" in detailRun, false, "internal ledger source stays out of card detail");
+console.log("execution run ledger test ok: ownership, transitions, completion dedupe, terminal cancel, public projection");

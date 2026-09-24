@@ -60,6 +60,8 @@ const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server", "cards.ts"), "utf8"),
 ].join("\n");
+const cardDetailServer = server.slice(server.indexOf("  cardDetail: {"), server.indexOf("  addCardComment: {"));
+const executionContract = readFileSync(join(root, "server", "execution-contract.ts"), "utf8");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
 const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");
 const explorePanelState = readFileSync(join(root, "components", "panels", "explore-panel-state.ts"), "utf8");
@@ -77,6 +79,9 @@ assert.match(server, /cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuse
 assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\)/, "detail schema carries nullable lead and cycle times");
 assert.match(server, /doingNow: z\.array\(z\.string\(\)\), executingScope: z\.string\(\)\.nullable\(\)/, "detail schema carries doing names and active scope");
 assert.match(server, /verifiedHeadSha: z\.string\(\)\.nullable\(\)/, "detail schema carries nullable verified HEAD");
+assert.match(server, /executionRuns: executionLifecycle\.detailList\(cardId\)/, "card detail uses the public execution-run projection");
+assert.doesNotMatch(server, /executionRuns: executionLifecycle\.list\(cardId\)/, "card detail never exposes raw ledger rows");
+assert.match(executionContract, /executionRuns: \{/, "execution runs remain available through their dedicated RPC");
 assert.match(buildProgress, /const flow = \{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}/, "detail progress reads the card times");
 assert.match(buildProgress, /<ScopeProgress scopes=\{detail\.scopes\} flow=\{flow\} \/>/, "the scoped progress view receives the card flow");
 assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
