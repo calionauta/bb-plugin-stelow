@@ -56,11 +56,13 @@ const actions = questionFormActions(
   async () => calls.push(["cancel"]),
 );
 await actions.submit([["A"]], false);
+await actions.submit([["A"], ["B1", "B2"]], true);
 await actions.cancel();
 assert.deepEqual(calls, [
   ["submit", { answers: ["A"] }],
+  ["submit", { answers: [["A"], ["B1", "B2"]] }],
   ["cancel"],
-], "the form forwards submit and cancel exactly once without changing their promise contract");
+], "the form forwards single, batch, and cancel callbacks exactly once without changing their promise contract");
 
 const app = readFileSync(new URL("../app.tsx", import.meta.url), "utf8");
 const form = readFileSync(new URL("../components/conversation/question-form.tsx", import.meta.url), "utf8");
@@ -72,7 +74,12 @@ assert.match(
   "the app shell imports the extracted registration boundary",
 );
 assert.match(app, /registerPendingInteraction\(app\);/, "the app registers pending questions through the conversation boundary");
-assert.doesNotMatch(app, /function QuestionForm\(|app\.slots\.pendingInteraction\(/, "no form body or slot wiring remains in the shell");
+assert.doesNotMatch(app, /function QuestionForm\(/, "the form body no longer remains in the shell");
+assert.match(
+  form,
+  /pendingInteraction\(\{\s*id: "stelow-question",\s*component: QuestionForm,/,
+  "the extracted registration keeps the renderer id and component contract",
+);
 assert.match(form, /const batched = items\.length > 1;/, "the host payload shape follows the rendered question count");
 assert.match(form, /<Button variant="outline" onClick=\{\(\) => void actions\.cancel\(\)\}>/, "cancel uses the shared button control");
 assert.match(button, /const Comp = asChild \? Slot : "button";/, "the shared button is natively keyboard-operable by default");
