@@ -102,7 +102,6 @@ import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
 import { evidenceStatus } from "../lib/research-evidence.mjs";
 import { resolveCardMove } from "../lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "../lib/worker-action-policy.mjs";
-import { cliHelpText, cliUsageLine, nearestCommand } from "../lib/cli-suggest.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "../lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "../lib/workflow-skills-sync.mjs";
 import { previewShape, previewText } from "../lib/preview-session.mjs";
@@ -172,6 +171,7 @@ import {
   workflowScopes,
 } from "./scopes.js";
 import { createPlatformHandlers } from "./runtime/platform.js";
+import { cliHelpResult, cliUnknownResult, stelowCliCommands } from "./runtime/cli-registry.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
 import { startReconciler } from "./runtime/reconciler.js";
@@ -4440,52 +4440,12 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
   // Opt into BB 0.43 RPC discovery so the described methods are listed.
   { experimental_discoverable: true });
 
-  // One command table feeds registration, fallthrough usage, and help text:
-  // a new subcommand updates all three by editing this list only.
-  const STELOW_CLI_COMMANDS = [
-      { name: "status", summary: "Show Stelow workflows", usage: "bb stelow status [--project <proj_id>] [--json]" },
-      { name: "ask", summary: "Ask blocking structured questions", usage: "bb stelow ask --thread <thr_id> --question <text> [--multiple] --option <label> [--desc <text>] [--preview <text>] [--artifact <path>]... (repeat --question groups to ask several at once; write all content in English)" },
-      { name: "seed", summary: "Seed state.md, transitions.md, stelow.json", usage: "bb stelow seed --project <proj_id> --name <name> --intent <new-product|feature|bugfix|refactor|investigate>" },
-      { name: "preview", summary: "Run and inspect a card workspace's dev server", usage: "bb stelow preview [status|start|stop] [--card <card_id>] [--json]" },
-      { name: "advance", summary: "Advance to the next Stelow stage", usage: "bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" },
-      { name: "done", summary: "Commit workflow completion (verified in code)", usage: "bb stelow done [--card <card_id>]" },
-      { name: "split", summary: "Execute the approved card-split proposal (no content args)", usage: "bb stelow split [--card <card_id>]" },
-      { name: "playbook", summary: "Print this card's exact state and playbook paths", usage: "bb stelow playbook [--card <card_id>]" },
-      { name: "doctor", summary: "Detect workflow drift (locks, intent, state vs transitions)", usage: "bb stelow doctor [--project <proj_id>] [--json]" },
-      { name: "schema", summary: "Show machine-readable subcommand contracts", usage: "bb stelow schema [command]" },
-      { name: "sync-scopes", summary: "Parse spec-tech scopes into tracking (idempotent)", usage: "bb stelow sync-scopes [--project <proj_id>] [--name <workflow>] [--json]" },
-      { name: "scope", summary: "Validated scope transitions (single writer)", usage: "bb stelow scope <start|done|seed-tasks> --scope <id> [--project <proj_id>] [--name <workflow>] [--iteration <n>] [--actual-files <a,b>] [--tasks <json>] [--start-sha <sha>] [--json]" },
-      { name: "lock", summary: "File-reservation locks for parallel scopes", usage: "bb stelow lock <acquire|release|check> [--project <proj_id>] --scope <id> [--file <f>...] [--ttl N] [--json]" },
-      { name: "config", summary: "Read workflow config from tracking", usage: "bb stelow config get <field> [default] [--project <proj_id>]" },
-      { name: "fan-out", summary: "Fan out index opportunities into build cards", usage: "bb stelow fan-out --opportunity <id> [--opportunity ...] [--card <card_id>] [--project <proj_id>]" },
-      { name: "verify", summary: "Verify artifacts, or run the Build card's host-recorded tests", usage: "bb stelow verify [--card <card_id>] [--tests] [--json]" },
-      { name: "gap-scopes", summary: "Convert escalated gaps into rework scopes (idempotent)", usage: "bb stelow gap-scopes [--card <card_id>]" },
-      { name: "metrics", summary: "Lead/cycle time and gap rates per card, or fleet-wide without --card (read-only)", usage: "bb stelow metrics [--json] [--card <card_id>]" },
-      { name: "storage", summary: "Worktree disk usage attributed to cards, heaviest first (read-only)", usage: "bb stelow storage [--json] [--card <card_id>]" },
-      { name: "manifest", summary: "Paste-ready Stelow-Artifacts trailer block for commit messages (read-only)", usage: "bb stelow manifest [--json] [--card <card_id>]" },
-      { name: "export", summary: "Refresh docs/runs/<card> plus manifest.md (idempotent, also automatic at done); --check reports content drift and uncommitted state without writing", usage: "bb stelow export [--json] [--check] [--card <card_id>] [--dir <relpath>]" },
-      { name: "draft", summary: "Disposable Tier G draft burst on the generation preset (text-in/text-out)", usage: "bb stelow draft --prompt <brief> [--json] [--card <card_id>]" },
-      { name: "review", summary: "Independent artifact review by the designated reviewer preset (opt-in, read-only)", usage: "bb stelow review [--card <card_id>] [--artifact <path>]" },
-      { name: "criteria", summary: "Score an artifact against its skill's semantic criteria (advisory, read-only)", usage: "bb stelow criteria --skill <skill-id> --artifact <path> [--card <card_id>] [--json]" },
-      { name: "verify-tasks", summary: "Judge completed tasks against the working diff (advisory, read-only)", usage: "bb stelow verify-tasks [--card <card_id>] [--json]" },
-      { name: "verify-delegation", summary: "Count worker subagent delegations in the thread timeline (advisory, read-only)", usage: "bb stelow verify-delegation [--card <card_id>] [--json]" },
-      { name: "gap-triage", summary: "Second-opinion escalated critique gaps via the judge (advisory, read-only)", usage: "bb stelow gap-triage [--card <card_id>] [--json]" },
-      { name: "preset", summary: "Manage agent presets", usage: "bb stelow preset list|add|remove|assign" },
-      { name: "help", summary: "Show help for a subcommand", usage: "bb stelow help [command]" },
-    ];
   bb.cli.register({
     name: "stelow",
     summary: "Inspect and interact with Stelow workflows",
-    commands: STELOW_CLI_COMMANDS,
+    commands: stelowCliCommands,
     async run(argv, ctx) {
-      if (argv[0] === "help") {
-        const text = cliHelpText(STELOW_CLI_COMMANDS, argv[1]);
-        if (text === null) {
-          const suggestion = argv[1] ? nearestCommand(argv[1], STELOW_CLI_COMMANDS.map((entry) => entry.name)) : null;
-          return { exitCode: 2, stderr: `Unknown command "${argv[1] ?? ""}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}\n${cliUsageLine(STELOW_CLI_COMMANDS)}` };
-        }
-        return { exitCode: 0, stdout: text };
-      }
+      if (argv[0] === "help") return cliHelpResult(argv);
       if (argv[0] === "status") {
         const projectFlag = argv.indexOf("--project");
         const projectId = projectFlag >= 0 ? argv[projectFlag + 1] : ctx.projectId;
@@ -6378,8 +6338,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
         return { exitCode: 2, stderr: "Usage: bb stelow preset list|add|remove|assign" };
       }
-      const suggestion = typeof argv[0] === "string" && argv[0] ? nearestCommand(argv[0], STELOW_CLI_COMMANDS.map((entry) => entry.name)) : null;
-      return { exitCode: 2, stderr: `Unknown command "${argv[0] ?? ""}".${suggestion ? ` Did you mean "${suggestion}"?` : ""}\n${cliUsageLine(STELOW_CLI_COMMANDS)}` };
+      return cliUnknownResult(argv);
     },
   });
 
