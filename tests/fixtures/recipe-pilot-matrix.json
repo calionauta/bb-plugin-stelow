@@ -17,7 +17,7 @@
     },
     {
       "path": "server/bb-workflow-bridge.ts",
-      "sha256": "ab9655ce8e19f33aea102dd6a81362c8db87559326253bda752941edffacb6ff"
+      "sha256": "a42118398d5743db086cea53dafce52febfa4cf6c38ccf9bc8bc846ac5fc30e6"
     },
     {
       "path": "lib/execution-artifacts.mjs",
