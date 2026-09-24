@@ -21,6 +21,15 @@ their handlers to `bb.rpc.register`:
 - `server/execution-advance.ts` owns stage preflight, route dispatch, and CLI
   advance behavior.
 - `server/worktree-cleanup.ts` owns cleanup preview and confirmed removal.
+- `server/runtime/platform.ts` owns tool status/install probes, update state,
+  model discovery, and preview RPC delegation. Probe subprocesses receive an
+  explicit environment that excludes daemon credentials.
+- `server/runtime/research-artifacts.ts` owns research and exploration
+  artifact discovery and validation.
+- `server/runtime/flow-metrics.ts` owns completed-card flow aggregation and
+  current attention signals.
+- `server/runtime/mentions.ts` and `server/runtime/reconciler.ts` own mention
+  provider registration and periodic reconciliation.
 
 Execution migrations run during startup. Reconciliation runs once after
 startup and on a named interval; the timer is cleared on disposal. Worker
