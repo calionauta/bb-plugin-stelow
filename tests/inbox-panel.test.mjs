@@ -6,6 +6,7 @@ import {
   inboxAction,
   inboxBadgeCount,
   inboxLoadFailure,
+  inboxPanelState,
   inboxVisibleEntries,
 } from "../lib/inbox-panel-state.mjs";
 
@@ -49,6 +50,10 @@ assert.equal(inboxAction(archived), "restore", "archived items restore");
 assert.equal(inboxBadgeCount([attention, read, archived, resolved]), 2, "badge counts unread active action items, including unread completions");
 assert.equal(inboxLoadFailure("RPC failed", []), true, "a failed first load has a retryable failure state");
 assert.equal(inboxLoadFailure("RPC failed", [attention]), false, "a background refresh failure preserves stale content");
+assert.equal(inboxPanelState(true, null, []), "loading", "the first successful request remains in the loading state");
+assert.equal(inboxPanelState(false, "RPC failed", []), "failure", "an initial request failure renders the retryable failure state");
+assert.equal(inboxPanelState(false, "RPC failed", [attention]), "content", "a refresh failure keeps stale content visible");
+assert.equal(inboxPanelState(false, null, []), "content", "a successful empty load renders the empty state");
 
 assert.match(panel, /rpc\.call\("markNotificationRead"/, "opening an unread item acknowledges it before navigation");
 assert.match(panel, /rpc\.call\("archiveNotification"[\s\S]*rpc\.call\("restoreNotification"/, "the extracted panel owns both archive transitions");

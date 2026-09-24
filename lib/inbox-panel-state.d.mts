@@ -21,4 +21,9 @@ export function inboxVisibleEntries(
 ): InboxPanelNotification[];
 export function inboxAction(entry: InboxPanelNotification): "archive" | "restore";
 export function inboxLoadFailure(error: string | null, notifications: InboxPanelNotification[]): boolean;
+export function inboxPanelState(
+  firstLoad: boolean,
+  error: string | null,
+  notifications: InboxPanelNotification[],
+): "loading" | "failure" | "content";
 export function inboxBadgeCount(notifications: InboxPanelNotification[]): number;

@@ -8,10 +8,8 @@ import {
   inboxEventPresentation,
   inboxEventText,
   inboxEventTime,
-  inboxFilterEntries,
-  unreadInboxEntries,
 } from "../../lib/inbox-event-presentation.mjs";
-import { inboxAction, inboxLoadFailure, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
+import { inboxAction, inboxPanelState, inboxVisibleEntries } from "../../lib/inbox-panel-state.mjs";
 
 export type InboxNotification = {
   id: string;
@@ -171,7 +169,7 @@ export function InboxPanel() {
   });
   const entries = inboxVisibleEntries(notifications, filter, unreadOnly);
   const selected = FILTERS.find((entry) => entry.id === filter)!;
-  const fatalError = inboxLoadFailure(loadError, notifications);
+  const panelState = inboxPanelState(firstLoad, loadError, notifications);
   const emptyTitle = unreadOnly
     ? "No unread updates"
     : filter === "attention"
@@ -235,7 +233,7 @@ export function InboxPanel() {
             Unread only
           </label>
         </div>
-        {firstLoad ? <PanelSkeleton /> : fatalError ? (
+        {panelState === "loading" ? <PanelSkeleton /> : panelState === "failure" ? (
           <section className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
             <p>{loadError}</p>
             <button onClick={() => void load()} className="mt-3 min-h-11 cursor-pointer rounded-md border px-3 text-sm font-medium hover:bg-background">
