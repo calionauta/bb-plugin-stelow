@@ -510,8 +510,8 @@ const researchSync = server.slice(server.indexOf("async function syncResearchThr
 assert.match(researchSync, /card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked"/, "research sync never writes terminal cards");
 const exploreSync = server.slice(server.indexOf("async function syncExploreThreadState"), server.indexOf("async function exploreArtifact"));
 assert.match(exploreSync, /card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked"/, "explore sync never writes terminal cards");
-const failedWriter = serverWorkerRetry.slice(serverWorkerRetry.indexOf("async function applyFailed"), serverWorkerRetry.indexOf("function failureCause"));
-assert.match(failedWriter, /current && terminal\(current\.status\)/, "a dead thread after Done never stains the card");
+const failedWriter = serverWorkerRetry.slice(serverWorkerRetry.indexOf("async function applyFailed"), serverWorkerRetry.indexOf("function dispose"));
+assert.match(failedWriter, /current && \(terminal\(current\.status\)/, "a dead thread after Done never stains the card");
 assert.match(server, /errorNeedsAttention\(row\.status, row\.last_error, activity\)/, "board attention shares the terminal-error predicate");
 assert.match(server, /errorNeedsAttention\(card\.status, card\.last_error, effectiveActivity\)/, "detail attention shares the same predicate — badge and card cannot disagree");
 const retry = rpcMethod("retryWorker", "restartWorker");

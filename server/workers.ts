@@ -7,45 +7,16 @@ import { mergeLineageFile, writeMergedFile } from "../lib/workflow-lineage.mjs";
 import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
 import { createWorkerHistory } from "./workers-history.js";
 import { createWorkerRetry } from "./workers-retry.js";
+import { createRespawnScheduler, defaultWorkerScheduler } from "./workers-scheduler.js";
+import { replaceCardWorker, spawnCardWorker, stopThread } from "./workers-spawn.js";
+import type { WorkerCard, WorkerScheduler, WorkerSpawnArgs } from "./workers-types.js";
 
 export { runWorkerMigrations } from "./workers-migrations.js";
+export type { WorkerCard } from "./workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type SpawnArgs = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0];
 type ThreadEnvironment = SpawnArgs["environment"];
-export type WorkerCard = {
-  id: string;
-  project_id: string;
-  name: string;
-  display_name: string | null;
-  prompt: string;
-  intent: string;
-  status: string;
-  stage: string;
-  activity: string;
-  worker_thread_id: string | null;
-  worker_preset_id: string | null;
-  preset_restart_pending: number | null;
-  dir_hash: string | null;
-  auto_continue_count: number | null;
-  auto_continue_stage: string | null;
-  spawn_retry_count: number | null;
-  spawn_retry_thread: string | null;
-  attachments: string;
-  workspace_kind: "project" | "exploratory";
-  workspace_path: string | null;
-  workspace_host_id: string | null;
-  kind: "build" | "research" | "explore";
-  research_strategy: string | null;
-  research_strategies: string | null;
-  explore_stage: string | null;
-  last_error: string | null;
-  last_assistant_text: string | null;
-  last_idle_at: number | null;
-  environment_label: string | null;
-  created_at: number;
-  updated_at: number;
-};
 
 type Preset = {
   id: string;
@@ -115,6 +86,8 @@ type WorkerDeps = {
     options?: RespawnOptions,
   ) => Promise<RespawnPreparation>;
   resetAutoContinue: () => { count: number; stage: string | null };
+  scheduler?: WorkerScheduler;
+  retryDelayMs?: (attempt: number) => number;
   errors: { cardNotFound: string; cardArchived: string; presetNotFound: string };
 };
 
@@ -128,12 +101,6 @@ export function workerEnvironment(
     return { type: "host" as const, hostId, workspace: { type: "unmanaged" as const, path: source.path } };
   }
   return { type: "project-default" as const };
-}
-
-async function stop(deps: WorkerDeps, threadId: string | null): Promise<void> {
-  if (!threadId) return;
-  try { await deps.bb.sdk.threads.archive({ threadId }); } catch { /* already gone */ }
-  try { await deps.bb.sdk.threads.stop({ threadId }); } catch { /* already gone */ }
 }
 
 function recordThread(
@@ -256,8 +223,7 @@ async function replaceWorker(
     card,
     fallbackEnvironment(card, prepared, params),
   );
-  // delegation-site: worker-spawn
-  const thread = await deps.bb.sdk.threads.spawn({
+  const thread = await replaceCardWorker(deps.bb, {
     projectId: card.project_id,
     environment,
     visibility: "hidden",
@@ -268,8 +234,7 @@ async function replaceWorker(
     permissionMode: params.permissionMode as SpawnArgs["permissionMode"],
     executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
     ...(prepared.input ? { input: prepared.input } : { prompt: prepared.prompt }),
-  });
-  await stop(deps, card.worker_thread_id);
+  }, card.worker_thread_id);
   deps.updateCard(card.id, {
     worker_thread_id: thread.id,
     worker_preset_id: preset.id,
@@ -347,10 +312,6 @@ async function fresh(
   return { ok: true, error: null };
 }
 
-function scheduleRespawn(deps: WorkerDeps, cardId: string, presetId: string): void {
-  setTimeout(() => { void respawn(deps, cardId, presetId); }, 10);
-}
-
 async function failedCause(deps: WorkerDeps, threadId: string): Promise<string | null> {
   try {
     const events = await deps.bb.sdk.threads.events.list({
@@ -365,20 +326,18 @@ async function failedCause(deps: WorkerDeps, threadId: string): Promise<string |
   }
 }
 
-export function createWorkers(deps: WorkerDeps) {
-  const retry = createWorkerRetry({
-    db: deps.db,
-    getCard: deps.getCard,
-    updateCard: deps.updateCard,
-    comment: deps.comment,
-    publish: (cardId) => deps.bb.realtime.publish("card-state", { cardId }),
-    fresh: (cardId, reason) => fresh(deps, cardId, reason),
-    failedCause: (threadId) => failedCause(deps, threadId),
-  });
-  const history = createWorkerHistory(deps.db, deps.bb);
-
+function workerFacade(
+  deps: WorkerDeps,
+  retry: ReturnType<typeof createWorkerRetry>,
+  history: ReturnType<typeof createWorkerHistory>,
+  respawnScheduler: ReturnType<typeof createRespawnScheduler>,
+) {
   return {
-    stop: (threadId: string | null) => stop(deps, threadId),
+    stop: (threadId: string | null) => stopThread(deps.bb, threadId),
+    spawnInitial: (args: WorkerSpawnArgs) => spawnCardWorker(deps.bb, args),
+    spawnWorkflow: (args: WorkerSpawnArgs) => spawnCardWorker(deps.bb, args),
+    replacePrepared: (args: WorkerSpawnArgs, previousThreadId: string | null) =>
+      replaceCardWorker(deps.bb, args, previousThreadId),
     recordThread: (cardId: string, threadId: string, presetId: string | null, reason: string) =>
       recordThread(deps, cardId, threadId, presetId, reason),
     lineage: (rootPath: string, dirHash: string, threadId: string, presetId: string | null, reason: string) =>
@@ -389,11 +348,35 @@ export function createWorkers(deps: WorkerDeps) {
     respawn: (cardId: string, presetId: string, reason?: string, options?: RespawnOptions) =>
       respawn(deps, cardId, presetId, reason, options),
     fresh: (cardId: string, reason: "start" | "restart") => fresh(deps, cardId, reason),
-    scheduleRespawn: (cardId: string, presetId: string) => scheduleRespawn(deps, cardId, presetId),
+    scheduleRespawn: respawnScheduler.schedule,
     applyFailed: retry.applyFailed,
     ...history,
-    disposeRetries: retry.dispose,
+    dispose: () => {
+      respawnScheduler.dispose();
+      retry.dispose();
+    },
   };
+}
+
+export function createWorkers(deps: WorkerDeps) {
+  const scheduler = deps.scheduler ?? defaultWorkerScheduler;
+  const retry = createWorkerRetry({
+    db: deps.db,
+    getCard: deps.getCard,
+    updateCard: deps.updateCard,
+    comment: deps.comment,
+    publish: (cardId) => deps.bb.realtime.publish("card-state", { cardId }),
+    fresh: (cardId, reason) => fresh(deps, cardId, reason),
+    failedCause: (threadId) => failedCause(deps, threadId),
+    scheduler,
+    retryDelayMs: deps.retryDelayMs,
+  });
+  const history = createWorkerHistory(deps.db, deps.bb);
+  const respawnScheduler = createRespawnScheduler(
+    scheduler,
+    (cardId, presetId) => { void respawn(deps, cardId, presetId); },
+  );
+  return workerFacade(deps, retry, history, respawnScheduler);
 }
 
 export type Workers = ReturnType<typeof createWorkers>;

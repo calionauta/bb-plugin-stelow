@@ -6,7 +6,6 @@ import {
   runWorkerMigrations,
   workerEnvironment,
 } from "../server/workers.ts";
-import { createWorkerRetry } from "../server/workers-retry.ts";
 
 const preset = {
   id: "preset-a",
@@ -70,11 +69,8 @@ function database() {
   return db;
 }
 
-function harness({ spawnError = null, environment = null } = {}) {
-  const db = database();
-  const calls = [];
-  const current = card();
-  const bb = {
+function workerHost(calls, spawnError, environment) {
+  return {
     sdk: {
       threads: {
         spawn: async (args) => {
@@ -95,31 +91,50 @@ function harness({ spawnError = null, environment = null } = {}) {
     },
     realtime: { publish: (event, payload) => calls.push([event, payload]) },
   };
+}
+
+function attachmentParams(value) {
+  return {
+    providerId: value.provider_id,
+    modelId: value.model_id,
+    reasoningLevel: value.reasoning_level,
+    permissionMode: value.permission_mode,
+    environmentKind: value.environment_kind,
+    baseBranch: value.base_branch,
+    machineId: value.machine_id,
+    instructions: value.instructions,
+  };
+}
+
+function harness({
+  spawnError = null,
+  environment = null,
+  workerThreadId = "thread-old",
+  scheduler = undefined,
+  retryDelayMs = undefined,
+} = {}) {
+  const db = database();
+  const calls = [];
+  const current = card({ worker_thread_id: workerThreadId });
+  const bb = workerHost(calls, spawnError, environment);
   const workers = createWorkers({
     db,
     bb,
     now: () => 100,
     getCard: () => current,
-    updateCard: () => {},
+    updateCard: (cardId, fields) => calls.push(["updateCard", cardId, fields]),
     comment: (cardId, body) => calls.push(["comment", cardId, body]),
     getPreset: () => preset,
     getReliablePreset: () => preset,
-    presetParams: (value) => ({
-      providerId: value.provider_id,
-      modelId: value.model_id,
-      reasoningLevel: value.reasoning_level,
-      permissionMode: value.permission_mode,
-      environmentKind: value.environment_kind,
-      baseBranch: value.base_branch,
-      machineId: value.machine_id,
-      instructions: value.instructions,
-    }),
+    presetParams: attachmentParams,
     prepareRespawn: async () => ({
       prompt: "Continue the card",
       projectPath: "/repo",
       workspace: { path: "/repo", hostId: "host-a" },
     }),
     resetAutoContinue: () => ({ count: 0, stage: null }),
+    scheduler,
+    retryDelayMs,
     errors: {
       cardNotFound: "Card not found.",
       cardArchived: "This card is archived.",
@@ -138,6 +153,39 @@ test("worker migrations are idempotent and create the retry/ledger columns", () 
   const table = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'card_threads'").get();
   assert.equal(table.name, "card_threads");
   db.close();
+});
+
+test("fresh start refuses invalid states and completes success side effects", async () => {
+  const started = harness({ workerThreadId: null });
+  started.db.prepare("UPDATE cards SET spawn_retry_count = 2, spawn_retry_thread = ? WHERE id = ?")
+    .run("thread-old", "card-1");
+  const result = await started.workers.fresh("card-1", "start");
+  assert.deepEqual(result, { ok: true, error: null });
+  assert.ok(started.calls.some(([name, , body]) => name === "comment" && body.includes("continuing from the triage stage")));
+  assert.ok(started.calls.some(([name, , fields]) => name === "updateCard" && fields.auto_continue_count === 0));
+  assert.ok(started.calls.some(([name]) => name === "card-state"));
+  const retry = started.db.prepare("SELECT spawn_retry_count AS count, spawn_retry_thread AS thread FROM cards").get();
+  assert.deepEqual(retry, { count: 0, thread: null });
+  started.workers.dispose();
+  started.db.close();
+
+  const archived = harness({ workerThreadId: null });
+  archived.current.status = "archived";
+  assert.deepEqual(await archived.workers.fresh("card-1", "start"), {
+    ok: false,
+    error: "This card is archived.",
+  });
+  assert.equal(archived.calls.some(([name]) => name === "spawn"), false);
+  archived.workers.dispose();
+  archived.db.close();
+
+  const existing = harness();
+  assert.deepEqual(await existing.workers.fresh("card-1", "start"), {
+    ok: false,
+    error: "This card already has a worker thread.",
+  });
+  existing.workers.dispose();
+  existing.db.close();
 });
 
 test("environment selection pins project-default workers to declared source", () => {
@@ -160,6 +208,29 @@ test("environment selection pins project-default workers to declared source", ()
   });
 });
 
+test("initial and prepared replacement spawns share the worker spawn seam", async () => {
+  const initial = harness({ workerThreadId: null });
+  const args = { projectId: "project-1", environment: { type: "project-default" }, prompt: "Start" };
+  const spawned = await initial.workers.spawnInitial(args);
+  assert.equal(spawned.id, "thread-new");
+  assert.deepEqual(initial.calls[0], ["spawn", args]);
+  const workflow = await initial.workers.spawnWorkflow({ ...args, prompt: "Workflow" });
+  assert.equal(workflow.id, "thread-new");
+  assert.deepEqual(initial.calls[1], ["spawn", { ...args, prompt: "Workflow" }]);
+  initial.workers.dispose();
+  initial.db.close();
+
+  const replaced = harness();
+  const next = await replaced.workers.replacePrepared(
+    { projectId: "project-1", environment: { type: "project-default" }, prompt: "Restart" },
+    "thread-old",
+  );
+  assert.equal(next.id, "thread-new");
+  assert.deepEqual(replaced.calls.slice(0, 3).map(([name]) => name), ["spawn", "archive", "stop"]);
+  replaced.workers.dispose();
+  replaced.db.close();
+});
+
 test("respawn stops the predecessor only after the replacement exists", async () => {
   const { db, calls, workers } = harness();
   const result = await workers.respawn("card-1", preset.id, "restart");
@@ -169,6 +240,14 @@ test("respawn stops the predecessor only after the replacement exists", async ()
   assert.equal(rows.length, 1);
   assert.equal(rows[0].thread_id, "thread-new");
   db.close();
+});
+
+test("deferred respawn is cancelled when the worker lifecycle is disposed", async () => {
+  const { calls, workers } = harness();
+  workers.scheduleRespawn("card-1", preset.id);
+  workers.dispose();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls.some(([name]) => name === "spawn"), false);
 });
 
 test("failed respawn preserves the old worker instead of parking the card", async () => {
@@ -198,41 +277,4 @@ test("continuing workers reuse their live environment and ledger ownership is qu
   assert.equal(history[0].presetName, "Primary");
   assert.equal(history[0].children.length, 0);
   db.close();
-});
-
-test("retry claims are persisted and terminal workers never schedule recovery", async () => {
-  const db = database();
-  const updates = [];
-  const retry = createWorkerRetry({
-    db,
-    getCard: () => card(),
-    updateCard: (cardId, fields) => updates.push([cardId, fields]),
-    comment: () => {},
-    publish: () => {},
-    fresh: async () => ({ ok: true, error: null }),
-    failedCause: async () => null,
-  });
-  await retry.applyFailed("card-1", "thread-old", "ApiError 502 Bad Gateway");
-  const claimed = db.prepare("SELECT spawn_retry_count AS count, spawn_retry_thread AS thread FROM cards WHERE id = ?").get("card-1");
-  assert.equal(claimed.count, 1);
-  assert.equal(claimed.thread, "thread-old");
-  assert.equal(updates[0][1].activity, "running");
-  retry.dispose();
-  db.close();
-
-  const terminalDb = database();
-  const terminalUpdates = [];
-  const terminalRetry = createWorkerRetry({
-    db: terminalDb,
-    getCard: () => card({ status: "completed" }),
-    updateCard: (cardId, fields) => terminalUpdates.push(fields),
-    comment: () => {},
-    publish: () => {},
-    fresh: async () => ({ ok: true, error: null }),
-    failedCause: async () => null,
-  });
-  await terminalRetry.applyFailed("card-1", "thread-old", "ApiError 502 Bad Gateway");
-  assert.deepEqual(terminalUpdates, []);
-  assert.equal(terminalDb.prepare("SELECT spawn_retry_count AS count FROM cards").get().count, 0);
-  terminalDb.close();
 });

@@ -2144,8 +2144,7 @@ ${prompt}`;
     let thread: Awaited<ReturnType<typeof bb.sdk.threads.spawn>> | null = null;
     if (start) {
     try {
-      // delegation-site: worker-spawn
-      thread = await bb.sdk.threads.spawn({
+      thread = await workers.spawnInitial({
       projectId: workerProjectId,
       environment: selectedEnvironment,
       visibility: "hidden",
@@ -4096,9 +4095,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }, RECONCILE_MS);
   bb.onDispose(async () => {
     clearInterval(reconcileTimer);
-    // Pending spawn retries must not fire after reload: the next poll
-    // re-drives them from the persisted claim ledger instead.
-    workers.disposeRetries();
+    // Pending retries and deferred respawns must not fire after reload:
+    // persisted claims re-drive retries on the next poll.
+    workers.dispose();
   });
 
   // Workflow mechanics are private to workers created by the Build panel.
@@ -4358,8 +4357,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async startWorkflow({ projectId, prompt }) {
-      // delegation-site: worker-spawn
-      const thread = await bb.sdk.threads.spawn({
+      const thread = await workers.spawnWorkflow({
         projectId,
         environment: { type: "project-default" },
         title: `Stelow: ${prompt.slice(0, 70)}`,
@@ -5206,8 +5204,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         previousThreadId,
       }) : null;
       const nextEnvironment = await workers.continuingEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
-      // delegation-site: worker-spawn
-      const newThread = await bb.sdk.threads.spawn({
+      const newThread = await workers.replacePrepared({
         projectId: card.project_id,
         environment: nextEnvironment,
         visibility: "hidden",
@@ -5242,11 +5239,7 @@ ${SPLIT_PROTOCOL}
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}` }, ...cardAttachments(card.attachments)],
-      });
-      if (previousThreadId) {
-        try { await bb.sdk.threads.archive({ threadId: previousThreadId }); } catch { /* ignore */ }
-        try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
-      }
+      }, previousThreadId);
       db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, now(), cardId);
       const reseedReset = resetAutoContinue();
       updateCard(cardId, { stage: card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "triage", status: freshStatusForReseed(card, reclassified), activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null, auto_continue_count: reseedReset.count, auto_continue_stage: reseedReset.stage });

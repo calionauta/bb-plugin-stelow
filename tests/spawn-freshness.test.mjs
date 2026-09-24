@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,25 +11,26 @@ import { fileURLToPath } from "node:url";
 // this file when the spawn topology legitimately changes.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-const workerBackend = readFileSync(join(root, "server", "workers.ts"), "utf8");
+const workerBackend = readdirSync(join(root, "server"))
+  .filter((file) => /^workers.*\.ts$/.test(file))
+  .sort()
+  .map((file) => readFileSync(join(root, "server", file), "utf8"))
+  .join("\n");
 const spawnSources = `${server}\n${workerBackend}`;
 
-// Four direct worker spawns, one judge spawn, two helper-routed disposables:
-// the judge runner (preset decision mode) is the fifth direct site — one
-// hidden thread per judgment, prompt-built in lib, archived after reading.
-// A sixth direct site updates this contract deliberately. A new spawn site
-// is a new brain with its own lifecycle — it must arrive with a tier
-// decision here.
+// One worker SDK spawn, one preset-judge spawn, and two fallback calls inside
+// the disposable helper remain. All card-worker paths use the worker seam.
 assert.equal(
-  (spawnSources.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length,
-  5,
-  "three server worker spawns, the preset judge, and the worker lifecycle implementation are pinned",
+  (spawnSources.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length,
+  4,
+  "the worker seam, preset judge, and two disposable-helper calls are pinned",
 );
 assert.equal(
-  (workerBackend.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length,
+  (workerBackend.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length,
   1,
-  "the worker seam has one SDK spawn implementation; a second implementation updates this contract deliberately",
+  "the worker slice has one SDK spawn implementation",
 );
+assert.doesNotMatch(server, /delegation-site: worker-spawn/, "server.ts owns no direct worker spawn");
 assert.equal(
   (server.match(/await spawnDisposable\(\{/g) ?? []).length,
   4,
@@ -70,6 +71,7 @@ for (const line of server.split("\n")) {
     || line.includes("Previous worker thread:")
     || line.includes("previousThreadId: null")
     || line.includes("previousThreadId,")
+    || line.includes("}, previousThreadId)")
     || line.includes("previousThreadId }")
     || line.includes("const previousThreadId = card.worker_thread_id")
     || line.includes("previousThreadId: row.worker_thread_id")
@@ -108,4 +110,4 @@ assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-fi
 // fork, never sibling chatter.
 assert.match(server, /Delegate fresh: package the full task in the call itself/, "CARD_OWNER_RULES teaches fresh delegation");
 
-console.log("spawn freshness test ok: six spawns, no fork path, leashed builders, fresh rule taught");
+console.log("spawn freshness test ok: worker seam and judge pinned, no fork path, leashed builders, fresh rule taught");
