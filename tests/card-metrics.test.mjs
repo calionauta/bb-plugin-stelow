@@ -52,6 +52,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
+const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");
 const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
 const storage = readFileSync(join(root, "lib", "panel-storage.mjs"), "utf8");
 const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx"), "utf8");
@@ -72,7 +73,7 @@ assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flo
 // values degrade — a corrupt key never strands the track.
 assert.match(storage, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
 assert.match(buildPanelState, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view");
+assert.match(researchPanelState, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");
 
 // Flow strip: one glanceable line on finished work (count + p50s),

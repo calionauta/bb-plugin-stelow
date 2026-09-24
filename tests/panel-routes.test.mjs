@@ -85,7 +85,7 @@ assert.match(
 for (const component of ["ResearchPanel", "ExplorePanel"]) {
   assert.match(
     appSource,
-    new RegExp(`<${component} active=\\{active\\} />`),
+    new RegExp(`<${component}[\\s\\S]*?active=\\{active\\}`),
     `${component} must forward the routed active state`,
   );
 }

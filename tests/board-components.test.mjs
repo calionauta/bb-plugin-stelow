@@ -28,6 +28,8 @@ const buildPanel = readFileSync(join(root, "components/panels/build-panel.tsx"),
 const buildPanelDialogs = readFileSync(join(root, "components/panels/build-panel-dialogs.tsx"), "utf8");
 const buildPanelState = readFileSync(join(root, "components/panels/build-panel-state.ts"), "utf8");
 const buildPanelView = readFileSync(join(root, "components/panels/build-panel-view.tsx"), "utf8");
+const researchPanelState = readFileSync(join(root, "components/panels/research-panel-state.ts"), "utf8");
+const researchPanelView = readFileSync(join(root, "components/panels/research-panel-view.tsx"), "utf8");
 const inboxPanel = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 assert.deepEqual(viewsForTrack("build"), ["board", "list", "hill"], "build keeps its three views");
@@ -45,16 +47,24 @@ assert.match(
   "the rendered toggle derives its options from the track restriction",
 );
 assert.match(buildPanelView, /<ViewToggle[^>]*track="build"/, "build calls the shared toggle as build");
-assert.match(app, /<ViewToggle[^>]*track="research"/, "research calls the shared toggle as research");
+assert.match(researchPanelView, /<ViewToggle[\s\S]*?track="research"/, "research calls the shared toggle as research");
 assert.match(app, /<ViewToggle[^>]*track="explore"/, "explore calls the shared toggle as explore");
-assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 2, "lightweight panels bind persistence to a track");
+assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "the remaining lightweight panel binds persistence to a track");
+assert.equal((researchPanelState.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "research binds persistence to a track");
 assert.equal((buildPanelState.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 1, "build binds persistence to a track");
-assert.equal((app.match(/<ViewToggle/g) ?? []).length + (buildPanelView.match(/<ViewToggle/g) ?? []).length, 3, "one shared toggle call site per board");
+assert.equal(
+  (app.match(/<ViewToggle/g) ?? []).length
+    + (buildPanelView.match(/<ViewToggle/g) ?? []).length
+    + (researchPanelView.match(/<ViewToggle/g) ?? []).length,
+  3,
+  "one shared toggle call site per board",
+);
 assert.match(panelState, /normalizeBoardView\(window\.localStorage\.getItem\(storageKey\), track\)/, "stored views pass through the tested track restriction");
 assert.equal(
   (app.match(/= usePanelData/g) ?? []).length
     + (inboxPanel.match(/= usePanelData/g) ?? []).length
-    + (buildPanelState.match(/return usePanelData/g) ?? []).length,
+    + (buildPanelState.match(/return usePanelData/g) ?? []).length
+    + (researchPanelState.match(/= usePanelData/g) ?? []).length,
   4,
   "all four data-backed panels use the shared loading lifecycle",
 );
@@ -162,7 +172,8 @@ assert.match(filters, /type="checkbox"/, "multi-select filters use keyboard-nati
 assert.match(filters, /aria-label={`Remove \$\{facet\.label\} filter \$\{label\}`}/, "selected filter pills expose their facet and value");
 assert.equal(
   (app.match(/<FiltersBar/g) ?? []).length
-    + (buildPanelView.match(/<FiltersBar/g) ?? []).length,
+    + (buildPanelView.match(/<FiltersBar/g) ?? []).length
+    + (researchPanelView.match(/<FiltersBar/g) ?? []).length,
   3,
   "all boards use the extracted filter bar",
 );

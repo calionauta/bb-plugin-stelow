@@ -15,6 +15,7 @@ const githubServer = readFileSync(join(root, "server", "github-issues.ts"), "utf
 const githubApp = readFileSync(join(root, "components", "github", "github-issues-dialog.tsx"), "utf8");
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
+const researchPanelDialogs = readFileSync(join(root, "components", "panels", "research-panel-dialogs.tsx"), "utf8");
 const workflowVocabulary = readFileSync(join(root, "lib", "workflow-vocabulary.mjs"), "utf8");
 const researchDialog = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialog = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
@@ -76,7 +77,11 @@ assert.match(researchDialog, /rpc\.call\("createResearchCard", \{[^}]*start: sta
 // Research creation: one dialog component owns draft, strategy, error,
 // and start — the panel keeps the open flag plus the strategy catalog.
 assert.match(researchDialog, /export function CreateResearchDialog\(\{ open, onOpenChange, activeProjectId, strategies, researchPreset/, "the research dialog lives in the creation module");
-assert.match(app, /import \{ CreateResearchDialog \} from "\.\/components\/creation\/create-research-dialog"/, "the board reads the shared dialog");
+assert.match(
+  researchPanelDialogs,
+  /import \{ CreateResearchDialog \} from "\.\.\/creation\/create-research-dialog"/,
+  "the research panel reads the shared dialog",
+);
 assert.doesNotMatch(app, /rpc\.call\("createResearchCard",/, "no local research submit survives in the panel");
 assert.match(researchDialog, /function resetOnOpen\(\) \{\s*\n\s*setStrategy\(null\);\s*\n\s*setStartImmediately\(true\);\s*\n\s*setError\(null\);/, "every open resets strategy, start, and error");
 assert.match(exploreDialog, /rpc\.call\("createExploreCard", \{[^}]*start: startImmediately/, "explore submit passes the choice");

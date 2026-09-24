@@ -14,7 +14,6 @@ import { toast } from "sonner";
 import { DECISION_PROVIDERS } from "./lib/decision-api.mjs";
 import { inboxBadgeCount } from "./lib/inbox-panel-state.mjs";
 import { STORAGE_KEYS } from "./lib/panel-storage.mjs";
-import { joinStrategyLabels } from "./lib/detail-presentation.mjs";
 import { relativeTime } from "./lib/relative-time.mjs";
 import { researchColumnForStatus } from "./lib/card-question-state.mjs";
 import { LIGHTWEIGHT_COLUMNS, LIGHTWEIGHT_COLUMN_LABELS, LIGHTWEIGHT_VISIBLE_COLUMNS } from "./lib/tracks.mjs";
@@ -29,13 +28,14 @@ import {
 import { StelowPanel } from "./components/panel/stelow-panel";
 import { InboxPanel } from "./components/panels/inbox-panel";
 import { BuildPanel } from "./components/panels/build-panel";
+import { ResearchPanel } from "./components/panels/research-panel";
 import { TrackSkeleton } from "./components/panel/track-skeleton";
 import { rememberStelowReturnFocusCardId } from "./components/panel/stelow-focus.mjs";
 import { FiltersBar } from "./components/board/board-filters";
 import { ViewToggle } from "./components/board/board-view-toggle";
-import { ExploreList, ResearchList } from "./components/board/track-lists";
+import { ExploreList } from "./components/board/track-lists";
 import { BoardColumn } from "./components/board/board-column";
-import { ExploreCard, ResearchCard } from "./components/board/board-cards";
+import { ExploreCard } from "./components/board/board-cards";
 import { BucketGalleryButton, useBucketGallery } from "./components/board/card-gallery";
 import {
   useBoardView,
@@ -58,7 +58,6 @@ import {
 } from "./components/dashboard/build-status-pills";
 import { StayInTouchStep } from "./components/dashboard/stay-in-touch-step";
 import type { ResearchStrategyOption } from "./components/creation/creation-settings";
-import { CreateResearchDialog } from "./components/creation/create-research-dialog";
 import { CreateExploreDialog } from "./components/creation/create-explore-dialog";
 import { registerPendingInteraction } from "./components/conversation/question-form";
 import { DisclosureChevron, DisclosureSection } from "./components/disclosure";
@@ -237,202 +236,6 @@ function useResearchAccessory(): SidebarAccessoryHandle {
   useDebouncedRealtime(["card-state", "board-changed"], () => void reload());
   const tone = count > 0 ? "bg-muted text-foreground" : "bg-muted text-muted-foreground";
   return { count, tone };
-}
-
-// Second track beside Build: lightweight research (Bucket / Doing / Done)
-// driven by one stelow-product-* strategy per card. No stages, no gates —
-// the card produces a index, and opportunities fan out into Build cards.
-function ResearchPanel({ active }: { active: boolean }) {
-  const { projectId: routeProjectId } = useBbContext();
-  const navigate = useBbNavigate();
-  const rpc = useRpc<typeof rpcContract>();
-  const [researchPresetsOpen, setResearchPresetsOpen] = useState(false);
-  const [collapsedColumns, setCollapsedColumns] = usePersistentCollapsedGroups(
-    STORAGE_KEYS.researchColumns,
-    false,
-  );
-  const [createOpen, setCreateOpen] = useState(false);
-  const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView, "research");
-  const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
-  const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
-  const [filterAttention, setFilterAttention] = useState(false);
-  const loadResearch = useCallback(async () => {
-    const targetId = routeProjectId;
-    const [projectsResult, cardsResult, strategiesResult, presetsResult, bandPresetsResult] = await Promise.all([
-      rpc.call("projects", {}).catch(() => null),
-      rpc.call("listCards", { projectId: targetId, kind: "research" }).catch(() => ({ cards: [] })),
-      rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
-      rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
-      rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
-    ]);
-    return {
-      cards: cardsResult.cards,
-      presets: presetsResult.presets,
-      projects: projectsResult?.projects ?? [],
-      researchBandPresets: bandPresetsResult.bands,
-      strategies: strategiesResult.strategies,
-    };
-  }, [routeProjectId, rpc]);
-  const {
-    data: { cards, presets, projects, researchBandPresets, strategies },
-    isInitialLoad,
-    load,
-  } = usePanelData(loadResearch, {
-    errorMessage: "Unable to load research.",
-    initialData: {
-      cards: [] as CardItem[],
-      presets: [] as PresetManagerPreset[],
-      projects: [] as Project[],
-      researchBandPresets: [] as BandPresetAssignment[],
-      strategies: [] as ResearchStrategyOption[],
-    },
-    itemCountKey: "cards",
-    realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
-  });
-
-  const strategyLabelById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
-  const activeProjectId = routeProjectId;
-  const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
-  // Research has its own band default (like each build phase). Unset means
-  // "use the board default" — the same fallback the worker spawn applies, so
-  // the dialog never promises a preset the worker won't get.
-  const researchBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "research")?.presetId) ?? null;
-  const effectiveResearchPreset = researchBandPreset ?? defaultPreset;
-  const filteredCards = useMemo(() => cards.filter((card) => {
-    if (!matchesFilterValue(filterProjectIds, card.projectId)) return false;
-    if (filterAttention && !card.needsAttention) return false;
-    return true;
-  }), [cards, filterProjectIds, filterAttention]);
-  const grouped = useMemo(() => {
-    const groups: Record<string, CardItem[]> = Object.fromEntries(RESEARCH_COLUMNS.map((column) => [column, []]));
-    for (const card of filteredCards) {
-      (groups[researchColumnOf(card)] ?? groups.inbox).push(card);
-    }
-    for (const column of Object.keys(groups)) {
-      groups[column]!.sort((a, b) => b.updatedAt - a.updatedAt);
-    }
-    return groups;
-  }, [filteredCards]);
-  // Captured pile for the creation checkbox link: same gallery as the
-  // header Bucket button, opened from the "park in Bucket" copy.
-  const openBucketCard = (card: CardItem) => goToCard(navigate, card, card.id);
-  const bucketGallery = useBucketGallery(grouped.inbox ?? [], openBucketCard);
-  const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
-
-  async function moveCard(cardId: string, target: string) {
-    if (!(RESEARCH_COLUMNS as readonly string[]).includes(target)) return;
-    const result = await rpc.call("moveCard", { cardId, status: target as "inbox" | "doing" | "done" | "archived" });
-    if (!result.ok) toast.error(result.error ?? "Move failed");
-  }
-
-  return (
-    <div className="flex h-full overflow-hidden bg-background">
-      <div className="flex-1 overflow-auto p-4 md:p-6">
-        <div className="mx-auto max-w-[1500px] space-y-4">
-          {isInitialLoad ? <TrackSkeleton columns={4} /> : <>
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">Research</h1>
-              <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">An AI agent applies specialized research strategy to surface prioritized opportunities you can turn into {trackTitle("build")} cards.</p>
-              {inbox.length > 0 ? <button type="button" onClick={() => setFilterAttention(true)} className="mt-0.5 inline-flex min-h-11 cursor-pointer items-center text-xs text-amber-700 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary dark:text-amber-300" aria-label={`Show the ${inbox.length} card${inbox.length === 1 ? "" : "s"} that need attention`}>
-                {inbox.length} {inbox.length === 1 ? "item needs" : "items need"} your attention
-              </button> : null}
-            </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New research</Button>
-              <BucketGalleryButton
-                cards={grouped.inbox ?? []}
-                onOpenCard={openBucketCard}
-              />
-              <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the research band default"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
-            </div>
-          </header>
-
-          <PresetOnboardingDialog
-            storageKey={STORAGE_KEYS.onboardResearch}
-            title="Choose your research agent preset"
-            intro="Investigations run on the research band preset — set it once here, or pin a different preset per card in Manage."
-            onOpenPresets={() => setResearchPresetsOpen(true)}
-            active={active}
-          />
-
-          <CreateResearchDialog
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            activeProjectId={activeProjectId}
-            strategies={strategies}
-            researchPreset={effectiveResearchPreset}
-            hasBandPreset={Boolean(researchBandPreset)}
-            bucketGallery={bucketGallery}
-            onOpenPresets={() => setResearchPresetsOpen(true)}
-          />
-
-          <PresetManagerDialog
-            open={researchPresetsOpen}
-            onOpenChange={setResearchPresetsOpen}
-            rpc={rpc}
-            presets={presets}
-            onChanged={() => load()}
-          />
-
-          <div className="flex items-start gap-2 border-b pb-3">
-            <div className="min-w-0 flex-1">
-              <FiltersBar
-                projects={projects}
-                filterProjectIds={filterProjectIds}
-                filterAttention={filterAttention}
-                onProjectToggle={(value) => setFilterProjectIds((prev) => toggleFilterValue(prev, value))}
-                onAttention={setFilterAttention}
-                onReset={() => { setFilterProjectIds([]); setFilterAttention(false); }}
-              />
-            </div>
-            <ViewToggle view={viewMode} track="research" onChange={setViewMode} label="Research cards view" />
-          </div>
-          {viewMode === "board" ? (
-          <p className="text-xs text-muted-foreground">
-            <span className="sm:hidden">Swipe sideways to view every stage.</span>
-            <span className="hidden sm:inline">Use Shift + scroll to move across stages.</span>
-          </p>
-          ) : null}
-          {viewMode === "list" ? (
-            <ResearchList
-              groups={grouped}
-              strategyLabelById={strategyLabelById}
-              collapsed={collapsedListGroups}
-              onToggle={(column) => setCollapsedListGroups((current) => ({
-                ...current,
-                [column]: !current[column],
-              }))}
-              onOpenCard={(card) => goToCard(navigate, card, card.id)}
-              onOpenThread={(threadId) => navigate.toThread(threadId)}
-            />
-          ) : (
-          <div data-testid="kanban-board" className="grid justify-start gap-3 overflow-x-auto md:h-[clamp(20rem,calc(100dvh-17rem),48rem)] md:overflow-y-hidden" style={{ gridTemplateColumns: kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedColumns) }}>
-            {VISIBLE_RESEARCH_COLUMNS.map((column) => (
-              <BoardColumn
-                key={column}
-                column={column}
-                cards={grouped[column]}
-                collapsed={Boolean(collapsedColumns[column])}
-                onToggleCollapsed={() => setCollapsedColumns((current) => ({ ...current, [column]: !current[column] }))}
-                onDrop={(cardId) => moveCard(cardId, column)}
-                labels={RESEARCH_COLUMN_LABELS}
-                renderCard={(card) => (
-                  <ResearchCard
-                    card={card}
-                    strategyLabel={joinStrategyLabels(card.researchStrategies ?? [], strategyLabelById)}
-                    onOpen={() => goToCard(navigate, card, card.id)}
-                  />
-                )}
-              />
-            ))}
-          </div>
-          )}
-          </>}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function ExplorePanel({ active }: { active: boolean }) {
@@ -1070,7 +873,15 @@ function renderTrackPanel(tab: StelowTrack, active: boolean) {
       />
     );
   }
-  if (tab === "research") return <ResearchPanel active={active} />;
+  if (tab === "research") {
+    return (
+      <ResearchPanel
+        active={active}
+        renderOnboarding={(props) => <PresetOnboardingDialog {...props} />}
+        renderPresetManager={(props) => <PresetManagerDialog {...props} />}
+      />
+    );
+  }
   if (tab === "explore") return <ExplorePanel active={active} />;
   return <AboutPanel />;
 }

@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { KANBAN_COLUMN_WIDTHS, kanbanGridColumns, toggleFilterValue, matchesFilterValue } from "../lib/kanban-layout.mjs";
+import {
+  filterAndGroupResearchCards,
+  researchCardMatches,
+  researchPresetFor,
+  strategyLabelsById,
+} from "../lib/research-panel-state.mjs";
 
 assert.deepEqual(KANBAN_COLUMN_WIDTHS, {
   expanded: "minmax(240px, 320px)",
@@ -23,6 +29,9 @@ const app = readFileSync(join(root, "app.tsx"), "utf8");
 const buildPanel = readFileSync(join(root, "components", "panels", "build-panel.tsx"), "utf8");
 const buildPanelDialogs = readFileSync(join(root, "components", "panels", "build-panel-dialogs.tsx"), "utf8");
 const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
+const researchPanel = readFileSync(join(root, "components", "panels", "research-panel.tsx"), "utf8");
+const researchPanelDialogs = readFileSync(join(root, "components", "panels", "research-panel-dialogs.tsx"), "utf8");
+const researchPanelView = readFileSync(join(root, "components", "panels", "research-panel-view.tsx"), "utf8");
 const boardFilters = readFileSync(join(root, "components", "board", "board-filters.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components", "board", "board-cards.tsx"), "utf8");
@@ -33,7 +42,8 @@ const researchDialogKanban = readFileSync(join(root, "components", "creation", "
 const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
 assert.equal(
   (app.match(/<BucketGalleryButton/g) ?? []).length
-    + (buildPanelView.match(/<BucketGalleryButton/g) ?? []).length,
+    + (buildPanelView.match(/<BucketGalleryButton/g) ?? []).length
+    + (researchPanelView.match(/<BucketGalleryButton/g) ?? []).length,
   3,
   "build, research, and explore each offer the Bucket gallery",
 );
@@ -41,7 +51,8 @@ assert.equal(
 // keep the full catalog): the kanban grids and extracted list adapters
 // iterate the visible lists, so no empty Bucket column renders anywhere.
 assert.match(buildPanelView, /BUILD_BOARD_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "build kanban iterates visible columns");
-assert.match(app, /VISIBLE_RESEARCH_COLUMNS\.map\(\(column\) => \(/, "lightweight kanban iterates visible columns");
+assert.match(researchPanelView, /LIGHTWEIGHT_VISIBLE_COLUMNS\.map\(\(column\) => \(/, "research kanban iterates visible columns");
+assert.match(app, /VISIBLE_RESEARCH_COLUMNS\.map\(\(column\) => \(/, "explore kanban iterates visible columns");
 assert.match(trackLists, /const BUILD_COLUMNS = BUILD_BOARD_VISIBLE_COLUMNS/, "build lists omit the Bucket column");
 assert.match(trackLists, /const LIGHTWEIGHT_COLUMNS = LIGHTWEIGHT_VISIBLE_COLUMNS/, "lightweight lists omit the Bucket column");
 assert.doesNotMatch(app, /{COLUMNS\.map\(\(column\) => \(/, "the build kanban renders no Bucket column");
@@ -57,7 +68,7 @@ assert.ok(app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedCol
 // beside creation, before configuration. A drift back fails here.
 for (const [label, source] of [
   ["New issue", buildPanelView],
-  ["New research", app],
+  ["New research", researchPanelView],
   ["New exploration", app],
 ]) {
   const at = source.indexOf(label);
@@ -76,16 +87,18 @@ assert.equal((hillBoard.match(/<CardGalleryDialog/g) ?? []).length, 1, "only the
 assert.match(cardGallery, /<CardGalleryDialog/, "the Bucket hook mounts the same dialog implementation");
 assert.equal(
   (app.match(/const bucketGallery = useBucketGallery\(/g) ?? []).length
-    + (buildPanel.match(/useBucketGallery\(/g) ?? []).length,
+    + (buildPanel.match(/useBucketGallery\(/g) ?? []).length
+    + (researchPanel.match(/useBucketGallery\(/g) ?? []).length,
   3,
   "each track owns one pile opener shared by its header and creation dialog",
 );
 assert.match(buildDialogKanban, /bucketGallery=\{bucketGallery\}/, "the build dialog receives its track pile opener as a prop");
 assert.equal(
   (buildDialogKanban.match(/bucketGallery\.bucketGallery/g) ?? []).length
-    + (buildPanelDialogs.match(/bucketGallery\.bucketGallery/g) ?? []).length,
-  1,
-  "the shared Build Bucket gallery mounts once inside the creation dialog",
+    + (buildPanelDialogs.match(/bucketGallery\.bucketGallery/g) ?? []).length
+    + (researchDialogKanban.match(/bucketGallery\.bucketGallery/g) ?? []).length,
+  2,
+  "the Build and Research galleries mount once inside their creation dialogs",
 );
 assert.match(
   buildPanelView,
@@ -126,7 +139,8 @@ assert.match(boardCards, /export function BoardCard\(\{ card, onOpen \}/, "tiles
 assert.match(boardCards, /const open = useCallback\(\(\) => onOpen\(\), \[onOpen\]\)/, "click and keyboard activation share that open action");
 assert.equal(
   (app.match(/onOpen=\{\(\) => goToCard\(navigate, card, card\.id\)\}/g) ?? []).length
-    + (buildPanelView.match(/onOpen=\{\(\) => onOpenCard\(card, card\.id\)\}/g) ?? []).length,
+    + (buildPanelView.match(/onOpen=\{\(\) => onOpenCard\(card, card\.id\)\}/g) ?? []).length
+    + (researchPanelView.match(/onOpen=\{\(\) => props\.onOpenCard\(card, card\.id\)\}/g) ?? []).length,
   3,
   "Build, Research, and Explore columns each open their card through the panel router",
 );
@@ -137,14 +151,15 @@ assert.match(
 );
 assert.equal(
   (app.match(/const openBucketCard = \(card: CardItem\) => goToCard\(/g) ?? []).length
-    + (buildPanel.match(/openBuildCard\(navigate\)/g) ?? []).length,
+    + (buildPanel.match(/openBuildCard\(navigate\)/g) ?? []).length
+    + (researchPanel.match(/openResearchCard\(navigate\)/g) ?? []).length,
   3,
   "each track has one Bucket callback owned by the panel router",
 );
 assert.equal(
   (app.match(/openBucketCard/g) ?? []).length,
-  6,
-  "research and explore share one callback for header and creation gallery",
+  3,
+  "explore shares one callback for its header and creation gallery",
 );
 assert.match(
   buildPanel,
@@ -184,4 +199,112 @@ assert.equal(matchesFilterValue(["a"], "a"), true, "membership matches");
 assert.equal(matchesFilterValue(["a"], "b"), false, "absence filters");
 assert.equal(matchesFilterValue(null, "a"), true, "junk matches everything");
 
-console.log("kanban layout test ok: bounded open and collapsed columns");
+const researchFilters = {
+  columns: ["inbox", "doing", "done", "archived"],
+  projectIds: [],
+  attention: false,
+};
+const researchCard = (overrides = {}) => ({
+  projectId: "project-1",
+  status: "pending",
+  needsAttention: false,
+  updatedAt: 1,
+  ...overrides,
+});
+const researchGroups = filterAndGroupResearchCards([
+  researchCard({ id: "unknown", status: "unexpected", updatedAt: 1 }),
+  researchCard({ id: "archived", status: "archived", updatedAt: 2 }),
+  researchCard({ id: "done", status: "completed", updatedAt: 3 }),
+  researchCard({ id: "running", status: "in-progress", updatedAt: 4 }),
+  researchCard({ id: "approved", status: "approved", updatedAt: 5 }),
+], researchFilters);
+assert.deepEqual(Object.keys(researchGroups), ["inbox", "doing", "done", "archived"]);
+assert.deepEqual(researchGroups.inbox.map((entry) => entry.id), ["unknown"]);
+assert.deepEqual(researchGroups.doing.map((entry) => entry.id), ["approved", "running"]);
+assert.deepEqual(researchGroups.done.map((entry) => entry.id), ["done"]);
+assert.deepEqual(researchGroups.archived.map((entry) => entry.id), ["archived"]);
+assert.equal(
+  researchCardMatches(researchCard({ projectId: "project-2" }), {
+    ...researchFilters,
+    projectIds: ["project-1"],
+  }),
+  false,
+  "project switching never leaks a card from another project",
+);
+assert.equal(
+  researchCardMatches(researchCard(), { ...researchFilters, attention: true }),
+  false,
+  "attention mode never admits a card that needs no decision",
+);
+assert.equal(
+  researchCardMatches(
+    researchCard({ projectId: "project-2", needsAttention: true }),
+    { ...researchFilters, projectIds: ["project-1"], attention: true },
+  ),
+  false,
+  "project and attention filters both apply",
+);
+const strategyLabels = strategyLabelsById([
+  { id: "strategy-a", label: "Jobs to be Done" },
+  { id: "strategy-b", label: "Opportunity Mapping" },
+]);
+assert.equal(strategyLabels.get("strategy-a"), "Jobs to be Done");
+assert.equal(strategyLabels.get("strategy-b"), "Opportunity Mapping");
+const researchPresets = [
+  { id: "default", isDefault: true },
+  { id: "research", isDefault: false },
+];
+assert.deepEqual(
+  researchPresetFor(researchPresets, [{ band: "research", presetId: "research" }]),
+  { preset: researchPresets[1], hasBandPreset: true },
+  "the research band assignment reaches the creation dialog",
+);
+assert.deepEqual(
+  researchPresetFor(researchPresets, []),
+  { preset: researchPresets[0], hasBandPreset: false },
+  "an unset research band truthfully falls back to the board default",
+);
+assert.deepEqual(
+  researchPresetFor(researchPresets, [{ band: "research", presetId: "missing" }]),
+  { preset: researchPresets[0], hasBandPreset: false },
+  "a stale research assignment falls back without claiming a band preset",
+);
+assert.deepEqual(
+  researchPresetFor(researchPresets, [{ band: "explore", presetId: "research" }]),
+  { preset: researchPresets[0], hasBandPreset: false },
+  "another track's assignment never configures research",
+);
+assert.deepEqual(
+  researchPresetFor([{ id: "first" }], []),
+  { preset: { id: "first" }, hasBandPreset: false },
+  "an unmarked preset list uses its first entry",
+);
+assert.deepEqual(
+  researchPresetFor([], []),
+  { preset: null, hasBandPreset: false },
+  "an empty preset list creates no phantom assignment",
+);
+assert.match(
+  researchPanelView,
+  /<ResearchList[\s\S]*strategyLabelById=\{state\.labels\}[\s\S]*<ResearchCard[\s\S]*joinStrategyLabels\(card\.researchStrategies \?\? \[\], state\.labels\)/,
+  "board tiles and list rows receive the same strategy label map",
+);
+const researchCreationWiring = new RegExp([
+  /<CreateResearchDialog/,
+  /activeProjectId=\{props\.projectId\}/,
+  /strategies=\{props\.data\.strategies\}/,
+  /researchPreset=\{props\.preset\.preset\}/,
+  /hasBandPreset=\{props\.preset\.hasBandPreset\}/,
+].map((pattern) => pattern.source).join("[\\s\\S]*?"));
+assert.match(
+  researchPanelDialogs,
+  researchCreationWiring,
+  "creation receives the active project, strategy catalog, and resolved preset",
+);
+assert.match(
+  researchPanelDialogs,
+  /renderOnboarding\(\{[\s\S]*storageKey: STORAGE_KEYS\.onboardResearch[\s\S]*renderPresetManager\(\{[\s\S]*presets: props\.data\.presets/,
+  "research keeps onboarding and preset-manager wiring",
+);
+
+console.log("kanban layout test ok: bounded columns and research panel state");
