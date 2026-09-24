@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import Database from "better-sqlite3";
+import { testDatabase } from "./helpers/test-database.mjs";
 import {
   createWorkspacesRecovery,
   recoveredCheckoutIntegrity,
@@ -56,21 +56,22 @@ function registeredSources() {
 }
 
 function createDb() {
-  const db = new Database(":memory:");
-  db.exec(`
-    PRAGMA foreign_keys = ON;
-    CREATE TABLE cards (
-      id TEXT PRIMARY KEY,
-      display_name TEXT,
-      name TEXT NOT NULL
-    );
-  `);
-  runWorkspaceRecoveryMigrations(db);
-  db.prepare("INSERT INTO cards (id, display_name, name) VALUES (?, ?, ?)")
-    .run("source-card", "Original work", "source-card");
-  db.prepare("INSERT INTO cards (id, display_name, name) VALUES (?, ?, ?)")
-    .run("audit-card", "Recovery audit", "audit-card");
-  return db;
+  return testDatabase(
+    `
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE cards (
+        id TEXT PRIMARY KEY,
+        display_name TEXT,
+        name TEXT NOT NULL
+      );
+    `,
+    runWorkspaceRecoveryMigrations,
+    (db) => {
+      const insert = db.prepare("INSERT INTO cards (id, display_name, name) VALUES (?, ?, ?)");
+      insert.run("source-card", "Original work", "source-card");
+      insert.run("audit-card", "Recovery audit", "audit-card");
+    },
+  );
 }
 
 function harness({ sources = registeredSources(), threadOutput = "" } = {}) {
