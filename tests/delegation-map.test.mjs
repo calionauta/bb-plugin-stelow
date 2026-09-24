@@ -46,7 +46,9 @@ assert.equal(markers.length, directSpawns.length, "every direct spawn carries ex
 for (const site of markers) {
   assert.ok(getDelegationSite(site), `${site} is registered`);
 }
-const disposableCalls = [...server.matchAll(/spawnDisposable\(\{[\s\S]*?\}, "([a-z-]+)"\)/g)].map((match) => match[1]);
+const disposableCalls = [...server.matchAll(
+  /spawnDisposable\s*\(\s*\{[\s\S]*?\}\s*,\s*"([a-z-]+)"\s*,?\s*\)/g,
+)].map((match) => match[1]);
 assert.ok(disposableCalls.length >= 2, "disposable callers name their site");
 for (const site of disposableCalls) {
   assert.equal(getDelegationSite(site).spawn, "disposable", `${site} is a disposable site`);

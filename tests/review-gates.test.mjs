@@ -140,7 +140,11 @@ assert.match(
   /void deps\.requestGatePreReview\(card\.id, parsed\.stage\)\.catch\(\(\) => undefined\);/,
   "gate entry triggers without waiting",
 );
-assert.match(server, /async function requestGatePreReview\(cardId: string, stage: string\)/, "the trigger is one named helper");
+assert.match(
+  server,
+  /async function requestGatePreReview\(\s*cardId: string,\s*stage: string,?\s*\)/,
+  "the trigger is one named helper",
+);
 const preAt = server.indexOf("async function requestGatePreReview(");
 const preEnd = server.indexOf("\n  }\n", preAt);
 assert.ok(preAt >= 0 && preEnd > preAt, "the helper body is bounded");
@@ -148,9 +152,17 @@ const preBody = server.slice(preAt, preEnd);
 assert.ok(preBody.includes("preReviewArtifactKind(stage)"), "eligibility resolves through the lib map, never inline");
 assert.ok(preBody.includes("card.kind !== \"build\""), "research and explore never pre-review");
 assert.ok(preBody.includes("if (!reviewPreset) return;"), "undesignated reviewers stay silent, exactly like review refuses");
-assert.ok(preBody.includes("boardFromRoot(bb, workspace.path, card.dir_hash)"), "artifact resolution mirrors approveGate");
+assert.match(
+  preBody,
+  /boardFromRoot\(\s*bb,\s*workspace\.path,\s*card\.dir_hash,?\s*\)/,
+  "artifact resolution mirrors approveGate",
+);
 assert.ok(preBody.includes("if (!depth || !depth.pass) return;"), "thin files never spend review budget");
-assert.ok(preBody.includes('}, "review")'), "pre-reviews ride the registered review site");
-assert.ok(preBody.includes('logCardComment(cardId, "card", cardId, "agent"'), "findings land as a card comment, never a gate file");
+assert.match(preBody, /\},\s*"review",?\s*\)/, "pre-reviews ride the registered review site");
+assert.match(
+  preBody,
+  /logCardComment\(\s*cardId,\s*"card",\s*cardId,\s*"agent"/,
+  "findings land as a card comment, never a gate file",
+);
 
 console.log("review gates test ok: normalize both directions, legacy no-regression, atom matrix, state.md storage, gate-named reasons");
