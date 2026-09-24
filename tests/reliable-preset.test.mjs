@@ -121,7 +121,11 @@ assert.match(server, /const effective = getReliablePresetForBand\("research", ca
 assert.match(server, /\? getReliablePresetForBand\(STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\)/, "promotion handoff resolves reliable-aware");
 assert.match(server, /const bandPreset = band \? getReliablePresetForBand\(band, card\.id\) : null;/, "the advance band swap resolves reliable-aware");
 assert.match(server, /const bandPreset = getReliablePresetForBand\(band, cliCard\.id\);/, "the CLI advance band swap resolves reliable-aware");
-assert.match(server, /const reliablePreset = reliable \? deps\.getPreset\(reliable\.preset_id\) : null;/, "the initial spawn consults the reliable row");
+assert.match(
+  server,
+  /const reliablePreset = reliableId \? deps\.getPreset\(reliableId\) : null;/,
+  "the initial spawn consults the reliable row through the preset seam",
+);
 assert.match(server, /const base = reliablePreset \?\? bandPreset \?\? selected;/, "the initial spawn prefers reliable over band over default");
 
 // Board and card detail show the effective preset, so the panel never

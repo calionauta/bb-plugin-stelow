@@ -85,7 +85,6 @@ import { countScopeDialects, diagnoseScopeSync } from "./lib/spec-scope-reader.m
 import { advanceExecutionGates, doneBuildGates } from "./lib/build-gates.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
-import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
 import { playbookEntries, renderPlaybook } from "./lib/playbook.mjs";
 import { parseWorkflowConfig } from "./lib/workflow-config.mjs";
 import { formatReviewGates, legacyLabelForGates, normalizeReviewGates, preReviewArtifactKind } from "./lib/review-gates.mjs";
@@ -3025,6 +3024,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       exploreIds: () => TECHNIQUE_CATALOG.map((entry) => entry.id),
       defaultPreset: getDefaultPreset,
       getPreset: getPresetById,
+      getBandPresetId: presetServer.getBandPresetId,
+      getReliablePresetId: presetServer.getReliablePresetId,
+      createCardOverride: (cardId, base, override) =>
+        presetServer.createCardOverride(cardId, base as PresetRow, override),
+      pinCardPreset,
+      removeCardPreset,
       presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
       spawnInitial: (args) => workers.spawnInitial(args),
       recordThread: (cardId, threadId, presetId, reason) => workers.recordThread(cardId, threadId, presetId, reason),

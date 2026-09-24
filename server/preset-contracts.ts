@@ -39,6 +39,13 @@ export type PresetCard = {
   worker_preset_id: string | null;
 };
 
+export type CardPresetOverride = {
+  providerId: string | null;
+  modelId: string | null;
+  reasoningLevel: string | null;
+  permissionMode: string | null;
+};
+
 export type SingletonPresetTable =
   | "review_preset"
   | "generation_preset"

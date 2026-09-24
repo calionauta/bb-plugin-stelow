@@ -9,6 +9,7 @@ import { normalizeBuildSeedIntent } from "../lib/workflow-intent-policy.mjs";
 import { formatReviewGates, legacyLabelForGates, normalizeReviewGates } from "../lib/review-gates.mjs";
 import type { CardPromptRules } from "./cards-create-prompt.js";
 import { buildBuildPrompt } from "./cards-create-prompt.js";
+import type { CardPresetOverride } from "./preset-contracts.js";
 import { workerEnvironment } from "./workers.js";
 import { finishCard, insertCard } from "./cards-create-persist.js";
 
@@ -96,6 +97,11 @@ export type CardsCreateDeps = {
   exploreIds: () => string[];
   defaultPreset: () => Preset;
   getPreset: (id: string) => Preset | null;
+  getBandPresetId: (band: string) => string | null;
+  getReliablePresetId: () => string | null;
+  createCardOverride: (cardId: string, base: Preset, override: CardPresetOverride) => Preset;
+  pinCardPreset: (cardId: string, presetId: string, assignedAt?: number) => boolean;
+  removeCardPreset: (cardId: string) => void;
   presetParams: (preset: Preset) => PresetParams;
   spawnInitial: (args: SpawnArgs) => Promise<{ id: string }>;
   recordThread: (cardId: string, threadId: string, presetId: string | null, reason: string) => void;
@@ -215,51 +221,20 @@ function resolvePreset(
   input: CardCreateInput,
   cardId: string,
 ) {
-  const selected = input.presetId ? (deps.getPreset(input.presetId) ?? deps.defaultPreset()) : deps.defaultPreset();
-  const band = deps.db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?")
-    .get(bandForKind(input.kind ?? "build")) as { preset_id: string } | undefined;
-  const reliable = deps.db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1")
-    .get() as { preset_id: string } | undefined;
-  const bandPreset = band ? deps.getPreset(band.preset_id) : null;
-  const reliablePreset = reliable ? deps.getPreset(reliable.preset_id) : null;
+  const selected = input.presetId
+    ? deps.getPreset(input.presetId) ?? deps.defaultPreset()
+    : deps.defaultPreset();
+  const bandId = deps.getBandPresetId(bandForKind(input.kind ?? "build"));
+  const reliableId = deps.getReliablePresetId();
+  const bandPreset = bandId ? deps.getPreset(bandId) : null;
+  const reliablePreset = reliableId ? deps.getPreset(reliableId) : null;
   const base = reliablePreset ?? bandPreset ?? selected;
   const override = composerPresetOverride(base, input.execution ?? null);
   if (!override?.providerId || !override.modelId || !override.reasoningLevel || !override.permissionMode) {
     return { preset: base, pinnedId: null };
   }
-  pinPreset(deps, cardId, base, override);
-  const preset = deps.getPreset(`card-override-${cardId}`) ?? base;
+  const preset = deps.createCardOverride(cardId, base, override);
   return { preset, pinnedId: preset.id === base.id ? null : preset.id };
-}
-
-function pinPreset(
-  deps: CardsCreateDeps,
-  cardId: string,
-  preset: Preset,
-  override: NonNullable<ReturnType<typeof composerPresetOverride>>,
-): void {
-  if (!override.providerId || !override.modelId || !override.reasoningLevel || !override.permissionMode) return;
-  const timestamp = deps.now();
-  deps.db.prepare(
-    "INSERT OR REPLACE INTO presets "
-      + "(id, name, provider_id, model_id, reasoning_level, permission_mode, "
-      + "environment_kind, base_branch, machine_id, instructions, is_default, "
-      + "built_in, created_at, updated_at) VALUES "
-      + "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)",
-  ).run(
-    `card-override-${cardId}`,
-    `Card override ${cardId}`,
-    override.providerId,
-    override.modelId,
-    override.reasoningLevel,
-    override.permissionMode,
-    preset.environment_kind,
-    preset.base_branch,
-    preset.machine_id,
-    preset.instructions,
-    timestamp,
-    timestamp,
-  );
 }
 
 async function preparePrompts(
@@ -386,7 +361,7 @@ export function createCardInternal(deps: CardsCreateDeps) {
     try {
       thread = await spawnInitial(deps, input, workspace, prepared);
     } catch (error) {
-      if (resolvedPreset.pinnedId) deps.db.prepare("DELETE FROM presets WHERE id = ?").run(resolvedPreset.pinnedId);
+      if (resolvedPreset.pinnedId) deps.removeCardPreset(cardId);
       throw error;
     }
     const timestamp = await insertCard(deps, input, cardId, workspace, prepared, trackWithEnvironment, resolvedPreset.preset, resolvedPreset.pinnedId, thread);

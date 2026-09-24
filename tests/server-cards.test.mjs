@@ -86,49 +86,44 @@ test("read card files rejects workspace escapes and reads text", async () => {
   assert.equal((await cards.handlers.readCardFile({ cardId: card.id, path: "notes.md" })).content, "artifact");
 });
 
-test("deferred build creation stores the card kind and never spawns a worker", async () => {
-  let inserted;
-  const db = {
-    prepare(sql) {
-      return {
-        get: () => sql.includes("stage_presets")
-          ? { preset_id: "preset_1" }
-          : undefined,
-        run: (...values) => { inserted = values; },
-      };
-    },
-  };
-  const bb = {
-    sdk: { projects: { get: async () => ({ id: "proj_1", sources: [{ path: "/workspace", hostId: "host_1" }] }) } },
-    storage: { kv: { set: async () => undefined } },
-    realtime: { publish: () => undefined },
-  };
-  const preset = {
+const creationRules = {
+  cardOwnerRules: "owner", neverSeed: "never", cliEquivalents: "cli", reconProtocol: "recon",
+  draftProtocol: "draft", turnDiscipline: "turn", commitStyle: "commit", interfacePick: "pick",
+  doneProtocol: "done", splitProtocol: "split",
+};
+
+function creationPresetDeps(calls) {
+  const basePreset = {
     id: "preset_1",
     provider_id: "pi",
     model_id: "model",
     reasoning_level: "medium",
     permission_mode: "auto",
-    environment_kind: "project",
+    environment_kind: "project-default",
     base_branch: "main",
     machine_id: null,
     instructions: "follow the workflow",
   };
-  let spawned = false;
-  const create = createCardInternal({
-    db,
-    bb,
-    now: () => 100,
-    randomId: () => "card_created",
-    roundTimestamp: () => "stamp",
-    seedBuildIntent: async () => "feature",
-    seedWorkflow: async () => ({ error: null, dirHash: "hash", stateDir: ".stelow/state" }),
-    researchStrategy: () => null,
-    exploreStage: () => null,
-    researchIds: () => [],
-    exploreIds: () => [],
-    defaultPreset: () => preset,
-    getPreset: () => preset,
+  const overridePreset = {
+    ...basePreset,
+    id: "card-override-card_created",
+    provider_id: "acp-opencode",
+    model_id: "opencode-go/muse-spark",
+  };
+  return {
+    defaultPreset: () => basePreset,
+    getPreset: (id) => id === overridePreset.id ? overridePreset : basePreset,
+    getBandPresetId: () => null,
+    getReliablePresetId: () => null,
+    createCardOverride: () => {
+      calls.push("create-override");
+      return overridePreset;
+    },
+    pinCardPreset: () => {
+      calls.push("pin-override");
+      return true;
+    },
+    removeCardPreset: () => calls.push("remove-override"),
     presetParams: (value) => ({
       providerId: value.provider_id,
       modelId: value.model_id,
@@ -138,7 +133,57 @@ test("deferred build creation stores the card kind and never spawns a worker", a
       machineId: value.machine_id,
       instructions: value.instructions,
     }),
-    spawnInitial: async () => { spawned = true; return { id: "thread_1" }; },
+  };
+}
+
+function creationHost(calls) {
+  let inserted;
+  const db = {
+    prepare(sql) {
+      return {
+        run: (...values) => {
+          assert.match(sql, /^INSERT INTO cards/);
+          inserted = values;
+          calls.push("insert-card");
+        },
+      };
+    },
+  };
+  const bb = {
+    sdk: {
+      projects: {
+        get: async () => ({
+          id: "proj_1",
+          sources: [{ path: "/workspace", hostId: "host_1" }],
+        }),
+      },
+    },
+    storage: { kv: { set: async () => undefined } },
+    realtime: { publish: () => undefined },
+  };
+  return { db, bb, getInserted: () => inserted };
+}
+
+function creationWorkflowDeps(calls, spawnError) {
+  return {
+    now: () => 100,
+    randomId: () => "card_created",
+    roundTimestamp: () => "stamp",
+    seedBuildIntent: async () => "feature",
+    seedWorkflow: async () => ({
+      error: null,
+      dirHash: "hash",
+      stateDir: ".stelow/state",
+    }),
+    researchStrategy: () => null,
+    exploreStage: () => null,
+    researchIds: () => [],
+    exploreIds: () => [],
+    spawnInitial: async () => {
+      calls.push("spawn");
+      if (spawnError) throw spawnError;
+      return { id: "thread_1" };
+    },
     recordThread: () => undefined,
     lineage: async () => undefined,
     roundPath: (stateDir) => stateDir,
@@ -146,27 +191,75 @@ test("deferred build creation stores the card kind and never spawns a worker", a
     ensureParent: async () => undefined,
     researchPrompt: () => "research",
     explorePrompt: () => "explore",
-    rules: {
-      cardOwnerRules: "owner", neverSeed: "never", cliEquivalents: "cli", reconProtocol: "recon",
-      draftProtocol: "draft", turnDiscipline: "turn", commitStyle: "commit", interfacePick: "pick",
-      doneProtocol: "done", splitProtocol: "split",
-    },
+    rules: creationRules,
     describeManagedWorktree: () => false,
     recordStageEvent: () => undefined,
     comment: () => undefined,
     suggestCardName: async () => undefined,
-  });
+  };
+}
 
-  const result = await create({
-    projectId: "proj_1",
-    prompt: "Improve the thing",
-    attachments: [],
-    intent: "feature",
-    appetite: "Lean",
-    reviewMode: "Auto",
-    start: false,
+function creationHarness({ execution = null, spawnError = null } = {}) {
+  const calls = [];
+  const host = creationHost(calls);
+  const create = createCardInternal({
+    ...host,
+    ...creationPresetDeps(calls),
+    ...creationWorkflowDeps(calls, spawnError),
   });
+  return {
+    create: (input) => create({ ...input, execution }),
+    calls,
+    getInserted: host.getInserted,
+  };
+}
+
+const creationInput = {
+  projectId: "proj_1",
+  prompt: "Improve the thing",
+  attachments: [],
+  intent: "feature",
+  appetite: "Lean",
+  reviewMode: "Auto",
+};
+
+test("deferred build creation stores the card kind and never spawns a worker", async () => {
+  const { create, calls, getInserted } = creationHarness();
+  const result = await create({ ...creationInput, start: false });
   assert.deepEqual(result, { cardId: "card_created", threadId: null });
-  assert.equal(spawned, false);
-  assert.equal(inserted[CARD_COLUMNS.indexOf("kind")], "build");
+  assert.equal(calls.includes("spawn"), false);
+  assert.equal(getInserted()[CARD_COLUMNS.indexOf("kind")], "build");
+});
+
+test("divergent creation choices pin the override only after the card row exists", async () => {
+  const { create, calls } = creationHarness({
+    execution: {
+      providerId: "acp-opencode",
+      model: "opencode-go/muse-spark",
+      reasoningLevel: "medium",
+      permissionMode: "auto",
+    },
+  });
+  const result = await create(creationInput);
+  assert.equal(result.threadId, "thread_1");
+  assert.ok(
+    calls.indexOf("insert-card") < calls.indexOf("pin-override"),
+    `override lifecycle calls: ${calls.join(", ")}`,
+  );
+  assert.equal(calls.includes("remove-override"), false);
+});
+
+test("spawn failure removes the staged override and never persists a card", async () => {
+  const { create, calls } = creationHarness({
+    execution: { providerId: "acp-opencode", model: "opencode-go/muse-spark" },
+    spawnError: new Error("spawn failed"),
+  });
+  await assert.rejects(
+    create(creationInput),
+    /spawn failed/,
+  );
+  assert.ok(calls.includes("create-override"), `failure calls: ${calls.join(", ")}`);
+  assert.ok(calls.includes("remove-override"));
+  assert.equal(calls.includes("insert-card"), false);
+  assert.equal(calls.includes("pin-override"), false);
 });

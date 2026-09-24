@@ -90,7 +90,9 @@ export async function finishCard(
   timestamp: number,
 ): Promise<{ cardId: string; threadId: string | null }> {
   deps.recordStageEvent(cardId, track.research ? "research" : track.explore ? "explore" : "triage");
-  if (pinnedId) deps.db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, pinnedId, timestamp);
+  if (pinnedId && !deps.pinCardPreset(cardId, pinnedId, timestamp)) {
+    throw new Error("Card preset disappeared before creation completed.");
+  }
   if (thread) {
     deps.recordThread(cardId, thread.id, preset.id, "initial");
     if (track.seed.dirHash) void deps.lineage(workspace.rootPath, track.seed.dirHash, thread.id, preset.id, "initial");

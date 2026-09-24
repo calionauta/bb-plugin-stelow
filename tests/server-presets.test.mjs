@@ -130,6 +130,33 @@ test("card, band, and reliable resolution follow the full fallback cascade", asy
   assert.equal(server.getPresetForBand("execution", "card-1").id, "preset_default");
 });
 
+test("card creation accessors preserve the base environment and assignment timestamp", async () => {
+  const { db, server } = harness();
+  const custom = await addPreset(server, {
+    name: "Custom base",
+    environmentKind: "new-worktree",
+  });
+  const base = db.prepare("SELECT * FROM presets WHERE id = ?").get(custom.preset.id);
+  const override = server.createCardOverride("card-1", base, {
+    providerId: "acp-opencode",
+    modelId: "opencode-go/muse-spark",
+    reasoningLevel: "high",
+    permissionMode: "accept-edits",
+  });
+  assert.equal(override.id, "card-override-card-1");
+  assert.equal(override.environment_kind, "new-worktree");
+  assert.equal(override.base_branch, null);
+  assert.equal(server.pinCardPreset("card-1", override.id, 250), true);
+  assert.deepEqual(
+    db.prepare("SELECT preset_id, assigned_at FROM card_presets WHERE card_id = ?").get("card-1"),
+    { preset_id: override.id, assigned_at: 250 },
+  );
+  assert.equal(server.pinCardPreset("card-1", "missing"), false);
+  server.removeCardPreset("card-1");
+  assert.equal(server.hasCardPreset("card-1"), false);
+  assert.equal(server.getPresetById(override.id), null);
+});
+
 test("band, singleton, default, and unassignment mutations persist and publish", async () => {
   const { db, server, events } = harness();
   const review = await addPreset(server, { name: "Reviewer" });
