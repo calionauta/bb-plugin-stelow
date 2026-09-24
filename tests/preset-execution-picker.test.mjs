@@ -11,7 +11,7 @@ import {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
-const decisionUi = readFileSync(join(root, "components/settings/decision-api.tsx"), "utf8");
+const decisionRouterUi = readFileSync(join(root, "components/settings/decision-router-row.tsx"), "utf8");
 
 function loadPresetExecutionPicker() {
   const source = readFileSync(
@@ -94,7 +94,7 @@ for (const value of ["rules", "", "unknown"]) {
 }
 
 assert.match(
-  decisionUi,
+  decisionRouterUi,
   /import \{ modeLabel \} from "\.\/preset-execution-values\.mjs"/,
   "decision routing consumes the tested mode-label helper",
 );
