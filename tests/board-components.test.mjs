@@ -10,12 +10,14 @@ import {
   showScopeStrip,
 } from "../lib/board-list-presentation.mjs";
 import { normalizeBoardView, viewsForTrack } from "../lib/board-views.mjs";
+import { collapsedGroupsFromStorage, isInitialPanelLoad } from "../lib/panel-state.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const filters = readFileSync(join(root, "components/board/board-filters.tsx"), "utf8");
 const viewToggle = readFileSync(join(root, "components/board/board-view-toggle.tsx"), "utf8");
 const lists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
+const panelState = readFileSync(join(root, "components/panel/panel-state-hooks.ts"), "utf8");
 
 assert.deepEqual(viewsForTrack("build"), ["board", "list", "hill"], "build keeps its three views");
 assert.deepEqual(viewsForTrack("research"), ["board", "list"], "research excludes hill");
@@ -36,6 +38,17 @@ assert.match(app, /<ViewToggle[^>]*track="research"/, "research calls the shared
 assert.match(app, /<ViewToggle[^>]*track="explore"/, "explore calls the shared toggle as explore");
 assert.equal((app.match(/useBoardView\(STORAGE_KEYS\.\w+View, "\w+"\)/g) ?? []).length, 3, "all three panels bind persistence to a track");
 assert.equal((app.match(/<ViewToggle/g) ?? []).length, 3, "one shared toggle call site per board");
+assert.match(panelState, /export function useBoardView\(/, "view persistence has one shared panel hook");
+assert.match(panelState, /normalizeBoardView\(window\.localStorage\.getItem\(storageKey\), track\)/, "stored views pass through the tested track restriction");
+assert.equal((app.match(/= usePanelData/g) ?? []).length, 4, "all four data-backed panels use the shared loading lifecycle");
+assert.equal((app.match(/firstLoadRef/g) ?? []).length, 0, "panel shells no longer own duplicate first-load state");
+
+assert.deepEqual(collapsedGroupsFromStorage(null, false), { archived: true }, "missing column state starts archived");
+assert.deepEqual(collapsedGroupsFromStorage('{"inbox":true}', true), { archived: true, inbox: true }, "list groups merge their default under stored choices");
+assert.deepEqual(collapsedGroupsFromStorage('{"inbox":true}', false), { inbox: true }, "column state preserves an explicit archive override");
+assert.deepEqual(collapsedGroupsFromStorage("not-json", true), { archived: true }, "corrupt state recovers at the default");
+assert.equal(isInitialPanelLoad(true, 0), true, "an empty first load shows the panel skeleton");
+assert.equal(isInitialPanelLoad(true, 2), false, "a background refresh keeps existing content visible");
 
 const scopeSummary = { scopesDone: 2, scopesTotal: 5, tasksDone: 3, tasksTotal: 7 };
 assert.equal(

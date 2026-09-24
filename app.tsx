@@ -50,7 +50,12 @@ import { BoardCard, ExploreCard, ResearchCard } from "./components/board/board-c
 import { FlowStrip } from "./components/board/flow-strip";
 import { HillBoard } from "./components/board/hill-board";
 import { BucketGalleryButton, useBucketGallery } from "./components/board/card-gallery";
-import { normalizeBoardView, type BoardTrack } from "./lib/board-views.mjs";
+import {
+  useBoardView,
+  useCollapsedGroups,
+  usePanelData,
+  usePersistentCollapsedGroups,
+} from "./components/panel/panel-state-hooks";
 import {
   STELOW_PANEL_ID,
   STELOW_PANEL_PATH,
@@ -157,6 +162,15 @@ type ProjectsResponse = Extract<BoardResult, { projects: unknown }>;
 type Project = ProjectsResponse["projects"][number];
 type CardsResponse = Extract<BoardResult, { cards: unknown }>;
 type CardItem = CardsResponse["cards"][number];
+type BandPresetAssignment = { band: string; presetId: string | null; stages: string[] };
+type BoardPanelData = {
+  boardBandPresets: BandPresetAssignment[];
+  boardPresets: PresetManagerPreset[];
+  cards: CardItem[];
+  githubAutomationEnabled: boolean;
+  githubStatus: GithubStatus | null;
+  projects: Project[];
+};
 
 function statusGlyph(status: string) {
   if (isDoneStatus(status)) return "✓";
@@ -334,25 +348,23 @@ function TrackSkeleton({ columns = 5 }: { columns?: number }) {
 function InboxPanel() {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [notifications, setNotifications] = useState<InboxNotification[]>([]);
   const [filter, setFilter] = useState<"attention" | "resolved" | "archived" | "all">("attention");
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // Background refreshes must never flash loading UI (see BoardPanel).
-  const firstLoadRef = useRef(true);
-  const load = useCallback(async () => {
-    if (firstLoadRef.current) setLoading(true);
-    try {
-      setNotifications((await rpc.call("listNotifications", { includeArchived: true })).notifications);
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Unable to load Stelow Inbox.");
-    }
-    finally { setLoading(false); firstLoadRef.current = false; }
-  }, [rpc]);
-  useEffect(() => { void load(); }, [load]);
-  useDebouncedRealtime(["card-state", "inbox-changed"], () => void load());
+  const loadInbox = useCallback(async () => ({
+    notifications: (await rpc.call("listNotifications", { includeArchived: true })).notifications,
+  }), [rpc]);
+  const {
+    data: { notifications },
+    isInitialLoad: firstLoad,
+    load,
+    loadError,
+    loading,
+  } = usePanelData(loadInbox, {
+    errorMessage: "Unable to load Stelow Inbox.",
+    initialData: { notifications: [] as InboxNotification[] },
+    itemCountKey: "notifications",
+    realtimeChannels: ["card-state", "inbox-changed"],
+  });
   const entries = unreadInboxEntries(inboxFilterEntries(notifications, filter), unreadOnly);
   async function open(entry: InboxNotification) {
     if (!entry.readAt) {
@@ -400,7 +412,6 @@ function InboxPanel() {
   const selected = filters.find((entry) => entry.id === filter)!;
   // No blank on reload: first mount skeletons, later polls keep stale
   // content with a quiet updating hint instead of flashing.
-  const firstLoad = loading && notifications.length === 0;
   const fatalError = loadError && notifications.length === 0;
   const emptyTitle = unreadOnly ? "No unread updates" : filter === "attention" ? "All clear" : `No ${selected.label.toLowerCase()} updates`;
   const emptyDescription = unreadOnly ? "Everything in this view has been read." : filter === "attention" ? "Stelow will surface work only when it needs you." : selected.description;
@@ -411,27 +422,10 @@ function BoardPanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [cards, setCards] = useState<CardItem[]>([]);
-  const [boardProjectId, setBoardProjectId] = useState<string | null>(routeProjectId);
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") return { archived: true };
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEYS.boardColumns);
-      if (!raw) return { archived: true };
-      const parsed = JSON.parse(raw) as Record<string, boolean>;
-      return typeof parsed === "object" && parsed ? parsed : { archived: true };
-    } catch { return { archived: true }; }
-  });
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try { window.localStorage.setItem(STORAGE_KEYS.boardColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
-  }, [collapsedColumns]);
-  const [loading, setLoading] = useState(true);
-  // Background refreshes (realtime) must never flash loading UI: skeletons
-  // blank the board while loading is true. Only the first load may set
-  // it; refreshes update state silently.
-  const firstLoadRef = useRef(true);
+  const [collapsedColumns, setCollapsedColumns] = usePersistentCollapsedGroups(
+    STORAGE_KEYS.boardColumns,
+    false,
+  );
   const [createBuildOpen, setCreateBuildOpen] = useState(false);
   // Workflow preferences stay visible under the composer: a collapsed
   // Settings hides consequential choices (planning depth, review gates)
@@ -457,43 +451,53 @@ function BoardPanel({ active }: { active: boolean }) {
   const [filterAttention, setFilterAttention] = useState(false);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.buildView, "build");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.buildListGroups);
-  const [boardPresets, setBoardPresets] = useState<PresetManagerPreset[]>([]);
-  const [boardBandPresets, setBoardBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [boardPresetsOpen, setBoardPresetsOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
-  const [githubStatus, setGithubStatus] = useState<GithubStatus | null>(null);
-  const [githubAutomationEnabled, setGithubAutomationEnabled] = useState(true);
-
-  const load = useCallback(async (targetId: string | null) => {
-    if (firstLoadRef.current) setLoading(true);
-    try {
-      const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
-        rpc.call("projects", {}).catch(() => null),
-        rpc.call("listCards", { projectId: targetId, kind: "build" }).catch(() => ({ cards: [] })),
-        rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
-        rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
-        rpc.call("board", { projectId: targetId }).catch(() => null),
-      ]);
-      setProjects(projectsResult?.projects ?? []);
-      setCards(cardsResult.cards);
-      setBoardPresets(presetsResult.presets);
-      setBoardBandPresets(bandPresetsResult.bands);
-      if (boardResult?.githubStatus) setGithubStatus(boardResult.githubStatus);
-      if (boardResult && "githubAutomationEnabled" in boardResult) setGithubAutomationEnabled(boardResult.githubAutomationEnabled !== false);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to load Stelow.");
-      if (firstLoadRef.current) {
-        setProjects([]);
-        setCards([]);
-      }
-    } finally {
-      setLoading(false);
-      firstLoadRef.current = false;
-    }
-  }, [rpc]);
-
-  useEffect(() => { void load(boardProjectId ?? routeProjectId); }, [load, boardProjectId, routeProjectId]);
-  useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void load(boardProjectId ?? routeProjectId));
+  const loadBoard = useCallback(async (): Promise<BoardPanelData> => {
+    const targetId = routeProjectId;
+    const [projectsResult, cardsResult, presetsResult, bandPresetsResult, boardResult] = await Promise.all([
+      rpc.call("projects", {}).catch(() => null),
+      rpc.call("listCards", { projectId: targetId, kind: "build" }).catch(() => ({ cards: [] })),
+      rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
+      rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
+      rpc.call("board", { projectId: targetId }).catch(() => null),
+    ]);
+    return {
+      boardBandPresets: bandPresetsResult.bands,
+      boardPresets: presetsResult.presets,
+      cards: cardsResult.cards,
+      githubAutomationEnabled: boardResult && "githubAutomationEnabled" in boardResult
+        ? boardResult.githubAutomationEnabled !== false
+        : true,
+      githubStatus: boardResult?.githubStatus ?? null,
+      projects: projectsResult?.projects ?? [],
+    };
+  }, [routeProjectId, rpc]);
+  const {
+    data: {
+      boardBandPresets,
+      boardPresets,
+      cards,
+      githubAutomationEnabled,
+      githubStatus,
+      projects,
+    },
+    isInitialLoad,
+    load,
+    loading,
+  } = usePanelData(loadBoard, {
+    errorMessage: "Unable to load Stelow.",
+    initialData: {
+      boardBandPresets: [] as BandPresetAssignment[],
+      boardPresets: [] as PresetManagerPreset[],
+      cards: [] as CardItem[],
+      githubAutomationEnabled: true,
+      githubStatus: null,
+      projects: [] as Project[],
+    },
+    itemCountKey: "cards",
+    realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
+  });
   useEffect(() => {
     void rpc.call("boardWorkflowDefaults", {}).then(({ appetite: savedAppetite, reviewGates: savedGates }) => {
       setAppetite(savedAppetite);
@@ -514,7 +518,7 @@ function BoardPanel({ active }: { active: boolean }) {
     try { window.localStorage.setItem(STORAGE_KEYS.reviewGates, JSON.stringify(reviewGates)); } catch { /* best-effort */ }
   }, [reviewGates]);
 
-  const activeProjectId = boardProjectId ?? routeProjectId;
+  const activeProjectId = routeProjectId;
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
   const defaultWorkerPreset = boardPresets.find((preset) => preset.isDefault) ?? boardPresets[0] ?? null;
   const presetForBand = (band: string) => {
@@ -559,7 +563,7 @@ function BoardPanel({ active }: { active: boolean }) {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
-          {loading && cards.length === 0 ? <TrackSkeleton /> : <>
+          {isInitialLoad ? <TrackSkeleton /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Build</h1>
@@ -616,14 +620,14 @@ function BoardPanel({ active }: { active: boolean }) {
             activeProjectId={activeProjectId ?? null}
             activeProjectName={activeProject?.name ?? null}
             githubStatus={githubStatus}
-            onChanged={() => void load(boardProjectId ?? routeProjectId)}
+            onChanged={() => void load()}
           />
           <PresetManagerDialog
             open={boardPresetsOpen}
             onOpenChange={setBoardPresetsOpen}
             rpc={rpc}
             presets={boardPresets}
-            onChanged={() => load(boardProjectId ?? routeProjectId)}
+            onChanged={() => load()}
           />
 
           <div className="flex items-start gap-2 border-b pb-3">
@@ -721,67 +725,52 @@ function ResearchPanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [cards, setCards] = useState<CardItem[]>([]);
-  const [strategies, setStrategies] = useState<ResearchStrategyOption[]>([]);
-  const [presets, setPresets] = useState<PresetManagerPreset[]>([]);
-  const [researchBandPresets, setResearchBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [researchPresetsOpen, setResearchPresetsOpen] = useState(false);
-  const [researchProjectId, setResearchProjectId] = useState<string | null>(routeProjectId);
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") return { archived: true };
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEYS.researchColumns);
-      if (!raw) return { archived: true };
-      const parsed = JSON.parse(raw) as Record<string, boolean>;
-      return typeof parsed === "object" && parsed ? parsed : { archived: true };
-    } catch { return { archived: true }; }
-  });
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try { window.localStorage.setItem(STORAGE_KEYS.researchColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
-  }, [collapsedColumns]);
-  const [loading, setLoading] = useState(true);
-  // Background refreshes must never flash loading UI (see BoardPanel).
-  const firstLoadRef = useRef(true);
+  const [collapsedColumns, setCollapsedColumns] = usePersistentCollapsedGroups(
+    STORAGE_KEYS.researchColumns,
+    false,
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.researchView, "research");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.researchListGroups);
   const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
-
-  const load = useCallback(async (targetId: string | null) => {
-    if (firstLoadRef.current) setLoading(true);
-    try {
-      const [projectsResult, cardsResult, strategiesResult, presetsResult, bandPresetsResult] = await Promise.all([
-        rpc.call("projects", {}).catch(() => null),
-        rpc.call("listCards", { projectId: targetId, kind: "research" }).catch(() => ({ cards: [] })),
-        rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
-        rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
-        rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
-      ]);
-      setProjects(projectsResult?.projects ?? []);
-      setCards(cardsResult.cards);
-      setStrategies(strategiesResult.strategies);
-      setPresets(presetsResult.presets);
-      setResearchBandPresets(bandPresetsResult.bands);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to load research.");
-      if (firstLoadRef.current) {
-        setProjects([]);
-        setCards([]);
-      }
-    } finally {
-      setLoading(false);
-      firstLoadRef.current = false;
-    }
-  }, [rpc]);
-
-  useEffect(() => { void load(researchProjectId ?? routeProjectId); }, [load, researchProjectId, routeProjectId]);
-  useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void load(researchProjectId ?? routeProjectId));
+  const loadResearch = useCallback(async () => {
+    const targetId = routeProjectId;
+    const [projectsResult, cardsResult, strategiesResult, presetsResult, bandPresetsResult] = await Promise.all([
+      rpc.call("projects", {}).catch(() => null),
+      rpc.call("listCards", { projectId: targetId, kind: "research" }).catch(() => ({ cards: [] })),
+      rpc.call("researchStrategies", {}).catch(() => ({ strategies: [] })),
+      rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
+      rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
+    ]);
+    return {
+      cards: cardsResult.cards,
+      presets: presetsResult.presets,
+      projects: projectsResult?.projects ?? [],
+      researchBandPresets: bandPresetsResult.bands,
+      strategies: strategiesResult.strategies,
+    };
+  }, [routeProjectId, rpc]);
+  const {
+    data: { cards, presets, projects, researchBandPresets, strategies },
+    isInitialLoad,
+    load,
+  } = usePanelData(loadResearch, {
+    errorMessage: "Unable to load research.",
+    initialData: {
+      cards: [] as CardItem[],
+      presets: [] as PresetManagerPreset[],
+      projects: [] as Project[],
+      researchBandPresets: [] as BandPresetAssignment[],
+      strategies: [] as ResearchStrategyOption[],
+    },
+    itemCountKey: "cards",
+    realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
+  });
 
   const strategyLabelById = useMemo(() => new Map(strategies.map((entry) => [entry.id, entry.label])), [strategies]);
-  const activeProjectId = researchProjectId ?? routeProjectId;
+  const activeProjectId = routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
   // Research has its own band default (like each build phase). Unset means
   // "use the board default" — the same fallback the worker spawn applies, so
@@ -819,7 +808,7 @@ function ResearchPanel({ active }: { active: boolean }) {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
-          {loading && cards.length === 0 ? <TrackSkeleton columns={4} /> : <>
+          {isInitialLoad ? <TrackSkeleton columns={4} /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Research</h1>
@@ -862,7 +851,7 @@ function ResearchPanel({ active }: { active: boolean }) {
             onOpenChange={setResearchPresetsOpen}
             rpc={rpc}
             presets={presets}
-            onChanged={() => load(researchProjectId ?? routeProjectId)}
+            onChanged={() => load()}
           />
 
           <div className="flex items-start gap-2 border-b pb-3">
@@ -929,66 +918,51 @@ function ExplorePanel({ active }: { active: boolean }) {
   const { projectId: routeProjectId } = useBbContext();
   const navigate = useBbNavigate();
   const rpc = useRpc<typeof rpcContract>();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [cards, setCards] = useState<CardItem[]>([]);
-  const [stages, setStages] = useState<ResearchStrategyOption[]>([]);
-  const [presets, setPresets] = useState<PresetManagerPreset[]>([]);
-  const [researchBandPresets, setResearchBandPresets] = useState<{ band: string; presetId: string | null; stages: string[] }[]>([]);
   const [researchPresetsOpen, setResearchPresetsOpen] = useState(false);
-  const [exploreProjectId, setExploreProjectId] = useState<string | null>(routeProjectId);
-  const [collapsedColumns, setCollapsedColumns] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") return { archived: true };
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEYS.exploreColumns);
-      if (!raw) return { archived: true };
-      const parsed = JSON.parse(raw) as Record<string, boolean>;
-      return typeof parsed === "object" && parsed ? parsed : { archived: true };
-    } catch { return { archived: true }; }
-  });
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try { window.localStorage.setItem(STORAGE_KEYS.exploreColumns, JSON.stringify(collapsedColumns)); } catch { /* ignore */ }
-  }, [collapsedColumns]);
-  const [loading, setLoading] = useState(true);
-  // Background refreshes must never flash loading UI (see BoardPanel).
-  const firstLoadRef = useRef(true);
+  const [collapsedColumns, setCollapsedColumns] = usePersistentCollapsedGroups(
+    STORAGE_KEYS.exploreColumns,
+    false,
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [viewMode, setViewMode] = useBoardView(STORAGE_KEYS.exploreView, "explore");
   const [collapsedListGroups, setCollapsedListGroups] = useCollapsedGroups(STORAGE_KEYS.exploreListGroups);
   const [filterProjectIds, setFilterProjectIds] = useState<string[]>([]);
   const [filterAttention, setFilterAttention] = useState(false);
+  const loadExplore = useCallback(async () => {
+    const targetId = routeProjectId;
+    const [projectsResult, cardsResult, stagesResult, presetsResult, bandPresetsResult] = await Promise.all([
+      rpc.call("projects", {}).catch(() => null),
+      rpc.call("listCards", { projectId: targetId, kind: "explore" }).catch(() => ({ cards: [] })),
+      rpc.call("stageCatalog", {}).catch(() => ({ stages: [] })),
+      rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
+      rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
+    ]);
+    return {
+      cards: cardsResult.cards,
+      presets: presetsResult.presets,
+      projects: projectsResult?.projects ?? [],
+      researchBandPresets: bandPresetsResult.bands,
+      stages: stagesResult.stages,
+    };
+  }, [routeProjectId, rpc]);
+  const {
+    data: { cards, presets, projects, researchBandPresets, stages },
+    isInitialLoad,
+    load,
+  } = usePanelData(loadExplore, {
+    errorMessage: "Unable to load explore.",
+    initialData: {
+      cards: [] as CardItem[],
+      presets: [] as PresetManagerPreset[],
+      projects: [] as Project[],
+      researchBandPresets: [] as BandPresetAssignment[],
+      stages: [] as ResearchStrategyOption[],
+    },
+    itemCountKey: "cards",
+    realtimeChannels: ["card-state", "board-changed", "inbox-changed"],
+  });
 
-  const load = useCallback(async (targetId: string | null) => {
-    if (firstLoadRef.current) setLoading(true);
-    try {
-      const [projectsResult, cardsResult, stagesResult, presetsResult, bandPresetsResult] = await Promise.all([
-        rpc.call("projects", {}).catch(() => null),
-        rpc.call("listCards", { projectId: targetId, kind: "explore" }).catch(() => ({ cards: [] })),
-        rpc.call("stageCatalog", {}).catch(() => ({ stages: [] })),
-        rpc.call("listPresets", {}).catch(() => ({ presets: [] })),
-        rpc.call("listBandPresets", {}).catch(() => ({ bands: [] })),
-      ]);
-      setProjects(projectsResult?.projects ?? []);
-      setCards(cardsResult.cards);
-      setStages(stagesResult.stages);
-      setPresets(presetsResult.presets);
-      setResearchBandPresets(bandPresetsResult.bands);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to load explore.");
-      if (firstLoadRef.current) {
-        setProjects([]);
-        setCards([]);
-      }
-    } finally {
-      setLoading(false);
-      firstLoadRef.current = false;
-    }
-  }, [rpc]);
-
-  useEffect(() => { void load(exploreProjectId ?? routeProjectId); }, [load, exploreProjectId, routeProjectId]);
-  useDebouncedRealtime(["card-state", "board-changed", "inbox-changed"], () => void load(exploreProjectId ?? routeProjectId));
-
-  const activeProjectId = exploreProjectId ?? routeProjectId;
+  const activeProjectId = routeProjectId;
   const defaultPreset = presets.find((preset) => preset.isDefault) ?? presets[0] ?? null;
   const exploreBandPreset = presets.find((preset) => preset.id === researchBandPresets.find((entry) => entry.band === "explore")?.presetId) ?? null;
   const effectiveExplorePreset = exploreBandPreset ?? defaultPreset;
@@ -1024,7 +998,7 @@ function ExplorePanel({ active }: { active: boolean }) {
     <div className="flex h-full overflow-hidden bg-background">
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="mx-auto max-w-[1500px] space-y-4">
-          {loading && cards.length === 0 ? <TrackSkeleton columns={4} /> : <>
+          {isInitialLoad ? <TrackSkeleton columns={4} /> : <>
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">Explore</h1>
@@ -1067,7 +1041,7 @@ function ExplorePanel({ active }: { active: boolean }) {
             onOpenChange={setResearchPresetsOpen}
             rpc={rpc}
             presets={presets}
-            onChanged={() => load(exploreProjectId ?? routeProjectId)}
+            onChanged={() => load()}
           />
 
           <div className="flex items-start gap-2 border-b pb-3">
@@ -1149,45 +1123,7 @@ const STORAGE_KEYS = {
   exploreView: "stelow-explore-view-v1",
 } as const;
 
-// Collapsible list-view groups with archived collapsed by default. Stored
-// choices win over the default (spread after), matching the kanban column
-// behavior; unknown keys are inert.
-type BoardView = "board" | "list" | "hill";
-
-// The board forgets nothing: returning from a card restores the view the
-// human picked, per track. Values outside that track's supported views
-// degrade to board, including a stale hill value on lightweight tracks.
-function useBoardView(storageKey: string, track: BoardTrack): [BoardView, (view: BoardView) => void] {
-  const [viewMode, setViewMode] = useState<BoardView>(() => {
-    if (typeof window === "undefined") return "board";
-    try {
-      return normalizeBoardView(window.localStorage.getItem(storageKey), track);
-    } catch { return "board"; }
-  });
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try { window.localStorage.setItem(storageKey, viewMode); } catch { /* ignore */ }
-  }, [storageKey, viewMode]);
-  return [viewMode, setViewMode];
-}
-
-function useCollapsedGroups(storageKey: string) {
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") return { archived: true };
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return { archived: true };
-      const parsed = JSON.parse(raw) as Record<string, boolean>;
-      return typeof parsed === "object" && parsed ? { archived: true, ...parsed } : { archived: true };
-    } catch { return { archived: true }; }
-  });
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try { window.localStorage.setItem(storageKey, JSON.stringify(collapsed)); } catch { /* ignore */ }
-  }, [storageKey, collapsed]);
-  return [collapsed, setCollapsed] as const;
-}
-
+// Board view and collapsed-state hooks live with the other panel state.
 // Card route adapters live in components/detail/card-detail-route. The app
 // supplies navigation and the preset dialog factory so route behavior stays
 // independent from the panel shell.

@@ -14,6 +14,7 @@ const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), 
 const cardGallery = readFileSync(join(root, "components/board/card-gallery.tsx"), "utf8");
 const viewToggle = readFileSync(join(root, "components", "board", "board-view-toggle.tsx"), "utf8");
 const lists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
+const panelState = readFileSync(join(root, "components", "panel", "panel-state-hooks.ts"), "utf8");
 const pills = readFileSync(join(root, "components", "dashboard", "build-status-pills.tsx"), "utf8");
 const manageHeader = readFileSync(join(root, "components", "manage", "card-detail-header.tsx"), "utf8");
 
@@ -92,7 +93,7 @@ assert.ok(
 // track (board, list, hill) instead of resetting to board. Unknown stored
 // values degrade — a corrupt key never strands the track.
 assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
-assert.match(app, /function useBoardView\(storageKey: string, track: BoardTrack\)/, "one hook serves all three tracks with their restrictions");
+assert.match(panelState, /export function useBoardView\(/, "one extracted hook serves all three tracks with their restrictions");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view against the build restriction");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view against the lightweight restriction");
 assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view against the lightweight restriction");

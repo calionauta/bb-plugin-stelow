@@ -7,6 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
+const panelState = readFileSync(join(root, "components/panel/panel-state-hooks.ts"), "utf8");
 const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
 const openStelowAction = readFileSync(join(root, "components/thread/open-stelow-action.tsx"), "utf8");
 const routeAdapters = readFileSync(join(root, "components/detail/card-detail-route.tsx"), "utf8");
@@ -367,7 +368,7 @@ assert.match(server, /updateCard\(cardId, questionWaitUpdates\(lastOutput\)\)/, 
 
 // List-view groups collapse with archived collapsed by default and stored
 // choices surviving reloads; completed build cards read as one state.
-assert.match(app, /\{ archived: true, \.\.\.parsed \}/, "stored choices win over the archived-collapsed default");
+assert.match(panelState, /usePersistentCollapsedGroups\(storageKey, true\)/, "stored list choices win over the archived-collapsed default");
 assert.match(buildProgress, /const positioned = progress\.scopes\.total > 0 \|\| card\.status === "completed"/, "completed cards carry no stale stage hint");
 assert.match(buildProgress, /positioned \? "where this card is" : <>where this card is · <CurrentStagePill/, "only cards without a terminal or scoped position show the live checkpoint pill");
 assert.match(detailTimeline, /isTerminalCheckpoint/, "the terminal Audit checkpoint cannot be selected as a reopen target");
