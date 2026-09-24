@@ -47,6 +47,7 @@ const updateStatus = readFileSync(new URL("../components/settings/plugin-update-
 const aboutUi = `${about}\n${hostTools}\n${updateActions}\n${updateStatus}`;
 assert.doesNotMatch(app, /new URL\("\.\/assets\//, "frontend never builds a runtime static-asset URL");
 const server = readFileSync(new URL("../server/plugin-runtime.ts", import.meta.url), "utf8");
+const platform = readFileSync(new URL("../server/runtime/platform.ts", import.meta.url), "utf8");
 const platformContract = readFileSync(new URL("../server/platform-rpc-contract.ts", import.meta.url), "utf8");
 assert.match(platformContract, /aboutLogo:\s*\{/, "the composed server exposes the aboutLogo RPC");
 const syncLib = readFileSync(new URL("../lib/workflow-skills-sync.mjs", import.meta.url), "utf8");
@@ -58,8 +59,8 @@ assert.equal(manifest.files.includes("assets"), true, "plugin package carries as
 assert.match(syncLib, /readPinnedStelowSource/, "release sync reads a pinned source manifest");
 assert.doesNotMatch(server, /syncHelperScript|syncWorkflowSkills|background\.schedule\("stelow-skills-sync"/, "runtime never mutates vendored Stelow behavior");
 assert.match(server, /bb\.sdk\.plugins\.checkUpdates\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the installed-plugin update check");
-assert.match(server, /bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: bb\.pluginId \}\)/, "BB owns the explicit update operation");
-assert.match(server, /async buildInfo\(\) \{\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*await refreshPluginUpdate\(\);/, "each UI read obtains a fresh BB-owned update status");
+assert.match(platform, /deps\.bb\.sdk\.plugins\.applyUpdate\(\{ pluginId: deps\.bb\.pluginId \}\)/, "BB owns the explicit update operation");
+assert.match(platform, /await deps\.refreshPluginUpdate\(\);/, "each UI read obtains a fresh BB-owned update status");
 assert.match(aboutUi, /skills · pinned to Stelow/, "About shows the pinned version, not an ambiguous sync age");
 // Version story reads top-down across cards: Status (verdict + notices),
 // then Contents (description with the skills pin beside the content it

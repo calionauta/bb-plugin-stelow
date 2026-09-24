@@ -1,7 +1,6 @@
 import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join as nodeJoin, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
@@ -36,7 +35,6 @@ import { decideAskGate } from "../lib/ask-gate.mjs";
 import { cleanAnswerList } from "../lib/expired-question-answers.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "../lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "../lib/plugin-paths.mjs";
-import { loadAboutLogo } from "../lib/about-logo.mjs";
 import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "../lib/plugin-update.mjs";
 import { discardConfirm, discardEligibility, discardTrail } from "../lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "../lib/github-release.mjs";
@@ -44,9 +42,17 @@ import { stallCount, healPresetStaleness } from "../lib/worker-ledger.mjs";
 import { normalizePromoteName, findAdoptableProject } from "../lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "../lib/state-template.mjs";
 import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "../lib/workflow-state-identity.mjs";
-import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, expectedSubsteps, missingSubsteps, mergeStrategyContracts } from "../lib/research-strategies.mjs";
-import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, substepPathsForRound, ROUNDS_DIR } from "../lib/research-rounds.mjs";
-import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, exploreArtifactFile, findInvalidRounds, findInvalidSubsteps, substepQuality, researchVerifyReport, researchVerifyText, exploreVerifyReport, exploreVerifyText } from "../lib/research-artifacts.mjs";
+import { RESEARCH_STRATEGIES, researchStrategyById, parseStrategyList, mergeStrategyContracts } from "../lib/research-strategies.mjs";
+import { normalizeHistory, roundTimestamp, roundFileName, parseRoundPath, ROUNDS_DIR } from "../lib/research-rounds.mjs";
+import {
+  isValidRoundContent,
+  isValidExploreContent,
+  exploreArtifactFile,
+  researchVerifyReport,
+  researchVerifyText,
+  exploreVerifyReport,
+  exploreVerifyText,
+} from "../lib/research-artifacts.mjs";
 import { validateArtifact, validateSubstep, validateVariant, validateExplore, buildDocDepths, sealStatus } from "../lib/artifact-validation.mjs";
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "../lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "../lib/delegation-map.mjs";
@@ -73,7 +79,6 @@ import { contractForStrategy, contractForBuildArtifact } from "../lib/artifact-c
 import { normalizeKind } from "../lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
-import { isResearchReadyForReview, researchReadyFingerprint } from "../lib/research-ready.mjs";
 import { evidenceStatus } from "../lib/research-evidence.mjs";
 import { resolveCardMove } from "../lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "../lib/worker-action-policy.mjs";
@@ -146,6 +151,9 @@ import {
   trackingEntryForCard,
   workflowScopes,
 } from "./scopes.js";
+import { createPlatformHandlers } from "./runtime/platform.js";
+import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
+import { registerMentionProviders } from "./runtime/mentions.js";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -217,9 +225,6 @@ function readPinnedStelowVersion(): string | null {
   return null;
 }
 
-// Memoized About logo data URI (loaded on first About visit).
-let aboutLogoCache: string | null | undefined;
-
 // Stage bands: groups of workflow stages that share a worker preset. A card's
 // worker swaps presets only at band boundaries (analysis -> planning -> execution
 // -> review), so context continuity is preserved within a band. Research and
@@ -227,15 +232,6 @@ let aboutLogoCache: string | null | undefined;
 // have an explicit preset default independent of the build analysis phase.
 // Bands live in lib/workflow-vocabulary.mjs (single source shared with the panel).
 
-// Pi exposes every route it can delegate to (OpenRouter, OpenCode, Bifrost,
-// etc.). Stelow's Pi presets intentionally offer only the configured Bifrost
-// routes used by this installation, keeping the picker actionable.
-const PI_BIFROST_PRESET_MODELS = [
-  { model: "bifrost/harness-coding", displayName: "Harness Coding (Bifrost)" },
-  { model: "bifrost/gpt-5.6-sol", displayName: "GPT-5.6 Sol (ChatGPT via Bifrost)" },
-  { model: "bifrost/gpt-5.6-terra", displayName: "GPT-5.6 Terra (ChatGPT via Bifrost)" },
-  { model: "bifrost/gpt-5.6-luna", displayName: "GPT-5.6 Luna (ChatGPT via Bifrost)" },
-] as const;
 
 import {
   attachmentSchema,
@@ -1818,155 +1814,36 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return absolute && existsSync(absolute) ? absolute : name;
   }
 
-  // Resolve the research index file for a card: always the card's own state
-  // dir (never the project root, so many research cards can share one
-  // project without colliding). Every refusal names its exit.
-  // Round files for a research card, newest first. History entries carry
-  // their exact file path (computed at spawn), so listing reads known
-  // paths instead of guessing: ready when the file has content, pending
-  // while the round's worker is alive, missing otherwise. Manifest
-  // sub-step files join the round sharing their stamp; unregistered .md
-  // files declared in the typed manifest join their recorded round. Never
-  // surface arbitrary files from the state directory as user-facing results.
-  // Fail-soft throughout.
-  async function researchRoundFiles(workspacePath: string | null, hostId: string | null, stateDir: string | null, history: Array<{ id: string; at: string; file: string }>, live: boolean) {
-    type RoundFile = { display: string; path: string; absolutePath: string; hostId: string; generatedAt: string };
-    type Round = { n: number; strategyId: string; label: string; emoji: string; at: string; status: "ready" | "pending" | "missing"; missing: string[]; substeps: Array<{ slug: string; status: "ready" | "missing" | "invalid" | "needs-depth" }>; files: RoundFile[] };
-    const rounds: Round[] = history.map((entry, index) => {
-      const meta = researchStrategyById(entry.id);
-      return { n: index + 1, strategyId: entry.id, label: meta?.label ?? entry.id, emoji: meta?.emoji ?? "", at: entry.at, status: "missing" as const, missing: [], substeps: [], files: [] };
-    });
-    const substepContents = new Map<number, Array<{ slug: string; content: string | null }>>();
-    if (workspacePath && stateDir) {
-      try {
-        const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
-        const manifest = stateBlob ? parseArtifactManifest(stateBlob).filter((fields) => fields.stage === "research" && typeof fields.path === "string") : [];
-        // Sub-step extras join the round sharing strategy + stamp.
-        // Contents ride along for per-substep quality (same predicates the
-        // verify gate enforces, so card and gate never disagree).
-        for (const round of rounds) {
-          const stamp = parseRoundPath(history[round.n - 1].file, round.strategyId)?.stamp;
-          if (!stamp || !hostId) continue;
-          for (const fields of manifest) {
-            if (!fields.path || fields.path === history[round.n - 1].file) continue;
-            const parsed = parseRoundPath(fields.path, round.strategyId);
-            if (!parsed || parsed.roundNo !== round.n || parsed.stamp !== stamp) continue;
-            const full = resolveArtifactPath(workspacePath, fields.path);
-            if (!full) continue;
-            const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
-            if (!artifact || !isPublishableArtifactContent(artifact.content)) continue;
-            round.files.push({ display: fields.label ?? full.split("/").pop()!, path: fields.path, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
-            if (parsed.subskill && typeof artifact.content === "string") {
-              const list = substepContents.get(round.n) ?? [];
-              list.push({ slug: parsed.subskill, content: artifact.content });
-              substepContents.set(round.n, list);
-            }
-          }
-          round.files.sort((a, b) => (a.display < b.display ? -1 : 1));
-        }
-      } catch { /* fail-soft: history-only rounds, no extras or orphans */ }
-    }
-    // Primary contents decide ready vs pending/missing (sequential reads over
-    // a handful of small files; rounds are few by construction).
-    // Validity is isValidRoundContent (lib/research-artifacts): non-empty,
-    // substantive, and never a mirror of research-index.md. A round that
-    // fails it renders as missing instead of surfacing the wrong artifact
-    // as if it were the round's output.
-    const indexBlob = rounds.length > 0 && stateDir ? await bb.sdk.files.read({ path: join(stateDir, "research-index.md") }).then((f) => (typeof f.content === "string" ? f.content : null)).catch(() => null) : null;
-    for (const round of rounds) {
-      const present = round.files
-        .map((file) => parseRoundPath(file.path, round.strategyId)?.subskill)
-        .filter((slug): slug is string => typeof slug === "string");
-      round.missing = missingSubsteps(round.strategyId, present);
-      round.substeps = substepQuality(
-        expectedSubsteps(round.strategyId),
-        substepContents.get(round.n) ?? [],
-        indexBlob,
-        (slug, content) => validateSubstep(slug, content).failures.map((failure) => failure.detail),
-      );
-      const full = workspacePath ? resolveArtifactPath(workspacePath, history[round.n - 1].file) : null;
-      const primaryLabel = `Round ${round.n} — ${round.label}`;
-      if (full && hostId) {
-        const artifact = await bb.sdk.files.read({ path: full }).catch(() => null);
-        const content = artifact?.content ?? null;
-        if (isValidRoundContent(content, indexBlob)) {
-          round.status = "ready";
-          round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
-        } else {
-          round.status = round.n === rounds.length && live ? "pending" : "missing";
-          // Pending work has no artifact affordance until it has real text.
-          // A thin draft may still be useful to inspect, but an empty file or
-          // an index mirror must never render as a reviewable document.
-          if (round.status === "pending" && isPublishableArtifactContent(content) && !researchRoundMirrorsIndex(content, indexBlob)) round.files.unshift({ display: primaryLabel, path: history[round.n - 1].file, absolutePath: full, hostId, generatedAt: fileTimestamp(artifact, round.at) });
-        }
-      } else {
-        round.status = round.n === rounds.length && live ? "pending" : "missing";
-      }
-    }
-    return { rounds: rounds.reverse() };
-  }
+  const platform = createPlatformHandlers({
+    bb,
+    pluginDir,
+    pluginSkillsDir: PLUGIN_SKILLS_DIR,
+    buildInfo: BUILD_INFO,
+    readPinnedStelowVersion,
+    refreshPluginUpdate,
+    getPluginUpdate: () => pluginUpdate,
+    getGithubRelease: () => githubRelease,
+    resolveLocalBin,
+    homeDir,
+    localBinDir,
+    preview: { view: previewView, start: previewStart, stop: previewStop, share: previewShare },
+  });
 
-  // Deterministic artifact guarantee (enforced in code, not in prompt):
-  // readiness requires a reviewable index AND every round's native file
-  // valid AND every registered composite substep valid
-  // (lib/research-artifacts + lib/research-rounds). A complete index with a
-  // missing/mirrored/thin round or substep is NOT done — the card stays open
-  // and each invalid item surfaces as an inbox error naming what to re-run.
-  // The worker prompt states this contract; this function is what makes it true.
-  async function researchRoundIntegrity(card: CardRow): Promise<Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }>> {
-    const workspace = await cardWorkspace(card);
-    if (!workspace?.path || !card.dir_hash) return [];
-    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
-    if (!stateDir) return [];
-    const history = strategyRounds(card);
-    if (history.length === 0) return [];
-    const indexBlob = await bb.sdk.files.read({ path: join(stateDir, "research-index.md") }).then((f) => (typeof f.content === "string" ? f.content : null)).catch(() => null);
-    const contents = new Map<string, string | null>();
-    const readAndCache = async (relPath: string): Promise<string | null> => {
-      if (contents.has(relPath)) return contents.get(relPath) ?? null;
-      const full = resolveArtifactPath(workspace.path, relPath);
-      const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
-      contents.set(relPath, content);
-      return content;
-    };
-    for (const entry of history) {
-      await readAndCache(entry.file);
-    }
-    const invalid = findInvalidRounds(
-      history,
-      (path) => contents.get(path) ?? null,
-      indexBlob,
-      (id) => researchStrategyById(id)?.label ?? null,
-      (strategyId, content) => validateVariant(content, contractForStrategy(strategyId)).failures.map((failure) => failure.detail),
-    );
-    // Composite substeps join history primaries with state.md manifest paths
-    // (same strategy + round + stamp). Unregistered substep files stay
-    // visible via the card's unregistered-artifact path; only registered
-    // substeps gate completion, so the manifest remains the source of truth.
-    const stateBlob = await bb.sdk.files.read({ path: join(stateDir, "state.md") }).then((f) => f.content).catch(() => null);
-    const manifestPaths = stateBlob
-      ? parseArtifactManifest(stateBlob).filter((fields) => fields.stage === "research" && typeof fields.path === "string").map((fields) => fields.path as string)
-      : [];
-    const substeps: Array<{ n: number; label: string; slug: string; path: string }> = [];
-    history.forEach((entry, index) => {
-      const n = index + 1;
-      const label = researchStrategyById(entry.id)?.label ?? entry.id;
-      for (const subPath of substepPathsForRound(manifestPaths, entry.id, entry.file)) {
-        const slug = parseRoundPath(subPath, entry.id)?.subskill ?? subPath.split("/").pop() ?? subPath;
-        substeps.push({ n, label, slug, path: subPath });
-      }
-    });
-    for (const sub of substeps) {
-      await readAndCache(sub.path);
-    }
-    invalid.push(...findInvalidSubsteps(
-      substeps,
-      (path) => contents.get(path) ?? null,
-      indexBlob,
-      (slug, content) => validateSubstep(slug, content).failures.map((failure) => failure.detail),
-    ));
-    return invalid;
-  }
+  const researchArtifacts = createResearchArtifactRuntime({
+    bb,
+    cardWorkspace,
+    workflowStateDir: (rootPath, workflowId, dirHash) => workflowStateDir(bb, rootPath, workflowId, dirHash),
+    strategyRounds,
+    joinPath: join,
+    workspaceRelative,
+    errors: { workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE },
+  });
+  const {
+    researchRoundFiles,
+    readResearchIndex,
+    researchReadiness,
+    exploreArtifact,
+  } = researchArtifacts;
 
   // Create only the destination directory. Artifact files themselves are
   // published by workers with content, never reserved as blank placeholders.
@@ -2088,38 +1965,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return workspaceRelative(workspacePath, join(stateDirAbs, `${ROUNDS_DIR}/${base}`)) ?? `${ROUNDS_DIR}/${base}`;
   }
 
-  async function readResearchIndex(card: CardRow): Promise<{ ok: false; error: string } | { ok: true; content: string; absolute: string; display: string }> {
-    const workspace = await cardWorkspace(card);
-    if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
-    if (!card.dir_hash) return { ok: false, error: "No workflow state for this research yet." };
-    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
-    if (!stateDir) return { ok: false, error: "No workflow state for this research yet." };
-    const absolute = join(stateDir, "research-index.md");
-    const content = await bb.sdk.files.read({ path: absolute }).then((file) => file.content).catch(() => null);
-    if (content === null) return { ok: false, error: "Research results are still being prepared." };
-    return { ok: true, content, absolute, display: workspaceRelative(workspace.path, absolute) ?? "research-index.md" };
-  }
-
   // Research readiness in one place (convention over configuration): the
   // index ## Opportunities checkboxes the fan-out dialog already parses via
   // parseResearchIndex. The sync writer and both read-path attention flags
   // share this predicate so they cannot diverge into "paused" vs "ready"
   // again. Build keeps its own terminal convention (state.md audit stage)
   // — each track reuses its canonical artifact, never a second definition.
-  async function researchReadiness(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null; evidence: "verified" | "hypothesis-only"; invalid: Array<{ n: number; label: string; slug?: string; reason?: string; detail?: string }> }> {
-    if (card.kind !== "research") return { ready: false, fingerprint: null, evidence: "verified", invalid: [] };
-    const index = await readResearchIndex(card).catch(() => null);
-    if (!index || index.ok !== true) return { ready: false, fingerprint: null, evidence: "verified", invalid: [] };
-    const evidence = evidenceStatus(index.content);
-    if (!isResearchReadyForReview(index.content)) return { ready: false, fingerprint: null, evidence, invalid: [] };
-    // Upstream of completion, not after it: an index with invalid rounds is
-    // not ready. The sync names each invalid round as an inbox error so the
-    // failure is impossible to miss and the human knows what to re-run.
-    const invalid = await researchRoundIntegrity(card).catch(() => []);
-    if (invalid.length > 0) return { ready: false, fingerprint: null, evidence, invalid };
-    return { ready: true, fingerprint: researchReadyFingerprint(index.content), evidence, invalid: [] };
-  }
-
   // Shared lightweight-track poll pieces (Research + Explore syncs both use
   // them — convention over configuration, one definition of each rule):
   // waiting is activity (never board position), and every agent output lands
@@ -2220,15 +2071,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     escalateIfStalled(card.id);
   }
 
-  // Stable content fingerprint for an explore artifact: identical content
-  // across polls dedupes to one completion event, and a rewritten artifact
-  // (restart) produces a fresh one.
-  function shortFingerprint(text: string): string {
-    let hash = 0;
-    for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
-    return hash.toString(36);
-  }
-
   // Explore cards have no stages and no index: Done means the stage skill
   // produced its artifact (explore-<stage>.md with real content). Mirrors the
   // research sync minus the index contract.
@@ -2285,25 +2127,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
     escalateIfStalled(card.id);
   }
-
-  // The stage's artifact file with real content: the deterministic completion
-  // signal for an explore card (lib/research-artifacts: same substance rule
-  // as research rounds, minus the index mirror). A missing/thin file means
-  // the stage skill has not produced its deliverable yet; a present file
-  // must also meet its stage contract (lib/artifact-contracts).
-  async function exploreArtifact(card: CardRow): Promise<{ ready: boolean; fingerprint: string | null; failures: string[] }> {
-    const workspace = await cardWorkspace(card);
-    if (!workspace?.path || !card.dir_hash || !card.explore_stage) return { ready: false, fingerprint: null, failures: [] };
-    const stateDir = await workflowStateDir(bb, workspace.path, card.id, card.dir_hash).catch(() => null);
-    if (!stateDir) return { ready: false, fingerprint: null, failures: [] };
-    const full = join(stateDir, exploreArtifactFile(card.explore_stage));
-    const content = await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null);
-    if (!isValidExploreContent(content)) return { ready: false, fingerprint: null, failures: [] };
-    const failures = validateExplore(card.explore_stage, content).failures.map((failure) => failure.detail).slice(0, 3);
-    if (failures.length > 0) return { ready: false, fingerprint: null, failures };
-    return { ready: true, fingerprint: shortFingerprint(content as string), failures: [] };
-  }
-
 
   // Single writer for card conversation rows (agent trail, user notes,
   // worker transitions). Returns the comment id for callers that reference it.
@@ -4542,173 +4365,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
 
     ...presetServer.handlers,
 
-    async listProviderModels() {
-      const providers = await bb.sdk.providers.list().catch(() => []);
-      const models: Array<{ providerId: string; model: string; displayName: string }> = [];
-      const availability = new Map<string, boolean>();
-      for (const provider of providers) {
-        const result = await bb.sdk.providers.models({ providerId: provider.id }).catch(() => null);
-        availability.set(provider.id, result !== null);
-        if (provider.id === "pi") {
-          const catalog = new Map((result?.models ?? []).map((model) => [model.model, model.displayName]));
-          for (const model of PI_BIFROST_PRESET_MODELS) {
-            models.push({ providerId: "pi", model: model.model, displayName: catalog.get(model.model) ?? model.displayName });
-          }
-          continue;
-        }
-        for (const model of result?.models ?? []) {
-          models.push({ providerId: provider.id, model: model.model, displayName: model.displayName });
-        }
-      }
-      return { providers: providers.map((provider) => ({ id: provider.id, displayName: provider.displayName, modelsAvailable: availability.get(provider.id) ?? false })), models };
-    },
-
-    async buildInfo() {
-      // The About panel and sidebar each issue one read on mount.  Do the
-      // lightweight BB-owned check as part of that read, rather than handing
-      // them an initial "checking" cache value that has no later push event.
-      // refreshPluginUpdate is fail-soft, so this never makes the panel fail.
-      await refreshPluginUpdate();
-      let skills: string[] = [];
-      try {
-        skills = readdirSync(PLUGIN_SKILLS_DIR, { withFileTypes: true })
-          .filter((e) => e.isDirectory() && e.name.startsWith("stelow-"))
-          .map((e) => e.name)
-          .sort();
-      } catch { /* panel shows an empty list */ }
-      return { version: BUILD_INFO.version, builtAt: BUILD_INFO.builtAt, stelowVersion: readPinnedStelowVersion(), skills, pluginUpdate, githubRelease };
-    },
-    async applyPluginUpdate() {
-      try {
-        const result = await bb.sdk.plugins.applyUpdate({ pluginId: bb.pluginId });
-        await refreshPluginUpdate(true);
-        return { applied: result.applied, outcome: result.outcome, detail: result.detail ?? null, from: result.from.version, to: result.to?.version ?? null };
-      } catch (error) {
-        return { applied: false, outcome: "unavailable" as const, detail: error instanceof Error ? error.message : String(error), from: null, to: null };
-      }
-    },
-    async checkPluginUpdate() {
-      await refreshPluginUpdate(true);
-      return { pluginUpdate, githubRelease };
-    },
-
-    // About identity mark. Served as a data URI (never a static file URL —
-    // see lib/about-logo.mjs), read once from the source root and memoized.
-    // Missing asset yields null and the tab falls back to text, never a
-    // broken image.
-    async aboutLogo() {
-      if (aboutLogoCache === undefined) aboutLogoCache = loadAboutLogo(pluginDir);
-      return { dataUri: aboutLogoCache ?? null };
-    },
-
-    // Presence probe for the optional host binaries the workflow knows how
-    // to use (About tab). Read-only `--version` calls, 8s each, parallel;
-    // anything missing/slow yields present:false — never a throw. One id
-    // per tool; bins are tried in order, first success wins.
-    async toolStatus() {
-      const candidates: Array<{ id: string; bins: string[] }> = [
-        { id: "sem", bins: [resolveLocalBin("sem")] },
-        { id: "ast-grep", bins: [resolveLocalBin("ast-grep"), resolveLocalBin("sg")] },
-        { id: "cymbal", bins: [resolveLocalBin("cymbal")] },
-        { id: "ripwire", bins: [resolveLocalBin("ripwire")] },
-      ];
-      const probe = (bins: string[]): Promise<{ present: boolean; version: string | null }> => {
-        const [bin, ...rest] = bins;
-        if (!bin) return Promise.resolve({ present: false, version: null });
-        return new Promise((resolve) => {
-          execFile(bin, ["--version"], { timeout: 8000, maxBuffer: 64 * 1024 }, (error, stdout) => {
-            if (!error && typeof stdout === "string" && stdout.trim()) {
-              resolve({ present: true, version: stdout.trim().split("\n")[0]?.slice(0, 60) ?? null });
-              return;
-            }
-            void probe(rest).then(resolve);
-          });
-        });
-      };
-      const tools = await Promise.all(candidates.map(async ({ id, bins }) => ({ id, ...(await probe(bins)) })));
-      return { tools };
-    },
-
-    // Install one optional tool on explicit user request (About tab button).
-    // Static command map — no user input reaches a shell. Everything lands
-    // in ~/.local/bin (what resolveLocalBin probes); never sudo, never
-    // outside HOME. Success is verified by re-probing, not by exit code
-    // alone; the log tail explains failures inline in the UI.
-    async installTool({ id }) {
-      const tailLines = (text: string) => text.split("\n").slice(-25).join("\n").slice(-2000);
-      const run = (cmd: string, args: string[], extraEnv: Record<string, string> = {}): Promise<{ code: number; out: string }> =>
-        new Promise((resolve) => {
-          execFile(cmd, args, { timeout: 300000, maxBuffer: 1024 * 1024, env: { ...process.env, ...extraEnv } }, (error, stdout, stderr) => {
-            const out = `${typeof stdout === "string" ? stdout : ""}\n${typeof stderr === "string" ? stderr : ""}`.trim();
-            resolve({ code: error ? 1 : 0, out });
-          });
-        });
-      const tmpScript = `.stelow-tool-install-${id}-${process.pid}-${Date.now()}.sh`;
-      const tmpPath = nodeJoin(tmpdir(), tmpScript);
-      let log = "";
-      try {
-        if (id === "sem" || id === "ripwire") {
-          const scripts: Record<string, { url: string; args: string[]; env: Record<string, string> }> = {
-            sem: { url: "https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh", args: [], env: {} },
-            ripwire: { url: "https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh", args: [], env: { RIPWIRE_REPO: "redhat-et/ripwire", RIPWIRE_INSTALL_YES: "1", RIPWIRE_NO_ACTIVATE: "1" } },
-          };
-          const spec = scripts[id]!;
-          const download = await run("curl", ["-fsSL", "--max-time", "120", spec.url, "-o", tmpPath]);
-          log += download.out;
-          if (download.code !== 0) return { ok: false, version: null, log: tailLines(log) || "Download failed." };
-          const install = await run("bash", [tmpPath, ...spec.args], spec.env);
-          log += `\n${install.out}`;
-          if (install.code !== 0) return { ok: false, version: null, log: tailLines(log) || "Installer failed." };
-        } else if (id === "ast-grep") {
-          // --prefix keeps it in ~/.local (default global prefix is
-          // root-owned on servers); bins land in ~/.local/bin.
-          const prefix = localBinDir ? nodeJoin(homeDir, ".local") : "";
-          const install = await run("npm", ["install", "-g", ...(prefix ? ["--prefix", prefix] : []), "@ast-grep/cli"]);
-          log += install.out;
-          if (install.code !== 0) return { ok: false, version: null, log: tailLines(log) || "npm install failed." };
-        } else {
-          // cymbal via go install (CGO per upstream README); GOBIN pins the
-          // binary into ~/.local/bin instead of ~/go/bin.
-          const install = await run("go", ["install", "github.com/1broseidon/cymbal@latest"], {
-            ...(localBinDir ? { GOBIN: localBinDir } : {}),
-            CGO_CFLAGS: "-DSQLITE_ENABLE_FTS5",
-          });
-          log += install.out;
-          if (install.code !== 0) return { ok: false, version: null, log: tailLines(log) || "go install failed." };
-        }
-      } finally {
-        try { unlinkSync(tmpPath); } catch { /* best-effort */ }
-      }
-      const bins: Record<string, string[]> = {
-        sem: [resolveLocalBin("sem")],
-        "ast-grep": [resolveLocalBin("ast-grep"), resolveLocalBin("sg")],
-        cymbal: [resolveLocalBin("cymbal")],
-        ripwire: [resolveLocalBin("ripwire")],
-      };
-      for (const bin of bins[id] ?? []) {
-        const check = await run(bin, ["--version"]);
-        if (check.code === 0 && check.out.trim()) {
-          return { ok: true, version: check.out.trim().split("\n")[0]?.slice(0, 60) ?? null, log: tailLines(log) || "Installed." };
-        }
-      }
-      return { ok: false, version: null, log: tailLines(log) || "Installed but the binary did not respond." };
-    },
-
-    async previewState({ cardId, appOrigin }) {
-      return await previewView(cardId, appOrigin ?? null);
-    },
-
-    async previewStart({ cardId }) {
-      return await previewStart(cardId);
-    },
-
-    async previewStop({ cardId }) {
-      return await previewStop(cardId);
-    },
-
-    async previewShare({ cardId }) {
-      return await previewShare(cardId);
-    },
+    ...platform,
   },
   // Opt into BB 0.43 RPC discovery so the described methods are listed.
   { experimental_discoverable: true });
@@ -6755,55 +6412,5 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
     },
   });
 
-  bb.ui.registerMentionProvider({
-    id: "workflow",
-    label: "Stelow workflows",
-    triggers: ["@"],
-    async search({ query, projectId }) {
-      const board = await loadBoard(bb, projectId ?? null);
-      const needle = query.toLowerCase();
-      const fromBoard = board.workflows.filter((workflow) => workflow.name.toLowerCase().includes(needle)).slice(0, 20).map((workflow) => ({ id: workflow.id, title: workflow.name, subtitle: `${workflow.stage} · ${workflow.status}` }));
-      // Boards are project-root scoped and miss exploratory cards (per-card
-      // stelow.json). Fall back to the cards table so every card is findable.
-      const cardRows = (projectId
-        ? db.prepare("SELECT id, display_name, name, stage, status, intent, dir_hash FROM cards WHERE project_id = ? AND status != 'archived'").all(projectId)
-        : db.prepare("SELECT id, display_name, name, stage, status, intent, dir_hash FROM cards WHERE status != 'archived'").all()) as Array<{ id: string; display_name: string | null; name: string; stage: string; status: string; intent: string; dir_hash: string | null }>;
-      const fromCards = cardRows
-        .filter((card) => (card.display_name ?? card.name).toLowerCase().includes(needle))
-        .slice(0, 20)
-        .map((card) => ({ id: card.dir_hash ?? card.id, title: card.display_name ?? card.name, subtitle: `${card.stage} · ${card.status} · ${card.intent}` }));
-      const seen = new Set(fromBoard.map((item) => item.id));
-      return [...fromBoard, ...fromCards.filter((item) => !seen.has(item.id))].slice(0, 20);
-    },
-    async resolve(itemId) {
-      const projects = await bb.sdk.projects.list({ includePersonal: true });
-      for (const project of projects) {
-        const board = await loadBoard(bb, project.id);
-        const workflow = board.workflows.find((item) => item.id === itemId);
-        if (workflow) return { context: `Stelow workflow ${workflow.name}: stage=${workflow.stage}, status=${workflow.status}, appetite=${workflow.appetite}, review_mode=${workflow.reviewMode}. Scopes: ${workflow.scopes.map((scope) => `${scope.id}:${scope.status}`).join(", ") || "none"}.` };
-      }
-      const card = db.prepare("SELECT display_name, name, stage, status, intent FROM cards WHERE dir_hash = ? OR id = ?").get(itemId, itemId) as { display_name: string | null; name: string; stage: string; status: string; intent: string } | undefined;
-      if (card) return { context: `Stelow card ${card.display_name ?? card.name}: stage=${card.stage}, status=${card.status}, intent=${card.intent}.` };
-      throw new Error("Stelow workflow no longer exists.");
-    },
-  });
-
-  // File mentions: type @ + filename in any composer (including the Stelow
-  // board) to insert a workspace file reference the agent can open/read.
-  bb.ui.registerMentionProvider({
-    id: "file",
-    label: "Workspace files",
-    triggers: ["@"],
-    async search({ query, projectId }) {
-      if (!projectId) return [];
-      const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
-      const root = project?.sources.find((entry) => entry.isDefault)?.path ?? null;
-      if (!root) return [];
-      const listed = await bb.sdk.files.list({ path: root, query, limit: 20 }).catch(() => null);
-      return (listed?.files ?? []).slice(0, 20).map((file) => ({ id: file.path, title: file.path.split("/").pop() ?? file.path, subtitle: file.path }));
-    },
-    async resolve(itemId) {
-      return { context: `Workspace file: ${itemId}` };
-    },
-  });
+  registerMentionProviders(bb, { db, loadBoard: (projectId) => loadBoard(bb, projectId) });
 }

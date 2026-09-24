@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const platformSource = readFileSync(join(root, "server/runtime/platform.ts"), "utf8");
 const contractSource = readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8");
 const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
@@ -100,8 +101,14 @@ for (const field of ["url", "command", "checkout", "log", "hints"]) {
 }
 
 // --- The public surface is reachable from both callers. -------------------
-assert.match(slice("    async previewStart({ cardId }) {", "    async previewStop({ cardId }) {"), /previewStart\(cardId\)/, "the RPC must reach the runtime's start");
-assert.match(slice("    async previewStop({ cardId }) {", "  });"), /previewStop\(cardId\)/, "the RPC must reach the runtime's stop");
+assert.match(source, /\.\.\.platform,/, "the composition root must register the platform handlers");
+for (const method of ["view", "start", "stop", "share"]) {
+  assert.equal(
+    platformSource.match(new RegExp(`deps\\.preview\\.${method}\\(`, "g"))?.length,
+    1,
+    `the platform must dispatch exactly one preview ${method} handler`,
+  );
+}
 assert.match(source, /\{ name: "preview", summary:/, "the CLI must document the subcommand");
 assert.match(source, /createPreviewRuntime/, "server.ts must construct the runtime");
 
