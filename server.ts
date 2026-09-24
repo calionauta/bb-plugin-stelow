@@ -57,7 +57,6 @@ import {
 } from "./lib/decision-api.mjs";
 import { DECISION_POINT_ARTIFACT_CRITERIA, normalizePointMode, defaultThresholdsFor, normalizeThresholds } from "./lib/decision-points.mjs";
 import { doingNowNames } from "./lib/doing-now.mjs";
-import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
 import { tasksToScoreQuestions, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
 import { resolveScoredVerdicts } from "./lib/score-verdicts.mjs";
@@ -85,13 +84,11 @@ import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { formatBytes, threadIdFromWorktreePath, isStaleEnvironment } from "./lib/worktree-storage.mjs";
-import { parseScopeArgs } from "./lib/scope-command.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { ensureTrackableEventsTable, recordTrackableEvent } from "./lib/trackable-events.mjs";
-import { enrichEntriesForDetail, sanitizeEvidenceRecord } from "./lib/trackable-evidence.mjs";
+import { enrichEntriesForDetail } from "./lib/trackable-evidence.mjs";
 import { buildRegistry, canStart, dependencyCycles } from "./lib/trackable-relations.mjs";
-import { isSpecTechFile, plansRelDir } from "./lib/tracking-paths.mjs";
-import { countScopeDialects, diagnoseScopeSync, mergePlannedTasks } from "./lib/spec-scope-reader.mjs";
+import { countScopeDialects, diagnoseScopeSync } from "./lib/spec-scope-reader.mjs";
 import { advanceExecutionGates, doneBuildGates } from "./lib/build-gates.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
@@ -114,6 +111,15 @@ import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, b
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
 import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } from "./server/decision-api.js";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
+import {
+  createScopeProgressSync,
+  latestSpecTech,
+  loadCardScopes,
+  normalizeStatus,
+  runScopeCommand,
+  trackingEntryForCard,
+  workflowScopes,
+} from "./server/scopes.js";
 import { attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "./lib/thread-children.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
@@ -896,11 +902,6 @@ function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeStatus(value: unknown): z.infer<typeof statusSchema> {
-  const candidate = text(value, "pending");
-  return statusSchema.safeParse(candidate).success ? candidate as z.infer<typeof statusSchema> : "pending";
-}
-
 // Short human status for the GitHub completion summary (English).
 function statusLabelForSummary(status: string): string {
   if (status === "in-progress") return "in progress";
@@ -1112,52 +1113,6 @@ function parseNextStages(rootPath: string | null, currentStage: string): string[
   return Array.from(stages);
 }
 
-// Scopes follow the immutable owner, never the name: two cards carrying the
-// same request must not read each other's scope progress.
-function loadCardScopes(rootPath: string | null, workflowId: string, opts?: { mergePlanned?: boolean }): Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"] {
-  if (!rootPath) return [];
-  const tracking = join(rootPath, "stelow.json");
-  if (!existsSync(tracking)) return [];
-  let trackingData: LooseRecord;
-  try { trackingData = JSON.parse(readFileSync(tracking, "utf8")) as LooseRecord; } catch { return []; }
-  const match = workflowEntryForOwner(array(trackingData.workflows), workflowId) as LooseRecord | null;
-  if (!match) return [];
-  const tracked = workflowScopes(match);
-  // Planned tasks enrich synced scopes at read time (Done Criterion becomes
-  // the task note): the host never writes tracking, so blocks without a
-  // synced scope stay invisible instead of inventing scopes. Gates pass
-  // mergePlanned: false — containment enforces tracked truth, the merge is
-  // display-only (otherwise pre-merge cards could never complete).
-  if (opts?.mergePlanned === false) return tracked as Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"];
-  const spec = latestSpecTech(rootPath, workflowId)?.content ?? null;
-  return mergePlannedTasks(tracked, spec) as Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"];
-}
-
-// Single read of a card's tracking entry: every derived path (plans,
-// scopes, contracts) resolves from this entry through the uniform layout,
-// never by re-deriving date/dirHash per call site.
-function trackingEntryForCard(rootPath: string, workflowId: string): LooseRecord | null {
-  try {
-    const trackingData = JSON.parse(readFileSync(join(rootPath, "stelow.json"), "utf8")) as LooseRecord;
-    return workflowEntryForOwner(array(trackingData.workflows), workflowId) as LooseRecord | null;
-  } catch { return null; }
-}
-function latestSpecTech(rootPath: string, workflowId: string): { file: string; content: string } | null {
-  // Lexicographically latest spec-tech version. Null on any miss: callers
-  // fail open, never dead.
-  try {
-    const match = trackingEntryForCard(rootPath, workflowId);
-    if (!match) return null;
-    const plansRel = plansRelDir(workflowStateRelativeDir(match));
-    if (!plansRel) return null;
-    const plans = nodeJoin(rootPath, ...plansRel.split("/"));
-    const files = readdirSync(plans).filter(isSpecTechFile).sort();
-    if (files.length === 0) return null;
-    const file = files[files.length - 1]!;
-    return { file, content: readFileSync(nodeJoin(plans, file), "utf8") };
-  } catch { return null; }
-}
-
 async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string, stateDir?: string | null, requireOwnedState = false): Promise<string | null> {
   const tracking = join(rootPath, "stelow.json");
   const transitions = join(rootPath, "skills/stelow-workflow-orchestrator/references/transitions.md");
@@ -1220,46 +1175,6 @@ async function readJson(files: FilesApi, path: string): Promise<LooseRecord | nu
   } catch {
     return null;
   }
-}
-
-function workflowScopes(raw: LooseRecord): Workflow["scopes"] {
-  return array(raw.scopes).map((entry, index) => {
-    const scope = record(entry);
-    const sanitizedRecord = sanitizeEvidenceRecord(scope.record);
-    return {
-      id: text(scope.id, `scope-${index + 1}`),
-      name: text(scope.name, text(scope.title, `Scope ${index + 1}`)),
-      // Tracking shapes declare their kind: the registry, conditions, and
-      // contract lookups never infer it from nesting again.
-      kind: "scope",
-      ...(typeof scope.type === "string" ? { type: scope.type } : {}),
-      status: normalizeStatus(scope.status),
-      ...(typeof scope.source === "string" ? { source: scope.source } : {}),
-      ...(typeof scope.gap === "string" ? { gap: scope.gap } : {}),
-      ...(Array.isArray(scope.blockedBy) ? { blockedBy: (scope.blockedBy as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)) } : {}),
-      ...(Array.isArray(scope.depends_on) ? { dependsOn: (scope.depends_on as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)) } : {}),
-      // Machine evidence travels with the projection: the record mirror
-      // (verified, counts) and declared target files feed conditions and
-      // claim checks downstream — never silently dropped.
-      ...(sanitizedRecord ? { record: sanitizedRecord } : {}),
-      ...(typeof scope.started_at === "string" && scope.started_at ? { startedAt: scope.started_at } : {}),
-      ...(Array.isArray(scope.targetFiles) ? { targetFiles: (scope.targetFiles as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)).filter(Boolean) } : {}),
-      tasks: array(scope.tasks).map((item, taskIndex) => {
-        const task = record(item);
-        const strArray = (value: unknown): string[] | undefined => Array.isArray(value) ? value.map((entry) => typeof entry === "string" ? entry : String(entry)) : undefined;
-        return {
-          id: text(task.id, `task-${taskIndex + 1}`),
-          name: text(task.name, text(task.title, `Task ${taskIndex + 1}`)),
-          kind: "task",
-          status: normalizeStatus(task.status),
-          ...(typeof task.source === "string" ? { source: task.source } : {}),
-          ...(typeof task.note === "string" ? { note: task.note } : {}),
-          ...(strArray(task.blockedBy) ?? strArray(task.blocked_by) ? { blockedBy: strArray(task.blockedBy) ?? strArray(task.blocked_by) } : {}),
-          ...(strArray(task.dependsOn) ?? strArray(task.depends_on) ? { dependsOn: strArray(task.dependsOn) ?? strArray(task.depends_on) } : {}),
-        };
-      }),
-    };
-  });
 }
 
 async function findArtifacts(files: FilesApi, root: string, workflow: LooseRecord): Promise<Workflow["artifacts"]> {
@@ -4734,21 +4649,11 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   function maybeBumpSeverity(): Promise<void> {
     return decisionApi.maybeBumpSeverity();
   }
-  // Last-seen scope prints per live card. Module-closure lifetime is
-  // correct: a reload re-baselines silently instead of inheriting stale
-  // hashes across a restart.
-  const scopePrints = new Map<string, string>();
-  async function syncScopeProgress(cardId: string): Promise<void> {
-    try {
-      const card = getCard(cardId);
-      if (!card) { scopePrints.delete(cardId); return; }
-      const workspace = await cardWorkspace(card);
-      const print = workspace?.path ? scopeFingerprint(loadCardScopes(workspace.path, card.id)) : "";
-      const prev = scopePrints.get(cardId);
-      scopePrints.set(cardId, print);
-      if (prev !== undefined && prev !== print) bb.realtime.publish("card-state", { cardId });
-    } catch { /* advisory; next tick retries */ }
-  }
+  const scopeProgress = createScopeProgressSync({
+    getCard,
+    cardWorkspace,
+    publish: (cardId) => bb.realtime.publish("card-state", { cardId }),
+  });
   const reconcileTimer = setInterval(() => {
     if (!(db as unknown as { open?: boolean }).open) return;
     try {
@@ -4760,8 +4665,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // the next host-driven reload. First sight sets the baseline silently
       // — a restart must not publish-storm every live card — and dead cards
       // prune out so the map cannot grow past the live set.
-      for (const row of rows) void syncScopeProgress(row.id);
-      for (const id of scopePrints.keys()) if (!liveIds.has(id)) scopePrints.delete(id);
+      for (const row of rows) void scopeProgress.sync(row.id);
+      scopeProgress.prune(liveIds);
     } catch { /* db closed during reload; next tick retries */ }
     void maybeBumpSeverity();
     // Expired workspace claims are crashed workers that never released:
@@ -8427,30 +8332,22 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { exitCode: 0, stdout: result.stdout };
       }
       if (argv[0] === "scope") {
-        // Single-writer scope transitions for workers (no scripts/stelow
-        // binary exists in a bb workspace): start|done|seed-tasks validate
-        // terminality, containment, and dependency order in the helper and
-        // commit atomically. Like sync-scopes, the write doubles as the
-        // refresh signal so the card reloads, and trails the decision.
-        const parsed = parseScopeArgs(argv.slice(1));
-        if (parsed.error) return { exitCode: 2, stderr: parsed.error };
-        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
-        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
-        const rootPath = workspace?.path ?? await projectRoot(bb, parsed.projectId ?? ctx.projectId ?? null);
-        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
-        if (guard) return { exitCode: 1, stderr: guard };
-        const result = await runHelper(["scope", ...parsed.passthrough!], rootPath, stateDir ?? undefined);
-        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "scope transition failed", stdout: result.stdout };
-        if (cliCard) {
-          try {
-            recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: parsed.scopeId!, transition: parsed.op === "start" ? "started" : parsed.op === "seed-tasks" ? "tasks-seeded" : "completed", actor: "worker", evidence: result.stdout.slice(0, 200) });
-          } catch { /* trail never blocks */ }
-          bb.realtime.publish("card-state", { cardId: cliCard.id });
-          bb.realtime.publish("board-changed", { cardId: cliCard.id });
-        }
-        return { exitCode: 0, stdout: result.stdout };
+        return runScopeCommand(argv, ctx, {
+          bb,
+          getCardByWorkerThread,
+          cardWorkspace,
+          projectRoot: (projectId) => projectRoot(bb, projectId),
+          workflowStateDir: (rootPath, card) => workflowStateDir(
+            bb,
+            rootPath,
+            card.id,
+            card.dir_hash!,
+          ),
+          ensureProjectArtifacts: (rootPath, stateDir, requireOwnedState) =>
+            ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
+          runHelper,
+          recordTrackableEvent: (event) => { recordTrackableEvent(db, event); },
+        });
       }
       if (argv[0] === "lock") {
         const args = argv.slice(1);

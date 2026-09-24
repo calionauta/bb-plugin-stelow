@@ -31,19 +31,24 @@ assert.ok(parseScopeArgs(["start", "--scope", "scope-1", "--name"]).error, "dang
 assert.ok(parseScopeArgs(null).error, "junk refuses");
 assert.ok(parseScopeArgs(["done", "--scope", "scope-1", "--json", "--json"]).error === undefined, "repeated boolean flags pass");
 
-// Branch pins (topology): the wrapper trails worker transitions and
-// refreshes both surfaces, and the command is registered with usage.
+// Topology pins (wiring only): server delegates the command to the extracted
+// module with the dependencies it owns; behavior is covered against the module.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 const start = server.indexOf('if (argv[0] === "scope") {');
 assert.ok(start >= 0, "the scope branch exists");
 const end = server.indexOf('if (argv[0] === "lock") {', start);
 assert.ok(end > start, "the scope branch sits beside the helper wrappers");
 const branch = server.slice(start, end);
-assert.match(branch, /parseScopeArgs\(/, "the wrapper parses through lib");
-assert.match(branch, /transition: parsed\.op === "start" \? "started" : parsed\.op === "seed-tasks" \? "tasks-seeded" : "completed", actor: "worker"/, "worker transitions trail as worker");
-assert.match(branch, /bb\.realtime\.publish\("card-state"/, "tracking writes refresh the card");
-assert.match(branch, /bb\.realtime\.publish\("board-changed"/, "tracking writes refresh the board");
+assert.match(branch, /return runScopeCommand\(argv, ctx, \{/, "the server delegates scope transitions");
+assert.match(branch, /runHelper,/, "the delegated command receives the shared helper runner");
+assert.match(branch, /recordTrackableEvent:/, "the delegated command receives the durable trail writer");
+assert.match(
+  scopeModule,
+  /export async function runScopeCommand(?:<[^>]+>)?\(/,
+  "the extracted module owns the command behavior",
+);
 assert.match(server, /\{ name: "scope", summary: "Validated scope transitions/, "the command is registered with its usage");
 
-console.log("scope command test ok: parsing, trail, refresh, registration");
+console.log("scope command test ok: parsing, extraction wiring, registration");
