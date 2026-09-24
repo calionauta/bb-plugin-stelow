@@ -13,7 +13,8 @@ import { ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshE
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
+const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
+const app = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
 // Scorer boundaries: fresh actions act, old/repeated escalate, completions
 // review quietly. Reasons ride every tier — never a bare number.
@@ -77,14 +78,18 @@ assert.equal(countsForInboxBadge({ kind: "paused", archivedAt: null, resolvedAt:
 assert.equal(countsForInboxBadge({ kind: "completed", archivedAt: null, resolvedAt: null, readAt: 1 }), false, "read completions never count");
 assert.equal(countsForInboxBadge({ kind: "question", archivedAt: 1, resolvedAt: null }), false, "archived items never count");
 
-// Wiring: migration runs at boot, the sweep recomputes beside the stall
-// escalation, rows reach the panel through the contract, and the panel
-// renders reasons with an escalating mark.
-assert.match(server, /ensureInboxSeverityColumns\(db\);/, "the migration runs at boot");
+// Wiring: the feature migration owns the columns, the sweep recomputes beside
+// stall escalation, and the extracted contract feeds severity to the panel.
+assert.match(server, /runInboxMigrations\(db\);/, "the feature migration runs at boot");
 assert.match(server, /refreshEventSeverity\(db, \{ cardId, nowMs: now\(\) \}\)/, "the sweep recomputes tiers beside the stall escalation");
-assert.match(server, /severity: z\.number\(\),/, "the snapshot contract carries severity");
-assert.match(server, /severityReasons: z\.array\(z\.string\(\)\)/, "the snapshot contract carries reasons");
-assert.match(server, /severity: row\.severity \?\? 1, severityReasons: parseSeverityReasons\(row\.severity_reasons\)/, "list rows map stored tiers with safe fallbacks");
+assert.match(serverInbox, /ensureInboxSeverityColumns\(db\);/, "the feature module owns severity migrations");
+assert.match(serverInbox, /severity: z\.number\(\),/, "the snapshot contract carries severity");
+assert.match(serverInbox, /severityReasons: z\.array\(z\.string\(\)\)/, "the snapshot contract carries reasons");
+assert.match(
+  serverInbox,
+  /severity: row\.severity \?\? 1,[\s\S]*severityReasons: parseSeverityReasons\(row\.severity_reasons\)/,
+  "list rows map stored tiers with safe fallbacks",
+);
 assert.match(app, /severityReasons\.slice\(0, 3\)\.join\(" · "\)/, "rows render up to three reason chips");
 assert.match(app, /entry\.severity >= 2 && entry\.resolvedAt == null/, "the escalating mark shows on open escalations only");
 

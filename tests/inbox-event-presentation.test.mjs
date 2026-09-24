@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { inboxEventPresentation, isOpenInboxAction, unreadInboxEntries } from "../lib/inbox-event-presentation.mjs";
+import { inboxEventDescription, inboxEventPresentation, inboxEventText, inboxEventTime, isOpenInboxAction, unreadInboxEntries } from "../lib/inbox-event-presentation.mjs";
 
 const openQuestion = { kind: "question", occurredAt: 10, resolvedAt: null, archivedAt: null };
 assert.deepEqual(inboxEventPresentation(openQuestion), { label: "Needs a decision", tone: null, stateAt: 10, stateLabel: null });
@@ -32,4 +32,14 @@ assert.equal(inboxEventPresentation({ kind: "paused", occurredAt: 10, resolvedAt
 assert.equal(inboxEventPresentation({ kind: "paused", occurredAt: 10, resolvedAt: 20, resolvedReason: "completed", archivedAt: null }).label, "Completed");
 assert.equal(inboxEventPresentation({ kind: "error", occurredAt: 10, resolvedAt: 20, resolvedReason: "archived", archivedAt: null }).label, "Closed with the card");
 assert.equal(inboxEventPresentation({ ...resolvedQuestion, resolvedReason: "bogus" }).label, "Decision resolved", "unknown reasons fall back to the kind label");
+
+// Description: kept history names itself, open events speak their summary.
+assert.equal(inboxEventDescription({ ...openQuestion, summary: "Answer this" }), "Answer this", "open events read their summary");
+assert.equal(inboxEventDescription({ ...resolvedQuestion, summary: "Answer this" }), "This Inbox update is kept for history.", "kept rows never re-ask");
+// Text: the label prefixes unless already inside the description.
+assert.equal(inboxEventText({ ...openQuestion, summary: "Answer this" }), "Needs a decision. Answer this", "label prefixes a bare summary");
+assert.equal(inboxEventText({ ...openQuestion, summary: "Needs a decision: pick one" }), "Needs a decision: pick one", "an embedded label is never doubled");
+// Time: state time carries its label, open events read the relative clock.
+assert.match(inboxEventTime({ ...resolvedQuestion, summary: "x" }), /^Resolved /, "resolved time carries its state");
+assert.match(inboxEventTime({ ...openQuestion, summary: "x" }), /(Just now|\d+[mhd] ago|Yesterday)$/, "open time reads the relative clock");
 console.log("inbox event presentation test ok: active, resolved, archived, and informational states");

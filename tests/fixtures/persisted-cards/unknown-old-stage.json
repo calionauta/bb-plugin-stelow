@@ -1,0 +1,14 @@
+{
+  "name": "unknown-old-stage",
+  "card": {
+    "id": "card_unknown_stage",
+    "kind": "build",
+    "status": "in-progress",
+    "stage": "legacy-preflight",
+    "workerThreadId": "thr_unknown_stage",
+    "dirHash": "sw-card_unknown_stage",
+    "spawnRetryCount": 0,
+    "spawnRetryThread": null
+  },
+  "state": "---\nworkflow_id: card_unknown_stage\nname: Unknown old stage\nintent: feature\ncurrent_stage: legacy-preflight\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\nstages:\n  legacy-preflight: in-progress\nartifacts: []\nhistory: []\n---\n"
+}

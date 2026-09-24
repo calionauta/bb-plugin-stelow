@@ -70,26 +70,25 @@ assert.equal(await resolveGhPath(async () => true), "gh", "PATH gh wins when pre
 await assert.rejects(resolveGhPath(async () => { throw new Error("nope"); }), /not available/, "a throwing probe counts as a miss");
 await assert.rejects(resolveGhPath(async () => false), /not available/, "no working gh refuses with the redirect");
 
-// Submit guard: the Build start sets a busy ref before the createCard call
-// and clears it on every terminal path, so a double-click cannot create two
-// cards (and two issues). Order is the contract — a guard after the call
-// guards nothing.
+// Submit guard: the modular Build start sets a busy ref before createCard and
+// clears it on every terminal path, so a double-click cannot create two cards
+// (and two issues). Order is the contract — a guard after the call guards
+// nothing.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const contract = readFileSync(join(root, "server/github-issues.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
-const buildStartAt = app.indexOf("async function start(request: NewThreadRequest) {");
-const nextStartAt = app.indexOf("async function start(request: NewThreadRequest) {", buildStartAt + 1);
-const buildStart = app.slice(buildStartAt, nextStartAt);
-assert.ok(buildStart.indexOf("if (submitBusyRef.current) return;") < buildStart.indexOf('rpc.call("createCard"'), "the busy guard precedes the card write");
+const createDialog = readFileSync(join(root, "components/creation/create-build-dialog.tsx"), "utf8");
+const doneDraft = readFileSync(join(root, "components/github/github-done-draft-dialog.tsx"), "utf8");
+const buildStart = createDialog.slice(createDialog.indexOf("async function start(request: NewThreadRequest)"), createDialog.indexOf("function resetOnOpen()"));
+assert.ok(buildStart.indexOf("if (!submission.trim() || submitBusyRef.current) return;") < buildStart.indexOf('rpc.call("createCard"'), "the busy guard precedes the card write");
 assert.ok(buildStart.indexOf("submitBusyRef.current = false") > buildStart.indexOf('rpc.call("createCard"'), "the flag clears after the write paths");
 assert.match(contract, /createLinkedGithubIssue: \{/, "the RPC is contracted");
 assert.match(contract, /async createLinkedGithubIssue\(\{ cardId/, "the RPC is implemented");
-assert.match(app, /rpc\.call\("createLinkedGithubIssue"/, "the creation dialog calls it after the card exists");
-assert.match(app, /Also create issue\{/, "the opt-in checkbox names the destination");
-assert.match(app, /Pick a repository/, "several mapped repos force an explicit pick, never a silent default");
-assert.match(app, /const \[createGithubIssue, setCreateGithubIssue\] = useState\(false\)/, "creation stays off by default");
+assert.match(createDialog, /rpc\.call\("createLinkedGithubIssue"/, "the creation dialog calls it after the card exists");
+assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Also create issue\{/, "the opt-in checkbox names the destination");
+assert.match(readFileSync(join(root, "components/github/github-create-row.tsx"), "utf8"), /Pick a repository/, "several mapped repos force an explicit pick, never a silent default");
+assert.match(createDialog, /const \[createGithubIssue, setCreateGithubIssue\] = useState\(false\)/, "creation stays off by default");
 assert.match(readFileSync(join(root, "server.ts"), "utf8"), /draftDoneComment: \{/, "the draft RPC is contracted");
-assert.match(app, /rpc\.call\("draftDoneComment"/, "the Done dialog drafts through the RPC");
-assert.match(app, /Draft GitHub comment…/, "the Manage entry names the action");
+assert.match(doneDraft, /rpc\.call\("draftDoneComment"/, "the Done dialog drafts through the RPC");
+assert.match(doneDraft, /Draft GitHub comment\?/, "the dialog names the action");
 
 console.log("github issue create test ok: marker, args, strict parse, gh resolution, wiring");

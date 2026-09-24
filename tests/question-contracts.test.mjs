@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { EXPECTED_QUESTION_CONTRACTS, loadQuestionContracts, parseQuestionContracts, requiredForStage } from "../lib/question-contracts.mjs";
+import { loadQuestionContracts, requiredForStage } from "../lib/question-contracts.mjs";
 
-// The host's enforcement mirror is deliberately pinned to the vendored
-// upstream source: methodology changes cannot silently change what bb blocks.
-const byStageAndId = (a, b) => `${a.stage}/${a.id}`.localeCompare(`${b.stage}/${b.id}`);
-assert.deepEqual([...loadQuestionContracts()].sort(byStageAndId), [...EXPECTED_QUESTION_CONTRACTS].sort(byStageAndId), "vendored question contract matches the host mirror");
+// The generated catalog is the host's only source for question contracts.
+const contracts = loadQuestionContracts();
+assert.ok(contracts.length > 0, "generated catalog contains question contracts");
+assert.equal(new Set(contracts.map(({ stage, id }) => `${stage}/${id}`)).size, contracts.length, "question ids are unique per stage");
 
 const humanModes = [
   "Product Spec + Interface Gates",
@@ -34,8 +33,4 @@ assert.deepEqual(
 assert.deepEqual(requiredForStage({ stage: "selection", reviewMode: "Unknown", appetite: "Core" }), [], "unknown modes fail open");
 assert.deepEqual(requiredForStage({ stage: "selection", reviewMode: humanModes[0], appetite: "Lean" }), [], "Lean has no multi-option selection contract");
 
-const malformed = readFileSync(new URL("../skills/stelow-workflow-orchestrator/stages.yaml", import.meta.url), "utf8")
-  .replace("kind: agent-receipt", "kind: invented-kind");
-assert.throws(() => parseQuestionContracts(malformed), /unknown kind/, "a malformed upstream contract refuses to load instead of dropping the requirement");
-
-console.log("question contracts test ok: pinned source, mode/appetite matrix, fail-open, malformed contract");
+console.log("question contracts test ok: generated source, mode/appetite matrix, and fail-open behavior");

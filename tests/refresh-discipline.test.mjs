@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 // (read-only). Sliced by argv markers: topology, not copy.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 
 function branch(open, close) {
   const start = server.indexOf(open);
@@ -26,7 +27,10 @@ function assertRefresh(name, open, close) {
 }
 
 assertRefresh("sync-scopes", 'if (argv[0] === "sync-scopes") {', 'if (argv[0] === "scope") {');
-assertRefresh("scope", 'if (argv[0] === "scope") {', 'if (argv[0] === "lock") {');
+const scopeBranch = branch('if (argv[0] === "scope") {', 'if (argv[0] === "lock") {');
+assert.match(scopeBranch, /return runScopeCommand\(/, "scope delegates to the extracted wrapper");
+assert.match(scopeModule, /deps\.bb\.realtime\.publish\("card-state"/, "scope refreshes the card");
+assert.match(scopeModule, /deps\.bb\.realtime\.publish\("board-changed"/, "scope refreshes the board");
 assertRefresh("gap-scopes", 'if (argv[0] === "gap-scopes") {', 'if (argv[0] === "metrics") {');
 
 const lock = branch('if (argv[0] === "lock") {', 'if (argv[0] === "config") {');

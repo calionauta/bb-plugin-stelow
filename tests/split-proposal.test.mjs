@@ -55,7 +55,10 @@ assert.equal(total.archiveParent, true, "full approval archives the parent");
 // while re-asking with the tag is still legal — instead of letting a
 // would-be split die silently. Decided through the shared gate on slug
 // truth, like every other split entry point.
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/execution-native.ts"), "utf8"),
+].join("\n");
 assert.match(serverSource, /recorded as STANDARD — its answer is text only and executes nothing/, "the ask result names the standard consequence");
 assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the reminder gives the exact repair while still in time");
 assert.match(serverSource, /splitEligibility\(\{ kind: askCard\.kind, stage: askStage \}\)/, "the reminder decides through the shared gate");
@@ -70,7 +73,7 @@ assert.ok(!serverSource.includes("Only build cards split. Research and explore")
 // Config inheritance reads through the same shared parser — no anchored
 // `^appetite:` reader (misses the indented block) and no truncating
 // `(\S+)` may reappear.
-assert.equal((serverSource.match(/parseWorkflowConfig\(/g) ?? []).length, 5, "card detail, split inheritance, advance guard, ask validation, and reseed preservation share one config parser");
+assert.equal((serverSource.match(/parseWorkflowConfig\(/g) ?? []).length, 6, "card detail, split inheritance, advance guard, ask validation, reseed preservation, and native recipe context share one config parser");
 assert.ok(!serverSource.includes("^appetite:"), "no anchored appetite reader survives");
 assert.ok(!serverSource.includes('review_mode:\\s*'), "no truncating review_mode reader survives");
 
@@ -103,9 +106,10 @@ assert.match(serverSource, /SPLIT_REQUEST_NUDGE, mentions: \[\]/, "the trigger d
 assert.match(serverSource, /splitAction: z\.object\(\{ show:/, "cardDetail exposes the dumb-UI split flag");
 assert.match(serverSource, /const splitAction = splitActionState\(\{/, "cardDetail computes the flag from the shared rule");
 
-const appSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../app.tsx"), "utf8");
-assert.match(appSource, /Propose split…/, "the build card offers the trigger at triage/select");
-assert.match(appSource, /rpc\.call\("requestSplitProposal", \{ cardId \}\)/, "the button calls the trigger RPC");
-assert.match(appSource, /detail\?\.splitAction\?\.show/, "the UI reads the server flag, never local stage rules");
+const heroSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/build-detail-hero.tsx"), "utf8");
+const buildLifecycleSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/use-build-detail-lifecycle.ts"), "utf8");
+assert.match(heroSource, /Propose split…/, "the build card offers the trigger at triage/select");
+assert.match(buildLifecycleSource, /rpc\.call\("requestSplitProposal", \{ cardId \}\)/, "the button handler calls the trigger RPC through the extracted lifecycle state");
+assert.match(heroSource, /detail\?\.splitAction\?\.show/, "the UI reads the server flag, never local stage rules");
 
 console.log("split proposal test ok: validation, keep veto, unknown refusal, partial remainder");

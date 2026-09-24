@@ -43,21 +43,22 @@ assert.equal(run(toMirrorRows("card_1", [{ author: "octocat", createdAt: "2026-0
 assert.equal(run(toMirrorRows("card_1", [{ author: "octocat", createdAt: "2026-09-22T11:00:00Z", body: "Third." }], 10_002)), 1, "a new comment inserts once");
 assert.equal(db.prepare("SELECT COUNT(*) AS n FROM github_issue_comments").get().n, 3, "the mirror holds exactly the thread");
 
-// Wiring: the discussion RPC exists in contract and handlers, the card
-// detail fetches it on open, and the section only renders for linked cards.
+// Wiring: the discussion RPC exists in contract and handlers, the modular
+// card detail component fetches it on open, and the section only renders for
+// linked cards.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const contract = readFileSync(join(root, "server/github-issues.ts"), "utf8");
+const discussion = readFileSync(join(root, "components/github/github-linked-discussion.tsx"), "utf8");
 assert.match(contract, /getLinkedDiscussion: \{/, "the discussion RPC is contracted");
 assert.match(contract, /async getLinkedDiscussion\(\{ cardId/, "the discussion RPC is implemented");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
-assert.match(app, /rpc\.call\("getLinkedDiscussion"/, "card detail fetches the mirror on open");
-assert.match(app, /Linked discussion/, "the section names itself");
+assert.match(discussion, /rpc\.call\("getLinkedDiscussion"/, "card detail fetches the mirror on open");
+assert.match(discussion, /Linked discussion/, "the section names itself");
 assert.match(contract, /postIssueComment: \{/, "the post RPC is contracted");
 assert.match(contract, /async postIssueComment\(\{ cardId, body/, "the post RPC is implemented");
 assert.match(contract, /canCreate: z\.boolean\(\),\n\s+repos: z\.array\(z\.string\(\)\)/, "eligibility travels with the mirror");
-assert.match(app, /rpc\.call\("postIssueComment"/, "the composer posts through the RPC");
-assert.match(app, /Write to the issue/, "the composer names its target");
-assert.match(app, /public and hard to undo/, "the confirm states the blast radius");
-assert.match(app, /No linked issue yet/, "the unlinked state offers creation");
+assert.match(discussion, /rpc\.call\("postIssueComment"/, "the composer posts through the RPC");
+assert.match(discussion, /Write to the issue/, "the composer names its target");
+assert.match(discussion, /public and hard to undo/, "the confirm states the blast radius");
+assert.match(discussion, /No linked issue yet/, "the unlinked state offers creation");
 
 console.log("github issue comments test ok: fingerprint, mapping, dedupe storage, wiring");

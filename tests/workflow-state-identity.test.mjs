@@ -51,7 +51,11 @@ assert.equal(workflowStateRelativeDir(keptEntry), ".stelow/2026-09-12/sw-second-
 // Server contract: a third same-name card reads no scopes — the same rule that
 // keeps state.md apart applies to the board's scope progress.
 assert.equal(workflowEntryForOwner([firstCard, secondCard], "card_third"), null, "an unknown owner reads no scopes");
-const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8");
+const serverSource = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards.ts"), "utf8"),
+].join("\n");
 const scopeReads = [...serverSource.matchAll(/(?<!function )loadCardScopes\(([^,]+),\s*([^,)]+)/g)].map((match) => match[2].trim());
 assert.ok(scopeReads.length > 0, "the card-scope read sites are covered by this contract");
 for (const owner of scopeReads) {
@@ -61,11 +65,12 @@ for (const owner of scopeReads) {
 // Server contract: whatever seeds, seeds an owner. Card work binds the card id;
 // human-seeded work derives a stable owner from its name. A freshly minted id
 // here is how a second, unresolvable state directory gets created.
-const seedOwners = [...serverSource.matchAll(/seedWorkflow\(bb, [^,]+, ([^,]+),/g)].map((match) => match[1].trim());
+const normalizedServerSource = serverSource.replace(/\s+/g, " ");
+const seedOwners = [...normalizedServerSource.matchAll(/seedWorkflow\( ?(?:bb|deps\.bb), [^,]+, ([^,]+),/g)].map((match) => match[1].trim());
 assert.ok(seedOwners.length >= 4, "every seed call site is covered by this contract");
 for (const owner of seedOwners) {
   assert.ok(
-    /(\.id|Id)$/.test(owner) || owner.startsWith("workflowIdForName("),
+    /(\.id|Id|cardId)$/.test(owner) || owner.startsWith("workflowIdForName("),
     `seeding binds an owner, got seedWorkflow(bb, rootPath, ${owner}, ...)`,
   );
 }

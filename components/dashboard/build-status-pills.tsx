@@ -74,6 +74,16 @@ const ACTIVITY_GLYPH: Record<string, string> = { running: "●", "awaiting-answe
 const ACTIVITY_LABEL: Record<string, string> = { idle: "Paused", running: "Working", "awaiting-answer": "Waiting for you", error: "Failed" };
 const ACTIVITY_TITLE: Record<string, string> = { running: "Worker is actively working", "awaiting-answer": "Waiting for your answer", error: "Worker failed. Needs attention." };
 
+export function ReviewChip() {
+  return <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-medium text-emerald-700 dark:text-emerald-300">Review</span>;
+}
+
+export function attentionLabel(activity: string): string {
+  if (activity === "awaiting-answer") return "Answer required";
+  if (activity === "error") return "Worker failed";
+  return "Paused. Resume it.";
+}
+
 // One component owns the transient activity vocabulary everywhere it appears.
 // Build summaries choose only the human-waiting state; active work is a live
 // border, while lightweight cards can opt into their compact activity pill.
@@ -130,10 +140,27 @@ export function DoingNowPill({ names }: { names: string[] }) {
 // summary counts, so progress reads as shape, not just numbers. Null when
 // the card has no scopes — tracks without scope data show nothing rather
 // than an empty bar.
-export function ScopeStrip({ done, total }: { done: number; total: number }) {
+type ScopeProgressItem = { status?: string };
+
+function scopeSegmentTone(status: string | undefined, index: number, done: number): string {
+  if (status === "completed" || status === "done" || (status == null && index < done)) return "bg-emerald-500";
+  if (status === "in-progress" || status === "running") return "bg-primary";
+  if (status === "blocked" || status === "failed" || status === "escalated") return "bg-amber-500";
+  return "bg-muted";
+}
+
+export function ScopeProgressTrack({ items, done, total, className = "", label = "Scope progress" }: { items?: ScopeProgressItem[]; done: number; total: number; className?: string; label?: string }) {
   if (!(total > 0)) return null;
   const pct = Math.max(0, Math.min(100, (done / total) * 100));
-  return <span role="img" aria-label={`${done} of ${total} scopes done`} className="inline-block h-1 w-16 overflow-hidden rounded-full bg-muted align-middle"><span style={{ width: `${pct}%` }} className="block h-full rounded-full bg-primary/70" /></span>;
+  if (!items || total > 12) return <div role="progressbar" aria-label={`${label}: ${done} of ${total} complete`} aria-valuenow={done} aria-valuemin={0} aria-valuemax={total} className={`h-1.5 min-w-0 overflow-hidden rounded-full bg-muted/70 ${className}`}><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} /></div>;
+  const segments = Array.from({ length: total }, (_, index) => items?.[index] ?? { status: index < done ? "completed" : "pending" });
+  return <div role="progressbar" aria-label={`${label}: ${done} of ${total} complete`} aria-valuenow={done} aria-valuemin={0} aria-valuemax={total} className={`flex h-1.5 min-w-0 gap-0.5 overflow-hidden rounded-full bg-muted/70 ${className}`}>
+    {segments.map((segment, index) => <span key={index} className={`min-w-0 flex-1 first:rounded-l-full last:rounded-r-full ${scopeSegmentTone(segment.status, index, done)}`} />)}
+  </div>;
+}
+
+export function ScopeStrip({ done, total }: { done: number; total: number }) {
+  return <ScopeProgressTrack done={done} total={total} className="w-16 shrink-0" label="Scopes" />;
 }
 
 // The same summary is used by a Build tile and its open-card breadcrumb:

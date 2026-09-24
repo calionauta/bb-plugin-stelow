@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,22 +11,31 @@ import { fileURLToPath } from "node:url";
 // this file when the spawn topology legitimately changes.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const drafting = readFileSync(join(root, "server", "drafting.ts"), "utf8");
+const workerBackend = readdirSync(join(root, "server"))
+  .filter((file) => /^workers.*\.ts$/.test(file))
+  .sort()
+  .map((file) => readFileSync(join(root, "server", file), "utf8"))
+  .join("\n");
+const spawnSources = `${server}\n${drafting}\n${workerBackend}`;
 
-// Four direct worker spawns, one judge spawn, two helper-routed disposables:
-// the judge runner (preset decision mode) is the fifth direct site — one
-// hidden thread per judgment, prompt-built in lib, archived after reading.
-// A sixth direct site updates this contract deliberately. A new spawn site
-// is a new brain with its own lifecycle — it must arrive with a tier
-// decision here.
+// One worker SDK spawn, one preset-judge spawn, and two fallback calls inside
+// the disposable helper remain. All card-worker paths use the worker seam.
 assert.equal(
-  (server.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length,
-  5,
-  "four direct worker spawns plus the preset judge pinned; a sixth updates this contract deliberately",
+  (spawnSources.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length,
+  4,
+  "the worker seam, preset judge, and two disposable-helper calls are pinned",
 );
 assert.equal(
-  (server.match(/await spawnDisposable\(\{/g) ?? []).length,
-  5,
-  "five disposable spawns pinned (review, draft, card-title, gate pre-review, done-note); a sixth updates this contract deliberately",
+  (workerBackend.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length,
+  1,
+  "the worker slice has one SDK spawn implementation",
+);
+assert.doesNotMatch(server, /delegation-site: worker-spawn/, "server.ts owns no direct worker spawn");
+assert.equal(
+  (spawnSources.match(/(?:await )?(?:deps\.)?spawnDisposable\(\{/g) ?? []).length,
+  4,
+  "four disposable spawns pinned (review, draft, card-title, gate pre-review); a fifth updates this contract deliberately",
 );
 
 // The SDK surface has no history inheritance today — keep it that way. If a
@@ -35,10 +44,10 @@ assert.equal(
 // as a threads.list filter for child-thread observability — listing, never
 // inheritance — so it is scoped out of this ban.)
 for (const token of ["resumeThread", "continueFromThread", "forkThread", "inheritHistory", "forkHistory"]) {
-  assert.ok(!server.includes(token), `no fork-family parameter (${token}) anywhere near spawning`);
+  assert.ok(!spawnSources.includes(token), `no fork-family parameter (${token}) anywhere near spawning`);
 }
-for (const match of server.matchAll(/bb\.sdk\.threads\.spawn\(\{/g)) {
-  const block = server.slice(match.index, match.index + 1500);
+for (const match of spawnSources.matchAll(/workers\.spawn\(\{|bb\.sdk\.threads\.spawn\(/g)) {
+  const block = spawnSources.slice(match.index, match.index + 1500);
   for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {
     assert.ok(!block.includes(token), `spawn block inherits no history (${token})`);
   }
@@ -46,8 +55,8 @@ for (const match of server.matchAll(/bb\.sdk\.threads\.spawn\(\{/g)) {
 // Disposable blocks route through the helper: same history bans. The helper
 // itself owns the only other spawn calls (with-owner, then the strict-host
 // fallback without) — lifecycle ownership travels there, never history.
-for (const match of server.matchAll(/await spawnDisposable\(\{/g)) {
-  const block = server.slice(match.index, match.index + 900);
+for (const match of spawnSources.matchAll(/(?:await )?(?:deps\.)?spawnDisposable\(\{/g)) {
+  const block = spawnSources.slice(match.index, match.index + 900);
   for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {
     assert.ok(!block.includes(token), `disposable spawn block inherits no history (${token})`);
   }
@@ -63,6 +72,7 @@ for (const line of server.split("\n")) {
     || line.includes("Previous worker thread:")
     || line.includes("previousThreadId: null")
     || line.includes("previousThreadId,")
+    || line.includes("}, previousThreadId)")
     || line.includes("previousThreadId }")
     || line.includes("const previousThreadId = card.worker_thread_id")
     || line.includes("previousThreadId: row.worker_thread_id")
@@ -76,20 +86,28 @@ for (const line of server.split("\n")) {
 // the leash (no files, no commands, no questions) is tested where it lives,
 // and this pins the wiring: no hand-rolled draft/review prompt may bypass it.
 assert.match(server, /buildReviewPrompt\(\{ cardName:/, "review prompts go through the lib builder");
-assert.match(server, /buildDraftPrompt\(\{ cardName:/, "draft prompts go through the lib builder");
-for (const name of ["reviewThread = await spawnDisposable({", "draftThread = await spawnDisposable({", "preThread = await spawnDisposable({"]) {
-  const at = server.indexOf(name);
+assert.match(drafting, /buildDraftPrompt\(\{ cardName:/, "draft prompts go through the lib builder");
+for (const [source, name] of [
+  [server, "reviewThread = await spawnDisposable({"],
+  [drafting, "return deps.spawnDisposable({"],
+  [server, "preThread = await spawnDisposable({"],
+]) {
+  const at = source.indexOf(name);
   assert.ok(at >= 0, `${name} exists`);
-  assert.ok(server.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
-  assert.ok(server.slice(at, at + 900).includes("lifecycleOwnerThreadId: card.worker_thread_id"), "disposable spawns die with their worker (dependent lifecycle)");
+  assert.ok(source.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
 }
+assert.ok(drafting.includes("lifecycleOwnerThreadId: card.worker_thread_id"), "drafts die with their worker");
+assert.ok(drafting.includes('return deps.spawnDisposable({'), "drafting owns delegated draft spawns");
 // Card titles are ownerless by design: they need no worker, and the
 // rename-guard plus silent failure cover every race — an owner link would
 // add lifecycle without meaning.
-const titleAt = server.indexOf("spawnDisposable({", server.indexOf("async function suggestCardName"));
+const titleAt = drafting.indexOf(
+  "return deps.spawnDisposable({",
+  drafting.indexOf("async function spawnTitle"),
+);
 assert.ok(titleAt >= 0, "titling rides the disposable path as a registered site");
-assert.ok(server.slice(titleAt, titleAt + 600).includes('visibility: "hidden"'), "title spawns stay hidden");
-assert.ok(server.slice(titleAt, titleAt + 1200).includes('"card-title"'), "title spawns name their registry site");
+assert.ok(drafting.slice(titleAt, titleAt + 600).includes('visibility: "hidden"'), "title spawns stay hidden");
+assert.ok(drafting.slice(titleAt, titleAt + 1200).includes('"card-title"'), "title spawns name their registry site");
 // lifecycleOwnerThreadId is lifecycle, never history: the bans above (parent,
 // fork, resume inside spawn blocks) still stand untouched.
 // Older daemons that reject the field instead of stripping it get one retry
@@ -101,4 +119,4 @@ assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-fi
 // fork, never sibling chatter.
 assert.match(server, /Delegate fresh: package the full task in the call itself/, "CARD_OWNER_RULES teaches fresh delegation");
 
-console.log("spawn freshness test ok: six spawns, no fork path, leashed builders, fresh rule taught");
+console.log("spawn freshness test ok: worker seam and judge pinned, no fork path, leashed builders, fresh rule taught");

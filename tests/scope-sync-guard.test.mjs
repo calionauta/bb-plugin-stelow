@@ -120,14 +120,15 @@ assert.equal(reseeded[0].tasks[0].status, "done", "seeded status survives the me
 // missing-tracking signal.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-assert.match(server, /advanceExecutionGates\(/, "advance consults the gates module");
+const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+assert.match(executionAdvance, /advanceExecutionGates\(/, "advance consults the gates module");
 assert.match(server, /doneBuildGates\(/, "done consults the gates module");
 assert.match(server, /diagnoseScopeSync\(\{ specContent/, "card detail reports scope-sync health from the spec against synced scopes");
 assert.match(server, /scopeSync: z\.object\(\{ state: z\.enum\(/, "the card detail contract carries the sync state");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
-assert.match(app, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the checks section names missing scope tracking from live card state");
-assert.match(app, /detail\?\.scopeSync && \(detail\.scopeSync\.state/, "the progress section renders the reported sync state");
-assert.match(app, /ended before tracking was established/, "completed cards read history, not worker redirects");
-assert.match(app, /card\.status !== "completed" && card\.status !== "archived" \? <p/, "terminal cards hide the rewrite advisory");
+const buildProgress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
+assert.match(buildProgress, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the checks section names missing scope tracking from live card state");
+assert.match(buildProgress, /!detail\.scopeSync \|\| !\["human-dialect", "unsynced"\]\.includes\(detail\.scopeSync\.state\)/, "the progress section renders the reported sync state");
+assert.match(buildProgress, /ended before tracking was established/, "completed cards read history, not worker redirects");
+assert.match(buildProgress, /card\.status !== "completed" && card\.status !== "archived"/, "terminal cards hide the rewrite advisory");
 
 console.log("scope sync guard test ok: dialects, task extraction, execution/done refusals, merge, wiring");

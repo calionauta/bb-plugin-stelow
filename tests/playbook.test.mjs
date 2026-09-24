@@ -10,9 +10,9 @@ import { knownStages, playbookEntries, renderPlaybook, stagePlaybookRelPath } fr
 
 // Explicit coverage first: every machine stage resolves somewhere, and the
 // table agrees with the files actually vendored.
-const STAGES = ["triage", "select", "setup", "context", "shape", "critique", "gate", "interface", "int-gate", "selection", "planning", "plan-gate", "execution", "verification", "diff-gate", "audit"];
+const STAGES = ["triage", "select", "setup", "context", "shape", "critique", "gate", "scope", "interface", "int-gate", "selection", "planning", "plan-gate", "execution", "verification", "diff-gate", "audit"];
 assert.deepEqual(knownStages().sort(), STAGES.slice().sort(), "every machine stage has a playbook row");
-assert.equal(stagePlaybookRelPath("shape"), "stelow-workflow-shape-up/SKILL.md", "skill-owned stages point at the skill");
+assert.equal(stagePlaybookRelPath("shape"), "SKILL.md", "skill-owned stages point at the skill's entry file");
 assert.equal(stagePlaybookRelPath("context"), "stages/context.md", "file-owned stages point at the file");
 assert.equal(stagePlaybookRelPath("select"), null, "stages without a dedicated file fall back to the orchestrator");
 assert.equal(stagePlaybookRelPath("nope"), null, "unknown stages fall back instead of inventing a path");

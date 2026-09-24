@@ -10,6 +10,13 @@ import { fileURLToPath } from "node:url";
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(root, "server.ts"), "utf8");
+const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
+const appSource = readFileSync(join(root, "app.tsx"), "utf8");
+const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
+const exploreSource = readFileSync(join(root, "components/detail/explore-detail-content.tsx"), "utf8");
+const buildSource = readFileSync(join(import.meta.dirname, "../components/detail/build-detail-workspace.tsx"), "utf8");
+const detailSource = `${appSource}\n${buildSource}\n${researchSource}\n${exploreSource}`;
+const previewSource = readFileSync(join(root, "components/detail/preview-section.tsx"), "utf8");
 
 /** The text between two markers, failing loudly if either is gone. */
 function slice(start, end) {
@@ -48,7 +55,7 @@ for (const leaked of ["previewSessions", "killPreview", "connectUnexpose", "abso
 const checkout = slice("async function cardCheckout(", "async function previewTarget(");
 // Both markers are required to exist first: a missing one makes indexOf -1,
 // and -1 < n would pass the comparison below with the call deleted entirely.
-const workerFirst = checkout.indexOf("workerEnvironmentOf(card)");
+const workerFirst = checkout.indexOf("workers.workerEnvironmentOf(card)");
 const sourceFallback = checkout.indexOf("cardWorkspace(card)");
 assert.notEqual(workerFirst, -1, "cardCheckout must consult the worker's environment");
 assert.notEqual(sourceFallback, -1, "cardCheckout must fall back to the project source");
@@ -59,7 +66,10 @@ const target = slice("async function previewTarget(", "async function previewTar
 assert.match(target, /cardCheckout\(card\)/, "preview must use the shared checkout resolver");
 assert.match(target, /source: checkout\.source/, "the target must carry the shared source label the panel shows");
 assert.match(target, /slug: card\.name/, "the card's own name is the convention that picks between app directories");
-const workerEnv = slice("async function workerEnvironmentOf(", "async function previewTarget(");
+const workerEnv = workersSource.slice(
+  workersSource.indexOf("async function workerEnvironmentOf("),
+  workersSource.indexOf("async function continuingEnvironment("),
+);
 assert.match(workerEnv, /status === "ready"/, "a retired or destroyed environment is not a checkout to preview");
 assert.match(workerEnv, /\?\.catch\(\(\) => null\)|catch \{/, "a removed environment must fall back, not throw");
 
@@ -91,4 +101,18 @@ assert.match(slice("    async previewStop({ cardId }) {", "  });"), /previewStop
 assert.match(source, /\{ name: "preview", summary:/, "the CLI must document the subcommand");
 assert.match(source, /createPreviewRuntime/, "server.ts must construct the runtime");
 
-console.log("preview wiring test ok: host effects wired, dispose wired, lifecycle in lib, worker checkout first, one renderer, shared state list");
+// --- The extracted panel owns its complete preview seam. ------------------
+// These are topology guards, not snapshots: a copy left in app.tsx would split
+// the polling/action state machine, while deleting one RPC would strand a live
+// control even though both files would still typecheck.
+assert.match(researchSource, /import \{ PreviewSection \} from "\.\/preview-section"/, "the extracted research body must consume the preview seam");
+assert.match(exploreSource, /import \{ PreviewSection \} from "\.\/preview-section"/, "the extracted explore body must consume the preview seam");
+assert.equal((detailSource.match(/<PreviewSection/g) ?? []).length, 3, "Build, Research, and Explore must each mount one preview section");
+assert.doesNotMatch(detailSource, /function PreviewSection|const PreviewFrame|function PreviewAddress/, "preview implementation must not be copied into a detail route module");
+for (const rpcName of ["previewState", "previewStart", "previewStop", "previewShare"]) {
+  assert.ok(previewSource.includes(`"${rpcName}"`), `the preview panel must keep its ${rpcName} seam`);
+}
+assert.match(previewSource, /previewAction\(info\.state, info\.available\)/, "the button must use the canonical runtime action decision");
+assert.match(previewSource, /tries >= 30/, "starting preview polling must stay bounded");
+
+console.log("preview wiring test ok: host effects wired, dispose wired, lifecycle in lib, worker checkout first, one renderer, shared state list, panel seam intact");

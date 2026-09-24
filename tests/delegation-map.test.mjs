@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DELEGATION_SITES, getDelegationSite, assertDisposableSpawn } from "../lib/delegation-map.mjs";
+import { getDelegationSite, assertDisposableSpawn } from "../lib/delegation-map.mjs";
 
 // Registry reads: every site names tier, preset source, spawn path,
 // write behavior, and judge. Unknown sites refuse before any SDK call.
@@ -23,10 +23,24 @@ assert.throws(() => assertDisposableSpawn({ site: "preset-judge", args: hiddenRe
 
 // Topology: every direct spawn carries a marker, every marker names a
 // registered site, and disposable callers pass registered disposable ids.
-// A sixth spawn site — or an unregistered one — fails here first.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
-const directSpawns = server.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? [];
+const serverRoot = readFileSync(join(root, "server.ts"), "utf8");
+const workerFiles = readdirSync(join(root, "server"))
+  .filter((file) => /^workers.*\.ts$/.test(file))
+  .sort();
+const workerSource = workerFiles
+  .map((file) => readFileSync(join(root, "server", file), "utf8"))
+  .join("\n");
+const server = `${serverRoot}\n${workerSource}`;
+const directSpawns = [
+  ...(serverRoot.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []),
+  ...(workerSource.match(/bb\.sdk\.threads\.spawn\(/g) ?? []),
+];
+assert.doesNotMatch(serverRoot, /delegation-site: worker-spawn/, "server.ts cannot reintroduce a direct worker spawn");
+assert.doesNotMatch(server, /workers\.spawn\(\{/, "the worker facade has no generic spawn escape hatch");
+assert.equal((serverRoot.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length, 1, "only the preset judge remains in server.ts");
+assert.equal((workerSource.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length, 1, "worker support modules own one SDK spawn implementation");
+assert.equal((server.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length, 4, "two disposable-helper calls, one judge, and one worker implementation are pinned");
 const markers = [...server.matchAll(/\/\/ delegation-site: (\S+)/g)].map((match) => match[1]);
 assert.equal(markers.length, directSpawns.length, "every direct spawn carries exactly one site marker");
 for (const site of markers) {

@@ -11,8 +11,15 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 // spawn site that bypasses the resolver).
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/cards.ts"), "utf8"),
+  readFileSync(join(root, "server/cards-create.ts"), "utf8"),
+].join("\n");
+const executionAdvance = readFileSync(join(root, "server", "execution-advance.ts"), "utf8");
+const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
+const workerBackend = readFileSync(join(root, "server/workers.ts"), "utf8");
+const managerBand = readFileSync(join(root, "components/settings/preset-manager-band-routing.tsx"), "utf8");
 
 // Cascade order: card pin > reliable override > band > default. A reorder
 // here changes which brain runs the worker, so each level is pinned.
@@ -90,53 +97,146 @@ const bandBodyEnd = server.indexOf("\n  }\n", bandDefAt);
 assert.ok(bandBodyEnd > bandDefAt, "the pure band resolver body is bounded");
 const bandBody = server.slice(bandDefAt, bandBodyEnd);
 assert.ok(!bandBody.includes("reliable"), "the pure band resolver never consults the override");
-assert.match(server, /const bandPreset = getPresetForBand\(band, cardId\);/, "the draft-burst fallback still resolves the pure band preset");
+const draftBandFallback = /const band = deps\.getPresetForBand\(bandForCardKindStage\(card\.kind, card\.stage\), card\.id\);/;
+assert.match(drafting, draftBandFallback, "the draft-burst fallback still resolves the pure band preset");
 
 // Every reliable-tier spawn resolves through the override-aware resolver:
 // fresh starts, promotion handoff, research fan-out, both band swaps, and
 // the initial spawn chain. A spawn that bypasses it silently ignores the
 // user's override.
-assert.match(server, /const effective = getReliablePresetForBand\(card\.kind === "research" \? "research" : card\.kind === "explore" \? "explore" : STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\);/, "fresh starts resolve reliable-aware");
+const freshReliable = /const effective = deps\.getReliablePreset\(bandForCardKindStage\(card\.kind, card\.stage\), cardId\);/;
+assert.match(workerBackend, freshReliable, "fresh starts resolve reliable-aware");
 assert.match(server, /const effective = getReliablePresetForBand\("research", cardId\);/, "research fan-out resolves reliable-aware");
 assert.match(server, /\? getReliablePresetForBand\(STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\)/, "promotion handoff resolves reliable-aware");
-assert.match(server, /const bandPreset = band \? getReliablePresetForBand\(band, card\.id\) : null;/, "the advance band swap resolves reliable-aware");
-assert.match(server, /const bandPreset = getReliablePresetForBand\(band, cliCard\.id\);/, "the CLI advance band swap resolves reliable-aware");
-assert.match(server, /const reliablePreset = reliableRow \? getPresetById\(reliableRow\.preset_id\) : null;/, "the initial spawn consults the reliable row");
-assert.match(server, /const basePreset = reliablePreset \?\? bandPreset \?\? preset;/, "the initial spawn prefers reliable over band over default");
+assert.match(executionAdvance, /const preset = deps\.getReliablePreset\(band, card\.id\);/, "the advance band swap resolves reliable-aware");
+assert.match(
+  executionAdvance,
+  /const currentPresetId = card\.worker_preset_id \?\? deps\.getCardPresetId\(card\.id\);/,
+  "the advance band swap honors the card pin before respawning",
+);
+assert.match(server, /const reliablePreset = reliable \? deps\.getPreset\(reliable\.preset_id\) : null;/, "the initial spawn consults the reliable row");
+assert.match(server, /const base = reliablePreset \?\? bandPreset \?\? selected;/, "the initial spawn prefers reliable over band over default");
 
 // Board and card detail show the effective preset, so the panel never
 // claims the band preset while a reliable override runs the worker.
-assert.match(server, /const preset = getReliablePresetForBand\(STAGE_TO_BAND\[row\.stage\] \?\? "analysis", row\.id\);/, "the board list shows the effective preset");
-assert.match(server, /const preset = getReliablePresetForBand\(card\.kind === "research" \? "research" : card\.kind === "explore" \? "explore" : STAGE_TO_BAND\[card\.stage\] \?\? "analysis", card\.id\);/, "the card detail shows the effective preset");
+assert.match(
+  server,
+  /const preset = deps\.getReliablePreset\(STAGE_TO_BAND\[row\.stage\] \?\? "analysis", row\.id\);/,
+  "the board list shows the effective preset",
+);
+assert.match(
+  server,
+  new RegExp(
+    "const preset = getReliablePresetForBand\\(card\\.kind === \\\"research\\\" "
+    + "\\? \\\"research\\\" : card\\.kind === \\\"explore\\\" \\? \\\"explore\\\" : "
+    + "STAGE_TO_BAND\\[card\\.stage\\] \\?\\? \\\"analysis\\\", card\\.id\\);",
+  ),
+  "the card detail shows the effective preset",
+);
 
 // Manager dialog: the Reliable row is a real override select (same
 // "Use band preset" empty-means-today pattern as Generation), not the
 // old static "no configuration" label.
-assert.doesNotMatch(app, /Band preset — no configuration/, "the unconfigurable Reliable label is gone");
-assert.match(app, /rpc\.call\("assignReliablePreset", \{ presetId: value \}\)/, "the Reliable row assigns through the override RPC");
-assert.match(app, /rpc\.call\("getReliablePreset", \{\}\)/, "the manager loads the current reliable override");
+assert.doesNotMatch(managerBand, /Band preset — no configuration/, "the unconfigurable Reliable label is gone");
+assert.match(managerBand, /assignReliablePreset/, "the Reliable row assigns through the override RPC");
+assert.match(managerBand, /getReliablePreset/, "the manager loads the current reliable override");
 // Row-scoped: the empty-means-band clear option must live on the Reliable
 // row itself (between its label and the Generation row) — deleting it
 // strands a set override with no way back, while the RPC-string pins above
 // would still pass.
-const reliableRowAt = app.indexOf("✓ Reliable");
+const reliableRowAt = managerBand.indexOf("✓ Reliable");
 assert.ok(reliableRowAt >= 0, "the Reliable row exists");
-const generationRowAt = app.indexOf("⚡ Generation", reliableRowAt);
+const generationRowAt = managerBand.indexOf("⚡ Generation", reliableRowAt);
 assert.ok(generationRowAt > reliableRowAt, "the Generation row follows the Reliable row");
-const reliableRow = app.slice(reliableRowAt, generationRowAt);
-assert.ok(reliableRow.includes('<option value="">Use band preset</option>'), "the Reliable row offers the empty-means-band clear option");
+const reliableRow = managerBand.slice(reliableRowAt, generationRowAt);
+assert.ok(reliableRow.includes('emptyLabel="Use band preset"'), "the Reliable row offers the empty-means-band clear option");
 assert.ok(reliableRow.includes("assignReliablePreset"), "the Reliable row wires its select to the override RPC");
+
+// Mutation success and post-mutation refresh have separate failure edges.
+// Otherwise a failed list refresh reports that the persisted assignment failed.
+const setBandAt = managerBand.indexOf("const setBand =");
+const setBandEnd = managerBand.indexOf("  const extra =", setBandAt);
+const setBandHandler = managerBand.slice(setBandAt, setBandEnd);
+assert.ok(setBandAt >= 0 && setBandEnd > setBandAt, "the phase assignment handler is bounded");
+const refreshAt = setBandHandler.indexOf("void onChanged()");
+const listAt = setBandHandler.indexOf('call("listBandPresets"');
+assert.ok(
+  refreshAt >= 0 && listAt > refreshAt,
+  "a successful assignment starts the parent refresh",
+);
+assert.match(
+  setBandHandler,
+  /\.catch\(\(\) => onBandsChange\(\[\]\)\)/,
+  "a failed list refresh clears stale routing without claiming the assignment failed",
+);
+assert.match(
+  setBandHandler,
+  /Failed to set phase preset\./,
+  "only the mutation failure owns the phase failure message",
+);
 
 // Independent review is not a tier: one designated preset in another model
 // family, read-only, and the review command refuses without it instead of
 // falling back. The row lives below the tiers with its own clear option,
 // so the tiers above can never be mistaken for review configuration.
-const reviewerRowAt = app.indexOf("◎ Independent review", generationRowAt);
-assert.ok(reviewerRowAt > generationRowAt, "the Review row follows the tiers, visibly separated");
-const reviewerRow = app.slice(reviewerRowAt, reviewerRowAt + 2500);
-assert.ok(reviewerRow.includes('rpc.call("assignReviewPreset", { presetId: value })'), "the Review row assigns through the reviewer RPC");
-assert.ok(reviewerRow.includes("getReviewPreset") || app.includes("reloadReviewer"), "the manager loads the current reviewer designation");
-assert.ok(reviewerRow.includes('<option value="">No reviewer</option>'), "clearing the reviewer is explicit — empty never silently means a worker preset");
-assert.ok(reviewerRow.includes("refuse instead of borrowing a worker preset"), "the row states the refuse-instead-of-fallback contract");
+const reviewerRowAt = managerBand.indexOf(
+  "◎ Independent review",
+  generationRowAt,
+);
+assert.ok(
+  reviewerRowAt > generationRowAt,
+  "the Review row follows the tiers, visibly separated",
+);
+const reviewerRow = managerBand.slice(reviewerRowAt);
+assert.ok(
+  reviewerRow.includes("assignReviewPreset"),
+  "the Review row assigns through the reviewer RPC",
+);
+assert.ok(
+  reviewerRow.includes('emptyLabel="No reviewer"'),
+  "clearing the reviewer is explicit — empty never silently means a worker preset",
+);
+assert.ok(
+  managerBand.includes("reviews refuse instead of ") &&
+    managerBand.includes("borrowing a worker preset."),
+  "the row states the refuse-instead-of-fallback contract",
+);
+
+const setDelegatedAt = managerBand.indexOf("function assignDelegatedPreset");
+const setDelegatedEnd = managerBand.indexOf(
+  "export function PresetManagerDelegatedWork",
+  setDelegatedAt,
+);
+const setDelegatedHandler = managerBand.slice(setDelegatedAt, setDelegatedEnd);
+assert.ok(
+  setDelegatedAt >= 0 && setDelegatedEnd > setDelegatedAt,
+  "the delegated assignment handler is bounded",
+);
+const delegatedRefreshAt = setDelegatedHandler.indexOf("void actions.onChanged()");
+const delegatedReloadAt = setDelegatedHandler.indexOf(
+  'call("getReliablePreset"',
+);
+assert.ok(
+  delegatedRefreshAt >= 0 && delegatedReloadAt > delegatedRefreshAt,
+  "a successful designation starts refresh and local reload independently",
+);
+assert.ok(
+  setDelegatedHandler.includes('call("getReviewPreset"'),
+  "the manager reloads the current reviewer designation",
+);
+const failuresAt = managerBand.indexOf("const DELEGATED_FAILURES");
+const failuresEnd = managerBand.indexOf("function PresetSelect", failuresAt);
+const failureMessages = managerBand.slice(failuresAt, failuresEnd);
+for (const message of [
+  "Failed to set reliable preset.",
+  "Failed to set generation preset.",
+  "Failed to set reviewer preset.",
+]) {
+  const tier = message.split(" ")[3];
+  assert.ok(
+    failureMessages.includes(message),
+    `the ${tier} failure stays action-specific`,
+  );
+}
 
 console.log("reliable preset test ok: cascade order, singleton discipline, spawn wiring, manager override");

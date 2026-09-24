@@ -104,8 +104,13 @@ coordination on shared checkouts → 10/tick cap.
   wiring, scheduler, all 11 RPCs. `server.ts` only spreads the contract
   and handlers, calls one migration function, and schedules two lines.
   The seam is an explicit deps object (`db`, `bb`, clock, card ops).
-- `components/github-issues-dialog.tsx` — the whole dialog (both tabs).
-  `BoardPanel` keeps the button and the open flag.
+- `components/github/` — the dialog shell (`github-issues-dialog.tsx`),
+  one state hook (`github-dialog-state.ts`: all tab state, RPC handlers,
+  open/re-anchor/switch choreography), the tabs (`github-import-tab.tsx`,
+  `github-automation-tab.tsx`), the chrome (`github-dialog-chrome.tsx`:
+  tablist + footer), plus the completion write-back dialog
+  (`github-completion-dialog.tsx`). `BoardPanel` keeps the button and
+  the open flag; `BuildDetailBody` keeps the trigger and the open flag.
 - Pure core with node tests: `lib/automation-rules.mjs` (one decision
   function serves scheduler + dry-run), `lib/github-intent.mjs`
   (intent, authors, prompt threading, related issues),

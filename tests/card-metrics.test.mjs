@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "../lib/card-metrics.mjs";
+import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 
 const HOUR = 3_600_000;
 
@@ -43,41 +44,82 @@ assert.deepEqual(summarizeDurations([100, 200, 300, 400]), { count: 4, p50: 200,
 assert.deepEqual(summarizeDurations([150]), { count: 1, p50: 150, p90: 150, max: 150 }, "a single value is its own percentile");
 assert.deepEqual(summarizeDurations([]), { count: 0, p50: null, p90: null, max: null }, "empty sets resolve nulls, never zero");
 assert.deepEqual(summarizeDurations([100, -5, NaN, "x"]), { count: 1, p50: 100, p90: 100, max: 100 }, "junk never enters the ranking");
+assert.equal(
+  totalScopeElapsedMs([{ status: "done", startedAt: "2026-01-01T00:00:00Z", record: { completedAt: "2026-01-01T00:01:00Z" } }]),
+  60000,
+  "completed scope time is bounded",
+);
+assert.equal(totalScopeElapsedMs([{ status: "pending" }]), null, "unstarted scope has no elapsed time");
 
 // Server wiring: one batched flow RPC (finished cards only, project +
 // done-window filters, p50/p90 summary) plus per-card times on detail.
 // Active cards carry no times — the query scopes completed, the detail
 // degrades to nulls.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server", "cards.ts"), "utf8"),
+].join("\n");
+const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
+const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");
+const explorePanelState = readFileSync(join(root, "components", "panels", "explore-panel-state.ts"), "utf8");
+const buildPanelView = readFileSync(join(root, "components", "panels", "build-panel-view.tsx"), "utf8");
+const storage = readFileSync(join(root, "lib", "panel-storage.mjs"), "utf8");
+const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx"), "utf8");
+const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
+const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
 assert.match(server, /WHERE status = 'completed'/, "aggregates read finished cards, never actives");
 assert.match(server, /GROUP BY card_id/, "one batched pass per dimension, no per-card round trips");
 assert.match(server, /since != null && doneAt < since/, "the done window filters both ends");
-assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs, cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper, never its own math");
-assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\), doingNow: z\.array\(z\.string\(\)\), verifiedHeadSha: z\.string\(\)\.nullable\(\) \}\),/, "detail schema carries times, doing names, and the verified HEAD as nullable");
-assert.match(app, /flow=\{\{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}\}/, "detail progress reads the card times");
-assert.match(app, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
+assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs/, "detail reuses the one helper for lead time");
+assert.match(server, /cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper for cycle time");
+assert.match(server, /leadMs: z\.number\(\)\.nullable\(\), cycleMs: z\.number\(\)\.nullable\(\)/, "detail schema carries nullable lead and cycle times");
+assert.match(server, /doingNow: z\.array\(z\.string\(\)\), executingScope: z\.string\(\)\.nullable\(\)/, "detail schema carries doing names and active scope");
+assert.match(server, /verifiedHeadSha: z\.string\(\)\.nullable\(\)/, "detail schema carries nullable verified HEAD");
+assert.match(buildProgress, /const flow = \{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}/, "detail progress reads the card times");
+assert.match(buildProgress, /<ScopeProgress scopes=\{detail\.scopes\} flow=\{flow\} \/>/, "the scoped progress view receives the card flow");
+assert.match(buildProgress, /Lead \{flow\.leadMs !== null \? formatDuration\(flow\.leadMs\) : "—"\}/, "missing times render a dash, never a zero");
 
 // View persistence: returning from a card restores the picked view per
 // track (board, list, hill) instead of resetting to board. Unknown stored
 // values degrade — a corrupt key never strands the track.
-assert.match(app, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
-assert.match(app, /function useBoardView\(storageKey: string\)/, "one hook serves all three tracks");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.buildView\)/, "build restores its view");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.researchView\)/, "research restores its view");
-assert.match(app, /useBoardView\(STORAGE_KEYS\.exploreView\)/, "explore restores its view");
+assert.match(storage, /buildView: "stelow-build-view-v1"/, "each track owns its view key");
+assert.match(buildPanelState, /useBoardView\(STORAGE_KEYS\.buildView, "build"\)/, "build restores its view");
+assert.match(researchPanelState, /useBoardView\(STORAGE_KEYS\.researchView, "research"\)/, "research restores its view");
+assert.match(
+  researchPanelState,
+  /usePersistentCollapsedGroups\([\s\S]*STORAGE_KEYS\.researchColumns/,
+  "research board columns restore their own collapsed state",
+);
+assert.match(
+  researchPanelState,
+  /useCollapsedGroups\([\s\S]*STORAGE_KEYS\.researchListGroups/,
+  "research list groups restore their own collapsed state",
+);
+assert.match(explorePanelState, /useBoardView\(STORAGE_KEYS\.exploreView, "explore"\)/, "explore restores its view");
 
 // Flow strip: one glanceable line on finished work (count + p50s),
 // expanding to window presets and a per-card table. Empty boards render
 // nothing — clean stays clean. Project comes from the board filter, so
 // no second picker drifts out of sync with it.
-assert.match(app, /function FlowStrip\(\{ rpc, projectId, navigate \}/, "one strip component owns board flow");
-assert.match(app, /<FlowStrip rpc=\{rpc\} projectId=\{filterProjectIds\.length === 1 \? filterProjectIds\[0\] \?\? null : null\} navigate=\{navigate\} \/>/, "the strip follows a single picked project, all projects otherwise");
-assert.match(app, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
-assert.match(app, /\["all", "30d", "90d"\]|FLOW_WINDOWS/, "done windows are presets, not free dates");
-assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open through the shared navigator");
+assert.match(flowStrip, /export function FlowStrip\(\{ rpc, projectId, onOpenCard \}/, "one strip component owns board flow");
+const flowMount = buildPanelView.match(/<FlowStrip[\s\S]*?\/>/)?.[0] ?? "";
+assert.ok(
+  flowMount.includes(
+    "projectId={state.projectIds.length === 1 ? state.projectIds[0] ?? null : null}",
+  ),
+  "the strip follows one picked project, or all projects",
+);
+assert.ok(
+  flowMount.includes(
+    "onOpenCard={(kind, cardId) => props.onOpenCard({ kind }, cardId)}",
+  ),
+  "every flow row forwards through the shared navigator",
+);
+assert.match(flowStrip, /if \(!result \|\| result\.summary\.count === 0\) return null/, "no finished cards means no strip");
+assert.match(flowStrip, /FLOW_WINDOWS/, "done windows are presets, not free dates");
+assert.match(flowStrip, /onOpenCard\(item\.kind, item\.cardId\)/, "flow rows open through the shared navigator");
 
 // Attention rides the same RPC pass: stuck (blocked status or errored
 // worker — explicit signals, never heuristics) and review-awaiting dones,
@@ -86,27 +128,38 @@ assert.match(app, /goToCard\(navigate, \{ kind: item\.kind/, "flow rows open thr
 assert.match(server, /attention: z\.array\(z\.object\(\{ cardId: z\.string\(\), kind: z\.enum\(\["build", "research", "explore"\]\), name: z\.string\(\), reason: z\.enum\(\["stuck", "review"\]\) \}\)\)/, "attention items are contracted with a closed reason set");
 assert.match(server, /row\.status === "blocked" \|\| row\.activity === "error"/, "stuck derives from explicit signals only");
 assert.match(server, /hasPendingReview\(db, row\.id\)/, "review-awaiting derives from the shared review signal");
-assert.match(app, /useState<"tempo" \| "atencao">\("tempo"\)/, "tempo and attention are tabs, not stacked sections");
-assert.match(app, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
-assert.match(app, /size-1\.5 animate-pulse rounded-full bg-amber-500/, "the stuck chip pulses — the only motion on the strip");
-assert.match(app, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
-assert.doesNotMatch(app, /velocity|throughput per|per worker/, "no efficiency ranking survives in the strip");
+assert.match(flowStrip, /type FlowTab = "tempo" \| "atencao"/, "tempo and attention share one closed tab type");
+assert.match(flowStrip, /useState<FlowTab>\("tempo"\)/, "tempo is the default tab, not a second stacked section");
+assert.match(flowStrip, /Right now — not in the selected window/, "attention names its window-independence where it could confuse");
+assert.match(
+  flowStrip,
+  /isStuck \? "animate-pulse bg-amber-500" : "bg-emerald-500"/,
+  "only the stuck indicator pulses; the review indicator stays still",
+);
+assert.match(flowStrip, /All clear — nothing stuck, nothing awaiting review/, "empty attention reassures instead of blanking");
+assert.doesNotMatch(flowStrip, /velocity|throughput per|per worker/, "no efficiency ranking survives in the strip");
 
 // The header names the component and its count honestly: Flow indicators
 // over finished cards with a measured trail — never a bare "N done" that
 // reads as Done-column membership. p50/p90 never stand unexplained.
-assert.match(app, />Flow<\//, "the strip header names the component, not just its numbers");
-assert.match(app, /Finished cards with a measured trail/, "the count explains its own scope in label and title");
-assert.match(app, /\{result\.summary\.count\} finished · \{preset\.label\.toLowerCase\(\)\}/, "the closed header names its window — a filtered count never reads as the column");
-assert.match(app, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
-assert.match(app, /9 of 10 finish within/, "slow names what p90 means in words");
-assert.match(app, /Lead runs idea to done; cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
-assert.doesNotMatch(app, /lead p50 \{/, "no bare p50 readout survives in the header");
-assert.doesNotMatch(app, /p90 lead \{/, "no bare p90 readout survives in the window row");
+assert.match(flowStrip, />Flow<\//, "the strip header names the component, not just its numbers");
+assert.match(flowStrip, /Finished cards with a measured trail/, "the count explains its own scope in label and title");
+assert.match(
+  flowStrip,
+  /\{result\.summary\.count\} finished · \{preset\.label\.toLowerCase\(\)\}/,
+  "the closed header names its window — a filtered count never reads as the column",
+);
+assert.match(flowStrip, /Typical is the median \(p50\)/, "typical is glossed, not assumed");
+assert.match(flowStrip, /9 of 10 finish within/, "slow names what p90 means in words");
+assert.match(flowStrip, /Lead[\s\S]*cycle runs first real movement/, "lead vs cycle reads inline, not only on hover");
+assert.doesNotMatch(flowStrip, /lead p50 \{/, "no bare p50 readout survives in the header");
+assert.doesNotMatch(flowStrip, /p90 lead \{/, "no bare p90 readout survives in the window row");
 
 // Worker-history total: one summed line in the summary, unknowns skipped,
 // all-unknown hidden — the per-thread rows below keep their own numbers.
-assert.match(app, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");
-assert.match(app, /tokens total<\/span>/, "the total reads as a total, not another row");
+assert.match(workerHistory, /totalTokenUsage\(history\)/, "the summary totals through the lib, never inline math");
+assert.match(workerHistory, /<WorkerHistoryRow key=\{entry\.threadId\} entry=\{entry\} \/>/, "the list delegates one row per entry");
+assert.match(workerHistory, /entry\.endedAt === null \? "Current worker"/, "a live worker reads current, a replaced one names its end");
+assert.match(workerHistory, /tokens total<\/span>/, "the total reads as a total, not another row");
 
 console.log("card metrics test ok: lead/cycle math, stage split, durations");

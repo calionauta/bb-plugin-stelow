@@ -57,7 +57,8 @@ assert.match(
 // shared by build/research/explore through createCardInternal.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-assert.match(server, /environmentFallbackNotice\(environment, selectedEnvironment\)/, "creation checks the substitution");
-assert.match(server, /logCardComment\(cardId, "card", cardId, "agent", envNotice\)/, "substitutions page the card");
+const cardsCreate = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
+assert.match(cardsCreate, /environmentFallbackNotice\(input\.environment, prepared\.environment\)/, "creation checks the substitution");
+assert.match(server, /comment: \(cardId, body\) => \{ logCardComment\(cardId, "card", cardId, "agent", body\); \}/, "substitutions page the card");
 
 console.log("card environment test ok: explicit pass-through, honest fallback, creation notice");

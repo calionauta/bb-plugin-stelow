@@ -14,10 +14,10 @@ module.exports = {
     },
     {
       name: "lib-stays-host-neutral",
-      comment: "Shared library code must not reach into the bb server or React app layers.",
+      comment: "Shared library code must not reach into the bb server or React app layers (including server/ slices).",
       severity: "error",
       from: { path: "^lib/" },
-      to: { path: "^(app\\.tsx|server\\.ts|components/|hooks/)" },
+      to: { path: "^(app\\.tsx|server\\.ts|server/|components/|hooks/)" },
     },
   ],
   options: {

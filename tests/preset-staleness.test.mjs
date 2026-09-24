@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { liveWorkerCards, bandForCardKindStage } from "../lib/preset-staleness.mjs";
+import { bandForCardKindStage, isWorkerPresetStale, liveWorkerCards } from "../lib/preset-staleness.mjs";
 import { refreshRestartPending } from "../lib/worker-ledger.mjs";
 import { resolveReliablePreset } from "../lib/reliable-preset.mjs";
 
@@ -20,6 +20,31 @@ assert.equal(bandForCardKindStage("explore", "whatever"), "explore", "explore ow
 assert.equal(bandForCardKindStage("build", "triage"), "analysis", "triage rides the analysis band");
 assert.equal(bandForCardKindStage("build", "critique"), "planning", "critique rides the planning band");
 assert.equal(bandForCardKindStage("build", "no-such-stage"), "analysis", "unknown stages fall back to analysis");
+
+const currentPreset = { presetId: "preset-a", workerPresetId: "preset-a", presetRestartPending: false };
+assert.equal(
+  isWorkerPresetStale({ workerThreadId: "thr_1" }, { card: currentPreset }),
+  false,
+  "a worker on the current preset is current",
+);
+assert.equal(
+  isWorkerPresetStale(
+    { workerThreadId: "thr_1" },
+    { card: { ...currentPreset, presetId: "preset-b" } },
+  ),
+  true,
+  "an id mismatch requires a fresh worker",
+);
+assert.equal(
+  isWorkerPresetStale(
+    { workerThreadId: "thr_1" },
+    { card: { ...currentPreset, presetRestartPending: true } },
+  ),
+  true,
+  "an explicit restart-pending flag wins over matching ids",
+);
+assert.equal(isWorkerPresetStale({ workerThreadId: null }, { card: currentPreset }), false, "a workerless card has no running preset to restart");
+assert.equal(isWorkerPresetStale({ workerThreadId: "thr_1" }, null), false, "an unloaded detail cannot claim stale state");
 
 const db = new Database(":memory:");
 db.exec(`

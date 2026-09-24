@@ -77,7 +77,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   destination it fails closed (save refuses, ticks park with the fix
   named). Rules never move cards, merge code, or import behind the user's
   back. The whole feature is one decoupled module (`server/github-issues.ts`
-  + `components/github-issues-dialog.tsx`, pure core in `lib/`): evolve it
+  + `components/github/`, pure core in `lib/`): evolve it
   there, and `STELOW_GITHUB_ISSUES=0` on the host switches off its
   scheduler, RPCs, and panel button without touching anything else.
   Operator guide (flows, trust model, kill switch, module map):
@@ -120,7 +120,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   A composer posts back through `postIssueComment` behind an inline confirm
   naming the destination (`repo#number`, public and hard to undo) — human
   gesture only, payload validated server-side, mirror refreshed on success.
-- **Manual Git changes from Done** (`publicationStatus`, `CardDetailBody`). A
+- **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
   BB stays authoritative: a default-branch action is prominently labelled as
@@ -254,9 +254,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   scope in one shared pill (`DoingNowPill`, truncated with the full
   doing set one hover away) whenever the worker runs or waits — the same
   selection the detail "Doing now" line reads, defined once in
-  `lib/doing-now.mjs`. Groups collapse per track (persisted; Archived
-  starts collapsed). One shared row across tracks (Build geometry
-  standard; strategy/technique rides the meta line).
+  `lib/doing-now.mjs`. The open card names the first in-progress scope
+  explicitly, keeps each scope's own task list under `ScopesList`, and
+  shows wall-clock elapsed time per scope plus the total window. Groups
+  collapse per track (persisted; Archived starts collapsed). One shared
+  row across tracks (Build geometry standard; strategy/technique rides
+  the meta line).
 - **Hill view (Build track).** The same filtered cards as dots on a figuring-out /
   executing curve, for the glanceable question columns can't answer — research
   and explore cards carry no scopes or workflow stages, so their toggles hide
@@ -611,10 +614,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   the worker.
 - **Thread embeds.** Card drawer inside threads
   (`stelow-card-detail`), "Open Stelow" header action,
-  `stelow-artifact` message chips, blocking question form.
-  The command palette offers Stelow: open card for this thread from any
-  worker thread — the drawer resolves the thread to its owning card, and
-  says plainly when the thread is not a Stelow worker.
+  `stelow-artifact` and `stelow-quality` message chips, blocking question
+  form. Chips validate untrusted paths, show the original directive when
+  malformed, and mark host-refused file links unavailable instead of
+  pretending they opened. The command palette offers Stelow: open card for
+  this thread from any worker thread — the drawer resolves the thread to its
+  owning card, and says plainly when the thread is not a Stelow worker.
 
 ## 5. Recover
 *When the worker stalls or fails, I want one obvious fix.*
@@ -668,11 +673,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   `stelow.json` so history survives plugin DB loss.
 - **Provider token usage.** Each worker-history row shows BB's latest
   provider-reported token total when available. Missing provider data stays
-  hidden per row rather than presenting a misleading zero or an estimate. The
+  hidden rather than presenting a misleading zero or an estimate. The
   history summary adds one card total across all workers and children
-  (`totalTokenUsage`, unknowns skipped); when every worker is unknown the
-  summary reads `tokens unknown` so the feature stays discoverable instead
-  of silently absent. Each entry
+  (`totalTokenUsage`, unknowns skipped, all-unknown hidden). Each entry
   also carries its provider split (input, output, cached, reasoning via
   `tokenBreakdownFromEvents`, summed per card with `sumTokenBreakdowns`);
   the history shows reported legs labeled (`in · out · cached ·
@@ -705,11 +708,7 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   line, detached HEAD, clean checkout). The confirm dialog states the
   exact blast radius in English before anything runs; execution stops the
   worker, re-validates the checkout, verifies the result, and leaves an
-  agent comment as the trail. No automatic deletion exists anywhere:
-  archival and hard delete leave checkouts to BB's own lifecycle, and a
-  merged pull request surfaces a one-click worktree cleanup suggestion
-  (`cleanupWorktreePreview`, `cleanupWorktree`) — same evidence and blast
-  radius, explicit confirm, card kept as record instead of archived.
+  agent comment as the trail.
 - **Delete archived card** (`deleteCard`). Hard delete offered only on
   archived cards from Manage, behind an English confirm dialog. Removes
   the card row plus comments, presets, questions, inbox events, and
@@ -1156,8 +1155,10 @@ investigation that feeds the build board.*
   `app.slots.messageDirective`, `qualitySeal` RPC). Workers emit one seal
   per produced file; the chip revalidates live and renders verified /
   hypothesis / needs-work / unverified with failure details on hover and
-  click-to-open. Seals state checked provenance, never truth; unknown
-  shapes and unreadable files read as unverified.
+  click-to-open with a 44px touch target. Seals state checked provenance,
+  never truth; unknown shapes and unreadable files read as unverified. A
+  failed live revalidation reports `quality unavailable` instead of waiting
+  forever.
 - **Shared machinery.** Hero, questions, artifacts viewer, presets,
   retry/restart/reseed, worker history, inbox, and realtime are the same
   components as build. Stage advance and intent editing refuse on
@@ -1297,6 +1298,12 @@ bundle (0.4.84) must accept the plugin — every new API use is feature-detected
 with a fallback, so 0.4.106 is build-time types only.
 
 Host-version note: the 0.43.3 APIs above went live with host 0.43.3 and plugin 0.35.2, verified live: all 96 RPC methods are discoverable via bb plugin rpc list, and dependent-thread ownership, persistent requestInput presentation, and app.commands registration are served by the host. No plugin-side CLI substitute was built (YAGNI).
+
+## Canonical stages and host-native execution
+
+- **Shared stage catalog.** The board, state template, artifact ordering, playbooks, question contracts, and route projections read the generated upstream `stage-catalog.json`; the plugin no longer keeps a hand-maintained list of the 17 Build stages. A pinned sync preserves the last good catalog when an older upstream pin does not contain it.
+- **Capability-negotiated execution.** Host-neutral execution adapters normalize run state and negotiate required capabilities before starting a recipe. Missing capabilities produce a named refusal or an explicit coordinator-owned sequential route; permission requirements are never silently weakened. The coordinator route is not presented as a native run and has no fabricated run ID, resume handle, or cancel semantics. The optional BB Workflows binding reports its real capability limits, including no per-call permission control, while the card remains the owner of human input and resume.
+- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential until file-claim and parent-merge safety is proven.
 
 ## Cross-cutting rules (apply to every feature above)
 

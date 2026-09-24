@@ -203,8 +203,9 @@ const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");
 assert.match(gates, /unverified Record — complete every verification checklist/, "done refuses unverified Records with the checklist redirect");
 assert.match(server, /recordTrackableEvent\(/, "decisions trail into the event log");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
-assert.match(app, /scope\.conditions/, "scopes render their conditions");
-assert.match(app, /task\.conditions/, "tasks render their conditions through the same machine");
-assert.match(app, /Acceptance criteria \(\{scope\.contract\.acceptanceCriteria\.length\}\)/, "scopes surface contract criteria with counts");
+const scopesList = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
+assert.match(scopesList, /scope\.conditions/, "scopes render their conditions");
+assert.match(scopesList, /task\.conditions/, "tasks render their conditions through the same machine");
+assert.match(scopesList, /Acceptance criteria \(\{scope\.contract\.acceptanceCriteria\.length\}\)/, "scopes surface contract criteria with counts");
 
 console.log("trackable evidence test ok: contracts, records, conditions, wiring");

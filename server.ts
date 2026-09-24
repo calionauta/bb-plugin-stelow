@@ -13,8 +13,7 @@ import { splitDiffByFile, MAX_DIFF_FILES } from "./lib/diff-split.mjs";
 import { summarizeSemDiff } from "./lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "./lib/cymbal-changed.mjs";
 import { skippedStages } from "./lib/stage-skips.mjs";
-import { ensureInboxResolvedReasonColumn, ensureInboxSeverityColumns, hasPendingReview, insertInboxEvent, listInboxEvents, markQuestionsAnswered, refreshEventSeverity, refreshStalledPaused, resolveActionInboxEvents, syncQuestionInboxEvents } from "./lib/inbox-events.mjs";
-import { parseSeverityReasons } from "./lib/inbox-severity.mjs";
+import { hasPendingReview, refreshEventSeverity, refreshStalledPaused } from "./lib/inbox-events.mjs";
 import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, lapsedScopeClaims, liveClaimsForWorkspace, matchScopeClaims, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "./lib/card-claims.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "./lib/card-terminal.mjs";
 import { resolveClaimKey } from "./lib/card-claim-key.mjs";
@@ -30,8 +29,7 @@ import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
 import { discardConfirm, discardEligibility, discardTrail, cleanupEligibility, cleanupConfirm, cleanupTrail } from "./lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "./lib/github-release.mjs";
-import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
-import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
+import { stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
@@ -41,16 +39,22 @@ import { researchRoundMirrorsIndex, isValidRoundContent, isValidExploreContent, 
 import { validateArtifact, validateSubstep, validateVariant, validateExplore, buildDocDepths, sealStatus } from "./lib/artifact-validation.mjs";
 import { buildReviewPrompt, parseReviewOutput, reviewSummary, reviewCoversFingerprint } from "./lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "./lib/delegation-map.mjs";
-import { resolveDraftPreset, buildDraftPrompt, validateDraftOutput, buildCardNamePrompt, validateCardName, heuristicDisplayName, CARD_NAME_MAX_CHARS } from "./lib/draft-burst.mjs";
-import { buildDoneCommentBrief } from "./lib/github-issue-create.mjs";
-import { awaitDraftThread } from "./lib/draft-await.mjs";
+import { heuristicDisplayName } from "./lib/draft-burst.mjs";
 import { resolveReliablePreset } from "./lib/reliable-preset.mjs";
 import { judgeArtifactCriteria, groupCriteriaByKind, parseCriteriaBlock } from "./lib/skill-criteria.mjs";
 import { liveWorkerCards, bandForCardKindStage } from "./lib/preset-staleness.mjs";
-import { resolveDecisionApiKey, normalizeDecisionApiModel, isDecisionApiEndpointValid, evaluateDecisionCall, isDecisionApiDisabled, buildProbeCall, meetsDecisionThreshold, normalizeDecisionProvider, providerRequiresKey, defaultEndpointFor, defaultModelFor, DECISION_PROVIDERS } from "./lib/decision-api.mjs";
-import { DECISION_POINTS, DECISION_POINT_TRIAGE_INTENT, DECISION_POINT_ARTIFACT_CRITERIA, DECISION_POINT_AUTO_CONTINUE, DECISION_POINT_INBOX_SEVERITY, TRIAGE_INTENT_CRITERIA, getDecisionPoint as getDecisionPointDef, normalizePointMode, defaultThresholdsFor, normalizeThresholds, normalizePointRoute, resolvePointRoute, pointSupportsPresetJudge, triageIntentQuestions, resolveSeedIntent, autoContinueQuestions, resolveAutoContinue, severityBumpQuestions } from "./lib/decision-points.mjs";
+import {
+  resolveDecisionApiKey,
+  normalizeDecisionApiModel,
+  evaluateDecisionCall,
+  isDecisionApiDisabled,
+  normalizeDecisionProvider,
+  providerRequiresKey,
+  defaultEndpointFor,
+  defaultModelFor,
+} from "./lib/decision-api.mjs";
+import { DECISION_POINT_ARTIFACT_CRITERIA, normalizePointMode, defaultThresholdsFor, normalizeThresholds } from "./lib/decision-points.mjs";
 import { doingNowNames } from "./lib/doing-now.mjs";
-import { scopeFingerprint } from "./lib/scope-fingerprint.mjs";
 import { buildPresetJudgePrompt, parsePresetJudgeOutput, PRESET_JUDGE_TIMEOUT_MS, PRESET_JUDGE_POLL_MS } from "./lib/preset-judge.mjs";
 import { tasksToScoreQuestions, resolveScopeVerdicts, taskVerifyCommand, TASK_EVIDENCE_DIFF_CHARS } from "./lib/task-evidence.mjs";
 import { resolveScoredVerdicts } from "./lib/score-verdicts.mjs";
@@ -64,12 +68,8 @@ import { evidenceStatus } from "./lib/research-evidence.mjs";
 import { resolveCardMove } from "./lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-policy.mjs";
 import { cliHelpText, cliUsageLine, nearestCommand } from "./lib/cli-suggest.mjs";
-import { parsePushRemoteUrl } from "./lib/remote-url.mjs";
-import { buildSquashScript, parseSquashOutput, squashExitMessage } from "./lib/squash-merge.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, normalizeBuildSeedIntent, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
-import { failureCauseFromEvents, truncateCause } from "./lib/worker-failure.mjs";
-import { MAX_SPAWN_RETRIES, claimSpawnRetry, isRetryableSpawnError, resetSpawnRetry, spawnRetryDelayMs } from "./lib/spawn-retry.mjs";
 import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal, withRuntimeIgnoreEntry } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
@@ -78,14 +78,11 @@ import { splitQuestionText } from "./lib/split-question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "./lib/question-presentation.mjs";
 import { doneEligibility } from "./lib/completion.mjs";
 import { formatBytes, threadIdFromWorktreePath, isStaleEnvironment } from "./lib/worktree-storage.mjs";
-import { parseScopeArgs } from "./lib/scope-command.mjs";
 import { isDoneStatus } from "./lib/trackables.mjs";
 import { ensureTrackableEventsTable, recordTrackableEvent } from "./lib/trackable-events.mjs";
-import { enrichEntriesForDetail, sanitizeEvidenceRecord } from "./lib/trackable-evidence.mjs";
-import { buildRegistry, canStart, dependencyCycles } from "./lib/trackable-relations.mjs";
-import { isSpecTechFile, plansRelDir } from "./lib/tracking-paths.mjs";
-import { countScopeDialects, diagnoseScopeSync, mergePlannedTasks } from "./lib/spec-scope-reader.mjs";
-import { advanceExecutionGates, doneBuildGates } from "./lib/build-gates.mjs";
+import { enrichEntriesForDetail } from "./lib/trackable-evidence.mjs";
+import { countScopeDialects, diagnoseScopeSync } from "./lib/spec-scope-reader.mjs";
+import { doneBuildGates } from "./lib/build-gates.mjs";
 import { AUDIT_RECEIPT_FILE, AUDIT_RECEIPT_NOTE, auditReceiptReadiness } from "./lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "./lib/card-work-resume.mjs";
 import { composerPresetOverride, composerSpawnInput } from "./lib/composer-execution.mjs";
@@ -95,18 +92,58 @@ import { formatReviewGates, legacyLabelForGates, normalizeReviewGates, preReview
 import { requiredForStage } from "./lib/question-contracts.mjs";
 import { checkAdvanceContracts } from "./lib/advance-contracts.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
-import { canCommitPublication, canMarkPullRequestDraft, canMarkPullRequestReady, canMergePullRequest, canSquashMerge, publicationBlocker, publicationSource } from "./lib/vcs-publication.mjs";
-import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
+import { publicationSource } from "./lib/vcs-publication.mjs";
 import { detectedTestCommand, sameGitEvidence, verificationReadiness } from "./lib/audit-verification.mjs";
 import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
 import { artifactRole } from "./lib/artifact-roles.mjs";
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
-import { tokenUsageFromEvents, tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
+import { tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "./lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
+import { totalScopeElapsedMs } from "./lib/scope-elapsed.mjs";
+import {
+  createWorkspacesRecovery,
+  recoveredCheckoutIntegrity,
+  runWorkspaceRecoveryMigrations,
+  workspaceRecoveryRpcContract,
+} from "./server/workspaces-recovery.js";
+import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } from "./server/decision-api.js";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
-import { attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "./lib/thread-children.mjs";
+import { createInboxServer, inboxRpcContract, runInboxMigrations } from "./server/inbox.js";
+import { createDraftingServer } from "./server/drafting.js";
+import { createCardsServer, createCardStore } from "./server/cards.js";
+import {
+  executionRpcContract,
+  executionRunSchema,
+  runExecutionMigrations,
+} from "./server/execution-contract.js";
+import { createExecutionNative } from "./server/execution-native.js";
+import { createExecutionLifecycle } from "./server/execution-lifecycle.js";
+import { createExecutionReconcile } from "./server/execution-reconcile.js";
+import { createExecutionAdvance } from "./server/execution-advance.js";
+import {
+  createArtifactsPublication,
+  publicationRpcContract,
+  runPublicationMigrations,
+} from "./server/artifacts-publication.js";
+import {
+  createWorkers,
+  runWorkerMigrations,
+  workerEnvironment,
+  type RespawnOptions,
+  type RespawnPreparation,
+  type WorkerCard,
+} from "./server/workers.js";
+import {
+  createScopeProgressSync,
+  latestSpecTech,
+  loadCardScopes,
+  normalizeStatus,
+  runScopeCommand,
+  trackingEntryForCard,
+  workflowScopes,
+} from "./server/scopes.js";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -312,41 +349,6 @@ const workflowSchema = z.object({
   artifacts: z.array(artifactSchema),
 });
 
-const inboxEventSnapshotSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["question", "error", "paused", "completed"]),
-  summary: z.string(),
-  occurredAt: z.number(),
-  resolvedAt: z.number().nullable(),
-  resolvedReason: z.enum(["answered", "superseded", "resumed", "completed", "archived"]).nullable(),
-  archivedAt: z.number().nullable(),
-  severity: z.number(),
-  severityReasons: z.array(z.string()),
-});
-
-const publicationCapabilitySchema = z.object({ available: z.boolean(), reason: z.string().nullable() });
-const publicationSnapshotSchema = z.object({
-  available: z.boolean(),
-  message: z.string().nullable(),
-  source: z.string().nullable(),
-  environmentId: z.string().nullable(),
-  isWorktree: z.boolean(),
-  branch: z.object({ current: z.string().nullable(), default: z.string().nullable(), headSha: z.string().nullable() }).nullable(),
-  workingTree: z.object({ state: z.string(), hasUncommittedChanges: z.boolean(), files: z.number() }).nullable(),
-  mergeBase: z.object({ branch: z.string(), ahead: z.number(), behind: z.number(), hasCommittedUnmergedChanges: z.boolean() }).nullable(),
-  pullRequest: z.object({ number: z.number(), title: z.string(), url: z.string(), state: z.string(), attention: z.string(), review: z.string(), checks: z.string(), mergeability: z.string() }).nullable(),
-  pullRequestMessage: z.string().nullable(),
-  capabilities: z.object({ commit: publicationCapabilitySchema, squashMerge: publicationCapabilitySchema, markReady: publicationCapabilitySchema, markDraft: publicationCapabilitySchema, mergePullRequest: publicationCapabilitySchema }),
-  events: z.array(z.object({ id: z.string(), action: z.string(), message: z.string(), commitSha: z.string().nullable(), pullRequestUrl: z.string().nullable(), createdAt: z.number() })),
-});
-const publicationCommitDiffSchema = z.object({
-  found: z.boolean(),
-  commitSha: z.string().nullable(),
-  shortstat: z.string().nullable(),
-  files: z.array(z.object({ path: z.string(), display: z.string(), patch: z.string().nullable(), binary: z.boolean(), changeKind: z.string(), additions: z.number(), deletions: z.number(), truncated: z.boolean(), loadMode: z.string() })),
-  truncated: z.boolean(),
-  error: z.string().nullable(),
-});
 // BB-native self-update state. Displays ride along because git installs
 // report commit shas as versions — the panel formats those, never raw shas.
 const pluginUpdateSchema = z.object({
@@ -387,45 +389,35 @@ export const rpcContract = defineRpcContract({
     output: z.object({ ok: z.boolean(), answered: z.number(), error: z.string().nullable() }),
   },
   ...githubRpcContract,
+  ...decisionApiRpcContract,
+  ...inboxRpcContract,
+  ...executionRpcContract,
   listCards: {
     experimental_description: "Cards with status, worker state, and scope progress, optionally by track",
     input: z.object({ projectId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable().optional() }).strict(),
-    output: z.object({ cards: z.array(z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), doingNow: z.array(z.string()) })) }),
-  },
-  listNotifications: {
-    experimental_description: "Inbox events: needs-attention first, then completions, history, archived",
-    input: z.object({ includeArchived: z.boolean().default(false) }).strict(),
-    output: z.object({ notifications: z.array(inboxEventSnapshotSchema.extend({ cardId: z.string(), cardName: z.string(), projectName: z.string(), cardKind: z.enum(["build", "research", "explore"]), readAt: z.number().nullable() })) }),
-  },
-  markNotificationRead: {
-    experimental_description: "Mark one inbox event read",
-    input: z.object({ notificationId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean() }),
-  },
-  markCardNotificationsRead: {
-    experimental_description: "Mark a card's events of one kind read",
-    input: z.object({ cardId: z.string(), kind: z.enum(["question", "error", "paused", "completed"]) }).strict(),
-    output: z.object({ marked: z.boolean() }),
-  },
-  archiveNotification: {
-    experimental_description: "Archive one inbox event",
-    input: z.object({ notificationId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean() }),
-  },
-  restoreNotification: {
-    experimental_description: "Restore an archived inbox event to history",
-    input: z.object({ notificationId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean() }),
+    output: z.object({
+      cards: z.array(z.object({
+        id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(),
+        projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]),
+        workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(),
+        kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(),
+        researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema,
+        stage: z.string(), workerThreadId: z.string().nullable(),
+        activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(),
+        needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(),
+        presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), updatedAt: z.number(),
+        stallCount: z.number(), scopeSummary: z.object({
+          scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number(),
+          elapsedMs: z.number().nullable(),
+        }),
+        doingNow: z.array(z.string()), executingScope: z.string().nullable(),
+      })),
+    }),
   },
   cardByWorkerThread: {
     experimental_description: "Find the card that owns a worker thread",
     input: z.object({ threadId: z.string() }).strict(),
     output: z.object({ cardId: z.string().nullable(), kind: z.enum(["build", "research", "explore"]).nullable() }),
-  },
-  getNotification: {
-    experimental_description: "One inbox event for a card",
-    input: z.object({ notificationId: z.string(), cardId: z.string() }).strict(),
-    output: z.object({ notification: inboxEventSnapshotSchema.nullable() }),
   },
   readCardFile: {
     experimental_description: "Read a workspace file through the card's checkout",
@@ -486,7 +478,22 @@ export const rpcContract = defineRpcContract({
     experimental_description: "Full card picture: scopes, questions, artifacts, workers, Git state",
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({
-      card: z.object({ id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(), projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]), workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(), kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(), researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema, stage: z.string(), workerThreadId: z.string().nullable(), activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(), needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(), presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(), updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({ scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number() }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(), leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()), verifiedHeadSha: z.string().nullable() }),
+      card: z.object({
+        id: z.string(), name: z.string(), displayName: z.string(), prompt: z.string(), intent: z.string(),
+        projectId: z.string(), projectName: z.string(), workspaceKind: z.enum(["project", "exploratory"]),
+        workspacePath: z.string().nullable(), environmentLabel: z.string().nullable(),
+        kind: z.enum(["build", "research", "explore"]), researchStrategy: z.string().nullable(),
+        researchStrategies: z.array(z.string()), exploreStage: z.string().nullable(), status: statusSchema,
+        stage: z.string(), workerThreadId: z.string().nullable(),
+        activity: z.enum(["idle", "running", "awaiting-answer", "error"]), lastError: z.string().nullable(),
+        needsAttention: z.boolean(), hasPendingReview: z.boolean(), presetName: z.string().nullable(),
+        presetProviderId: z.string().nullable(), presetModelId: z.string().nullable(), presetOverridden: z.boolean(),
+        updatedAt: z.number(), stallCount: z.number(), scopeSummary: z.object({
+          scopesTotal: z.number(), scopesDone: z.number(), tasksTotal: z.number(), tasksDone: z.number(), elapsedMs: z.number().nullable(),
+        }), presetId: z.string(), workerPresetId: z.string().nullable(), presetRestartPending: z.boolean(),
+        leadMs: z.number().nullable(), cycleMs: z.number().nullable(), doingNow: z.array(z.string()),
+        executingScope: z.string().nullable(), verifiedHeadSha: z.string().nullable(),
+      }),
       attachments: z.array(attachmentSchema.extend({ display: z.string(), relPath: z.string().nullable(), absolutePath: z.string(), hostId: z.string().nullable() })),
       mentionedFiles: z.array(z.object({ path: z.string(), display: z.string(), absolutePath: z.string(), hostId: z.string(), relPath: z.string().nullable() })),
       scopes: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("scope"), type: z.string().optional(), status: statusSchema, source: z.string().optional(), gap: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), record: z.object({ verified: z.boolean().optional(), filesCount: z.number().optional(), commandsCount: z.number().optional(), completedAt: z.string().optional(), startedAt: z.string().optional(), suggestedCommit: z.string().optional() }).optional(), startedAt: z.string().optional(), targetFiles: z.array(z.string()).optional(), contract: z.object({ acceptanceCriteria: z.array(z.string()), verifyCommands: z.array(z.string()), targetFiles: z.array(z.string()) }).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })), claimed: z.boolean().nullable(), tasks: z.array(z.object({ id: z.string(), name: z.string(), kind: z.literal("task"), status: statusSchema, source: z.string().optional(), note: z.string().optional(), blockedBy: z.array(z.string()).optional(), dependsOn: z.array(z.string()).optional(), conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })) })), })),
@@ -503,6 +510,7 @@ export const rpcContract = defineRpcContract({
       scopeSync: z.object({ state: z.enum(["ok", "no-spec", "no-blocks", "human-dialect", "unsynced"]), syncedScopes: z.number(), machineBlocks: z.number(), humanBlocks: z.number(), specFile: z.string().nullable() }).nullable(),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), role: z.enum(["deliverable", "evidence"]), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable() })) })),
+      executionRuns: z.array(executionRunSchema),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
       // exploratory workspaces, which live outside provisioned environments.
@@ -623,46 +631,7 @@ export const rpcContract = defineRpcContract({
       recon: z.object({ state: z.enum(["recorded", "missing", "invalid"]), detail: z.string() }).nullable(),
     }),
   },
-  publicationStatus: {
-    experimental_description: "Git publication snapshot: branch, tree, merge-base, PR, capabilities",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: publicationSnapshotSchema,
-  },
-  publicationCommitDiff: {
-    experimental_description: "Read-only diff of one recorded publication commit",
-    input: z.object({ cardId: z.string(), commitSha: z.string().regex(/^[0-9a-f]{7,64}$/i) }).strict(),
-    output: publicationCommitDiffSchema,
-  },
-  publicationCommit: {
-    experimental_description: "Save a local commit in the card's checkout through BB",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
-  },
-  publicationSquashMerge: {
-    experimental_description: "Squash branch commits into one local commit on the base branch",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), commitSha: z.string().nullable() }),
-  },
-  publicationPushTerminal: {
-    experimental_description: "Push the branch in the card's own terminal and stream the result",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
-  },
-  publicationPullPush: {
-    experimental_description: "Pull with rebase then push in the card's checkout, the rejected-push fix",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), terminalId: z.string().nullable() }),
-  },
-  publicationPushTerminals: {
-    experimental_description: "Live push shells for a card with readable output tails",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable(), remote: z.object({ owner: z.string(), repo: z.string(), webUrl: z.string() }).nullable(), terminals: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), exitCode: z.number().nullable(), createdAt: z.number(), pushState: z.enum(["waiting", "running", "succeeded", "failed"]), pushExit: z.number().nullable(), outputTail: z.string().nullable(), outputUnavailable: z.boolean() })) }),
-  },
-  publicationPullRequestAction: {
-    experimental_description: "Mark a PR ready or draft, or merge it; checks stay authoritative",
-    input: z.object({ cardId: z.string(), operation: z.enum(["ready", "draft", "merge"]), method: z.enum(["merge", "rebase", "squash"]).optional() }).strict(),
-    output: z.object({ ok: z.boolean(), message: z.string(), pullRequestUrl: z.string().nullable() }),
-  },
+  ...publicationRpcContract,
   runResearchStrategy: {
     experimental_description: "Run one more research strategy round on a card",
     input: z.object({ cardId: z.string(), strategy: z.string().min(1).max(60) }).strict(),
@@ -673,21 +642,7 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
     output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), threadId: z.string().nullable(), error: z.string().nullable() }),
   },
-  workspaceRecovery: {
-    experimental_description: "One evidenced next step for work that happened elsewhere",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ kind: z.enum(["attached", "promote", "external-project", "ambiguous", "documents-only"]), message: z.string(), workspace: z.object({ path: z.string().nullable(), isGit: z.boolean(), hasSource: z.boolean() }), candidates: z.array(z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), branch: z.string().nullable(), headSha: z.string().nullable(), changedFiles: z.number(), evidence: z.string() })), looseEvidence: z.array(z.object({ path: z.string(), kind: z.enum(["folder", "patch"]) })), recovery: z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), attachedAt: z.number() }).nullable(), audit: z.object({ cardId: z.string(), cardName: z.string(), createdAt: z.number() }).nullable(), error: z.string().nullable() }),
-  },
-  attachRecoveryCheckout: {
-    experimental_description: "Attach a reviewed registered checkout to an exploratory card",
-    input: z.object({ cardId: z.string(), projectId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  createRecoveryAudit: {
-    experimental_description: "Create a build card auditing an attached recovery checkout",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), auditCardId: z.string().nullable(), auditCardName: z.string().nullable(), error: z.string().nullable() }),
-  },
+  ...workspaceRecoveryRpcContract,
   answerExpiredQuestions: {
     experimental_description: "Answer timed-out questions from the card, all-or-nothing like live",
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().min(1).max(10_000)).min(1).max(20) })).min(1).max(12) }).strict(),
@@ -782,46 +737,6 @@ export const rpcContract = defineRpcContract({
   assignReliablePreset: {
     experimental_description: "Set the reliable-tier preset override; null clears",
     input: z.object({ presetId: z.string().nullable() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  getDecisionApiConfig: {
-    experimental_description: "Decision API endpoint, model, and key presence, never the key",
-    input: z.object({}).strict(),
-    output: z.object({ endpoint: z.string(), model: z.string(), hasKey: z.boolean(), keySource: z.string().nullable(), keyRequired: z.boolean(), disabled: z.boolean(), provider: z.string(), configured: z.boolean() }),
-  },
-  setDecisionApiConfig: {
-    experimental_description: "Configure the shared decision endpoint: endpoint, key, model",
-    input: z.object({ endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional(), provider: z.string().max(20).nullable().optional() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  testDecisionApi: {
-    experimental_description: "Probe the decision endpoint with one fixed call and latency",
-    input: z.object({}).strict(),
-    output: z.object({ ok: z.boolean(), latencyMs: z.number().nullable(), model: z.string().nullable(), error: z.string().nullable() }),
-  },
-  getDecisionPoint: {
-    experimental_description: "One decision router's mode, thresholds, route override, and judge preset",
-    input: z.object({ point: z.string() }).strict(),
-    output: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()), route: z.object({ provider: z.string().nullable(), endpoint: z.string().nullable(), apiKey: z.string().nullable(), model: z.string().nullable() }).nullable(), presetId: z.string().nullable() }),
-  },
-  listDecisionPoints: {
-    experimental_description: "Every decision router with rules, modes, and current settings",
-    input: z.object({}).strict(),
-    output: z.object({ points: z.array(z.object({ id: z.string(), label: z.string(), description: z.string(), rules: z.string(), requires: z.string().nullable(), modes: z.array(z.string()), mode: z.string(), thresholds: z.record(z.string(), z.number()), route: z.object({ provider: z.string().nullable(), endpoint: z.string().nullable(), apiKey: z.string().nullable(), model: z.string().nullable() }).nullable(), presetId: z.string().nullable() })) }),
-  },
-  setDecisionPoint: {
-    experimental_description: "Set a decision router's mode, thresholds, route override, and judge preset",
-    input: z.object({ point: z.string(), mode: z.string(), thresholds: z.record(z.string(), z.number()).optional(), route: z.object({ provider: z.string().max(40).nullable().optional(), endpoint: z.string().max(500).nullable().optional(), apiKey: z.string().max(1000).nullable().optional(), model: z.string().max(120).nullable().optional() }).strict().nullable().optional(), presetId: z.string().max(200).nullable().optional() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  getReviewPolicy: {
-    experimental_description: "Independent-review gate policy: off or required",
-    input: z.object({}).strict(),
-    output: z.object({ mode: z.enum(["off", "required"]) }),
-  },
-  setReviewPolicy: {
-    experimental_description: "Set the independent-review gate policy",
-    input: z.object({ mode: z.enum(["off", "required"]) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
   assignPreset: {
@@ -940,11 +855,6 @@ function text(value: unknown, fallback = ""): string {
 
 function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
-}
-
-function normalizeStatus(value: unknown): z.infer<typeof statusSchema> {
-  const candidate = text(value, "pending");
-  return statusSchema.safeParse(candidate).success ? candidate as z.infer<typeof statusSchema> : "pending";
 }
 
 // Short human status for the GitHub completion summary (English).
@@ -1075,16 +985,6 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
   }
 }
 
-function workerEnvironment(source: { path: string; hostId: string }, params: { environmentKind: string; machineId: string | null }, forceWorkspaceHost = false) {
-  // Card workflow state is stored in the declared workspace. The default preset
-  // must therefore run there as well; BB's generic project-default may point at
-  // a managed worktree, which silently splits state from execution.
-  if (forceWorkspaceHost || params.environmentKind === "project-default") {
-    return { type: "host" as const, hostId: forceWorkspaceHost ? source.hostId : (params.machineId ?? source.hostId), workspace: { type: "unmanaged" as const, path: source.path } };
-  }
-  return { type: "project-default" as const };
-}
-
 type ThreadEnvironment = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]["environment"];
 
 import { selectCardEnvironment, isManagedWorktreeEnvironment, environmentFallbackNotice } from "./lib/card-environment.mjs";
@@ -1158,52 +1058,6 @@ function parseNextStages(rootPath: string | null, currentStage: string): string[
   return Array.from(stages);
 }
 
-// Scopes follow the immutable owner, never the name: two cards carrying the
-// same request must not read each other's scope progress.
-function loadCardScopes(rootPath: string | null, workflowId: string, opts?: { mergePlanned?: boolean }): Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"] {
-  if (!rootPath) return [];
-  const tracking = join(rootPath, "stelow.json");
-  if (!existsSync(tracking)) return [];
-  let trackingData: LooseRecord;
-  try { trackingData = JSON.parse(readFileSync(tracking, "utf8")) as LooseRecord; } catch { return []; }
-  const match = workflowEntryForOwner(array(trackingData.workflows), workflowId) as LooseRecord | null;
-  if (!match) return [];
-  const tracked = workflowScopes(match);
-  // Planned tasks enrich synced scopes at read time (Done Criterion becomes
-  // the task note): the host never writes tracking, so blocks without a
-  // synced scope stay invisible instead of inventing scopes. Gates pass
-  // mergePlanned: false — containment enforces tracked truth, the merge is
-  // display-only (otherwise pre-merge cards could never complete).
-  if (opts?.mergePlanned === false) return tracked as Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"];
-  const spec = latestSpecTech(rootPath, workflowId)?.content ?? null;
-  return mergePlannedTasks(tracked, spec) as Awaited<ReturnType<typeof rpcContract.cardDetail.output.parse>>["scopes"];
-}
-
-// Single read of a card's tracking entry: every derived path (plans,
-// scopes, contracts) resolves from this entry through the uniform layout,
-// never by re-deriving date/dirHash per call site.
-function trackingEntryForCard(rootPath: string, workflowId: string): LooseRecord | null {
-  try {
-    const trackingData = JSON.parse(readFileSync(join(rootPath, "stelow.json"), "utf8")) as LooseRecord;
-    return workflowEntryForOwner(array(trackingData.workflows), workflowId) as LooseRecord | null;
-  } catch { return null; }
-}
-function latestSpecTech(rootPath: string, workflowId: string): { file: string; content: string } | null {
-  // Lexicographically latest spec-tech version. Null on any miss: callers
-  // fail open, never dead.
-  try {
-    const match = trackingEntryForCard(rootPath, workflowId);
-    if (!match) return null;
-    const plansRel = plansRelDir(workflowStateRelativeDir(match));
-    if (!plansRel) return null;
-    const plans = nodeJoin(rootPath, ...plansRel.split("/"));
-    const files = readdirSync(plans).filter(isSpecTechFile).sort();
-    if (files.length === 0) return null;
-    const file = files[files.length - 1]!;
-    return { file, content: readFileSync(nodeJoin(plans, file), "utf8") };
-  } catch { return null; }
-}
-
 async function ensureProjectArtifacts(bb: BbPluginApi, rootPath: string, stateDir?: string | null, requireOwnedState = false): Promise<string | null> {
   const tracking = join(rootPath, "stelow.json");
   const transitions = join(rootPath, "skills/stelow-workflow-orchestrator/references/transitions.md");
@@ -1266,46 +1120,6 @@ async function readJson(files: FilesApi, path: string): Promise<LooseRecord | nu
   } catch {
     return null;
   }
-}
-
-function workflowScopes(raw: LooseRecord): Workflow["scopes"] {
-  return array(raw.scopes).map((entry, index) => {
-    const scope = record(entry);
-    const sanitizedRecord = sanitizeEvidenceRecord(scope.record);
-    return {
-      id: text(scope.id, `scope-${index + 1}`),
-      name: text(scope.name, text(scope.title, `Scope ${index + 1}`)),
-      // Tracking shapes declare their kind: the registry, conditions, and
-      // contract lookups never infer it from nesting again.
-      kind: "scope",
-      ...(typeof scope.type === "string" ? { type: scope.type } : {}),
-      status: normalizeStatus(scope.status),
-      ...(typeof scope.source === "string" ? { source: scope.source } : {}),
-      ...(typeof scope.gap === "string" ? { gap: scope.gap } : {}),
-      ...(Array.isArray(scope.blockedBy) ? { blockedBy: (scope.blockedBy as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)) } : {}),
-      ...(Array.isArray(scope.depends_on) ? { dependsOn: (scope.depends_on as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)) } : {}),
-      // Machine evidence travels with the projection: the record mirror
-      // (verified, counts) and declared target files feed conditions and
-      // claim checks downstream — never silently dropped.
-      ...(sanitizedRecord ? { record: sanitizedRecord } : {}),
-      ...(typeof scope.started_at === "string" && scope.started_at ? { startedAt: scope.started_at } : {}),
-      ...(Array.isArray(scope.targetFiles) ? { targetFiles: (scope.targetFiles as unknown[]).map((entry) => typeof entry === "string" ? entry : String(entry)).filter(Boolean) } : {}),
-      tasks: array(scope.tasks).map((item, taskIndex) => {
-        const task = record(item);
-        const strArray = (value: unknown): string[] | undefined => Array.isArray(value) ? value.map((entry) => typeof entry === "string" ? entry : String(entry)) : undefined;
-        return {
-          id: text(task.id, `task-${taskIndex + 1}`),
-          name: text(task.name, text(task.title, `Task ${taskIndex + 1}`)),
-          kind: "task",
-          status: normalizeStatus(task.status),
-          ...(typeof task.source === "string" ? { source: task.source } : {}),
-          ...(typeof task.note === "string" ? { note: task.note } : {}),
-          ...(strArray(task.blockedBy) ?? strArray(task.blocked_by) ? { blockedBy: strArray(task.blockedBy) ?? strArray(task.blocked_by) } : {}),
-          ...(strArray(task.dependsOn) ?? strArray(task.depends_on) ? { dependsOn: strArray(task.dependsOn) ?? strArray(task.depends_on) } : {}),
-        };
-      }),
-    };
-  });
 }
 
 async function findArtifacts(files: FilesApi, root: string, workflow: LooseRecord): Promise<Workflow["artifacts"]> {
@@ -1589,6 +1403,7 @@ export default async function plugin(bb: BbPluginApi) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ask_contracts_card ON ask_contracts(card_id, consumed_at, asked_at)`);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
+  runWorkerMigrations(db);
   if (!cardColumns.some((column) => column.name === "display_name")) {
     db.exec("ALTER TABLE cards ADD COLUMN display_name TEXT");
   }
@@ -1597,12 +1412,6 @@ export default async function plugin(bb: BbPluginApi) {
   }
   if (!cardColumns.some((column) => column.name === "dir_hash")) {
     db.exec("ALTER TABLE cards ADD COLUMN dir_hash TEXT");
-  }
-  if (!cardColumns.some((column) => column.name === "worker_preset_id")) {
-    db.exec("ALTER TABLE cards ADD COLUMN worker_preset_id TEXT");
-  }
-  if (!cardColumns.some((column) => column.name === "preset_restart_pending")) {
-    db.exec("ALTER TABLE cards ADD COLUMN preset_restart_pending INTEGER NOT NULL DEFAULT 0");
   }
   if (!cardColumns.some((column) => column.name === "attachments")) {
     db.exec("ALTER TABLE cards ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'");
@@ -1628,19 +1437,6 @@ export default async function plugin(bb: BbPluginApi) {
   if (!cardColumns.some((column) => column.name === "explore_stage")) {
     db.exec("ALTER TABLE cards ADD COLUMN explore_stage TEXT");
   }
-  // Automatic spawn-retry budget (lib/spawn-retry): attempts claimed per
-  // failed thread, so a restart/reseed or a new failure starts fresh.
-  if (!cardColumns.some((column) => column.name === "spawn_retry_count")) {
-    db.exec("ALTER TABLE cards ADD COLUMN spawn_retry_count INTEGER NOT NULL DEFAULT 0");
-  }
-  if (!cardColumns.some((column) => column.name === "spawn_retry_thread")) {
-    db.exec("ALTER TABLE cards ADD COLUMN spawn_retry_thread TEXT");
-  }
-  // Spawn environment in one stored word (lib/tracks): the open card reads
-  // it instead of guessing shared-vs-worktree from paths.
-  if (!cardColumns.some((column) => column.name === "environment_label")) {
-    db.exec("ALTER TABLE cards ADD COLUMN environment_label TEXT");
-  }
   const expiredQuestionColumns = db.prepare("PRAGMA table_info(expired_questions)").all() as Array<{ name: string }>;
   if (!expiredQuestionColumns.some((column) => column.name === "kind")) {
     db.exec("ALTER TABLE expired_questions ADD COLUMN kind TEXT NOT NULL DEFAULT 'standard'");
@@ -1648,6 +1444,9 @@ export default async function plugin(bb: BbPluginApi) {
   // Trackable event trail (lib/trackable-events): append-only causal log.
   // CREATE TABLE IF NOT EXISTS is its own migration — no column dance.
   ensureTrackableEventsTable(db);
+  // Native execution uses the same migration discipline: an idempotent table
+  // ensure outside the versioned bb.storage.migrate ledger.
+  runExecutionMigrations(db);
   if (!expiredQuestionColumns.some((column) => column.name === "locale")) {
     db.exec("ALTER TABLE expired_questions ADD COLUMN locale TEXT");
   }
@@ -1666,32 +1465,6 @@ export default async function plugin(bb: BbPluginApi) {
     answered_at INTEGER,
     consumed_at INTEGER,
     created TEXT NOT NULL DEFAULT '[]'
-  )`);
-  // Preserve a legacy card's original workspace claim separately from a
-  // user-confirmed checkout. Recovery never silently rewrites history.
-  db.exec(`CREATE TABLE IF NOT EXISTS workspace_recoveries (
-    card_id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
-    project_name TEXT NOT NULL,
-    source_path TEXT NOT NULL,
-    original_workspace_path TEXT,
-    evidence TEXT NOT NULL,
-    git_root TEXT,
-    branch TEXT,
-    head_sha TEXT,
-    changed_files INTEGER NOT NULL DEFAULT 0,
-    attached_at INTEGER NOT NULL,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  )`);
-  // The original exploratory card remains historical evidence. A recovery
-  // audit is a separate, normal Build card in the registered project, with a
-  // real BB workspace and therefore the usual test/commit/PR controls.
-  db.exec(`CREATE TABLE IF NOT EXISTS recovery_audits (
-    source_card_id TEXT PRIMARY KEY,
-    audit_card_id TEXT NOT NULL UNIQUE,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (source_card_id) REFERENCES cards(id) ON DELETE CASCADE,
-    FOREIGN KEY (audit_card_id) REFERENCES cards(id) ON DELETE CASCADE
   )`);
   // Host-run test evidence is scoped to one card and Git identity. It is
   // intentionally a ledger rather than a mutable receipt paragraph.
@@ -1774,69 +1547,9 @@ export default async function plugin(bb: BbPluginApi) {
     assigned_at INTEGER NOT NULL,
     FOREIGN KEY (preset_id) REFERENCES presets(id) ON DELETE CASCADE
   )`);
-  // Decision API: one Jev-compatible endpoint for every decision point.
-  // Endpoint + key + model live here once, never per point. An absent row
-  // means unconfigured — points fall back to built-in rules.
-  db.exec(`CREATE TABLE IF NOT EXISTS decision_api_config (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    endpoint TEXT NOT NULL,
-    api_key TEXT NOT NULL DEFAULT '',
-    model TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`);
-  // Provider column for installs created before provider adapters: jev is
-  // the wire-compatible default, so old rows keep working unchanged.
-  const decisionApiColumns = db.prepare("PRAGMA table_info(decision_api_config)").all() as Array<{ name: string }>;
-  if (!decisionApiColumns.some((column) => column.name === "provider")) {
-    db.exec("ALTER TABLE decision_api_config ADD COLUMN provider TEXT NOT NULL DEFAULT 'jev'");
-  }
-  // Per-point router modes + thresholds as free-form JSON. Absent rows mean
-  // registry defaults (built-in rules), so new points need no migration.
-  db.exec(`CREATE TABLE IF NOT EXISTS decision_points (
-    point TEXT PRIMARY KEY,
-    mode TEXT NOT NULL CHECK (mode IN ('rules', 'api', 'preset')),
-    thresholds TEXT NOT NULL DEFAULT '{}',
-    provider TEXT,
-    endpoint TEXT,
-    api_key TEXT,
-    model TEXT,
-    preset_id TEXT,
-    updated_at INTEGER NOT NULL
-  )`);
-  // Per-point routing (route override columns + preset judge pin) arrived
-  // after the table: older rows also carry CHECK(mode IN ('rules', 'api')),
-  // which would refuse preset mode. Rebuild once to widen it, preserving
-  // rows — guarded by the new column so reruns are no-ops.
-  const pointColumns = db.prepare("PRAGMA table_info(decision_points)").all() as Array<{ name: string }>;
-  if (!pointColumns.some((column) => column.name === "preset_id")) {
-    // One transaction: a crash between DROP and RENAME must never lose the
-    // four rows — half a migration is worse than none.
-    const rebuildDecisionPoints = db.transaction(() => {
-      db.exec(`CREATE TABLE IF NOT EXISTS decision_points_new (
-      point TEXT PRIMARY KEY,
-      mode TEXT NOT NULL CHECK (mode IN ('rules', 'api', 'preset')),
-      thresholds TEXT NOT NULL DEFAULT '{}',
-      provider TEXT,
-      endpoint TEXT,
-      api_key TEXT,
-      model TEXT,
-      preset_id TEXT,
-      updated_at INTEGER NOT NULL
-    )`);
-      db.exec(`INSERT OR IGNORE INTO decision_points_new (point, mode, thresholds, updated_at) SELECT point, mode, thresholds, updated_at FROM decision_points`);
-      db.exec(`DROP TABLE decision_points`);
-      db.exec(`ALTER TABLE decision_points_new RENAME TO decision_points`);
-    });
-    rebuildDecisionPoints();
-  }
-  // Review enforcement policy (default off): when required, research/explore
-  // done refuses without a passing review stamped with the current
-  // fingerprint. Mechanism only — calibration stays a documented prerequisite.
-  db.exec(`CREATE TABLE IF NOT EXISTS review_policy (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    mode TEXT NOT NULL CHECK (mode IN ('off', 'required')),
-    assigned_at INTEGER NOT NULL
-  )`);
+  // Decision API and review enforcement policy own their migrations behind
+  // one feature seam; server.ts only wires the resulting factory.
+  runDecisionApiMigrations(db);
   // Rebuild tables created with the build-only band allowlist, preserving
   // rows. Runs once: the rebuilt schema has no CHECK to match against.
   const stagePresetsSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'stage_presets'").get() as { sql: string } | undefined;
@@ -1851,55 +1564,15 @@ export default async function plugin(bb: BbPluginApi) {
       INSERT INTO stage_presets (band, preset_id, assigned_at) SELECT band, preset_id, assigned_at FROM stage_presets_rebuild;
       DROP TABLE stage_presets_rebuild;`);
   }
-  // This table is deliberately created outside the historical migration array:
-  // older local installations have different recorded migration lengths.
-  db.exec(`CREATE TABLE IF NOT EXISTS inbox_events (
-    id TEXT PRIMARY KEY,
-    card_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('question','error','paused','completed')),
-    summary TEXT NOT NULL,
-    dedupe_key TEXT NOT NULL UNIQUE,
-    occurred_at INTEGER NOT NULL,
-    read_at INTEGER,
-    archived_at INTEGER,
-    resolved_at INTEGER,
-    resolved_reason TEXT,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_inbox_events_visible ON inbox_events(archived_at, occurred_at DESC);`);
+  // Inbox tables and their idempotent column migrations remain outside the
+  // historical migration array: older local installations have different
+  // recorded migration lengths.
+  runInboxMigrations(db);
+  // Workspace recovery owns its reviewed-checkout and audit ledgers.
+  runWorkspaceRecoveryMigrations(db);
   // Workspace-level file claims (lib/card-claims): cross-card coordination
-  // for cards sharing one checkout. Same outside-the-migration-array
-  // pattern as inbox_events above.
+  // for cards sharing one checkout.
   ensureCardClaimsTables(db);
-  const inboxColumns = db.prepare("PRAGMA table_info(inbox_events)").all() as Array<{ name: string }>;
-  if (!inboxColumns.some((column) => column.name === "resolved_at")) db.exec("ALTER TABLE inbox_events ADD COLUMN resolved_at INTEGER");
-  // Column migrations run after the table exists: on a fresh database the
-  // CREATE TABLE above already carries resolved_reason/resolved_at, and on
-  // legacy databases these add what the table predates. Calling them before
-  // the CREATE TABLE crashes fresh installs (no such table: inbox_events).
-  ensureInboxResolvedReasonColumn(db);
-  ensureInboxSeverityColumns(db);
-  // One-time cleanup of a historical bug: research completions used to emit
-  // two events (the generic transition + the research-specific one). The
-  // generic rows are redundant noise for research cards — drop them. The
-  // duplicate-insert path is fixed upstream, so this converges on first run.
-  db.prepare(`DELETE FROM inbox_events WHERE kind = 'completed' AND summary = 'Completed. Review the final outcome.' AND card_id IN (SELECT id FROM cards WHERE kind = 'research')`).run();
-
-  // card_threads is the worker ledger: one row per worker thread a card has
-  // ever had (initial spawn, band-swap / manual restarts, reseeds). Old rows
-  // stay as history; the open row (ended_at NULL) is the current worker.
-  // Threads themselves are archived+hidden on replacement, so the list UI
-  // never pollutes — this table is the auditable memory of it.
-  db.exec(`CREATE TABLE IF NOT EXISTS card_threads (
-    thread_id TEXT PRIMARY KEY,
-    card_id TEXT NOT NULL,
-    preset_id TEXT,
-    started_at INTEGER NOT NULL,
-    ended_at INTEGER,
-    ended_reason TEXT,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_card_threads_card ON card_threads(card_id, started_at DESC);`);
 
   // GitHub issues live decoupled in server/github-issues.ts: tables,
   // backfills, matcher wiring, scheduler, and RPCs. One call owns it all.
@@ -1910,19 +1583,9 @@ export default async function plugin(bb: BbPluginApi) {
     db.exec("ALTER TABLE automation_rules ADD COLUMN autostart INTEGER NOT NULL DEFAULT 0");
   }
 
-  // Publication is intentionally separate from a card's Done state. A card is
-  // workflow-complete before its owner decides whether and how to publish it.
-  db.exec(`CREATE TABLE IF NOT EXISTS publication_events (
-    id TEXT PRIMARY KEY,
-    card_id TEXT NOT NULL,
-    action TEXT NOT NULL,
-    message TEXT NOT NULL,
-    commit_sha TEXT,
-    pull_request_url TEXT,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_publication_events_card ON publication_events(card_id, created_at DESC);`);
+  // Publication remains separate from a card's Done state. Its event history
+  // and RPC behavior are owned by the publication feature module.
+  runPublicationMigrations(db);
 
   const presetColumns = db.prepare("PRAGMA table_info(presets)").all() as Array<{ name: string }>;
   if (!presetColumns.some((column) => column.name === "environment_kind")) {
@@ -2127,18 +1790,6 @@ ${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
 ${prompt}`;
   }
 
-  // One route for every api-mode judgment: the point's stored override wins
-  // field by field, the shared endpoint row fills the rest. An empty
-  // override resolves exactly to today's global behavior.
-  type PointRouteRow = { provider: string | null; endpoint: string | null; api_key: string | null; model: string | null };
-  type GlobalRouteRow = { endpoint: string; api_key: string; model: string; provider: string | null };
-  function pointRouteConfig(point: PointRouteRow | undefined | null, cfg: GlobalRouteRow | undefined) {
-    return resolvePointRoute({
-      override: point ? { provider: point.provider, endpoint: point.endpoint, apiKey: point.api_key, model: point.model } : null,
-      fallback: { provider: cfg?.provider ?? null, endpoint: cfg?.endpoint ?? null, apiKey: cfg?.api_key ?? null, model: cfg?.model ?? null },
-    });
-  }
-
   // Preset judgment runner: one hidden thread on the pinned preset answers a
   // strict-JSON question. Always cleans up (stop + archive); every failure
   // returns ok:false so callers fall back to built-in rules or refuse with
@@ -2282,64 +1933,6 @@ ${prompt}`;
     });
   });
 
-  // Fire-and-forget card titling on the Generation tier: a short hidden
-  // burst proposes a better title than the prompt-derived heuristic, then
-  // the human renames inline. Silent on every failure path — creation
-  // already succeeded with the heuristic, and a title is never worth an
-  // error. Registered as delegation site "card-title".
-  async function suggestCardName(cardId: string): Promise<void> {
-    try {
-      const card = getCard(cardId);
-      if (!card) return;
-      const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
-      const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-      const boardDefault = designated ? getPresetById(designated.preset_id) : null;
-      const bandPreset = getPresetForBand(band, cardId);
-      const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
-      const titlePreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
-      if (!titlePreset) return;
-      const params = presetAttachmentParams(titlePreset);
-      let titleThread: { id: string };
-      try {
-        titleThread = await spawnDisposable({
-          projectId: card.project_id,
-          environment: { type: "project-default" },
-          visibility: "hidden",
-          title: `Stelow title: ${card.display_name ?? card.name}`,
-          providerId: params.providerId,
-          model: params.modelId,
-          reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-          permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
-          input: [{ type: "text", mentions: [], text: buildCardNamePrompt({ prompt: card.prompt, kind: card.kind }) }],
-        }, "card-title");
-      } catch {
-        return;
-      }
-      const TITLE_POLLS = 12;
-      for (let poll = 0; poll < TITLE_POLLS; poll++) {
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-        const thread = await bb.sdk.threads.get({ threadId: titleThread.id }).catch(() => null);
-        const status = (thread as { status?: unknown } | null)?.status;
-        if (status === "idle" || status === "stopping" || status === "archived" || status === "deleted") break;
-        if (status === "failed" || status === "error" || poll === TITLE_POLLS - 1) {
-          await stopWorkerThread(titleThread.id).catch(() => undefined);
-          return;
-        }
-      }
-      const output = await bb.sdk.threads.output({ threadId: titleThread.id }).then((result) => result.output ?? "").catch(() => "");
-      await stopWorkerThread(titleThread.id).catch(() => undefined);
-      const validated = validateCardName(output);
-      if (!validated.ok || !validated.name) return;
-      const live = getCard(cardId);
-      // Never overwrite a human rename that landed while judging.
-      if (!live || (live.display_name ?? live.name) !== (card.display_name ?? card.name)) return;
-      db.prepare("UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?").run(validated.name, now(), cardId);
-      bb.realtime.publish("card-state", { cardId });
-    } catch {
-      // Titles never break creation.
-    }
-  }
-
   // Independent pre-review on gate entry (see advance hook): same reviewer
   // machinery as the review command, but advisory-only — findings land as
   // a card comment, never a reviews/ file, and every miss is silent.
@@ -2389,12 +1982,12 @@ ${prompt}`;
         const status = (thread as { status?: unknown } | null)?.status;
         if (status === "idle" || status === "stopping" || status === "archived" || status === "deleted") break;
         if (status === "failed" || status === "error" || poll === 59) {
-          await stopWorkerThread(preThread.id).catch(() => undefined);
+          await workers.stop(preThread.id).catch(() => undefined);
           return;
         }
       }
       const output = await bb.sdk.threads.output({ threadId: preThread.id }).then((result) => result.output ?? "").catch(() => "");
-      await stopWorkerThread(preThread.id).catch(() => undefined);
+      await workers.stop(preThread.id).catch(() => undefined);
       const parsed = parseReviewOutput(output, content);
       if (!parsed || !Array.isArray(parsed.findings) || parsed.findings.length === 0) return;
       logCardComment(cardId, "card", cardId, "agent", `Independent pre-review (${stage}, ${reviewPreset.name}):\n\n${reviewSummary(parsed)}`);
@@ -2404,354 +1997,41 @@ ${prompt}`;
     }
   }
 
-  // Triage-intent router: seed a build card's intent from the Decision API
-  // when the point runs in api mode. Advisory only — the worker always
-  // re-settles intent in triage — and fail-soft: any missing config, key,
-  // error, or low-confidence answer leaves "unknown", exactly as today.
-  async function seedBuildIntentFromRouter(promptText: string, projectId: string | null): Promise<string> {
-    try {
-      if (isDecisionApiDisabled(process.env)) return "unknown";
-      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_TRIAGE_INTENT) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      const mode = normalizePointMode(point?.mode, "rules");
-      if (mode !== "api" && mode !== "preset") return "unknown";
-      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      let stored: unknown = null;
-      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
-      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_TRIAGE_INTENT));
-      if (mode === "preset") {
-        const presetId = point?.preset_id ?? null;
-        if (!presetId) return "unknown";
-        const prompt = buildPresetJudgePrompt({ kind: "choice", state: promptText, questions: triageIntentQuestions() });
-        const judged = await judgeViaPreset({ presetId, projectId, title: "Stelow judge: triage intent", prompt });
-        if (!judged.ok || !judged.text) {
-          bb.log.warn(`triage intent router fell back to built-in rules: ${judged.error ?? "judge failed"}`);
-          return "unknown";
-        }
-        const parsed = parsePresetJudgeOutput({ kind: "choice", text: judged.text, validChoices: Object.keys(TRIAGE_INTENT_CRITERIA) });
-        if (!parsed.ok || !("choice" in parsed)) {
-          bb.log.warn(`triage intent router fell back to built-in rules: ${!parsed.ok ? parsed.error : "verdict shape mismatch"}`);
-          return "unknown";
-        }
-        const resolved = resolveSeedIntent({ apiAnswers: { intent: { type: "choice", choice: parsed.choice, confidence: parsed.confidence } }, routeAt: thresholds.routeAt });
-        if (resolved.source !== "api") return "unknown";
-        bb.log.info(`triage intent seeded from preset judge (${presetId}): ${resolved.intent} (confidence ${resolved.confidence})`);
-        return resolved.intent;
-      }
-      const route = pointRouteConfig(point, cfg);
-      const provider = normalizeDecisionProvider(route.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return "unknown";
-      const result = await evaluateDecisionCall({
-        provider,
-        endpoint: route.endpoint ?? defaultEndpointFor(provider),
-        apiKey: key ?? "",
-        model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
-        state: promptText,
-        questions: triageIntentQuestions(),
-      });
-      if (!result.ok) {
-        bb.log.warn(`triage intent router fell back to built-in rules: ${result.error ?? "call failed"}`);
-        return "unknown";
-      }
-      const resolved = resolveSeedIntent({ apiAnswers: result.answers, routeAt: thresholds.routeAt });
-      if (resolved.source === "api") bb.log.info(`triage intent seeded from Decision API: ${resolved.intent} (confidence ${resolved.confidence})`);
-      return resolved.intent;
-    } catch {
-      return "unknown";
-    }
+  // Decision API execution seams live in the server/decision-api-* modules. These thin
+  // adapters keep call sites explicit while the feature owns its behavior.
+  function seedBuildIntentFromRouter(promptText: string, projectId: string | null): Promise<string> {
+    return decisionApi.seedBuildIntent(promptText, projectId);
   }
 
-  // Auto-continue veto: when the point runs in api mode and the heuristic
-  // already cleared a resume, ask one Noul whether the last output shows
-  // real progress. A confident "no" vetoes the resume (the card falls
-  // through to the paused path); everything else keeps the heuristic
-  // standing. Tool-only turns carry no output text — the advance scan
-  // already proved them, so they skip the call entirely.
-  async function vetAutoContinueNudge(stateText: string | null): Promise<boolean> {
-    try {
-      if (!stateText || !stateText.trim()) return true;
-      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_AUTO_CONTINUE) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      if (normalizePointMode(point?.mode, "rules") === "preset") bb.log.warn("auto-continue ignores preset mode: hot paths stay on rules/api so judgments never burn worker turns.");
-      if (normalizePointMode(point?.mode, "rules") !== "api") return true;
-      if (isDecisionApiDisabled(process.env)) return true;
-      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const route = pointRouteConfig(point, cfg);
-      const provider = normalizeDecisionProvider(route.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return true;
-      let stored: unknown = null;
-      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
-      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_AUTO_CONTINUE));
-      const result = await evaluateDecisionCall({
-        provider,
-        endpoint: route.endpoint ?? defaultEndpointFor(provider),
-        apiKey: key ?? "",
-        model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
-        state: stateText,
-        questions: autoContinueQuestions(),
-      });
-      if (!result.ok) {
-        bb.log.warn(`auto-continue veto skipped, heuristic stands: ${result.error ?? "call failed"}`);
-        return true;
-      }
-      const answer = result.answers?.progress ?? null;
-      const resolved = resolveAutoContinue({ apiNoul: answer && answer.type === "noul" ? answer.noul : null, routeAt: thresholds.routeAt });
-      if (!resolved.proceed) bb.log.info(`auto-continue vetoed by Decision API (progress ${answer && answer.type === "noul" ? answer.noul : "n/a"})`);
-      return resolved.proceed;
-    } catch {
-      return true;
-    }
+  function vetAutoContinueNudge(stateText: string | null): Promise<boolean> {
+    return decisionApi.vetAutoContinue(stateText);
   }
 
-  async function createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, kind, strategy, stageId, start = true, execution }: { projectId: string; environment?: unknown; prompt: string; attachments: Array<{ path: string; type: "localFile" | "localImage" }>; intent: string; appetite: string; reviewMode: string | string[]; presetId?: string | null; kind?: "build" | "research" | "explore"; strategy?: string | null; stageId?: string | null; start?: boolean; execution?: { providerId?: string; model?: string; reasoningLevel?: string; permissionMode?: "accept-edits" | "auto" | "full"; serviceTier?: "default" | "fast"; executionInputSources?: { providerId?: "explicit" | "client-preference"; model?: "explicit" | "client-preference"; reasoningLevel?: "explicit" | "client-preference"; permissionMode?: "explicit" | "client-preference"; serviceTier?: "explicit" | "client-preference" } } | null }): Promise<{ cardId: string; threadId: string | null }> {
-    const project = await bb.sdk.projects.get({ projectId }).catch(() => null);
-    // The composer submits the Personal project id for “Don't work in a
-    // project”. Some SDK project reads omit its `kind`, so accept its stable
-    // id as well as the documented kind marker.
-    const isExploratory = projectId === "proj_personal" || project?.kind === "personal";
-    if (isExploratory && (kind ?? "build") === "build") {
-      throw new Error("Build cards require a project workspace with a Git source. Choose the code project in BB before starting; use Research or Explore for personal, document-only work.");
-    }
-    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-    if (!isExploratory && !source?.path) throw new Error("Project workspace path is unavailable.");
-    const cardId = randomId("card");
-    const environmentRecord = environment && typeof environment === "object" ? environment as Record<string, unknown> : {};
-    const requestedHostId = typeof environmentRecord.hostId === "string" ? environmentRecord.hostId : null;
-    const hosts = await bb.sdk.hosts.list();
-    // The plugin's synchronous filesystem operations run on this host. BB's
-    // public host contract does not identify it, so only accept the sole host.
-    if (isExploratory && hosts.length !== 1) {
-      throw new Error("Exploratory work currently requires a single local BB host.");
-    }
-    const localHostId = hosts[0]?.id ?? null;
-    if (isExploratory && requestedHostId && requestedHostId !== localHostId) {
-      throw new Error("Exploratory work currently requires the local host.");
-    }
-    const exploratoryHostId = localHostId;
-    const rootPath = isExploratory
-      ? nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory", cardId)
-      : source?.path;
-    let workspaceProjectId = projectId;
-    let workspaceSource: { path: string; hostId: string } | undefined = source ? { path: source.path, hostId: source.hostId } : undefined;
-    if (isExploratory && rootPath && exploratoryHostId) {
-      mkdirSync(rootPath, { recursive: true });
-      const existing = (await bb.sdk.projects.list()).find((entry) => entry.name === "Stelow exploratory work" && entry.sources.some((candidate) => candidate.hostId === exploratoryHostId && candidate.path === nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory")));
-      const exploratoryProject = existing ?? await bb.sdk.projects.create({ name: "Stelow exploratory work", source: { type: "local_path", hostId: exploratoryHostId, path: nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory") } });
-      workspaceProjectId = exploratoryProject.id;
-      workspaceSource = { path: rootPath, hostId: exploratoryHostId };
-    }
-    if (!rootPath || !workspaceSource) throw new Error("A workspace path is unavailable for this card.");
-    const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "stelow";
-    const displayName = heuristicDisplayName(prompt, slug);
-    const isResearch = kind === "research";
-    const isExplore = kind === "explore";
-    const researchStrategy = isResearch ? researchStrategyById(strategy ?? "") : null;
-    if (isResearch && !researchStrategy) {
-      throw new Error(`Unknown research strategy "${strategy ?? ""}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`);
-    }
-    const exploreStage = isExplore ? techniqueById(stageId ?? "") : null;
-    if (isExplore && !exploreStage) {
-      throw new Error(`Unknown explore technique "${stageId ?? ""}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`);
-    }
-    // Explicit intent wins (import heuristic, reseed reclassification);
-    // otherwise the triage router may seed from the Decision API, else the
-    // worker settles "unknown" in triage as before.
-    const explicitIntent = normalizeBuildSeedIntent(intent);
-    const initialIntent = isResearch ? "investigate" : isExplore ? "explore" : explicitIntent !== "unknown" ? explicitIntent : await seedBuildIntentFromRouter(prompt, workspaceProjectId);
-    // Canonical gates: legacy ladder strings normalize through the compat
-    // map, so the composer, board defaults, and reseed all carry the set.
-    const reviewGates = normalizeReviewGates(reviewMode);
-    const reviewRung = legacyLabelForGates(reviewGates) ?? (reviewGates.length === 0 ? "Auto" : `Custom ${formatReviewGates(reviewGates)}`);
-    const seed = await seedWorkflow(bb, rootPath, cardId, slug, initialIntent, appetite, reviewGates);
-    if (seed.error) throw new Error(seed.error);
-    const preset = presetId ? (getPresetById(presetId) ?? getDefaultPreset()) : getDefaultPreset();
-    // Spawn workers on their track's entry band (lib/tracks: each track
-    // owns its band). A board-level reliable override replaces the band
-    // preset when set; otherwise falls back to the card/board default when
-    // the band is unconfigured.
-    const spawnBand = bandForKind(kind ?? "build");
-    const bandRow = db.prepare("SELECT preset_id FROM stage_presets WHERE band = ?").get(spawnBand) as { preset_id: string } | undefined;
-    const reliableRow = db.prepare("SELECT preset_id FROM reliable_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-    const bandPreset = bandRow ? getPresetById(bandRow.preset_id) : null;
-    const reliablePreset = reliableRow ? getPresetById(reliableRow.preset_id) : null;
-    const basePreset = reliablePreset ?? bandPreset ?? preset;
-    // The composer owns the provider/model pickers: when the submitted
-    // choice differs from the resolved base preset, pin it as this card's
-    // override (same card-override-* mechanism as the Agent preset dialog)
-    // so the spawn — and every later restart/reseed, which resolve through
-    // the override-aware getReliablePresetForBand — runs what the user picked.
-    // A matching choice pins nothing: the card stays on the shared preset.
-    const override = composerPresetOverride(basePreset, execution ?? null);
-    let spawnPreset = basePreset;
-    // Pinned after the card row exists (card_presets references cards): the
-    // presets row itself is standalone and must exist before the spawn below.
-    let pinnedOverrideId: string | null = null;
-    if (override && override.providerId && override.modelId && override.reasoningLevel && override.permissionMode) {
-      const ts = now();
-      db.prepare("INSERT OR REPLACE INTO presets (id, name, provider_id, model_id, reasoning_level, permission_mode, environment_kind, base_branch, machine_id, instructions, is_default, built_in, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)").run(
-        `card-override-${cardId}`, `Card override ${cardId}`, override.providerId, override.modelId, override.reasoningLevel, override.permissionMode, basePreset.environment_kind, basePreset.base_branch, basePreset.machine_id, basePreset.instructions, ts, ts,
-      );
-      const pinned = getPresetById(`card-override-${cardId}`);
-      if (pinned) {
-        spawnPreset = pinned;
-        pinnedOverrideId = pinned.id;
-      }
-    }
-    const params = presetAttachmentParams(spawnPreset);
-    const spawnExecution = composerSpawnInput(params, execution ?? null);
-    const workerAttachments = attachments.map((attachment) => ({ type: attachment.type, path: attachment.path }));
-    // BB requires Personal-project threads to retain a `personal` workspace.
-    // Exploratory work therefore uses one Stelow-owned project with a local source.
-    const workerProjectId = workspaceProjectId;
-    const selectedEnvironment = isExploratory
-      ? workerEnvironment(workspaceSource, params, true)
-      : selectCardEnvironment(environment, workerEnvironment(workspaceSource, params)) as ThreadEnvironment;
-    const selectedManagedWorktree = isManagedWorktreeEnvironment(selectedEnvironment);
-    const creationStamp = roundTimestamp();
-    const creationRoundFile = isResearch && researchStrategy && seed.stateDir
-      ? roundRelPath(seed.stateDir, rootPath, roundFileName(researchStrategy.id, 1, creationStamp))
-      : "";
-    if (creationRoundFile) await ensureArtifactParent(rootPath, creationRoundFile);
-    // Paths are deterministic, but files are created only when their worker
-    // has reviewable content. A missing output is pending, never an empty UI.
-    const researchPrompt = isResearch && researchStrategy ? researchWorkerPrompt({
-      displayName,
-      prompt,
-      strategyLabel: researchStrategy.label,
-      strategyId: researchStrategy.id,
-      strategySkill: researchStrategy.skill,
-      stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
-      workspaceRoot: rootPath,
-      instructions: params.instructions,
-      flavor: "initial",
-      previousThreadId: null,
-      roundNo: 1,
-      roundStamp: creationStamp,
-      roundFile: creationRoundFile,
-    }) : null;
-    const explorePrompt = isExplore && exploreStage ? exploreWorkerPrompt({
-      displayName,
-      prompt,
-      stage: exploreStage,
-      stateDirText: text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>"),
-      workspaceRoot: rootPath,
-      instructions: params.instructions,
-      flavor: "initial",
-      previousThreadId: null,
-    }) : null;
-    // Deferred start: an unstarted card parks in To-Do with no thread and
-    // no activity. The sync poll ignores threadless cards by construction,
-    // so nothing runs, burns, or badges until the human starts it.
-    let thread: Awaited<ReturnType<typeof bb.sdk.threads.spawn>> | null = null;
-    if (start) {
-    try {
-      // delegation-site: worker-spawn
-      thread = await bb.sdk.threads.spawn({
-      projectId: workerProjectId,
-      environment: selectedEnvironment,
-      visibility: "hidden",
-      title: `Stelow: ${displayName}`,
-      // spawnExecution merges the composer's choice over the resolved
-      // preset; the preset fallbacks below only cover the impossible case
-      // of a preset row missing a NOT NULL column (fail closed on strings).
-      providerId: spawnExecution.providerId ?? params.providerId,
-      model: spawnExecution.model ?? params.modelId,
-      reasoningLevel: (spawnExecution.reasoningLevel ?? params.reasoningLevel) as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-      permissionMode: (spawnExecution.permissionMode ?? params.permissionMode) as "accept-edits" | "auto" | "full",
-      ...(spawnExecution.serviceTier ? { serviceTier: spawnExecution.serviceTier } : {}),
-      executionInputSources: spawnExecution.executionInputSources,
-      input: [{ type: "text", mentions: [], text: researchPrompt ?? explorePrompt ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, intent, current_stage, status. ${CARD_OWNER_RULES}
-
-${selectedManagedWorktree ? "BB provisioned the managed worktree selected by the user. Treat your current working directory as the code root; never redirect code changes to the project source path used for Stelow's workflow metadata." : ""}
-
-Step 1 — verify intent first: this card starts as intent=\`${initialIntent}\` in state.md (pre-seeded when the request already carried one, else \`unknown\`). Read the request, confirm or pick the fitting intent (new-product, feature, bugfix, refactor, investigate) and write it to state.md immediately so the card updates in real time. Ask one concise question via the form below only when genuinely ambiguous. Do NOT load phase skills or do product work before intent is settled. Appetite=\`${appetite}\` and review gates=\`${formatReviewGates(reviewGates)}\` (${reviewRung}) are already recorded in state.md — use them, never re-ask.
-
-Order of work, always: (1) triage — settle intent and record it in state.md; (2) load the workflow skills; (3) advance stages and do the work. If a \`bb stelow\` command fails, read its stderr once and continue the workflow — do NOT spend the turn debugging the CLI; report the exact error and move on.
-
-Load the workflow skills first (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-* via \`bb skill list\`). Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
-
-${TURN_DISCIPLINE}
-
-${COMMIT_STYLE}
-
-CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
-
-    bb stelow ask --thread "$BB_THREAD_ID" \\
-      --question "<a single clear question>" \\
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, --preview for the inline glance, --artifact for the workspace-relative file they can open.
-
-Before asking, summarize what you read so the user can answer with context. Do not skip triage; do not start shaping before triage is settled. Each ask blocks until answered; the card stays in its column and signals it is waiting for an answer. On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card and the answer arrives as a message. Never re-ask the same question. ${INTERFACE_PICK} For unselected gates, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
-
-${DONE_PROTOCOL}
-
-${SPLIT_PROTOCOL}
-
-${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
-${prompt}` }, ...workerAttachments],
-      });
-    } catch (error) {
-      // No card row exists yet: drop the override preset staged above so a
-      // failed spawn leaves no orphan card-override row behind.
-      if (pinnedOverrideId) db.prepare("DELETE FROM presets WHERE id = ?").run(pinnedOverrideId);
-      throw error;
-    }
-    }
-    const ts = now();
-    const createdAt = new Date(ts).toISOString();
-    // Columns are the single source of truth: placeholders derive from this
-    // list, so adding a column cannot leave the SQL with a stray "?".
-    const CARD_COLUMNS = ["id", "project_id", "name", "display_name", "prompt", "intent", "status", "stage", "activity", "worker_thread_id", "worker_preset_id", "dir_hash", "attachments", "workspace_kind", "workspace_path", "workspace_host_id", "kind", "research_strategy", "research_strategies", "explore_stage", "last_error", "last_assistant_text", "environment_label", "created_at", "updated_at"];
-    const selectedEnvRecord = selectedEnvironment && typeof selectedEnvironment === "object" ? selectedEnvironment as Record<string, unknown> : {};
-    const selectedEnvWorkspace = selectedEnvRecord.workspace && typeof selectedEnvRecord.workspace === "object" && !Array.isArray(selectedEnvRecord.workspace) ? selectedEnvRecord.workspace as Record<string, unknown> : {};
-    const environmentLabel = describeCardEnvironment({ exploratory: isExploratory, envType: selectedEnvRecord.type, workspaceType: selectedEnvWorkspace.type });
-    const cardValues = [cardId, workspaceProjectId, slug, displayName, prompt, initialIntent, isResearch || isExplore ? "pending" : "draft", isResearch ? "research" : isExplore ? "explore" : "triage", start ? "running" : "idle", thread?.id ?? null, spawnPreset.id, seed.dirHash, JSON.stringify(attachments), isExploratory ? "exploratory" : "project", isExploratory ? rootPath : null, isExploratory ? workspaceSource.hostId : null, isResearch ? "research" : isExplore ? "explore" : "build", researchStrategy?.id ?? null, isResearch && researchStrategy ? JSON.stringify([{ id: researchStrategy.id, at: createdAt, file: creationRoundFile }]) : null, exploreStage?.id ?? null, null, null, environmentLabel, ts, ts];
-    if (cardValues.length !== CARD_COLUMNS.length) {
-      throw new Error(`Card insert mismatch: ${cardValues.length} values for ${CARD_COLUMNS.length} columns.`);
-    }
-    db.prepare(`INSERT INTO cards (${CARD_COLUMNS.join(", ")}) VALUES (${CARD_COLUMNS.map(() => "?").join(", ")})`).run(...cardValues);
-    recordStageEvent(cardId, isResearch ? "research" : isExplore ? "explore" : "triage");
-    // NOTE: no card_presets row here on purpose unless the composer pinned
-    // one above. An override row means "the user explicitly pinned this
-    // card", and writing the spawn default as one would mislabel every
-    // fresh card as overridden (and trip staleness). The pin lands after
-    // the card row because card_presets references cards.
-    if (pinnedOverrideId) {
-      db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, pinnedOverrideId, ts);
-    }
-    if (thread) {
-      recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
-      if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
-    }
-    // Build remembers the user's planning depth / review gates for the next
-    // card. Research and Explore carry fixed internals that must never
-    // clobber those build defaults.
-    if (!isResearch && !isExplore) await bb.storage.kv.set("board-workflow-defaults", { appetite, reviewMode: reviewRung, reviewGates });
-    // An explicitly requested environment that fell back is page-worthy: a
-    // worker in the wrong checkout is a wrong-place work incident, not a
-    // cosmetic mismatch. Creation itself never fails over this.
-    const envNotice = !isExploratory ? environmentFallbackNotice(environment, selectedEnvironment) : null;
-    if (envNotice) {
-      bb.log.warn(`card ${cardId}: ${envNotice}`);
-      logCardComment(cardId, "card", cardId, "agent", envNotice);
-    }
-    bb.realtime.publish("card-state", { cardId });
-    // Title suggestion rides along, never blocking: creation already
-    // succeeded with the heuristic, the burst upgrades it when it lands.
-    void suggestCardName(cardId).catch(() => undefined);
-    return { cardId, threadId: thread?.id ?? null };
-  }
-
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; spawn_retry_count: number | null; spawn_retry_thread: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; environment_label: string | null; created_at: number; updated_at: number };
+  type CardRow = WorkerCard;
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
-  type InboxEventRow = { id: string; card_id: string; kind: "question" | "error" | "paused" | "completed"; summary: string; occurred_at: number; read_at: number | null; archived_at: number | null; resolved_at: number | null; resolved_reason: string | null; severity: number | null; severity_reasons: string | null };
   type PresetRow = {
     id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
     permission_mode: string; environment_kind: string; base_branch: string | null; machine_id: string | null;
     instructions: string; is_default: number; built_in: number; created_at: number; updated_at: number;
   };
+
+  const cardStore = createCardStore(bb, db);
+  const getCard = cardStore.getCard;
+  const cardWorkspace = cardStore.cardWorkspace;
+
+  const inbox = createInboxServer({
+    db,
+    now,
+    randomId,
+    publish: (event, payload) => bb.realtime.publish(event, payload),
+    listProjects: () => bb.sdk.projects.list(),
+  });
+  const recordInboxEvent = inbox.record;
+  const resolveInboxEvents = inbox.resolve;
+  const syncPendingQuestionInbox = (card: CardRow, interactionIds: string[], occurredAt = now()) =>
+    inbox.syncPendingQuestion(card.id, interactionIds, occurredAt);
+  const markInboxQuestionsAnswered = (cardId: string, interactionIds: string[]) =>
+    inbox.markAnswered(cardId, interactionIds);
 
   function getDefaultPreset(): PresetRow {
     const row = db.prepare("SELECT * FROM presets WHERE is_default = 1 ORDER BY created_at ASC LIMIT 1").get() as PresetRow | undefined;
@@ -2850,19 +2130,17 @@ ${prompt}` }, ...workerAttachments],
     };
   }
 
-  // Respawn a card's worker with a new preset at a band boundary. Kept on the
-  // same per-workflow state dir (dir_hash) so the new worker re-reads the
-  // already-advanced state.md and continues from the current stage — no context
-  // is re-created or reset. The old worker is archived/stopped by this helper.
-  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append"; roundNo?: number; roundStamp?: string; roundFile?: string; previousProjectId?: string | null }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
-    const row = getCard(cardId);
-    if (!row) return { ok: false, error: ERR_CARD_NOT_FOUND };
-    const preset = getPresetById(presetId);
-    if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
+  // Prepare the exact worker continuation; server/workers.ts owns the spawn,
+  // old-thread shutdown, ledger rotation, and lineage write.
+  async function prepareWorkerRespawn(
+    row: CardRow,
+    preset: PresetRow,
+    _reason: string,
+    opts?: RespawnOptions,
+  ): Promise<RespawnPreparation> {
     const params = presetAttachmentParams(preset);
     const workspace = await cardWorkspace(row);
     const projectPath = workspace?.path ?? "";
-    const source = workspace?.hostId ? { path: workspace.path, hostId: workspace.hostId } : null;
     // Resolve the real per-workflow state dir (stelow.json -> created date), so
     // the respawned worker is told the correct path — never a guessed date.
     let stateDir: string | null = null;
@@ -2870,7 +2148,7 @@ ${prompt}` }, ...workerAttachments],
       stateDir = await workflowStateDir(bb, projectPath, row.id, row.dir_hash).catch(() => null);
     }
     if (row.dir_hash && !stateDir) {
-      return { ok: false, error: "This card's workflow state cannot be verified. Reseed it before restarting its worker." };
+      return { error: "This card's workflow state cannot be verified. Reseed it before restarting its worker." };
     }
     const stateHint = stateDir ?? (row.dir_hash ? ".stelow/<date>/" + row.dir_hash : "<project>/.stelow/<date>/<dirHash>");
     // Research cards restart with the strategy prompt, never the build
@@ -2881,9 +2159,9 @@ ${prompt}` }, ...workerAttachments],
     const history = strategyList(row);
     const runStrategyId = row.kind === "research" ? (opts?.strategyId ?? history[history.length - 1] ?? row.research_strategy ?? "") : null;
     const researchStrategy = row.kind === "research" ? researchStrategyById(runStrategyId ?? "") : null;
-    if (row.kind === "research" && !researchStrategy) return { ok: false, error: "This research has no known strategy. Archive it and start a new one." };
+    if (row.kind === "research" && !researchStrategy) return { error: "This research has no known strategy. Archive it and start a new one." };
     const exploreStage = row.kind === "explore" ? techniqueById(row.explore_stage ?? "") : null;
-    if (row.kind === "explore" && !exploreStage) return { ok: false, error: "This explore card has no known technique. Archive it and start a new one." };
+    if (row.kind === "explore" && !exploreStage) return { error: "This explore card has no known technique. Archive it and start a new one." };
     // Restart reuses the round's own file (idempotent rewrite); a fresh
     // spawn passes its own. Fall back to a composed path only when history
     // carries none (shouldn't happen for spawned rounds).
@@ -2919,20 +2197,15 @@ ${prompt}` }, ...workerAttachments],
       flavor: "restart",
       previousThreadId: row.worker_thread_id,
     }) : null;
-    try {
-      const nextEnvironment = await continuingWorkerEnvironment(row, source ? workerEnvironment(source, params, row.workspace_kind === "exploratory") : { type: "project-default" });
-      // delegation-site: worker-spawn
-      const newThread = await bb.sdk.threads.spawn({
-        projectId: row.project_id,
-        environment: nextEnvironment,
-        visibility: "hidden",
-        title: `Stelow: ${row.display_name ?? row.name}`,
-        providerId: params.providerId,
-        model: params.modelId,
-        reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-        permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
-        executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
+    const prompt = researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. \
+The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — \
+its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; \
+its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} \
+The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — \
+start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks \
+(stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` \
+if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} \
+Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
 
 ${TURN_DISCIPLINE}
 
@@ -2957,48 +2230,55 @@ ${DONE_PROTOCOL}
 
 ${SPLIT_PROTOCOL}
 
-${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`,
-      });
-      // The new worker is live — only now retire the old one (archive+stop), so a
-      // spawn failure never leaves the card with no worker. If the old worker is
-      // the one that just called advance, it has already returned its CLI output.
-      if (row.worker_thread_id) {
-        try { await bb.sdk.threads.archive({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
-        try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
-      }
-      const ts = now();
-      updateCard(cardId, { worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, activity: "running", last_error: null, updated_at: ts });
-      recordWorkerThread(db, cardId, newThread.id, preset.id, endedReason);
-      if (row.dir_hash) void recordWorkflowLineage(projectPath, row.dir_hash, newThread.id, preset.id, endedReason);
-      // Official inline mention of the archived predecessor (not just copied
-      // text): renders as a chip the user can open, and the worker can expand
-      // it natively for context state.md doesn't carry. Best-effort — the
-      // prompt text already references the thread id.
-      if (row.worker_thread_id) {
-        try {
-          const tag = "@previous-worker";
-          const mentionText = `Continuity link — ${tag} is the archived worker this thread replaces. Consult it if state.md is thin.`;
-          const start = mentionText.indexOf(tag);
-          await bb.sdk.threads.send({ threadId: newThread.id, mode: "auto", input: [{ type: "text", text: mentionText, mentions: [{ start, end: start + tag.length, resource: { kind: "thread", label: `Stelow: ${row.display_name ?? row.name} (previous)`, threadId: row.worker_thread_id, projectId: opts?.previousProjectId ?? row.project_id } }] }] });
-        } catch { /* mention nicety; prompt reference suffices */ }
-      }
-      return { ok: true, threadId: newThread.id };
-    } catch (error) {
-      // Spawn failed — surface it instead of leaving a silent zombie card.
-      const msg = error instanceof Error ? error.message : "Respawn failed.";
-      updateCard(cardId, { activity: "error", last_error: msg });
-      return { ok: false, error: msg };
-    }
+${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`;
+    return { prompt, projectPath, workspace };
   }
 
-  async function cardWorkspace(card: CardRow): Promise<{ path: string; hostId: string | null } | null> {
-    if (card.workspace_kind === "exploratory") {
-      return card.workspace_path ? { path: card.workspace_path, hostId: card.workspace_host_id } : null;
-    }
-    const project = await bb.sdk.projects.get({ projectId: card.project_id }).catch(() => null);
-    const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-    return source?.path ? { path: source.path, hostId: source.hostId } : null;
-  }
+  const workers = createWorkers({
+    db,
+    bb,
+    now,
+    getCard,
+    updateCard,
+    comment: (cardId, body) => { logCardComment(cardId, "card", cardId, "agent", body); },
+    getPreset: (presetId) => getPresetById(presetId),
+    getReliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
+    presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
+    prepareRespawn: (card, preset, reason, options) =>
+      prepareWorkerRespawn(card, preset as PresetRow, reason, options),
+    resetAutoContinue,
+    errors: {
+      cardNotFound: "Card not found.",
+      cardArchived: "This card is archived.",
+      presetNotFound: "Preset not found.",
+    },
+  });
+  const drafting = createDraftingServer({
+    db,
+    bb,
+    now,
+    timestamp: roundTimestamp,
+    getCard,
+    getCardByWorkerThread,
+    isArchivedCard,
+    cardWorkspace,
+    continuingEnvironment: workers.continuingEnvironment,
+    getPreset: (presetId) => getPresetById(presetId),
+    getPresetForBand,
+    getGenerationPresetId: () => {
+      const row = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
+      return row?.preset_id ?? null;
+    },
+    presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
+    spawnDisposable,
+    stopThread: (threadId) => workers.stop(threadId),
+    comment: (cardId, body) => { logCardComment(cardId, "card", cardId, "agent", body); },
+    publish: (event, payload) => bb.realtime.publish(event, payload),
+    stateDir: (card, workspace) => workflowStateDir(bb, workspace.path, card.id, card.dir_hash!),
+    workspaceRelative,
+  });
+
+
 
   type RecoveryGitEvidence = { isGit: boolean; gitRoot: string | null; branch: string | null; headSha: string | null; changedFiles: number };
   type QuestionStalenessVerdict = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
@@ -3059,6 +2339,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       execFile("git", args, { cwd, timeout: 15_000, maxBuffer }, (error, stdout) => done({ ok: !error, stdout: typeof stdout === "string" ? stdout : "" }));
     });
   }
+  async function dropLinkedWorktree(checkoutPath: string, branch: string): Promise<void> {
+    const common = await runGitIn(checkoutPath, ["rev-parse", "--git-common-dir"]);
+    const mainDir = common.ok && common.stdout.trim() ? common.stdout.trim() : "";
+    const mainAbs = mainDir ? (isAbsolute(mainDir) ? mainDir : nodeJoin(checkoutPath, mainDir)) : "";
+    if (!mainAbs) throw new Error("Cannot locate the main checkout.");
+    await runGitIn(mainAbs, ["worktree", "unlock", checkoutPath]);
+    const removed = await runGitIn(mainAbs, ["worktree", "remove", "--force", checkoutPath]);
+    if (!removed.ok) throw new Error("Could not remove the worktree.");
+    const pruned = await runGitIn(mainAbs, ["branch", "-D", branch]);
+    if (!pruned.ok) throw new Error("Worktree removed, but the branch survived — delete it by hand.");
+    if (existsSync(checkoutPath)) throw new Error("The worktree folder survived removal.");
+  }
+
   // Discard evidence: everything discardEligibility (lib/discard-policy)
   // needs, gathered fresh per call. Exploratory folders are exact paths;
   // project checkouts resolve through the card's workspace like the worker's.
@@ -3069,23 +2362,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     linkedWorktree: boolean; sharedWith: number;
   };
   const EXPLORATORY_SCOPE = nodeJoin(process.env.HOME ?? "/tmp", ".bb", "stelow", "exploratory");
-  // Shared worktree removal (discard + post-merge cleanup): unlock, remove
-  // with force, delete the branch, verify the folder is gone. Same commands
-  // and order wherever a linked worktree is dropped — one function, never
-  // two copies drifting apart.
-  async function dropLinkedWorktree(checkoutPath: string, branch: string): Promise<void> {
-    const common = await runGitIn(checkoutPath, ["rev-parse", "--git-common-dir"]);
-    const mainDir = common.ok && common.stdout.trim() ? common.stdout.trim() : "";
-    const mainAbs = mainDir ? (isAbsolute(mainDir) ? mainDir : nodeJoin(checkoutPath, mainDir)) : "";
-    if (!mainAbs) throw new Error("Cannot locate the main checkout.");
-    // Best-effort: a locked worktree refuses removal until unlocked.
-    await runGitIn(mainAbs, ["worktree", "unlock", checkoutPath]);
-    const removed = await runGitIn(mainAbs, ["worktree", "remove", "--force", checkoutPath]);
-    if (!removed.ok) throw new Error("Could not remove the worktree.");
-    const pruned = await runGitIn(mainAbs, ["branch", "-D", branch]);
-    if (!pruned.ok) throw new Error("Worktree removed, but the branch survived — delete it by hand.");
-    if (existsSync(checkoutPath)) throw new Error("The worktree folder survived removal.");
-  }
   async function discardEvidence(card: CardRow): Promise<DiscardEvidence> {
     const blank: DiscardEvidence = { status: card.status, workspaceKind: card.workspace_kind, checkoutPath: null, dirExists: false, isGit: false, branch: null, hasUpstream: false, upstreamRef: null, changed: [], untracked: [], unpushedCommits: 0, stashCount: 0, resetTarget: null, linkedWorktree: false, sharedWith: 0 };
     if (card.workspace_kind === "exploratory") {
@@ -3230,56 +2506,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     });
   }
 
-  // Stelow seeds every workspace with `skills/`, `data/`, `.stelow/`, and
-  // `stelow.json`. Treating that scaffolding as source made every exploratory
-  // card look promotable, which hid the worker-reported-checkout path. The
-  // rule (and its test) lives in lib/workspace-recovery.
-  function exploratoryHasSource(path: string | null): boolean {
-    if (!path) return false;
-    try {
-      return hasWorkspaceSource(readdirSync(path, { withFileTypes: true }).map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() })));
-    } catch { return false; }
-  }
-
-  type RecoveryCandidate = { projectId: string; projectName: string; path: string; branch: string | null; headSha: string | null; changedFiles: number; evidence: string; gitRoot: string | null };
-  async function recoverySnapshot(card: CardRow) {
-    const attached = db.prepare("SELECT project_id, project_name, source_path, attached_at FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { project_id: string; project_name: string; source_path: string; attached_at: number } | undefined;
-    const audit = db.prepare("SELECT ra.audit_card_id, ra.created_at, COALESCE(c.display_name, c.name) AS card_name FROM recovery_audits ra JOIN cards c ON c.id = ra.audit_card_id WHERE ra.source_card_id = ?").get(card.id) as { audit_card_id: string; created_at: number; card_name: string } | undefined;
-    const workspacePath = card.workspace_path;
-    const workspace = workspacePath ? await recoveryGitEvidence(workspacePath) : { isGit: false, gitRoot: null, branch: null, headSha: null, changedFiles: 0 };
-    // `last_assistant_text` may be blank on older cards after an idle sync.
-    // The thread output is the durable fallback, read only for this explicit
-    // recovery check (never searched across unrelated threads).
-    const threadOutput = card.worker_thread_id
-      ? await bb.sdk.threads.output({ threadId: card.worker_thread_id }).then((result) => result.output ?? "").catch(() => "")
-      : "";
-    const paths = reportedCheckoutPaths(card.last_assistant_text ?? "", threadOutput);
-    const looseEvidence = reportedRecoveryEvidence(card.last_assistant_text ?? "", threadOutput)
-      .filter((entry) => existsSync(entry.path) && !paths.includes(entry.path));
-    const projects = await bb.sdk.projects.list().catch(() => []);
-    const candidates: RecoveryCandidate[] = [];
-    for (const project of projects) for (const source of project.sources ?? []) {
-      if (!source.path || !paths.includes(source.path)) continue;
-      if (card.workspace_host_id && source.hostId && source.hostId !== card.workspace_host_id) continue;
-      const evidence = await recoveryGitEvidence(source.path);
-      if (!evidence.isGit || evidence.changedFiles === 0) continue;
-      candidates.push({ projectId: project.id, projectName: project.name, path: source.path, branch: evidence.branch, headSha: evidence.headSha, changedFiles: evidence.changedFiles, evidence: "Worker explicitly reported this registered checkout.", gitRoot: evidence.gitRoot });
-    }
-    const hasSource = exploratoryHasSource(workspacePath);
-    const kind = recoveryDisposition({ workspaceIsGit: workspace.isGit, hasWorkspaceSource: hasSource, candidates, attached: Boolean(attached) });
-    return { kind, message: recoveryMessage(kind), workspace: { path: workspacePath, isGit: workspace.isGit, hasSource }, candidates, looseEvidence, recovery: attached ? { projectId: attached.project_id, projectName: attached.project_name, path: attached.source_path, attachedAt: attached.attached_at } : null, audit: audit ? { cardId: audit.audit_card_id, cardName: audit.card_name, createdAt: audit.created_at } : null };
-  }
-
-  async function recoveredCheckoutIntegrity(card: CardRow, path: string): Promise<string | null> {
-    if (card.workspace_kind !== "exploratory") return null;
-    const recorded = db.prepare("SELECT git_root FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { git_root: string | null } | undefined;
-    if (!recorded?.git_root) return null;
-    const live = await recoveryGitEvidence(path);
-    return !live.isGit || live.gitRoot !== recorded.git_root
-      ? "The attached recovery checkout no longer resolves to the Git root you reviewed. Re-check recovery evidence before viewing or acting on this diff."
-      : null;
-  }
-
   // --- Preview: one dev server per checkout. --------------------------------
   //
   // The lifecycle — which checkout owns a server, when it is ready, what to
@@ -3337,26 +2563,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   type PreviewEnvironment = { id?: string | null; path?: string | null; hostId?: string | null; isWorktree?: boolean; workspaceProvisionType?: string | null; branchName?: string | null } | null;
 
-  /** The environment backing the card's worker thread, while it still exists. */
-  async function workerEnvironmentOf(card: CardRow): Promise<PreviewEnvironment> {
-    if (!card.worker_thread_id) return null;
-    try {
-      const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id });
-      const environmentId = (thread as { environmentId?: unknown }).environmentId;
-      if (typeof environmentId !== "string" || !environmentId) return null;
-      const environment = await bb.sdk.environments.get({ environmentId });
-      return environment?.status === "ready" && environment.path ? environment : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Later stage workers stay in the checkout the card originally used. */
-  async function continuingWorkerEnvironment(card: CardRow, fallback: ThreadEnvironment): Promise<ThreadEnvironment> {
-    const environment = await workerEnvironmentOf(card);
-    return environment?.id ? { type: "reuse", environmentId: environment.id } : fallback;
-  }
-
   type CardCheckout = { path: string; hostId: string | null; environmentId: string | null; environment: PreviewEnvironment; source: string };
 
   /**
@@ -3372,7 +2578,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const recovery = db.prepare("SELECT source_path FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { source_path: string } | undefined;
       if (recovery?.source_path) return { path: recovery.source_path, hostId: card.workspace_host_id, environmentId: null, environment: null, source: "Recovered project checkout" };
     }
-    const environment = await workerEnvironmentOf(card);
+    const environment = await workers.workerEnvironmentOf(card);
     if (environment?.path) {
       return {
         path: environment.path,
@@ -3499,143 +2705,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       : null;
   }
 
-  type PublicationSnapshot = z.infer<typeof publicationSnapshotSchema>;
-  type PublicationAction = "commit" | "squash_merge" | "push_terminal" | "pull_request_ready" | "pull_request_draft" | "pull_request_merge";
-
-  function unavailablePublication(message: string, events: PublicationSnapshot["events"] = []): PublicationSnapshot {
-    const blocked = { available: false, reason: message };
-    return {
-      available: false, message, source: null, environmentId: null, isWorktree: false,
-      branch: null, workingTree: null, mergeBase: null, pullRequest: null, pullRequestMessage: null,
-      capabilities: { commit: blocked, squashMerge: blocked, markReady: blocked, markDraft: blocked, mergePullRequest: blocked }, events,
-    };
-  }
-
-  function publicationEvents(cardId: string): PublicationSnapshot["events"] {
-    return (db.prepare("SELECT id, action, message, commit_sha, pull_request_url, created_at FROM publication_events WHERE card_id = ? ORDER BY created_at DESC LIMIT 12").all(cardId) as Array<{ id: string; action: string; message: string; commit_sha: string | null; pull_request_url: string | null; created_at: number }>).map((event) => ({
-      id: event.id, action: event.action, message: event.message, commitSha: event.commit_sha, pullRequestUrl: event.pull_request_url, createdAt: event.created_at,
-    }));
-  }
-
-  function recordPublication(cardId: string, action: PublicationAction, message: string, commitSha: string | null = null, pullRequestUrl: string | null = null): void {
-    db.prepare("INSERT INTO publication_events (id, card_id, action, message, commit_sha, pull_request_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(randomId("pub"), cardId, action, message, commitSha, pullRequestUrl, now());
-  }
-
-  async function publicationSnapshot(card: CardRow): Promise<PublicationSnapshot> {
-    const events = publicationEvents(card.id);
-    if (normalizeStatus(card.status) !== "completed") return unavailablePublication("Only completed cards can publish changes.", events);
-    const checkout = await cardCheckout(card).catch(() => null);
-    if (!checkout?.environmentId || !checkout.environment) return unavailablePublication("Publishing is available only while this card has a live BB workspace environment.", events);
-    const [status, pullRequest] = await Promise.all([
-      bb.sdk.environments.status({ environmentId: checkout.environmentId }).catch(() => null),
-      bb.sdk.environments.pullRequest({ environmentId: checkout.environmentId }).catch(() => ({ outcome: "unavailable", message: "BB could not read pull-request status." })),
-    ]);
-    if (!status || status.outcome !== "available") return unavailablePublication(status?.outcome === "not_applicable" ? status.message : status?.failure?.message ?? "BB could not inspect this workspace.", events);
-    const blocker = publicationBlocker(status);
-    const commit = canCommitPublication(status);
-    const squashMerge = canSquashMerge(status);
-    const pr = pullRequest.outcome === "available" && "pullRequest" in pullRequest ? pullRequest.pullRequest : null;
-    const capability = ({ ok, reason }: { ok: boolean; reason: string | null }) => ({ available: ok, reason });
-    const markReady = capability(canMarkPullRequestReady(status, pullRequest));
-    const markDraft = capability(canMarkPullRequestDraft(status, pullRequest));
-    const merge = capability(canMergePullRequest(status, pullRequest));
-    return {
-      available: blocker === null,
-      message: blocker,
-      source: checkout.source,
-      environmentId: checkout.environmentId,
-      isWorktree: Boolean(checkout.environment.isWorktree),
-      branch: { current: status.workspace.branch.currentBranch, default: status.workspace.branch.defaultBranch, headSha: status.workspace.checkout.kind === "branch" || status.workspace.checkout.kind === "detached" ? status.workspace.checkout.headSha : null },
-      workingTree: { state: status.workspace.workingTree.state, hasUncommittedChanges: status.workspace.workingTree.hasUncommittedChanges, files: status.workspace.workingTree.files.length },
-      mergeBase: status.workspace.mergeBase ? { branch: status.workspace.mergeBase.mergeBaseBranch, ahead: status.workspace.mergeBase.aheadCount, behind: status.workspace.mergeBase.behindCount, hasCommittedUnmergedChanges: status.workspace.mergeBase.hasCommittedUnmergedChanges } : null,
-      pullRequest: pr ? { number: pr.number, title: pr.title, url: pr.url, state: pr.state, attention: pr.attention, review: pr.review.state, checks: pr.checks.state, mergeability: pr.mergeability.state } : null,
-      pullRequestMessage: pullRequest.outcome === "unavailable" && "message" in pullRequest ? pullRequest.message : null,
-      capabilities: {
-        commit: capability(commit),
-        squashMerge: capability(squashMerge),
-        markReady,
-        markDraft,
-        mergePullRequest: merge,
-      },
-      events,
-    };
-  }
-
-  async function publicationEnvironment(cardId: string): Promise<{ card: CardRow; environmentId: string; snapshot: PublicationSnapshot } | { error: string }> {
-    const card = getCard(cardId);
-    if (!card) return { error: ERR_CARD_NOT_FOUND };
-    const snapshot = await publicationSnapshot(card);
-    if (!snapshot.environmentId) return { error: snapshot.message ?? "Publishing is unavailable." };
-    return { card, environmentId: snapshot.environmentId, snapshot };
-  }
-
-  type PushShellSession = { id: string; title: string; status: string; exitCode: number | null; createdAt: number };
-
-  async function pushShellSessions(environmentId: string): Promise<PushShellSession[]> {
-    const listed = await bb.sdk.terminals.list({ scope: { kind: "environment", environmentId } }).catch(() => null);
-    const sessions = (listed as { sessions?: PushShellSession[] } | null)?.sessions ?? [];
-    return sessions
-      .filter((session) => session.title.startsWith("Stelow push"))
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, 5);
-  }
-
-  async function livePushShell(environmentId: string): Promise<PushShellSession | null> {
-    const previous = await pushShellSessions(environmentId);
-    for (const session of previous) {
-      const read = await readPushShell(session);
-      if (!read.unavailable && read.pushState === "running") return session;
-    }
-    return null;
-  }
-
-  async function retirePushShells(environmentId: string): Promise<void> {
-    const previous = await pushShellSessions(environmentId);
-    for (const session of previous) {
-      await bb.sdk.terminals.close({ terminalId: session.id, mode: "if-clean" }).catch(() => null);
-    }
-    for (const session of previous) {
-      const read = await readPushShell(session);
-      // Force only shells that finished (marker), never ran (waiting),
-      // or already ended — never a live run (blocked before this point).
-      if (read.unavailable || read.pushState !== "running") {
-        await bb.sdk.terminals.close({ terminalId: session.id, mode: "force" }).catch(() => null);
-      }
-    }
-  }
-
-  async function readPushShell(session: PushShellSession): Promise<{ text: string | null; unavailable: boolean; pushState: "waiting" | "running" | "succeeded" | "failed"; pushExit: number | null }> {
-    try {
-      const out = await bb.sdk.terminals.output({ terminalId: session.id, tailBytes: 8000 });
-        const text = (out.chunks ?? [])
-          .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
-          .join("")
-          // Collapse carriage-return progress the way a real terminal renders
-          // it: git rewrites one line via \r, so only the final segment is
-          // visible. Drops hundreds of intermediate percentages, keeps errors.
-          // eslint-disable-next-line no-control-regex
-          .replace(/[^\n]*\r(?!\n)/g, "")
-          // Strip ANSI escapes so the panel shows readable output.
-          // eslint-disable-next-line no-control-regex
-          .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
-          // eslint-disable-next-line no-control-regex
-          .replace(/\u001b\][^\u0007]*\u0007/g, "")
-          .slice(-4000);
-      // The exit marker names the outcome. Legacy shells (typed but
-      // never submitted) carry no marker and end with the bare command.
-      const marker = text.match(/STELOW_PUSH_EXIT:(\d+)/);
-      const parsed = marker ? Number.parseInt(marker[1] ?? "", 10) : null;
-      const pushExit = parsed !== null && Number.isNaN(parsed) ? null : parsed;
-      const pushState = marker
-        ? (pushExit === 0 ? "succeeded" as const : "failed" as const)
-        : /git push\s*$/.test(text) ? "waiting" as const : "running" as const;
-      return { text: text || null, unavailable: false, pushState, pushExit };
-    } catch {
-      // output() 409s once the shell exits: an ended shell is never
-      // "running" — the panel renders it as Ended via outputUnavailable.
-      return { text: null, unavailable: true, pushState: "failed" as const, pushExit: null };
-    }
-  }
 
   /**
    * The target for a card, or the one message that explains why there is none.
@@ -3987,144 +3056,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ready: true, fingerprint: researchReadyFingerprint(index.content), evidence, invalid: [] };
   }
 
-  // Failure cause for a dead worker with no output. thread.failed only
-  // carries system/error text, so a provider-side death (e.g. a 400 on the
-  // very first inference call) arrives with error=null and the card would sit
-  // at Failed with a blank last_error. The latest provider/error detail names
-  // the cause. Best-effort: never throws, never blocks the state write.
-  async function workerFailureCause(threadId: string): Promise<string | null> {
-    try {
-      const events = await bb.sdk.threads.events.list({ threadId, types: ["provider/error"], order: "desc", limit: "5" });
-      return failureCauseFromEvents(events ?? []);
-    } catch { return null; }
-  }
-
-  // Total + split from one latest event: two readers of the same event
-  // would double the thread-event calls on every detail load.
-  async function workerTokenReport(threadId: string): Promise<{ total: number | null; breakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null }> {
-    try {
-      const events = await bb.sdk.threads.events.list({ threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
-      return { total: tokenUsageFromEvents(events), breakdown: tokenBreakdownFromEvents(events) };
-    } catch { return { total: null, breakdown: null }; }
-  }
-
-  async function workerChildThreads(threadId: string): Promise<Array<{ threadId: string; title: string | null; status: string; providerId: string | null; tokenUsage: number | null; tokenBreakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null }>> {
-    try {
-      const list = await bb.sdk.threads.list({ parentThreadId: threadId, limit: 10 });
-      const children = shapeChildThreads(list);
-      if (children.length === 0) return [];
-      // Per-child cost: token events live on each child thread. One latest
-      // event per child, in parallel, fail-open — an unreadable child keeps
-      // a null total (unknown, never zero). Runs only when children exist,
-      // so the common childless detail load pays nothing extra.
-      const usages = await Promise.all(children.map(async (child) => {
-        try {
-          const events = await bb.sdk.threads.events.list({ threadId: child.threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
-          return [child.threadId, tokenUsageFromEvents(events), tokenBreakdownFromEvents(events)] as const;
-        } catch { return [child.threadId, null, null] as const; }
-      }));
-      const withTotals = attachChildTokenUsage(children, Object.fromEntries(usages.map(([id, total]) => [id, total])));
-      return attachChildTokenBreakdown(withTotals, Object.fromEntries(usages.map(([id, , breakdown]) => [id, breakdown])));
-    } catch { return []; }
-  }
-
-  // Automatic spawn retries (lib/spawn-retry). One retry in flight per
-  // card: a retry spawns a whole worker, so duplicates would double burn
-  // and race on state.md. The map holds cardId -> failed threadId.
-  const pendingSpawnRetries = new Map<string, string>();
-  const spawnRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-  // Whether a dead worker earns an automatic respawn: start-phase only
-  // (never produced output) with a transient infrastructure cause, budget
-  // remaining for this thread, and no retry already in flight.
-  function canAutoRetrySpawn(card: CardRow, cause: string): boolean {
-    if (card.last_assistant_text != null) return false;
-    if (!isRetryableSpawnError(cause)) return false;
-    if (pendingSpawnRetries.get(card.id) === card.worker_thread_id) return false;
-    const used = card.spawn_retry_thread === card.worker_thread_id ? (card.spawn_retry_count ?? 0) : 0;
-    return used < MAX_SPAWN_RETRIES;
-  }
-
-  function scheduleSpawnRetry(cardId: string, threadId: string): boolean {
-    if (pendingSpawnRetries.get(cardId) === threadId) return true;
-    let attempt = 0;
-    try {
-      attempt = claimSpawnRetry(db, cardId, threadId, MAX_SPAWN_RETRIES);
-    } catch {
-      return false;
-    }
-    // Lost the race (or budget exhausted between check and claim): leave
-    // the card to the normal error path instead of spawning uncounted.
-    if (attempt < 1) return false;
-    pendingSpawnRetries.set(cardId, threadId);
-    const card = getCard(cardId);
-    const short = truncateCause(card?.last_error) ?? "unknown error";
-    updateCard(cardId, { activity: "running", last_error: `Worker failed to start (${short}) — automatic retry ${attempt}/${MAX_SPAWN_RETRIES}.` });
-    const timer = setTimeout(() => {
-      spawnRetryTimers.delete(cardId);
-      void runSpawnRetryAttempt(cardId, threadId, attempt);
-    }, spawnRetryDelayMs(attempt));
-    spawnRetryTimers.set(cardId, timer);
-    return true;
-  }
-
-  async function runSpawnRetryAttempt(cardId: string, threadId: string, attempt: number): Promise<void> {
-    try {
-      // Idempotency re-validation: abort unless the same dead worker still
-      // owns a non-terminal card that never started working.
-      const card = getCard(cardId);
-      if (!card || card.status === "archived" || card.status === "completed" || card.status === "blocked") return;
-      if (card.worker_thread_id !== threadId) return;
-      if (card.last_assistant_text != null) return;
-      const result = await spawnFreshWorker(cardId, "restart");
-      if (result.ok) {
-        // spawnFreshWorker clears the retry budget on success.
-        logCardComment(cardId, "card", cardId, "agent", `Worker start recovered automatically (attempt ${attempt}/${MAX_SPAWN_RETRIES}).`);
-        bb.realtime.publish("card-state", { cardId });
-        return;
-      }
-      if (attempt < MAX_SPAWN_RETRIES && result.error && isRetryableSpawnError(result.error)) {
-        pendingSpawnRetries.delete(cardId);
-        scheduleSpawnRetry(cardId, threadId);
-        return;
-      }
-      // Exhausted or non-transient: honest error — the updateCard transition
-      // to error emits the single inbox event.
-      updateCard(cardId, { activity: "error", last_error: `${result.error ?? "Worker failed to start."} (automatic spawn retries exhausted)` });
-    } finally {
-      if (pendingSpawnRetries.get(cardId) === threadId) pendingSpawnRetries.delete(cardId);
-    }
-  }
-
-  // Single writer for "the worker thread died". Keeps a recorded cause (event
-  // error or a previous last_error); otherwise resolves the provider detail
-  // once and stores it, so the Failed pill, the detail hero, and the inbox
-  // event all name the cause instead of going blank.
-  async function applyWorkerFailed(cardId: string, threadId: string, eventError: string | null) {
-    // A dead thread after Done is history, not a failure: never stain a
-    // terminal card with an error.
-    const current = getCard(cardId);
-    if (current && (current.status === "completed" || current.status === "archived" || current.status === "blocked")) return;
-    // A retry already in flight for this exact failure: leave its state
-    // alone (the next poll would otherwise schedule a duplicate).
-    if (current && pendingSpawnRetries.get(cardId) === threadId) return;
-    const recorded = current?.last_error;
-    const specific = typeof eventError === "string" && eventError.trim() ? eventError.trim()
-      : typeof recorded === "string" && recorded.trim() ? recorded.trim()
-      : await workerFailureCause(threadId);
-    // Re-read after the await: a retry may have been scheduled (or the card
-    // archived) while the cause resolved — never overwrite that verdict.
-    const fresh = getCard(cardId);
-    if (!fresh || fresh.status === "completed" || fresh.status === "archived" || fresh.status === "blocked") return;
-    if (pendingSpawnRetries.get(cardId) === threadId) return;
-    // Transient start-phase failure: respawn automatically (bounded) instead
-    // of paging the human. The inbox stays quiet until retries exhaust. A
-    // declined schedule falls through to the honest error below.
-    if (specific && canAutoRetrySpawn(fresh, specific) && scheduleSpawnRetry(cardId, threadId)) return;
-    if (specific) updateCard(cardId, { activity: "error", last_error: specific });
-    else updateCard(cardId, { activity: "error" });
-  }
-
   // Shared lightweight-track poll pieces (Research + Explore syncs both use
   // them — convention over configuration, one definition of each rule):
   // waiting is activity (never board position), and every agent output lands
@@ -4217,7 +3148,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
         noteAgentOutput(card, lastOutput);
       } else if (status === "failed" || status === "error") {
-        await applyWorkerFailed(card.id, card.worker_thread_id!, null);
+        await workers.applyFailed(card.id, card.worker_thread_id!, null);
       }
     } catch (error) {
       updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -4283,7 +3214,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
         noteAgentOutput(card, lastOutput);
       } else if (status === "failed" || status === "error") {
-        await applyWorkerFailed(card.id, card.worker_thread_id!, null);
+        await workers.applyFailed(card.id, card.worker_thread_id!, null);
       }
     } catch (error) {
       updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -4309,20 +3240,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ready: true, fingerprint: shortFingerprint(content as string), failures: [] };
   }
 
-  // Mirror the card_threads ledger into the workflow's own stelow.json
-  // (upstream "Worker Lineage" contract): survives plugin database loss and
-  // is readable by any host and by the worker itself. Best-effort — a failed
-  // lineage write must never break a spawn, reseed, or restart.
-  async function recordWorkflowLineage(rootPath: string, dirHash: string, threadId: string, presetId: string | null, endedReason: string): Promise<void> {
-    try {
-      const trackingPath = join(rootPath, "stelow.json");
-      await writeMergedFile(bb.sdk.files, trackingPath, rootPath, (existing) => mergeLineageFile(existing, dirHash, { threadId, presetId, endedReason }));
-    } catch { /* audit-only */ }
-  }
-
-  function getCard(cardId: string): CardRow | undefined {
-    return db.prepare("SELECT * FROM cards WHERE id = ?").get(cardId) as CardRow | undefined;
-  }
 
   // Shared refusal copy: identical wording everywhere so the same failure
   // reads the same on every surface, fixed in one place.
@@ -4338,6 +3255,86 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     db.prepare("INSERT INTO comments (id, card_id, target, target_id, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(commentId, cardId, target, targetId, author, body, now());
     return commentId;
   }
+
+  const cards = createCardsServer({
+    db,
+    bb,
+    now,
+    store: cardStore,
+    errors: { cardNotFound: "Card not found.", workspaceUnavailable: "Workspace is unavailable." },
+    idleAttentionMs: 90_000,
+    loadBoard: (projectId) => loadBoard(bb, projectId),
+    githubStatus: () => github.githubStatus(),
+    githubAutomationEnabled: githubIssuesEnabled,
+    strategyList,
+    getReliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
+    fetchPendingQuestions,
+    openExpiredQuestionIds,
+    create: {
+      db,
+      bb,
+      now,
+      randomId,
+      roundTimestamp,
+      seedBuildIntent: seedBuildIntentFromRouter,
+      seedWorkflow: (plugin, rootPath, cardId, slug, intent, appetite, reviewGates) =>
+        seedWorkflow(plugin, rootPath, cardId, slug, intent, appetite, reviewGates),
+      researchStrategy: researchStrategyById,
+      exploreStage: techniqueById,
+      researchIds: () => RESEARCH_STRATEGIES.map((entry) => entry.id),
+      exploreIds: () => TECHNIQUE_CATALOG.map((entry) => entry.id),
+      defaultPreset: getDefaultPreset,
+      getPreset: getPresetById,
+      presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
+      spawnInitial: (args) => workers.spawnInitial(args),
+      recordThread: (cardId, threadId, presetId, reason) => workers.recordThread(cardId, threadId, presetId, reason),
+      lineage: (rootPath, dirHash, threadId, presetId, reason) => workers.lineage(rootPath, dirHash, threadId, presetId, reason),
+      roundPath: roundRelPath,
+      roundFile: roundFileName,
+      ensureParent: ensureArtifactParent,
+      researchPrompt: (input) => researchWorkerPrompt(input as Parameters<typeof researchWorkerPrompt>[0]),
+      explorePrompt: (input) => exploreWorkerPrompt(input as Parameters<typeof exploreWorkerPrompt>[0]),
+      rules: {
+        cardOwnerRules: CARD_OWNER_RULES,
+        neverSeed: NEVER_SEED,
+        cliEquivalents: CLI_EQUIVALENTS,
+        reconProtocol: RECON_PROTOCOL,
+        draftProtocol: DRAFT_PROTOCOL,
+        turnDiscipline: TURN_DISCIPLINE,
+        commitStyle: COMMIT_STYLE,
+        interfacePick: INTERFACE_PICK,
+        doneProtocol: DONE_PROTOCOL,
+        splitProtocol: SPLIT_PROTOCOL,
+      },
+      describeManagedWorktree: isManagedWorktreeEnvironment,
+      recordStageEvent,
+      comment: (cardId, body) => { logCardComment(cardId, "card", cardId, "agent", body); },
+      suggestCardName: (cardId) => drafting.suggestCardName(cardId),
+    },
+  });
+  const createCardInternal = cards.createInternal;
+
+  const workspacesRecovery = createWorkspacesRecovery({
+    db,
+    now,
+    publish: (event, payload) => bb.realtime.publish(event, payload),
+    cardNotFound: ERR_CARD_NOT_FOUND,
+    cardArchived: ERR_CARD_ARCHIVED,
+    cards: {
+      get: (cardId) => getCard(cardId),
+      create: (args) => createCardInternal(args),
+      comment: (cardId, target, targetId, author, body) => logCardComment(cardId, target, targetId, author, body),
+    },
+    gitEvidence: recoveryGitEvidence,
+    listProjects: () => bb.sdk.projects.list(),
+    getProject: (projectId) => bb.sdk.projects.get({ projectId }),
+    getThreadOutput: async (threadId) => {
+      const result = await bb.sdk.threads.output({ threadId });
+      return result.output ?? "";
+    },
+  });
+  const recoverySnapshot = workspacesRecovery.snapshot;
+  const recoveryIntegrityDeps = { db, gitEvidence: recoveryGitEvidence };
 
   // ::name{...} directives are bb's thread renderer syntax (the worker emits
   // ::stelow-artifact chips per produced file). Card comments are rendered as
@@ -4414,12 +3411,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     bb.realtime.publish("card-state", { cardId });
   }
 
-  function recordInboxEvent(card: CardRow, kind: InboxEventRow["kind"], summary: string, dedupeKey: string, occurredAt: number): void {
-    if (insertInboxEvent(db, { id: randomId("evt"), cardId: card.id, kind, summary, dedupeKey, occurredAt })) {
-      bb.realtime.publish("inbox-changed", { cardId: card.id });
-    }
-  }
-
   // Workspace claim coordination (lib/card-claims). A card that hits a file
   // held by another live card parks that scope, not the thread: the worker
   // gets a BB-LOCK-BLOCKED stderr, the user gets a paused inbox event naming
@@ -4489,70 +3480,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { /* advisory only */ }
   }
 
-  // Worker shutdown shared by every path that parks a card: the Archive
-  // One fresh-worker spawn for every start path (manual Start, drag to
-  // Doing, preset restart): same state dir, same trail, same budget reset.
-  // respawnWorkerForBand is null-thread safe, so first starts and restarts
-  // share this body instead of pasting it twice.
-  async function spawnFreshWorker(cardId: string, reason: "start" | "restart"): Promise<{ ok: boolean; error: string | null }> {
-    const card = getCard(cardId);
-    if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-    if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
-    if (reason === "start" && card.worker_thread_id) return { ok: false, error: "This card already has a worker thread." };
-    const effective = getReliablePresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
-    const previousThreadId = card.worker_thread_id;
-    const result = await respawnWorkerForBand(cardId, effective.id, reason);
-    if (!result.ok) return { ok: false, error: result.error ?? null };
-    // Trail: which preset took over and where the previous worker's
-    // history lives, so the switch is auditable from the card.
-    const presetName = getPresetById(effective.id)?.name ?? effective.id;
-    const continueText = card.kind === "research" ? "continuing the research" : card.kind === "explore" ? "continuing the explore run" : `continuing from the ${card.stage} stage`;
-    logCardComment(cardId, "card", cardId, "agent", reason === "start"
-      ? `Worker started on preset "${presetName}", ${continueText}.`
-      : previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`);
-    // A fresh worker earns a fresh auto-continue budget: the previous
-    // worker's stalls say nothing about this one.
-    const reset = resetAutoContinue();
-    updateCard(cardId, { auto_continue_count: reset.count, auto_continue_stage: reset.stage });
-    // A live worker also clears the spawn-retry budget: the start phase
-    // succeeded, so any future failure is a new episode.
-    resetSpawnRetry(db, cardId);
-    bb.realtime.publish("card-state", { cardId });
-    return { ok: true, error: null };
-  };
-
-  // button, drag-to-archived, and hard delete. Archiving a card must never
-  // leave its worker running (burning tokens on a hidden board).
-  async function stopWorkerThread(threadId: string | null): Promise<void> {
-    if (!threadId) return;
-    try { await bb.sdk.threads.archive({ threadId }); } catch { /* already gone */ }
-    try { await bb.sdk.threads.stop({ threadId }); } catch { /* already gone */ }
-  }
-
-  // Shared draft-burst prologue (CLI `bb stelow draft` and the done-note
-  // draft RPC): card lookup, generation-preset cascade, workspace, spawn
-  // environment. One place so preset and environment semantics cannot drift
-  // between callers; each caller keeps its own error presentation (exit
-  // codes vs RPC refusal objects).
-  async function resolveDraftContext(card: CardRow): Promise<
-    | { ok: true; draftPreset: PresetRow; params: ReturnType<typeof presetAttachmentParams>; workspace: { path: string; hostId: string | null }; environment: Awaited<ReturnType<typeof continuingWorkerEnvironment>>; resolvedSource: string | null }
-    | { ok: false; error: string }
-  > {
-    const band = card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis";
-    const designated = db.prepare("SELECT preset_id FROM generation_preset WHERE id = 1").get() as { preset_id: string } | undefined;
-    const boardDefault = designated ? getPresetById(designated.preset_id) : null;
-    const bandPreset = getPresetForBand(band, card.id);
-    const resolved = resolveDraftPreset({ cardPin: null, boardDefault: boardDefault?.id ?? null, bandFallback: bandPreset?.id ?? null });
-    const draftPreset = resolved.presetId ? getPresetById(resolved.presetId) : null;
-    if (!draftPreset) return { ok: false, error: "No preset available for drafting (no generation preset, no band preset). Assign presets first." };
-    const params = presetAttachmentParams(draftPreset);
-    const workspace = await cardWorkspace(card).catch(() => null);
-    if (!workspace?.path) return { ok: false, error: ERR_WORKSPACE_UNAVAILABLE };
-    const draftSource = workspace.hostId ? { path: workspace.path, hostId: workspace.hostId } : null;
-    const environment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
-    return { ok: true, draftPreset, params, workspace, environment, resolvedSource: resolved.source };
-  }
-
   // Disposable spawns (draft bursts, independent reviews) die with their
   // worker through lifecycleOwnerThreadId (BB 0.43 dependent threads).
   // Hosts predating the field strip unknown keys and honor the spawn; a host
@@ -4573,27 +3500,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       throw error;
     }
-  }
-
-  // Resolution is per-kind, never blanket: a worker moving again clears
-  // failure/pause signals, but a question stays until it is answered.
-  // The reason travels with the timestamp so the Resolved filter can name
-  // HOW each item cleared (answered, superseded, resumed, completed,
-  // archived) instead of a bare date.
-  type InboxResolutionReason = "answered" | "superseded" | "resumed" | "completed" | "archived";
-  function resolveInboxEvents(cardId: string, resolvedAt: number, kinds: Array<"question" | "error" | "paused"> = ["question", "error", "paused"], reason: InboxResolutionReason | null = null): void {
-    if (resolveActionInboxEvents(db, cardId, resolvedAt, kinds, reason) > 0) bb.realtime.publish("inbox-changed", { cardId });
-  }
-
-  function syncPendingQuestionInbox(card: CardRow, interactionIds: string[], occurredAt = now()): void {
-    const result = syncQuestionInboxEvents(db, {
-      cardId: card.id,
-      interactionIds,
-      occurredAt,
-      createId: () => randomId("evt"),
-      summary: "The agent is waiting for your answer to continue.",
-    });
-    if (result.inserted > 0 || result.resolved > 0 || result.reopened > 0 || result.pausedSuperseded > 0) bb.realtime.publish("inbox-changed", { cardId: card.id });
   }
 
   function openExpiredQuestionIds(cardId: string): string[] {
@@ -4716,6 +3622,74 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     } catch { return []; }
   }
 
+  const executionNative = createExecutionNative({
+    db,
+    bb,
+    randomId,
+    cardWorkspace,
+    stateDir: (card, rootPath) => workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    logComment: (cardId, targetId, body) => logCardComment(cardId, "card", targetId, "agent", body),
+  });
+  const executionLifecycle = createExecutionLifecycle({
+    db,
+    bb,
+    randomId,
+    getCard,
+    logComment: (cardId, targetId, body) => logCardComment(cardId, "card", targetId, "agent", body),
+    native: executionNative,
+  });
+  const executionReconcile = createExecutionReconcile({
+    db,
+    bb,
+    now,
+    randomId,
+    getCard,
+    cardWorkspace,
+    fetchPendingQuestions,
+    logComment: (cardId, targetId, body) => logCardComment(cardId, "card", targetId, "agent", body),
+    publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
+    native: executionNative,
+    lifecycle: executionLifecycle,
+  });
+  const executionAdvance = createExecutionAdvance({
+    errors: { cardNotFound: ERR_CARD_NOT_FOUND, cardArchived: ERR_CARD_ARCHIVED, workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE },
+    getCard,
+    getCardByWorkerThread,
+    cardWorkspace,
+    projectRoot: (projectId) => projectRoot(bb, projectId),
+    stateDir: (card, rootPath) => workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    ensureArtifacts: (rootPath, stateDir, requireOwnedState) => ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
+    questionGate: (card, stateDir) => questionContractsGate(card, stateDir),
+    runHelper,
+    native: executionNative,
+    reworkNote: async (card) => {
+      if (card.stage !== "audit") return "";
+      const gaps = await critiqueGapState(card).catch(() => null);
+      if (!gaps?.matched) return "";
+      const open = gaps.auditGapScopes.filter((scope) => !isDoneStatus(scope.status));
+      return open.length > 0
+        ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`
+        : "\n(rework loop: back to execution from audit — no open audit-gap scopes)";
+    },
+    updateCard: (cardId, fields) => updateCard(cardId, fields as Parameters<typeof updateCard>[1]),
+    recordStageEvent,
+    recordExecutionEntry: (cardId, evidence, transition) => recordTrackableEvent(db, {
+      cardId,
+      kind: "scope",
+      trackableId: "all",
+      transition,
+      actor: "host",
+      evidence,
+    }),
+    getReliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
+    getCardPresetId: (cardId) => getPresetForCard(cardId).id,
+    respawn: (cardId, presetId) => workers.respawn(cardId, presetId),
+    scheduleRespawn: (cardId, presetId) => workers.scheduleRespawn(cardId, presetId),
+    requestGatePreReview,
+    publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
+    isArchivedCard,
+  });
+
   const INTENT_VALUES = ["new-product", "feature", "bugfix", "refactor", "investigate"] as const;
 
   async function syncThreadState(cardId: string): Promise<void> {
@@ -4806,8 +3780,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           updateCard(cardId, updates);
         }
       } else if (status === "idle" || status === "stopping") {
+        // Native execution owns the card while it is queued/running. A
+        // needs-input run is also alive while the card has no human question
+        // yet; once the question exists, normal question-wait state resumes.
+        if (executionLifecycle.keepsCardRunning(cardId, 0)) {
+          updateCard(cardId, { activity: "running" });
+          return;
+        }
         const questionIds = await syncOpenQuestionInbox(card);
         if (questionIds === null) return;
+        if (executionLifecycle.keepsCardRunning(cardId, questionIds.length)) {
+          updateCard(cardId, { activity: "running" });
+          return;
+        }
         const transitioningIntoIdle = card.activity !== "idle";
         if (questionIds.length > 0) {
           // The worker stopped (likely a timed-out ask) but a question is
@@ -4950,7 +3935,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           logCardComment(cardId, "card", cardId, "agent", stripMessageDirectives(lastOutput));
         }
       } else if (status === "failed" || status === "error") {
-        await applyWorkerFailed(cardId, card.worker_thread_id, null);
+        await workers.applyFailed(cardId, card.worker_thread_id, null);
       }
     } catch (error) {
       updateCard(cardId, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -4969,11 +3954,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   bb.events.on("thread.failed", ({ thread, error }) => {
     const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
     if (!row) return;
-    void applyWorkerFailed(row.id, thread.id, typeof error === "string" ? error : null);
+    void workers.applyFailed(row.id, thread.id, typeof error === "string" ? error : null);
   });
   // Reconcile card states with their worker threads after reloads (events only fire on transitions).
   const liveCards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
   for (const row of liveCards) void syncThreadState(row.id);
+  void executionReconcile.reconcile();
 
   // Deterministic sweep (bb 0.40 removed system/thread/interrupted from the
   // plugin event API): periodically reconcile live cards so interrupts,
@@ -4983,78 +3969,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // this long (two reconcile cycles). A worker that just finished a turn is
   // idle for a few seconds before being resumed — not an attention item.
   const IDLE_ATTENTION_MS = 90_000;
-  // Semantic severity bump (inbox-severity point): at most a few unjudged
-  // routine items per tick get one yes/no — "does this block the worker?" —
-  // and confident yeses promote to escalating with a model-judged chip.
-  // Never demotes, never resolves, never re-judges a checked item; items
-  // too fresh to have settled (under 5 minutes) wait for a later tick.
-  // Everything else (mode, key, kill switch, failures) keeps deterministic
-  // tiers standing. Advisory ordering only — the badge never moves on it.
-  const SEVERITY_BUMP_PER_TICK = 3;
-  const SEVERITY_BUMP_MIN_AGE_MS = 5 * 60 * 1000;
-  async function maybeBumpSeverity(): Promise<void> {
-    try {
-      const point = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(DECISION_POINT_INBOX_SEVERITY) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      if (normalizePointMode(point?.mode, "rules") === "preset") bb.log.warn("inbox severity ignores preset mode: hot paths stay on rules/api so judgments never burn worker turns.");
-      if (normalizePointMode(point?.mode, "rules") !== "api") return;
-      if (isDecisionApiDisabled(process.env)) return;
-      const cfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const route = pointRouteConfig(point, cfg);
-      const provider = normalizeDecisionProvider(route.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: route.apiKey ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return;
-      let stored: unknown = null;
-      try { stored = point ? JSON.parse(point.thresholds) : null; } catch { stored = null; }
-      const thresholds = normalizeThresholds(stored, defaultThresholdsFor(DECISION_POINT_INBOX_SEVERITY));
-      const cutoff = now() - SEVERITY_BUMP_MIN_AGE_MS;
-      // Card context rides the state — a bare summary ("Idle…", "Round 3
-      // failed…") judges poorly alone; name, kind, and stage disambiguate
-      // without extra calls.
-      const rows = db.prepare(
-        "SELECT inbox_events.id, inbox_events.summary, inbox_events.severity_reasons, cards.display_name, cards.name, cards.kind AS card_kind, cards.stage FROM inbox_events JOIN cards ON cards.id = inbox_events.card_id WHERE inbox_events.resolved_at IS NULL AND inbox_events.archived_at IS NULL AND inbox_events.severity = 1 AND inbox_events.occurred_at <= ? AND inbox_events.severity_reasons NOT LIKE '%model-judged%' ORDER BY inbox_events.occurred_at ASC LIMIT 3",
-      ).all(cutoff) as Array<{ id: string; summary: string; severity_reasons: string | null; display_name: string | null; name: string; card_kind: string | null; stage: string }>;
-      const candidates = rows.slice(0, SEVERITY_BUMP_PER_TICK);
-      let changed = 0;
-      for (const row of candidates) {
-        const state = `Card "${row.display_name ?? row.name}" (${row.card_kind ?? "build"}, stage ${row.stage}): ${row.summary}`;
-        const result = await evaluateDecisionCall({
-          provider,
-          endpoint: route.endpoint ?? defaultEndpointFor(provider),
-          apiKey: key ?? "",
-          model: normalizeDecisionApiModel(route.model, defaultModelFor(provider)),
-          state,
-          questions: severityBumpQuestions(),
-        }).catch(() => null);
-        if (!result || !result.ok) continue;
-        const answer = result.answers?.blocking ?? null;
-        if (!answer || answer.type !== "noul" || typeof answer.noul !== "number") continue;
-        const reasons = [...parseSeverityReasons(row.severity_reasons), "model-judged"];
-        if (meetsDecisionThreshold(answer.noul, thresholds.routeAt)) {
-          changed += db.prepare("UPDATE inbox_events SET severity = 2, severity_reasons = ? WHERE id = ? AND resolved_at IS NULL").run(JSON.stringify(reasons), row.id).changes;
-        } else {
-          changed += db.prepare("UPDATE inbox_events SET severity_reasons = ? WHERE id = ? AND resolved_at IS NULL").run(JSON.stringify(reasons), row.id).changes;
-        }
-      }
-      if (changed > 0) bb.realtime.publish("inbox-changed", { bumped: changed });
-    } catch { /* advisory only — tiers stand without the bump */ }
+
+
+  function maybeBumpSeverity(): Promise<void> {
+    return decisionApi.maybeBumpSeverity();
   }
-  // Last-seen scope prints per live card. Module-closure lifetime is
-  // correct: a reload re-baselines silently instead of inheriting stale
-  // hashes across a restart.
-  const scopePrints = new Map<string, string>();
-  async function syncScopeProgress(cardId: string): Promise<void> {
-    try {
-      const card = getCard(cardId);
-      if (!card) { scopePrints.delete(cardId); return; }
-      const workspace = await cardWorkspace(card);
-      const print = workspace?.path ? scopeFingerprint(loadCardScopes(workspace.path, card.id)) : "";
-      const prev = scopePrints.get(cardId);
-      scopePrints.set(cardId, print);
-      if (prev !== undefined && prev !== print) bb.realtime.publish("card-state", { cardId });
-    } catch { /* advisory; next tick retries */ }
-  }
+  const scopeProgress = createScopeProgressSync({
+    getCard,
+    cardWorkspace,
+    publish: (cardId) => bb.realtime.publish("card-state", { cardId }),
+  });
   const reconcileTimer = setInterval(() => {
     if (!(db as unknown as { open?: boolean }).open) return;
+    void executionReconcile.reconcile();
     try {
       const rows = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
       for (const row of rows) void syncThreadState(row.id);
@@ -5064,8 +3991,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // the next host-driven reload. First sight sets the baseline silently
       // — a restart must not publish-storm every live card — and dead cards
       // prune out so the map cannot grow past the live set.
-      for (const row of rows) void syncScopeProgress(row.id);
-      for (const id of scopePrints.keys()) if (!liveIds.has(id)) scopePrints.delete(id);
+      for (const row of rows) void scopeProgress.sync(row.id);
+      scopeProgress.prune(liveIds);
     } catch { /* db closed during reload; next tick retries */ }
     void maybeBumpSeverity();
     // Expired workspace claims are crashed workers that never released:
@@ -5105,10 +4032,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   }, RECONCILE_MS);
   bb.onDispose(async () => {
     clearInterval(reconcileTimer);
-    // Pending spawn retries must not fire after reload: the next poll
-    // re-drives them from the persisted claim ledger instead.
-    for (const timer of spawnRetryTimers.values()) clearTimeout(timer);
-    spawnRetryTimers.clear();
+    // Pending retries and deferred respawns must not fire after reload:
+    // persisted claims re-drive retries on the next poll.
+    workers.dispose();
   });
 
   // Workflow mechanics are private to workers created by the Build panel.
@@ -5145,6 +4071,16 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. Only a visible structured form on the card counts as a pending question — a prior chat message or split-proposal record does not. If the user cannot see a form and the stage needs input, submit the same bb stelow ask once; the host refuses duplicates when a real form is open. Never claim to be waiting based on memory alone. ${INTERFACE_PICK} Unselected gates approve and advance themselves; selected gates use a structured ask. If a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
   }
 
+  // Decision API, review policy, migrations, handlers, and execution seams
+  // live behind one factory. Preset judging remains host-owned and injected.
+  const decisionApi = createDecisionApi({
+    db,
+    bb,
+    now,
+    judgeViaPreset,
+    presetExists: (id) => getPresetById(id) !== null,
+  });
+
   // GitHub issues live decoupled in server/github-issues.ts: tables,
   // backfills, matcher wiring, scheduler, and RPCs. One seam in, one out.
   const github = createGithubAutomation({
@@ -5166,15 +4102,30 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   // The scheduler lives with the feature it drives: disabling the module
   // (STELOW_GITHUB_ISSUES=0) stops the ticks along with the RPCs.
   bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () => github.runAutomationRules());
-  bb.background.schedule("stelow-github-discussion-mirror", "*/5 * * * *", () => { void github.refreshLinkedDiscussions(); });
+
+  const artifactsPublication = createArtifactsPublication({
+    db,
+    bb,
+    now,
+    randomId,
+    cardNotFound: ERR_CARD_NOT_FOUND,
+    cards: {
+      get: (cardId) => getCard(cardId),
+      checkout: (card) => cardCheckout(card as CardRow),
+    },
+    normalizeStatus,
+  });
 
   bb.rpc.register(rpcContract, {
+    ...decisionApi.handlers,
     ...github.handlers,
-    board: async ({ projectId }) => {
-      const board = await loadBoard(bb, projectId);
-      const githubStatus = await github.githubStatus().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] }));
-      return { ...board, githubStatus, githubAutomationEnabled: githubIssuesEnabled() };
-    },
+    ...inbox.handlers,
+    ...executionLifecycle.handlers,
+    ...executionReconcile.handlers,
+    ...executionAdvance.handlers,
+    ...workspacesRecovery.handlers,
+    ...artifactsPublication.handlers,
+    board: cards.handlers.board as never,
     projects: async () => {
       const list = await bb.sdk.projects.list();
       return { projects: list.map((project) => ({ id: project.id, name: project.name })) };
@@ -5312,14 +4263,22 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         // Split proposals answered on the card land here instead of the
         // blocking call above — one shared recording (lib/split-proposal).
         recordSplitAnswer(db, cardId, decisions);
-        // A structured interaction resumes the waiting command but not a new
-        // agent turn. Exactly one continuation for the whole batch.
-        await bb.sdk.threads.send({ threadId: card.worker_thread_id, mode: "auto", input: [{ type: "text", text: formatBatchContinuation(decisions), mentions: [] }] });
+        // The lifecycle suppresses the ordinary worker continuation only for
+        // its exact native-boundary answer; all other batches resume normally.
+        const boundaryRun = await executionLifecycle.routeAnswerContinuation(
+          cardId,
+          card.worker_thread_id,
+          decisions,
+        );
         const unansweredIds = [...pendingById.keys()].filter((id) => !answeredInteractionIds.has(id));
         const openQuestionIds = [...unansweredIds, ...openExpiredQuestionIds(cardId)];
         // Name the answered ones BEFORE the sync: disappearance alone would
         // mislabel them superseded.
-        markQuestionsAnswered(db, { cardId, interactionIds: [...answeredInteractionIds], occurredAt: now() });
+        markInboxQuestionsAnswered(cardId, [...answeredInteractionIds]);
+        if (boundaryRun) {
+          const resumeError = await executionLifecycle.resumeAfterAnswers(boundaryRun, decisions);
+          if (resumeError) return { ok: false as const, answered: decisions.length, error: resumeError };
+        }
         syncPendingQuestionInbox(card, openQuestionIds);
         // Contract provenance: answers that match a declared contract id
         // name it in the trail. Undeclared answers behave exactly as before.
@@ -5342,8 +4301,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async startWorkflow({ projectId, prompt }) {
-      // delegation-site: worker-spawn
-      const thread = await bb.sdk.threads.spawn({
+      const thread = await workers.spawnWorkflow({
         projectId,
         environment: { type: "project-default" },
         title: `Stelow: ${prompt.slice(0, 70)}`,
@@ -5361,146 +4319,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { rootPath, statePath: result.statePath, error: null };
     },
 
-    async listCards({ projectId, kind }) {
-      const stmt = projectId && kind
-        ? db.prepare("SELECT * FROM cards WHERE project_id = ? AND kind = ? ORDER BY updated_at DESC")
-        : projectId
-          ? db.prepare("SELECT * FROM cards WHERE project_id = ? ORDER BY updated_at DESC")
-          : kind
-            ? db.prepare("SELECT * FROM cards WHERE kind = ? ORDER BY updated_at DESC")
-            : db.prepare("SELECT * FROM cards ORDER BY updated_at DESC");
-      const rows = (projectId && kind ? stmt.all(projectId, kind) : projectId ? stmt.all(projectId) : kind ? stmt.all(kind) : stmt.all()) as CardRow[];
-      const projectsList = await bb.sdk.projects.list();
-      const projectMap = new Map(projectsList.map((project) => [project.id, project.name]));
-      // One parse per card: stelow.json parsing is pure local IO, but a shared
-      // workspace must never mean a shared summary.
-      const scopeCache = new Map<string, { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number; doingNow: string[] }>();
-      const emptySummary = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0, doingNow: [] as string[] };
-      async function scopeSummary(row: CardRow): Promise<typeof emptySummary> {
-        try {
-          const workspace = await cardWorkspace(row);
-          if (!workspace?.path) return emptySummary;
-          const cached = scopeCache.get(row.id);
-          if (cached) return cached;
-          const done = (status: string): boolean => isDoneStatus(status);
-          const scopes = loadCardScopes(workspace.path, row.id);
-          const summary = {
-            scopesTotal: scopes.length,
-            scopesDone: scopes.filter((scope) => done(scope.status)).length,
-            tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0),
-            tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => done(task.status)).length, 0),
-            doingNow: doingNowNames(scopes),
-          };
-          scopeCache.set(row.id, summary);
-          return summary;
-        } catch {
-          return emptySummary;
-        }
-      }
-      const enriched = await Promise.all(rows.map(async (row) => {
-        let activity = row.activity as "idle" | "running" | "awaiting-answer" | "error";        if (activity !== "error" && row.worker_thread_id) {
-          // A pending stelow ask interaction must surface regardless of whether
-          // the thread currently reports running or idle: an ask parks the card
-          // until answered, and idle (vs "waiting") is indistinguishable from a
-          // prompt otherwise. Promote to awaiting-answer so the question shows.
-          const pending = await fetchPendingQuestions(row.worker_thread_id);
-          if (pending.length > 0 || openExpiredQuestionIds(row.id).length > 0) activity = "awaiting-answer";
-        }
-        // Unified attention signal: ONE flag answering "does this card need a
-        // human right now?", plus the reason (kind) that decides the primary
-        // action (answer / inspect / retake). A terminal completion is not a
-        // request for human action; idle-stuck, question and error are.
-        const termStatus = isClaimTerminal(row.status);
-        // Idle-stuck uses last_idle_at when present (set on transition into
-        // idle), falling back to updated_at as the idle-onset proxy so cards
-        // without the timestamp still surface instead of staying invisible.
-        const idleAt = (row.last_idle_at && row.last_idle_at > 0) ? row.last_idle_at : row.updated_at;
-        const idleCandidate = activity === "idle"
-          && row.worker_thread_id !== null
-          && !termStatus
-          && now() - idleAt >= IDLE_ATTENTION_MS;
-        const idleStuck = idleCandidate;
-        const questionPending = activity === "awaiting-answer";
-        // A stale last_error on a terminal card is residue, not a request:
-        // Done never asks for attention because of it.
-        const errorPending = errorNeedsAttention(row.status, row.last_error, activity);
-        const attentionKind = (idleStuck ? "idle" : questionPending ? "question" : errorPending ? "error" : null) as "question" | "error" | "idle" | null;
-        const needsAttention = attentionKind !== null;
-        const preset = getReliablePresetForBand(STAGE_TO_BAND[row.stage] ?? "analysis", row.id);
-        return {
-          id: row.id,
-          name: row.name,
-          displayName: row.display_name ?? row.name,
-          prompt: row.prompt,
-          intent: row.intent,
-          projectId: row.project_id,
-          projectName: row.workspace_kind === "exploratory" ? "Exploratory work" : (projectMap.get(row.project_id) ?? row.project_id),
-          workspaceKind: row.workspace_kind,
-          workspacePath: row.workspace_path,
-          environmentLabel: row.environment_label ?? null,
-          kind: normalizeKind(row.kind),
-          researchStrategy: row.research_strategy,
-          researchStrategies: strategyList(row),
-          exploreStage: row.explore_stage ?? null,
-          status: normalizeStatus(row.status),
-          stage: row.stage,
-          workerThreadId: row.worker_thread_id,
-          activity,
-          lastError: row.last_error,
-          needsAttention,
-          hasPendingReview: hasPendingReview(db, row.id),
-          presetName: preset.name,
-          presetProviderId: preset.provider_id,
-          presetModelId: preset.model_id,
-          updatedAt: row.updated_at,
-          stallCount: stallCount(db, row.id),
-          ...(await (async () => {
-            const summary = await scopeSummary(row);
-            return { scopeSummary: { scopesTotal: summary.scopesTotal, scopesDone: summary.scopesDone, tasksTotal: summary.tasksTotal, tasksDone: summary.tasksDone }, doingNow: summary.doingNow };
-          })()),
-        };
-      }));
-      return { cards: enriched };
-    },
-
-    async listNotifications({ includeArchived }) {
-      const rows = listInboxEvents(db, includeArchived) as Array<InboxEventRow & { display_name: string | null; name: string; project_id: string; card_kind: string | null; resolved_at: number | null }>;
-      const projects = await bb.sdk.projects.list();
-      const projectNames = new Map(projects.map((project) => [project.id, project.name]));
-      return {
-        notifications: rows.map((row) => ({ id: row.id, cardId: row.card_id, cardName: row.display_name ?? row.name, projectName: projectNames.get(row.project_id) ?? row.project_id, cardKind: normalizeKind(row.card_kind), kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, readAt: row.read_at, resolvedAt: row.resolved_at ?? null, resolvedReason: (["answered", "superseded", "resumed", "completed", "archived"] as const).includes(row.resolved_reason as never) ? row.resolved_reason as "answered" | "superseded" | "resumed" | "completed" | "archived" : null, archivedAt: row.archived_at, severity: row.severity ?? 1, severityReasons: parseSeverityReasons(row.severity_reasons) })),
-      };
-    },
-
-    async markNotificationRead({ notificationId }) {
-      const result = db.prepare("UPDATE inbox_events SET read_at = ? WHERE id = ? AND read_at IS NULL").run(now(), notificationId);
-      if (result.changes > 0) bb.realtime.publish("inbox-changed", { notificationId });
-      return { ok: result.changes > 0 };
-    },
-
-    async markCardNotificationsRead({ cardId, kind }) {
-      // Viewing marks informational state seen (read), never resolved.
-      // Only completions use this today: opening a Done card clears its
-      // "new" badge while the entry stays in Recent updates. Action kinds
-      // (question/error/paused) keep counting until resolved, no matter
-      // how often the card is opened.
-      if (kind !== "completed") return { marked: false };
-      const result = db.prepare("UPDATE inbox_events SET read_at = ? WHERE card_id = ? AND kind = 'completed' AND read_at IS NULL AND archived_at IS NULL").run(now(), cardId);
-      if (result.changes > 0) bb.realtime.publish("inbox-changed", { cardId });
-      return { marked: result.changes > 0 };
-    },
-
-    async archiveNotification({ notificationId }) {
-      const result = db.prepare("UPDATE inbox_events SET archived_at = ? WHERE id = ? AND archived_at IS NULL").run(now(), notificationId);
-      if (result.changes > 0) bb.realtime.publish("inbox-changed", { notificationId });
-      return { ok: result.changes > 0 };
-    },
-
-    async restoreNotification({ notificationId }) {
-      const result = db.prepare("UPDATE inbox_events SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL").run(notificationId);
-      if (result.changes > 0) bb.realtime.publish("inbox-changed", { notificationId });
-      return { ok: result.changes > 0 };
-    },
+    listCards: cards.handlers.listCards,
 
     async cardByWorkerThread({ threadId }) {
       const row = getCardByWorkerThread(threadId);
@@ -5511,35 +4330,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { cardId: row.id, kind: normalizeKind(row.kind) };
     },
 
-    async getNotification({ notificationId, cardId }) {
-      const row = db.prepare("SELECT id, kind, summary, occurred_at, resolved_at, resolved_reason, archived_at, severity, severity_reasons FROM inbox_events WHERE id = ? AND card_id = ?").get(notificationId, cardId) as Pick<InboxEventRow, "id" | "kind" | "summary" | "occurred_at" | "resolved_at" | "resolved_reason" | "archived_at" | "severity" | "severity_reasons"> | undefined;
-      return { notification: row ? { id: row.id, kind: row.kind, summary: row.summary, occurredAt: row.occurred_at, resolvedAt: row.resolved_at, resolvedReason: (["answered", "superseded", "resumed", "completed", "archived"] as const).includes(row.resolved_reason as never) ? row.resolved_reason as "answered" | "superseded" | "resumed" | "completed" | "archived" : null, archivedAt: row.archived_at, severity: row.severity ?? 1, severityReasons: parseSeverityReasons(row.severity_reasons) } : null };
-    },
+    readCardFile: cards.handlers.readCardFile,
 
-    async readCardFile({ cardId, path }) {
-      // Read-only artifact viewer backing: resolve strictly inside the card
-      // workspace (never absolute escapes), cap output, refuse binaries.
-      const card = getCard(cardId);
-      if (!card) return { content: null, truncated: false, error: ERR_CARD_NOT_FOUND };
-      const workspace = await cardWorkspace(card);
-      if (!workspace?.path) return { content: null, truncated: false, error: ERR_WORKSPACE_UNAVAILABLE };
-      const full = resolveArtifactPath(workspace.path, path)
-        ?? (isAbsolute(path) && !path.split(/[\\/]+/).some((segment) => segment === "..") && relative(workspace.path, resolve(path)).split(/[\\/]+/)[0] !== ".." ? resolve(path) : null);
-      if (!full) return { content: null, truncated: false, error: "Path escapes the workspace." };
-      try {
-        const file = await bb.sdk.files.read({ path: full });
-        const text = typeof file.content === "string" ? file.content : null;
-        if (text === null || text.includes("\0")) return { content: null, truncated: false, error: "Not a readable text file." };
-        const LIMIT = 200_000;
-        return { content: text.slice(0, LIMIT), truncated: text.length > LIMIT, error: null };
-      } catch {
-        return { content: null, truncated: false, error: "Could not read the file." };
-      }
-    },
-
-    async createCard({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, start, execution }) {
-      return createCardInternal({ projectId, environment, prompt, attachments, intent, appetite, reviewMode, presetId, start, execution: execution ?? null });
-    },
+    createCard: cards.handlers.createCard,
 
     async gapSummary({ cardId }) {
       // Build gap panel backing: resolved live from the matched execution
@@ -5642,70 +4435,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       }
       if (!matched) return unverified;
       return { status: sealStatus(failures.length === 0 ? { pass: true } : { pass: false }, evidence ?? "verified"), failures, evidence, label };
-    },
-
-    // Done-note draft for the GitHub post dialog: same generation-preset
-    // cascade and hidden-thread lifecycle as disposable prose bursts, with
-    // the card's own scopes as the factual brief. Generated on dialog open
-    // (freshness plus no wasted tokens), never at Done time.
-    async draftDoneComment({ cardId }: { cardId: string }) {
-      const card = getCard(cardId);
-      if (!card) throw new Error(ERR_CARD_NOT_FOUND);
-      if (isArchivedCard(card)) throw new Error(ERR_CARD_ARCHIVED);
-      const draftContext = await resolveDraftContext(card);
-      if (!draftContext.ok) return { ok: false, draft: null, error: draftContext.error };
-      const { draftPreset, params, workspace, environment: draftEnvironment } = draftContext;
-      const scopes = loadCardScopes(workspace.path, card.id);
-      const scopeLines = scopes.map((scope) => `- ${String(scope.name)} (${String(scope.status)})`);
-      const doneCount = scopes.filter((scope) => scope.status === "done" || scope.status === "completed").length;
-      const brief = buildDoneCommentBrief({
-        title: card.display_name ?? card.name,
-        intent: card.intent ?? "unknown",
-        stage: card.stage,
-        scopesDone: doneCount,
-        scopesTotal: scopes.length,
-        scopeLines,
-        promptExcerpt: card.prompt.length > 1500 ? `${card.prompt.slice(0, 1500)}…` : card.prompt,
-      });
-      const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
-      let draftThread: { id: string };
-      try {
-        draftThread = await spawnDisposable({
-          projectId: card.project_id,
-          environment: draftEnvironment,
-          visibility: "hidden",
-          // Same dependent lifecycle as prose bursts: archiving the worker
-          // archives the draft with it. The text returns through this RPC,
-          // never thread history.
-          ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
-          title: `Stelow done-note: ${card.display_name ?? card.name}`,
-          providerId: params.providerId,
-          model: params.modelId,
-          reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-          permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
-          executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-          prompt,
-        }, "draft-burst");
-      } catch (error) {
-        return { ok: false, draft: null, error: `Draft spawn failed: ${error instanceof Error ? error.message : "unknown error"}.` };
-      }
-      const waited = await awaitDraftThread(
-        {
-          threadStatus: async () => {
-            const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
-            const status = (thread as { status?: unknown } | null)?.status;
-            return typeof status === "string" ? status : null;
-          },
-          threadOutput: () => bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => ""),
-          stopThread: () => stopWorkerThread(draftThread.id),
-          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-        },
-        draftThread.id,
-      );
-      if (!waited.ok) return { ok: false, draft: null, error: waited.error };
-      const validated = validateDraftOutput(waited.output);
-      if (!validated.ok) return { ok: false, draft: null, error: validated.error ?? "Empty draft." };
-      return { ok: true, draft: validated.text, error: null };
     },
 
     async cardDetail({ cardId }) {
@@ -5894,17 +4623,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null) as "question" | "error" | "idle" | null;
       // Worker ledger, newest first. The open row (endedAt null) is the live
       // worker; older rows are archived threads replaced along the way.
-      const workerRows = db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>;
-      const workerHistory = await Promise.all(workerRows.map(async (row) => {
-        const report = await workerTokenReport(row.thread_id);
-        return {
-          threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at,
-          endedAt: row.ended_at, endedReason: row.ended_reason,
-          tokenUsage: report.total,
-          tokenBreakdown: report.breakdown,
-          children: await workerChildThreads(row.thread_id),
-        };
-      }));
+      const workerHistory = await workers.history(cardId);
       // Imported-issue link for the Done-card write-back affordance. The URL
       // is deterministic (github.com/<repo>/issues/<number>), so no extra
       // GitHub round-trip is needed to render it.
@@ -5948,7 +4667,52 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const withStaleness = <T extends { id: string }>(questions: T[]): (T & { staleness: { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] } | null })[] =>
         questions.map((question) => ({ ...question, staleness: questionStaleness.get(question.id) ?? null }));
       return {
-        card: { id: card.id, name: card.name, displayName: card.display_name ?? card.name, prompt: card.prompt, intent: card.intent, projectId: card.project_id, projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName, workspaceKind: card.workspace_kind, workspacePath: card.workspace_path, environmentLabel: card.environment_label ?? null, kind: normalizeKind(card.kind), researchStrategy: card.research_strategy, researchStrategies: strategyList(card), exploreStage: card.explore_stage ?? null, status: normalizeStatus(card.status), stage: card.stage, workerThreadId: card.worker_thread_id, activity: effectiveActivity, lastError: card.last_error, needsAttention: attentionKind !== null, hasPendingReview: hasPendingReview(db, cardId), presetName: preset.name, presetProviderId: preset.provider_id, presetModelId: preset.model_id, presetOverridden: (db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined)?.preset_id != null, updatedAt: card.updated_at, stallCount: stallCount(db, cardId), scopeSummary: { scopesTotal: scopes.length, scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length, tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0), tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0) }, presetId: preset.id, workerPresetId: card.worker_preset_id, presetRestartPending: (card.preset_restart_pending ?? 0) === 1, leadMs: flowTimesForCard(card).leadMs, cycleMs: flowTimesForCard(card).cycleMs, doingNow: doingNowNames(scopes), verifiedHeadSha: verifiedHeadShaForCard(card.id) },
+        card: {
+          id: card.id,
+          name: card.name,
+          displayName: card.display_name ?? card.name,
+          prompt: card.prompt,
+          intent: card.intent,
+          projectId: card.project_id,
+          projectName: card.workspace_kind === "exploratory" ? "Exploratory work" : projectName,
+          workspaceKind: card.workspace_kind,
+          workspacePath: card.workspace_path,
+          environmentLabel: card.environment_label ?? null,
+          kind: normalizeKind(card.kind),
+          researchStrategy: card.research_strategy,
+          researchStrategies: strategyList(card),
+          exploreStage: card.explore_stage ?? null,
+          status: normalizeStatus(card.status),
+          stage: card.stage,
+          workerThreadId: card.worker_thread_id,
+          activity: effectiveActivity,
+          lastError: card.last_error,
+          needsAttention: attentionKind !== null,
+          hasPendingReview: hasPendingReview(db, cardId),
+          presetName: preset.name,
+          presetProviderId: preset.provider_id,
+          presetModelId: preset.model_id,
+          presetOverridden: (
+            db.prepare("SELECT preset_id FROM card_presets WHERE card_id = ?").get(cardId) as { preset_id: string } | undefined
+          )?.preset_id != null,
+          updatedAt: card.updated_at,
+          stallCount: stallCount(db, cardId),
+          scopeSummary: {
+            scopesTotal: scopes.length,
+            scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length,
+            tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0),
+            tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0),
+            elapsedMs: totalScopeElapsedMs(scopes),
+          },
+          presetId: preset.id,
+          workerPresetId: card.worker_preset_id,
+          presetRestartPending: (card.preset_restart_pending ?? 0) === 1,
+          leadMs: flowTimesForCard(card).leadMs,
+          cycleMs: flowTimesForCard(card).cycleMs,
+          doingNow: doingNowNames(scopes),
+          executingScope: scopes.find((scope) => scope.status === "in-progress")?.name ?? null,
+          verifiedHeadSha: verifiedHeadShaForCard(card.id),
+        },
         attachments,
         mentionedFiles,
         scopes: enrichedScopes,
@@ -5960,6 +4724,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         scopeSync,
         artifacts,
         workerHistory,
+        executionRuns: executionLifecycle.list(cardId),
         fileEnvironmentId,
         nextStages,
         githubLink,
@@ -6001,6 +4766,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { ok: true, error: null };
     },
 
+    async draftDoneComment({ cardId }) {
+      return drafting.draftDoneComment(cardId);
+    },
+
     async addCardComment({ cardId, target, targetId, body }) {
       const card = getCard(cardId);
       if (!card) return { commentId: "", error: ERR_CARD_NOT_FOUND };
@@ -6022,7 +4791,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async cancelCard({ cardId }) {
       const card = getCard(cardId);
       if (!card) return { archived: false };
-      await stopWorkerThread(card.worker_thread_id);
+      await workers.stop(card.worker_thread_id);
+      if (!await executionLifecycle.stopOwned(cardId, "card-archived")) return { archived: false };
       updateCard(cardId, { status: "archived", activity: "idle" });
       await releaseCardClaimsAndNotify(cardId);
       bb.realtime.publish("card-state", { cardId });
@@ -6038,7 +4808,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card) return { deleted: false, error: ERR_CARD_NOT_FOUND };
       if (card.status !== "archived") return { deleted: false, error: "Only archived cards can be deleted. Archive it first." };
-      await stopWorkerThread(card.worker_thread_id);
+      await workers.stop(card.worker_thread_id);
+      if (!await executionLifecycle.stopOwned(cardId, "card-deleted")) {
+        return { deleted: false, error: "The native workflow could not be stopped; the card was not deleted." };
+      }
       await releaseCardClaimsAndNotify(cardId);
       // Files follow the row: the card's workflow state dir (.stelow run
       // artifacts) is removed too, or orphaned runs pile up on disk.
@@ -6057,7 +4830,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM ask_contracts WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM inbox_events WHERE card_id = ?").run(cardId);
-      db.prepare("DELETE FROM card_threads WHERE card_id = ?").run(cardId);
+      workers.deleteCard(cardId);
       db.prepare("UPDATE github_imports SET card_id = NULL WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM cards WHERE id = ?").run(cardId);
       bb.realtime.publish("card-state", { cardId });
@@ -6084,7 +4857,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const decision = discardEligibility(evidence);
       if (!decision.eligible || !decision.action) return { ok: false, summary: null, error: decision.reason ?? "Nothing safe to discard." };
       // Stop first: discarding under a live worker races its next write.
-      await stopWorkerThread(card.worker_thread_id);
+      await workers.stop(card.worker_thread_id);
       // Re-validate after the stop landed: a push, a cleanup, or a delete
       // may have changed the checkout under this discard.
       const live = getCard(cardId);
@@ -6129,6 +4902,42 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       return { ok: true, summary, error: null };
     },
 
+    async cleanupWorktreePreview({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) return { eligible: false, reason: ERR_CARD_NOT_FOUND, branch: null, fileCount: 0, commitCount: 0, confirmTitle: null, confirmBody: null };
+      const evidence = await discardEvidence(card);
+      const decision = cleanupEligibility(evidence);
+      if (!decision.eligible) return { eligible: false, reason: decision.reason, branch: evidence.branch, fileCount: 0, commitCount: 0, confirmTitle: null, confirmBody: null };
+      const files = [...evidence.changed, ...evidence.untracked];
+      const copy = cleanupConfirm(evidence);
+      return { eligible: true, reason: null, branch: evidence.branch, fileCount: files.length, commitCount: evidence.unpushedCommits, confirmTitle: copy.title, confirmBody: copy.body };
+    },
+
+    async cleanupWorktree({ cardId }) {
+      const card = getCard(cardId);
+      if (!card) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
+      const evidence = await discardEvidence(card);
+      const decision = cleanupEligibility(evidence);
+      if (!decision.eligible) return { ok: false, summary: null, error: decision.reason ?? "Nothing safe to clean up." };
+      await workers.stop(card.worker_thread_id);
+      const live = getCard(cardId);
+      if (!live) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
+      const fresh = await discardEvidence(live);
+      const confirm = cleanupEligibility(fresh);
+      if (!confirm.eligible) return { ok: false, summary: null, error: confirm.reason ?? "The checkout changed under this cleanup — review it again." };
+      if (!fresh.branch) return { ok: false, summary: null, error: "The checkout lost its branch mid-cleanup — review it by hand." };
+      try {
+        await dropLinkedWorktree(fresh.checkoutPath ?? "", fresh.branch);
+      } catch (error) {
+        return { ok: false, summary: null, error: error instanceof Error ? error.message : "Cleanup failed midway — review the checkout by hand." };
+      }
+      const summary = cleanupTrail(fresh);
+      logCardComment(cardId, "card", cardId, "agent", summary);
+      bb.realtime.publish("card-state", { cardId });
+      bb.realtime.publish("board-changed", { cardId });
+      return { ok: true, summary, error: null };
+    },
+
     async retryWorker({ cardId }) {
       // First-line recovery for stuck workers (error OR idle with nothing
       // pending): the plugin SDK exposes no thread-retry, but delivering a
@@ -6164,7 +4973,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async startWorker({ cardId }) {
-      return spawnFreshWorker(cardId, "start");
+      return workers.fresh(cardId, "start");
     },
 
     async restartWorker({ cardId }) {
@@ -6173,7 +4982,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // current stage — unlike reseed (restarts triage) and retry (same
       // thread, same model: provider/model are fixed at spawn and can never
       // change on a live thread). Uses the override-aware effective preset.
-      return spawnFreshWorker(cardId, "restart");
+      return workers.fresh(cardId, "restart");
     },
 
     async requestSplitProposal({ cardId }) {
@@ -6208,42 +5017,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       logCardComment(cardId, "card", cardId, "agent", "Split proposal requested — the worker will ask with --tag split.");
       bb.realtime.publish("card-state", { cardId });
       return { ok: true, error: null };
-    },
-
-    async cleanupWorktreePreview({ cardId }) {
-      const card = getCard(cardId);
-      if (!card) return { eligible: false, reason: ERR_CARD_NOT_FOUND, branch: null, fileCount: 0, commitCount: 0, confirmTitle: null, confirmBody: null };
-      const evidence = await discardEvidence(card);
-      const decision = cleanupEligibility(evidence);
-      if (!decision.eligible) return { eligible: false, reason: decision.reason, branch: evidence.branch, fileCount: 0, commitCount: 0, confirmTitle: null, confirmBody: null };
-      const files = [...evidence.changed, ...evidence.untracked];
-      const copy = cleanupConfirm(evidence);
-      return { eligible: true, reason: null, branch: evidence.branch, fileCount: files.length, commitCount: evidence.unpushedCommits, confirmTitle: copy.title, confirmBody: copy.body };
-    },
-    async cleanupWorktree({ cardId }) {
-      const card = getCard(cardId);
-      if (!card) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
-      const evidence = await discardEvidence(card);
-      const decision = cleanupEligibility(evidence);
-      if (!decision.eligible) return { ok: false, summary: null, error: decision.reason ?? "Nothing safe to clean up." };
-      // Re-validate after any concurrent change: stop, re-read, re-decide.
-      await stopWorkerThread(card.worker_thread_id);
-      const live = getCard(cardId);
-      if (!live) return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
-      const fresh = await discardEvidence(live);
-      const confirm = cleanupEligibility(fresh);
-      if (!confirm.eligible) return { ok: false, summary: null, error: confirm.reason ?? "The checkout changed under this cleanup — review it again." };
-      if (!fresh.branch) return { ok: false, summary: null, error: "The checkout lost its branch mid-cleanup — review it by hand." };
-      try {
-        await dropLinkedWorktree(fresh.checkoutPath ?? "", fresh.branch ?? "");
-      } catch (error) {
-        return { ok: false, summary: null, error: error instanceof Error ? error.message : "Cleanup failed midway — review the checkout by hand." };
-      }
-      const summary = cleanupTrail(fresh);
-      logCardComment(cardId, "card", cardId, "agent", summary);
-      bb.realtime.publish("card-state", { cardId });
-      bb.realtime.publish("board-changed", { cardId });
-      return { ok: true, summary, error: null };
     },
 
     async reseedCard({ cardId, presetId, intent: requestedIntent }) {
@@ -6333,9 +5106,8 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         flavor: "reseed",
         previousThreadId,
       }) : null;
-      const nextEnvironment = await continuingWorkerEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
-      // delegation-site: worker-spawn
-      const newThread = await bb.sdk.threads.spawn({
+      const nextEnvironment = await workers.continuingEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
+      const newThread = await workers.replacePrepared({
         projectId: card.project_id,
         environment: nextEnvironment,
         visibility: "hidden",
@@ -6370,16 +5142,12 @@ ${SPLIT_PROTOCOL}
 
 ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
 ${card.prompt}` }, ...cardAttachments(card.attachments)],
-      });
-      if (previousThreadId) {
-        try { await bb.sdk.threads.archive({ threadId: previousThreadId }); } catch { /* ignore */ }
-        try { await bb.sdk.threads.stop({ threadId: previousThreadId }); } catch { /* ignore */ }
-      }
+      }, previousThreadId);
       db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, now(), cardId);
       const reseedReset = resetAutoContinue();
       updateCard(cardId, { stage: card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "triage", status: freshStatusForReseed(card, reclassified), activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null, auto_continue_count: reseedReset.count, auto_continue_stage: reseedReset.stage });
-      recordWorkerThread(db, cardId, newThread.id, preset.id, "reseed");
-      if (seed.dirHash) void recordWorkflowLineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
+      workers.recordThread(cardId, newThread.id, preset.id, "reseed");
+      if (seed.dirHash) void workers.lineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
       bb.realtime.publish("card-state", { cardId });
       return { reseeded: true, error: null, reclassified };
     },
@@ -6399,14 +5167,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // still resolve (the card's state changed). Drag-to-archived stops
         // the worker exactly like the Archive button — parking a card must
         // never orphan a running worker.
-        if (decision.move.status === "archived") await stopWorkerThread(card.worker_thread_id);
+        if (decision.move.status === "archived") await workers.stop(card.worker_thread_id);
         // Drag-to-Doing on a threadless card starts it: Doing means working,
         // so the move spawns through the shared starter instead of parking
         // a lie on the board. A failed start blocks the move, not silently.
         // (Only lightweight tracks reach this status branch; build moves
         // phases, never bare statuses.)
         if (decision.move.status === "in-progress" && !card.worker_thread_id) {
-          const started = await spawnFreshWorker(cardId, "start");
+          const started = await workers.fresh(cardId, "start");
           if (!started.ok) return { ok: false, error: started.error };
         }
         updateCard(cardId, { status: decision.move.status as "draft" | "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
@@ -6429,7 +5197,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // right checkpoint, and reverted if the spawn fails — a card must never
       // be left parked in a phase with nothing running behind it.
       if (!card.worker_thread_id) {
-        const started = await spawnFreshWorker(cardId, "start");
+        const started = await workers.fresh(cardId, "start");
         if (!started.ok) {
           updateCard(cardId, previous);
           return { ok: false, error: started.error };
@@ -6487,7 +5255,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const preset = card.kind === "build"
         ? getReliablePresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId)
         : getPresetForCard(cardId);
-      const handoff = await respawnWorkerForBand(cardId, preset.id, "project-promotion", { previousProjectId: card.project_id });
+      const handoff = await workers.respawn(cardId, preset.id, "project-promotion", { previousProjectId: card.project_id });
       if (!handoff.ok || !handoff.threadId) {
         db.prepare("UPDATE cards SET project_id = ?, workspace_kind = 'exploratory', workspace_path = ?, workspace_host_id = ?, activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run(card.project_id, workspace.path, workspace.hostId, card.activity, card.last_error, now(), cardId);
         bb.realtime.publish("card-state", { cardId });
@@ -6498,74 +5266,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
       return { ok: true, projectId, projectName, threadId: handoff.threadId, error: null };
-    },
-
-    async workspaceRecovery({ cardId }) {
-      const card = getCard(cardId);
-      if (!card) return { kind: "documents-only" as const, message: "Card not found.", workspace: { path: null, isGit: false, hasSource: false }, candidates: [], looseEvidence: [], recovery: null, audit: null, error: ERR_CARD_NOT_FOUND };
-      if (card.workspace_kind !== "exploratory") return { kind: "attached" as const, message: "This card already belongs to a project workspace.", workspace: { path: null, isGit: true, hasSource: true }, candidates: [], looseEvidence: [], recovery: null, audit: null, error: null };
-      return { ...(await recoverySnapshot(card)), error: null };
-    },
-
-    async attachRecoveryCheckout({ cardId, projectId }) {
-      const card = getCard(cardId);
-      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-      if (card.workspace_kind !== "exploratory") return { ok: false, error: "This card already belongs to a project workspace." };
-      if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
-      const snapshot = await recoverySnapshot(card);
-      const candidate = snapshot.candidates.find((entry) => entry.projectId === projectId);
-      if (!candidate) return { ok: false, error: "That checkout no longer has the exact reported, registered Git evidence. Refresh and review again." };
-      db.prepare("INSERT OR REPLACE INTO workspace_recoveries (card_id, project_id, project_name, source_path, original_workspace_path, evidence, git_root, branch, head_sha, changed_files, attached_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, candidate.projectId, candidate.projectName, candidate.path, card.workspace_path, candidate.evidence, candidate.gitRoot, candidate.branch, candidate.headSha, candidate.changedFiles, now());
-      logCardComment(cardId, "card", cardId, "agent", `Recovery attached after user review: registered project "${candidate.projectName}" at ${candidate.path}; ${candidate.changedFiles} uncommitted files, branch ${candidate.branch ?? "detached"}, HEAD ${candidate.headSha?.slice(0, 12) ?? "unknown"}. Original exploratory workspace remains preserved.`);
-      bb.realtime.publish("card-state", { cardId });
-      bb.realtime.publish("board-changed", { cardId });
-      return { ok: true, error: null };
-    },
-
-    async createRecoveryAudit({ cardId }) {
-      const sourceCard = getCard(cardId);
-      if (!sourceCard) return { ok: false, auditCardId: null, auditCardName: null, error: ERR_CARD_NOT_FOUND };
-      if (sourceCard.workspace_kind !== "exploratory") return { ok: false, auditCardId: null, auditCardName: null, error: "Recovery audits only apply to the preserved exploratory card." };
-      const existing = db.prepare("SELECT audit_card_id FROM recovery_audits WHERE source_card_id = ?").get(cardId) as { audit_card_id: string } | undefined;
-      if (existing) {
-        const auditCard = getCard(existing.audit_card_id);
-        return { ok: true, auditCardId: existing.audit_card_id, auditCardName: auditCard?.display_name ?? auditCard?.name ?? "Recovery audit", error: null };
-      }
-      const recovery = db.prepare("SELECT project_id, project_name, source_path, evidence, git_root, branch, head_sha, changed_files FROM workspace_recoveries WHERE card_id = ?").get(cardId) as { project_id: string; project_name: string; source_path: string; evidence: string; git_root: string | null; branch: string | null; head_sha: string | null; changed_files: number } | undefined;
-      if (!recovery) return { ok: false, auditCardId: null, auditCardName: null, error: "Attach the exact registered checkout first. Recovery never guesses a project or changes files before that review." };
-      const project = await bb.sdk.projects.get({ projectId: recovery.project_id }).catch(() => null);
-      const source = project?.sources.find((entry) => entry.path === recovery.source_path) ?? project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-      if (!source?.path || source.path !== recovery.source_path) return { ok: false, auditCardId: null, auditCardName: null, error: "The attached project source changed. Re-check recovery evidence before creating its audit card." };
-      const auditPrompt = [
-        `Recovery audit for the preserved exploratory card “${sourceCard.display_name ?? sourceCard.name}”.`,
-        `Evidence source: ${recovery.source_path}`,
-        `Recorded Git root: ${recovery.git_root ?? "unknown"}; branch: ${recovery.branch ?? "detached"}; HEAD: ${recovery.head_sha ?? "unknown"}; changed files at review: ${recovery.changed_files}.`,
-        "Inspect the existing uncommitted changes and the original card's artifacts before editing. Do not rewrite or complete the original exploratory card. Establish what is recoverable, make only justified fixes in this real project workspace, run the host-recorded test check, and use the normal Git changes / PR workflow for any publication.",
-      ].join("\n\n");
-      try {
-        const created = await createCardInternal({
-          projectId: recovery.project_id,
-          environment: { type: "host", hostId: source.hostId, workspace: { type: "unmanaged", path: source.path } },
-          prompt: auditPrompt,
-          attachments: [],
-          intent: "investigate",
-          appetite: "Complete",
-          reviewMode: "Product Spec + Interface + Tech Review + Code Diff",
-          kind: "build",
-          start: true,
-        });
-        const auditCard = getCard(created.cardId);
-        const createdAt = now();
-        db.prepare("INSERT INTO recovery_audits (source_card_id, audit_card_id, created_at) VALUES (?, ?, ?)").run(cardId, created.cardId, createdAt);
-        logCardComment(cardId, "card", cardId, "agent", `Recovery mismatch recorded. Original exploratory work remains immutable; recovery audit card ${created.cardId} now owns review, tests, commits, and PRs for ${recovery.project_name}.`);
-        logCardComment(created.cardId, "card", created.cardId, "agent", `Recovery audit created from preserved card ${cardId}. Evidence checkout: ${recovery.source_path}; recorded HEAD ${recovery.head_sha ?? "unknown"}.`);
-        bb.realtime.publish("card-state", { cardId });
-        bb.realtime.publish("card-state", { cardId: created.cardId });
-        bb.realtime.publish("board-changed", { cardId: created.cardId });
-        return { ok: true, auditCardId: created.cardId, auditCardName: auditCard?.display_name ?? auditCard?.name ?? "Recovery audit", error: null };
-      } catch (error) {
-        return { ok: false, auditCardId: null, auditCardName: null, error: error instanceof Error ? error.message : "Could not create the recovery audit card." };
-      }
     },
 
     async researchStrategies() {
@@ -6695,7 +5395,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // A recovered checkout is a read-only audit target, never a fuzzy path
       // alias. If its Git root changed since the human attached it, stop here
       // rather than showing a convincing diff from a different repository.
-      const recoveryError = await recoveredCheckoutIntegrity(card, workspace.path);
+      const recoveryError = await recoveredCheckoutIntegrity(recoveryIntegrityDeps, card, workspace.path);
       if (recoveryError) return { ...empty, found: true, error: recoveryError };
       const runGit = (args: string[], cwd?: string): Promise<{ ok: boolean; stdout: string }> =>
         new Promise((resolve) => {
@@ -6808,303 +5508,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       };
     },
 
-    async publicationStatus({ cardId }) {
-      const card = getCard(cardId);
-      return card ? await publicationSnapshot(card) : unavailablePublication(ERR_CARD_NOT_FOUND);
-    },
-
-    // Publication history is an audit trail, not an arbitrary Git browser:
-    // a caller can inspect only commits Stelow itself recorded for this card.
-    // BB supplies the diff from the selected environment, so this remains
-    // useful for local-only commits and never shells out to Git on the plugin.
-    async publicationCommitDiff({ cardId, commitSha }) {
-      const empty = { found: false, commitSha: null, shortstat: null, files: [], truncated: false, error: null as string | null };
-      const recorded = db.prepare("SELECT 1 FROM publication_events WHERE card_id = ? AND commit_sha = ? LIMIT 1").get(cardId, commitSha);
-      if (!recorded) return { ...empty, error: "This commit is not recorded in this card's publication history." };
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ...empty, error: prepared.error };
-      try {
-        const result = await bb.sdk.environments.diffFiles({ environmentId: prepared.environmentId, target: "commit", sha: commitSha });
-        if (result.outcome !== "available") {
-          const error = result.outcome === "not_applicable" ? result.message : result.failure.message;
-          return { ...empty, error };
-        }
-        const patches = new Map(result.initialPatches.map((patch) => [patch.path, patch]));
-        // Commit targets carry no inline patches (initialPatches is empty even
-        // with loadMode auto): every file patch needs an explicit diffPatch
-        // fetch. Only too_large is genuinely unrenderable. Fetch bounded and
-        // fail-soft so one bad file never breaks the whole commit view.
-        const missingPaths = result.files
-          .filter((file) => !file.binary && file.loadMode !== "too_large" && !patches.has(file.path))
-          .map((file) => file.path);
-        const MAX_MISSING_PATCHES = 25;
-        let patchesTruncated = false;
-        if (missingPaths.length > 0) {
-          try {
-            const demanded = await bb.sdk.environments.diffPatch({
-              environmentId: prepared.environmentId,
-              paths: missingPaths.slice(0, MAX_MISSING_PATCHES),
-              target: { type: "commit", sha: commitSha },
-            });
-            if (demanded.outcome === "available") {
-              for (const patch of demanded.patches) patches.set(patch.path, patch);
-            } else {
-              const reason = demanded.outcome === "not_applicable" ? demanded.message : demanded.failure.message;
-              bb.log.warn(`stelow commit diff: diffPatch unavailable for ${commitSha} (${missingPaths.length} files): ${reason}`);
-            }
-            patchesTruncated = missingPaths.length > MAX_MISSING_PATCHES;
-          } catch (error) {
-            // Keep the initial patches; the UI states per-file availability.
-            bb.log.warn(`stelow commit diff: diffPatch failed for ${commitSha}: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-        return {
-          found: true,
-          commitSha,
-          shortstat: result.shortstat,
-          files: result.files.map((file) => {
-            const patch = patches.get(file.path);
-            return {
-              path: file.path,
-              display: file.path.split("/").pop() || file.path,
-              patch: patch?.patch ?? null,
-              binary: file.binary,
-              changeKind: file.changeKind,
-              additions: file.additions,
-              deletions: file.deletions,
-              truncated: patch?.truncated ?? file.loadMode !== "auto",
-              loadMode: file.loadMode,
-            };
-          }),
-          truncated: result.truncated || patchesTruncated,
-          error: null,
-        };
-      } catch (error) {
-        return { ...empty, error: error instanceof Error ? error.message : "BB could not load this commit diff." };
-      }
-    },
-
-    async publicationCommit({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
-      if (!prepared.snapshot.capabilities.commit.available) return { ok: false, message: prepared.snapshot.capabilities.commit.reason ?? "Commit is unavailable.", commitSha: null };
-      try {
-        // BB executes this on the environment host and owns staging, identity,
-        // hooks, and commit formatting. Do not substitute a local shell call.
-        const result = await bb.sdk.environments.commit({ environmentId: prepared.environmentId });
-        recordPublication(cardId, "commit", result.message, result.commitSha);
-        return { ok: true, message: result.message, commitSha: result.commitSha };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not commit this workspace.", commitSha: null };
-      }
-    },
-
-    async publicationSquashMerge({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, commitSha: null };
-      if (!prepared.snapshot.capabilities.squashMerge.available) return { ok: false, message: prepared.snapshot.capabilities.squashMerge.reason ?? "Local squash merge is unavailable.", commitSha: null };
-      const base = prepared.snapshot.mergeBase?.branch;
-      const branch = prepared.snapshot.branch?.current;
-      if (!base) return { ok: false, message: "BB could not determine the merge-base branch.", commitSha: null };
-      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", commitSha: null };
-      // BB exposes no local squash action (only PR squash-merge), so the
-      // panel runs `git merge --squash` in the card's own environment shell —
-      // the same visible-terminal pattern as push/sync. The script
-      // aborts/resets before restoring the branch, so a conflict never
-      // strands the checkout mid-merge (lib/squash-merge.mjs).
-      let script: string;
-      try {
-        script = buildSquashScript({ base, branch, message: `Squash merge ${branch} into ${base} (Stelow)` });
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "Squash refused the branch names.", commitSha: null };
-      }
-      try {
-        const terminal = await bb.sdk.terminals.create({
-          cols: 120,
-          rows: 30,
-          scope: { kind: "environment", environmentId: prepared.environmentId },
-          start: { mode: "shell" },
-          title: `Stelow squash ${branch}`,
-        });
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const live = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
-          if (live?.status === "running") break;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        try {
-          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from(`${script}\r`).toString("base64") });
-        } catch (error) {
-          await bb.sdk.terminals.close({ terminalId: terminal.id, mode: "force" }).catch(() => null);
-          return { ok: false, message: error instanceof Error ? `Squash shell opened (${terminal.id}) but the command could not be sent: ${error.message}` : `Squash shell opened (${terminal.id}) but the command could not be sent.`, commitSha: null };
-        }
-        const deadline = Date.now() + 60_000;
-        for (;;) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const out = await bb.sdk.terminals.output({ terminalId: terminal.id, tailBytes: 8000 }).catch(() => null);
-          const tail = ((out?.chunks ?? []) as Array<{ dataBase64: string }>)
-            .map((chunk) => Buffer.from(chunk.dataBase64, "base64").toString("utf8"))
-            .join("")
-            .slice(-4000);
-          const verdict = parseSquashOutput(tail);
-          if (verdict.finished) {
-            await bb.sdk.terminals.close({ terminalId: terminal.id, mode: "force" }).catch(() => null);
-            if (verdict.exit === 0 && verdict.sha) {
-              const message = `Squashed ${branch} into ${base} as ${verdict.sha}.`;
-              recordPublication(cardId, "squash_merge", message, verdict.sha);
-              return { ok: true, message, commitSha: verdict.sha };
-            }
-            return { ok: false, message: squashExitMessage(verdict.exit, branch, base), commitSha: null };
-          }
-          if (Date.now() > deadline) {
-            return { ok: false, message: `Squash is still running in shell ${terminal.id} — finish it in BB's terminal panel, then squash again.`, commitSha: null };
-          }
-        }
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not squash merge this workspace.", commitSha: null };
-      }
-    },
-
-    async publicationPushTerminal({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, terminalId: null as string | null };
-      const branch = prepared.snapshot.branch?.current;
-      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
-      try {
-        // BB never auto-reveals a new shell, so "open a terminal" was a
-        // promise the panel could not keep — and typed-but-unsent input left
-        // users unsure whether anything ran. Instead the confirmed action
-        // RUNS git push in the card's own environment (correct host and
-        // checkout by construction) and streams the result into Push shells
-        // below via publicationPushTerminals. The exit marker makes
-        // completion explicit: no marker yet means still running or waiting
-        // on interactive auth (finish it in BB's terminal panel).
-        // Single-active strategy: one push shell per card at a time. A push
-        // already in flight blocks a duplicate; retired predecessors are
-        // closed so runs never accumulate into an unreadable list.
-        const live = await livePushShell(prepared.environmentId);
-        if (live) {
-          return { ok: false, message: `A push is already running in shell ${live.id} — Check result instead of starting another.`, terminalId: live.id };
-        }
-        await retirePushShells(prepared.environmentId);
-        const terminal = await bb.sdk.terminals.create({
-          cols: 120,
-          rows: 30,
-          scope: { kind: "environment", environmentId: prepared.environmentId },
-          start: { mode: "shell" },
-          title: `Stelow push — ${branch}`,
-        });
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const live = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
-          if (live?.status === "running") break;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        // A swallowed input failure used to report success with an empty
-        // shell. Fail loudly instead: no history entry, no success toast.
-        // \r submits the line (verified against the terminal daemon); the
-        // marker reports the push exit so the panel can name the outcome.
-        try {
-          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git push; echo \"STELOW_PUSH_EXIT:$?\"\r").toString("base64") });
-        } catch (error) {
-          return { ok: false, message: error instanceof Error ? `Push shell opened (${terminal.id}) but git push could not be sent: ${error.message}` : `Push shell opened (${terminal.id}) but git push could not be sent.`, terminalId: terminal.id };
-        }
-        recordPublication(cardId, "push_terminal", `Ran git push in shell ${terminal.id} on ${branch}.`, null);
-        return { ok: true, message: `Push running in shell ${terminal.id} — watch Push shells below for the result.`, terminalId: terminal.id };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not open a push terminal.", terminalId: null as string | null };
-      }
-    },
-
-    async publicationPullPush({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, terminalId: null as string | null };
-      const branch = prepared.snapshot.branch?.current;
-      if (!branch) return { ok: false, message: "BB could not determine this checkout's branch.", terminalId: null as string | null };
-      try {
-        // The decided Git workflow for rejected pushes: pull with rebase
-        // (linear history, no merge commits for lay users), then push — one
-        // confirmed click. A conflicted pull aborts itself (REBASE_HEAD
-        // present): the checkout returns to its pre-pull state, nothing is
-        // lost, and the panel names the manual exit. BB exposes no pull
-        // action, so this runs shell-mediated like push, with sentinels for
-        // each step.
-        const live = await livePushShell(prepared.environmentId);
-        if (live) {
-          return { ok: false, message: `A push is already running in shell ${live.id} — Check result instead of starting another.`, terminalId: live.id };
-        }
-        await retirePushShells(prepared.environmentId);
-        const terminal = await bb.sdk.terminals.create({
-          cols: 120,
-          rows: 30,
-          scope: { kind: "environment", environmentId: prepared.environmentId },
-          start: { mode: "shell" },
-          title: `Stelow push — ${branch}`,
-        });
-        for (let attempt = 0; attempt < 5; attempt++) {
-          const liveTerminal = await bb.sdk.terminals.get({ terminalId: terminal.id }).catch(() => null);
-          if (liveTerminal?.status === "running") break;
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-        try {
-          await bb.sdk.terminals.input({ terminalId: terminal.id, dataBase64: Buffer.from("git pull --rebase; echo \"STELOW_SYNC_EXIT:$?\"; if git rev-parse --verify REBASE_HEAD >/dev/null 2>&1; then git rebase --abort; echo \"STELOW_SYNC_ABORTED:1\"; fi; git push; echo \"STELOW_PUSH_EXIT:$?\"\r").toString("base64") });
-        } catch (error) {
-          return { ok: false, message: error instanceof Error ? `Sync shell opened (${terminal.id}) but the command could not be sent: ${error.message}` : `Sync shell opened (${terminal.id}) but the command could not be sent.`, terminalId: terminal.id };
-        }
-        recordPublication(cardId, "push_terminal", `Ran pull --rebase + push in shell ${terminal.id} on ${branch}.`, null);
-        return { ok: true, message: `Sync & push running in shell ${terminal.id} — watch Push shells below for the result.`, terminalId: terminal.id };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not open a sync shell.", terminalId: null as string | null };
-      }
-    },
-
-    async publicationPushTerminals({ cardId }) {
-      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, error: prepared.error, remote: null, terminals: [] };
-      try {
-        const pushSessions = await pushShellSessions(prepared.environmentId);
-        const terminals = await Promise.all(pushSessions.map(async (session) => {
-          const read = await readPushShell(session);
-          return { id: session.id, title: session.title, status: session.status, exitCode: session.exitCode, createdAt: session.createdAt, pushState: read.pushState, pushExit: read.pushExit, outputTail: read.text, outputUnavailable: read.unavailable };
-        }));
-        // The remote lives in git's own `To <url>` line: newest shell first,
-        // first parseable wins. Absent until a push actually ran — links wait.
-        let remote: { owner: string; repo: string; webUrl: string } | null = null;
-        for (const terminal of terminals) {
-          remote = parsePushRemoteUrl(terminal.outputTail);
-          if (remote) break;
-        }
-        return { ok: true, error: null, remote, terminals };
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : "BB could not list push shells.", remote: null, terminals: [] };
-      }
-    },
-
-    async publicationPullRequestAction({ cardId, operation, method }) {      const prepared = await publicationEnvironment(cardId);
-      if ("error" in prepared) return { ok: false, message: prepared.error, pullRequestUrl: null };
-      const url = prepared.snapshot.pullRequest?.url ?? null;
-      const capability = operation === "merge"
-        ? prepared.snapshot.capabilities.mergePullRequest
-        : operation === "ready"
-          ? prepared.snapshot.capabilities.markReady
-          : prepared.snapshot.capabilities.markDraft;
-      if (!capability.available) return { ok: false, message: capability.reason ?? "This pull-request action is unavailable.", pullRequestUrl: url };
-      try {
-        if (operation === "ready") {
-          const result = await bb.sdk.environments.markPullRequestReady({ environmentId: prepared.environmentId });
-          recordPublication(cardId, "pull_request_ready", result.message, null, url);
-          return { ok: true, message: result.message, pullRequestUrl: url };
-        }
-        if (operation === "draft") {
-          const result = await bb.sdk.environments.markPullRequestDraft({ environmentId: prepared.environmentId });
-          recordPublication(cardId, "pull_request_draft", result.message, null, url);
-          return { ok: true, message: result.message, pullRequestUrl: url };
-        }
-        const result = await bb.sdk.environments.mergePullRequest({ environmentId: prepared.environmentId, method: method ?? "squash" });
-        recordPublication(cardId, "pull_request_merge", result.message, null, url);
-        return { ok: true, message: result.message, pullRequestUrl: url };
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "BB could not apply this pull-request action.", pullRequestUrl: url };
-      }
-    },
 
     async runResearchStrategy({ cardId, strategy }) {
       // Composite research: run another strategy round on the same card.
@@ -7130,7 +5533,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         ? roundRelPath(fanoutStateDir, fanoutWorkspace.path, roundFileName(picked.id, roundNo, roundStamp))
         : "";
       if (roundFile && fanoutWorkspace?.path) await ensureArtifactParent(fanoutWorkspace.path, roundFile);
-      const result = await respawnWorkerForBand(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append", roundNo, roundStamp, roundFile });
+      const result = await workers.respawn(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append", roundNo, roundStamp, roundFile });
       if (!result.ok) return { ok: false, strategy: null, error: result.error ?? "Could not start the strategy round." };
       const history = [...strategyRounds(card), { id: picked.id, at: roundAt, file: roundFile }];
       db.prepare("UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), cardId);
@@ -7172,7 +5575,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // asks; otherwise a valid response would resume the worker but make
       // `bb stelow split` refuse as unanswered.
       recordSplitAnswer(db, cardId, decisions);
-      markQuestionsAnswered(db, { cardId, interactionIds: [...rows.keys()].map((questionId) => `expired:${questionId}`), occurredAt: now() });
+      markInboxQuestionsAnswered(
+        cardId,
+        [...rows.keys()].map((questionId) => `expired:${questionId}`),
+      );
       const openQuestionIds = await syncOpenQuestionInbox(card);
       // Same stale-error rule as live answers: answering clears the
       // interrupted turn's failure so the recovered card reads coherent.
@@ -7186,43 +5592,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         }
       }
       return { ok: true as const, answered: decisions.length, error: null };
-    },
-
-    async advanceCard({ cardId, stage }) {
-      const card = getCard(cardId);
-      if (!card) return { ok: false, stdout: "", error: ERR_CARD_NOT_FOUND };
-      if (isArchivedCard(card)) return { ok: false, stdout: "", error: ERR_CARD_ARCHIVED };
-      if (card.kind === "research") return { ok: false, stdout: "", error: "Research cards don't use stages — a completed index moves them to Done automatically." };
-      if (card.kind === "explore") return { ok: false, stdout: "", error: "Explore cards don't use stages — a completed artifact moves them to Done automatically." };
-      const workspace = await cardWorkspace(card);
-      if (!workspace?.path) return { ok: false, stdout: "", error: ERR_WORKSPACE_UNAVAILABLE };
-      const stateDir = card.dir_hash ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash) : null;
-      const source = { path: workspace.path, hostId: workspace.hostId };
-      const guard = await ensureProjectArtifacts(bb, source.path, stateDir, Boolean(card.dir_hash));
-      if (guard) return { ok: false, stdout: "", error: guard };
-      // Check the stage being left before the helper mutates state.md. The
-      // workflow file is slug truth, so a refusal leaves both it and the DB
-      // card at the same stage.
-      const questionGuard = await questionContractsGate(card, stateDir);
-      if (questionGuard) return { ok: false, stdout: "", error: questionGuard };
-      const result = await runHelper(["advance", stage], source.path, stateDir ?? undefined);
-      if (result.code !== 0) return { ok: false, stdout: result.stdout, error: result.stderr || "stelow advance failed" };
-      // Band-preset swap, mirroring the CLI advance path: if the phase of the
-      // stage just advanced to defines a preset different from this worker's,
-      // respawn with the phase preset on the same state dir.
-      const band = STAGE_TO_BAND[stage];
-      const bandPreset = band ? getReliablePresetForBand(band, card.id) : null;
-      const currentPresetId = card.worker_preset_id ?? getPresetForCard(card.id).id;
-      if (band && bandPreset && bandPreset.id !== currentPresetId) {
-        await respawnWorkerForBand(card.id, bandPreset.id);
-      }
-      // Reaching audit is still unfinished work. Only `bb stelow done` may
-      // record completion after the host verifies its terminal conditions.
-      // A manual advance is therefore never a way to bypass that invariant.
-      const nextStatus = stage === "triage" ? "draft" : "in-progress";
-      updateCard(cardId, { stage, status: nextStatus, activity: "running" });
-      bb.realtime.publish("card-state", { cardId });
-      return { ok: true, stdout: result.stdout, error: null };
     },
 
     async advance({ projectId, stage }) {
@@ -7362,138 +5731,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         refreshRestartPending(db, card.id, card.worker_thread_id, card.worker_preset_id, getReliablePresetForBand(band, card.id).id);
       }
       bb.realtime.publish("board-changed", { presetId });
-      return { ok: true, error: null };
-    },
-
-    // The key itself never leaves the host: reads report presence + source
-    // only, so panels and logs cannot leak it.
-    async getDecisionApiConfig() {
-      const row = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const { key, source } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
-      const provider = normalizeDecisionProvider(row?.provider ?? "jev");
-      return {
-        endpoint: row?.endpoint ?? defaultEndpointFor(provider),
-        model: normalizeDecisionApiModel(row?.model, defaultModelFor(provider)),
-        hasKey: key !== null,
-        keySource: source,
-        keyRequired: providerRequiresKey(provider),
-        disabled: isDecisionApiDisabled(process.env),
-        provider,
-        configured: row !== undefined,
-      };
-    },
-
-    async setDecisionApiConfig({ endpoint, apiKey, model, provider }) {
-      const current = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const nextProvider = provider === undefined ? normalizeDecisionProvider(current?.provider ?? "jev") : normalizeDecisionProvider(provider, "");
-      if (!nextProvider) return { ok: false, error: `Unknown provider "${provider}". Available: ${DECISION_PROVIDERS.map((entry) => entry.id).join(", ")}.` };
-      const nextEndpoint = endpoint === undefined ? (current?.endpoint ?? defaultEndpointFor(nextProvider)) : (endpoint ?? defaultEndpointFor(nextProvider));
-      if (!isDecisionApiEndpointValid(nextEndpoint)) return { ok: false, error: "Endpoint must be an http(s) URL (e.g. https://api.typesafe.ai/v1/systemone)." };
-      const nextModel = model === undefined ? (current?.model ?? defaultModelFor(nextProvider)) : normalizeDecisionApiModel(model, defaultModelFor(nextProvider));
-      if (!nextModel) return { ok: false, error: "Model must name a version (e.g. jev-latest)." };
-      const nextKey = apiKey === undefined ? (current?.api_key ?? "") : (apiKey ?? "");
-      db.prepare("INSERT OR REPLACE INTO decision_api_config (id, endpoint, api_key, model, provider, updated_at) VALUES (1, ?, ?, ?, ?, ?)").run(nextEndpoint.trim(), nextKey, nextModel, nextProvider, now());
-      return { ok: true, error: null };
-    },
-
-    // Explicit probe: one fixed Noul question, reported with latency. The
-    // only place the host spends Decision API budget on demand — background
-    // paths fail soft to built-in rules instead.
-    async testDecisionApi() {
-      if (isDecisionApiDisabled(process.env)) return { ok: false, latencyMs: null, model: null, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
-      const row = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-      const provider = normalizeDecisionProvider(row?.provider ?? "jev");
-      const { key } = resolveDecisionApiKey({ storedKey: row?.api_key ?? null, env: process.env });
-      if (!key && providerRequiresKey(provider)) return { ok: false, latencyMs: null, model: null, error: "No key: set one in Decision API settings or export DECISION_API_KEY." };
-      const probe = buildProbeCall(provider);
-      const result = await evaluateDecisionCall({
-        provider,
-        endpoint: row?.endpoint ?? defaultEndpointFor(provider),
-        apiKey: key ?? "",
-        model: normalizeDecisionApiModel(row?.model, defaultModelFor(provider)),
-        state: probe.state,
-        questions: probe.questions,
-      });
-      if (!result.ok) return { ok: false, latencyMs: null, model: null, error: result.error ?? "the Decision API call failed" };
-      return { ok: true, latencyMs: result.latencyMs ?? null, model: result.model ?? null, error: null };
-    },
-
-    async getDecisionPoint({ point }) {
-      const def = getDecisionPointDef(point);
-      const row = db.prepare("SELECT mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(point) as { mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      const fallback = def?.defaultThresholds ?? { routeAt: 0.6 };
-      let stored: unknown = null;
-      try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
-      const route = row ? normalizePointRoute({ provider: row.provider, endpoint: row.endpoint, apiKey: row.api_key, model: row.model }) : null;
-      return {
-        point,
-        mode: normalizePointMode(row?.mode, def?.defaultMode ?? "rules"),
-        thresholds: normalizeThresholds(stored, fallback),
-        route: route && (route.provider ?? route.endpoint ?? route.apiKey ?? route.model) ? route : null,
-        presetId: row?.preset_id ?? null,
-      };
-    },
-
-    async listDecisionPoints() {
-      const rows = db.prepare("SELECT point, mode, thresholds, provider, endpoint, api_key, model, preset_id FROM decision_points").all() as Array<{ point: string; mode: string; thresholds: string; provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null }>;
-      const byId = new Map(rows.map((row) => [row.point, row]));
-      return {
-        points: DECISION_POINTS.map((def) => {
-          const row = byId.get(def.id);
-          let stored: unknown = null;
-          try { stored = row ? JSON.parse(row.thresholds) : null; } catch { stored = null; }
-          const route = row ? normalizePointRoute({ provider: row.provider, endpoint: row.endpoint, apiKey: row.api_key, model: row.model }) : null;
-          return {
-            id: def.id,
-            label: def.label,
-            description: def.description,
-            rules: def.rules,
-            requires: def.requires ?? null,
-            modes: [...def.modes],
-            mode: normalizePointMode(row?.mode, def.defaultMode),
-            thresholds: normalizeThresholds(stored, def.defaultThresholds),
-            route: route && (route.provider ?? route.endpoint ?? route.apiKey ?? route.model) ? route : null,
-            presetId: row?.preset_id ?? null,
-          };
-        }),
-      };
-    },
-
-    async setDecisionPoint({ point, mode, thresholds, route, presetId }) {
-      const def = getDecisionPointDef(point);
-      if (!def) return { ok: false, error: `Unknown decision point "${point}". Available: ${DECISION_POINTS.map((entry) => entry.id).join(", ")}.` };
-      if (!def.modes.includes(mode)) return { ok: false, error: `Unknown mode "${mode}" for ${point}. Available: ${def.modes.join(", ")}.` };
-      if (mode === "api" && isDecisionApiDisabled(process.env)) return { ok: false, error: "Decision API is disabled on this host (STELOW_DECISION_API=0)." };
-      const existing = db.prepare("SELECT provider, endpoint, api_key, model, preset_id FROM decision_points WHERE point = ?").get(point) as { provider: string | null; endpoint: string | null; api_key: string | null; model: string | null; preset_id: string | null } | undefined;
-      // Absent params preserve the stored row; explicit null clears. Flipping
-      // modes never silently drops a configured route or preset.
-      const nextRoute = route === undefined
-        ? normalizePointRoute({ provider: existing?.provider ?? null, endpoint: existing?.endpoint ?? null, apiKey: existing?.api_key ?? null, model: existing?.model ?? null })
-        : normalizePointRoute(route);
-      let presetRow: string | null = presetId === undefined ? (existing?.preset_id ?? null) : presetId;
-      // Preset judging burns a full provider turn per judgment: only points
-      // that allow it accept the mode, and only with a preset that exists.
-      // Anything else refuses at save time — a misconfigured point never
-      // silently degrades at use time.
-      if (mode === "preset") {
-        if (!pointSupportsPresetJudge(point)) return { ok: false, error: `"${point}" cannot judge via preset: hot paths stay on rules/api so judgments never burn worker turns.` };
-        if (typeof presetRow !== "string" || presetRow.length === 0) return { ok: false, error: `Preset mode needs a judge preset — pick any preset, including one no stage uses.` };
-        if (!getPresetById(presetRow)) return { ok: false, error: `Unknown preset "${presetRow}".` };
-      }
-      const next = normalizeThresholds(thresholds ?? null, def.defaultThresholds);
-      db.prepare("INSERT OR REPLACE INTO decision_points (point, mode, thresholds, provider, endpoint, api_key, model, preset_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(point, mode, JSON.stringify(next), nextRoute.provider, nextRoute.endpoint, nextRoute.apiKey, nextRoute.model, presetRow, now());
-      bb.realtime.publish("board-changed", { point });
-      return { ok: true, error: null };
-    },
-
-    async getReviewPolicy() {
-      const row = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
-      return { mode: row?.mode === "required" ? "required" as const : "off" as const };
-    },
-
-    async setReviewPolicy({ mode }) {
-      db.prepare("INSERT OR REPLACE INTO review_policy (id, mode, assigned_at) VALUES (1, ?, ?)").run(mode, now());
-      bb.realtime.publish("board-changed", { reviewPolicy: mode });
       return { ok: true, error: null };
     },
 
@@ -8022,111 +6259,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const result = await seedWorkflow(bb, rootPath, workflowIdForName(name), name, intent);
         return result.error ? { exitCode: 1, stderr: result.error } : { exitCode: 0, stdout: result.statePath ?? "" };
       }
-      if (argv[0] === "advance") {
-        const args = argv.slice(1);
-        const flag = (name: string) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
-        const projectId = flag("--project") ?? ctx.projectId;
-        const dryRun = args.includes("--dry-run");
-        const json = args.includes("--json");
-        const stage = flag("--stage") ?? args.find((arg) => !arg.startsWith("--") && arg !== projectId);
-        if (!projectId || !stage) return { exitCode: 2, stderr: "Usage: bb stelow advance [--project <proj_id>] [--dry-run] [--json] <stage>" };
-        // The agent runs this from within its worker thread; resolve the owning
-        // card first so Personal/exploratory work uses its own workspace.
-        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
-        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
-        const rootPath = workspace?.path ?? await projectRoot(bb, projectId);
-        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
-        if (guard) return { exitCode: 1, stderr: guard };
-        if (!dryRun && cliCard) {
-          const questionGuard = await questionContractsGate(cliCard, stateDir);
-          if (questionGuard) return { exitCode: 1, stderr: questionGuard };
-        }
-        const helperArgs = ["advance", stage, ...(dryRun ? ["--dry-run"] : []), ...(json ? ["--json"] : [])];
-        const result = await runHelper(helperArgs, rootPath, stateDir ?? undefined);
-        // Helper exit codes are meaningful (2 = usage, 1 = invalid transition):
-        // pass through instead of collapsing.
-        if (result.code !== 0) return { exitCode: result.code ?? 1, stderr: result.stderr || "advance failed", stdout: result.stdout };
-        // --dry-run validates only: no card writes, no band swap, no auto-sync.
-        if (dryRun) return { exitCode: 0, stdout: result.stdout };
-        if (cliCard) updateCard(cliCard.id, { stage, status: "in-progress", activity: "running", last_error: null });
-        if (cliCard) recordStageEvent(cliCard.id, stage);
-        // Band-preset swap: if the band of the stage just advanced to defines a
-        // preset different from the one this worker was spawned with, respawn the
-        // worker with that band preset on the same state dir. Deferred (setTimeout)
-        // so the current handle returns its output before the worker is replaced.
-        if (cliCard) {
-          const band = STAGE_TO_BAND[stage];
-          if (band) {
-            const bandPreset = getReliablePresetForBand(band, cliCard.id);
-            const currentPresetId = cliCard.worker_preset_id ?? getPresetForCard(cliCard.id).id;
-            if (bandPreset.id !== currentPresetId) {
-              const targetId = cliCard.id;
-              setTimeout(() => { respawnWorkerForBand(targetId, bandPreset.id).catch(() => {}); }, 10);
-            }
-          }
-        }
-        // Entering execution seeds scope tracking best-effort: the vendored
-        // Step 2e (`scripts/stelow sync-scopes`) has no binary in a bb
-        // workspace, so the host performs the same call here. Explicit worker
-        // calls remain canonical; failures never block the advance.
-        if (stage === "execution") {
-          // Loop-back transparency: audit → execution is the rework loop,
-          // so the advance names the open rework it picks up (or its
-          // absence) instead of moving silently. cliCard is a pre-write
-          // snapshot, so its stage is still the stage we came from.
-          let loopNote = "";
-          if (cliCard && cliCard.stage === "audit") {
-            const gapState = await critiqueGapState(cliCard).catch(() => null);
-            if (gapState?.matched) {
-              const open = gapState.auditGapScopes.filter((scope) => !isDoneStatus(scope.status));
-              loopNote = open.length > 0
-                ? `\n(rework loop: back to execution from audit — picking up ${open.length} open audit-gap scope(s): ${open.map((scope) => scope.id).join(", ")})`
-                : "\n(rework loop: back to execution from audit — no open audit-gap scopes)";
-            }
-          }
-          let syncedCount: number | null = null;
-          try {
-            const sync = await runHelper(["sync-scopes", "--json"], rootPath, stateDir ?? undefined);
-            const parsed = JSON.parse(sync.stdout || "{}") as { synced?: unknown };
-            if (typeof parsed.synced === "number") syncedCount = parsed.synced;
-          } catch { /* best-effort only */ }
-          // Fail-closed scope gates (build only): the sync above had its
-          // chance — refusals preempt entry, notes compose with its report.
-          // Gate order lives in lib/build-gates (first refusal wins).
-          if (cliCard?.kind === "build") {
-            const synced = loadCardScopes(rootPath, cliCard.id);
-            const spec = latestSpecTech(rootPath, cliCard.id)?.content ?? null;
-            const entryRegistry = buildRegistry(synced, { defaultKind: "scope" });
-            const pendingScopes = synced.filter((scope) => scope.status === "pending");
-            const gate = advanceExecutionGates({
-              kind: cliCard.kind, stage, specContent: spec, syncedCount: synced.length,
-              cycles: dependencyCycles(entryRegistry),
-              hasUnstartablePending: pendingScopes.length > 0 && !pendingScopes.some((scope) => canStart(entryRegistry, scope.id, isDoneStatus)),
-            });
-            const syncedNote = syncedCount !== null && syncedCount > 0 ? `\n(sync-scopes: synced ${syncedCount} scopes)` : "";
-            // Trail the entry decision (fail-open): refused or entered with N.
-            try {
-              recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: "all", transition: gate.refusal ? "execution-refused" : "execution-entered", actor: "host", evidence: gate.refusal ?? `${synced.length} synced scope(s)` });
-            } catch { /* trail never blocks */ }
-            if (gate.refusal) return { exitCode: 1, stderr: gate.refusal };
-            if (gate.note || syncedNote) return { exitCode: 0, stdout: result.stdout + syncedNote + (gate.note ? `\n(${gate.note})` : "") + loopNote };
-          }
-          if (loopNote) return { exitCode: 0, stdout: result.stdout + loopNote };
-        }
-        // Independent pre-review on gate entry (advisory, never blocking):
-        // when a build card advances into gate/int-gate/plan-gate with a
-        // reviewer designated, a hidden reviewer thread judges the gate's
-        // registered artifact and posts findings as a card comment for the
-        // human (and the worker) to read before approval. Fire-and-forget —
-        // advance never waits (this return is past the dry-run exit).
-        // Silent skip on every miss: no designation, no workflow, no
-        // artifact, thin artifact. diff-gate stays out (no single file;
-        // deterministic diff checks already run there).
-        if (cliCard) void requestGatePreReview(cliCard.id, stage).catch(() => undefined);
-        return { exitCode: 0, stdout: result.stdout };
-      }
+      if (argv[0] === "advance") return executionAdvance.cli(argv, ctx);
       if (argv[0] === "gap-scopes") {
         // Deterministic ESCALATED → scopes conversion (upstream criteria 9).
         // The worker classifies gaps; code creates the rework scopes so the
@@ -8323,8 +6456,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const path = typeof env.path === "string" && env.path ? env.path : null;
           const bytes = path ? await duBytes(path).catch(() => null) : null;
           const threadId = threadIdFromWorktreePath(path);
-          const owner = threadId ? (db.prepare("SELECT card_id FROM card_threads WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1").get(threadId) as { card_id: string } | undefined) : undefined;
-          const card = owner ? getCard(owner.card_id) : undefined;
+          const owner = threadId ? workers.ledgerCardId(threadId) : null;
+          const card = owner ? getCard(owner) : undefined;
           if (onlyCardId && (!card || card.id !== onlyCardId)) continue;
           rows.push({
             environmentId: env.id,
@@ -8488,10 +6621,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // (20 latest threads) and fail-open — export never blocks on it.
         let exportTokens = null;
         try {
-          const threadRows = db.prepare("SELECT thread_id FROM card_threads WHERE card_id = ? ORDER BY started_at DESC LIMIT 20").all(card.id) as Array<{ thread_id: string }>;
-          const reports = await Promise.all(threadRows.map(async (row) => {
+          const threadIds = workers.ledgerThreadIds(card.id, 20);
+          const reports = await Promise.all(threadIds.map(async (threadId) => {
             try {
-              const events = await bb.sdk.threads.events.list({ threadId: row.thread_id, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
+              const events = await bb.sdk.threads.events.list({ threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
               return tokenBreakdownFromEvents(events);
             } catch { return null; }
           }));
@@ -8684,8 +6817,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const textOut = researchVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the rounds above, then run done again." };
           }
-          const policyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
-          if (policyRow?.mode === "required" && !(await passingReviewCovers(card, readiness.fingerprint).catch(() => false))) {
+          if (decisionApi.reviewPolicy().mode === "required" && !(await passingReviewCovers(card, readiness.fingerprint).catch(() => false))) {
             return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current index — run `bb stelow review`, then run done again. (Enable only with a reviewer you trust on adversarial spot-checks; see docs/phase6-independent-review-plan.md.)" };
           }
           const researchBundle = await exportRunBundle(card, {});
@@ -8708,8 +6840,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const textOut = exploreVerifyText(report);
             return { exitCode: 1, stdout: textOut.stdout, stderr: textOut.stderr || "verify failed — fix the artifact above, then run done again." };
           }
-          const explorePolicyRow = db.prepare("SELECT mode FROM review_policy WHERE id = 1").get() as { mode: string } | undefined;
-          if (explorePolicyRow?.mode === "required" && !(await passingReviewCovers(card, artifact.fingerprint).catch(() => false))) {
+          if (decisionApi.reviewPolicy().mode === "required" && !(await passingReviewCovers(card, artifact.fingerprint).catch(() => false))) {
             return { exitCode: 1, stderr: "Review policy is required: no passing review covers the current artifact — run `bb stelow review`, then run done again. (Enable only with a reviewer you trust on adversarial spot-checks; see docs/phase6-independent-review-plan.md.)" };
           }
           const exploreBundle = await exportRunBundle(card, {});
@@ -8883,7 +7014,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // drag to Archived. The command's stdout is guidance, not a
           // lifecycle guarantee: end its worker here so it cannot consume a
           // turn after its card has disappeared from active work.
-          await stopWorkerThread(card.worker_thread_id);
+          await workers.stop(card.worker_thread_id);
           updateCard(cardId, { status: "archived", activity: "idle" });
           return { exitCode: 0, stdout: `Split into ${created.length} build ${created.length === 1 ? "card" : "cards"}: ${created.map((entry) => entry.slice).join("; ")}. The parent card is archived — stop: your workflow ends here.` };
         }
@@ -8945,30 +7076,22 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { exitCode: 0, stdout: result.stdout };
       }
       if (argv[0] === "scope") {
-        // Single-writer scope transitions for workers (no scripts/stelow
-        // binary exists in a bb workspace): start|done|seed-tasks validate
-        // terminality, containment, and dependency order in the helper and
-        // commit atomically. Like sync-scopes, the write doubles as the
-        // refresh signal so the card reloads, and trails the decision.
-        const parsed = parseScopeArgs(argv.slice(1));
-        if (parsed.error) return { exitCode: 2, stderr: parsed.error };
-        const cliCard = ctx.threadId ? getCardByWorkerThread(ctx.threadId) : undefined;
-        const workspace = cliCard ? await cardWorkspace(cliCard) : null;
-        const rootPath = workspace?.path ?? await projectRoot(bb, parsed.projectId ?? ctx.projectId ?? null);
-        if (!rootPath) return { exitCode: 1, stderr: "Workspace path is unavailable." };
-        const stateDir = cliCard?.dir_hash ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash) : null;
-        const guard = await ensureProjectArtifacts(bb, rootPath, stateDir, Boolean(cliCard?.dir_hash));
-        if (guard) return { exitCode: 1, stderr: guard };
-        const result = await runHelper(["scope", ...parsed.passthrough!], rootPath, stateDir ?? undefined);
-        if (result.code !== 0) return { exitCode: 1, stderr: result.stderr || "scope transition failed", stdout: result.stdout };
-        if (cliCard) {
-          try {
-            recordTrackableEvent(db, { cardId: cliCard.id, kind: "scope", trackableId: parsed.scopeId!, transition: parsed.op === "start" ? "started" : parsed.op === "seed-tasks" ? "tasks-seeded" : "completed", actor: "worker", evidence: result.stdout.slice(0, 200) });
-          } catch { /* trail never blocks */ }
-          bb.realtime.publish("card-state", { cardId: cliCard.id });
-          bb.realtime.publish("board-changed", { cardId: cliCard.id });
-        }
-        return { exitCode: 0, stdout: result.stdout };
+        return runScopeCommand(argv, ctx, {
+          bb,
+          getCardByWorkerThread,
+          cardWorkspace,
+          projectRoot: (projectId) => projectRoot(bb, projectId),
+          workflowStateDir: (rootPath, card) => workflowStateDir(
+            bb,
+            rootPath,
+            card.id,
+            card.dir_hash!,
+          ),
+          ensureProjectArtifacts: (rootPath, stateDir, requireOwnedState) =>
+            ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
+          runHelper,
+          recordTrackableEvent: (event) => { recordTrackableEvent(db, event); },
+        });
       }
       if (argv[0] === "lock") {
         const args = argv.slice(1);
@@ -9326,7 +7449,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const reviewWorkspace = await cardWorkspace(card);
         if (!reviewWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
         const reviewSource = reviewWorkspace.hostId ? { path: reviewWorkspace.path, hostId: reviewWorkspace.hostId } : null;
-        const reviewEnvironment = await continuingWorkerEnvironment(card, reviewSource ? workerEnvironment(reviewSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+        const reviewFallback = reviewSource
+          ? workerEnvironment(reviewSource, params, card.workspace_kind === "exploratory")
+          : { type: "project-default" as const };
+        const reviewEnvironment = await workers.continuingEnvironment(card, reviewFallback);
         const prompt = buildReviewPrompt({ cardName: card.display_name ?? card.name, request: card.prompt, contractLabel, artifactContent: artifactText, deterministicFailures: [], evidence });
         let reviewThread: { id: string };
         try {
@@ -9427,7 +7553,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const content = full ? await bb.sdk.files.read({ path: full }).then((f) => f.content).catch(() => null) : null;
         if (typeof content !== "string" || !content.trim()) return { exitCode: 1, stderr: `Artifact "${artifactArg}" is missing or empty — write it first, then judge.` };
         const criteriaCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const criteriaRoute = pointRouteConfig(criteriaPoint, criteriaCfg);
+        const criteriaRoute = decisionApi.routeConfig(criteriaPoint, criteriaCfg);
         const criteriaProvider = normalizeDecisionProvider(criteriaRoute.provider ?? "jev");
         const { key: criteriaKey } = resolveDecisionApiKey({ storedKey: criteriaRoute.apiKey ?? null, env: process.env });
         if (!criteriaKey && providerRequiresKey(criteriaProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
@@ -9489,7 +7615,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const doneTasks = taskScopes.flatMap((scope) => (Array.isArray(scope.tasks) ? scope.tasks : []).filter((task) => isDoneStatus(task.status)).map((task) => ({ id: task.id, name: task.name, scope: scope.name, verify: taskVerifyCommand(task) })));
         if (doneTasks.length === 0) return { exitCode: 0, stdout: "No completed tasks to evidence — pending tasks are openly pending, nothing to judge." };
         const taskCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const taskRoute = pointRouteConfig(taskPoint, taskCfg);
+        const taskRoute = decisionApi.routeConfig(taskPoint, taskCfg);
         const taskProvider = normalizeDecisionProvider(taskRoute.provider ?? "jev");
         const { key: taskKey } = resolveDecisionApiKey({ storedKey: taskRoute.apiKey ?? null, env: process.env });
         if (!taskKey && providerRequiresKey(taskProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
@@ -9627,7 +7753,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           return { exitCode: 1, stderr: "Gap triage needs the Artifact criteria router in Decision API or preset mode. Set it in Manage agent presets → Decision routers." };
         }
         const gapCfg = db.prepare("SELECT endpoint, api_key, model, provider FROM decision_api_config WHERE id = 1").get() as { endpoint: string; api_key: string; model: string; provider: string | null } | undefined;
-        const gapRoute = pointRouteConfig(gapPoint, gapCfg);
+        const gapRoute = decisionApi.routeConfig(gapPoint, gapCfg);
         const gapProvider = normalizeDecisionProvider(gapRoute.provider ?? "jev");
         const { key: gapKey } = resolveDecisionApiKey({ storedKey: gapRoute.apiKey ?? null, env: process.env });
         if (!gapKey && providerRequiresKey(gapProvider)) return { exitCode: 1, stderr: "No key: set one in Decision API settings or export DECISION_API_KEY." };
@@ -9669,90 +7795,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         return { exitCode: 0, stdout: [`Gap triage (${gapJudged.findings.length} escalated gaps judged for genuineness against the critique and the working diff):`, ...gapLines, `Summary: ${gapGenuine} genuine, ${gapNotReal} dismissed, ${gapUncertain} unverifiable — advisory only; routing stays deterministic.${gapBlind}`].join("\n") };
       }
       if (argv[0] === "draft") {
-        // Disposable Tier G burst: text-in/text-out on the generation
-        // preset, judged 100% by the caller. The draft thread writes
-        // nothing, asks nothing, advances nothing — a cheap model is safe
-        // exactly because the leash is short. Anything needing tools,
-        // exact shapes, or multi-step work stays Tier R (do it yourself
-        // on your band preset, never here).
-        const args = argv.slice(1);
-        const json = args.includes("--json");
-        let cardId = ctx.threadId ? getCardByWorkerThread(ctx.threadId)?.id : undefined;
-        let brief: string | null = null;
-        for (let i = 0; i < args.length; i++) {
-          if (args[i] === "--prompt") { brief = args[i + 1] ?? null; i++; continue; }
-          if (args[i] === "--card") { cardId = args[i + 1]; i++; continue; }
-          if (args[i] === "--json") continue;
-          return { exitCode: 2, stderr: "Usage: bb stelow draft --prompt <brief> [--json] [--card <card_id>]" };
-        }
-        if (!cardId) return { exitCode: 2, stderr: "No card in context (run from the worker thread or pass --card <card_id>)." };
-        if (!brief || !brief.trim()) return { exitCode: 2, stderr: "Pass --prompt <brief>: one disposable draft request (prose only, never protocol work)." };
-        const card = getCard(cardId);
-        if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
-        if (isArchivedCard(card)) return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
-        const draftContext = await resolveDraftContext(card);
-        if (!draftContext.ok) return { exitCode: 1, stderr: draftContext.error };
-        const { draftPreset, params, workspace: draftWorkspace, environment: draftEnvironment, resolvedSource } = draftContext;
-        const permissionNote = params.permissionMode === "full"
-          ? " (preset permission coerced full → accept-edits: drafts read, never write)"
-          : "";
-        const fallbackNote = resolvedSource === "band" ? " (generation preset unset — ran on the band preset)" : "";
-        const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
-        let draftThread: { id: string };
-        try {
-          draftThread = await spawnDisposable({
-            projectId: card.project_id,
-            environment: draftEnvironment,
-            visibility: "hidden",
-            // Disposable draft: archiving the worker archives the draft with
-            // it (BB 0.43 dependent threads). Lifecycle only — the text still
-            // travels through the draft record, never thread history.
-            ...(card.worker_thread_id ? { lifecycleOwnerThreadId: card.worker_thread_id } : {}),
-            title: `Stelow draft: ${card.display_name ?? card.name}`,
-            providerId: params.providerId,
-            model: params.modelId,
-            reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-            permissionMode: (params.permissionMode === "full" ? "accept-edits" : params.permissionMode) as "accept-edits" | "auto" | "full",
-            executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-            prompt,
-          }, "draft-burst");
-        } catch (error) {
-          return { exitCode: 1, stderr: `Draft spawn failed: ${error instanceof Error ? error.message : "unknown error"}.${permissionNote}` };
-        }
-        const waited = await awaitDraftThread(
-          {
-            threadStatus: async () => {
-              const thread = await bb.sdk.threads.get({ threadId: draftThread.id }).catch(() => null);
-              const status = (thread as { status?: unknown } | null)?.status;
-              return typeof status === "string" ? status : null;
-            },
-            threadOutput: () => bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => ""),
-            stopThread: () => stopWorkerThread(draftThread.id),
-            sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-          },
-          draftThread.id,
-        );
-        if (!waited.ok) return { exitCode: 1, stderr: waited.error ?? "Draft failed." };
-        const output = waited.output;
-        const validated = validateDraftOutput(output);
-        if (!validated.ok) return { exitCode: 1, stderr: validated.error ?? "Empty draft." };
-        const stamp = roundTimestamp();
-        const draftStateDir = card.dir_hash ? await workflowStateDir(bb, draftWorkspace.path, card.id, card.dir_hash).catch(() => null) : null;
-        let draftPath: string | null = null;
-        if (draftStateDir) {
-          const full = join(draftStateDir, `drafts/draft-${stamp}.md`);
-          try {
-            await bb.sdk.files.mkdir({ path: dirname(full), rootPath: draftWorkspace.path, recursive: true });
-            await bb.sdk.files.write({
-              path: full,
-              content: `# Draft ${stamp} (${resolvedSource})\n\nCard: ${card.display_name ?? card.name}\nThread: ${draftThread.id}\nPreset: ${draftPreset.name}\n\n${validated.text}\n`,
-            });
-            draftPath = workspaceRelative(draftWorkspace.path, full) ?? `drafts/draft-${stamp}.md`;
-          } catch { /* draft still returned via stdout */ }
-        }
-        logCardComment(cardId, "card", cardId, "agent", `Draft burst (${draftPreset.name}${fallbackNote}) — judge every word before using it.${draftPath ? ` Record: ${draftPath}.` : ""}${permissionNote}`);
-        if (json) return { exitCode: 0, stdout: JSON.stringify({ draft: validated.text, truncated: validated.truncated ?? false, threadId: draftThread.id, path: draftPath, source: resolvedSource }, null, 2) };
-        return { exitCode: 0, stdout: validated.text };
+        const result = await drafting.command(argv, ctx.threadId);
+        if (result) return result;
       }
       if (argv[0] === "preset") {
         const sub = argv[1];
