@@ -6,6 +6,7 @@ import { MAX_CHILDREN, attachChildTokenUsage, attachChildTokenBreakdown, shapeCh
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const workerBackend = readFileSync(join(root, "server", "workers-history.ts"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 
 // Shaping only: deleted threads hide, fields fall back, the list caps.
@@ -70,7 +71,7 @@ assert.deepEqual(attachChildTokenBreakdown(null, {}), [], "non-lists attach to n
 // Breakdowns ride the same history entries as totals: one latest event
 // per thread, totals kept, split added. The contract pins both fields so
 // a dropped split fails loudly instead of rendering half a story.
-assert.match(server, /tokenBreakdown: report\.breakdown/, "history entries carry the split beside the total");
+assert.match(workerBackend, /tokenBreakdown: report\.breakdown/, "history entries carry the split beside the total");
 assert.match(server, /tokenBreakdown: z\.object\(\{ input: z\.number\(\)\.nullable\(\), output: z\.number\(\)\.nullable\(\), cached: z\.number\(\)\.nullable\(\), reasoning: z\.number\(\)\.nullable\(\), total: z\.number\(\)\.nullable\(\) \}\)\.nullable\(\)/, "worker history schemas carry the split on entries and children");
 assert.match(workerHistory, /sumTokenBreakdowns\(history\.flatMap/, "the card total sums splits through the lib");
 assert.match(workerHistory, /legs\.join\(" · "\)/, "reported legs render labeled, omitted legs never render");

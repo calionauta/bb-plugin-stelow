@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DELEGATION_SITES, getDelegationSite, assertDisposableSpawn } from "../lib/delegation-map.mjs";
+import { getDelegationSite, assertDisposableSpawn } from "../lib/delegation-map.mjs";
 
 // Registry reads: every site names tier, preset source, spawn path,
 // write behavior, and judge. Unknown sites refuse before any SDK call.
@@ -26,7 +26,7 @@ assert.throws(() => assertDisposableSpawn({ site: "preset-judge", args: hiddenRe
 // A sixth spawn site — or an unregistered one — fails here first.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
-const directSpawns = server.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? [];
+const directSpawns = server.match(/workers\.spawn\(\{/g) ?? [];
 const markers = [...server.matchAll(/\/\/ delegation-site: (\S+)/g)].map((match) => match[1]);
 assert.equal(markers.length, directSpawns.length, "every direct spawn carries exactly one site marker");
 for (const site of markers) {

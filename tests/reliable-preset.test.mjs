@@ -12,6 +12,7 @@ import { resolveReliablePreset, RELIABLE_SOURCE_CARD, RELIABLE_SOURCE_OVERRIDE, 
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const workerBackend = readFileSync(join(root, "server/workers.ts"), "utf8");
 const managerBand = readFileSync(join(root, "components/settings/preset-manager-band-routing.tsx"), "utf8");
 
 // Cascade order: card pin > reliable override > band > default. A reorder
@@ -96,7 +97,8 @@ assert.match(server, /const bandPreset = getPresetForBand\(band, cardId\);/, "th
 // fresh starts, promotion handoff, research fan-out, both band swaps, and
 // the initial spawn chain. A spawn that bypasses it silently ignores the
 // user's override.
-assert.match(server, /const effective = getReliablePresetForBand\(card\.kind === "research" \? "research" : card\.kind === "explore" \? "explore" : STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\);/, "fresh starts resolve reliable-aware");
+const freshReliable = /const effective = deps\.getReliablePreset\(bandForCardKindStage\(card\.kind, card\.stage\), cardId\);/;
+assert.match(workerBackend, freshReliable, "fresh starts resolve reliable-aware");
 assert.match(server, /const effective = getReliablePresetForBand\("research", cardId\);/, "research fan-out resolves reliable-aware");
 assert.match(server, /\? getReliablePresetForBand\(STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\)/, "promotion handoff resolves reliable-aware");
 assert.match(server, /const bandPreset = band \? getReliablePresetForBand\(band, card\.id\) : null;/, "the advance band swap resolves reliable-aware");

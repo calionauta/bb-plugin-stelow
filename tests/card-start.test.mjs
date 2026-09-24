@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 // unstarted card — only the human unchecks the box.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const workers = readFileSync(join(root, "server/workers.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 // GitHub issues live decoupled: the feature module owns matching,
 // creation, scheduler, and RPCs; server.ts only wires the seam.
@@ -42,8 +43,9 @@ assert.match(githubServer, /start: decision\.start/, "automation passes the work
 assert.match(server, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
 assert.match(server, /startWorker: \{/, "the start trigger is a named RPC");
 assert.match(server, /async startWorker\(\{ cardId \}\)/, "the handler resolves the card");
-assert.match(server, /spawnFreshWorker\(cardId, "start"\)/, "starting shares the fresh-spawn body");
-assert.match(server, /return spawnFreshWorker\(cardId, "restart"\)/, "restart shares the same body — one spawn, never pasted");
+assert.match(workers, /async function fresh\(/, "the worker seam owns the fresh-spawn body");
+assert.match(server, /workers\.fresh\(cardId, "start"\)/, "starting shares the fresh-spawn body");
+assert.match(server, /return workers\.fresh\(cardId, "restart"\)/, "restart shares the same body — one spawn, never pasted");
 assert.match(server, /Drag-to-Doing on a threadless card starts it/, "dragging inbox to Doing spawns instead of lying");
 assert.match(server, /thread\?\.id \?\? null/, "an unstarted card stores a null thread, never a placeholder");
 
@@ -147,7 +149,8 @@ assert.match(heroActions, /Not started — parked in Bucket/, "a parked card say
 // The Bucket is the board's first column on every track, and leaving it is
 // what starts a parked card (a build phase move spawns instead of lying).
 assert.match(server, /const decision = resolveCardMove\(card\.kind, status, \{ hasWorker: Boolean\(card\.worker_thread_id\) \}\)/, "the move policy knows whether the card already started");
-assert.match(server, /if \(!card\.worker_thread_id\) \{\s*const started = await spawnFreshWorker\(cardId, "start"\);/, "entering a build phase starts a parked card");
+const parkedStart = /if \(!card\.worker_thread_id\) \{\s*const started = await workers\.fresh\(cardId, "start"\);/;
+assert.match(server, parkedStart, "entering a build phase starts a parked card");
 assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
 assert.match(workflowVocabulary, /export function buildBoardColumnFor\(card\)/, "the board projection keeps thread state, so a parked card reaches the Bucket");
 

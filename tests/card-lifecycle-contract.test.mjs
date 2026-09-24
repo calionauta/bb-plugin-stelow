@@ -7,6 +7,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
 const serverRecovery = readFileSync(join(root, "server/workspaces-recovery.ts"), "utf8");
 const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
+const serverWorkerRetry = readFileSync(join(root, "server/workers-retry.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const navigation = readFileSync(join(root, "components/app-support/navigation.ts"), "utf8");
 const trackLists = readFileSync(join(root, "components/board/track-lists.tsx"), "utf8");
@@ -424,7 +425,8 @@ assert.doesNotMatch(app, /Choose a single stage from|Choose one specialized skil
 // Promotion is a true ownership handoff: a new project worker takes over only
 // after it starts, and a failed handoff restores the exploratory card.
 const promote = rpcMethod("promoteCard", "researchStrategies");
-assert.match(promote, /respawnWorkerForBand\(cardId, preset\.id, "project-promotion", \{ previousProjectId: card\.project_id \}\)/, "promotion starts a worker in the new project");
+const promotionRespawn = /workers\.respawn\(cardId, preset\.id, "project-promotion", \{ previousProjectId: card\.project_id \}\)/;
+assert.match(promote, promotionRespawn, "promotion starts a worker in the new project");
 assert.match(promote, /workspace_kind = 'exploratory'/, "failed handoff restores the exploratory workspace");
 assert.match(promote, /The card remains exploratory; its existing worker is still active/, "failed handoff explains the safe state");
 
@@ -508,8 +510,8 @@ const researchSync = server.slice(server.indexOf("async function syncResearchThr
 assert.match(researchSync, /card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked"/, "research sync never writes terminal cards");
 const exploreSync = server.slice(server.indexOf("async function syncExploreThreadState"), server.indexOf("async function exploreArtifact"));
 assert.match(exploreSync, /card\.status === "completed" \|\| card\.status === "archived" \|\| card\.status === "blocked"/, "explore sync never writes terminal cards");
-const failedWriter = server.slice(server.indexOf("async function applyWorkerFailed"), server.indexOf("async function markThreadRunning"));
-assert.match(failedWriter, /current\.status === "completed" \|\| current\.status === "archived" \|\| current\.status === "blocked"/, "a dead thread after Done never stains the card");
+const failedWriter = serverWorkerRetry.slice(serverWorkerRetry.indexOf("async function applyFailed"), serverWorkerRetry.indexOf("function failureCause"));
+assert.match(failedWriter, /current && terminal\(current\.status\)/, "a dead thread after Done never stains the card");
 assert.match(server, /errorNeedsAttention\(row\.status, row\.last_error, activity\)/, "board attention shares the terminal-error predicate");
 assert.match(server, /errorNeedsAttention\(card\.status, card\.last_error, effectiveActivity\)/, "detail attention shares the same predicate — badge and card cannot disagree");
 const retry = rpcMethod("retryWorker", "restartWorker");

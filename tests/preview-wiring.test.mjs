@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(root, "server.ts"), "utf8");
+const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
 const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
 const exploreSource = readFileSync(join(root, "components/detail/explore-detail-content.tsx"), "utf8");
@@ -54,7 +55,7 @@ for (const leaked of ["previewSessions", "killPreview", "connectUnexpose", "abso
 const checkout = slice("async function cardCheckout(", "async function previewTarget(");
 // Both markers are required to exist first: a missing one makes indexOf -1,
 // and -1 < n would pass the comparison below with the call deleted entirely.
-const workerFirst = checkout.indexOf("workerEnvironmentOf(card)");
+const workerFirst = checkout.indexOf("workers.workerEnvironmentOf(card)");
 const sourceFallback = checkout.indexOf("cardWorkspace(card)");
 assert.notEqual(workerFirst, -1, "cardCheckout must consult the worker's environment");
 assert.notEqual(sourceFallback, -1, "cardCheckout must fall back to the project source");
@@ -65,7 +66,10 @@ const target = slice("async function previewTarget(", "async function previewTar
 assert.match(target, /cardCheckout\(card\)/, "preview must use the shared checkout resolver");
 assert.match(target, /source: checkout\.source/, "the target must carry the shared source label the panel shows");
 assert.match(target, /slug: card\.name/, "the card's own name is the convention that picks between app directories");
-const workerEnv = slice("async function workerEnvironmentOf(", "async function previewTarget(");
+const workerEnv = workersSource.slice(
+  workersSource.indexOf("async function workerEnvironmentOf("),
+  workersSource.indexOf("async function continuingEnvironment("),
+);
 assert.match(workerEnv, /status === "ready"/, "a retired or destroyed environment is not a checkout to preview");
 assert.match(workerEnv, /\?\.catch\(\(\) => null\)|catch \{/, "a removed environment must fall back, not throw");
 

@@ -31,10 +31,7 @@ assert.equal((serverSource.match(/const RECON_PROTOCOL = "/g) ?? []).length, 1, 
 // each site by the next anchor instead.
 const sites = {
   spawn: "Step 1 — verify intent first",
-  // The restart template opens with the same re-seed sentence as the reseed
-  // template; indexOf lands on this earlier occurrence, and the end marker
-  // closes before the reseed template starts.
-  restart: "The host re-seeded your per-workflow state, transitions.md, and stelow.json",
+  restart: "const prompt = researchRestart ?? exploreRestart ?? `You are running a Stelow workflow",
   // The reseed template opens with the same sentence as restart, so anchor
   // on the site's unique const assignment instead (it precedes the template).
   reseed: "researchReseed ?? exploreReseed ??",
@@ -46,8 +43,8 @@ const ordered = Object.entries(sites).map(([site, anchor]) => {
 }).sort((a, b) => a.at - b.at);
 const siteEnds = {
   spawn: "const ts = now();",
-  restart: "only now retire the old one",
-  reseed: "recordWorkerThread(db, cardId, newThread.id, preset.id, \"reseed\")",
+  restart: "return { prompt, projectPath, stateDir, workspace };",
+  reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const { site, at } of ordered) {
   const stop = serverSource.indexOf(siteEnds[site], at);
@@ -77,8 +74,11 @@ const doneSites = {
   // next-anchor bounding breaks where a template closes after the next
   // anchor opens (research closes past explore's first line).
   spawn: { anchor: "Step 1 — verify intent first", end: "const ts = now();" },
-  restart: { anchor: "You are being restarted mid-workflow at a stage boundary", end: "only now retire the old one" },
-  reseed: { anchor: "in the re-seeded state.md", end: "recordWorkerThread(db, cardId, newThread.id, preset.id, \"reseed\")" },
+  restart: {
+    anchor: "const prompt = researchRestart ?? exploreRestart ?? `You are running a Stelow workflow",
+    end: "return { prompt, projectPath, stateDir, workspace };",
+  },
+  reseed: { anchor: "in the re-seeded state.md", end: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")" },
   research: { anchor: "NEVER check a box yourself", end: "function exploreWorkerPrompt" },
   explore: { anchor: "SINGLE-STAGE Stelow exploration", end: "async function createCardInternal" },
 };
@@ -133,13 +133,13 @@ assert.equal(splitDefs.length, 1, "SPLIT_PROTOCOL is defined once, not pasted pe
 assert.equal((serverSource.match(/run `bb stelow split` \(no args/g) ?? []).length, 1, "the split invocation prose lives in the const only");
 const splitSites = {
   spawn: "Step 1 — verify intent first",
-  restart: "The host re-seeded your per-workflow state, transitions.md, and stelow.json",
+  restart: "const prompt = researchRestart ?? exploreRestart ?? `You are running a Stelow workflow",
   reseed: "researchReseed ?? exploreReseed ??",
 };
 const splitEnds = {
   spawn: "const ts = now();",
-  restart: "only now retire the old one",
-  reseed: "recordWorkerThread(db, cardId, newThread.id, preset.id, \"reseed\")",
+  restart: "return { prompt, projectPath, stateDir, workspace };",
+  reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const [site, anchor] of Object.entries(splitSites)) {
   const at = serverSource.indexOf(anchor);
@@ -163,7 +163,8 @@ assert.match(serverSource, /Split is exceptional, not a checklist decomposition/
 assert.match(serverSource, /Each proposed child must be worth its own normal workflow/, "the worker must reject micro-splits");
 assert.match(serverSource, /Do NOT split merely because the request has bullets, files, UI\/API pieces, sequential steps, or small fixes/, "the split threshold names common false positives");
 assert.match(serverSource, /A split ask must use --multiple/, "the host enforces multi-select for an approved split");
-assert.match(serverSource, /if \(archiveParent\) \{\s*\/\/ Full split parks[\s\S]*?await stopWorkerThread\(card\.worker_thread_id\);/, "a fully split parent stops its worker before archiving");
+const splitStop = /if \(archiveParent\) \{\s*\/\/ Full split parks[\s\S]*?await workers\.stop\(card\.worker_thread_id\);/;
+assert.match(serverSource, splitStop, "a fully split parent stops its worker before archiving");
 assert.ok(!serverSource.includes('updateCard(cliCard.id, { stage, status: stage === "audit" ? "completed"'), "the worker advance never completes — done does");
 
 console.log("prompt contracts test ok: single-source clauses, all build spawn paths covered, no seed invitation, done/playbook/split verbs, preset fence, no audit inference, explicit split");

@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 // this file when the spawn topology legitimately changes.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const workerBackend = readFileSync(join(root, "server", "workers.ts"), "utf8");
+const spawnSources = `${server}\n${workerBackend}`;
 
 // Four direct worker spawns, one judge spawn, two helper-routed disposables:
 // the judge runner (preset decision mode) is the fifth direct site — one
@@ -19,9 +21,14 @@ const server = readFileSync(join(root, "server.ts"), "utf8");
 // is a new brain with its own lifecycle — it must arrive with a tier
 // decision here.
 assert.equal(
-  (server.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length,
-  5,
-  "four direct worker spawns plus the preset judge pinned; a sixth updates this contract deliberately",
+  (server.match(/workers\.spawn\(\{/g) ?? []).length,
+  4,
+  "four direct worker spawn sites plus the preset judge remain pinned in the worker seam",
+);
+assert.equal(
+  (workerBackend.match(/bb\.sdk\.threads\.spawn\(args\)/g) ?? []).length,
+  1,
+  "the worker seam has one SDK spawn implementation; a second direct implementation updates this contract deliberately",
 );
 assert.equal(
   (server.match(/await spawnDisposable\(\{/g) ?? []).length,
@@ -35,10 +42,10 @@ assert.equal(
 // as a threads.list filter for child-thread observability — listing, never
 // inheritance — so it is scoped out of this ban.)
 for (const token of ["resumeThread", "continueFromThread", "forkThread", "inheritHistory", "forkHistory"]) {
-  assert.ok(!server.includes(token), `no fork-family parameter (${token}) anywhere near spawning`);
+  assert.ok(!spawnSources.includes(token), `no fork-family parameter (${token}) anywhere near spawning`);
 }
-for (const match of server.matchAll(/bb\.sdk\.threads\.spawn\(\{/g)) {
-  const block = server.slice(match.index, match.index + 1500);
+for (const match of spawnSources.matchAll(/workers\.spawn\(\{|bb\.sdk\.threads\.spawn\(/g)) {
+  const block = spawnSources.slice(match.index, match.index + 1500);
   for (const token of ["parentThreadId", "resumeThread", "continueFromThread", "forkThread", "inheritHistory", "parent:"]) {
     assert.ok(!block.includes(token), `spawn block inherits no history (${token})`);
   }

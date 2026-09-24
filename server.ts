@@ -29,8 +29,7 @@ import { loadAboutLogo } from "./lib/about-logo.mjs";
 import { applyFailedCheck, mapUpdateEntry, selectOwnEntry } from "./lib/plugin-update.mjs";
 import { discardConfirm, discardEligibility, discardTrail } from "./lib/discard-policy.mjs";
 import { fetchLatestPluginRelease, isNewerRelease } from "./lib/github-release.mjs";
-import { recordWorkerThread, stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
-import { mergeLineageFile, writeMergedFile } from "./lib/workflow-lineage.mjs";
+import { stallCount, refreshRestartPending, healPresetStaleness } from "./lib/worker-ledger.mjs";
 import { normalizePromoteName, findAdoptableProject } from "./lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "./lib/state-template.mjs";
 import { workflowDirHash, workflowEntryForOwner, workflowIdForName, workflowStateRelativeDir, ownsWorkflowState, upsertWorkflowEntry } from "./lib/workflow-state-identity.mjs";
@@ -71,8 +70,6 @@ import { isArchivedCard, stripArchivedResuscitation } from "./lib/worker-action-
 import { cliHelpText, cliUsageLine, nearestCommand } from "./lib/cli-suggest.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, normalizeBuildSeedIntent, resolveReseedIntent } from "./lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "./lib/workflow-skills-sync.mjs";
-import { failureCauseFromEvents, truncateCause } from "./lib/worker-failure.mjs";
-import { MAX_SPAWN_RETRIES, claimSpawnRetry, isRetryableSpawnError, resetSpawnRetry, spawnRetryDelayMs } from "./lib/spawn-retry.mjs";
 import { PREVIEW_STATES, previewShape, previewText } from "./lib/preview-session.mjs";
 import { cardWorkerSeedRefusal, withRuntimeIgnoreEntry } from "./lib/card-seed-guard.mjs";
 import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "./lib/auto-continue.mjs";
@@ -102,7 +99,7 @@ import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome }
 import { artifactRole } from "./lib/artifact-roles.mjs";
 import { RECON_RECEIPT_FILE, reconReceiptStatus } from "./lib/recon-receipt.mjs";
 import { stalenessOf } from "./lib/question-staleness.mjs";
-import { tokenUsageFromEvents, tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
+import { tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "./lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
 import {
@@ -120,6 +117,14 @@ import {
   runPublicationMigrations,
 } from "./server/artifacts-publication.js";
 import {
+  createWorkers,
+  runWorkerMigrations,
+  workerEnvironment,
+  type RespawnOptions,
+  type RespawnPreparation,
+  type WorkerCard,
+} from "./server/workers.js";
+import {
   createScopeProgressSync,
   latestSpecTech,
   loadCardScopes,
@@ -128,7 +133,6 @@ import {
   trackingEntryForCard,
   workflowScopes,
 } from "./server/scopes.js";
-import { attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "./lib/thread-children.mjs";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -921,16 +925,6 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
   }
 }
 
-function workerEnvironment(source: { path: string; hostId: string }, params: { environmentKind: string; machineId: string | null }, forceWorkspaceHost = false) {
-  // Card workflow state is stored in the declared workspace. The default preset
-  // must therefore run there as well; BB's generic project-default may point at
-  // a managed worktree, which silently splits state from execution.
-  if (forceWorkspaceHost || params.environmentKind === "project-default") {
-    return { type: "host" as const, hostId: forceWorkspaceHost ? source.hostId : (params.machineId ?? source.hostId), workspace: { type: "unmanaged" as const, path: source.path } };
-  }
-  return { type: "project-default" as const };
-}
-
 type ThreadEnvironment = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]["environment"];
 
 import { selectCardEnvironment, isManagedWorktreeEnvironment, environmentFallbackNotice } from "./lib/card-environment.mjs";
@@ -1349,6 +1343,7 @@ export default async function plugin(bb: BbPluginApi) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ask_contracts_card ON ask_contracts(card_id, consumed_at, asked_at)`);
 
   const cardColumns = db.prepare("PRAGMA table_info(cards)").all() as Array<{ name: string }>;
+  runWorkerMigrations(db);
   if (!cardColumns.some((column) => column.name === "display_name")) {
     db.exec("ALTER TABLE cards ADD COLUMN display_name TEXT");
   }
@@ -1357,12 +1352,6 @@ export default async function plugin(bb: BbPluginApi) {
   }
   if (!cardColumns.some((column) => column.name === "dir_hash")) {
     db.exec("ALTER TABLE cards ADD COLUMN dir_hash TEXT");
-  }
-  if (!cardColumns.some((column) => column.name === "worker_preset_id")) {
-    db.exec("ALTER TABLE cards ADD COLUMN worker_preset_id TEXT");
-  }
-  if (!cardColumns.some((column) => column.name === "preset_restart_pending")) {
-    db.exec("ALTER TABLE cards ADD COLUMN preset_restart_pending INTEGER NOT NULL DEFAULT 0");
   }
   if (!cardColumns.some((column) => column.name === "attachments")) {
     db.exec("ALTER TABLE cards ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'");
@@ -1387,19 +1376,6 @@ export default async function plugin(bb: BbPluginApi) {
   }
   if (!cardColumns.some((column) => column.name === "explore_stage")) {
     db.exec("ALTER TABLE cards ADD COLUMN explore_stage TEXT");
-  }
-  // Automatic spawn-retry budget (lib/spawn-retry): attempts claimed per
-  // failed thread, so a restart/reseed or a new failure starts fresh.
-  if (!cardColumns.some((column) => column.name === "spawn_retry_count")) {
-    db.exec("ALTER TABLE cards ADD COLUMN spawn_retry_count INTEGER NOT NULL DEFAULT 0");
-  }
-  if (!cardColumns.some((column) => column.name === "spawn_retry_thread")) {
-    db.exec("ALTER TABLE cards ADD COLUMN spawn_retry_thread TEXT");
-  }
-  // Spawn environment in one stored word (lib/tracks): the open card reads
-  // it instead of guessing shared-vs-worktree from paths.
-  if (!cardColumns.some((column) => column.name === "environment_label")) {
-    db.exec("ALTER TABLE cards ADD COLUMN environment_label TEXT");
   }
   const expiredQuestionColumns = db.prepare("PRAGMA table_info(expired_questions)").all() as Array<{ name: string }>;
   if (!expiredQuestionColumns.some((column) => column.name === "kind")) {
@@ -1534,22 +1510,6 @@ export default async function plugin(bb: BbPluginApi) {
   // Workspace-level file claims (lib/card-claims): cross-card coordination
   // for cards sharing one checkout.
   ensureCardClaimsTables(db);
-
-  // card_threads is the worker ledger: one row per worker thread a card has
-  // ever had (initial spawn, band-swap / manual restarts, reseeds). Old rows
-  // stay as history; the open row (ended_at NULL) is the current worker.
-  // Threads themselves are archived+hidden on replacement, so the list UI
-  // never pollutes — this table is the auditable memory of it.
-  db.exec(`CREATE TABLE IF NOT EXISTS card_threads (
-    thread_id TEXT PRIMARY KEY,
-    card_id TEXT NOT NULL,
-    preset_id TEXT,
-    started_at INTEGER NOT NULL,
-    ended_at INTEGER,
-    ended_reason TEXT,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  );
-  CREATE INDEX IF NOT EXISTS idx_card_threads_card ON card_threads(card_id, started_at DESC);`);
 
   // GitHub issues live decoupled in server/github-issues.ts: tables,
   // backfills, matcher wiring, scheduler, and RPCs. One call owns it all.
@@ -1780,7 +1740,7 @@ ${prompt}`;
     let threadId: string | null = null;
     try {
       // delegation-site: preset-judge
-      const thread = await bb.sdk.threads.spawn({
+      const thread = await workers.spawn({
         projectId,
         environment: { type: "project-default" },
         visibility: "hidden",
@@ -1950,12 +1910,12 @@ ${prompt}`;
         const status = (thread as { status?: unknown } | null)?.status;
         if (status === "idle" || status === "stopping" || status === "archived" || status === "deleted") break;
         if (status === "failed" || status === "error" || poll === TITLE_POLLS - 1) {
-          await stopWorkerThread(titleThread.id).catch(() => undefined);
+          await workers.stop(titleThread.id).catch(() => undefined);
           return;
         }
       }
       const output = await bb.sdk.threads.output({ threadId: titleThread.id }).then((result) => result.output ?? "").catch(() => "");
-      await stopWorkerThread(titleThread.id).catch(() => undefined);
+      await workers.stop(titleThread.id).catch(() => undefined);
       const validated = validateCardName(output);
       if (!validated.ok || !validated.name) return;
       const live = getCard(cardId);
@@ -2017,12 +1977,12 @@ ${prompt}`;
         const status = (thread as { status?: unknown } | null)?.status;
         if (status === "idle" || status === "stopping" || status === "archived" || status === "deleted") break;
         if (status === "failed" || status === "error" || poll === 59) {
-          await stopWorkerThread(preThread.id).catch(() => undefined);
+          await workers.stop(preThread.id).catch(() => undefined);
           return;
         }
       }
       const output = await bb.sdk.threads.output({ threadId: preThread.id }).then((result) => result.output ?? "").catch(() => "");
-      await stopWorkerThread(preThread.id).catch(() => undefined);
+      await workers.stop(preThread.id).catch(() => undefined);
       const parsed = parseReviewOutput(output, content);
       if (!parsed || !Array.isArray(parsed.findings) || parsed.findings.length === 0) return;
       logCardComment(cardId, "card", cardId, "agent", `Independent pre-review (${stage}, ${reviewPreset.name}):\n\n${reviewSummary(parsed)}`);
@@ -2185,7 +2145,7 @@ ${prompt}`;
     if (start) {
     try {
       // delegation-site: worker-spawn
-      thread = await bb.sdk.threads.spawn({
+      thread = await workers.spawn({
       projectId: workerProjectId,
       environment: selectedEnvironment,
       visibility: "hidden",
@@ -2261,8 +2221,8 @@ ${prompt}` }, ...workerAttachments],
       db.prepare("INSERT OR REPLACE INTO card_presets (card_id, preset_id, assigned_at) VALUES (?, ?, ?)").run(cardId, pinnedOverrideId, ts);
     }
     if (thread) {
-      recordWorkerThread(db, cardId, thread.id, spawnPreset.id, "initial");
-      if (seed.dirHash) void recordWorkflowLineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
+      workers.recordThread(cardId, thread.id, spawnPreset.id, "initial");
+      if (seed.dirHash) void workers.lineage(rootPath, seed.dirHash, thread.id, spawnPreset.id, "initial");
     }
     // Build remembers the user's planning depth / review gates for the next
     // card. Research and Explore carry fixed internals that must never
@@ -2283,7 +2243,7 @@ ${prompt}` }, ...workerAttachments],
     return { cardId, threadId: thread?.id ?? null };
   }
 
-  type CardRow = { id: string; project_id: string; name: string; display_name: string | null; prompt: string; intent: string; status: string; stage: string; activity: string; worker_thread_id: string | null; worker_preset_id: string | null; preset_restart_pending: number | null; dir_hash: string | null; auto_continue_count: number | null; auto_continue_stage: string | null; spawn_retry_count: number | null; spawn_retry_thread: string | null; attachments: string; workspace_kind: "project" | "exploratory"; workspace_path: string | null; workspace_host_id: string | null; kind: "build" | "research" | "explore"; research_strategy: string | null; research_strategies: string | null; explore_stage: string | null; last_error: string | null; last_assistant_text: string | null; last_idle_at: number | null; environment_label: string | null; created_at: number; updated_at: number };
+  type CardRow = WorkerCard;
   type CommentRow = { id: string; card_id: string; target: string; target_id: string; author: string; body: string; created_at: number };
   type PresetRow = {
     id: string; name: string; provider_id: string; model_id: string; reasoning_level: string;
@@ -2402,19 +2362,17 @@ ${prompt}` }, ...workerAttachments],
     };
   }
 
-  // Respawn a card's worker with a new preset at a band boundary. Kept on the
-  // same per-workflow state dir (dir_hash) so the new worker re-reads the
-  // already-advanced state.md and continues from the current stage — no context
-  // is re-created or reset. The old worker is archived/stopped by this helper.
-  async function respawnWorkerForBand(cardId: string, presetId: string, endedReason = "band-swap", opts?: { strategyId?: string; flavor?: "restart" | "append"; roundNo?: number; roundStamp?: string; roundFile?: string; previousProjectId?: string | null }): Promise<{ ok: boolean; error?: string; threadId?: string }> {
-    const row = getCard(cardId);
-    if (!row) return { ok: false, error: ERR_CARD_NOT_FOUND };
-    const preset = getPresetById(presetId);
-    if (!preset) return { ok: false, error: ERR_PRESET_NOT_FOUND };
+  // Prepare the exact worker continuation; server/workers.ts owns the spawn,
+  // old-thread shutdown, ledger rotation, and lineage write.
+  async function prepareWorkerRespawn(
+    row: CardRow,
+    preset: PresetRow,
+    _reason: string,
+    opts?: RespawnOptions,
+  ): Promise<RespawnPreparation> {
     const params = presetAttachmentParams(preset);
     const workspace = await cardWorkspace(row);
     const projectPath = workspace?.path ?? "";
-    const source = workspace?.hostId ? { path: workspace.path, hostId: workspace.hostId } : null;
     // Resolve the real per-workflow state dir (stelow.json -> created date), so
     // the respawned worker is told the correct path — never a guessed date.
     let stateDir: string | null = null;
@@ -2422,7 +2380,7 @@ ${prompt}` }, ...workerAttachments],
       stateDir = await workflowStateDir(bb, projectPath, row.id, row.dir_hash).catch(() => null);
     }
     if (row.dir_hash && !stateDir) {
-      return { ok: false, error: "This card's workflow state cannot be verified. Reseed it before restarting its worker." };
+      return { error: "This card's workflow state cannot be verified. Reseed it before restarting its worker." };
     }
     const stateHint = stateDir ?? (row.dir_hash ? ".stelow/<date>/" + row.dir_hash : "<project>/.stelow/<date>/<dirHash>");
     // Research cards restart with the strategy prompt, never the build
@@ -2433,9 +2391,9 @@ ${prompt}` }, ...workerAttachments],
     const history = strategyList(row);
     const runStrategyId = row.kind === "research" ? (opts?.strategyId ?? history[history.length - 1] ?? row.research_strategy ?? "") : null;
     const researchStrategy = row.kind === "research" ? researchStrategyById(runStrategyId ?? "") : null;
-    if (row.kind === "research" && !researchStrategy) return { ok: false, error: "This research has no known strategy. Archive it and start a new one." };
+    if (row.kind === "research" && !researchStrategy) return { error: "This research has no known strategy. Archive it and start a new one." };
     const exploreStage = row.kind === "explore" ? techniqueById(row.explore_stage ?? "") : null;
-    if (row.kind === "explore" && !exploreStage) return { ok: false, error: "This explore card has no known technique. Archive it and start a new one." };
+    if (row.kind === "explore" && !exploreStage) return { error: "This explore card has no known technique. Archive it and start a new one." };
     // Restart reuses the round's own file (idempotent rewrite); a fresh
     // spawn passes its own. Fall back to a composed path only when history
     // carries none (shouldn't happen for spawned rounds).
@@ -2471,20 +2429,15 @@ ${prompt}` }, ...workerAttachments],
       flavor: "restart",
       previousThreadId: row.worker_thread_id,
     }) : null;
-    try {
-      const nextEnvironment = await continuingWorkerEnvironment(row, source ? workerEnvironment(source, params, row.workspace_kind === "exploratory") : { type: "project-default" });
-      // delegation-site: worker-spawn
-      const newThread = await bb.sdk.threads.spawn({
-        projectId: row.project_id,
-        environment: nextEnvironment,
-        visibility: "hidden",
-        title: `Stelow: ${row.display_name ?? row.name}`,
-        providerId: params.providerId,
-        model: params.modelId,
-        reasoningLevel: params.reasoningLevel as "low" | "medium" | "high" | "xhigh" | "max" | "none" | "ultra" | "ultracode",
-        permissionMode: params.permissionMode as "accept-edits" | "auto" | "full",
-        executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-        prompt: researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
+    const prompt = researchRestart ?? exploreRestart ?? `You are running a Stelow workflow inside the bb-plugin-stelow panel. \
+The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — \
+its state.md holds name, intent, current_stage, status.${stateDir ? "" : " Resolve the exact path from stelow.json; \
+its state.md holds name, intent, current_stage, status."} ${CARD_OWNER_RULES} \
+The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — \
+start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks \
+(stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` \
+if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} \
+Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
 
 ${TURN_DISCIPLINE}
 
@@ -2509,38 +2462,8 @@ ${DONE_PROTOCOL}
 
 ${SPLIT_PROTOCOL}
 
-${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`,
-      });
-      // The new worker is live — only now retire the old one (archive+stop), so a
-      // spawn failure never leaves the card with no worker. If the old worker is
-      // the one that just called advance, it has already returned its CLI output.
-      if (row.worker_thread_id) {
-        try { await bb.sdk.threads.archive({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
-        try { await bb.sdk.threads.stop({ threadId: row.worker_thread_id }); } catch { /* ignore */ }
-      }
-      const ts = now();
-      updateCard(cardId, { worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, activity: "running", last_error: null, updated_at: ts });
-      recordWorkerThread(db, cardId, newThread.id, preset.id, endedReason);
-      if (row.dir_hash) void recordWorkflowLineage(projectPath, row.dir_hash, newThread.id, preset.id, endedReason);
-      // Official inline mention of the archived predecessor (not just copied
-      // text): renders as a chip the user can open, and the worker can expand
-      // it natively for context state.md doesn't carry. Best-effort — the
-      // prompt text already references the thread id.
-      if (row.worker_thread_id) {
-        try {
-          const tag = "@previous-worker";
-          const mentionText = `Continuity link — ${tag} is the archived worker this thread replaces. Consult it if state.md is thin.`;
-          const start = mentionText.indexOf(tag);
-          await bb.sdk.threads.send({ threadId: newThread.id, mode: "auto", input: [{ type: "text", text: mentionText, mentions: [{ start, end: start + tag.length, resource: { kind: "thread", label: `Stelow: ${row.display_name ?? row.name} (previous)`, threadId: row.worker_thread_id, projectId: opts?.previousProjectId ?? row.project_id } }] }] });
-        } catch { /* mention nicety; prompt reference suffices */ }
-      }
-      return { ok: true, threadId: newThread.id };
-    } catch (error) {
-      // Spawn failed — surface it instead of leaving a silent zombie card.
-      const msg = error instanceof Error ? error.message : "Respawn failed.";
-      updateCard(cardId, { activity: "error", last_error: msg });
-      return { ok: false, error: msg };
-    }
+${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`;
+    return { prompt, projectPath, stateDir, workspace };
   }
 
   async function cardWorkspace(card: CardRow): Promise<{ path: string; hostId: string | null } | null> {
@@ -2551,6 +2474,27 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const source = project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
     return source?.path ? { path: source.path, hostId: source.hostId } : null;
   }
+
+  const workers = createWorkers({
+    db,
+    bb,
+    now,
+    getCard,
+    updateCard,
+    comment: (cardId, body) => { logCardComment(cardId, "card", cardId, "agent", body); },
+    getPreset: (presetId) => getPresetById(presetId),
+    getReliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
+    presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
+    cardWorkspace,
+    prepareRespawn: (card, preset, reason, options) =>
+      prepareWorkerRespawn(card, preset as PresetRow, reason, options),
+    resetAutoContinue,
+    errors: {
+      cardNotFound: "Card not found.",
+      cardArchived: "This card is archived.",
+      presetNotFound: "Preset not found.",
+    },
+  });
 
   type RecoveryGitEvidence = { isGit: boolean; gitRoot: string | null; branch: string | null; headSha: string | null; changedFiles: number };
   type QuestionStalenessVerdict = { docRevised: boolean; docRemoved: boolean; checkoutMoved: boolean; commitCount: number; touchedPaths: string[] };
@@ -2822,26 +2766,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   type PreviewEnvironment = { id?: string | null; path?: string | null; hostId?: string | null; isWorktree?: boolean; workspaceProvisionType?: string | null; branchName?: string | null } | null;
 
-  /** The environment backing the card's worker thread, while it still exists. */
-  async function workerEnvironmentOf(card: CardRow): Promise<PreviewEnvironment> {
-    if (!card.worker_thread_id) return null;
-    try {
-      const thread = await bb.sdk.threads.get({ threadId: card.worker_thread_id });
-      const environmentId = (thread as { environmentId?: unknown }).environmentId;
-      if (typeof environmentId !== "string" || !environmentId) return null;
-      const environment = await bb.sdk.environments.get({ environmentId });
-      return environment?.status === "ready" && environment.path ? environment : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Later stage workers stay in the checkout the card originally used. */
-  async function continuingWorkerEnvironment(card: CardRow, fallback: ThreadEnvironment): Promise<ThreadEnvironment> {
-    const environment = await workerEnvironmentOf(card);
-    return environment?.id ? { type: "reuse", environmentId: environment.id } : fallback;
-  }
-
   type CardCheckout = { path: string; hostId: string | null; environmentId: string | null; environment: PreviewEnvironment; source: string };
 
   /**
@@ -2857,7 +2781,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const recovery = db.prepare("SELECT source_path FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { source_path: string } | undefined;
       if (recovery?.source_path) return { path: recovery.source_path, hostId: card.workspace_host_id, environmentId: null, environment: null, source: "Recovered project checkout" };
     }
-    const environment = await workerEnvironmentOf(card);
+    const environment = await workers.workerEnvironmentOf(card);
     if (environment?.path) {
       return {
         path: environment.path,
@@ -3335,144 +3259,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return { ready: true, fingerprint: researchReadyFingerprint(index.content), evidence, invalid: [] };
   }
 
-  // Failure cause for a dead worker with no output. thread.failed only
-  // carries system/error text, so a provider-side death (e.g. a 400 on the
-  // very first inference call) arrives with error=null and the card would sit
-  // at Failed with a blank last_error. The latest provider/error detail names
-  // the cause. Best-effort: never throws, never blocks the state write.
-  async function workerFailureCause(threadId: string): Promise<string | null> {
-    try {
-      const events = await bb.sdk.threads.events.list({ threadId, types: ["provider/error"], order: "desc", limit: "5" });
-      return failureCauseFromEvents(events ?? []);
-    } catch { return null; }
-  }
-
-  // Total + split from one latest event: two readers of the same event
-  // would double the thread-event calls on every detail load.
-  async function workerTokenReport(threadId: string): Promise<{ total: number | null; breakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null }> {
-    try {
-      const events = await bb.sdk.threads.events.list({ threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
-      return { total: tokenUsageFromEvents(events), breakdown: tokenBreakdownFromEvents(events) };
-    } catch { return { total: null, breakdown: null }; }
-  }
-
-  async function workerChildThreads(threadId: string): Promise<Array<{ threadId: string; title: string | null; status: string; providerId: string | null; tokenUsage: number | null; tokenBreakdown: { input: number | null; output: number | null; cached: number | null; reasoning: number | null; total: number | null } | null }>> {
-    try {
-      const list = await bb.sdk.threads.list({ parentThreadId: threadId, limit: 10 });
-      const children = shapeChildThreads(list);
-      if (children.length === 0) return [];
-      // Per-child cost: token events live on each child thread. One latest
-      // event per child, in parallel, fail-open — an unreadable child keeps
-      // a null total (unknown, never zero). Runs only when children exist,
-      // so the common childless detail load pays nothing extra.
-      const usages = await Promise.all(children.map(async (child) => {
-        try {
-          const events = await bb.sdk.threads.events.list({ threadId: child.threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
-          return [child.threadId, tokenUsageFromEvents(events), tokenBreakdownFromEvents(events)] as const;
-        } catch { return [child.threadId, null, null] as const; }
-      }));
-      const withTotals = attachChildTokenUsage(children, Object.fromEntries(usages.map(([id, total]) => [id, total])));
-      return attachChildTokenBreakdown(withTotals, Object.fromEntries(usages.map(([id, , breakdown]) => [id, breakdown])));
-    } catch { return []; }
-  }
-
-  // Automatic spawn retries (lib/spawn-retry). One retry in flight per
-  // card: a retry spawns a whole worker, so duplicates would double burn
-  // and race on state.md. The map holds cardId -> failed threadId.
-  const pendingSpawnRetries = new Map<string, string>();
-  const spawnRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-  // Whether a dead worker earns an automatic respawn: start-phase only
-  // (never produced output) with a transient infrastructure cause, budget
-  // remaining for this thread, and no retry already in flight.
-  function canAutoRetrySpawn(card: CardRow, cause: string): boolean {
-    if (card.last_assistant_text != null) return false;
-    if (!isRetryableSpawnError(cause)) return false;
-    if (pendingSpawnRetries.get(card.id) === card.worker_thread_id) return false;
-    const used = card.spawn_retry_thread === card.worker_thread_id ? (card.spawn_retry_count ?? 0) : 0;
-    return used < MAX_SPAWN_RETRIES;
-  }
-
-  function scheduleSpawnRetry(cardId: string, threadId: string): boolean {
-    if (pendingSpawnRetries.get(cardId) === threadId) return true;
-    let attempt = 0;
-    try {
-      attempt = claimSpawnRetry(db, cardId, threadId, MAX_SPAWN_RETRIES);
-    } catch {
-      return false;
-    }
-    // Lost the race (or budget exhausted between check and claim): leave
-    // the card to the normal error path instead of spawning uncounted.
-    if (attempt < 1) return false;
-    pendingSpawnRetries.set(cardId, threadId);
-    const card = getCard(cardId);
-    const short = truncateCause(card?.last_error) ?? "unknown error";
-    updateCard(cardId, { activity: "running", last_error: `Worker failed to start (${short}) — automatic retry ${attempt}/${MAX_SPAWN_RETRIES}.` });
-    const timer = setTimeout(() => {
-      spawnRetryTimers.delete(cardId);
-      void runSpawnRetryAttempt(cardId, threadId, attempt);
-    }, spawnRetryDelayMs(attempt));
-    spawnRetryTimers.set(cardId, timer);
-    return true;
-  }
-
-  async function runSpawnRetryAttempt(cardId: string, threadId: string, attempt: number): Promise<void> {
-    try {
-      // Idempotency re-validation: abort unless the same dead worker still
-      // owns a non-terminal card that never started working.
-      const card = getCard(cardId);
-      if (!card || card.status === "archived" || card.status === "completed" || card.status === "blocked") return;
-      if (card.worker_thread_id !== threadId) return;
-      if (card.last_assistant_text != null) return;
-      const result = await spawnFreshWorker(cardId, "restart");
-      if (result.ok) {
-        // spawnFreshWorker clears the retry budget on success.
-        logCardComment(cardId, "card", cardId, "agent", `Worker start recovered automatically (attempt ${attempt}/${MAX_SPAWN_RETRIES}).`);
-        bb.realtime.publish("card-state", { cardId });
-        return;
-      }
-      if (attempt < MAX_SPAWN_RETRIES && result.error && isRetryableSpawnError(result.error)) {
-        pendingSpawnRetries.delete(cardId);
-        scheduleSpawnRetry(cardId, threadId);
-        return;
-      }
-      // Exhausted or non-transient: honest error — the updateCard transition
-      // to error emits the single inbox event.
-      updateCard(cardId, { activity: "error", last_error: `${result.error ?? "Worker failed to start."} (automatic spawn retries exhausted)` });
-    } finally {
-      if (pendingSpawnRetries.get(cardId) === threadId) pendingSpawnRetries.delete(cardId);
-    }
-  }
-
-  // Single writer for "the worker thread died". Keeps a recorded cause (event
-  // error or a previous last_error); otherwise resolves the provider detail
-  // once and stores it, so the Failed pill, the detail hero, and the inbox
-  // event all name the cause instead of going blank.
-  async function applyWorkerFailed(cardId: string, threadId: string, eventError: string | null) {
-    // A dead thread after Done is history, not a failure: never stain a
-    // terminal card with an error.
-    const current = getCard(cardId);
-    if (current && (current.status === "completed" || current.status === "archived" || current.status === "blocked")) return;
-    // A retry already in flight for this exact failure: leave its state
-    // alone (the next poll would otherwise schedule a duplicate).
-    if (current && pendingSpawnRetries.get(cardId) === threadId) return;
-    const recorded = current?.last_error;
-    const specific = typeof eventError === "string" && eventError.trim() ? eventError.trim()
-      : typeof recorded === "string" && recorded.trim() ? recorded.trim()
-      : await workerFailureCause(threadId);
-    // Re-read after the await: a retry may have been scheduled (or the card
-    // archived) while the cause resolved — never overwrite that verdict.
-    const fresh = getCard(cardId);
-    if (!fresh || fresh.status === "completed" || fresh.status === "archived" || fresh.status === "blocked") return;
-    if (pendingSpawnRetries.get(cardId) === threadId) return;
-    // Transient start-phase failure: respawn automatically (bounded) instead
-    // of paging the human. The inbox stays quiet until retries exhaust. A
-    // declined schedule falls through to the honest error below.
-    if (specific && canAutoRetrySpawn(fresh, specific) && scheduleSpawnRetry(cardId, threadId)) return;
-    if (specific) updateCard(cardId, { activity: "error", last_error: specific });
-    else updateCard(cardId, { activity: "error" });
-  }
-
   // Shared lightweight-track poll pieces (Research + Explore syncs both use
   // them — convention over configuration, one definition of each rule):
   // waiting is activity (never board position), and every agent output lands
@@ -3565,7 +3351,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
         noteAgentOutput(card, lastOutput);
       } else if (status === "failed" || status === "error") {
-        await applyWorkerFailed(card.id, card.worker_thread_id!, null);
+        await workers.applyFailed(card.id, card.worker_thread_id!, null);
       }
     } catch (error) {
       updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -3631,7 +3417,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         }
         noteAgentOutput(card, lastOutput);
       } else if (status === "failed" || status === "error") {
-        await applyWorkerFailed(card.id, card.worker_thread_id!, null);
+        await workers.applyFailed(card.id, card.worker_thread_id!, null);
       }
     } catch (error) {
       updateCard(card.id, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -3655,17 +3441,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     const failures = validateExplore(card.explore_stage, content).failures.map((failure) => failure.detail).slice(0, 3);
     if (failures.length > 0) return { ready: false, fingerprint: null, failures };
     return { ready: true, fingerprint: shortFingerprint(content as string), failures: [] };
-  }
-
-  // Mirror the card_threads ledger into the workflow's own stelow.json
-  // (upstream "Worker Lineage" contract): survives plugin database loss and
-  // is readable by any host and by the worker itself. Best-effort — a failed
-  // lineage write must never break a spawn, reseed, or restart.
-  async function recordWorkflowLineage(rootPath: string, dirHash: string, threadId: string, presetId: string | null, endedReason: string): Promise<void> {
-    try {
-      const trackingPath = join(rootPath, "stelow.json");
-      await writeMergedFile(bb.sdk.files, trackingPath, rootPath, (existing) => mergeLineageFile(existing, dirHash, { threadId, presetId, endedReason }));
-    } catch { /* audit-only */ }
   }
 
   function getCard(cardId: string): CardRow | undefined {
@@ -3851,46 +3626,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         + refreshEventSeverity(db, { cardId, nowMs: now() });
       if (touched > 0) bb.realtime.publish("inbox-changed", { cardId });
     } catch { /* advisory only */ }
-  }
-
-  // Worker shutdown shared by every path that parks a card: the Archive
-  // One fresh-worker spawn for every start path (manual Start, drag to
-  // Doing, preset restart): same state dir, same trail, same budget reset.
-  // respawnWorkerForBand is null-thread safe, so first starts and restarts
-  // share this body instead of pasting it twice.
-  async function spawnFreshWorker(cardId: string, reason: "start" | "restart"): Promise<{ ok: boolean; error: string | null }> {
-    const card = getCard(cardId);
-    if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-    if (card.status === "archived") return { ok: false, error: ERR_CARD_ARCHIVED };
-    if (reason === "start" && card.worker_thread_id) return { ok: false, error: "This card already has a worker thread." };
-    const effective = getReliablePresetForBand(card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : STAGE_TO_BAND[card.stage] ?? "analysis", cardId);
-    const previousThreadId = card.worker_thread_id;
-    const result = await respawnWorkerForBand(cardId, effective.id, reason);
-    if (!result.ok) return { ok: false, error: result.error ?? null };
-    // Trail: which preset took over and where the previous worker's
-    // history lives, so the switch is auditable from the card.
-    const presetName = getPresetById(effective.id)?.name ?? effective.id;
-    const continueText = card.kind === "research" ? "continuing the research" : card.kind === "explore" ? "continuing the explore run" : `continuing from the ${card.stage} stage`;
-    logCardComment(cardId, "card", cardId, "agent", reason === "start"
-      ? `Worker started on preset "${presetName}", ${continueText}.`
-      : previousThreadId ? `Worker restarted on preset "${presetName}", ${continueText}. Previous worker thread: ${previousThreadId} (archived).` : `Worker started on preset "${presetName}", ${continueText}.`);
-    // A fresh worker earns a fresh auto-continue budget: the previous
-    // worker's stalls say nothing about this one.
-    const reset = resetAutoContinue();
-    updateCard(cardId, { auto_continue_count: reset.count, auto_continue_stage: reset.stage });
-    // A live worker also clears the spawn-retry budget: the start phase
-    // succeeded, so any future failure is a new episode.
-    resetSpawnRetry(db, cardId);
-    bb.realtime.publish("card-state", { cardId });
-    return { ok: true, error: null };
-  };
-
-  // button, drag-to-archived, and hard delete. Archiving a card must never
-  // leave its worker running (burning tokens on a hidden board).
-  async function stopWorkerThread(threadId: string | null): Promise<void> {
-    if (!threadId) return;
-    try { await bb.sdk.threads.archive({ threadId }); } catch { /* already gone */ }
-    try { await bb.sdk.threads.stop({ threadId }); } catch { /* already gone */ }
   }
 
   // Disposable spawns (draft bursts, independent reviews) die with their
@@ -4269,7 +4004,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           logCardComment(cardId, "card", cardId, "agent", stripMessageDirectives(lastOutput));
         }
       } else if (status === "failed" || status === "error") {
-        await applyWorkerFailed(cardId, card.worker_thread_id, null);
+        await workers.applyFailed(cardId, card.worker_thread_id, null);
       }
     } catch (error) {
       updateCard(cardId, { activity: "error", last_error: error instanceof Error ? error.message : "Unable to read worker thread." });
@@ -4288,7 +4023,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   bb.events.on("thread.failed", ({ thread, error }) => {
     const row = db.prepare("SELECT id FROM cards WHERE worker_thread_id = ? AND status != 'archived'").get(thread.id) as { id: string } | undefined;
     if (!row) return;
-    void applyWorkerFailed(row.id, thread.id, typeof error === "string" ? error : null);
+    void workers.applyFailed(row.id, thread.id, typeof error === "string" ? error : null);
   });
   // Reconcile card states with their worker threads after reloads (events only fire on transitions).
   const liveCards = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
@@ -4364,8 +4099,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     clearInterval(reconcileTimer);
     // Pending spawn retries must not fire after reload: the next poll
     // re-drives them from the persisted claim ledger instead.
-    for (const timer of spawnRetryTimers.values()) clearTimeout(timer);
-    spawnRetryTimers.clear();
+    workers.disposeRetries();
   });
 
   // Workflow mechanics are private to workers created by the Build panel.
@@ -4626,7 +4360,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
     async startWorkflow({ projectId, prompt }) {
       // delegation-site: worker-spawn
-      const thread = await bb.sdk.threads.spawn({
+      const thread = await workers.spawn({
         projectId,
         environment: { type: "project-default" },
         title: `Stelow: ${prompt.slice(0, 70)}`,
@@ -5069,17 +4803,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         : null) as "question" | "error" | "idle" | null;
       // Worker ledger, newest first. The open row (endedAt null) is the live
       // worker; older rows are archived threads replaced along the way.
-      const workerRows = db.prepare("SELECT card_threads.thread_id, card_threads.preset_id, presets.name AS preset_name, card_threads.started_at, card_threads.ended_at, card_threads.ended_reason FROM card_threads LEFT JOIN presets ON presets.id = card_threads.preset_id WHERE card_threads.card_id = ? ORDER BY card_threads.started_at DESC LIMIT 6").all(cardId) as Array<{ thread_id: string; preset_id: string | null; preset_name: string | null; started_at: number; ended_at: number | null; ended_reason: string | null }>;
-      const workerHistory = await Promise.all(workerRows.map(async (row) => {
-        const report = await workerTokenReport(row.thread_id);
-        return {
-          threadId: row.thread_id, presetName: row.preset_name, startedAt: row.started_at,
-          endedAt: row.ended_at, endedReason: row.ended_reason,
-          tokenUsage: report.total,
-          tokenBreakdown: report.breakdown,
-          children: await workerChildThreads(row.thread_id),
-        };
-      }));
+      const workerHistory = await workers.history(cardId);
       // Imported-issue link for the Done-card write-back affordance. The URL
       // is deterministic (github.com/<repo>/issues/<number>), so no extra
       // GitHub round-trip is needed to render it.
@@ -5197,7 +4921,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     async cancelCard({ cardId }) {
       const card = getCard(cardId);
       if (!card) return { archived: false };
-      await stopWorkerThread(card.worker_thread_id);
+      await workers.stop(card.worker_thread_id);
       updateCard(cardId, { status: "archived", activity: "idle" });
       await releaseCardClaimsAndNotify(cardId);
       bb.realtime.publish("card-state", { cardId });
@@ -5213,7 +4937,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const card = getCard(cardId);
       if (!card) return { deleted: false, error: ERR_CARD_NOT_FOUND };
       if (card.status !== "archived") return { deleted: false, error: "Only archived cards can be deleted. Archive it first." };
-      await stopWorkerThread(card.worker_thread_id);
+      await workers.stop(card.worker_thread_id);
       await releaseCardClaimsAndNotify(cardId);
       // Files follow the row: the card's workflow state dir (.stelow run
       // artifacts) is removed too, or orphaned runs pile up on disk.
@@ -5232,7 +4956,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM ask_contracts WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM inbox_events WHERE card_id = ?").run(cardId);
-      db.prepare("DELETE FROM card_threads WHERE card_id = ?").run(cardId);
+      workers.deleteCard(cardId);
       db.prepare("UPDATE github_imports SET card_id = NULL WHERE card_id = ?").run(cardId);
       db.prepare("DELETE FROM cards WHERE id = ?").run(cardId);
       bb.realtime.publish("card-state", { cardId });
@@ -5259,7 +4983,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       const decision = discardEligibility(evidence);
       if (!decision.eligible || !decision.action) return { ok: false, summary: null, error: decision.reason ?? "Nothing safe to discard." };
       // Stop first: discarding under a live worker races its next write.
-      await stopWorkerThread(card.worker_thread_id);
+      await workers.stop(card.worker_thread_id);
       // Re-validate after the stop landed: a push, a cleanup, or a delete
       // may have changed the checkout under this discard.
       const live = getCard(cardId);
@@ -5349,7 +5073,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
 
     async startWorker({ cardId }) {
-      return spawnFreshWorker(cardId, "start");
+      return workers.fresh(cardId, "start");
     },
 
     async restartWorker({ cardId }) {
@@ -5358,7 +5082,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       // current stage — unlike reseed (restarts triage) and retry (same
       // thread, same model: provider/model are fixed at spawn and can never
       // change on a live thread). Uses the override-aware effective preset.
-      return spawnFreshWorker(cardId, "restart");
+      return workers.fresh(cardId, "restart");
     },
 
     async requestSplitProposal({ cardId }) {
@@ -5482,9 +5206,9 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         flavor: "reseed",
         previousThreadId,
       }) : null;
-      const nextEnvironment = await continuingWorkerEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
+      const nextEnvironment = await workers.continuingEnvironment(card, workerEnvironment(source, params, card.workspace_kind === "exploratory"));
       // delegation-site: worker-spawn
-      const newThread = await bb.sdk.threads.spawn({
+      const newThread = await workers.spawn({
         projectId: card.project_id,
         environment: nextEnvironment,
         visibility: "hidden",
@@ -5527,8 +5251,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       db.prepare("UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?").run(intent, now(), cardId);
       const reseedReset = resetAutoContinue();
       updateCard(cardId, { stage: card.kind === "research" ? "research" : card.kind === "explore" ? "explore" : "triage", status: freshStatusForReseed(card, reclassified), activity: "running", last_error: null, worker_thread_id: newThread.id, worker_preset_id: preset.id, preset_restart_pending: 0, last_assistant_text: null, auto_continue_count: reseedReset.count, auto_continue_stage: reseedReset.stage });
-      recordWorkerThread(db, cardId, newThread.id, preset.id, "reseed");
-      if (seed.dirHash) void recordWorkflowLineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
+      workers.recordThread(cardId, newThread.id, preset.id, "reseed");
+      if (seed.dirHash) void workers.lineage(source.path, seed.dirHash, newThread.id, preset.id, "reseed");
       bb.realtime.publish("card-state", { cardId });
       return { reseeded: true, error: null, reclassified };
     },
@@ -5548,14 +5272,14 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // still resolve (the card's state changed). Drag-to-archived stops
         // the worker exactly like the Archive button — parking a card must
         // never orphan a running worker.
-        if (decision.move.status === "archived") await stopWorkerThread(card.worker_thread_id);
+        if (decision.move.status === "archived") await workers.stop(card.worker_thread_id);
         // Drag-to-Doing on a threadless card starts it: Doing means working,
         // so the move spawns through the shared starter instead of parking
         // a lie on the board. A failed start blocks the move, not silently.
         // (Only lightweight tracks reach this status branch; build moves
         // phases, never bare statuses.)
         if (decision.move.status === "in-progress" && !card.worker_thread_id) {
-          const started = await spawnFreshWorker(cardId, "start");
+          const started = await workers.fresh(cardId, "start");
           if (!started.ok) return { ok: false, error: started.error };
         }
         updateCard(cardId, { status: decision.move.status as "draft" | "pending" | "in-progress" | "completed" | "archived" }, { suppressCompletionEvent: true });
@@ -5578,7 +5302,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // right checkpoint, and reverted if the spawn fails — a card must never
       // be left parked in a phase with nothing running behind it.
       if (!card.worker_thread_id) {
-        const started = await spawnFreshWorker(cardId, "start");
+        const started = await workers.fresh(cardId, "start");
         if (!started.ok) {
           updateCard(cardId, previous);
           return { ok: false, error: started.error };
@@ -5636,7 +5360,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const preset = card.kind === "build"
         ? getReliablePresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId)
         : getPresetForCard(cardId);
-      const handoff = await respawnWorkerForBand(cardId, preset.id, "project-promotion", { previousProjectId: card.project_id });
+      const handoff = await workers.respawn(cardId, preset.id, "project-promotion", { previousProjectId: card.project_id });
       if (!handoff.ok || !handoff.threadId) {
         db.prepare("UPDATE cards SET project_id = ?, workspace_kind = 'exploratory', workspace_path = ?, workspace_host_id = ?, activity = ?, last_error = ?, updated_at = ? WHERE id = ?").run(card.project_id, workspace.path, workspace.hostId, card.activity, card.last_error, now(), cardId);
         bb.realtime.publish("card-state", { cardId });
@@ -5914,7 +5638,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         ? roundRelPath(fanoutStateDir, fanoutWorkspace.path, roundFileName(picked.id, roundNo, roundStamp))
         : "";
       if (roundFile && fanoutWorkspace?.path) await ensureArtifactParent(fanoutWorkspace.path, roundFile);
-      const result = await respawnWorkerForBand(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append", roundNo, roundStamp, roundFile });
+      const result = await workers.respawn(cardId, effective.id, "strategy-add", { strategyId: picked.id, flavor: "append", roundNo, roundStamp, roundFile });
       if (!result.ok) return { ok: false, strategy: null, error: result.error ?? "Could not start the strategy round." };
       const history = [...strategyRounds(card), { id: picked.id, at: roundAt, file: roundFile }];
       db.prepare("UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(history), now(), cardId);
@@ -6001,7 +5725,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       const bandPreset = band ? getReliablePresetForBand(band, card.id) : null;
       const currentPresetId = card.worker_preset_id ?? getPresetForCard(card.id).id;
       if (band && bandPreset && bandPreset.id !== currentPresetId) {
-        await respawnWorkerForBand(card.id, bandPreset.id);
+        await workers.respawn(card.id, bandPreset.id);
       }
       // Reaching audit is still unfinished work. Only `bb stelow done` may
       // record completion after the host verifies its terminal conditions.
@@ -6718,7 +6442,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             const currentPresetId = cliCard.worker_preset_id ?? getPresetForCard(cliCard.id).id;
             if (bandPreset.id !== currentPresetId) {
               const targetId = cliCard.id;
-              setTimeout(() => { respawnWorkerForBand(targetId, bandPreset.id).catch(() => {}); }, 10);
+              workers.scheduleRespawn(targetId, bandPreset.id);
             }
           }
         }
@@ -6978,8 +6702,8 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           const path = typeof env.path === "string" && env.path ? env.path : null;
           const bytes = path ? await duBytes(path).catch(() => null) : null;
           const threadId = threadIdFromWorktreePath(path);
-          const owner = threadId ? (db.prepare("SELECT card_id FROM card_threads WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1").get(threadId) as { card_id: string } | undefined) : undefined;
-          const card = owner ? getCard(owner.card_id) : undefined;
+          const owner = threadId ? workers.ledgerCardId(threadId) : null;
+          const card = owner ? getCard(owner) : undefined;
           if (onlyCardId && (!card || card.id !== onlyCardId)) continue;
           rows.push({
             environmentId: env.id,
@@ -7143,10 +6867,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         // (20 latest threads) and fail-open — export never blocks on it.
         let exportTokens = null;
         try {
-          const threadRows = db.prepare("SELECT thread_id FROM card_threads WHERE card_id = ? ORDER BY started_at DESC LIMIT 20").all(card.id) as Array<{ thread_id: string }>;
-          const reports = await Promise.all(threadRows.map(async (row) => {
+          const threadIds = workers.ledgerThreadIds(card.id, 20);
+          const reports = await Promise.all(threadIds.map(async (threadId) => {
             try {
-              const events = await bb.sdk.threads.events.list({ threadId: row.thread_id, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
+              const events = await bb.sdk.threads.events.list({ threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" });
               return tokenBreakdownFromEvents(events);
             } catch { return null; }
           }));
@@ -7536,7 +7260,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // drag to Archived. The command's stdout is guidance, not a
           // lifecycle guarantee: end its worker here so it cannot consume a
           // turn after its card has disappeared from active work.
-          await stopWorkerThread(card.worker_thread_id);
+          await workers.stop(card.worker_thread_id);
           updateCard(cardId, { status: "archived", activity: "idle" });
           return { exitCode: 0, stdout: `Split into ${created.length} build ${created.length === 1 ? "card" : "cards"}: ${created.map((entry) => entry.slice).join("; ")}. The parent card is archived — stop: your workflow ends here.` };
         }
@@ -7971,7 +7695,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const reviewWorkspace = await cardWorkspace(card);
         if (!reviewWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
         const reviewSource = reviewWorkspace.hostId ? { path: reviewWorkspace.path, hostId: reviewWorkspace.hostId } : null;
-        const reviewEnvironment = await continuingWorkerEnvironment(card, reviewSource ? workerEnvironment(reviewSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+        const reviewFallback = reviewSource
+          ? workerEnvironment(reviewSource, params, card.workspace_kind === "exploratory")
+          : { type: "project-default" as const };
+        const reviewEnvironment = await workers.continuingEnvironment(card, reviewFallback);
         const prompt = buildReviewPrompt({ cardName: card.display_name ?? card.name, request: card.prompt, contractLabel, artifactContent: artifactText, deterministicFailures: [], evidence });
         let reviewThread: { id: string };
         try {
@@ -8350,7 +8077,10 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const draftWorkspace = await cardWorkspace(card);
         if (!draftWorkspace?.path) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
         const draftSource = draftWorkspace.hostId ? { path: draftWorkspace.path, hostId: draftWorkspace.hostId } : null;
-        const draftEnvironment = await continuingWorkerEnvironment(card, draftSource ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory") : { type: "project-default" });
+        const draftFallback = draftSource
+          ? workerEnvironment(draftSource, params, card.workspace_kind === "exploratory")
+          : { type: "project-default" as const };
+        const draftEnvironment = await workers.continuingEnvironment(card, draftFallback);
         const prompt = buildDraftPrompt({ cardName: card.display_name ?? card.name, brief });
         let draftThread: { id: string };
         try {
@@ -8384,16 +8114,16 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
           // stop polling and fall through to the empty-draft path below.
           if (status === "archived" || status === "deleted") break;
           if (status === "failed" || status === "error") {
-            await stopWorkerThread(draftThread.id).catch(() => undefined);
+            await workers.stop(draftThread.id).catch(() => undefined);
             return { exitCode: 1, stderr: `Draft thread ${draftThread.id} ended with status ${String(status)} — do the draft yourself.` };
           }
           if (poll === DRAFT_POLLS - 1) {
-            await stopWorkerThread(draftThread.id).catch(() => undefined);
+            await workers.stop(draftThread.id).catch(() => undefined);
             return { exitCode: 1, stderr: `Draft thread ${draftThread.id} still running after 3 minutes — stopped; do the draft yourself.` };
           }
         }
         const output = await bb.sdk.threads.output({ threadId: draftThread.id }).then((result) => result.output ?? "").catch(() => "");
-        await stopWorkerThread(draftThread.id).catch(() => undefined);
+        await workers.stop(draftThread.id).catch(() => undefined);
         const validated = validateDraftOutput(output);
         if (!validated.ok) return { exitCode: 1, stderr: validated.error ?? "Empty draft." };
         const stamp = roundTimestamp();

@@ -15,6 +15,7 @@ const publicationOperations = readFileSync(
 );
 const server = [
   serverRoot,
+  readFileSync(join(root, "server/workers.ts"), "utf8"),
   publicationContract,
   readFileSync(join(root, "server/artifacts-publication-commits.ts"), "utf8"),
   readFileSync(join(root, "server/artifacts-publication-status.ts"), "utf8"),
@@ -132,7 +133,7 @@ assert.match(server, /recordPublication\(deps, cardId, "squash_merge", message, 
 assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
 assert.match(server, /selectCardEnvironment\(environment, workerEnvironment/, "a card forwards the BB composer environment instead of replacing it with a preset");
-assert.match(server, /continuingWorkerEnvironment\(row/, "later workers reuse the card's selected BB environment");
+assert.match(server, /workers\.continuingEnvironment\(card/, "later workers reuse the card's selected BB environment");
 assert.match(server, /text: AUDIT_DONE_NUDGE, mentions: \[\], visibility: "agent-only"/, "automatic audit recovery stays out of the user conversation");
 assert.match(server, /text: buildContinueNudge\(\), mentions: \[\], visibility: "agent-only"/, "automatic continuations stay out of the user conversation");
 

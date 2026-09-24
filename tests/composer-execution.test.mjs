@@ -92,7 +92,10 @@ assert.equal(fallback.executionInputSources.providerId, "explicit", "missing pro
 // Contracts: the choice must travel composer -> RPC -> spawn on every
 // track, through one shared helper per layer — never pasted per site.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server.ts"), "utf8"),
+  readFileSync(join(root, "server/workers.ts"), "utf8"),
+].join("\n");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const composerHelper = readFileSync(join(root, "components", "creation", "composer-execution.ts"), "utf8");
 const buildDialog = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
