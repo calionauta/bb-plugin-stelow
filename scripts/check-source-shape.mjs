@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { extname } from "node:path";
 
 const sourceExtensions = new Set([".js", ".mjs", ".ts", ".tsx"]);
 const maxLineLength = 160;
 const args = process.argv.slice(2);
-const baselinePath = join(dirname(fileURLToPath(import.meta.url)), "..", "source-shape-baseline.json");
 let trackedSourceFiles;
 
 function git(...command) {
@@ -44,17 +42,7 @@ function explicitFiles() {
 }
 
 function resolveComparisonBase() {
-  const requested = optionValue("--base") || process.env.SOURCE_SHAPE_BASE;
-  if (requested) return requested;
-  return readBaselineCommit();
-}
-
-function readBaselineCommit() {
-  const config = JSON.parse(readFileSync(baselinePath, "utf8"));
-  if (typeof config.commit !== "string" || !/^[0-9a-f]{40,64}$/.test(config.commit)) {
-    throw new Error("source-shape-baseline.json must contain a full git commit SHA");
-  }
-  return config.commit;
+  return optionValue("--base") || process.env.SOURCE_SHAPE_BASE || "origin/master";
 }
 
 function assertCommit(ref, label) {
@@ -62,14 +50,6 @@ function assertCommit(ref, label) {
     git("rev-parse", "--verify", `${ref}^{commit}`);
   } catch {
     throw new Error(`${label} is not an available commit: ${ref}`);
-  }
-}
-
-function assertBaselineIsAncestor(baseline) {
-  try {
-    git("merge-base", "--is-ancestor", baseline, "HEAD");
-  } catch {
-    throw new Error(`source-shape baseline is not an ancestor of HEAD: ${baseline}`);
   }
 }
 
@@ -112,66 +92,37 @@ function readAddedLines(file, base) {
   return result;
 }
 
-function baselineLineCounts(file, baseline) {
-  let source;
-  try {
-    source = git("show", `${baseline}:${file}`);
-  } catch {
-    return new Map();
-  }
-  const counts = new Map();
-  for (const line of source.split(/\r?\n/)) {
-    if (line.length <= maxLineLength) continue;
-    const key = line;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return counts;
-}
-
-function inspectFile(file, base, baseline) {
-  const inheritedCounts = baselineLineCounts(file, baseline);
-  const inherited = [];
+function inspectFile(file, base) {
   const violations = [];
   for (const [lineNumber, line] of readAddedLines(file, base)) {
-    if (line.length <= maxLineLength) continue;
-    const key = line;
-    const remaining = inheritedCounts.get(key) ?? 0;
-    if (remaining > 0) {
-      inheritedCounts.set(key, remaining - 1);
-      inherited.push(`${file}:${lineNumber}`);
-    } else {
+    if (line.length > maxLineLength) {
       violations.push(`${file}:${lineNumber}: ${line.length} characters`);
     }
   }
-  return { inherited, violations };
+  return violations;
 }
 
 function main() {
   assertKnownArguments();
   const base = resolveComparisonBase();
-  const baseline = readBaselineCommit();
   assertCommit(base, "comparison base");
-  assertCommit(baseline, "source-shape baseline");
-  assertBaselineIsAncestor(baseline);
   const requestedFiles = explicitFiles();
   const candidates = requestedFiles.length > 0 ? requestedFiles.filter(isSource) : changedFiles(base);
-  const results = candidates.map((file) => inspectFile(file, base, baseline));
-  const inherited = results.flatMap((result) => result.inherited);
-  const violations = results.flatMap((result) => result.violations);
-  report(candidates.length, base, baseline, inherited, violations);
+  const violations = candidates.flatMap((file) => inspectFile(file, base));
+  report(candidates.length, base, violations);
 }
 
-function report(fileCount, base, baseline, inherited, violations) {
-  if (inherited.length > 0) {
-    console.log(`source shape: ${inherited.length} inherited legacy line(s) through ${baseline.slice(0, 12)} reported separately`);
-  }
+function report(fileCount, base, violations) {
   if (violations.length > 0) {
-    console.error(`Source shape failed against ${base}: new changed lines over ${maxLineLength} characters:`);
+    console.error(`Source shape failed against ${base}: changed lines over ${maxLineLength} characters:`);
     for (const violation of violations) console.error(`- ${violation}`);
     process.exitCode = 1;
     return;
   }
-  console.log(`source shape ok: ${fileCount} source file(s) from ${base}, no new line over ${maxLineLength} characters`);
+  console.log(
+    `source shape ok: ${fileCount} source file(s) from ${base}, `
+    + `no changed line over ${maxLineLength} characters`,
+  );
 }
 
 try {

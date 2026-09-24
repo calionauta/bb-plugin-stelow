@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { attachmentSchema, askOptionSchema, statusSchema } from "./contracts.js";
+import { executionRunSchema } from "./execution-contract.js";
 
 export const cardDetailRpcContract = {
   cardDetail: {
@@ -39,6 +40,7 @@ export const cardDetailRpcContract = {
           scopesDone: z.number(),
           tasksTotal: z.number(),
           tasksDone: z.number(),
+          elapsedMs: z.number().nullable(),
         }),
         presetId: z.string(),
         workerPresetId: z.string().nullable(),
@@ -46,6 +48,7 @@ export const cardDetailRpcContract = {
         leadMs: z.number().nullable(),
         cycleMs: z.number().nullable(),
         doingNow: z.array(z.string()),
+        executingScope: z.string().nullable(),
         verifiedHeadSha: z.string().nullable(),
       }),
       attachments: z.array(
@@ -236,6 +239,7 @@ export const cardDetailRpcContract = {
           ),
         }),
       ),
+      executionRuns: z.array(executionRunSchema),
       // Environment of the worker thread: enables workspace-kind file links
       // (the official viewer with comments). Host-kind links fail for
       // exploratory workspaces, which live outside provisioned environments.

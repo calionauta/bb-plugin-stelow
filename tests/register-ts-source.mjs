@@ -7,7 +7,8 @@ if (isMainThread) register(import.meta.filename, pathToFileURL("./"));
 
 export async function resolve(specifier, context, nextResolve) {
   const parent = context.parentURL ?? "";
-  if ((parent.includes("/server/") || parent.endsWith("/server.ts")) && specifier.startsWith(".") && specifier.endsWith(".js")) {
+  const resolvesLocalServerSource = parent.endsWith("/server.ts") || parent.includes("/server/");
+  if (resolvesLocalServerSource && specifier.startsWith(".") && specifier.endsWith(".js")) {
     const candidate = new URL(`${specifier.slice(0, -3)}.ts`, parent);
     try {
       await access(fileURLToPath(candidate));

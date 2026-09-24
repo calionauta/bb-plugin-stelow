@@ -90,6 +90,36 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   comment carries a hidden card marker that is verified back on the issue
   before counting as posted, so retries never double-post and a send
   without a visible comment reports itself instead of succeeding silently.
+- **GitHub issue creation at card birth** (`createLinkedGithubIssue`). The
+  Build creation dialog offers one opt-in checkbox (off by default) when the
+  project has a mapped repo: the card is always created first, then `gh`
+  creates the issue (same auth, no second token — taskboard's pattern) with
+  a hidden card marker in the body, and the link lands in `github_imports`.
+  Title and body only; a failed creation keeps the card and names the cause,
+  and an uncertain write (response lost) reports itself under a
+  machine-detectable `[STELOW_CREATE_OUTCOME_UNCERTAIN]` marker instead of
+  inviting a double-creating retry. Already-linked cards return their link.
+- **Done-note draft for GitHub** (`draftDoneComment`, `postIssueComment`).
+  Completed cards with a linked issue offer "Draft GitHub comment…": the
+  cheap generation preset (band fallback, same cascade as prose bursts)
+  drafts a completion note from the card's scopes, generated on dialog open
+  so tokens spend only on intent. The draft is fully editable, deliverable
+  artifacts ride as a detachable checklist, and Post sends the final text
+  through the human-gated comment RPC. The factual
+  `postGithubCompletion` path stays untouched.
+- **Linked discussion mirror** (`getLinkedDiscussion`, `postIssueComment`).
+  Cards linked to an issue render a read-only Linked discussion section on
+  every track: issue comments as a separate badged stream that never renders
+  as agent chatter and never routes to the worker (external text is context,
+  never instructions). Unlinked cards on a mapped project offer creation
+  from the same section instead. Identity is a content fingerprint (the
+  plugin type carries no comment ids), storage dedupes on it, edits/deletes
+  upstream are not tracked. Fetched live on card open plus a 5-minute mirror
+  poll for linked, non-terminal cards (terminal cards serve their frozen
+  snapshot); new rows publish `github-discussion` so open details refresh.
+  A composer posts back through `postIssueComment` behind an inline confirm
+  naming the destination (`repo#number`, public and hard to undo) — human
+  gesture only, payload validated server-side, mirror refreshed on success.
 - **Manual Git changes from Done** (`publicationStatus`, `BuildDetailBody`). A
   completed card with a live BB environment can inspect its exact worker
   checkout and make a host-local commit through BB. The checkout selected in
@@ -224,9 +254,12 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   scope in one shared pill (`DoingNowPill`, truncated with the full
   doing set one hover away) whenever the worker runs or waits — the same
   selection the detail "Doing now" line reads, defined once in
-  `lib/doing-now.mjs`. Groups collapse per track (persisted; Archived
-  starts collapsed). One shared row across tracks (Build geometry
-  standard; strategy/technique rides the meta line).
+  `lib/doing-now.mjs`. The open card names the first in-progress scope
+  explicitly, keeps each scope's own task list under `ScopesList`, and
+  shows wall-clock elapsed time per scope plus the total window. Groups
+  collapse per track (persisted; Archived starts collapsed). One shared
+  row across tracks (Build geometry standard; strategy/technique rides
+  the meta line).
 - **Hill view (Build track).** The same filtered cards as dots on a figuring-out /
   executing curve, for the glanceable question columns can't answer — research
   and explore cards carry no scopes or workflow stages, so their toggles hide
@@ -545,9 +578,8 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   for the host binaries the workflow can use (sem, cymbal, ripwire,
   ast-grep) with per-tool purpose and install command —
   install anytime, everything degrades silently without them. Each row
-  also offers one-click install (explicit consent, versioned and SHA-256
-  verified installer scripts, pinned npm/Go versions, an isolated installer
-  environment, ~/.local/bin, verified by re-probe) with per-row error + log, plus
+  also offers one-click install (explicit consent, SHA-256 verified versioned installers,
+  pinned npm/Go versions, an isolated installer environment, ~/.local/bin, verified by re-probe) with per-row error + log, plus
   one-click reinstall-as-update for installed tools. A separate "Ready via
   npx" group discloses the on-demand dependencies (skills hub, ctx7,
   agent-reach, last30days, thermo-nuclear) with usage and consent rules — info only,
@@ -1266,6 +1298,12 @@ bundle (0.4.84) must accept the plugin — every new API use is feature-detected
 with a fallback, so 0.4.106 is build-time types only.
 
 Host-version note: the 0.43.3 APIs above went live with host 0.43.3 and plugin 0.35.2, verified live: all 96 RPC methods are discoverable via bb plugin rpc list, and dependent-thread ownership, persistent requestInput presentation, and app.commands registration are served by the host. No plugin-side CLI substitute was built (YAGNI).
+
+## Canonical stages and host-native execution
+
+- **Shared stage catalog.** The board, state template, artifact ordering, playbooks, question contracts, and route projections read the generated upstream `stage-catalog.json`; the plugin no longer keeps a hand-maintained list of the 17 Build stages. A pinned sync preserves the last good catalog when an older upstream pin does not contain it.
+- **Capability-negotiated execution.** Host-neutral execution adapters normalize run state and negotiate required capabilities before starting a recipe. Missing capabilities produce a named refusal or an explicit coordinator-owned sequential route; permission requirements are never silently weakened. The coordinator route is not presented as a native run and has no fabricated run ID, resume handle, or cancel semantics. The optional BB Workflows binding reports its real capability limits, including no per-call permission control, while the card remains the owner of human input and resume.
+- **Durable native runs.** BB Workflows starts through the server-side `bb workflows run` bridge with inline, size-checked source and explicit project/thread context; each card run persists native identity, recipe, source hash, workspace, project, status, resume lineage, stop, completion dedupe, boundary identity, and artifact-validation state. Canonical stage entry performs preflight gates before mutating state, then dispatches the stage recipe. Outputs are staged per run and become successful only after the coordinator registers a receipt. The card detail exposes run status, a local-run deep-open action, and Stop, while native workers never own the card. The deep-open route uses only the ledger's local `exec_…` identity: queued and running runs focus the run row, `needs_input` focuses the real card question when it is present (and falls back to the run row during the question-sync race), and succeeded, failed, and cancelled runs focus run history. Native Workflows run IDs and preview directives remain evidence in the row, never in-app navigation; unknown states or identities get no invented route. `needs_input` becomes a real, marker-bound card question, and only that answer resumes the child run. `scope-batch` remains coordinator-sequential until file-claim and parent-merge safety is proven.
 
 ## Cross-cutting rules (apply to every feature above)
 

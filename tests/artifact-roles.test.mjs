@@ -32,13 +32,10 @@ assert.deepEqual(splitArtifactsByRole(null), { deliverables: [], evidence: [] },
 // progress count excludes evidence, and the Artifacts section renders the
 // evidence group apart from deliverables.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-const cardContract = [
-  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
-].join("\n");
-assert.match(server, /artifactRole\(/, "card detail stamps the artifact role");
-assert.match(cardContract, /role: z\.enum\(\["deliverable", "evidence"\]\)/, "the card detail contract carries the role");
+const runtime = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const contract = readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8");
+assert.match(runtime, /artifactRole\(/, "card detail stamps the artifact role");
+assert.match(contract, /role: z\.enum\(\["deliverable", "evidence"\]\)/, "the card detail contract carries the role");
 const progress = readFileSync(join(root, "components/detail/build-detail-progress.tsx"), "utf8");
 assert.match(progress, /\.filter\(\s*\(artifact\) => artifact\.role !== "evidence",/, "the file count excludes evidence");
 assert.match(progress, /Evidence — machine receipts/, "the Artifacts section groups evidence apart");

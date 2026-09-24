@@ -3,6 +3,7 @@ import { ConfirmActionDialog } from "../manage/confirm-action-dialog";
 import { PresetAssignDialog } from "../settings/preset-assign-dialog";
 import { ArtifactViewerDialog } from "./artifact-viewer-dialog";
 import { ExploreDetailContent } from "./explore-detail-content";
+import { LinkedDiscussionSection } from "../github/github-linked-discussion";
 import type { ExploreCard, ExploreDetail } from "./explore-detail-types";
 import type { InboxEventItem } from "./inbox-event-banner";
 import { useInboxEventFocus } from "./inbox-event-banner";
@@ -41,6 +42,7 @@ export function ExploreDetailBody({ cardId, inboxEventId, inboxEvent, card, deta
             state={state}
             onChanged={onChanged}
           />
+          <LinkedDiscussionSection cardId={cardId} />
         </div>
       </div>
       <ConfirmActionDialog

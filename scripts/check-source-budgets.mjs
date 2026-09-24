@@ -7,7 +7,7 @@ import ts from "typescript";
 const roots = ["server/", "components/", "hooks/", "lib/", "scripts/", "tests/"];
 const entrypoints = new Set(["server.ts", "app.tsx"]);
 const extensions = new Set([".js", ".mjs", ".ts", ".tsx"]);
-const baseline = JSON.parse(readFileSync("source-shape-budget-baseline.json", "utf8")).commit;
+const base = process.env.SOURCE_SHAPE_BASE || "origin/master";
 const maxFileLines = 400;
 const maxFunctionLines = 50;
 
@@ -63,9 +63,9 @@ function functionSizes(file, source) {
   return sizes;
 }
 
-function baselineSource(file) {
+function sourceAtBase(file) {
   try {
-    return git("show", `${baseline}:${file}`);
+    return git("show", `${base}:${file}`);
   } catch {
     return null;
   }
@@ -73,7 +73,7 @@ function baselineSource(file) {
 
 function inspect(file, inherited, violations) {
   const source = readFileSync(file, "utf8");
-  const previous = baselineSource(file);
+  const previous = sourceAtBase(file);
   const currentLines = sourceLines(source);
   const oldLines = previous === null ? 0 : sourceLines(previous);
   if (currentLines > maxFileLines) {
@@ -90,14 +90,18 @@ function inspect(file, inherited, violations) {
 }
 
 function main() {
-  if (!/^[0-9a-f]{40,64}$/.test(baseline)) throw new Error("budget baseline must be a full commit SHA");
-  git("merge-base", "--is-ancestor", baseline, "HEAD");
-  const files = git("ls-files", "--cached", "--others", "--exclude-standard")
-    .trim().split("\n").filter(isOwnedSource);
+  git("rev-parse", "--verify", `${base}^{commit}`);
+  const changed = git("diff", "--name-only", "--diff-filter=ACMRT", base, "--")
+    .trim().split("\n");
+  const untracked = git("status", "--porcelain", "--untracked-files=all")
+    .split("\n")
+    .map((line) => line.slice(3))
+    .filter((file) => file && !file.includes(" -> "));
+  const files = [...new Set([...changed, ...untracked].filter(Boolean))].filter(isOwnedSource);
   const inherited = [];
   const violations = [];
   for (const file of files) inspect(file, inherited, violations);
-  console.log(`source budgets: ${files.length} owned files; ${inherited.length} inherited oversize item(s)`);
+  console.log(`source budgets: ${files.length} changed owned files against ${base}`);
   for (const item of inherited) console.log(`  inherited ${item}`);
   for (const item of violations) console.error(`  over budget ${item}`);
   if (violations.length > 0) process.exitCode = 1;

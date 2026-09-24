@@ -22,6 +22,7 @@ import type { HostFileTarget, WorkspaceFileTarget } from "../artifacts/artifact-
 import { useDetailComment } from "../conversation/use-detail-comment";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
 import { GithubCompletionDialog } from "../github/github-completion-dialog";
+import { GithubDoneDraftDialog } from "../github/github-done-draft-dialog";
 import { CardDetailHeader } from "../manage/card-detail-header";
 import { useDebouncedRealtime } from "../use-debounced-realtime";
 import { ArtifactViewerDialog } from "./artifact-viewer-dialog";
@@ -29,6 +30,7 @@ import { BuildDetailContent } from "./build-detail-content";
 import { BuildLifecycleDialogs } from "./build-lifecycle-dialogs";
 import { useInboxEventFocus, type InboxEventItem } from "./inbox-event-banner";
 import { useBuildDetailLifecycle } from "./use-build-detail-lifecycle";
+import { useExecutionRuns } from "./use-execution-runs";
 
 type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 type RpcResult = Awaited<ReturnType<Rpc["call"]>>;
@@ -53,6 +55,7 @@ type PresetDialogRenderer = (state: {
 type BuildDetailBodyProps = {
   cardId: string;
   inboxEventId: string | null;
+  executionRunId: string | null;
   onClose: () => void;
   onBack?: () => void;
   intentLabels: Record<string, string>;
@@ -116,6 +119,7 @@ function useAdvanceCard(cardId: string, load: () => Promise<void>) {
 
 function useBuildPresentationState(card: BuildCard | null) {
   const [githubPostOpen, setGithubPostOpen] = useState(false);
+  const [githubDraftOpen, setGithubDraftOpen] = useState(false);
   const [publicationDirty, setPublicationDirty] = useState(false);
   const [publicationBranch, setPublicationBranch] = useState<string | null>(null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -137,6 +141,8 @@ function useBuildPresentationState(card: BuildCard | null) {
   return {
     githubPostOpen,
     setGithubPostOpen,
+    githubDraftOpen,
+    setGithubDraftOpen,
     publicationDirty,
     setPublicationDirty,
     publicationBranch,
@@ -184,18 +190,23 @@ function useBuildInteractions(
 
 export type BuildDetailView = ReturnType<typeof useBuildDetailData> &
   ReturnType<typeof useBuildInteractions> &
-  ReturnType<typeof useAdvanceCard> &
-  Pick<BuildDetailBodyProps, "renderPresetDialog">;
+  ReturnType<typeof useAdvanceCard> & {
+    execution: ReturnType<typeof useExecutionRuns>;
+    focusRunId: string | null;
+  } & Pick<BuildDetailBodyProps, "renderPresetDialog">;
 
 export function BuildDetailBody(props: BuildDetailBodyProps) {
   const { cardId, inboxEventId, renderPresetDialog } = props;
   const data = useBuildDetailData(cardId, inboxEventId);
   const interactions = useBuildInteractions(props, data.card, data.load);
   const advance = useAdvanceCard(cardId, data.load);
+  const execution = useExecutionRuns(cardId, props.executionRunId);
   const view: BuildDetailView = {
     ...data,
     ...interactions,
     ...advance,
+    execution,
+    focusRunId: props.executionRunId,
     renderPresetDialog,
   };
   return <BuildDetailLayout {...props} view={view} />;
@@ -315,6 +326,13 @@ function BuildDetailLayout({
           ? `${detail.githubLink.repo}#${detail.githubLink.number}`
           : null}
         onPosted={load}
+      />
+      <GithubDoneDraftDialog
+        open={view.githubDraftOpen}
+        onOpenChange={view.setGithubDraftOpen}
+        cardId={cardId}
+        artifacts={detail?.artifacts ?? []}
+        issueRef={detail?.githubLink ? { repo: detail.githubLink.repo, number: detail.githubLink.number } : null}
       />
       <BuildLifecycleDialogs
         state={lifecycle}

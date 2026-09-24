@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { doingNowNames } from "../lib/doing-now.mjs";
+import { doingNowNames, orderedDoingNow } from "../lib/doing-now.mjs";
 
 const scopes = [
   { id: "s1", name: "Checkout", status: "done", tasks: [{ name: "t1", status: "done" }] },
@@ -16,17 +16,20 @@ assert.deepEqual(doingNowNames(scopes), ["Apple Pay", "t4"], "doing scopes first
 assert.deepEqual(doingNowNames([{ name: "A", status: "done", tasks: [] }]), [], "all-done resolves empty, never history");
 assert.deepEqual(doingNowNames(null), [], "junk resolves empty, never throws");
 assert.deepEqual(doingNowNames(scopes, 1), ["Apple Pay"], "the limit caps callers that only fit one name");
+assert.deepEqual(
+  orderedDoingNow("Refunds", ["Apple Pay", "Refunds", "t4"]),
+  ["Refunds", "Apple Pay", "t4"],
+  "the executing scope is first and duplicates disappear",
+);
+assert.deepEqual(orderedDoingNow(null, ["A", "A", "B"]), ["A", "B"], "without an active scope, names are de-duplicated");
 
 // Server carries doing names on the list payload (one parse, cached with
 // the summary): tiles and rows read names, never re-derive them.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
-  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
 ].join("\n");
-const app = readFileSync(join(root, "app.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components", "board", "board-cards.tsx"), "utf8");
 const scopesList = readFileSync(join(root, "components", "detail", "scopes-list.tsx"), "utf8");
@@ -36,8 +39,8 @@ assert.match(server, /doingNow: summary\.doingNow/, "list rows carry the cached 
 
 // One shared pill on tiles and rows, live execution only: idle cards show
 // no pill (paused speaks for itself), and empty sets render nothing.
-assert.match(boardCards, /<DoingNowPill names=\{card\.doingNow \?\? \[\]\} \/>/, "tiles name the executing scope");
-assert.match(trackLists, /<DoingNowPill names=\{card\.doingNow \?\? \[\]\} \/>/, "rows name the executing scope");
+assert.match(boardCards, /<DoingNowPill names=\{orderedDoingNow\(card\.executingScope, card\.doingNow\)\} \/>/, "tiles prioritize the executing scope");
+assert.match(trackLists, /<DoingNowPill names=\{orderedDoingNow\(card\.executingScope, card\.doingNow\)\} \/>/, "rows prioritize the executing scope");
 assert.match(
   trackLists,
   /card\.activity === "running" \|\| card\.activity === "awaiting-answer"/,

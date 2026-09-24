@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createScopeProgressSync, loadCardScopes, runScopeCommand } from "../server/scopes.ts";
+import { z } from "zod";
 
 const root = mkdtempSync(join(tmpdir(), "stelow-scopes-"));
 try {
@@ -74,9 +75,18 @@ try {
   const display = loadCardScopes(root, "card-owned");
   assert.equal(display[0].tasks.length, 2, "display reads enrich tracked scopes with planned tasks");
   assert.equal(display[0].tasks[0].status, "done", "tracked task status remains authoritative");
+  assert.equal(display[0].tasks[1].kind, "task", "planned task keeps the card-detail kind contract");
   assert.equal(display[0].tasks[1].source, "planned", "planned task is marked as planned");
   assert.equal(display[0].tasks[1].note, "Done: Plan criterion", "planned task carries its done criterion");
-  assert.deepEqual(loadCardScopes(root, "card-owned", { mergePlanned: false }), tracked, "gate reads can return tracked truth without planned enrichment");
+  const detailTaskSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    kind: z.literal("task"),
+    status: z.string(),
+    conditions: z.array(z.object({ type: z.string(), reason: z.string(), message: z.string(), observedAt: z.string() })),
+  });
+  const detailTasks = display.flatMap((scope) => scope.tasks.map((task) => ({ ...task, conditions: [] })));
+  assert.equal(detailTaskSchema.array().safeParse(detailTasks).success, true, "card detail task shape accepts tracked and planned tasks");
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
@@ -157,9 +167,9 @@ assert.deepEqual(noCard.calls, [{
 assert.deepEqual(noCard.events, [], "a cardless transition does not publish card or board events");
 assert.equal(noCard.trails.length, 0, "a cardless transition cannot record a worker trail");
 
-const server = readFileSync(new URL("../server/plugin-runtime.ts", import.meta.url), "utf8");
+const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
 const scopeModule = readFileSync(new URL("../server/scopes.ts", import.meta.url), "utf8");
-assert.match(server, /from "\.\/scopes\.js"/, "the runtime delegates scope functionality to the extracted module");
+assert.match(server, /from "\.\/server\/scopes\.js"/, "server delegates scope functionality to the extracted module");
 assert.doesNotMatch(server, /function loadCardScopes\(/, "the extracted module owns scope loading rather than a duplicate server implementation");
 assert.doesNotMatch(server, /if \(argv\[0\] === "scope"\)[\s\S]*?runHelper\(\["scope"/, "the scope CLI wrapper is delegated instead of duplicated in server");
 assert.match(

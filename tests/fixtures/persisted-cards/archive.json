@@ -1,0 +1,15 @@
+{
+  "name": "archive",
+  "card": {
+    "id": "card_archive",
+    "kind": "build",
+    "status": "in-progress",
+    "stage": "execution",
+    "workerThreadId": "thr_archive",
+    "dirHash": "sw-card_archive",
+    "spawnRetryCount": 0,
+    "spawnRetryThread": null
+  },
+  "action": "archive",
+  "state": "---\nworkflow_id: card_archive\nname: Archive a persisted run\nintent: feature\ncurrent_stage: execution\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\nstages:\n  execution: in-progress\nartifacts: []\nhistory: []\n---\n"
+}

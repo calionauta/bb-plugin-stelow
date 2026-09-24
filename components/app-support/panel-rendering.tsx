@@ -56,13 +56,14 @@ export function renderCardRoute(
 ) {
   const shared = { navigate, intentLabels: INTENT_LABEL, onOpenRecoveryAudit, renderPresetDialog };
   if (route.kind === "bare-card") {
-    return <BareCardRoute cardId={route.cardId} eventId={route.eventId} {...shared} />;
+    return <BareCardRoute cardId={route.cardId} eventId={route.eventId} executionRunId={route.executionRunId} {...shared} />;
   }
   if (route.kind === "card") {
     return (
       <StelowCardDetail
         cardId={route.cardId}
         eventId={route.eventId}
+        executionRunId={route.executionRunId}
         backTrack={route.origin}
         {...shared}
       />

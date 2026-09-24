@@ -7,7 +7,7 @@ import { gapSummaryPresentation, summarizeScopeProgress } from "../../lib/build-
 import { isDoneStatus } from "../../lib/trackables.mjs";
 import { fileLinkTarget, type HostFileTarget, type WorkspaceFileTarget } from "../artifacts/artifact-inventory";
 import type { ArtifactViewerMode } from "../conversation/question-batch";
-import { Pill } from "../dashboard/build-status-pills";
+import { Pill, ScopeProgressTrack } from "../dashboard/build-status-pills";
 import { CurrentStagePill } from "../dashboard/build-status-pills";
 import { DisclosureSection } from "../disclosure";
 import { StageTimeline } from "./stage-timeline";
@@ -169,7 +169,22 @@ function emptyScopeCopy(card: BuildCard, archived: string | undefined): string {
 function ScopesProgress({ detail }: { detail: BuildDetail }) {
   if (detail.scopes.length === 0) return null;
   const flow = { leadMs: detail.card.leadMs ?? null, cycleMs: detail.card.cycleMs ?? null };
-  return <><ScopeProgress scopes={detail.scopes} flow={flow} /><ScopesList scopes={detail.scopes} statusTone={statusTone} statusGlyph={statusGlyph} statusLabel={statusLabel} /></>;
+  const elapsed = detail.card.scopeSummary.elapsedMs;
+  const activeScope = detail.card.executingScope;
+  return (
+    <>
+      <ScopeProgress scopes={detail.scopes} flow={flow} />
+      <ScopeProgressTrack done={detail.card.scopeSummary.scopesDone} total={detail.card.scopeSummary.scopesTotal} />
+      {elapsed != null ? <p className="text-xs text-muted-foreground">Total scope time: {formatDuration(elapsed)}</p> : null}
+      {activeScope ? <p className="text-xs text-primary">● Executing: {activeScope}</p> : null}
+      <ScopesList
+        scopes={detail.scopes}
+        statusTone={statusTone}
+        statusGlyph={statusGlyph}
+        statusLabel={statusLabel}
+      />
+    </>
+  );
 }
 
 function TimelineProgress({ card, detail, intentLabels, onPick }: { card: BuildCard; detail: BuildDetail; intentLabels: Record<string, string>; onPick: (stage: string) => void }) {

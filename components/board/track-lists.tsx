@@ -1,4 +1,6 @@
 import { DisclosureChevron } from "../disclosure";
+import { formatDuration } from "../../lib/card-metrics.mjs";
+import { orderedDoingNow } from "../../lib/doing-now.mjs";
 import {
   ActivityPill,
   AttentionChip,
@@ -29,6 +31,7 @@ type ScopeSummary = {
   scopesTotal: number;
   tasksDone: number;
   tasksTotal: number;
+  elapsedMs?: number | null;
 };
 
 type ListCard = {
@@ -43,6 +46,7 @@ type ListCard = {
   hasPendingReview: boolean;
   workerThreadId?: string | null;
   doingNow?: string[] | null;
+  executingScope?: string | null;
   scopeSummary: ScopeSummary;
   updatedAt: number;
   researchStrategies?: string[] | null;
@@ -101,7 +105,11 @@ function TrackListRow({ card, meta, onOpen, onOpenThread }: {
           <span className="mt-0.5 block break-words text-xs leading-5 text-muted-foreground">
             {card.projectName}{meta ? ` · ${meta}` : ""}
             {showScopeStrip(card) ? (
-              <> · <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} /></>
+              <>
+                {" · "}
+                <ScopeStrip done={card.scopeSummary.scopesDone} total={card.scopeSummary.scopesTotal} />
+                {card.scopeSummary.elapsedMs != null ? ` · ${formatDuration(card.scopeSummary.elapsedMs)} elapsed` : ""}
+              </>
             ) : null}
           </span>
         </span>
@@ -109,7 +117,7 @@ function TrackListRow({ card, meta, onOpen, onOpenThread }: {
       <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
         <ActivityPill activity={card.activity} />
         {showAttention(card) ? <AttentionChip label={attentionLabel(card.activity)} /> : null}
-        {showDoingNow(card) ? <DoingNowPill names={card.doingNow ?? []} /> : null}
+        {showDoingNow(card) ? <DoingNowPill names={orderedDoingNow(card.executingScope, card.doingNow)} /> : null}
         {pendingReview(card) ? <ReviewChip /> : null}
         <span className="whitespace-nowrap">{new Date(card.updatedAt).toLocaleString()}</span>
       </span>

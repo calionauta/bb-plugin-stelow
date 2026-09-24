@@ -8,6 +8,7 @@ import { cardRpcContract } from "./card-rpc-contract.js";
 import { cardDetailRpcContract } from "./card-detail-rpc-contract.js";
 import { lifecycleRpcContract } from "./lifecycle-rpc-contract.js";
 import { platformRpcContract } from "./platform-rpc-contract.js";
+import { executionRpcContract } from "./execution-contract.js";
 
 export const RPC_FRAGMENTS = [
   cardRpcContract,
@@ -19,6 +20,7 @@ export const RPC_FRAGMENTS = [
   publicationRpcContract,
   workspaceRecoveryRpcContract,
   platformRpcContract,
+  executionRpcContract,
 ];
 
 type FragmentUnionToIntersection<Fragment> = (Fragment extends unknown ? (value: Fragment) => void : never) extends

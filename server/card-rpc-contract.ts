@@ -86,8 +86,10 @@ export const cardRpcContract = {
             scopesDone: z.number(),
             tasksTotal: z.number(),
             tasksDone: z.number(),
+            elapsedMs: z.number().nullable(),
           }),
           doingNow: z.array(z.string()),
+          executingScope: z.string().nullable(),
         }),
       ),
     }),
@@ -209,5 +211,14 @@ export const cardRpcContract = {
     experimental_description: "Rename a card's display title (1-120 chars); blank restores the heuristic",
     input: z.object({ cardId: z.string(), name: z.string().max(120) }).strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  draftDoneComment: {
+    experimental_description: "Draft a GitHub completion note with the cheap generation preset",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      ok: z.boolean(),
+      draft: z.string().nullable(),
+      error: z.string().nullable(),
+    }),
   },
 };

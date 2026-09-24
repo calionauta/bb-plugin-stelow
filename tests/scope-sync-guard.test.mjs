@@ -76,8 +76,8 @@ assert.deepEqual(countScopeDialects(null), { machine: 0, human: 0 }, "junk never
 // the note the ScopesList already renders.
 const humanBlocks = splitScopeBlocks(HUMAN_SPEC);
 assert.deepEqual(parseScopeTasks(humanBlocks[0].body, "scope-1"), [
-  { id: "scope-1-t1", name: "Split overlay root", status: "pending", source: "planned", note: "Done: Root renders alone" },
-  { id: "scope-1-t2", name: "Wire trigger", status: "pending", source: "planned", note: "Done: Trigger opens overlay" },
+  { id: "scope-1-t1", name: "Split overlay root", kind: "task", status: "pending", source: "planned", note: "Done: Root renders alone" },
+  { id: "scope-1-t2", name: "Wire trigger", kind: "task", status: "pending", source: "planned", note: "Done: Trigger opens overlay" },
 ], "task table rows become planned tasks with Done Criterion notes");
 assert.deepEqual(parseScopeTasks("no tables", "scope-9"), [], "no table means no tasks");
 assert.deepEqual(
@@ -119,15 +119,12 @@ assert.equal(reseeded[0].tasks[0].status, "done", "seeded status survives the me
 // done path must consult the guard, and the checks section must name the
 // missing-tracking signal.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-const cardContract = [
-  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
-].join("\n");
-assert.match(server, /advanceExecutionGates\(/, "advance consults the gates module");
+const server = readFileSync(join(root, "server.ts"), "utf8");
+const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+assert.match(executionAdvance, /advanceExecutionGates\(/, "advance consults the gates module");
 assert.match(server, /doneBuildGates\(/, "done consults the gates module");
 assert.match(server, /diagnoseScopeSync\(\{ specContent/, "card detail reports scope-sync health from the spec against synced scopes");
-assert.match(cardContract, /scopeSync: z\s*\.object\(\{\s*state: z\.enum\(/, "the card detail contract carries the sync state");
+assert.match(server, /scopeSync: z\.object\(\{ state: z\.enum\(/, "the card detail contract carries the sync state");
 const buildProgress = readFileSync(join(root, "components/detail/build-progress.tsx"), "utf8");
 assert.match(buildProgress, /isScopeTrackingMissing\(\{[^}]*scopes: detail\.scopes[^}]*\}\)/, "the checks section names missing scope tracking from live card state");
 assert.match(buildProgress, /!detail\.scopeSync \|\| !\["human-dialect", "unsynced"\]\.includes\(detail\.scopeSync\.state\)/, "the progress section renders the reported sync state");

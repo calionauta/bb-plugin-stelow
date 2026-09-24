@@ -3,6 +3,7 @@ import { CardConversation } from "../conversation/card-conversation";
 import type { BuildDetailView } from "./build-detail-body";
 import { BuildReviewHero } from "./build-detail-hero";
 import { BuildArtifacts, BuildProgressSection } from "./build-detail-progress";
+import { ExecutionRunsSection } from "./execution-runs-section";
 import { BuildReviewTools } from "./build-detail-review-tools";
 import { BuildWorkspace } from "./build-detail-workspace";
 import { heroFor } from "./detail-hero";
@@ -71,6 +72,13 @@ function BuildCardContent({ cardId, inboxEventId, view }: BuildContentProps) {
         sectionRef={view.inboxEventRef}
       />
       <BuildReviewHero view={view} presetStale={presetStale} />
+      <ExecutionRunsSection
+        card={card}
+        runs={view.execution.runs}
+        focusRunId={view.focusRunId}
+        stoppingRunId={view.execution.stoppingRunId}
+        onCancel={view.execution.cancel}
+      />
       <BuildWorkspace view={view} presetStale={presetStale} />
       <BuildProgressSection view={view} />
       <WorkflowMap open={view.mapOpen} onToggle={view.setMapOpen} />

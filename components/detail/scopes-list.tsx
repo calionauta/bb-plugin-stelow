@@ -1,3 +1,5 @@
+import { formatDuration } from "../../lib/card-metrics.mjs";
+import { scopeElapsedMs } from "../../lib/scope-elapsed.mjs";
 import { useState } from "react";
 import { DisclosureChevron } from "../disclosure";
 import { Pill } from "../dashboard/build-status-pills";
@@ -27,9 +29,10 @@ export type ScopeListScope = {
   source?: string | null;
   gap?: string | null;
   status: string;
+  startedAt?: string | null;
+  record?: { completedAt?: string | null; verified?: boolean | null; filesCount?: number | null; commandsCount?: number | null } | null;
   tasks: ScopeListTask[];
   conditions?: Array<{ type: string; message: string }> | null;
-  record?: { verified?: boolean | null; filesCount?: number | null; commandsCount?: number | null } | null;
   claimed?: boolean | null;
   contract?: { acceptanceCriteria: string[] } | null;
   blockedBy?: string[] | null;
@@ -127,6 +130,7 @@ function ScopeRow({ scope, isOpen, onToggle, waitingOn, byId, fns }: {
           {scope.source === "audit-gap" ? <Pill tone="bg-amber-500/15 text-amber-700 dark:text-amber-300" title={scope.gap ? `Rework for escalated gap: ${scope.gap}` : "Rework scope from an escalated gap"}>↻ rework</Pill> : null}
           <Pill tone={fns.statusTone(scope.status)}><span className="mr-1">{fns.statusGlyph(scope.status)}</span>{fns.statusLabel(scope.status)}</Pill>
           {scope.tasks.length > 0 ? <span className="text-[11px] text-muted-foreground" title={`${tasksDone} of ${scope.tasks.length} tasks done`}>{tasksDone}/{scope.tasks.length} tasks</span> : null}
+           {scopeElapsedMs(scope) != null ? <span className="text-[11px] text-muted-foreground">· {formatDuration(scopeElapsedMs(scope) ?? 0)}</span> : null}
           {blockedNow ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title={wait.join(", ")}>⛔ waiting on {wait.length}</span> : null}
         </div>
         {(scope.blockedBy?.length || scope.dependsOn?.length) ? (

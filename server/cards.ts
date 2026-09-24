@@ -3,6 +3,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { resolveArtifactPath } from "../lib/artifact-manifest.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { doingNowNames } from "../lib/doing-now.mjs";
+import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import { hasPendingReview } from "../lib/inbox-events.mjs";
 import { loadCardScopes } from "./scopes.js";
 import { STAGE_TO_BAND } from "../lib/workflow-vocabulary.mjs";
@@ -15,7 +16,15 @@ import type { WorkerCard } from "./workers-types.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Workspace = { path: string; hostId: string | null };
-type ScopeSummary = { scopesTotal: number; scopesDone: number; tasksTotal: number; tasksDone: number; doingNow: string[] };
+type ScopeSummary = {
+  scopesTotal: number;
+  scopesDone: number;
+  tasksTotal: number;
+  tasksDone: number;
+  elapsedMs: number | null;
+  doingNow: string[];
+  executingScope: string | null;
+};
 type Preset = { name: string; provider_id: string; model_id: string };
 
 export function createCardStore(bb: BbPluginApi, db: Db) {
@@ -157,8 +166,10 @@ async function enrichCard(
       scopesDone: summary.scopesDone,
       tasksTotal: summary.tasksTotal,
       tasksDone: summary.tasksDone,
+      elapsedMs: summary.elapsedMs,
     },
     doingNow: summary.doingNow,
+    executingScope: summary.executingScope,
   };
 }
 
@@ -197,7 +208,7 @@ async function scopeSummary(
 ): Promise<ScopeSummary> {
   const cached = summaries.get(row.id);
   if (cached) return cached;
-  const empty = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0, doingNow: [] as string[] };
+  const empty = { scopesTotal: 0, scopesDone: 0, tasksTotal: 0, tasksDone: 0, elapsedMs: null, doingNow: [] as string[], executingScope: null };
   try {
     const workspace = await workspaceFor(row);
     if (!workspace?.path) return empty;
@@ -207,7 +218,9 @@ async function scopeSummary(
       scopesDone: scopes.filter((scope) => isDoneStatus(scope.status)).length,
       tasksTotal: scopes.reduce((total, scope) => total + scope.tasks.length, 0),
       tasksDone: scopes.reduce((total, scope) => total + scope.tasks.filter((task) => isDoneStatus(task.status)).length, 0),
+      elapsedMs: totalScopeElapsedMs(scopes),
       doingNow: doingNowNames(scopes),
+      executingScope: scopes.find((scope) => scope.status === "in-progress")?.name ?? null,
     };
     summaries.set(row.id, summary);
     return summary;

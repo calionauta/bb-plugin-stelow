@@ -9,9 +9,7 @@ import { fileURLToPath } from "node:url";
 // are about what the host provides and how the host is torn down. Each
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-const platformSource = readFileSync(join(root, "server/runtime/platform.ts"), "utf8");
-const contractSource = readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8");
+const source = readFileSync(join(root, "server.ts"), "utf8");
 const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
 const appSource = readFileSync(join(root, "app.tsx"), "utf8");
 const researchSource = readFileSync(join(root, "components/detail/research-detail-content.tsx"), "utf8");
@@ -90,10 +88,7 @@ assert.match(cli, /--json/, "the CLI must offer machine-readable output to the w
 // The state list has one definition (PREVIEW_STATES); a hand-copied literal
 // here would let the two drift, and the panel would validate a state the view
 // never produces.
-const contractStart = contractSource.indexOf("  previewState: {");
-const contractEnd = contractSource.indexOf("  previewStart: {", contractStart);
-assert.ok(contractStart >= 0 && contractEnd > contractStart, "the preview contract fragment exposes state before start");
-const contract = contractSource.slice(contractStart, contractEnd);
+const contract = slice("  previewState: {", "  previewStart: {");
 assert.match(contract, /state: z\.enum\(\[\.\.\.PREVIEW_STATES\]\)/, "the RPC must validate against the shared state list");
 assert.ok(contract.includes("frameReason: z.string().nullable()"), "why a preview cannot be framed must reach the panel");
 for (const field of ["url", "command", "checkout", "log", "hints"]) {
@@ -101,14 +96,8 @@ for (const field of ["url", "command", "checkout", "log", "hints"]) {
 }
 
 // --- The public surface is reachable from both callers. -------------------
-assert.match(source, /\.\.\.platform,/, "the composition root must register the platform handlers");
-for (const method of ["view", "start", "stop", "share"]) {
-  assert.equal(
-    platformSource.match(new RegExp(`deps\\.preview\\.${method}\\(`, "g"))?.length,
-    1,
-    `the platform must dispatch exactly one preview ${method} handler`,
-  );
-}
+assert.match(slice("    async previewStart({ cardId }) {", "    async previewStop({ cardId }) {"), /previewStart\(cardId\)/, "the RPC must reach the runtime's start");
+assert.match(slice("    async previewStop({ cardId }) {", "  });"), /previewStop\(cardId\)/, "the RPC must reach the runtime's stop");
 assert.match(source, /\{ name: "preview", summary:/, "the CLI must document the subcommand");
 assert.match(source, /createPreviewRuntime/, "server.ts must construct the runtime");
 

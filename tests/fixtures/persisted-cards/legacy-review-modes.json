@@ -1,0 +1,28 @@
+{
+  "name": "legacy-review-modes",
+  "card": {
+    "id": "card_legacy_review",
+    "kind": "build",
+    "status": "in-progress",
+    "stage": "selection",
+    "workerThreadId": "thr_legacy_review",
+    "dirHash": "sw-card_legacy_review",
+    "spawnRetryCount": 0,
+    "spawnRetryThread": null
+  },
+  "modes": [
+    {
+      "label": "Product Spec Gate",
+      "gates": ["spec"]
+    },
+    {
+      "label": "Product Spec + Interface + Scopes",
+      "gates": ["spec", "interface", "scope"]
+    },
+    {
+      "label": "Product Spec + Interface + Tech Review + Code Diff",
+      "gates": ["spec", "interface", "scope", "tech", "diff"]
+    }
+  ],
+  "state": "---\nworkflow_id: card_legacy_review\nname: Legacy review modes\nintent: feature\ncurrent_stage: selection\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Product Spec + Interface + Scopes\nstages:\n  selection: in-progress\nartifacts: []\nhistory: []\n---\n"
+}

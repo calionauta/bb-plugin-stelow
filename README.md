@@ -123,11 +123,12 @@ npm run quality:report
 
 It reports lint, unused-code, and duplication findings without blocking an
 existing checkout on its initial backlog. `npm run architecture` is the
-enforced boundary check. CI runs those checks and `npm run security:production`,
-which audits production dependencies for high and critical npm advisories.
-Run `npm run security:full` locally to include development dependencies.
-Socket's deeper package scan is optional and requires the repository's own
-Socket API token.
+enforced boundary check; `npm run security:full` fails on high/critical npm
+advisories. CI runs all of these automatically. Database
+backward-compatibility branches are tracked in `docs/legacy-compat.md` for
+the v1 cleanup, and the fresh-install test fails if a tracked migration
+disappears without a ledger update. Socket's deeper package scan
+is optional and requires the repository's own Socket API token.
 
 ```bash
 bb plugin dev

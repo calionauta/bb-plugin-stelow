@@ -11,10 +11,9 @@ import { fileURLToPath } from "node:url";
 // forgets a clause fails here instead of shipping a weaker worker.
 
 const serverSource = [
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create-prompt.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8"),
 ].join("\n");
 
 // Each clause is defined exactly once: pasted duplicates are drift.

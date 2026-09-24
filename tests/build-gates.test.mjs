@@ -122,8 +122,9 @@ for (const scopes of matrix) {
 // Wiring pins: server advance/done consult the gates module, never inline
 // refusals — the order above is the contract.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-assert.match(server, /advanceExecutionGates\(/, "advance consults the gates module");
+const server = readFileSync(join(root, "server.ts"), "utf8");
+const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+assert.match(executionAdvance, /advanceExecutionGates\(/, "advance consults the gates module");
 assert.match(server, /doneBuildGates\(/, "done consults the gates module");
 
 console.log("build gates test ok: order, redirects, fail-open, wiring");

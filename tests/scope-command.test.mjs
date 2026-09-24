@@ -34,7 +34,7 @@ assert.ok(parseScopeArgs(["done", "--scope", "scope-1", "--json", "--json"]).err
 // Topology pins (wiring only): server delegates the command to the extracted
 // module with the dependencies it owns; behavior is covered against the module.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const server = readFileSync(join(root, "server.ts"), "utf8");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
 const start = server.indexOf('if (argv[0] === "scope") {');
 assert.ok(start >= 0, "the scope branch exists");

@@ -5,11 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
-  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/core-migrations.ts"), "utf8"),
 ].join("\n");
 const serverRecovery = readFileSync(join(root, "server/workspaces-recovery.ts"), "utf8");
 const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
@@ -376,13 +373,14 @@ assert.match(buildLifecycleDialogs, /<Dialog open=\{state\.promoteOpen\}/, "prom
 // just the poll path: each refuses upfront with the named exit.
 const move = rpcMethod("moveCard", "promoteCard");
 assert.match(move, /if \(isArchivedCard\(card\)\) return \{ ok: false, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse board moves");
-const advance = rpcMethod("advanceCard", "advance");
-assert.match(advance, /if \(isArchivedCard\(card\)\) return \{ ok: false, stdout: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse stage advances");
-assert.match(advance, /Only `bb stelow done` may/, "manually advancing to Audit cannot mark a Build card done");
+const advance = readFileSync(join(root, "server", "execution-advance.ts"), "utf8");
+assert.match(advance, /deps\.isArchivedCard\(card\)/, "stage advances check archived state");
+assert.match(advance, /error: deps\.errors\.cardArchived/, "archived stage advances name the terminal refusal");
+assert.match(advance, /if \(card\.kind !== "build"\)/, "the execution advance route stays Build-only");
 assert.doesNotMatch(advance, /stage === "audit" \? "completed"/, "Audit is not an implicit completion path");
 const answer = rpcMethod("answerQuestions", "startWorkflow");
 assert.match(answer, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse batch answers");
-const answerExpired = rpcMethod("answerExpiredQuestions", "advanceCard");
+const answerExpired = rpcMethod("answerExpiredQuestions", "advance");
 assert.match(answerExpired, /if \(isArchivedCard\(card\)\) return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/, "archived cards refuse expired answers");
 const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(comment, /if \(isArchivedCard\(card\)\) return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse new comments");
@@ -548,7 +546,7 @@ assert.match(answerExpired, /formatBatchContinuation\(decisions\)/, "recovered a
 assert.doesNotMatch(answerExpired, /question that timed out/, "recovered answer delivery does not leak timeout jargon into the worker thread");
 assert.doesNotMatch(app, />Show<\/span><button/, "no detached Show label explains the read filter");
 assert.match(server, /splitQuestionText\(groups\[0\]!\.question\)/, "the split question is host-enriched in English before it reaches the user");
-assert.match(server, /\["kind", "TEXT NOT NULL DEFAULT 'standard'"\]/, "recovered questions persist an explicit semantic kind");
+assert.match(server, /kind TEXT NOT NULL DEFAULT 'standard'/, "recovered questions persist an explicit semantic kind");
 assert.match(answerExpired, /cleanAnswerList\(item\.answers\)/, "timed-out answers are cleaned through the shared helper before completeness validation");
 assert.match(answerExpired, /recordSplitAnswer\(db, cardId, decisions\)/, "a timed-out split answer records through the same shared helper as a live answer");
 assert.match(answerExpired, /if \(rows\.size !== openIds\.size\) return \{ ok: false as const, answered: 0, error: "Answer every pending question before submitting\." \}/, "timed-out batches refuse a partial answer at the RPC boundary");

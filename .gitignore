@@ -1,5 +1,7 @@
 dist/
 node_modules/
+.agents/
+skills-lock.json
 data/*.db
 .pi/
 .sync-state.json

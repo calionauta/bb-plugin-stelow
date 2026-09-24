@@ -38,7 +38,7 @@ function startupHost() {
   return { bb, db, schedules, events, disposals, registrations, calls };
 }
 
-test("plugin startup registers dispatch and disposes without touching live threads", async () => {
+test("plugin startup registers dispatch and disposes idempotently without stopping live threads", async () => {
   const host = startupHost();
   try {
     await plugin(host.bb);
@@ -71,6 +71,7 @@ test("plugin startup registers dispatch and disposes without touching live threa
     assert.deepEqual(host.registrations.agents({ thread: { title: "Ordinary thread" } }).skills, []);
     assert.ok(host.disposals.length >= 2, "preview and worker lifecycle register cleanup");
   } finally {
+    await Promise.all(host.disposals.map((dispose) => dispose()));
     await Promise.all(host.disposals.map((dispose) => dispose()));
     host.db.close();
   }
