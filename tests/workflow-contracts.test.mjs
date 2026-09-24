@@ -62,18 +62,16 @@ assert.equal(buildBoardColumnFor({ status: "completed", stage: "audit", workerTh
 // Upstream transparency: one skill per stage, one URL builder, no drift.
 // Skill-root URLs only — stage docs move, skill dirs are the stable address.
 assert.equal(STELOW_UPSTREAM_BASE, "https://github.com/calionauta/stelow/tree/main/skills", "upstream base has one catalog");
-const KNOWN_SKILLS = new Set(["stelow-workflow-orchestrator", "stelow-workflow-shape-up", "stelow-workflow-plan-critique", "stelow-workflow-interface-alternatives", "stelow-workflow-tech-planning", "stelow-workflow-scope-executor", "stelow-workflow-testing-execution", "stelow-workflow-execution-critique"]);
 for (const stage of WORKFLOW_STAGES) {
   assert.ok(stage.skill, `${stage.id} names its owning upstream skill`);
-  assert.ok(KNOWN_SKILLS.has(stage.skill), `${stage.id} skill ${stage.skill} is a vendored upstream skill`);
   assert.ok(existsSync(join(root, "skills", stage.skill, "SKILL.md")), `${stage.id} skill ${stage.skill} is vendored with SKILL.md`);
   assert.equal(STAGE_SKILL[stage.id], stage.skill, `${stage.id} skill has one map`);
   assert.equal(stageSkill(stage.id), stage.skill, `${stage.id} skill accessor agrees`);
   assert.equal(stageSkillUrl(stage.id), `${STELOW_UPSTREAM_BASE}/${stage.skill}`, `${stage.id} URL derives from base + skill`);
   assert.equal(STAGE_DOC[stage.id], stage.doc, `${stage.id} doc has one map`);
   if (stage.doc) {
-    assert.ok(existsSync(join(root, "skills", stage.skill, stage.doc)), `${stage.id} doc ${stage.skill}/${stage.doc} is vendored`);
-    assert.equal(stageInfoUrl(stage.id), `${STELOW_UPSTREAM_BLOB}/${stage.skill}/${stage.doc}`, `${stage.id} info URL points at its behavior doc`);
+    assert.ok(existsSync(join(root, "skills", stage.docSkill ?? stage.skill, stage.doc)), `${stage.id} doc ${stage.docSkill ?? stage.skill}/${stage.doc} is vendored`);
+    assert.equal(stageInfoUrl(stage.id), `${STELOW_UPSTREAM_BLOB}/${stage.docSkill ?? stage.skill}/${stage.doc}`, `${stage.id} info URL points at its behavior doc`);
   } else {
     assert.equal(stageInfoUrl(stage.id), stageSkillUrl(stage.id), `${stage.id} info URL falls back to the skill root`);
   }

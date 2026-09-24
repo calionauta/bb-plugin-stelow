@@ -1,0 +1,17 @@
+{
+  "name": "cold-install",
+  "card": {
+    "id": "card_cold_install",
+    "kind": "build",
+    "status": "draft",
+    "stage": "triage",
+    "workerThreadId": null,
+    "dirHash": null,
+    "spawnRetryCount": 0,
+    "spawnRetryThread": null
+  },
+  "tracking": {
+    "workflows": []
+  },
+  "state": "---\nworkflow_id: card_cold_install\nname: Cold install\nintent: feature\ncurrent_stage: triage\nstatus: active\nconfig:\n  appetite: Core\n  review_mode: Auto\n  product_type: software\nstages:\n  triage: pending\n  select: pending\n  setup: pending\n  context: pending\n  shape: pending\n  critique: pending\n  gate: pending\n  scope: pending\n  interface: pending\n  int-gate: pending\n  selection: pending\n  planning: pending\n  plan-gate: pending\n  execution: pending\n  verification: pending\n  diff-gate: pending\n  audit: pending\nartifacts: []\nhistory: []\n---\n"
+}

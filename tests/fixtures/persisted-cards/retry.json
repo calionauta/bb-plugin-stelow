@@ -1,0 +1,15 @@
+{
+  "name": "retry",
+  "card": {
+    "id": "card_retry",
+    "kind": "build",
+    "status": "in-progress",
+    "stage": "execution",
+    "workerThreadId": "thr_retry",
+    "dirHash": "sw-card_retry",
+    "spawnRetryCount": 0,
+    "spawnRetryThread": null
+  },
+  "failure": "Failed to fetch skill tree: 404 Not Found",
+  "state": "---\nworkflow_id: card_retry\nname: Retry a persisted run\nintent: bugfix\ncurrent_stage: execution\nstatus: active\nconfig:\n  appetite: Lean\n  review_mode: Auto\nstages:\n  execution: in-progress\nartifacts: []\nhistory: []\n---\n"
+}
