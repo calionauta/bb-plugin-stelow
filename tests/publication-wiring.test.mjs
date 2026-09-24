@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const serverRoot = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const serverRoot = readFileSync(join(root, "server.ts"), "utf8");
 const publicationContract = readFileSync(
   join(root, "server/artifacts-publication.ts"),
   "utf8",

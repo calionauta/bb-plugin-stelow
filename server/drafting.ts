@@ -353,5 +353,24 @@ export function createDraftingServer(deps: DraftingDeps) {
   return {
     command: (args: string[], threadId?: string) => command(deps, sleep, args, threadId),
     suggestCardName: (cardId: string) => suggestCardName(deps, sleep, cardId),
+    draftDoneComment: async (cardId: string): Promise<{ ok: boolean; draft: string | null; error: string | null }> => {
+      const card = deps.getCard(cardId);
+      if (!card) return { ok: false, draft: null, error: "Card not found." };
+      if (deps.isArchivedCard(card)) return { ok: false, draft: null, error: "This card is archived." };
+      const result = await runDraft(deps, sleep, {
+        cardId,
+        brief: `Draft a concise, factual GitHub completion note for the card "${titleOf(card)}". State what was delivered and mention the card's outcome. Do not invent work or evidence.`,
+        json: true,
+      });
+      if (result.exitCode !== 0 || !result.stdout) return { ok: false, draft: null, error: result.stderr ?? "Draft failed." };
+      try {
+        const parsed = JSON.parse(result.stdout) as { draft?: unknown };
+        return typeof parsed.draft === "string" && parsed.draft.trim()
+          ? { ok: true, draft: parsed.draft, error: null }
+          : { ok: false, draft: null, error: "Draft returned no text." };
+      } catch {
+        return { ok: false, draft: null, error: "Draft returned invalid output." };
+      }
+    },
   };
 }

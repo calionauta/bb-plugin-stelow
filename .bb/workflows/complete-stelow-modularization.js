@@ -188,9 +188,6 @@ for (let index = 0; index < slices.length; index += 1) {
   const implementation = await agent(`${common}\nSlice ${index + 1}/${slices.length}: ${slice.id}\nGoal: ${slice.goal}\nPrevious slice report: ${previous}\nStart by checking git status/log and the current tree. Complete exactly this slice; if it was already completed by earlier work, verify it and make no speculative duplicate.`, {
     label: `implement:${slice.id}`,
     phase: "Implement",
-    provider: "acp-opencode",
-    model: "opencode-go/space-bunny-free",
-    reasoningLevel: "medium",
   });
 
   phase("Review");
@@ -198,9 +195,6 @@ for (let index = 0; index < slices.length; index += 1) {
   const review = await agent(`${common}\nFresh double-check for slice ${slice.id}.\nGoal: ${slice.goal}\nImplementation report: ${implementation}\nInspect the actual diff and latest commits, not the report alone. Re-run focused tests. Perform adversarial gap analysis for behavior drift, missing tests, stale pins, cycles, dead code, size/function budgets, and accidental scope expansion. Fix every real issue you find, adapt tests to guard behavior, run the full per-slice gates, commit/push any fixes, and return the verified result.`, {
     label: `review:${slice.id}`,
     phase: "Review",
-    provider: "acp-opencode",
-    model: "opencode-go/space-bunny-free",
-    reasoningLevel: "medium",
   });
 
   phase("Finalize");
@@ -208,9 +202,6 @@ for (let index = 0; index < slices.length; index += 1) {
   const finalized = await agent(`${common}\nFinal gate for slice ${slice.id}.\nGoal: ${slice.goal}\nImplementation: ${implementation}\nReview: ${review}\nTreat both prior reports as untrusted summaries. Inspect repository state, run focused and full tests plus quality/build/bundle gates, fix anything still broken, commit/push if needed, and prove the slice is complete. Do not move to another slice.`, {
     label: `finalize:${slice.id}`,
     phase: "Finalize",
-    provider: "acp-opencode",
-    model: "opencode-go/space-bunny-free",
-    reasoningLevel: "medium",
   });
 
   results.push({ id: slice.id, implementation, review, finalized });
@@ -222,9 +213,6 @@ log("Running completeness audit against every original target");
 const audit = await agent(`${common}\nYou are the final completeness critic for the entire modularization plan. Audit the repository against these original targets: app.tsx <=600, server.ts <=600, every new file <=400, functions <=50 or explicitly dated exceptions, no avoidable duplication/dead code/cycles, Build body extracted, router/panel/board/settings/directives extracted, all nine server slices extracted, docs/blueprint synchronized, full tests/security/quality/build green, and working tree clean. Inspect commits/diffs and run the final commands. Fix any small remaining issue directly. For anything too broad to fix safely, return precise next actions. Do not claim completion without evidence.`, {
   label: "completeness-audit",
   phase: "Audit",
-  provider: "acp-opencode",
-  model: "opencode-go/space-bunny-free",
-  reasoningLevel: "medium",
   schema: {
     type: "object",
     required: ["complete", "findings", "nextActions", "evidence"],
@@ -245,17 +233,11 @@ for (let round = 1; round <= 3 && finalAudit && finalAudit.complete === false; r
   const repair = await agent(`${common}\nCompleteness repair round ${round}. The final audit is not complete.\nFindings: ${JSON.stringify(finalAudit.findings)}\nRequired next actions: ${JSON.stringify(finalAudit.nextActions)}\nImplement the next actions as bounded safe slices, one at a time. For each: inspect existing tests, add/fix behavior tests, run focused and full gates, negative-control new guards, commit and push. Continue without asking routine questions. Return a precise report even if an external dependency blocks one action.`, {
     label: `repair-round-${round}`,
     phase: "Repair",
-    provider: "acp-opencode",
-    model: "opencode-go/space-bunny-free",
-    reasoningLevel: "medium",
   });
   phase("Audit");
   const repairedAudit = await agent(`${common}\nRe-audit after repair round ${round}.\nRepair report: ${repair}\nRe-check every original completeness target, run all final gates, fix any small issue, and return structured evidence. Do not trust the repair report.`, {
     label: `reaudit-${round}`,
     phase: "Audit",
-  provider: "acp-opencode",
-  model: "opencode-go/space-bunny-free",
-  reasoningLevel: "medium",
     schema: {
       type: "object",
       required: ["complete", "findings", "nextActions", "evidence"],
@@ -275,9 +257,6 @@ phase("Report");
 const report = await agent(`${common}\nProduce the final user-facing completion report from repository evidence and the workflow records below. Verify current git status/log, app/server line counts, all slice commit SHAs, test/quality/security/build results, and any genuine blockers. State clearly which targets are complete and what remains if the audit is not complete. Do not make more feature changes unless a tiny final-report correction is required.\nSlice records: ${JSON.stringify(results)}\nFinal audit: ${JSON.stringify(finalAudit)}`, {
   label: "final-report",
   phase: "Report",
-  provider: "acp-opencode",
-  model: "opencode-go/space-bunny-free",
-  reasoningLevel: "medium",
 });
 
 return { slices: results, audit: finalAudit, report };

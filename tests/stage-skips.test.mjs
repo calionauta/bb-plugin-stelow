@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { INTENT_ROUTES, MODE_SKIPS, skippedStages } from "../lib/stage-skips.mjs";
 import { STAGE_SEQUENCE } from "../lib/artifact-groups.mjs";
 
-const FULL = ["triage", "select", "setup", "context", "shape", "critique", "gate", "scope", "interface", "int-gate", "selection", "planning", "plan-gate", "execution", "verification", "diff-gate", "audit"];
+const FULL = INTENT_ROUTES["new-product"];
 
 // Strictest mode runs every gate (diff-gate included). Context is resolved by
 // upstream context:5, so review mode alone never invents a skip.

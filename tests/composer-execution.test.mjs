@@ -93,15 +93,10 @@ assert.equal(fallback.executionInputSources.providerId, "explicit", "missing pro
 // track, through one shared helper per layer — never pasted per site.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
-  readFileSync(join(root, "server/preset-accessors.ts"), "utf8"),
-  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
-  readFileSync(join(root, "server/contracts.ts"), "utf8"),
 ].join("\n");
 const drafting = readFileSync(join(root, "server/drafting.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
@@ -135,9 +130,8 @@ assert.match(
   /executionArgs\(params, true\)/,
   "only the draft burst marks preset execution sources as explicit",
 );
-const presetAccessors = readFileSync(join(root, "server/preset-accessors.ts"), "utf8");
-assert.match(presetAccessors, /card-override-\$\{cardId\}/, "the preset feature owns card-override rows");
-assert.match(presetAccessors, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\)/, "the override is pinned through card_presets");
+assert.match(server, /card-override-\$\{cardId\}/, "a divergent choice pins a card-override row");
+assert.match(server, /INSERT OR REPLACE INTO card_presets \(card_id, preset_id, assigned_at\) VALUES \(\?, \?, \?\)/, "the override is pinned through card_presets");
 
 // Ordering: card_presets references cards, so the pin must land after the
 // card row exists — and a spawn failure must not orphan the staged row.
@@ -146,9 +140,10 @@ const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), 
 const createAt = cardsCreate.indexOf("export function createCardInternal");
 assert.ok(createAt >= 0, "createCardInternal exists");
 const createWindow = cardsCreate.slice(createAt);
-assert.ok(cardsPersist.includes("INSERT INTO cards ("), "creation persists the card before finishing");
-assert.match(cardsPersist, /if \(pinnedId && !deps\.pinCardPreset\(/, "creation pins the override through the preset seam");
-assert.ok(createWindow.includes("deps.removeCardPreset(cardId)"), "a failed spawn cleans the staged override row");
+const cardsInsertAt = cardsPersist.indexOf("INSERT INTO cards (");
+const pinAt = cardsPersist.indexOf("pinnedId");
+assert.ok(cardsInsertAt >= 0 && pinAt >= 0, "creation persists the card and its override");
+assert.ok(createWindow.includes("DELETE FROM presets WHERE id = ?"), "a failed spawn cleans the staged override row");
 
 assert.match(composerHelper, /export function composerExecutionOf\(/, "the creation module extracts the composer choice through one helper");
 assert.equal((app.match(/composerExecutionOf\(request\)/g) ?? []).length, 0, "no submit left in the panel forwards inline");

@@ -66,9 +66,10 @@ assert.equal(canClose(null, registry), false, "junk never closes");
 // Wiring pins: advance refuses cycles loud, done refuses open children on
 // closed scopes — both name the fix instead of stalling or certifying.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-assert.match(server, /dependencyCycles\(entryRegistry/, "advance checks the registry graph");
-assert.match(server, /canStart\(entryRegistry/, "advance names unstartable ordering without a cycle");
+const server = readFileSync(join(root, "server.ts"), "utf8");
+const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
+assert.match(executionAdvance, /dependencyCycles\(registry\)/, "advance checks the registry graph");
+assert.match(executionAdvance, /canStart\(registry, scope\.id, isDoneStatus\)/, "advance names unstartable ordering without a cycle");
 assert.match(server, /doneBuildGates\(/, "done consults the gates module");
 const gates = readFileSync(join(root, "lib", "build-gates.mjs"), "utf8");
 assert.match(gates, /blockedBy cycle detected/, "cycles refuse naming the loop");

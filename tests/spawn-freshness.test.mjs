@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 // history-carrying prompt builder fails here first — consciously update
 // this file when the spawn topology legitimately changes.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const server = readFileSync(join(root, "server.ts"), "utf8");
 const drafting = readFileSync(join(root, "server", "drafting.ts"), "utf8");
 const workerBackend = readdirSync(join(root, "server"))
   .filter((file) => /^workers.*\.ts$/.test(file))
