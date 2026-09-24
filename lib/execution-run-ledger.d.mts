@@ -26,6 +26,11 @@ export interface ExecutionRun {
   boundaryQuestion: string | null;
   createdAt: number;
 }
+export type PublicExecutionRun = Pick<ExecutionRun,
+  "id" | "cardId" | "runId" | "recipeId" | "stage" | "sourceHash" | "adapter" | "workspaceId" |
+  "originThreadId" | "nativeStatus" | "normalizedStatus" | "startedAt" | "completedAt" |
+  "resumeOf" | "errorCode" | "previewDirective" | "completionEventId" | "createdAt">;
+export function projectExecutionRun(value: ExecutionRun): PublicExecutionRun;
 export function ensureExecutionRunTable(db: any): void;
 export function createExecutionRun(db: any, input: Record<string, any>): ExecutionRun;
 export function getExecutionRun(db: any, id: string): ExecutionRun | null;

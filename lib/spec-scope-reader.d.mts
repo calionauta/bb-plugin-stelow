@@ -8,6 +8,7 @@ export interface SpecScopeBlock {
 export interface PlannedScopeTask {
   id: string;
   name: string;
+  kind: "task";
   note?: string;
   status: string;
   source: string;

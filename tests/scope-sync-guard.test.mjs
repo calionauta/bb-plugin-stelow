@@ -76,8 +76,8 @@ assert.deepEqual(countScopeDialects(null), { machine: 0, human: 0 }, "junk never
 // the note the ScopesList already renders.
 const humanBlocks = splitScopeBlocks(HUMAN_SPEC);
 assert.deepEqual(parseScopeTasks(humanBlocks[0].body, "scope-1"), [
-  { id: "scope-1-t1", name: "Split overlay root", status: "pending", source: "planned", note: "Done: Root renders alone" },
-  { id: "scope-1-t2", name: "Wire trigger", status: "pending", source: "planned", note: "Done: Trigger opens overlay" },
+  { id: "scope-1-t1", name: "Split overlay root", kind: "task", status: "pending", source: "planned", note: "Done: Root renders alone" },
+  { id: "scope-1-t2", name: "Wire trigger", kind: "task", status: "pending", source: "planned", note: "Done: Trigger opens overlay" },
 ], "task table rows become planned tasks with Done Criterion notes");
 assert.deepEqual(parseScopeTasks("no tables", "scope-9"), [], "no table means no tasks");
 assert.deepEqual(
