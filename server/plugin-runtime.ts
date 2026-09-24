@@ -104,7 +104,7 @@ import { resolveCardMove } from "../lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "../lib/worker-action-policy.mjs";
 import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "../lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "../lib/workflow-skills-sync.mjs";
-import { previewShape, previewText } from "../lib/preview-session.mjs";
+import { previewText } from "../lib/preview-session.mjs";
 import { cardWorkerSeedRefusal, withRuntimeIgnoreEntry } from "../lib/card-seed-guard.mjs";
 import { lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "../lib/auto-continue.mjs";
 import {
@@ -171,6 +171,7 @@ import {
   workflowScopes,
 } from "./scopes.js";
 import { createPlatformHandlers } from "./runtime/platform.js";
+import { createCardPreview } from "./runtime/card-preview.js";
 import { cliHelpResult, cliUnknownResult, stelowCliCommands } from "./runtime/cli-registry.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
@@ -1754,59 +1755,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return checkAdvanceContracts({ stage, enteredAt, contracts: required, receipts, answered });
   }
 
-  /**
-   * Where a preview runs. The worker's own checkout wins, because that is the
-   * directory the agent actually wrote to — a `new-worktree` preset runs in a
-   * bb-managed worktree, not in the project source. The project source is the
-   * fallback once that environment is gone, and the label travels with the
-   * target so the panel always names the codebase the user is looking at.
-   */
-  async function previewTarget(card: CardRow) {
-    const checkout = await cardCheckout(card);
-    return checkout
-      ? { checkout: checkout.path, hostId: checkout.hostId, slug: card.name, source: checkout.source }
-      : null;
-  }
-
-
-  /**
-   * The target for a card, or the one message that explains why there is none.
-   * Resolving where the code lives is host work (a worker's environment, or the
-   * project source), so it stays here; what to DO with that checkout is the
-   * runtime's job.
-   */
-  async function previewTargetFor(cardId: string) {
-    const card = getCard(cardId);
-    if (!card) throw new Error(ERR_CARD_NOT_FOUND);
-    return await previewTarget(card);
-  }
-
-  const NO_PREVIEW_WORKSPACE = "Workspace path is unavailable.";
-
-  /** The view the panel and the CLI both render. */
-  async function previewView(cardId: string, appOrigin: string | null = null) {
-    const target = await previewTargetFor(cardId);
-    if (!target) return previewShape({ error: NO_PREVIEW_WORKSPACE });
-    return await preview.view(target, appOrigin);
-  }
-
-  async function previewStart(cardId: string) {
-    const target = await previewTargetFor(cardId);
-    if (!target) return { ok: false, error: NO_PREVIEW_WORKSPACE };
-    return await preview.start(target);
-  }
-
-  async function previewStop(cardId: string) {
-    const target = await previewTargetFor(cardId);
-    if (!target) return { ok: false, error: NO_PREVIEW_WORKSPACE };
-    return await preview.stop(target);
-  }
-
-  async function previewShare(cardId: string) {
-    const target = await previewTargetFor(cardId);
-    if (!target) return { ok: false, error: NO_PREVIEW_WORKSPACE };
-    return await preview.share(target);
-  }
+  const cardPreview = createCardPreview({
+    getCard,
+    cardCheckout,
+    runtime: preview,
+    cardNotFoundError: ERR_CARD_NOT_FOUND,
+  });
+  const { view: previewView, start: previewStart, stop: previewStop, share: previewShare } = cardPreview;
 
   // Resolve a host binary: server-wide install at ~/.local/bin first
   // (non-interactive PATH lacks it), PATH fallback otherwise.

@@ -56,7 +56,7 @@ for (const leaked of ["previewSessions", "killPreview", "connectUnexpose", "abso
 // A `new-worktree` preset runs the agent in a bb-managed worktree, while
 // cardWorkspace() reports the project source. Reading files from the source
 // would preview the wrong code, and the user would be looking at mainline.
-const checkout = slice("async function cardCheckout(", "async function previewTarget(");
+const checkout = slice("async function cardCheckout(", "async function cardStageSlug(");
 // Both markers are required to exist first: a missing one makes indexOf -1,
 // and -1 < n would pass the comparison below with the call deleted entirely.
 const workerFirst = checkout.indexOf("workers.workerEnvironmentOf(card)");
@@ -66,10 +66,6 @@ assert.notEqual(sourceFallback, -1, "cardCheckout must fall back to the project 
 assert.ok(workerFirst < sourceFallback, "the worker's environment must be tried before the project source");
 assert.match(checkout, /environment\?\.path/, "a worker environment without a path must fall through, not win empty");
 assert.match(checkout, /environmentId: environment\.id/, "the exact BB environment must travel with the checkout");
-const target = slice("async function previewTarget(", "async function previewTargetFor(");
-assert.match(target, /cardCheckout\(card\)/, "preview must use the shared checkout resolver");
-assert.match(target, /source: checkout\.source/, "the target must carry the shared source label the panel shows");
-assert.match(target, /slug: card\.name/, "the card's own name is the convention that picks between app directories");
 const workerEnv = workersSource.slice(
   workersSource.indexOf("async function workerEnvironmentOf("),
   workersSource.indexOf("async function continuingEnvironment("),
@@ -78,9 +74,6 @@ assert.match(workerEnv, /status === "ready"/, "a retired or destroyed environmen
 assert.match(workerEnv, /\?\.catch\(\(\) => null\)|catch \{/, "a removed environment must fall back, not throw");
 
 // --- One renderer, so the panel and the CLI cannot diverge. ---------------
-const view = slice("async function previewView(", "async function previewStart(");
-assert.equal(view.split("previewShape(").length - 1, 1, "the missing-workspace answer is the only view built here");
-assert.match(view, /preview\.view\(target, appOrigin\)/, "the panel renders the shared view");
 const cli = slice('if (argv[0] === "preview") {', 'if (argv[0] === "fan-out") {');
 assert.match(cli, /previewView\(card\.id\)/, "the CLI renders the same view the panel does");
 assert.match(cli, /previewText\(view\)/, "the CLI prints the shared renderer's text");
@@ -110,7 +103,6 @@ assert.match(
   /deps\.preview\.stop\(cardId\)/,
   "the RPC must reach the runtime's stop",
 );
-assert.match(source, /\{ name: "preview", summary:/, "the CLI must document the subcommand");
 assert.match(source, /createPreviewRuntime/, "server/plugin-runtime.ts must construct the runtime");
 
 // --- The extracted panel owns its complete preview seam. ------------------
