@@ -49,6 +49,7 @@ import { ViewToggle } from "./components/board/board-view-toggle";
 import { BuildList, ExploreList, ResearchList } from "./components/board/track-lists";
 import { BoardColumn } from "./components/board/board-column";
 import { BoardCard, ExploreCard, ResearchCard } from "./components/board/board-cards";
+import { BucketGalleryButton, CardGalleryDialog, useBucketGallery } from "./components/board/card-gallery";
 import { normalizeBoardView, type BoardTrack } from "./lib/board-views.mjs";
 import {
   STELOW_PANEL_ID,
@@ -1862,81 +1863,6 @@ function FlowStrip({ rpc, projectId, navigate }: { rpc: ManagerRpc; projectId: s
         </div>
       ) : null}
     </div>
-  );
-}
-
-// Card gallery dialog: one expanded modal listing cards as the same tiles
-// the board shows — near-fullscreen (70vw), tiles at the board's own column
-// bounds (240–320px, the shared KANBAN_COLUMN_WIDTHS pair) and the board's
-// own natural height, filling left to right and wrapping down, vertical
-// scroll. Buckets and hill piles share it: callers pass title, description,
-// and cards; choosing a tile opens it through the same surface as the
-// board. Empty renders one line, never a dead modal. A narrow modal
-// degrades to one bounded column instead of overflowing sideways.
-function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }: {
-  open: boolean;
-  title: string;
-  description: string;
-  cards: CardItem[];
-  emptyText: string;
-  onOpenCard: (card: CardItem) => void;
-  onClose: () => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent fullscreenOnMobile className="h-[85dvh] overflow-y-auto sm:w-[70vw] sm:max-w-[70vw]">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        {cards.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{emptyText}</p>
-        ) : (
-          <ul data-gallery-tiles className="grid items-start justify-start gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),320px))]">
-            {cards.map((card) => (
-              <li key={card.id}>
-                <BoardCard card={card} onOpen={() => onOpenCard(card)} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// One copy source for the Bucket gallery (header button + creation
-// dialogs): title, description, and empty text derive from the pile,
-// never pasted per call site.
-function bucketGalleryCopy(cards: CardItem[]) {
-  return {
-    title: "Bucket",
-    description: cards.length > 0 ? `Captured, nothing running yet — ${cards.length} card${cards.length === 1 ? "" : "s"} waiting to start.` : "Captured, nothing running yet.",
-    emptyText: "Bucket's empty — new cards land here until their worker starts.",
-  };
-}
-
-// Creation dialogs share one opener for the track's captured pile: the
-// checkbox link calls open, the dialog node renders once beside the form.
-function useBucketGallery(cards: CardItem[]) {
-  const navigate = useBbNavigate();
-  const [open, setOpen] = useState(false);
-  const copy = bucketGalleryCopy(cards);
-  const node = (
-    <CardGalleryDialog open={open} title={copy.title} description={copy.description} cards={cards} emptyText={copy.emptyText} onOpenCard={(card) => { setOpen(false); goToCard(navigate, card, card.id); }} onClose={() => setOpen(false)} />
-  );
-  return { openBucketGallery: () => setOpen(true), bucketGallery: node };
-}
-
-// Bucket gallery affordance: one button per track opens its captured pile
-// as the shared gallery modal. Owns its open state — panels pass cards.
-function BucketGalleryButton({ cards }: { cards: CardItem[] }) {
-  const gallery = useBucketGallery(cards);
-  return (
-    <>
-      <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={gallery.openBucketGallery} title="Open the Bucket — captured cards waiting to start"><Icon name="PackageReceive" className="h-4 w-4" aria-hidden /> Bucket{cards.length > 0 ? ` (${cards.length})` : ""}</Button>
-      {gallery.bucketGallery}
-    </>
   );
 }
 

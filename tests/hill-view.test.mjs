@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const boardCards = readFileSync(join(root, "components/board/board-cards.tsx"), "utf8");
+const cardGallery = readFileSync(join(root, "components/board/card-gallery.tsx"), "utf8");
 const viewToggle = readFileSync(join(root, "components", "board", "board-view-toggle.tsx"), "utf8");
 const lists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");
 const pills = readFileSync(join(root, "components", "dashboard", "build-status-pills.tsx"), "utf8");
@@ -70,15 +71,16 @@ assert.ok(app.includes("function hillRegionLabel("), "region words come from one
 // dismissal ride the shared Dialog primitive, not a bespoke key handler.
 // Buckets reuse the same dialog through params (see kanban-layout) —
 // never a second modal.
-assert.ok(app.includes("function CardGalleryDialog({ open, title, description, cards, emptyText, onOpenCard, onClose }"), "one gallery dialog serves buckets and hill piles through params");
-assert.ok(app.includes("<Dialog open={open} onOpenChange="), "dismissal rides the shared Dialog primitive");
-assert.ok(app.includes("<DialogTitle>{title}</DialogTitle>"), "the dialog titles from params — pile count plus region, never a number");
+assert.ok(cardGallery.includes("export function CardGalleryDialog({"), "one gallery dialog serves buckets and hill piles through params");
+assert.ok(cardGallery.includes("onOpenChange={(next) =>"), "dismissal rides the shared Dialog primitive");
+assert.ok(cardGallery.includes("<DialogTitle>{title}</DialogTitle>"), "the dialog titles from params — pile count plus region, never a number");
 assert.match(boardCards, /export function BoardCard\(/, "the gallery reuses the extracted board tile component");
 assert.match(
-  app,
-  /<BoardCard card=\{card\} onOpen=\{\(\) => onOpenCard\(card\)\} \/>/,
+  cardGallery,
+  /onOpen=\{\(\) => onOpenCard\(card\)\}/,
   "the gallery mount passes its real open-card action into that component",
 );
+assert.doesNotMatch(app, /function CardGalleryDialog/, "the hill does not fork a private gallery modal");
 assert.ok(
   boardCards.includes("✓ {card.scopeSummary.scopesDone}/{card.scopeSummary.scopesTotal} scopes"),
   "tiles read scope counts, never percentages",
