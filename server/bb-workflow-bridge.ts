@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { BB_NATIVE_CAPABILITIES, missingNativeCapabilities } from "../lib/bb-workflow-capabilities.mjs";
 
 const execFileAsync = promisify(execFile);
+const bbBin = process.env.BB_CLI || "bb";
 
 export { BB_NATIVE_CAPABILITIES, missingNativeCapabilities };
 
@@ -29,11 +30,18 @@ function workflowEnv(projectId: string, threadId: string): NodeJS.ProcessEnv {
 export async function nativeWorkflowAvailable(ref?: { projectId: string; threadId: string; workspaceId: string }): Promise<boolean> {
   try {
     if (!ref) {
-      await execFileAsync("bb", ["workflows", "--help"], { timeout: 10_000 });
+      await execFileAsync(bbBin, ["workflows", "--help"], { timeout: 10_000 });
       return true;
     }
+    const { stdout: threadJson } = await execFileAsync(
+      bbBin,
+      ["thread", "show", ref.threadId, "--json"],
+      { cwd: ref.workspaceId, env: workflowEnv(ref.projectId, ref.threadId), timeout: 10_000 },
+    );
+    const thread = JSON.parse(threadJson).thread as { status?: string; environmentId?: string | null };
+    if (!thread.environmentId || !["active", "idle"].includes(thread.status ?? "")) return false;
     const source = 'export const meta = { name: "stelow-capability-probe", description: "Stelow capability probe", phases: [{ title: "Probe" }] }; return { state: "succeeded" };';
-    await execFileAsync("bb", ["workflows", "validate", "--script", source, "--json"], { cwd: ref.workspaceId, env: workflowEnv(ref.projectId, ref.threadId), timeout: 10_000 });
+    await execFileAsync(bbBin, ["workflows", "validate", "--script", source, "--json"], { cwd: ref.workspaceId, env: workflowEnv(ref.projectId, ref.threadId), timeout: 10_000 });
     return true;
   } catch {
     return false;
@@ -72,7 +80,7 @@ export function normalizeNativeWorkflowStatus(status: string): "queued" | "runni
 export async function runNativeWorkflow({ workspaceId, projectId, threadId, source, args, resumeRunId }: { workspaceId: string; projectId: string; threadId: string; source: string; args: Record<string, unknown>; resumeRunId?: string | null }): Promise<NativeWorkflowRun> {
   const command = ["workflows", "run", "--script", source, "--args", JSON.stringify(args), "--json"];
   if (resumeRunId) command.push("--resume", resumeRunId);
-  const { stdout } = await execFileAsync("bb", command, { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
+  const { stdout } = await execFileAsync(bbBin, command, { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000, maxBuffer: 2 * 1024 * 1024 });
   const result = JSON.parse(stdout);
   const run = result?.run ?? result?.data ?? result;
   if (!run?.runId) throw new Error("BB Workflows did not return a run id");
@@ -81,11 +89,11 @@ export async function runNativeWorkflow({ workspaceId, projectId, threadId, sour
 
 /** Server-side lifecycle bridge for a run started through the CLI. */
 export async function stopNativeWorkflow({ runId, workspaceId, projectId, threadId }: NativeWorkflowRef): Promise<void> {
-  await execFileAsync("bb", ["workflows", "stop", runId, "--json"], { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000 });
+  await execFileAsync(bbBin, ["workflows", "stop", runId, "--json"], { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000 });
 }
 
 export async function nativeWorkflowStatus({ runId, workspaceId, projectId, threadId }: NativeWorkflowRef): Promise<unknown> {
-  const { stdout } = await execFileAsync("bb", ["workflows", "status", runId, "--json"], { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000 });
+  const { stdout } = await execFileAsync(bbBin, ["workflows", "status", runId, "--json"], { cwd: workspaceId, env: workflowEnv(projectId, threadId), timeout: 30_000 });
   try {
     const result = JSON.parse(stdout);
     return result?.run ?? result?.data ?? result;
