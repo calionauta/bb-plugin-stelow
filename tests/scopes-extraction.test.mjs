@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadCardScopes, runScopeCommand } from "../server/scopes.ts";
+import { createScopeProgressSync, loadCardScopes, runScopeCommand } from "../server/scopes.ts";
 
 const root = mkdtempSync(join(tmpdir(), "stelow-scopes-"));
 try {
@@ -170,4 +170,57 @@ assert.match(
 assert.match(scopeModule, /parseScopeArgs\(argv\.slice\(1\)\)/, "the extracted CLI parses the command arguments");
 assert.match(scopeModule, /runHelper\(\s*\["scope", \.\.\.parsed\.passthrough!/, "the extracted CLI forwards the parsed helper command");
 
-console.log("scopes extraction test ok: owner reads, projection, planned enrichment, CLI transitions, failures, and publication order");
+const guarded = commandHarness({ card: { id: "card-guard", dir_hash: "sw-guard" } });
+guarded.deps.ensureProjectArtifacts = async () => "state.md is missing for the Stelow workflow. Reseed the workflow.";
+const guardedResult = await runScopeCommand(["scope", "start", "--scope", "scope-guard"], { threadId: "thread-guard" }, guarded.deps);
+assert.deepEqual(guardedResult, {
+  exitCode: 1,
+  stderr: "state.md is missing for the Stelow workflow. Reseed the workflow.",
+}, "artifact guards refuse before the helper runs");
+assert.equal(guarded.calls.length, 0, "artifact guards do not invoke the helper");
+assert.deepEqual(guarded.events, [], "artifact guards do not publish a transition");
+
+const noRoot = commandHarness({ card: null });
+noRoot.deps.projectRoot = async () => null;
+const noRootResult = await runScopeCommand(["scope", "start", "--scope", "scope-1"], { projectId: "missing" }, noRoot.deps);
+assert.deepEqual(noRootResult, { exitCode: 1, stderr: "Workspace path is unavailable." }, "a missing project root refuses clearly");
+assert.equal(noRoot.calls.length, 0, "a missing project root never invokes the helper");
+
+const trailFailure = commandHarness();
+trailFailure.deps.recordTrackableEvent = () => { throw new Error("trail unavailable"); };
+const trailFailureResult = await runScopeCommand(["scope", "done", "--scope", "scope-trail"], { threadId: "thread-trail" }, trailFailure.deps);
+assert.equal(trailFailureResult.exitCode, 0, "a trail failure does not undo a committed helper transition");
+assert.deepEqual(trailFailure.events, [
+  { name: "card-state", payload: { cardId: "card-1" } },
+  { name: "board-changed", payload: { cardId: "card-1" } },
+], "a trail failure still refreshes card and board state");
+
+const progressRoot = mkdtempSync(join(tmpdir(), "stelow-progress-"));
+try {
+  const progressTracking = {
+    workflows: [{ workflowId: "card-owned", scopes: [{ id: "scope-1", status: "in-progress" }] }],
+  };
+  writeFileSync(join(progressRoot, "stelow.json"), JSON.stringify(progressTracking));
+  const progressWrites = [];
+  const progress = createScopeProgressSync({
+    getCard: (id) => id === "card-owned" ? { id } : undefined,
+    cardWorkspace: async () => ({ path: progressRoot }),
+    publish: (id) => progressWrites.push(id),
+  });
+  await progress.sync("card-owned");
+  await progress.sync("card-owned");
+  assert.deepEqual(progressWrites, [], "the first fingerprint is a silent baseline");
+  progressTracking.workflows[0].scopes[0].status = "completed";
+  writeFileSync(join(progressRoot, "stelow.json"), JSON.stringify(progressTracking));
+  await progress.sync("card-owned");
+  assert.deepEqual(progressWrites, ["card-owned"], "a changed fingerprint publishes card state");
+  await progress.sync("missing-card");
+  progress.prune(new Set());
+  assert.equal(progressWrites.length, 1, "pruning dead cards does not publish a synthetic event");
+} finally {
+  rmSync(progressRoot, { recursive: true, force: true });
+}
+
+console.log(
+  "scopes extraction test ok: owner reads, projection, planned enrichment, CLI transitions, failures, publication order, guards, and progress synchronization",
+);
