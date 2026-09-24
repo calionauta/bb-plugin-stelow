@@ -97,7 +97,6 @@ import { requiredForStage } from "./lib/question-contracts.mjs";
 import { checkAdvanceContracts } from "./lib/advance-contracts.mjs";
 import { createPreviewRuntime } from "./lib/preview-runtime.mjs";
 import { publicationSource } from "./lib/vcs-publication.mjs";
-import { hasWorkspaceSource, recoveryDisposition, recoveryMessage, reportedCheckoutPaths, reportedRecoveryEvidence } from "./lib/workspace-recovery.mjs";
 import { detectedTestCommand, sameGitEvidence, verificationReadiness } from "./lib/audit-verification.mjs";
 import { AUDIT_TRAIL_FILE, AUDIT_TRAIL_NOTE, auditTrailGate, auditTrailOutcome } from "./lib/audit-trail-contract.mjs";
 import { artifactRole } from "./lib/artifact-roles.mjs";
@@ -106,6 +105,12 @@ import { stalenessOf } from "./lib/question-staleness.mjs";
 import { tokenUsageFromEvents, tokenBreakdownFromEvents, sumTokenBreakdowns } from "./lib/token-usage.mjs";
 import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "./lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "./lib/card-metrics.mjs";
+import {
+  createWorkspacesRecovery,
+  recoveredCheckoutIntegrity,
+  runWorkspaceRecoveryMigrations,
+  workspaceRecoveryRpcContract,
+} from "./server/workspaces-recovery.js";
 import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } from "./server/decision-api.js";
 import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./server/github-issues.js";
 import { createInboxServer, inboxRpcContract, runInboxMigrations } from "./server/inbox.js";
@@ -573,21 +578,7 @@ export const rpcContract = defineRpcContract({
     input: z.object({ cardId: z.string(), name: z.string().min(1).max(120) }).strict(),
     output: z.object({ ok: z.boolean(), projectId: z.string().nullable(), projectName: z.string().nullable(), threadId: z.string().nullable(), error: z.string().nullable() }),
   },
-  workspaceRecovery: {
-    experimental_description: "One evidenced next step for work that happened elsewhere",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ kind: z.enum(["attached", "promote", "external-project", "ambiguous", "documents-only"]), message: z.string(), workspace: z.object({ path: z.string().nullable(), isGit: z.boolean(), hasSource: z.boolean() }), candidates: z.array(z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), branch: z.string().nullable(), headSha: z.string().nullable(), changedFiles: z.number(), evidence: z.string() })), looseEvidence: z.array(z.object({ path: z.string(), kind: z.enum(["folder", "patch"]) })), recovery: z.object({ projectId: z.string(), projectName: z.string(), path: z.string(), attachedAt: z.number() }).nullable(), audit: z.object({ cardId: z.string(), cardName: z.string(), createdAt: z.number() }).nullable(), error: z.string().nullable() }),
-  },
-  attachRecoveryCheckout: {
-    experimental_description: "Attach a reviewed registered checkout to an exploratory card",
-    input: z.object({ cardId: z.string(), projectId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
-  },
-  createRecoveryAudit: {
-    experimental_description: "Create a build card auditing an attached recovery checkout",
-    input: z.object({ cardId: z.string() }).strict(),
-    output: z.object({ ok: z.boolean(), auditCardId: z.string().nullable(), auditCardName: z.string().nullable(), error: z.string().nullable() }),
-  },
+  ...workspaceRecoveryRpcContract,
   answerExpiredQuestions: {
     experimental_description: "Answer timed-out questions from the card, all-or-nothing like live",
     input: z.object({ cardId: z.string(), answers: z.array(z.object({ questionId: z.string().min(1).max(200), answers: z.array(z.string().min(1).max(10_000)).min(1).max(20) })).min(1).max(12) }).strict(),
@@ -1436,32 +1427,6 @@ export default async function plugin(bb: BbPluginApi) {
     consumed_at INTEGER,
     created TEXT NOT NULL DEFAULT '[]'
   )`);
-  // Preserve a legacy card's original workspace claim separately from a
-  // user-confirmed checkout. Recovery never silently rewrites history.
-  db.exec(`CREATE TABLE IF NOT EXISTS workspace_recoveries (
-    card_id TEXT PRIMARY KEY,
-    project_id TEXT NOT NULL,
-    project_name TEXT NOT NULL,
-    source_path TEXT NOT NULL,
-    original_workspace_path TEXT,
-    evidence TEXT NOT NULL,
-    git_root TEXT,
-    branch TEXT,
-    head_sha TEXT,
-    changed_files INTEGER NOT NULL DEFAULT 0,
-    attached_at INTEGER NOT NULL,
-    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
-  )`);
-  // The original exploratory card remains historical evidence. A recovery
-  // audit is a separate, normal Build card in the registered project, with a
-  // real BB workspace and therefore the usual test/commit/PR controls.
-  db.exec(`CREATE TABLE IF NOT EXISTS recovery_audits (
-    source_card_id TEXT PRIMARY KEY,
-    audit_card_id TEXT NOT NULL UNIQUE,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (source_card_id) REFERENCES cards(id) ON DELETE CASCADE,
-    FOREIGN KEY (audit_card_id) REFERENCES cards(id) ON DELETE CASCADE
-  )`);
   // Host-run test evidence is scoped to one card and Git identity. It is
   // intentionally a ledger rather than a mutable receipt paragraph.
   db.exec(`CREATE TABLE IF NOT EXISTS verification_runs (
@@ -1564,6 +1529,8 @@ export default async function plugin(bb: BbPluginApi) {
   // historical migration array: older local installations have different
   // recorded migration lengths.
   runInboxMigrations(db);
+  // Workspace recovery owns its reviewed-checkout and audit ledgers.
+  runWorkspaceRecoveryMigrations(db);
   // Workspace-level file claims (lib/card-claims): cross-card coordination
   // for cards sharing one checkout.
   ensureCardClaimsTables(db);
@@ -2798,56 +2765,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     });
   }
 
-  // Stelow seeds every workspace with `skills/`, `data/`, `.stelow/`, and
-  // `stelow.json`. Treating that scaffolding as source made every exploratory
-  // card look promotable, which hid the worker-reported-checkout path. The
-  // rule (and its test) lives in lib/workspace-recovery.
-  function exploratoryHasSource(path: string | null): boolean {
-    if (!path) return false;
-    try {
-      return hasWorkspaceSource(readdirSync(path, { withFileTypes: true }).map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() })));
-    } catch { return false; }
-  }
-
-  type RecoveryCandidate = { projectId: string; projectName: string; path: string; branch: string | null; headSha: string | null; changedFiles: number; evidence: string; gitRoot: string | null };
-  async function recoverySnapshot(card: CardRow) {
-    const attached = db.prepare("SELECT project_id, project_name, source_path, attached_at FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { project_id: string; project_name: string; source_path: string; attached_at: number } | undefined;
-    const audit = db.prepare("SELECT ra.audit_card_id, ra.created_at, COALESCE(c.display_name, c.name) AS card_name FROM recovery_audits ra JOIN cards c ON c.id = ra.audit_card_id WHERE ra.source_card_id = ?").get(card.id) as { audit_card_id: string; created_at: number; card_name: string } | undefined;
-    const workspacePath = card.workspace_path;
-    const workspace = workspacePath ? await recoveryGitEvidence(workspacePath) : { isGit: false, gitRoot: null, branch: null, headSha: null, changedFiles: 0 };
-    // `last_assistant_text` may be blank on older cards after an idle sync.
-    // The thread output is the durable fallback, read only for this explicit
-    // recovery check (never searched across unrelated threads).
-    const threadOutput = card.worker_thread_id
-      ? await bb.sdk.threads.output({ threadId: card.worker_thread_id }).then((result) => result.output ?? "").catch(() => "")
-      : "";
-    const paths = reportedCheckoutPaths(card.last_assistant_text ?? "", threadOutput);
-    const looseEvidence = reportedRecoveryEvidence(card.last_assistant_text ?? "", threadOutput)
-      .filter((entry) => existsSync(entry.path) && !paths.includes(entry.path));
-    const projects = await bb.sdk.projects.list().catch(() => []);
-    const candidates: RecoveryCandidate[] = [];
-    for (const project of projects) for (const source of project.sources ?? []) {
-      if (!source.path || !paths.includes(source.path)) continue;
-      if (card.workspace_host_id && source.hostId && source.hostId !== card.workspace_host_id) continue;
-      const evidence = await recoveryGitEvidence(source.path);
-      if (!evidence.isGit || evidence.changedFiles === 0) continue;
-      candidates.push({ projectId: project.id, projectName: project.name, path: source.path, branch: evidence.branch, headSha: evidence.headSha, changedFiles: evidence.changedFiles, evidence: "Worker explicitly reported this registered checkout.", gitRoot: evidence.gitRoot });
-    }
-    const hasSource = exploratoryHasSource(workspacePath);
-    const kind = recoveryDisposition({ workspaceIsGit: workspace.isGit, hasWorkspaceSource: hasSource, candidates, attached: Boolean(attached) });
-    return { kind, message: recoveryMessage(kind), workspace: { path: workspacePath, isGit: workspace.isGit, hasSource }, candidates, looseEvidence, recovery: attached ? { projectId: attached.project_id, projectName: attached.project_name, path: attached.source_path, attachedAt: attached.attached_at } : null, audit: audit ? { cardId: audit.audit_card_id, cardName: audit.card_name, createdAt: audit.created_at } : null };
-  }
-
-  async function recoveredCheckoutIntegrity(card: CardRow, path: string): Promise<string | null> {
-    if (card.workspace_kind !== "exploratory") return null;
-    const recorded = db.prepare("SELECT git_root FROM workspace_recoveries WHERE card_id = ?").get(card.id) as { git_root: string | null } | undefined;
-    if (!recorded?.git_root) return null;
-    const live = await recoveryGitEvidence(path);
-    return !live.isGit || live.gitRoot !== recorded.git_root
-      ? "The attached recovery checkout no longer resolves to the Git root you reviewed. Re-check recovery evidence before viewing or acting on this diff."
-      : null;
-  }
-
   // --- Preview: one dev server per checkout. --------------------------------
   //
   // The lifecycle — which checkout owns a server, when it is ready, what to
@@ -3770,6 +3687,28 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     return commentId;
   }
 
+  const workspacesRecovery = createWorkspacesRecovery({
+    db,
+    now,
+    publish: (event, payload) => bb.realtime.publish(event, payload),
+    cardNotFound: ERR_CARD_NOT_FOUND,
+    cardArchived: ERR_CARD_ARCHIVED,
+    cards: {
+      get: (cardId) => getCard(cardId),
+      create: (args) => createCardInternal(args),
+      comment: (cardId, target, targetId, author, body) => logCardComment(cardId, target, targetId, author, body),
+    },
+    gitEvidence: recoveryGitEvidence,
+    listProjects: () => bb.sdk.projects.list(),
+    getProject: (projectId) => bb.sdk.projects.get({ projectId }),
+    getThreadOutput: async (threadId) => {
+      const result = await bb.sdk.threads.output({ threadId });
+      return result.output ?? "";
+    },
+  });
+  const recoverySnapshot = workspacesRecovery.snapshot;
+  const recoveryIntegrityDeps = { db, gitEvidence: recoveryGitEvidence };
+
   // ::name{...} directives are bb's thread renderer syntax (the worker emits
   // ::stelow-artifact chips per produced file). Card comments are rendered as
   // plain Markdown, so strip the directive syntax there — the file names it
@@ -4512,6 +4451,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     ...decisionApi.handlers,
     ...github.handlers,
     ...inbox.handlers,
+    ...workspacesRecovery.handlers,
     ...artifactsPublication.handlers,
     board: async ({ projectId }) => {
       const board = await loadBoard(bb, projectId);
@@ -5709,74 +5649,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       return { ok: true, projectId, projectName, threadId: handoff.threadId, error: null };
     },
 
-    async workspaceRecovery({ cardId }) {
-      const card = getCard(cardId);
-      if (!card) return { kind: "documents-only" as const, message: "Card not found.", workspace: { path: null, isGit: false, hasSource: false }, candidates: [], looseEvidence: [], recovery: null, audit: null, error: ERR_CARD_NOT_FOUND };
-      if (card.workspace_kind !== "exploratory") return { kind: "attached" as const, message: "This card already belongs to a project workspace.", workspace: { path: null, isGit: true, hasSource: true }, candidates: [], looseEvidence: [], recovery: null, audit: null, error: null };
-      return { ...(await recoverySnapshot(card)), error: null };
-    },
-
-    async attachRecoveryCheckout({ cardId, projectId }) {
-      const card = getCard(cardId);
-      if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-      if (card.workspace_kind !== "exploratory") return { ok: false, error: "This card already belongs to a project workspace." };
-      if (isArchivedCard(card)) return { ok: false, error: ERR_CARD_ARCHIVED };
-      const snapshot = await recoverySnapshot(card);
-      const candidate = snapshot.candidates.find((entry) => entry.projectId === projectId);
-      if (!candidate) return { ok: false, error: "That checkout no longer has the exact reported, registered Git evidence. Refresh and review again." };
-      db.prepare("INSERT OR REPLACE INTO workspace_recoveries (card_id, project_id, project_name, source_path, original_workspace_path, evidence, git_root, branch, head_sha, changed_files, attached_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(cardId, candidate.projectId, candidate.projectName, candidate.path, card.workspace_path, candidate.evidence, candidate.gitRoot, candidate.branch, candidate.headSha, candidate.changedFiles, now());
-      logCardComment(cardId, "card", cardId, "agent", `Recovery attached after user review: registered project "${candidate.projectName}" at ${candidate.path}; ${candidate.changedFiles} uncommitted files, branch ${candidate.branch ?? "detached"}, HEAD ${candidate.headSha?.slice(0, 12) ?? "unknown"}. Original exploratory workspace remains preserved.`);
-      bb.realtime.publish("card-state", { cardId });
-      bb.realtime.publish("board-changed", { cardId });
-      return { ok: true, error: null };
-    },
-
-    async createRecoveryAudit({ cardId }) {
-      const sourceCard = getCard(cardId);
-      if (!sourceCard) return { ok: false, auditCardId: null, auditCardName: null, error: ERR_CARD_NOT_FOUND };
-      if (sourceCard.workspace_kind !== "exploratory") return { ok: false, auditCardId: null, auditCardName: null, error: "Recovery audits only apply to the preserved exploratory card." };
-      const existing = db.prepare("SELECT audit_card_id FROM recovery_audits WHERE source_card_id = ?").get(cardId) as { audit_card_id: string } | undefined;
-      if (existing) {
-        const auditCard = getCard(existing.audit_card_id);
-        return { ok: true, auditCardId: existing.audit_card_id, auditCardName: auditCard?.display_name ?? auditCard?.name ?? "Recovery audit", error: null };
-      }
-      const recovery = db.prepare("SELECT project_id, project_name, source_path, evidence, git_root, branch, head_sha, changed_files FROM workspace_recoveries WHERE card_id = ?").get(cardId) as { project_id: string; project_name: string; source_path: string; evidence: string; git_root: string | null; branch: string | null; head_sha: string | null; changed_files: number } | undefined;
-      if (!recovery) return { ok: false, auditCardId: null, auditCardName: null, error: "Attach the exact registered checkout first. Recovery never guesses a project or changes files before that review." };
-      const project = await bb.sdk.projects.get({ projectId: recovery.project_id }).catch(() => null);
-      const source = project?.sources.find((entry) => entry.path === recovery.source_path) ?? project?.sources.find((entry) => entry.isDefault) ?? project?.sources[0];
-      if (!source?.path || source.path !== recovery.source_path) return { ok: false, auditCardId: null, auditCardName: null, error: "The attached project source changed. Re-check recovery evidence before creating its audit card." };
-      const auditPrompt = [
-        `Recovery audit for the preserved exploratory card “${sourceCard.display_name ?? sourceCard.name}”.`,
-        `Evidence source: ${recovery.source_path}`,
-        `Recorded Git root: ${recovery.git_root ?? "unknown"}; branch: ${recovery.branch ?? "detached"}; HEAD: ${recovery.head_sha ?? "unknown"}; changed files at review: ${recovery.changed_files}.`,
-        "Inspect the existing uncommitted changes and the original card's artifacts before editing. Do not rewrite or complete the original exploratory card. Establish what is recoverable, make only justified fixes in this real project workspace, run the host-recorded test check, and use the normal Git changes / PR workflow for any publication.",
-      ].join("\n\n");
-      try {
-        const created = await createCardInternal({
-          projectId: recovery.project_id,
-          environment: { type: "host", hostId: source.hostId, workspace: { type: "unmanaged", path: source.path } },
-          prompt: auditPrompt,
-          attachments: [],
-          intent: "investigate",
-          appetite: "Complete",
-          reviewMode: "Product Spec + Interface + Tech Review + Code Diff",
-          kind: "build",
-          start: true,
-        });
-        const auditCard = getCard(created.cardId);
-        const createdAt = now();
-        db.prepare("INSERT INTO recovery_audits (source_card_id, audit_card_id, created_at) VALUES (?, ?, ?)").run(cardId, created.cardId, createdAt);
-        logCardComment(cardId, "card", cardId, "agent", `Recovery mismatch recorded. Original exploratory work remains immutable; recovery audit card ${created.cardId} now owns review, tests, commits, and PRs for ${recovery.project_name}.`);
-        logCardComment(created.cardId, "card", created.cardId, "agent", `Recovery audit created from preserved card ${cardId}. Evidence checkout: ${recovery.source_path}; recorded HEAD ${recovery.head_sha ?? "unknown"}.`);
-        bb.realtime.publish("card-state", { cardId });
-        bb.realtime.publish("card-state", { cardId: created.cardId });
-        bb.realtime.publish("board-changed", { cardId: created.cardId });
-        return { ok: true, auditCardId: created.cardId, auditCardName: auditCard?.display_name ?? auditCard?.name ?? "Recovery audit", error: null };
-      } catch (error) {
-        return { ok: false, auditCardId: null, auditCardName: null, error: error instanceof Error ? error.message : "Could not create the recovery audit card." };
-      }
-    },
-
     async researchStrategies() {
       return { strategies: RESEARCH_STRATEGIES };
     },
@@ -5904,7 +5776,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
       // A recovered checkout is a read-only audit target, never a fuzzy path
       // alias. If its Git root changed since the human attached it, stop here
       // rather than showing a convincing diff from a different repository.
-      const recoveryError = await recoveredCheckoutIntegrity(card, workspace.path);
+      const recoveryError = await recoveredCheckoutIntegrity(recoveryIntegrityDeps, card, workspace.path);
       if (recoveryError) return { ...empty, found: true, error: recoveryError };
       const runGit = (args: string[], cwd?: string): Promise<{ ok: boolean; stdout: string }> =>
         new Promise((resolve) => {

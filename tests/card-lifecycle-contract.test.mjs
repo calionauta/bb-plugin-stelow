@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server.ts"), "utf8");
+const serverRecovery = readFileSync(join(root, "server/workspaces-recovery.ts"), "utf8");
 const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const navigation = readFileSync(join(root, "components/app-support/navigation.ts"), "utf8");
@@ -378,8 +379,12 @@ const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(comment, /if \(isArchivedCard\(card\)\) return \{ commentId: "", error: ERR_CARD_ARCHIVED \}/, "archived cards refuse new comments");
 assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: card\.stage \}\)/, "a card comment reopens completed work through the shared lifecycle helper");
 assert.match(server, /statusForNewCardWork\(\{ kind: card\.kind, status: card\.status, stage: currentStage \}\)/, "a direct thread message reopens completed work through the same helper");
-assert.match(server, /async function recoveredCheckoutIntegrity\(/, "recovered checkouts have a dedicated integrity check before diffing");
-assert.match(server, /const recoveryError = await recoveredCheckoutIntegrity\(card, workspace\.path\)/, "recovered diffs fail closed when their attached Git root changes");
+assert.match(serverRecovery, /async function recoveredCheckoutIntegrity\(/, "recovered checkouts have a dedicated integrity check before diffing");
+assert.match(
+  server,
+  /const recoveryError = await recoveredCheckoutIntegrity\(recoveryIntegrityDeps, card, workspace\.path\)/,
+  "recovered diffs fail closed when their attached Git root changes",
+);
 assert.match(server, /verificationReadiness\(verificationRun, gitEvidence\)/, "Build completion requires a host-recorded test result at the current Git identity");
 assert.match(server, /hasWorker: card\.worker_thread_id !== null/, "the split flag knows whether a worker exists to propose from");
 assert.match(server, /if \(!card\.worker_thread_id\) return \{ ok: false, error: "This card has no worker thread\." \}/, "the split trigger refuses threadless cards even if the UI ever offers it");
