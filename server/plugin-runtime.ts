@@ -23,7 +23,6 @@ import {
   liveClaimsForWorkspace,
   releaseAllCardClaims,
   releaseWorkspaceClaims,
-  sweepExpiredClaims,
   waitersForFiles,
 } from "../lib/card-claims.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
@@ -154,6 +153,7 @@ import {
 import { createPlatformHandlers } from "./runtime/platform.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
+import { startReconciler } from "./runtime/reconciler.js";
 
 const pluginDir = resolvePluginRoot(dirname(fileURLToPath(import.meta.url)), existsSync);
 const HELPER_SCRIPT = (() => {
@@ -2780,65 +2780,23 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
   function maybeBumpSeverity(): Promise<void> {
     return decisionApi.maybeBumpSeverity();
   }
-  const scopeProgress = createScopeProgressSync({
-    getCard,
-    cardWorkspace,
-    publish: (cardId) => bb.realtime.publish("card-state", { cardId }),
+  const reconciler = startReconciler({
+    db,
+    syncThreadState,
+    scopeProgress: createScopeProgressSync({
+      getCard,
+      cardWorkspace,
+      publish: (cardId) => bb.realtime.publish("card-state", { cardId }),
+    }),
+    maybeBumpSeverity,
+    notifyClaimWaiters,
+    now: Date.now,
+    onError: (phase, error) => bb.log.warn(
+      `Stelow reconciliation ${phase} failed: ${error instanceof Error ? error.message : String(error)}`,
+    ),
   });
-  const reconcileTimer = setInterval(() => {
-    if (!(db as unknown as { open?: boolean }).open) return;
-    try {
-      const rows = db.prepare("SELECT id FROM cards WHERE worker_thread_id IS NOT NULL AND status != 'archived'").all() as Array<{ id: string }>;
-      for (const row of rows) void syncThreadState(row.id);
-      const liveIds = new Set(rows.map((row) => row.id));
-      // Scope-progress watch: silent worker edits (status flips with no host
-      // action) publish card-state within one tick instead of waiting for
-      // the next host-driven reload. First sight sets the baseline silently
-      // — a restart must not publish-storm every live card — and dead cards
-      // prune out so the map cannot grow past the live set.
-      for (const row of rows) void scopeProgress.sync(row.id);
-      scopeProgress.prune(liveIds);
-    } catch { /* db closed during reload; next tick retries */ }
-    void maybeBumpSeverity();
-    // Expired workspace claims are crashed workers that never released:
-    // reap them here and wake exactly the cards that waited on each file.
-    // Claims held by terminal-status cards are dead weight too (a terminal
-    // card must hold nothing): reap them on the same path so legacy rows
-    // and future terminal writes never park files hostage.
-    try {
-      const reaped = sweepExpiredClaims(db, Date.now());
-      if (reaped.length > 0) {
-        const byWorkspace = new Map<string, string[]>();
-        for (const row of reaped) {
-          const list = byWorkspace.get(row.workspacePath) ?? [];
-          list.push(row.file);
-          byWorkspace.set(row.workspacePath, list);
-        }
-        for (const [workspacePath, files] of byWorkspace) void notifyClaimWaiters(workspacePath, files);
-      }
-    } catch { /* advisory; next tick retries */ }
-    try {
-      const holders = db.prepare("SELECT id, status FROM cards").all() as Array<{ id: string; status: string }>;
-      for (const holder of holders) {
-        if (!isClaimTerminal(holder.status)) continue;
-        let released: Array<{ workspacePath: string; file: string }> = [];
-        try { released = releaseAllCardClaims(db, holder.id); } catch { continue; }
-        try { clearClaimWaiters(db, { cardId: holder.id }); } catch { /* advisory */ }
-        if (released.length === 0) continue;
-        const byWorkspace = new Map<string, string[]>();
-        for (const row of released) {
-          const list = byWorkspace.get(row.workspacePath) ?? [];
-          list.push(row.file);
-          byWorkspace.set(row.workspacePath, list);
-        }
-        for (const [workspacePath, files] of byWorkspace) void notifyClaimWaiters(workspacePath, files);
-      }
-    } catch { /* advisory; next tick retries */ }
-  }, RECONCILE_MS);
-  bb.onDispose(async () => {
-    clearInterval(reconcileTimer);
-    // Pending retries and deferred respawns must not fire after reload:
-    // persisted claims re-drive retries on the next poll.
+  bb.onDispose(() => {
+    reconciler.dispose();
     workers.dispose();
   });
 

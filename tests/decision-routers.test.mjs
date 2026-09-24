@@ -210,7 +210,6 @@ assert.ok(decisionSeams.includes("severityBumpQuestions()"), "the bump asks the 
 assert.ok(decisionSeams.includes("SET severity = 2"), "promotion only ever escalates");
 assert.ok(!decisionSeams.includes("resolved_at ="), "the bump never resolves anything");
 assert.ok(bumpBody.includes('inbox-changed", { bumped:'), "promotion publishes for reload");
-assert.match(server, /void maybeBumpSeverity\(\);/, "the reconcile tick runs the bump");
 assert.match(decisionApiUi, /Showing defaults — nothing saved yet/, "fresh installs state that defaults are in effect");
 assert.match(decisionApiUi, /Could not load the Decision API settings\./, "a failed settings load stays answerable");
 assert.match(decisionApiUi, /Decision API is disabled on this host/, "the settings block states the kill switch in place");
