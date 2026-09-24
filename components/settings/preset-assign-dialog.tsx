@@ -2,10 +2,7 @@ import { useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../../server";
-import {
-  classifyPresetSelection,
-  type PresetSelection,
-} from "../../lib/preset-assignment.mjs";
+import { runPresetAssignment } from "../../lib/preset-assignment.mjs";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,15 +38,6 @@ type PresetAssignDialogProps = {
   cardId: string;
   onChanged: () => void;
 };
-
-type CustomPresetRequest = {
-  providerId: string;
-  modelId: string;
-  reasoningLevel: string;
-  permissionMode: PermissionMode;
-  environmentKind: "project-default" | "new-worktree";
-};
-type CustomChoice = Exclude<PresetSelection, { kind: "default" } | { kind: "preset" }>;
 
 function usePresetOptions(open: boolean) {
   const rpc = useRpc<typeof rpcContract>();
@@ -98,61 +86,53 @@ function useCustomPreset(
   return { custom, value, setCustom };
 }
 
-async function assignExistingPreset(
-  rpc: Rpc,
-  cardId: string,
-  presetId: string | null,
-) {
-  return rpc.call("assignPreset", { cardId, presetId });
-}
-
-async function assignCustomPreset(
-  rpc: Rpc,
-  cardId: string,
-  request: CustomPresetRequest,
-) {
-  const upserted = await rpc.call("upsertPreset", {
-    id: `card-override-${cardId}`,
-    name: `Card override ${cardId}`,
-    ...request,
-  });
-  return assignExistingPreset(rpc, cardId, upserted.preset.id);
-}
-
-function customPresetRequest(
-  choice: CustomChoice,
-  customValue: PresetExecutionValue,
-  defaultPreset: PresetSummary | null,
-): CustomPresetRequest | null {
-  const value = choice.kind === "model"
-    ? {
-        providerId: choice.providerId,
-        modelId: choice.modelId,
-        reasoningLevel: defaultPreset?.reasoningLevel || "medium",
-        permissionMode: (defaultPreset?.permissionMode || "full") as PermissionMode,
-      }
-    : {
-        ...customValue,
-        modelId: customValue.modelId.trim(),
-      };
-  if (!value.providerId || !value.modelId) return null;
-  return {
-    ...value,
-    environmentKind: (defaultPreset?.environmentKind ?? "project-default") as
-      | "project-default"
-      | "new-worktree",
-  };
-}
+type PresetActionContext = {
+  rpc: Rpc;
+  cardId: string;
+  customValue: PresetExecutionValue;
+  defaultPreset: PresetSummary | null;
+  complete: (message: string) => void;
+  setError: (message: string | null) => void;
+};
 
 function recordAssignmentResult(
-  result: Awaited<ReturnType<typeof assignExistingPreset>>,
-  fallback: string,
-  success: string,
-  finish: (message: string) => void,
+  result: { ok: boolean; error?: string },
+  mode: "reset" | "override",
+  complete: (message: string) => void,
   setError: (message: string | null) => void,
 ) {
-  if (result.ok) finish(success);
-  else setError(result.error ?? fallback);
+  if (result.ok) {
+    complete(mode === "reset" ? RESET_SUCCESS : OVERRIDE_SUCCESS);
+    return;
+  }
+  const fallback = mode === "reset"
+    ? "Could not reset preset."
+    : "Could not change preset.";
+  setError(result.error ?? fallback);
+}
+
+async function applyPresetSelection(
+  context: PresetActionContext,
+  selected: string | null,
+) {
+  const assignment = await runPresetAssignment({
+    rpc: context.rpc,
+    cardId: context.cardId,
+    selected,
+    customValue: context.customValue,
+    defaultPreset: context.defaultPreset,
+  });
+  if (assignment.kind === "idle") return;
+  if (assignment.kind === "invalid") {
+    context.setError("Pick a provider and type a model id.");
+    return;
+  }
+  recordAssignmentResult(
+    assignment.result,
+    assignment.mode,
+    context.complete,
+    context.setError,
+  );
 }
 
 function usePresetActions({
@@ -189,32 +169,14 @@ function usePresetActions({
   }
 
   async function apply() {
-    const choice = classifyPresetSelection(selected);
-    if (!choice) return;
+    if (!selected) return;
     setBusy(true);
     setError(null);
     try {
-      if (choice.kind === "model" || choice.kind === "custom") {
-        const request = customPresetRequest(choice, customValue, defaultPreset);
-        if (!request) {
-          setError("Pick a provider and type a model id.");
-          return;
-        }
-        const result = await assignCustomPreset(rpc, cardId, request);
-        recordAssignmentResult(
-          result,
-          "Could not change preset.",
-          OVERRIDE_SUCCESS,
-          complete,
-          setError,
-        );
-      } else {
-        const presetId = choice.kind === "preset" ? choice.presetId : null;
-        const result = await assignExistingPreset(rpc, cardId, presetId);
-        const fallback = presetId ? "Could not change preset." : "Could not reset preset.";
-        const success = presetId ? OVERRIDE_SUCCESS : RESET_SUCCESS;
-        recordAssignmentResult(result, fallback, success, complete, setError);
-      }
+      await applyPresetSelection(
+        { rpc, cardId, customValue, defaultPreset, complete, setError },
+        selected,
+      );
     } finally {
       setBusy(false);
     }
@@ -223,32 +185,34 @@ function usePresetActions({
   return { busy, error, apply };
 }
 
-export function PresetAssignDialog({
-  open,
-  onOpenChange,
-  cardId,
-  onChanged,
-}: PresetAssignDialogProps) {
-  const { presets, catalog } = usePresetOptions(open);
-  const [selected, setSelected] = useState<string | null>(null);
-  const defaultPreset = presets.find((preset) => preset.isDefault) ?? null;
-  const custom = useCustomPreset(open, defaultPreset);
-  const actions = usePresetActions({
+type PresetAssignDialogViewProps = PresetAssignDialogProps & {
+  presets: PresetSummary[];
+  catalog: ProviderCatalog;
+  selected: string | null;
+  customValue: PresetExecutionValue;
+  custom: typeof EMPTY_CUSTOM;
+  busy: boolean;
+  error: string | null;
+  onCustomChange: (value: PresetExecutionValue) => void;
+  onSelect: (value: string) => void;
+  onApply: () => void;
+};
+
+function PresetAssignDialogView(props: PresetAssignDialogViewProps) {
+  const {
     open,
-    cardId,
-    selected,
-    customValue: custom.value,
-    defaultPreset,
     onOpenChange,
-    onChanged,
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    setSelected(null);
-  }, [open]);
-
-  const visibleError = actions.error;
+    presets,
+    catalog,
+    selected,
+    customValue,
+    custom,
+    busy,
+    error,
+    onCustomChange,
+    onSelect,
+    onApply,
+  } = props;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -261,26 +225,64 @@ export function PresetAssignDialog({
           presets={presets}
           catalog={catalog}
           selected={selected}
-          customValue={custom.value}
-          onCustomChange={(next) => {
-            custom.setCustom(next);
-            setSelected("custom");
-          }}
-          onSelect={setSelected}
+          customValue={customValue}
+          onCustomChange={onCustomChange}
+          onSelect={onSelect}
         />
-        {visibleError ? <p className="text-xs text-destructive">{visibleError}</p> : null}
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button
-            disabled={actions.busy || !selected || (
+            disabled={busy || !selected || (
               selected === "custom" &&
-              (!custom.custom.providerId || !custom.custom.modelId.trim())
+              (!custom.providerId || !custom.modelId.trim())
             )}
-            onClick={() => void actions.apply()}
+            onClick={onApply}
           >
-            {actions.busy ? "Applying…" : "Apply"}
+            {busy ? "Applying…" : "Apply"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function PresetAssignDialog(props: PresetAssignDialogProps) {
+  const { open, cardId, onChanged } = props;
+  const { presets, catalog } = usePresetOptions(open);
+  const [selected, setSelected] = useState<string | null>(null);
+  const defaultPreset = presets.find((preset) => preset.isDefault) ?? null;
+  const custom = useCustomPreset(open, defaultPreset);
+  const actions = usePresetActions({
+    open,
+    cardId,
+    selected,
+    customValue: custom.value,
+    defaultPreset,
+    onOpenChange: props.onOpenChange,
+    onChanged,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setSelected(null);
+  }, [open]);
+
+  return (
+    <PresetAssignDialogView
+      {...props}
+      presets={presets}
+      catalog={catalog}
+      selected={selected}
+      customValue={custom.value}
+      custom={custom.custom}
+      busy={actions.busy}
+      error={actions.error}
+      onCustomChange={(next) => {
+        custom.setCustom(next);
+        setSelected("custom");
+      }}
+      onSelect={setSelected}
+      onApply={() => void actions.apply()}
+    />
   );
 }

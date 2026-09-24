@@ -326,13 +326,14 @@ function BuildDetailLayout({
 
 function PresetDialogs({ cardId, view }: { cardId: string; view: BuildDetailView }) {
   const { load } = view;
+  const ownsPresetDialog = view.card?.kind === "build";
   return (
     <>
-      {view.renderPresetDialog({
+      {ownsPresetDialog ? view.renderPresetDialog({
         open: view.presetDialogOpen,
         onOpenChange: view.setPresetDialogOpen,
         onChanged: () => void load(),
-      })}
+      }) : null}
       <ArtifactViewerDialog
         open={view.viewerFile !== null}
         onOpenChange={(next) => { if (!next) view.setViewerFile(null); }}

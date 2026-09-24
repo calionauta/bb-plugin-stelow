@@ -197,8 +197,13 @@ assert.equal((exploreDetail.match(/<PresetAssignDialog/g) ?? []).length, 1, "exp
 assert.match(buildDetail, /<PresetDialogs cardId=\{cardId\} view=\{view\}/, "Build keeps its card-bound preset dialog seam");
 assert.match(
   buildDetail,
-  /view\.renderPresetDialog\(\{[\s\S]*cardId=\{cardId\}/,
-  "Build renders its injected preset dialog with the current card",
+  /ownsPresetDialog = view\.card\?\.kind === "build"/,
+  "the Build shell identifies which card kinds own preset assignment",
+);
+assert.match(
+  buildDetail,
+  /ownsPresetDialog \? view\.renderPresetDialog\(\{[\s\S]*onChanged: \(\) => void load\(\)[\s\S]*\) : null/,
+  "the Build shell renders its injected preset dialog only for Build cards",
 );
 assert.match(
   routeAdapters,
