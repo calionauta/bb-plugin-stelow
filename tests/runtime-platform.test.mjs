@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPlatformHandlers } from "../server/runtime/platform.ts";
+import { existsSync, writeFileSync } from "node:fs";
+import { createPlatformHandlers, defaultRun } from "../server/runtime/platform.ts";
 
 function harness(overrides = {}) {
   const calls = [];
+  const previewHandler = (method) => async (cardId, appOrigin) => {
+    calls.push(["preview", method, cardId, ...(method === "view" ? [appOrigin] : [])]);
+    return method === "view" ? { cardId, appOrigin } : { ok: true, cardId };
+  };
   const state = {
     update: { outcome: "current", installed: "0.46.0", installedDisplay: "0.46.0", candidate: null, candidateDisplay: null, detail: null, checkedAt: 10 },
     release: { tag: "v0.46.0", url: "https://example.test/release", checkedAt: 10, newer: false },
@@ -35,10 +40,10 @@ function harness(overrides = {}) {
     homeDir: "/home/test",
     localBinDir: "/home/test/.local/bin",
     preview: {
-      view: async (cardId, appOrigin) => ({ cardId, appOrigin }),
-      start: async (cardId) => ({ ok: true, cardId }),
-      stop: async (cardId) => ({ ok: true, cardId }),
-      share: async (cardId) => ({ ok: true, cardId }),
+      view: previewHandler("view"),
+      start: previewHandler("start"),
+      stop: previewHandler("stop"),
+      share: previewHandler("share"),
     },
     probeTool: async (bin) => {
       calls.push(["probe", bin]);
@@ -87,7 +92,7 @@ test("platform build info refreshes state and preserves the configured Pi model 
 });
 
 test("platform preview handlers delegate to the shared runtime without rebuilding responses", async () => {
-  const { handlers } = harness();
+  const { handlers, calls } = harness();
   assert.deepEqual(await handlers.previewState({ cardId: "card-1", appOrigin: "http://app" }), {
     cardId: "card-1",
     appOrigin: "http://app",
@@ -95,6 +100,12 @@ test("platform preview handlers delegate to the shared runtime without rebuildin
   assert.deepEqual(await handlers.previewStart({ cardId: "card-1" }), { ok: true, cardId: "card-1" });
   assert.deepEqual(await handlers.previewStop({ cardId: "card-1" }), { ok: true, cardId: "card-1" });
   assert.deepEqual(await handlers.previewShare({ cardId: "card-1" }), { ok: true, cardId: "card-1" });
+  assert.deepEqual(calls, [
+    ["preview", "view", "card-1", "http://app"],
+    ["preview", "start", "card-1"],
+    ["preview", "stop", "card-1"],
+    ["preview", "share", "card-1"],
+  ]);
 });
 
 test("tool install dispatch preserves installer-specific failure evidence", async () => {
@@ -121,12 +132,15 @@ test("tool install dispatch preserves installer-specific failure evidence", asyn
 
 test("script and binary verification failures remain distinguishable", async () => {
   const installer = harness({
-    runTool: async (command) => ({ code: command === "bash" ? 1 : 0, out: "" }),
+    runTool: async (command, args) => {
+      if (command === "curl") writeFileSync(args.at(-1), "unverified installer");
+      return { code: 0, out: "" };
+    },
   });
   assert.deepEqual(await installer.handlers.installTool({ id: "ripwire" }), {
     ok: false,
     version: null,
-    log: "\n",
+    log: "Installer SHA-256 mismatch.",
   });
 
   const verification = harness({
@@ -137,6 +151,104 @@ test("script and binary verification failures remain distinguishable", async () 
     version: null,
     log: "Installed but the binary did not respond.",
   });
+});
+
+test("installer provenance refuses modified scripts before execution and pins package versions", async () => {
+  for (const id of ["sem", "ripwire"]) {
+    const commands = [];
+    const { handlers } = harness({
+      runTool: async (command, args) => {
+        commands.push([command, args]);
+        if (command === "curl") writeFileSync(args.at(-1), "malicious script");
+        return { code: 0, out: "" };
+      },
+    });
+    assert.equal((await handlers.installTool({ id })).ok, false);
+    assert.deepEqual(commands.map(([command]) => command), ["curl"]);
+    assert.match(commands[0][1][3], /\/v\d+\.\d+\.\d+\//);
+  }
+
+  for (const [id, command, version] of [
+    ["ast-grep", "npm", "@ast-grep/cli@0.40.3"],
+    ["cymbal", "go", "github.com/1broseidon/cymbal@v0.17.0"],
+  ]) {
+    const commands = [];
+    const { handlers } = harness({
+      runTool: async (name, args) => {
+        commands.push([name, args]);
+        return { code: 1, out: "" };
+      },
+    });
+    await handlers.installTool({ id });
+    assert.equal(commands[0][0], command);
+    assert.ok(commands[0][1].includes(version));
+  }
+});
+
+test("subprocess runner passes an explicit environment without daemon secrets", async () => {
+  const secret = process.env.STELOW_INSTALL_TEST_SECRET;
+  process.env.STELOW_INSTALL_TEST_SECRET = "must-not-leak";
+  try {
+    const result = await defaultRun(process.execPath, [
+      "-e",
+      "process.stdout.write(JSON.stringify(process.env))",
+    ]);
+    assert.equal(result.code, 0);
+    const childEnv = JSON.parse(result.out);
+    assert.equal(childEnv.STELOW_INSTALL_TEST_SECRET, undefined);
+    assert.equal(childEnv.PATH, "/usr/local/bin:/usr/bin:/bin");
+    assert.notEqual(childEnv.HOME, process.env.HOME);
+    assert.equal(childEnv.TMPDIR, childEnv.HOME);
+  } finally {
+    if (secret === undefined) delete process.env.STELOW_INSTALL_TEST_SECRET;
+    else process.env.STELOW_INSTALL_TEST_SECRET = secret;
+  }
+});
+
+test("every install command receives an isolated home that is removed afterward", async () => {
+  for (const id of ["sem", "ripwire", "ast-grep", "cymbal"]) {
+    const commands = [];
+    const { handlers } = harness({
+      runTool: async (command, args, env) => {
+        commands.push({ command, args, env });
+        return { code: 1, out: "" };
+      },
+    });
+    await handlers.installTool({ id });
+    assert.equal(commands.length, 1);
+    assert.notEqual(commands[0].env.HOME, process.env.HOME);
+    assert.match(commands[0].env.HOME, /stelow-tool-install-/);
+    assert.equal(existsSync(commands[0].env.HOME), false);
+  }
+});
+
+test("verification runs inside the private install directory before cleanup", async () => {
+  const commands = [];
+  const { handlers } = harness({
+    runTool: async (command, args, env) => {
+      commands.push({ command, args, env });
+      assert.equal(existsSync(env.HOME), true);
+      return { code: 0, out: command === "npm" ? "installed" : "ast-grep 0.40.3" };
+    },
+  });
+  assert.deepEqual(await handlers.installTool({ id: "ast-grep" }), {
+    ok: true,
+    version: "ast-grep 0.40.3",
+    log: "installed",
+  });
+  assert.equal(commands.length, 2);
+  assert.equal(commands[0].env.HOME, commands[1].env.HOME);
+  assert.equal(existsSync(commands[0].env.HOME), false);
+});
+
+test("unknown tool IDs never dispatch an installer", async () => {
+  const { handlers, calls } = harness();
+  assert.deepEqual(await handlers.installTool({ id: "unexpected" }), {
+    ok: false,
+    version: null,
+    log: "Unknown tool: unexpected",
+  });
+  assert.deepEqual(calls, []);
 });
 
 test("platform exposes the complete public RPC handler set", () => {

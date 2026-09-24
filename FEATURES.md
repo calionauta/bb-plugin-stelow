@@ -545,8 +545,9 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   for the host binaries the workflow can use (sem, cymbal, ripwire,
   ast-grep) with per-tool purpose and install command —
   install anytime, everything degrades silently without them. Each row
-  also offers one-click install (explicit consent, official installers
-  only, ~/.local/bin, verified by re-probe) with per-row error + log, plus
+  also offers one-click install (explicit consent, versioned and SHA-256
+  verified installer scripts, pinned npm/Go versions, an isolated installer
+  environment, ~/.local/bin, verified by re-probe) with per-row error + log, plus
   one-click reinstall-as-update for installed tools. A separate "Ready via
   npx" group discloses the on-demand dependencies (skills hub, ctx7,
   agent-reach, last30days, thermo-nuclear) with usage and consent rules — info only,

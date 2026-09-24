@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { readdirSync, unlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join as nodeJoin } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -67,14 +68,24 @@ const PI_BIFROST_PRESET_MODELS = [
 
 const SCRIPT_INSTALLERS = {
   sem: {
-    url: "https://raw.githubusercontent.com/Ataraxy-Labs/sem/main/install.sh",
-    env: {},
+    url: "https://raw.githubusercontent.com/Ataraxy-Labs/sem/v0.25.0/install.sh",
+    sha256: "a7640dafcfa07c9548558138857f49e1a70a787478952800a5557e5cd7eee370",
+    env: { SEM_VERSION: "v0.25.0" },
   },
   ripwire: {
-    url: "https://raw.githubusercontent.com/redhat-et/ripwire/main/scripts/install.sh",
-    env: { RIPWIRE_REPO: "redhat-et/ripwire", RIPWIRE_INSTALL_YES: "1", RIPWIRE_NO_ACTIVATE: "1" },
+    url: "https://raw.githubusercontent.com/redhat-et/ripwire/v0.6.2/scripts/install.sh",
+    sha256: "dfc76bc9bdf97fb04f29683703fe931db885afadca056e98364c634874726d55",
+    env: {
+      RIPWIRE_REPO: "redhat-et/ripwire",
+      RIPWIRE_VERSION: "v0.6.2",
+      RIPWIRE_INSTALL_YES: "1",
+      RIPWIRE_NO_ACTIVATE: "1",
+    },
   },
 } as const;
+
+const AST_GREP_VERSION = "0.40.3";
+const CYMBAL_VERSION = "v0.17.0";
 
 function defaultProbe(bin: string): Promise<ToolProbeResult> {
   return new Promise((resolve) => {
@@ -88,7 +99,7 @@ function defaultProbe(bin: string): Promise<ToolProbeResult> {
   });
 }
 
-function defaultRun(
+export function defaultRun(
   command: string,
   args: string[],
   env: Record<string, string> = {},
@@ -97,7 +108,16 @@ function defaultRun(
     execFile(
       command,
       args,
-      { timeout: 300000, maxBuffer: 1024 * 1024, env: { ...process.env, ...env } },
+      {
+        timeout: 300000,
+        maxBuffer: 1024 * 1024,
+        env: {
+          HOME: env.HOME ?? tmpdir(),
+          PATH: "/usr/local/bin:/usr/bin:/bin",
+          TMPDIR: env.HOME ?? tmpdir(),
+          ...env,
+        },
+      },
       (error, stdout, stderr) => {
         const out = `${typeof stdout === "string" ? stdout : ""}\n${typeof stderr === "string" ? stderr : ""}`.trim();
         resolve({ code: error ? 1 : 0, out });
@@ -148,13 +168,29 @@ type InstallOutcome = {
 
 async function installScriptTool(
   run: RunTool,
+  deps: PlatformDeps,
   id: keyof typeof SCRIPT_INSTALLERS,
   tmpPath: string,
 ): Promise<InstallOutcome> {
   const spec = SCRIPT_INSTALLERS[id];
   const download = await run("curl", ["-fsSL", "--max-time", "120", spec.url, "-o", tmpPath]);
   if (download.code !== 0) return { result: download, failure: "Download failed." };
-  const install = await run("bash", [tmpPath], spec.env);
+  let digest: string;
+  try {
+    digest = createHash("sha256").update(readFileSync(tmpPath)).digest("hex");
+  } catch {
+    return { result: { code: 1, out: "Installer download is missing." }, failure: "Verification failed." };
+  }
+  if (digest !== spec.sha256) {
+    return { result: { code: 1, out: "Installer SHA-256 mismatch." }, failure: "Verification failed." };
+  }
+  const install = await run("bash", [tmpPath], {
+    ...spec.env,
+    HOME: nodeJoin(tmpPath, ".."),
+    ...(id === "sem"
+      ? { SEM_INSTALL_DIR: deps.localBinDir }
+      : { RIPWIRE_INSTALL_PREFIX: nodeJoin(deps.homeDir, ".local") }),
+  });
   return {
     result: { code: install.code, out: `${download.out}\n${install.out}` },
     failure: "Installer failed.",
@@ -163,12 +199,12 @@ async function installScriptTool(
 
 async function installNpmTool(run: RunTool, deps: PlatformDeps): Promise<InstallOutcome> {
   const prefix = deps.localBinDir ? nodeJoin(deps.homeDir, ".local") : "";
-  const args = ["install", "-g", ...(prefix ? ["--prefix", prefix] : []), "@ast-grep/cli"];
+  const args = ["install", "-g", ...(prefix ? ["--prefix", prefix] : []), `@ast-grep/cli@${AST_GREP_VERSION}`];
   return { result: await run("npm", args), failure: "npm install failed." };
 }
 
 async function installGoTool(run: RunTool, deps: PlatformDeps): Promise<InstallOutcome> {
-  const result = await run("go", ["install", "github.com/1broseidon/cymbal@latest"], {
+  const result = await run("go", ["install", `github.com/1broseidon/cymbal@${CYMBAL_VERSION}`], {
     ...(deps.localBinDir ? { GOBIN: deps.localBinDir } : {}),
     CGO_CFLAGS: "-DSQLITE_ENABLE_FTS5",
   });
@@ -190,23 +226,30 @@ async function verifyToolInstall(deps: PlatformDeps, run: RunTool, id: string, l
 }
 
 async function installTool(deps: PlatformDeps, id: string) {
-  const run = deps.runTool ?? defaultRun;
-  const tmpPath = nodeJoin(tmpdir(), `.stelow-tool-install-${id}-${process.pid}-${Date.now()}.sh`);
-  let log = "";
+  if (!["sem", "ripwire", "ast-grep", "cymbal"].includes(id)) {
+    return { ok: false, version: null, log: `Unknown tool: ${id}` };
+  }
+  const baseRun = deps.runTool ?? defaultRun;
+  const tempDir = mkdtempSync(nodeJoin(tmpdir(), "stelow-tool-install-"));
+  const tmpPath = nodeJoin(tempDir, "installer.sh");
+  const run: RunTool = (command, args, env) => baseRun(command, args, {
+    ...env,
+    HOME: tempDir,
+  });
   try {
     const outcome = id === "sem" || id === "ripwire"
-      ? await installScriptTool(run, id, tmpPath)
+      ? await installScriptTool(run, deps, id, tmpPath)
       : id === "ast-grep"
         ? await installNpmTool(run, deps)
         : await installGoTool(run, deps);
-    log = outcome.result.out;
+    const log = outcome.result.out;
     if (outcome.result.code !== 0) {
       return { ok: false, version: null, log: tailLines(log) || outcome.failure };
     }
+    return await verifyToolInstall(deps, run, id, log);
   } finally {
-    try { unlinkSync(tmpPath); } catch { /* best-effort cleanup */ }
+    rmSync(tempDir, { recursive: true, force: true });
   }
-  return verifyToolInstall(deps, run, id, log);
 }
 
 async function buildInfo(deps: PlatformDeps) {
