@@ -57,7 +57,10 @@ assert.equal(total.archiveParent, true, "full approval archives the parent");
 // truth, like every other split entry point.
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const splitContractSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/lifecycle-rpc-contract.ts"), "utf8");
-const cardContractSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-rpc-contract.ts"), "utf8");
+const cardContractSource = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-detail-rpc-contract.ts"), "utf8"),
+].join("\n");
 assert.match(serverSource, /recorded as STANDARD — its answer is text only and executes nothing/, "the ask result names the standard consequence");
 assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the reminder gives the exact repair while still in time");
 assert.match(serverSource, /splitEligibility\(\{ kind: askCard\.kind, stage: askStage \}\)/, "the reminder decides through the shared gate");

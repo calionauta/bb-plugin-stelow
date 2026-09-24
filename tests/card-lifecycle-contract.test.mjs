@@ -8,6 +8,7 @@ const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/core-migrations.ts"), "utf8"),
 ].join("\n");
 const serverRecovery = readFileSync(join(root, "server/workspaces-recovery.ts"), "utf8");

@@ -99,6 +99,7 @@ const server = [
   readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
   readFileSync(join(root, "server/preset-accessors.ts"), "utf8"),
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/contracts.ts"), "utf8"),
 ].join("\n");

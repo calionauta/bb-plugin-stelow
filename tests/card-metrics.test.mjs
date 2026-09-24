@@ -52,6 +52,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
 ].join("\n");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
 const researchPanelState = readFileSync(join(root, "components", "panels", "research-panel-state.ts"), "utf8");

@@ -24,6 +24,7 @@ const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
 ].join("\n");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const trackLists = readFileSync(join(root, "components", "board", "track-lists.tsx"), "utf8");

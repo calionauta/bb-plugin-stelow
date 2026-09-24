@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 import { MAX_CHILDREN, attachChildTokenUsage, attachChildTokenBreakdown, shapeChildThreads } from "../lib/thread-children.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const cardContract = readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8");
+const cardContract = [
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
+].join("\n");
 const workerBackend = readFileSync(join(root, "server", "workers-history.ts"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 

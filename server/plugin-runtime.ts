@@ -2,9 +2,9 @@ import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join as nodeJoin, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join as nodeJoin, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { isPublishableArtifactContent, parseArtifactManifest, resolveArtifactPath, unregisteredArtifactPaths, buildArtifactTrailer, renderBundleManifest } from "../lib/artifact-manifest.mjs";
 import { assignBundleNames, parseBundleManifest, staleBundleEntries, unbundledSources } from "../lib/run-bundle.mjs";
@@ -14,7 +14,19 @@ import { summarizeSemDiff } from "../lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "../lib/cymbal-changed.mjs";
 import { skippedStages } from "../lib/stage-skips.mjs";
 import { hasPendingReview, refreshEventSeverity, refreshStalledPaused } from "../lib/inbox-events.mjs";
-import { acquireWorkspaceClaims, addClaimWaiters, CLAIM_TTL_MS, checkWorkspaceClaims, clearClaimWaiters, ensureCardClaimsTables, lapsedScopeClaims, liveClaimsForWorkspace, matchScopeClaims, releaseAllCardClaims, releaseWorkspaceClaims, sweepExpiredClaims, waitersForFiles } from "../lib/card-claims.mjs";
+import {
+  acquireWorkspaceClaims,
+  addClaimWaiters,
+  CLAIM_TTL_MS,
+  checkWorkspaceClaims,
+  clearClaimWaiters,
+  lapsedScopeClaims,
+  liveClaimsForWorkspace,
+  releaseAllCardClaims,
+  releaseWorkspaceClaims,
+  sweepExpiredClaims,
+  waitersForFiles,
+} from "../lib/card-claims.mjs";
 import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
 import { resolveClaimKey } from "../lib/card-claim-key.mjs";
 import { classifyAskCancel, interruptionWhy, isRetryablePersistError } from "../lib/ask-cancel.mjs";
@@ -22,7 +34,6 @@ import { questionWaitUpdates, askFinishedUpdates } from "../lib/card-question-st
 import { parseAskGroups, cleanOptions, normalizeAskArtifactPath, inheritAskArtifact, expandInteractionQuestions, groupBatchAnswers, formatBatchContinuation } from "../lib/question-batch.mjs";
 import { decideAskGate } from "../lib/ask-gate.mjs";
 import { cleanAnswerList } from "../lib/expired-question-answers.mjs";
-import { matchAutomationIssues } from "../lib/automation-rules.mjs";
 import { consumeAskContract, recordAskContracts, validateAskContracts } from "../lib/ask-contracts.mjs";
 import { resolvePluginRoot } from "../lib/plugin-paths.mjs";
 import { loadAboutLogo } from "../lib/about-logo.mjs";
@@ -59,7 +70,7 @@ import { tasksToScoreQuestions, resolveScopeVerdicts, taskVerifyCommand, TASK_EV
 import { resolveScoredVerdicts } from "../lib/score-verdicts.mjs";
 import { countDelegations, summarizeDelegationEvidence } from "../lib/delegation-evidence.mjs";
 import { contractForStrategy, contractForBuildArtifact } from "../lib/artifact-contracts.mjs";
-import { BOARD_MOVE_COLUMNS, CARD_KINDS, describeCardEnvironment, isLightweightKind, normalizeKind } from "../lib/tracks.mjs";
+import { normalizeKind } from "../lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "../lib/research-ready.mjs";
@@ -67,18 +78,28 @@ import { evidenceStatus } from "../lib/research-evidence.mjs";
 import { resolveCardMove } from "../lib/card-move.mjs";
 import { isArchivedCard, stripArchivedResuscitation } from "../lib/worker-action-policy.mjs";
 import { cliHelpText, cliUsageLine, nearestCommand } from "../lib/cli-suggest.mjs";
-import { canEditWorkflowIntent, freshStatusForReseed, normalizeBuildSeedIntent, resolveReseedIntent } from "../lib/workflow-intent-policy.mjs";
+import { canEditWorkflowIntent, freshStatusForReseed, resolveReseedIntent } from "../lib/workflow-intent-policy.mjs";
 import { WORKFLOW_SKILLS } from "../lib/workflow-skills-sync.mjs";
-import { PREVIEW_STATES, previewShape, previewText } from "../lib/preview-session.mjs";
+import { previewShape, previewText } from "../lib/preview-session.mjs";
 import { cardWorkerSeedRefusal, withRuntimeIgnoreEntry } from "../lib/card-seed-guard.mjs";
-import { ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "../lib/auto-continue.mjs";
-import { SPLIT_KEEP_LABEL, SPLIT_PROPOSAL_TTL_MS, matchSplitDecision, recordSplitAnswer, splitActionState, splitEligibility, splitOutcome, splitRemainder, validateSplitSlices, withStandardSplitDisclosure } from "../lib/split-proposal.mjs";
+import { lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "../lib/auto-continue.mjs";
+import {
+  SPLIT_KEEP_LABEL,
+  SPLIT_PROPOSAL_TTL_MS,
+  recordSplitAnswer,
+  splitActionState,
+  splitEligibility,
+  splitOutcome,
+  splitRemainder,
+  validateSplitSlices,
+  withStandardSplitDisclosure,
+} from "../lib/split-proposal.mjs";
 import { splitQuestionText } from "../lib/split-question-presentation.mjs";
 import { askTimelineLabels, describeAskSubmission, englishQuestionContentError } from "../lib/question-presentation.mjs";
 import { doneEligibility } from "../lib/completion.mjs";
 import { formatBytes, threadIdFromWorktreePath, isStaleEnvironment } from "../lib/worktree-storage.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
-import { ensureTrackableEventsTable, recordTrackableEvent } from "../lib/trackable-events.mjs";
+import { recordTrackableEvent } from "../lib/trackable-events.mjs";
 import { enrichEntriesForDetail } from "../lib/trackable-evidence.mjs";
 import { buildRegistry, canStart, dependencyCycles } from "../lib/trackable-relations.mjs";
 import { countScopeDialects, diagnoseScopeSync } from "../lib/spec-scope-reader.mjs";
@@ -101,31 +122,16 @@ import { tokenBreakdownFromEvents, sumTokenBreakdowns } from "../lib/token-usage
 import { escalatedGaps, summarizeGaps, validateGapRegistry, gapsToTriageBatch, buildGapTriageState } from "../lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline, summarizeDurations } from "../lib/card-metrics.mjs";
 import { runPluginMigrations } from "./core-migrations.js";
-import {
-  createWorkspacesRecovery,
-  recoveredCheckoutIntegrity,
-  runWorkspaceRecoveryMigrations,
-  workspaceRecoveryRpcContract,
-} from "./workspaces-recovery.js";
-import { createDecisionApi, decisionApiRpcContract, runDecisionApiMigrations } from "./decision-api.js";
-import { createGithubAutomation, githubIssuesEnabled, githubRpcContract, runGithubMigrations } from "./github-issues.js";
-import { createInboxServer, inboxRpcContract, runInboxMigrations } from "./inbox.js";
+import { createWorkspacesRecovery, recoveredCheckoutIntegrity } from "./workspaces-recovery.js";
+import { createDecisionApi } from "./decision-api.js";
+import { createGithubAutomation, githubIssuesEnabled } from "./github-issues.js";
+import { createInboxServer } from "./inbox.js";
 import { createDraftingServer } from "./drafting.js";
 import { createCardsServer, createCardStore } from "./cards.js";
-import {
-  createPresetServer,
-  PRESET_MIGRATION_STATEMENTS,
-  runPresetMigrations,
-  type PresetRow,
-} from "./presets.js";
-import {
-  createArtifactsPublication,
-  publicationRpcContract,
-  runPublicationMigrations,
-} from "./artifacts-publication.js";
+import { createPresetServer, type PresetRow } from "./presets.js";
+import { createArtifactsPublication } from "./artifacts-publication.js";
 import {
   createWorkers,
-  runWorkerMigrations,
   workerEnvironment,
   type RespawnOptions,
   type RespawnPreparation,
@@ -232,16 +238,9 @@ const PI_BIFROST_PRESET_MODELS = [
 ] as const;
 
 import {
-  appetiteSchema,
-  askOptionSchema,
   attachmentSchema,
   boardWorkflowDefaultsSchema,
-  composerExecutionSchema,
   pluginUpdateSchema,
-  reviewModeInputSchema,
-  statusSchema,
-  taskSchema,
-  scopeSchema,
   workflowSchema,
 } from "./contracts.js";
 export { rpcContract } from "./rpc-contract.js";
@@ -256,6 +255,22 @@ export type PreviewInfo = z.infer<typeof rpcContract.previewState.output>;
 type FilesApi = BbPluginApi["sdk"]["files"];
 type Workflow = z.infer<typeof workflowSchema>;
 type LooseRecord = Record<string, unknown>;
+
+interface ResearchWorkerPromptInput {
+  displayName: string;
+  prompt: string;
+  strategyLabel: string;
+  strategyId: string;
+  strategySkill: string;
+  stateDirText: string;
+  workspaceRoot: string;
+  instructions: string;
+  flavor: "initial" | "restart" | "reseed" | "append";
+  previousThreadId: string | null;
+  roundNo: number;
+  roundStamp: string;
+  roundFile: string;
+}
 
 const GATES = {
   gate: { artifact: "product-spec", receipt: "gate-approved.md" },
@@ -404,9 +419,7 @@ async function seedWorkflow(bb: BbPluginApi, rootPath: string, workflowId: strin
   }
 }
 
-type ThreadEnvironment = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]["environment"];
-
-import { selectCardEnvironment, isManagedWorktreeEnvironment, environmentFallbackNotice } from "../lib/card-environment.mjs";
+import { isManagedWorktreeEnvironment } from "../lib/card-environment.mjs";
 
 function cardAttachments(raw: string | null): Array<z.infer<typeof attachmentSchema>> {
   try { return z.array(attachmentSchema).parse(JSON.parse(raw ?? "[]")); } catch { return []; }
@@ -797,7 +810,9 @@ export default async function plugin(bb: BbPluginApi) {
   // fans opportunities out into build cards from the plugin UI.
   const CARD_OWNER_RULES = "You are the card owner: preserve context, ask the user, and publish the canonical result yourself. workflow_id is an immutable ownership marker: never edit it, copy another workflow's state, or use a project-root state.md as a substitute. Do not split this card's initial workflow into subagents. You may delegate only independent work with a distinct input and output file, then review and synthesize it yourself. Never delegate structured questions, card state changes, lifecycle commands, or the canonical result. Delegate fresh: package the full task in the call itself (brief plus every file path and fact the delegate needs) — never fork a thread, inherit history, or let siblings talk to each other.";
 
-  function researchWorkerPrompt({ displayName, prompt, strategyLabel, strategyId, strategySkill, stateDirText, workspaceRoot, instructions, flavor, previousThreadId, roundNo, roundStamp, roundFile }: { displayName: string; prompt: string; strategyLabel: string; strategyId: string; strategySkill: string; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed" | "append"; previousThreadId: string | null; roundNo: number; roundStamp: string; roundFile: string }): string {
+  function researchWorkerPrompt(input: ResearchWorkerPromptInput): string {
+    const { displayName, prompt, strategyLabel, strategyId: _strategyId, strategySkill, stateDirText,
+      workspaceRoot, instructions, flavor, previousThreadId, roundNo, roundStamp, roundFile } = input;
     const flavorLine = flavor === "initial"
       ? "This is a fresh research task."
       : flavor === "append"
@@ -872,7 +887,25 @@ ${prompt}`;
   // Explore runs ONE build-stage skill standalone — no triage, no Shape
   // Up sequence, no gates. The worker loads the stage's playbook, applies it
   // to the input, and saves a single artifact into the card's state dir.
-  function exploreWorkerPrompt({ displayName, prompt, stage, stateDirText, workspaceRoot, instructions, flavor, previousThreadId }: { displayName: string; prompt: string; stage: { id: string; label: string; skill: string }; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed"; previousThreadId: string | null }): string {
+  function exploreWorkerPrompt({
+    displayName: _displayName,
+    prompt,
+    stage,
+    stateDirText,
+    workspaceRoot,
+    instructions,
+    flavor,
+    previousThreadId,
+  }: {
+    displayName: string;
+    prompt: string;
+    stage: { id: string; label: string; skill: string };
+    stateDirText: string;
+    workspaceRoot: string;
+    instructions: string;
+    flavor: "initial" | "restart" | "reseed";
+    previousThreadId: string | null;
+  }): string {
     const flavorLine = flavor === "initial"
       ? "This is a fresh single-stage exploration."
       : flavor === "restart"
@@ -2322,7 +2355,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       roundPath: roundRelPath,
       roundFile: roundFileName,
       ensureParent: ensureArtifactParent,
-      researchPrompt: (input) => researchWorkerPrompt(input as Parameters<typeof researchWorkerPrompt>[0]),
+      researchPrompt: (input) => researchWorkerPrompt(input as unknown as ResearchWorkerPromptInput),
       explorePrompt: (input) => exploreWorkerPrompt(input as Parameters<typeof exploreWorkerPrompt>[0]),
       rules: {
         cardOwnerRules: CARD_OWNER_RULES,
@@ -6409,7 +6442,6 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         let criteriaStored: unknown = null;
         try { criteriaStored = criteriaPoint ? JSON.parse(criteriaPoint.thresholds) : null; } catch { criteriaStored = null; }
         const criteriaThresholds = normalizeThresholds(criteriaStored, defaultThresholdsFor(DECISION_POINT_ARTIFACT_CRITERIA));
-        const criteriaSemantic = groupCriteriaByKind(parseCriteriaBlock(skillText)).semantic;
         const criteriaJudge = criteriaMode === "preset" ? (criteriaPoint?.preset_id ?? null) : null;
         if (criteriaMode === "preset" && !criteriaJudge) return { exitCode: 1, stderr: "Preset judging needs a judge preset — pick any preset in Decision routers, including one no stage uses." };
         const judgment = criteriaMode === "preset" && criteriaJudge
@@ -6483,7 +6515,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
         const judgedTasks = doneTasks.filter((task) => task.verify === null);
         const runVerifyCommand = (cmd: string): Promise<{ ok: boolean; code: number | null; failed: boolean }> => new Promise((resolveRun) => {
           const [bin, ...rest] = cmd.split(/\s+/);
-          execFile(bin, rest, { cwd: taskWorkspace.path, timeout: 60000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+          execFile(bin, rest, { cwd: taskWorkspace.path, timeout: 60000, maxBuffer: 4 * 1024 * 1024 }, (error, _stdout) => {
             if (error && (error as NodeJS.ErrnoException).code !== null && (error as NodeJS.ErrnoException).code !== undefined && typeof (error as { code?: unknown }).code !== "number") {
               resolveRun({ ok: false, code: null, failed: true });
               return;

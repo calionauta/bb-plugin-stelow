@@ -120,7 +120,10 @@ assert.equal(reseeded[0].tasks[0].status, "done", "seeded status survives the me
 // missing-tracking signal.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-const cardContract = readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8");
+const cardContract = [
+  readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
+].join("\n");
 assert.match(server, /advanceExecutionGates\(/, "advance consults the gates module");
 assert.match(server, /doneBuildGates\(/, "done consults the gates module");
 assert.match(server, /diagnoseScopeSync\(\{ specContent/, "card detail reports scope-sync health from the spec against synced scopes");

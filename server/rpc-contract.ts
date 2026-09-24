@@ -5,11 +5,13 @@ import { inboxRpcContract } from "./inbox.js";
 import { publicationRpcContract } from "./artifacts-publication.js";
 import { workspaceRecoveryRpcContract } from "./workspaces-recovery.js";
 import { cardRpcContract } from "./card-rpc-contract.js";
+import { cardDetailRpcContract } from "./card-detail-rpc-contract.js";
 import { lifecycleRpcContract } from "./lifecycle-rpc-contract.js";
 import { platformRpcContract } from "./platform-rpc-contract.js";
 
 export const RPC_FRAGMENTS = [
   cardRpcContract,
+  cardDetailRpcContract,
   githubRpcContract,
   decisionApiRpcContract,
   inboxRpcContract,
@@ -19,7 +21,12 @@ export const RPC_FRAGMENTS = [
   platformRpcContract,
 ];
 
-export function composeRpcFragments(fragments: ReadonlyArray<Record<string, unknown>>): Record<string, unknown> {
+type FragmentUnionToIntersection<Fragment> = (Fragment extends unknown ? (value: Fragment) => void : never) extends
+  (value: infer Intersection) => void ? Intersection : never;
+
+export function composeRpcFragments<const Fragments extends ReadonlyArray<Record<string, unknown>>>(
+  fragments: Fragments,
+): FragmentUnionToIntersection<Fragments[number]> {
   const composed: Record<string, unknown> = {};
   for (const fragment of fragments) {
     for (const name of Object.keys(fragment)) {
@@ -27,16 +34,7 @@ export function composeRpcFragments(fragments: ReadonlyArray<Record<string, unkn
       composed[name] = fragment[name];
     }
   }
-  return composed;
+  return composed as FragmentUnionToIntersection<Fragments[number]>;
 }
 
-export const rpcContract = defineRpcContract({
-  ...cardRpcContract,
-  ...githubRpcContract,
-  ...decisionApiRpcContract,
-  ...inboxRpcContract,
-  ...lifecycleRpcContract,
-  ...publicationRpcContract,
-  ...workspaceRecoveryRpcContract,
-  ...platformRpcContract,
-});
+export const rpcContract = defineRpcContract(composeRpcFragments(RPC_FRAGMENTS));
