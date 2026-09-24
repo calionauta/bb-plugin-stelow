@@ -6,6 +6,7 @@ import {
   getExecutionRun,
   listExecutionRuns,
   markExecutionResumeRequested,
+  projectExecutionRun,
   resetExecutionBoundary,
   transitionExecutionRun,
   type ExecutionRun,
@@ -251,6 +252,7 @@ export function createExecutionLifecycle(deps: LifecycleDeps) {
 
   return {
     list: (cardId: string) => listExecutionRuns(deps.db, cardId),
+    detailList: (cardId: string) => listExecutionRuns(deps.db, cardId).map(projectExecutionRun),
     keepsCardRunning,
     resumeAfterAnswers,
     routeAnswerContinuation,

@@ -47,6 +47,24 @@ export const lifecycleRpcContract = {
     input: z.object({ cardId: z.string() }).strict(),
     output: z.object({ ok: z.boolean(), summary: z.string().nullable(), error: z.string().nullable() }),
   },
+  cleanupWorktreePreview: {
+    experimental_description: "Preview removing a redundant linked worktree without archiving",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({
+      eligible: z.boolean(),
+      reason: z.string().nullable(),
+      branch: z.string().nullable(),
+      fileCount: z.number(),
+      commitCount: z.number(),
+      confirmTitle: z.string().nullable(),
+      confirmBody: z.string().nullable(),
+    }),
+  },
+  cleanupWorktree: {
+    experimental_description: "Remove the linked worktree while keeping the card record",
+    input: z.object({ cardId: z.string() }).strict(),
+    output: z.object({ ok: z.boolean(), summary: z.string().nullable(), error: z.string().nullable() }),
+  },
   reseedCard: {
     experimental_description: "Restart a card fresh from triage; scopes and comments kept",
     input: z
