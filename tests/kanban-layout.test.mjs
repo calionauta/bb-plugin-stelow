@@ -27,7 +27,7 @@ const cardGallery = readFileSync(join(root, "components", "board", "card-gallery
 const buildDialogKanban = readFileSync(join(root, "components", "creation", "create-build-dialog.tsx"), "utf8");
 const researchDialogKanban = readFileSync(join(root, "components", "creation", "create-research-dialog.tsx"), "utf8");
 const exploreDialogKanban = readFileSync(join(root, "components", "creation", "create-explore-dialog.tsx"), "utf8");
-assert.equal((app.match(/<BucketGalleryButton cards=\{grouped\.inbox \?\? \[\]\} \/>/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
+assert.equal((app.match(/<BucketGalleryButton/g) ?? []).length, 3, "build, research, and explore each offer the Bucket gallery");
 // Rendered boards hide the Bucket column (grouping, moves, and filters
 // keep the full catalog): the kanban grids and extracted list adapters
 // iterate the visible lists, so no empty Bucket column renders anywhere.
@@ -44,7 +44,7 @@ assert.ok(app.includes("kanbanGridColumns(VISIBLE_RESEARCH_COLUMNS, collapsedCol
 for (const label of ["New issue", "New research", "New exploration"]) {
   const at = app.indexOf(`/> ${label}</Button>`);
   assert.ok(at >= 0, `${label} button exists`);
-  const window = app.slice(at, at + 400);
+  const window = app.slice(at, at + 700);
   assert.ok(window.includes("<BucketGalleryButton"), `${label} is followed by the Bucket gallery`);
   assert.ok(window.indexOf("<BucketGalleryButton") < window.indexOf("Agent Presets</Button>"), "Bucket precedes Agent Presets");
 }
@@ -56,7 +56,11 @@ assert.match(
 assert.equal((cardGallery.match(/export function CardGalleryDialog\(/g) ?? []).length, 1, "one shared gallery dialog implementation");
 assert.equal((app.match(/<CardGalleryDialog/g) ?? []).length, 1, "only the hill pile mounts the dialog outside the Bucket feature");
 assert.match(cardGallery, /<CardGalleryDialog/, "the Bucket hook mounts the same dialog implementation");
-assert.equal((app.match(/const bucketGallery = useBucketGallery\(grouped\.inbox \?\? \[\]\);/g) ?? []).length, 3, "each track owns one pile opener shared by its header and creation dialog");
+assert.equal(
+  (app.match(/const bucketGallery = useBucketGallery\(/g) ?? []).length,
+  3,
+  "each track owns one pile opener shared by its header and creation dialog",
+);
 assert.match(buildDialogKanban, /bucketGallery=\{bucketGallery\}/, "the build dialog receives its track pile opener as a prop");
 assert.equal(((app.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (buildDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (researchDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length + (exploreDialogKanban.match(/onViewBucket=\{bucketGallery\.openBucketGallery\}/g) ?? []).length), 3, "each creation checkbox links to its pile's gallery");
 assert.doesNotMatch(app, /HillClusterDialog/, "the bespoke cluster overlay is gone");
@@ -100,9 +104,23 @@ assert.match(
   /onOpen=\{\(\) => onOpenCard\(card\)\}/,
   "gallery cards pass their own open-card action instead of a no-op",
 );
-assert.match(cardGallery, /rememberStelowReturnFocusCardId\(card\.id\)/, "Bucket navigation preserves the card return focus");
-assert.match(cardGallery, /subPath: cardSubPath\(card, card\.id\)/, "Bucket navigation uses the shared panel route");
-assert.match(cardGallery, /setOpen\(false\);[\s\S]*rememberStelowReturnFocusCardId/, "choosing a Bucket card closes the gallery before navigation");
+assert.equal(
+  (app.match(/const openBucketCard = \(card: CardItem\) => goToCard\(/g) ?? []).length,
+  3,
+  "each track has one Bucket callback owned by the panel router",
+);
+assert.equal(
+  (app.match(/openBucketCard/g) ?? []).length,
+  9,
+  "each track's header and creation gallery share that navigation callback",
+);
+assert.match(cardGallery, /useBucketGallery\(cards, onOpenCard\)/, "the Bucket hook delegates card navigation to its caller");
+assert.match(cardGallery, /setOpen\(false\);[\s\S]*onOpenCard\(card\)/, "choosing a Bucket card closes before delegated navigation");
+assert.doesNotMatch(
+  cardGallery,
+  /rememberStelowReturnFocusCardId|cardSubPath|toPluginPanel/,
+  "the gallery cannot fork focus or panel-route ownership",
+);
 assert.match(
   cardGallery,
   /className="min-h-11 w-full cursor-pointer sm:w-auto sm:flex-none"/,

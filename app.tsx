@@ -546,7 +546,8 @@ function BoardPanel({ active }: { active: boolean }) {
   }, [filteredCards]);
   // Captured pile for the creation checkbox link: same gallery as the
   // header Bucket button, opened from the "park in Bucket" copy.
-  const bucketGallery = useBucketGallery(grouped.inbox ?? []);
+  const openBucketCard = (card: CardItem) => goToCard(navigate, card, card.id);
+  const bucketGallery = useBucketGallery(grouped.inbox ?? [], openBucketCard);
 
   async function moveCard(cardId: string, target: string) {
     if (!(COLUMNS as readonly string[]).includes(target)) return;
@@ -570,7 +571,10 @@ function BoardPanel({ active }: { active: boolean }) {
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateBuildOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New issue</Button>
-              <BucketGalleryButton cards={grouped.inbox ?? []} />
+              <BucketGalleryButton
+                cards={grouped.inbox ?? []}
+                onOpenCard={openBucketCard}
+              />
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setBoardPresetsOpen(true)} title="Manage agent presets and per-phase routing"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
               {githubAutomationEnabled ? (
                 <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setGithubOpen(true)} title="Import GitHub issues now or watch labels automatically"><Icon name="Github" className="h-4 w-4" aria-hidden /> GitHub issues</Button>
@@ -798,7 +802,8 @@ function ResearchPanel({ active }: { active: boolean }) {
   }, [filteredCards]);
   // Captured pile for the creation checkbox link: same gallery as the
   // header Bucket button, opened from the "park in Bucket" copy.
-  const bucketGallery = useBucketGallery(grouped.inbox ?? []);
+  const openBucketCard = (card: CardItem) => goToCard(navigate, card, card.id);
+  const bucketGallery = useBucketGallery(grouped.inbox ?? [], openBucketCard);
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
 
   async function moveCard(cardId: string, target: string) {
@@ -822,7 +827,10 @@ function ResearchPanel({ active }: { active: boolean }) {
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New research</Button>
-              <BucketGalleryButton cards={grouped.inbox ?? []} />
+              <BucketGalleryButton
+                cards={grouped.inbox ?? []}
+                onOpenCard={openBucketCard}
+              />
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the research band default"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
             </div>
           </header>
@@ -999,7 +1007,8 @@ function ExplorePanel({ active }: { active: boolean }) {
   }, [filteredCards]);
   // Captured pile for the creation checkbox link: same gallery as the
   // header Bucket button, opened from the "park in Bucket" copy.
-  const bucketGallery = useBucketGallery(grouped.inbox ?? []);
+  const openBucketCard = (card: CardItem) => goToCard(navigate, card, card.id);
+  const bucketGallery = useBucketGallery(grouped.inbox ?? [], openBucketCard);
   const inbox = cards.filter((card) => card.needsAttention && card.status !== "archived");
 
   async function moveCard(cardId: string, target: string) {
@@ -1023,7 +1032,10 @@ function ExplorePanel({ active }: { active: boolean }) {
             </div>
             <div className="grid w-full grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:w-auto sm:items-center sm:gap-3">
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" onClick={() => setCreateOpen(true)}><Icon name="Plus" className="h-4 w-4" aria-hidden /> New exploration</Button>
-              <BucketGalleryButton cards={grouped.inbox ?? []} />
+              <BucketGalleryButton
+                cards={grouped.inbox ?? []}
+                onOpenCard={openBucketCard}
+              />
               <Button className="min-h-11 w-full sm:w-auto sm:flex-none" variant="outline" onClick={() => setResearchPresetsOpen(true)} title="Manage agent presets and the band default"><Icon name="Settings" className="h-4 w-4" aria-hidden /> Agent Presets</Button>
             </div>
           </header>

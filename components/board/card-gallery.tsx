@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import {
@@ -9,9 +8,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { STELOW_PANEL_ID, cardSubPath } from "../panel/stelow-route.mjs";
-import { rememberStelowReturnFocusCardId } from "../panel/stelow-focus.mjs";
 import { BoardCard, type BoardCardItem } from "./board-cards";
+
+type OpenCard = (card: BoardCardItem) => void;
 
 type CardGalleryDialogProps = {
   open: boolean;
@@ -82,17 +81,13 @@ function bucketGalleryCopy(cardCount: number) {
   };
 }
 
-export function useBucketGallery(cards: BoardCardItem[]) {
-  const navigate = useBbNavigate();
+export function useBucketGallery(cards: BoardCardItem[], onOpenCard: OpenCard) {
   const [open, setOpen] = useState(false);
   const copy = bucketGalleryCopy(cards.length);
 
   function openCard(card: BoardCardItem) {
     setOpen(false);
-    rememberStelowReturnFocusCardId(card.id);
-    navigate.toPluginPanel(STELOW_PANEL_ID, {
-      subPath: cardSubPath(card, card.id),
-    });
+    onOpenCard(card);
   }
 
   const bucketGallery = (
@@ -113,8 +108,14 @@ export function useBucketGallery(cards: BoardCardItem[]) {
   };
 }
 
-export function BucketGalleryButton({ cards }: { cards: BoardCardItem[] }) {
-  const gallery = useBucketGallery(cards);
+export function BucketGalleryButton({
+  cards,
+  onOpenCard,
+}: {
+  cards: BoardCardItem[];
+  onOpenCard: OpenCard;
+}) {
+  const gallery = useBucketGallery(cards, onOpenCard);
   return (
     <>
       <Button
