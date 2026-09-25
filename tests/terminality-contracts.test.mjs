@@ -67,6 +67,10 @@ assert.match(
   /if \(isArchivedCard\(card\)\)\s*return \{ ok: false, error: deps\.errors\.cardArchived \}/,
   "archived cards refuse board moves",
 );
+const cardDetailRuntime = readFileSync(
+  join(root, "server", "runtime", "card-detail.ts"),
+  "utf8",
+);
 const advance = readFileSync(
   join(root, "server", "execution-advance.ts"),
   "utf8",
@@ -156,7 +160,12 @@ assert.match(
 );
 assert.match(
   server,
-  /stalenessForQuestions\([\s\S]*?\.\.\.expiredQuestions/,
+  /const stalenessForQuestions = createQuestionStaleness\(/,
+  "the composition root wires the question-staleness evidence reader",
+);
+assert.match(
+  cardDetailRuntime,
+  /deps\.stalenessForQuestions\(cardId, \[\.\.\.pending, \.\.\.expiredQuestions\]\)/,
   "card reads compare every open question against its baseline",
 );
 assert.match(

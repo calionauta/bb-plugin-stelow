@@ -21,6 +21,10 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/worker-continuation.mjs"), "utf8"),
 ].join("\n");
 const cliRegistry = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli-registry.ts"), "utf8");
+const restartPromptSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/worker-restart-prompt.ts"),
+  "utf8",
+);
 
 // Each clause is defined exactly once: pasted duplicates are drift.
 const neverSeedDefs = serverSource.match(/const\s+NEVER_SEED\s*=\s*"/g) ?? [];
@@ -30,7 +34,12 @@ assert.equal(turnDisciplineDefs.length, 1, "TURN_DISCIPLINE is defined once, not
 assert.equal((serverSource.match(/const\s+COMMIT_STYLE\s*=\s*"/g) ?? []).length, 1, "COMMIT_STYLE is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/const\s+INTERFACE_PICK\s*=\s*"/g) ?? []).length, 1, "INTERFACE_PICK is defined once, not pasted per prompt");
 assert.equal((serverSource.match(/Interface-pick discipline: check review_gates/g) ?? []).length, 1, "the interface-pick prose lives in the const only");
-assert.equal((serverSource.match(/\$\{INTERFACE_PICK\}/g) ?? []).length, 3, "restart, nudge, and ask copy reference INTERFACE_PICK");
+assert.equal(
+  (serverSource.match(/\$\{INTERFACE_PICK\}/g) ?? []).length
+    + (restartPromptSource.match(/protocols\.interfacePick/g) ?? []).length,
+  3,
+  "restart, nudge, and ask copy reference the interface-pick protocol",
+);
 assert.match(serverSource, /%INTERFACE_PICK%/, "the initial creation template references INTERFACE_PICK");
 assert.equal((serverSource.match(/never run `bb stelow seed`/g) ?? []).length, 1, "the seed-ban prose lives in the const only");
 assert.equal((serverSource.match(/a second workflow outside your card/g) ?? []).length, 1, "the seed-ban explanation lives in the const only");
@@ -43,7 +52,6 @@ assert.equal((serverSource.match(/const\s+RECON_PROTOCOL\s*=\s*"/g) ?? []).lengt
 // each site by the next anchor instead.
 const sites = {
   spawn: "Step 1 — verify intent first",
-  restart: "researchRestart ??",
   // The reseed template opens with the same sentence as restart, so anchor
   // on the site's unique const assignment instead (it precedes the template).
   reseed: "researchReseed ??",
@@ -55,7 +63,6 @@ const ordered = Object.entries(sites).map(([site, anchor]) => {
 }).sort((a, b) => a.at - b.at);
 const siteEnds = {
   spawn: "%REQUEST%`;",
-  restart: "return { prompt, projectPath, workspace };",
   reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const { site, at } of ordered) {
@@ -68,6 +75,19 @@ for (const { site, at } of ordered) {
   assert.ok(window.includes(`${token}TURN_DISCIPLINE${suffix}`), `the ${site} prompt references TURN_DISCIPLINE`);
   assert.ok(window.includes(`${token}COMMIT_STYLE${suffix}`), `the ${site} prompt references COMMIT_STYLE`);
   assert.ok(window.includes(`${token}RECON_PROTOCOL${suffix}`), `the ${site} prompt references RECON_PROTOCOL`);
+}
+for (const protocol of [
+  "neverSeed",
+  "turnDiscipline",
+  "commitStyle",
+  "reconProtocol",
+  "doneProtocol",
+  "splitProtocol",
+]) {
+  assert.ok(
+    restartPromptSource.includes(`protocols.${protocol}`),
+    `the restart prompt references ${protocol}`,
+  );
 }
 
 // The shared CLI copy must never invite a card worker to seed: that exact
@@ -92,10 +112,6 @@ const doneSites = {
   // next-anchor bounding breaks where a template closes after the next
   // anchor opens (research closes past explore's first line).
   spawn: { anchor: "Step 1 — verify intent first", end: "%REQUEST%`;" },
-  restart: {
-    anchor: "researchRestart ??",
-    end: "return { prompt, projectPath, workspace };",
-  },
   reseed: {
     anchor: "in the re-seeded state.md",
     end: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
@@ -195,12 +211,10 @@ assert.equal(splitDefs.length, 1, "SPLIT_PROTOCOL is defined once, not pasted pe
 assert.equal((serverSource.match(/run `bb stelow split` \(no args/g) ?? []).length, 1, "the split invocation prose lives in the const only");
 const splitSites = {
   spawn: "Step 1 — verify intent first",
-  restart: "researchRestart ??",
   reseed: "researchReseed ??",
 };
 const splitEnds = {
   spawn: "%REQUEST%`;",
-  restart: "return { prompt, projectPath, workspace };",
   reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const [site, anchor] of Object.entries(splitSites)) {

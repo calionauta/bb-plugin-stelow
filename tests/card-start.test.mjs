@@ -11,6 +11,7 @@ const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-operations.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/worker-respawn-preparation.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-detail-presentation.ts"), "utf8"),
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
@@ -178,7 +179,11 @@ assert.match(workflowVocabulary, /export function buildBoardColumnFor\(card\)/, 
 // (provider/model) and the card's own project workspace — never ambient defaults.
 assert.match(server, /const effective = getReliablePresetForBand\(/, "Bucket exits spawn through the override-aware preset resolution");
 assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choice pinned at creation wins over band defaults at spawn");
-assert.match(server, /const workspace = await cardWorkspace\(row\);/, "respawns run in the card's own project workspace");
+assert.match(
+  server,
+  /const workspace = await deps\.cardWorkspace\(card\);/,
+  "respawns run in the card's own project workspace",
+);
 assert.match(
   server,
   /if \(\s*status === "in-progress" && !card\.worker_thread_id\s*\)/,

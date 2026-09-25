@@ -2,7 +2,6 @@ import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -251,7 +250,6 @@ import {
   RECON_RECEIPT_FILE,
   reconReceiptStatus,
 } from "../lib/recon-receipt.mjs";
-import { stalenessOf } from "../lib/question-staleness.mjs";
 import {
   tokenBreakdownFromEvents,
   sumTokenBreakdowns,
@@ -284,8 +282,6 @@ import { createArtifactsPublication } from "./artifacts-publication.js";
 import {
   createWorkers,
   workerEnvironment,
-  type RespawnOptions,
-  type RespawnPreparation,
   type WorkerCard,
 } from "./workers.js";
 import {
@@ -331,6 +327,9 @@ import { createCardMutationHandlers } from "./runtime/card-mutations.js";
 import { createCardLifecycleHandlers } from "./runtime/card-lifecycle.js";
 import { createCardOperationsHandlers } from "./runtime/card-operations.js";
 import { createBuildThreadSync } from "./runtime/build-thread-sync.js";
+import { createWorkerRespawnPreparation } from "./runtime/worker-respawn-preparation.js";
+import { createQuestionStaleness } from "./runtime/question-staleness.js";
+import { createDiscardEvidence } from "./runtime/discard-evidence.js";
 
 const pluginDir = resolvePluginRoot(
   dirname(fileURLToPath(import.meta.url)),
@@ -1454,186 +1453,30 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     interactionIds: string[],
   ) => inbox.markAnswered(cardId, interactionIds);
 
-  // Prepare the exact worker continuation; server/workers.ts owns the spawn,
-  // old-thread shutdown, ledger rotation, and lineage write.
-  async function prepareWorkerRespawn(
-    row: CardRow,
-    preset: PresetRow,
-    _reason: string,
-    opts?: RespawnOptions,
-  ): Promise<RespawnPreparation> {
-    const params = presetAttachmentParams(preset);
-    const workspace = await cardWorkspace(row);
-    const projectPath = workspace?.path ?? "";
-    // Resolve the real per-workflow state dir (stelow.json -> created date), so
-    // the respawned worker is told the correct path — never a guessed date.
-    let stateDir: string | null = null;
-    if (row.dir_hash && projectPath) {
-      stateDir = await workflowStateDir(
-        bb,
-        projectPath,
-        row.id,
-        row.dir_hash,
-      ).catch(() => null);
-    }
-    if (row.dir_hash && !stateDir) {
-      return {
-        error:
-          "This card's workflow state cannot be verified. Reseed it before restarting its worker.",
-      };
-    }
-    const stateHint =
-      stateDir ??
-      (row.dir_hash
-        ? ".stelow/<date>/" + row.dir_hash
-        : "<project>/.stelow/<date>/<dirHash>");
-    // Research cards restart with the strategy prompt, never the build
-    // stage machine. The run strategy defaults to the latest round; a new
-    // round passes its own. A research card without a known strategy cannot
-    // restart honestly — refuse with the fix instead of spawning a confused
-    // worker.
-    const history = strategyList(row);
-    const runStrategyId =
-      row.kind === "research"
-        ? (opts?.strategyId ??
-          history[history.length - 1] ??
-          row.research_strategy ??
-          "")
-        : null;
-    const researchStrategy =
-      row.kind === "research"
-        ? researchStrategyById(runStrategyId ?? "")
-        : null;
-    if (row.kind === "research" && !researchStrategy)
-      return {
-        error:
-          "This research has no known strategy. Archive it and start a new one.",
-      };
-    const exploreStage =
-      row.kind === "explore" ? techniqueById(row.explore_stage ?? "") : null;
-    if (row.kind === "explore" && !exploreStage)
-      return {
-        error:
-          "This explore card has no known technique. Archive it and start a new one.",
-      };
-    // Restart reuses the round's own file (idempotent rewrite); a fresh
-    // spawn passes its own. Fall back to a composed path only when history
-    // carries none (shouldn't happen for spawned rounds).
-    const respawnRoundNo = opts?.roundNo ?? Math.max(1, history.length);
-    const respawnStamp = opts?.roundStamp ?? roundTimestamp();
-    let respawnFile = opts?.roundFile ?? "";
-    if (!respawnFile && researchStrategy) {
-      respawnFile =
-        [...strategyRounds(row)]
-          .reverse()
-          .find((entry) => entry.id === researchStrategy.id)?.file ??
-        (stateDir && projectPath
-          ? roundRelPath(
-              stateDir,
-              projectPath,
-              roundFileName(researchStrategy.id, respawnRoundNo, respawnStamp),
-            )
-          : "");
-    }
-    const researchRestart = researchStrategy
-      ? researchWorkerPrompt({
-          displayName: row.display_name ?? row.name,
-          prompt: row.prompt,
-          strategyLabel: researchStrategy.label,
-          strategyId: researchStrategy.id,
-          strategySkill: researchStrategy.skill,
-          stateDirText: text(stateHint),
-          workspaceRoot: projectPath || "<workspace>",
-          instructions: params.instructions,
-          flavor: opts?.flavor ?? "restart",
-          previousThreadId: row.worker_thread_id,
-          roundNo: respawnRoundNo,
-          roundStamp: respawnStamp,
-          roundFile: respawnFile,
-        })
-      : null;
-    const exploreRestart = exploreStage
-      ? exploreWorkerPrompt({
-          displayName: row.display_name ?? row.name,
-          prompt: row.prompt,
-          stage: exploreStage,
-          stateDirText: text(stateHint),
-          workspaceRoot: projectPath || "<workspace>",
-          instructions: params.instructions,
-          flavor: "restart",
-          previousThreadId: row.worker_thread_id,
-        })
-      : null;
-    const prompt =
-      researchRestart ??
-      exploreRestart ??
-      `You are running a Stelow workflow inside the bb-plugin-stelow panel. \
-The host re-seeded your per-workflow state, transitions.md, and stelow.json. Your workflow owns its own state dir (${text(stateHint)}) — \
-its state.md holds name, intent, current_stage, status.${
-        stateDir
-          ? ""
-          : " Resolve the exact path from stelow.json; \
-its state.md holds name, intent, current_stage, status."
-      } ${CARD_OWNER_RULES} \
-The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) are provided by this plugin — \
-start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product strategy playbooks \
-(stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills add calionauta/stelow\` \
-if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} \
-Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
-
-${TURN_DISCIPLINE}
-
-${COMMIT_STYLE}
-
-Intent is currently \`${row.intent}\` in state.md. ${
-      row.intent === "unknown"
-        ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, \
-bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — \
-ask via the form below only if genuinely ambiguous."
-        : "Use it — do NOT ask the user to pick or confirm intent again."
-    } \
- \
-Order of work, always: (1) settle intent; (2) load the workflow skills; (3) continue from the current \
-stage. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging \
-the CLI; report the exact error and move on.
-
-You are being restarted mid-workflow at a stage boundary so a new preset can take over for this phase. \
-Read your state.md and transitions.md, and CONTINUE the workflow from the current stage. Do not restart \
-from triage; do not re-confirm what is already settled in state.md. Pick up exactly where the workflow \
-left off.${
-      row.worker_thread_id
-        ? ` Previous worker thread: ${row.worker_thread_id} (archived before this handoff). If state.md is thin — \
-e.g. the previous worker stalled silently — its turn history may hold the missing context; retrieve \
-it with \`bb thread output ${row.worker_thread_id}\`.`
-        : ""
-    }
-
-CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form:
-
-    bb stelow ask --thread "$BB_THREAD_ID" \\\ \
-      --question "<a single clear question>" \\\ \
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers \
-them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the \
-human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, \
---preview for the inline glance, --artifact for the workspace-relative file they can open.
-
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer \
-with context. Each bb stelow ask call blocks until the user submits; the card stays in its column and \
-signals it is waiting for an answer. Never re-ask the same question. ${INTERFACE_PICK} For unselected \
-gates, write the approval receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; \
-for selected gates, open a structured ask instead. Stop when the user archives the card or the workflow \
-reaches \`audit\`.
-
-${DONE_PROTOCOL}
-
-${SPLIT_PROTOCOL}
-
-${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:\n${row.prompt}`;
-    return { prompt, projectPath, workspace };
-  }
+  const prepareWorkerRespawn = createWorkerRespawnPreparation({
+    bb,
+    presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
+    cardWorkspace,
+    workflowStateDir,
+    strategyList,
+    strategyRounds,
+    researchWorkerPrompt,
+    exploreWorkerPrompt,
+    roundRelPath,
+    text,
+    protocols: {
+      cardOwnerRules: CARD_OWNER_RULES,
+      neverSeed: NEVER_SEED,
+      cliEquivalents: CLI_EQUIVALENTS,
+      reconProtocol: RECON_PROTOCOL,
+      draftProtocol: DRAFT_PROTOCOL,
+      turnDiscipline: TURN_DISCIPLINE,
+      commitStyle: COMMIT_STYLE,
+      interfacePick: INTERFACE_PICK,
+      doneProtocol: DONE_PROTOCOL,
+      splitProtocol: SPLIT_PROTOCOL,
+    },
+  });
 
   const workers = createWorkers({
     db,
@@ -1647,8 +1490,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     getPreset: (presetId) => getPresetById(presetId),
     getReliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
     presetParams: (preset) => presetAttachmentParams(preset as PresetRow),
-    prepareRespawn: (card, preset, reason, options) =>
-      prepareWorkerRespawn(card, preset as PresetRow, reason, options),
+    prepareRespawn: prepareWorkerRespawn,
     resetAutoContinue,
     errors: {
       cardNotFound: "Card not found.",
@@ -1700,107 +1542,13 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     headSha: string | null;
     changedFiles: number;
   };
-  type QuestionStalenessVerdict = {
-    docRevised: boolean;
-    docRemoved: boolean;
-    checkoutMoved: boolean;
-    commitCount: number;
-    touchedPaths: string[];
-  };
-  // Read-time staleness for a card's open questions: each questioned document
-  // against its ask-time baseline, plus the touched-paths evidence behind a
-  // moved checkout. Advisory only — every question stays answerable.
-  async function stalenessForQuestions(
-    cardId: string,
-    questions: Array<{
-      id: string;
-      options: Array<{ artifact: { absolutePath: string | null } | null }>;
-    }>,
-  ): Promise<Map<string, QuestionStalenessVerdict>> {
-    const out = new Map<string, QuestionStalenessVerdict>();
-    try {
-      const rows = db
-        .prepare(
-          "SELECT artifact_path, artifact_sha256, git_root, head_sha FROM question_evidence WHERE card_id = ?",
-        )
-        .all(cardId) as Array<{
-        artifact_path: string;
-        artifact_sha256: string;
-        git_root: string | null;
-        head_sha: string | null;
-      }>;
-      if (rows.length === 0) return out;
-      const byPath = new Map(rows.map((row) => [row.artifact_path, row]));
-      const heads = new Map<string, string | null>();
-      const touchedByMove = new Map<
-        string,
-        { commitCount: number; paths: string[] }
-      >();
-      const headFor = async (gitRoot: string): Promise<string | null> => {
-        if (!heads.has(gitRoot)) {
-          const current = await recoveryGitEvidence(gitRoot).catch(() => null);
-          heads.set(gitRoot, current?.headSha ?? null);
-        }
-        return heads.get(gitRoot) ?? null;
-      };
-      for (const question of questions) {
-        const flags = {
-          docRevised: false,
-          docRemoved: false,
-          checkoutMoved: false,
-        };
-        let detail = { commitCount: 0, paths: [] as string[] };
-        for (const option of question.options ?? []) {
-          const absolute = option?.artifact?.absolutePath;
-          if (!absolute) continue;
-          const row = byPath.get(absolute);
-          if (!row) continue;
-          const sha = await sha256OfHostFile(absolute);
-          const head = row.git_root ? await headFor(row.git_root) : null;
-          const single: {
-            docRevised: boolean;
-            docRemoved: boolean;
-            checkoutMoved: boolean;
-          } | null = stalenessOf(
-            {
-              artifactSha256: row.artifact_sha256,
-              gitRoot: row.git_root,
-              headSha: row.head_sha,
-            },
-            { sha256: sha, headSha: head },
-          );
-          if (!single) continue;
-          if (single.docRevised) flags.docRevised = true;
-          if (single.docRemoved) flags.docRemoved = true;
-          if (single.checkoutMoved) flags.checkoutMoved = true;
-          if (
-            single.checkoutMoved &&
-            row.git_root &&
-            row.head_sha &&
-            detail.paths.length === 0
-          ) {
-            const key = `${row.git_root} ${row.head_sha}`;
-            if (!touchedByMove.has(key))
-              touchedByMove.set(
-                key,
-                await gitTouchedSince(row.git_root, row.head_sha),
-              );
-            detail = touchedByMove.get(key)!;
-          }
-        }
-        if (flags.docRevised || flags.docRemoved || flags.checkoutMoved) {
-          out.set(question.id, {
-            ...flags,
-            commitCount: detail.commitCount,
-            touchedPaths: detail.paths,
-          });
-        }
-      }
-    } catch {
-      /* advisory only */
-    }
-    return out;
-  }
+  const stalenessForQuestions = createQuestionStaleness({
+    db,
+    recoveryGitEvidence,
+    sha256OfHostFile,
+    gitTouchedSince,
+  });
+
   function runGitIn(
     cwd: string,
     args: string[],
@@ -1849,177 +1597,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     if (existsSync(checkoutPath))
       throw new Error("The worktree folder survived removal.");
   }
-  // Discard evidence: everything discardEligibility (lib/discard-policy)
-  // needs, gathered fresh per call. Exploratory folders are exact paths;
-  // project checkouts resolve through the card's workspace like the worker's.
-  type DiscardEvidence = {
-    status: string;
-    workspaceKind: string;
-    checkoutPath: string | null;
-    dirExists: boolean;
-    isGit: boolean;
-    branch: string | null;
-    hasUpstream: boolean;
-    upstreamRef: string | null;
-    changed: string[];
-    untracked: string[];
-    unpushedCommits: number;
-    stashCount: number;
-    resetTarget: string | null;
-    linkedWorktree: boolean;
-    sharedWith: number;
-  };
   const EXPLORATORY_SCOPE = nodeJoin(
     process.env.HOME ?? "/tmp",
     ".bb",
     "stelow",
     "exploratory",
   );
-  async function discardEvidence(card: CardRow): Promise<DiscardEvidence> {
-    const blank: DiscardEvidence = {
-      status: card.status,
-      workspaceKind: card.workspace_kind,
-      checkoutPath: null,
-      dirExists: false,
-      isGit: false,
-      branch: null,
-      hasUpstream: false,
-      upstreamRef: null,
-      changed: [],
-      untracked: [],
-      unpushedCommits: 0,
-      stashCount: 0,
-      resetTarget: null,
-      linkedWorktree: false,
-      sharedWith: 0,
-    };
-    if (card.workspace_kind === "exploratory") {
-      const explorPath = card.workspace_path;
-      if (!explorPath) return blank;
-      let dirExists = false;
-      try {
-        dirExists = existsSync(explorPath);
-      } catch {
-        dirExists = false;
-      }
-      let sharedWith = 0;
-      try {
-        sharedWith =
-          (
-            db
-              .prepare(
-                "SELECT COUNT(*) AS n FROM cards WHERE id != ? AND status != 'archived' AND workspace_kind = 'exploratory' AND workspace_path = ?",
-              )
-              .get(card.id, explorPath) as { n: number } | undefined
-          )?.n ?? 0;
-      } catch {
-        /* count is advisory */
-      }
-      return { ...blank, checkoutPath: explorPath, dirExists, sharedWith };
-    }
-    const workspace = await cardWorkspace(card);
-    const checkout = workspace?.path ?? null;
-    if (!checkout) return blank;
-    const top = await runGitIn(checkout, ["rev-parse", "--show-toplevel"]);
-    if (!top.ok || !top.stdout.trim())
-      return { ...blank, checkoutPath: checkout };
-    const gitRoot = top.stdout.trim();
-    const [branchR, upstreamR, statusR, unpushedR, stashR] = await Promise.all([
-      runGitIn(gitRoot, ["branch", "--show-current"]),
-      runGitIn(gitRoot, [
-        "rev-parse",
-        "--abbrev-ref",
-        "--symbolic-full-name",
-        "@{u}",
-      ]),
-      runGitIn(gitRoot, ["status", "--porcelain=v1", "--untracked-files=all"]),
-      runGitIn(gitRoot, ["rev-list", "--count", "HEAD", "--not", "--remotes"]),
-      runGitIn(gitRoot, ["stash", "list", "--format=%gd"]),
-    ]);
-    const branch = branchR.ok ? branchR.stdout.trim() || null : null;
-    const changed: string[] = [];
-    const untracked: string[] = [];
-    if (statusR.ok) {
-      for (const line of statusR.stdout.split("\n")) {
-        if (!line) continue;
-        if (line.startsWith("??")) untracked.push(line.slice(3));
-        else changed.push(line.slice(3));
-      }
-    }
-    const unpushedCommits = unpushedR.ok
-      ? Number.parseInt(unpushedR.stdout.trim(), 10) || 0
-      : 0;
-    const stashCount = stashR.ok
-      ? stashR.stdout.split("\n").filter(Boolean).length
-      : 0;
-    // Reset target: parent of the first commit made since the card started
-    // (card-attributable work); no card-era commit means dirty-files-only.
-    let resetTarget: string | null = null;
-    try {
-      const since = Math.floor(card.created_at / 1000);
-      const first = await runGitIn(gitRoot, [
-        "log",
-        "--format=%H",
-        "--reverse",
-        `--since=${since}`,
-        "HEAD",
-        "--",
-      ]);
-      const firstSha = first.ok
-        ? (first.stdout
-            .split("\n")
-            .map((entry) => entry.trim())
-            .filter(Boolean)[0] ?? null)
-        : null;
-      if (firstSha) {
-        const parent = await runGitIn(gitRoot, ["rev-parse", `${firstSha}^`]);
-        resetTarget =
-          parent.ok && parent.stdout.trim() ? parent.stdout.trim() : null;
-      } else {
-        const head = await runGitIn(gitRoot, ["rev-parse", "HEAD"]);
-        resetTarget = head.ok && head.stdout.trim() ? head.stdout.trim() : null;
-      }
-    } catch {
-      resetTarget = null;
-    }
-    let linkedWorktree = false;
-    try {
-      linkedWorktree = lstatSync(nodeJoin(gitRoot, ".git")).isFile();
-    } catch {
-      linkedWorktree = false;
-    }
-    let sharedWith = 0;
-    try {
-      sharedWith =
-        (
-          db
-            .prepare(
-              "SELECT COUNT(*) AS n FROM cards WHERE id != ? AND status != 'archived' AND project_id = ?",
-            )
-            .get(card.id, card.project_id) as { n: number } | undefined
-        )?.n ?? 0;
-    } catch {
-      /* advisory */
-    }
-    return {
-      ...blank,
-      checkoutPath: gitRoot,
-      isGit: true,
-      branch,
-      hasUpstream: upstreamR.ok && Boolean(upstreamR.stdout.trim()),
-      upstreamRef:
-        upstreamR.ok && upstreamR.stdout.trim()
-          ? upstreamR.stdout.trim()
-          : null,
-      changed,
-      untracked,
-      unpushedCommits,
-      stashCount,
-      resetTarget,
-      linkedWorktree,
-      sharedWith,
-    };
-  }
+  const discardEvidence = createDiscardEvidence({
+    db,
+    cardWorkspace,
+    runGitIn,
+  });
+
   async function recoveryGitEvidence(
     path: string,
   ): Promise<RecoveryGitEvidence> {
