@@ -215,6 +215,11 @@ import {
   shouldDoneNudge,
 } from "../lib/auto-continue.mjs";
 import {
+  autoContinueFields,
+  buildContinueInput,
+  buildContinueNudge,
+} from "../lib/worker-continuation.mjs";
+import {
   SPLIT_KEEP_LABEL,
   SPLIT_PROPOSAL_TTL_MS,
   recordSplitAnswer,
@@ -4807,14 +4812,10 @@ is done until done runs.",
                 .send({
                   threadId: card.worker_thread_id,
                   mode: "auto",
-                  input: [
-                    {
-                      type: "text",
-                      text: buildContinueNudge(),
-                      mentions: [],
-                      visibility: "agent-only",
-                    },
-                  ],
+                  input: buildContinueInput(
+                    buildContinueNudge(INTERFACE_PICK),
+                    "private",
+                  ),
                 })
                 .then(() => true)
                 .catch(() => false);
@@ -4824,18 +4825,8 @@ is done until done runs.",
                   autoCount: card.auto_continue_count ?? 0,
                   autoStage: card.auto_continue_stage ?? null,
                 });
-                const autoFields: Parameters<typeof updateCard>[1] = {
-                  activity: "running",
-                  last_idle_at: null,
-                  last_error: null,
-                  auto_continue_count: autoNext.count,
-                  auto_continue_stage: autoNext.stage,
-                };
-                // A null read is "unknown", not progress: never blank the
-                // card's last text on it, or the trail and the stall detector
-                // below lose their reference point.
-                if (lastOutput != null)
-                  autoFields.last_assistant_text = lastOutput;
+                const autoFields: Parameters<typeof updateCard>[1] =
+                  autoContinueFields(autoNext, lastOutput);
                 updateCard(cardId, autoFields);
                 return;
               }
@@ -4985,13 +4976,6 @@ means the worker is waiting on input it never asked for.",
   const AUDIT_DONE_NUDGE =
     "The workflow is at the audit stage. If audit work remains, finish it first. Then commit completion with `bb stelow done` — it verifies in \
 code and refuses with the fix when something is missing. Never just announce completion and stop: only done completes the card.";
-  function buildContinueNudge(): string {
-    return `Continue the Stelow workflow now from the current stage. Re-read your state.md and transitions.md first, then keep working. Only \
-a visible structured form on the card counts as a pending question — a prior chat message or split-proposal record does not. If the user cannot \
-see a form and the stage needs input, submit the same bb stelow ask once; the host refuses duplicates when a real form is open. Never claim to \
-be waiting based on memory alone. ${INTERFACE_PICK} Unselected gates approve and advance themselves; selected gates use a structured ask. If \
-a bb stelow command fails, read its stderr once and continue — do not spend the turn debugging the CLI.`;
-  }
 
   // Decision API, review policy, migrations, handlers, and execution seams
   // live behind one factory. Preset judging remains host-owned and injected.
@@ -6522,12 +6506,12 @@ is already pending on the card, do NOT re-ask it — the answer arrives here on 
 that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — explore has no stages. When the \
 stage deliverable is complete, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the \
 turn debugging the CLI; report the exact error and move on.`
-              : buildContinueNudge();
+              : buildContinueNudge(INTERFACE_PICK);
         try {
           await bb.sdk.threads.send({
             threadId: card.worker_thread_id,
             mode: "auto",
-            input: [{ type: "text", text: nudge, mentions: [] }],
+            input: buildContinueInput(nudge, "public"),
           });
           // A manual resume is a fresh human verdict that the worker should be
           // working: reset the auto-continue budget with it, or the next fresh

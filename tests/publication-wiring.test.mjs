@@ -141,7 +141,11 @@ assert.match(
 );
 assert.match(server, /workers\.continuingEnvironment\(\s*card\s*,/, "later workers reuse the card's selected BB environment");
 assert.match(server, /text: AUDIT_DONE_NUDGE,\s*mentions: \[\],\s*visibility: "agent-only"/, "automatic audit recovery stays out of the user conversation");
-assert.match(server, /text: buildContinueNudge\(\),\s*mentions: \[\],\s*visibility: "agent-only"/, "automatic continuations stay out of the user conversation");
+assert.match(
+  server,
+  /input: buildContinueInput\([\s\S]*?buildContinueNudge\(INTERFACE_PICK\)[\s\S]*?"private"/,
+  "automatic continuations stay out of the user conversation",
+);
 
 assert.match(publication, /title="Git changes"/, "Done cards have a dedicated Git changes panel");
 assert.match(publication, /Commit workspace…/, "commit requires an explicit user action");

@@ -3,7 +3,21 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
-import { MAX_AUTO_CONTINUES, MAX_DONE_NUDGES, ensureAutoContinueColumns, lastTurnAdvancedStages, nextAutoContinue, resetAutoContinue, shouldAutoContinue, shouldDoneNudge } from "../lib/auto-continue.mjs";
+import {
+  MAX_AUTO_CONTINUES,
+  MAX_DONE_NUDGES,
+  ensureAutoContinueColumns,
+  lastTurnAdvancedStages,
+  nextAutoContinue,
+  resetAutoContinue,
+  shouldAutoContinue,
+  shouldDoneNudge,
+} from "../lib/auto-continue.mjs";
+import {
+  autoContinueFields,
+  buildContinueInput,
+  buildContinueNudge,
+} from "../lib/worker-continuation.mjs";
 
 // Regression: a build worker narrated progress ("Stage done, moving on")
 // and idled after every stage — the provider ends a turn on any final
@@ -30,6 +44,39 @@ assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 2, autoStage: "sh
 assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 9, autoStage: "context" }), { count: 1, stage: "shape" }, "a new stage restarts the count");
 assert.deepEqual(nextAutoContinue({ stage: "shape", autoCount: 0, autoStage: null }), { count: 1, stage: "shape" }, "the first nudge counts one");
 assert.deepEqual(resetAutoContinue(), { count: 0, stage: null }, "manual resume/restart wipes the budget");
+
+// Continuation transport is private for automatic nudges and public for manual
+// retries. The explicit public path is the negative control for private visibility.
+const nudge = buildContinueNudge("Interface choice: use the selected form.");
+assert.match(nudge, /Interface choice: use the selected form\./, "the continuation keeps interface guidance");
+assert.match(nudge, /a prior chat message or split-proposal record does not/, "past messages are not pending questions");
+assert.match(nudge, /host refuses duplicates when a real form is open/, "invisible questions cannot bypass duplicate asks");
+assert.match(nudge, /Never claim to be waiting based on memory alone/, "memory cannot manufacture a wait");
+const privateInput = buildContinueInput(nudge, "private");
+const publicInput = buildContinueInput(nudge, "public");
+assert.equal(privateInput[0].visibility, "agent-only", "automatic continuation is private");
+assert.equal(publicInput[0].visibility, undefined, "manual continuation remains public");
+assert.equal(privateInput[0].text, publicInput[0].text, "both paths share the same continuation copy");
+assert.deepEqual(privateInput[0].mentions, [], "continuation input carries no mentions");
+
+const recorded = autoContinueFields({ count: 2, stage: "shape" }, "fresh output");
+assert.deepEqual(
+  {
+    activity: recorded.activity,
+    idle: recorded.last_idle_at,
+    error: recorded.last_error,
+  },
+  { activity: "running", idle: null, error: null },
+  "a successful continuation returns the card to a healthy running state",
+);
+assert.equal(recorded.auto_continue_count, 2, "a successful continuation records its budget");
+assert.equal(recorded.auto_continue_stage, "shape", "budget recording keeps the current stage");
+assert.equal(recorded.last_assistant_text, "fresh output", "fresh output is recorded");
+assert.equal(
+  autoContinueFields({ count: 3, stage: "context" }, null).last_assistant_text,
+  undefined,
+  "unknown output does not blank the previous trail",
+);
 
 // Done-nudge: reaching audit is not completing (the old audit+idle ⇒
 // completed inference is gone — it made narrate-and-stop indistinguishable
@@ -112,35 +159,35 @@ assert.equal(lastTurnAdvancedStages("nope"), false, "non-array history reads as 
 assert.equal(lastTurnAdvancedStages([{ type: "turn/completed", data: {} }, null, { nope: 1 }]), false, "odd shapes never throw, they just miss");
 assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing");
 
-// Server contract: the idle branch consults the guard and resumes through
-// the shared continue copy; manual recovery paths reset the budget.
+// Server contract: the idle branch sends the shared nudge privately only after
+// a successful send, while manual recovery sends the same transport publicly.
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
+const autoStart = serverSource.indexOf("const autoSent = await");
+const autoEnd = serverSource.indexOf("// Backfill last_idle_at", autoStart);
+const autoBlock = serverSource.slice(autoStart, autoEnd);
+const retryStart = serverSource.indexOf("async retryWorker({ cardId })");
+const retryEnd = serverSource.indexOf("async startWorker({ cardId })", retryStart);
+const retryBlock = serverSource.slice(retryStart, retryEnd);
 assert.match(serverSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
 assert.match(serverSource, /cardStatus: card\.status/, "the audit watchdog receives the persisted card completion state");
-const privateContinuePattern = new RegExp([
-  String.raw`bb\.sdk\.threads\s*\n?\s*\.send\(\{`,
-  String.raw`[\s\S]*?threadId: card\.worker_thread_id,`,
-  String.raw`[\s\S]*?mode: "auto",`,
-  String.raw`[\s\S]*?input: \[[\s\S]*?text: buildContinueNudge\(\),`,
-  String.raw`[\s\S]*?mentions: \[\],[\s\S]*?visibility: "agent-only"`,
-].join(""));
 assert.match(
-  serverSource,
-  privateContinuePattern,
+  autoBlock,
+  /input: buildContinueInput\([\s\S]*?buildContinueNudge\(INTERFACE_PICK\)[\s\S]*?"private"/,
   "auto-continue sends the shared continue nudge privately in place",
 );
-assert.match(
-  serverSource,
-  /auto_continue_count:\s*autoNext\.count,\s*auto_continue_stage:\s*autoNext\.stage/,
-  "a resume records its budget use",
-);
-assert.match(serverSource, /function buildContinueNudge\(\): string/, "manual Retry and auto-continue share one nudge");
-assert.match(
-  serverSource,
-  /a visible structured form on the card counts as a pending question/,
-  "the recovery nudge cannot wait on an invisible question",
-);
+const successOrder = [
+  "if (autoSent)",
+  "nextAutoContinue({",
+  "autoContinueFields(autoNext, lastOutput)",
+  "updateCard(cardId, autoFields)",
+  "return;",
+].map((token) => autoBlock.indexOf(token));
+assert.ok(successOrder.every((position) => position >= 0), "successful auto-continue records through every step");
+assert.deepEqual(successOrder, [...successOrder].sort((a, b) => a - b), "budget recording follows a successful send");
+assert.match(retryBlock, /: buildContinueNudge\(INTERFACE_PICK\);/, "manual build Retry shares the extracted nudge");
+assert.match(retryBlock, /input: buildContinueInput\(nudge, "public"\)/, "manual Retry stays public");
+assert.doesNotMatch(retryBlock, /agent-only/, "manual Retry never inherits private visibility");
 assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
 assert.match(serverSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
 assert.match(serverSource, /expiredCount: openExpiredQuestionIds\(cardRow\.id\)\.length,/, "the dispatcher receives the recoverable expired count");

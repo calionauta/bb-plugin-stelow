@@ -16,6 +16,7 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create-prompt.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/worker-continuation.mjs"), "utf8"),
 ].join("\n");
 const cliRegistry = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli-registry.ts"), "utf8");
 

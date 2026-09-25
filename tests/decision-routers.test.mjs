@@ -169,7 +169,7 @@ assert.ok(vetBody.includes("autoContinueQuestions()"), "the veto asks the single
 assert.ok(vetBody.includes("resolveAutoContinue({"), "the veto resolves through the lib cascade");
 const seamVetoAt = server.indexOf("const vetted = await vetAutoContinueNudge(");
 assert.ok(seamVetoAt >= 0, "the resume path consults the veto");
-const sendAt = server.indexOf("buildContinueNudge()", seamVetoAt);
+const sendAt = server.indexOf("buildContinueNudge(INTERFACE_PICK)", seamVetoAt);
 assert.ok(sendAt > seamVetoAt, "the veto runs before any resume is sent");
 assert.ok(server.slice(seamVetoAt, sendAt).includes("if (!vetted)"), "a veto falls through to the paused path");
 assert.match(server, /const autoDecision = shouldAutoContinue\(\{/, "the heuristic gate still owns the resume decision");
