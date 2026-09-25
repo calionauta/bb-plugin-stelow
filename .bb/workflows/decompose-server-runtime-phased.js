@@ -46,15 +46,15 @@ const results = [];
 let previous = "No prior slice.";
 for (let index = 0; index < slices.length; index += 1) {
   const [id, goal] = slices[index];
-  const phase = phaseNames[id];
-  phase(phase);
+  const phaseName = phaseNames[id];
+  phase(phaseName);
   const implementation = await agent(`${common}
 Phase ${index + 1}/${slices.length}: ${id}.
 Goal: ${goal}
 Prior phase report: ${previous}
-Start by measuring the exact symbols and tests affected. Complete only this phase. Keep the composition root small and the extracted module cohesive. If the source is already partly extracted, verify and improve the real boundary rather than duplicating it. Commit and push the green phase.`, { label: `implement:${id}`, phase, provider: "acp-opencode", model: "opencode/space-bunny-free", reasoningLevel: "medium" });
+Start by measuring the exact symbols and tests affected. Complete only this phase. Keep the composition root small and the extracted module cohesive. If the source is already partly extracted, verify and improve the real boundary rather than duplicating it. Commit and push the green phase.`, { label: `implement:${id}`, phase: phaseName, provider: "acp-opencode", model: "opencode/space-bunny-free", reasoningLevel: "medium" });
   const review = await agent(`${common}
-Fresh adversarial review of phase ${id}. Inspect the actual diff and current source, not the implementation report. Check behavior parity, import direction, cycles, RPC/CLI registration, lifecycle, fail-soft paths, readable source shape, and test value. Run focused tests and one negative control. Fix every real issue, commit and push. Return exact before/after line and function counts plus remaining blockers; do not start a broad repair loop.`, { label: `review:${id}`, phase, provider: "acp-opencode", model: "opencode/space-bunny-free", reasoningLevel: "medium" });
+Fresh adversarial review of phase ${id}. Inspect the actual diff and current source, not the implementation report. Check behavior parity, import direction, cycles, RPC/CLI registration, lifecycle, fail-soft paths, readable source shape, and test value. Run focused tests and one negative control. Fix every real issue, commit and push. Return exact before/after line and function counts plus remaining blockers; do not start a broad repair loop.`, { label: `review:${id}`, phase: phaseName, provider: "acp-opencode", model: "opencode/space-bunny-free", reasoningLevel: "medium" });
   results.push({ id, implementation, review });
   previous = review;
 }
