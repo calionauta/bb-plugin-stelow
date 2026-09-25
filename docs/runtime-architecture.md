@@ -138,7 +138,9 @@ checks that each layer imports only the layers below it.
 executes lifecycle events, scheduler cleanup, worker skill isolation, RPC
 registration, CLI help, and preview disposal. The full suite also checks every
 RPC method has a handler and exercises representative success, refusal, and
-disposal paths.
+disposal paths. `tests/debt-baseline.test.mjs` pins the whole-tree size census
+and the exact inherited set below; it fails when a number grows, when a new
+oversized file appears, and when the gate starts or stops reporting an entry.
 
 The shape gate compares changed source with `origin/master` and applies the
 same boundary to the budget gate. It reports inherited debt separately only
@@ -154,12 +156,49 @@ into a second copy.
 The budget check reports no file or function over its limit among the changed
 sources. Everything it still reports is inherited, and the gate prints it with
 the baseline it matched so the number can be checked. The full inherited set is
-thirteen entries across six files: the GitHub issue automation
-(`server/github-issues.ts`, 939 lines, plus `runGithubMigrations` and the four
-functions inside `createGithubAutomation`), the CLI bundle writer, review
-subject and split reporter, the workflow seed, the Build dialog's submit
-handler, `lib/trackable-evidence.mjs`'s evidence conditions, and one oversized
-test callback in `tests/server-cards.test.mjs`. Those predate the extraction.
+thirteen entries across eight files:
+
+| File | Entry | Lines (baseline) |
+| --- | --- | --- |
+| `server/github-issues.ts` | the file | 942 (942) |
+| `server/github-issues.ts` | `createGithubAutomation` | 701 (709) |
+| `server/github-issues.ts` | `runGithubMigrations` | 64 (64) |
+| `server/github-issues.ts` | `createGithubAutomation/runSingleAutomationRule` | 53 (53) |
+| `server/github-issues.ts` | `createGithubAutomation/listGithubCandidates` | 58 (58) |
+| `server/github-issues.ts` | `createGithubAutomation/postGithubCompletion` | 59 (59) |
+| `server/runtime/cli/cli-bundle-writer.ts` | `writeBundle` | 68 (104) |
+| `server/runtime/cli/cli-review-subject.ts` | `deliverableSubject` | 69 (66) |
+| `server/runtime/cli/cli-split.ts` | `reportSplit` | 61 (59) |
+| `server/runtime/workflow-seeding.ts` | `seedWorkflow` | 72 (74) |
+| `components/creation/create-build-dialog.tsx` | `useCreateBuildSubmit` | 65 (65) |
+| `lib/trackable-evidence.mjs` | `evidenceConditions` | 74 (74) |
+| `tests/server-cards.test.mjs` | `callback#4` | 82 (84) |
+
+Those predate the extraction. `reportSplit` shows the caveat below in practice:
+it is accepted as inherited while two lines over its matched baseline.
+
+### Debt the gate cannot see
+
+Both gates compare against the merge base, so they only see files this branch
+touched. Oversized code in an unchanged file is invisible to them.
+`tests/debt-baseline.test.mjs` is the census that covers the rest: it walks
+every owned file, records each one over 400 lines and each function over 50,
+and pins them to a ratchet. Paying debt down lowers a number there; nothing
+raises one without a deliberate edit.
+
+Today the whole-tree census is five oversized files and fifty-six oversized
+functions, of which the diff-scoped gate reports one file and five functions.
+The two named areas of remaining work are:
+
+- `server/github-issues.ts` — 942 lines, with `createGithubAutomation` at 701
+  (a 40-line `createCardFromGithub`, a 39-line `saveAutomationRule`, and 41-line
+  issue-linking seams inside it), plus 229 lines of
+  `useGithubDialogState` and the dialog components under `components/github/`,
+  none of which this branch has touched.
+- the decision API — `createDecisionApi` at 319 lines with an 84-line
+  `setDecisionPoint`, and `createDecisionApiSeams` at 271 with a 55-line
+  `vetAutoContinue`. `server/decision-api.ts` sits exactly on the 400-line file
+  limit, so any addition to it is a violation the moment it is edited.
 
 One caveat, because the gate is a heuristic and not a lineage record: when a
 function has no same-named baseline it is matched to the most similar function
