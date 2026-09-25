@@ -128,7 +128,7 @@ const fenced = (value) => `reasoning\n\`\`\`json\n${JSON.stringify(value)}\n\`\`
     return {
       ok: true,
       text: fenced({ verdicts: [
-        { id: "risks", status: "met", confidence: 0.91 },
+        { id: "risks", status: "met", confidence: 0.8 },
         { id: "invented", status: "met", confidence: 1 },
       ] }),
       error: null,
