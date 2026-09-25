@@ -210,7 +210,7 @@ assert.match(
 );
 assert.match(
   server,
-  /presentation:\s*\{\s*label:\s*askTimelineLabels\(\{\s*batched,\s*count:\s*groups\.length,?\s*\}\),?\s*\},?/, 
+  /presentation:\s*\{\s*label:\s*askTimelineLabels\(\{\s*batched,\s*count:\s*groups\.length,?\s*\}\),?\s*\},?/,
   "the blocking ask names its wait on BB's timeline row instead of a generic label",
 );
 assert.match(
