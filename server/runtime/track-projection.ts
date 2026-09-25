@@ -53,73 +53,71 @@ export function strategyRounds(
   return normalizeHistory(row.research_strategies);
 }
 
+async function readReseedConfig(
+  deps: TrackProjectionDeps,
+  card: WorkerCard,
+  rootPath: string,
+): Promise<ReturnType<typeof parseWorkflowConfig> | null> {
+  if (!card.dir_hash) return null;
+  try {
+    const stateDir = await workflowStateDir(
+      deps.bb,
+      rootPath,
+      card.id,
+      card.dir_hash,
+    );
+    if (!stateDir) return null;
+    const content = await deps.bb.sdk.files
+      .read({ path: join(stateDir, "state.md") })
+      .then((file) => file.content)
+      .catch(() => null);
+    return typeof content === "string" ? parseWorkflowConfig(content) : null;
+  } catch {
+    return null;
+  }
+}
+async function markThreadRunning(
+  deps: TrackProjectionDeps,
+  card: WorkerCard,
+  lastOutput: string | null,
+): Promise<void> {
+  const questionIds = await deps.syncOpenQuestionInbox(card);
+  if (questionIds === null) return;
+  if (questionIds.length > 0) {
+    // Waiting is activity, never board position: the card stays in its
+    // column (Doing) while the question waits.
+    deps.updateCard(card.id, questionWaitUpdates(lastOutput));
+  } else {
+    const updates: Record<string, unknown> = {
+      activity: "running" as const,
+      last_assistant_text: lastOutput,
+    };
+    if (card.status === "pending") updates.status = "in-progress";
+    deps.updateCard(card.id, updates);
+  }
+}
+function noteAgentOutput(
+  deps: TrackProjectionDeps,
+  card: WorkerCard,
+  lastOutput: string | null,
+): void {
+  if (lastOutput && lastOutput !== card.last_assistant_text) {
+    deps.logCardComment(
+      card.id,
+      "card",
+      card.id,
+      "agent",
+      stripMessageDirectives(lastOutput),
+    );
+  }
+}
+
 export function createTrackProjection(deps: TrackProjectionDeps) {
-  /** The card's own workflow config, read from its verified state dir. */
-  async function readReseedConfig(
-    card: WorkerCard,
-    rootPath: string,
-  ): Promise<ReturnType<typeof parseWorkflowConfig> | null> {
-    if (!card.dir_hash) return null;
-    try {
-      const stateDir = await workflowStateDir(
-        deps.bb,
-        rootPath,
-        card.id,
-        card.dir_hash,
-      );
-      if (!stateDir) return null;
-      const content = await deps.bb.sdk.files
-        .read({ path: join(stateDir, "state.md") })
-        .then((file) => file.content)
-        .catch(() => null);
-      return typeof content === "string" ? parseWorkflowConfig(content) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * A worker that produced output is running, not waiting — unless a question
-   * is open, in which case the card keeps its column and the pending question
-   * carries the wait.
-   */
-  async function markThreadRunning(
-    card: WorkerCard,
-    lastOutput: string | null,
-  ): Promise<void> {
-    const questionIds = await deps.syncOpenQuestionInbox(card);
-    if (questionIds === null) return;
-    if (questionIds.length > 0) {
-      // Waiting is activity, never board position: the card stays in its
-      // column (Doing) while the question waits.
-      deps.updateCard(card.id, questionWaitUpdates(lastOutput));
-    } else {
-      const updates: Record<string, unknown> = {
-        activity: "running" as const,
-        last_assistant_text: lastOutput,
-      };
-      if (card.status === "pending") updates.status = "in-progress";
-      deps.updateCard(card.id, updates);
-    }
-  }
-
-  /** Trail a worker's final message on the card, once per new output. */
-  function noteAgentOutput(
-    card: WorkerCard,
-    lastOutput: string | null,
-  ): void {
-    if (lastOutput && lastOutput !== card.last_assistant_text) {
-      deps.logCardComment(
-        card.id,
-        "card",
-        card.id,
-        "agent",
-        stripMessageDirectives(lastOutput),
-      );
-    }
-  }
-
-  return { readReseedConfig, markThreadRunning, noteAgentOutput };
+  return {
+    readReseedConfig: readReseedConfig.bind(null, deps),
+    markThreadRunning: markThreadRunning.bind(null, deps),
+    noteAgentOutput: noteAgentOutput.bind(null, deps),
+  };
 }
 
 export type TrackProjection = ReturnType<typeof createTrackProjection>;

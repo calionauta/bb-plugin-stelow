@@ -30,75 +30,74 @@ export type QuestionInboxDeps = {
   ) => void;
 };
 
-export function createQuestionInbox(deps: QuestionInboxDeps) {
-  /** Expired questions awaiting an answer, in expiry order. */
-  function openExpiredQuestionIds(cardId: string): string[] {
-    return (
-      deps.db
-        .prepare(
-          "SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at ASC",
-        )
-        .all(cardId) as Array<{ id: string }>
-    ).map((row) => `expired:${row.id}`);
-  }
-
-  function pendingAsks(
-    list: Awaited<
-      ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>
-    >,
-  ): PendingAsk[] {
-    return list.filter(
-      (entry): entry is PendingAsk =>
-        entry.origin?.kind === "plugin" && entry.status === "pending",
+function openExpiredQuestionIds(
+  deps: QuestionInboxDeps,
+cardId: string): string[] {
+  return (
+    deps.db
+      .prepare(
+        "SELECT id FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at ASC",
+      )
+      .all(cardId) as Array<{ id: string }>
+  ).map((row) => `expired:${row.id}`);
+}
+function pendingAsks(
+  deps: QuestionInboxDeps,
+  list: Awaited<
+    ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>
+  >,
+): PendingAsk[] {
+  return list.filter(
+    (entry): entry is PendingAsk =>
+      entry.origin?.kind === "plugin" && entry.status === "pending",
+  );
+}
+async function fetchPendingAsks(
+  deps: QuestionInboxDeps,
+  threadId: string | null,
+): Promise<PendingAsk[] | null> {
+  if (!threadId) return [];
+  try {
+    return pendingAsks(
+      deps,
+      await deps.bb.sdk.threads.interactions.list({ threadId }),
     );
+  } catch {
+    // A failed read is unknown, not proof that a question disappeared.
+    // Callers must preserve the existing question state in this case.
+    return null;
   }
+}
+async function syncOpenQuestionInbox(
+  deps: QuestionInboxDeps,
+  card: WorkerCard,
+): Promise<string[] | null> {
+  const active = await fetchPendingAsks(deps, card.worker_thread_id);
+  if (active === null) return null;
+  const questionIds = [
+    ...active.map((entry) => entry.id),
+    ...openExpiredQuestionIds(deps, card.id),
+  ];
+  deps.syncPendingQuestionInbox(card, questionIds);
+  return questionIds;
+}
+function hasOpenQuestions(
+  deps: QuestionInboxDeps,
+  cardId: string,
+  questionIds: string[] | null,
+): boolean {
+  return questionIds !== null
+    ? questionIds.length > 0
+    : openExpiredQuestionIds(deps, cardId).length > 0;
+}
 
-  /** The card's live asks, or null when the host could not be asked. */
-  async function fetchPendingAsks(
-    threadId: string | null,
-  ): Promise<PendingAsk[] | null> {
-    if (!threadId) return [];
-    try {
-      return pendingAsks(
-        await deps.bb.sdk.threads.interactions.list({ threadId }),
-      );
-    } catch {
-      // A failed read is unknown, not proof that a question disappeared.
-      // Callers must preserve the existing question state in this case.
-      return null;
-    }
-  }
-
-  /** Sync the inbox to the card's open questions and report their ids. */
-  async function syncOpenQuestionInbox(
-    card: WorkerCard,
-  ): Promise<string[] | null> {
-    const active = await fetchPendingAsks(card.worker_thread_id);
-    if (active === null) return null;
-    const questionIds = [
-      ...active.map((entry) => entry.id),
-      ...openExpiredQuestionIds(card.id),
-    ];
-    deps.syncPendingQuestionInbox(card, questionIds);
-    return questionIds;
-  }
-
-  /** Whether the card still owes the user an answer; unknown reads as open. */
-  function hasOpenQuestions(
-    cardId: string,
-    questionIds: string[] | null,
-  ): boolean {
-    return questionIds !== null
-      ? questionIds.length > 0
-      : openExpiredQuestionIds(cardId).length > 0;
-  }
-
+export function createQuestionInbox(deps: QuestionInboxDeps) {
   return {
-    openExpiredQuestionIds,
-    pendingAsks,
-    fetchPendingAsks,
-    syncOpenQuestionInbox,
-    hasOpenQuestions,
+    openExpiredQuestionIds: openExpiredQuestionIds.bind(null, deps),
+    pendingAsks: pendingAsks.bind(null, deps),
+    fetchPendingAsks: fetchPendingAsks.bind(null, deps),
+    syncOpenQuestionInbox: syncOpenQuestionInbox.bind(null, deps),
+    hasOpenQuestions: hasOpenQuestions.bind(null, deps),
   };
 }
 

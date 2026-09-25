@@ -26,8 +26,6 @@ import { workflowStateDir } from "./workflow-state.js";
 import { ERRORS } from "./card-errors.js";
 import type { RuntimeServices } from "./runtime-services.js";
 import type { CardLedger } from "./card-ledger.js";
-import type { GitEvidence } from "./git-evidence.js";
-import type { QuestionInbox } from "./question-inbox.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -80,16 +78,7 @@ function createCardReads(
     cardWorkspace: services.cardWorkspace,
     workerEnvironmentOf: deps.workerEnvironmentOf,
   });
-  const asks = createAskArtifacts({
-    bb,
-    db,
-    now,
-    getCard: services.getCard,
-    cardWorkspace: services.cardWorkspace,
-    cardStageSlug: seams.cardStageSlug,
-    gitEvidence: git.recoveryGitEvidence,
-    sha256OfHostFile: git.sha256OfHostFile,
-  });
+  const asks = createAskArtifacts(askDeps(deps, seams, git));
   const previewHost = createPreviewHost({ bb, now });
   return {
     seams,
@@ -116,17 +105,40 @@ function createCardReads(
       cardWorkspace: services.cardWorkspace,
       syncOpenQuestionInbox: questions.syncOpenQuestionInbox,
     }),
-    researchArtifacts: createResearchArtifactRuntime({
-      bb,
-      cardWorkspace: services.cardWorkspace,
-      workflowStateDir: (rootPath, workflowId, dirHash) =>
-        workflowStateDir(bb, rootPath, workflowId, dirHash),
-      strategyRounds,
-      joinPath: join,
-      workspaceRelative,
-      errors: { workspaceUnavailable: ERRORS.workspaceUnavailable },
-    }),
+    researchArtifacts: createResearchArtifacts(deps),
   };
 }
 
+/** The research round artifacts a lightweight track writes and reads back. */
+function createResearchArtifacts(deps: ReadRuntimeDeps) {
+  return createResearchArtifactRuntime({
+    bb: deps.bb,
+    cardWorkspace: deps.services.cardWorkspace,
+    workflowStateDir: (rootPath, workflowId, dirHash) =>
+      workflowStateDir(deps.bb, rootPath, workflowId, dirHash),
+    strategyRounds,
+    joinPath: join,
+    workspaceRelative,
+    errors: { workspaceUnavailable: ERRORS.workspaceUnavailable },
+  });
+}
+
 export type ReadRuntime = ReturnType<typeof createReadRuntime>;
+
+/** The ask seam reads the card's stage and digests through the git seam. */
+function askDeps(
+  deps: ReadRuntimeDeps,
+  seams: ReturnType<typeof createCardSeams>,
+  git: WorkspaceReads["git"],
+) {
+  return {
+    bb: deps.bb,
+    db: deps.db,
+    now: deps.now,
+    getCard: deps.services.getCard,
+    cardWorkspace: deps.services.cardWorkspace,
+    cardStageSlug: seams.cardStageSlug,
+    gitEvidence: git.recoveryGitEvidence,
+    sha256OfHostFile: git.sha256OfHostFile,
+  };
+}

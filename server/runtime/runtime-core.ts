@@ -56,6 +56,7 @@ export function createRuntimeCore(bb: BbPluginApi) {
     draftProtocol: WORKER_PROTOCOL_CLAUSES.draftProtocol,
   });
   const workers = createWorkerRuntime({ bb, db, now, services, ledger, prompts });
+  const deps = { bb, db, now, services, ledger, prompts };
   return {
     bb,
     db,
@@ -66,28 +67,13 @@ export function createRuntimeCore(bb: BbPluginApi) {
     pluginUpdates,
     ...services,
     ...workers,
-    drafting: createDraftRuntime({
-      bb, db, now, services, ledger, prompts, ...workers,
-    }),
-    requestGatePreReview: createGatePreReviewRuntime({
-      bb, db, now, services, ledger, prompts, ...workers,
-    }),
+    drafting: createDraftRuntime({ ...deps, ...workers }),
+    requestGatePreReview: createGatePreReviewRuntime({ ...deps, ...workers }),
     ...createReadRuntime({
-      bb,
-      db,
-      now,
-      services,
-      ledger,
+      ...deps,
       workerEnvironmentOf: workers.workers.workerEnvironmentOf,
     }),
-    decision: createDecisionSurface({
-      db,
-      bb,
-      now,
-      judgeViaPreset: services.judgeViaPreset,
-      presetExists: (id) => services.presetServer.getPresetById(id) !== null,
-    }),
-    trackCapabilities: createTrackCapabilities(),
+    ...createDecisionAndTrackCore(bb, db, now, services),
     roundRelPath,
     strategyList,
     strategyRounds,
@@ -99,5 +85,24 @@ export function createRuntimeCore(bb: BbPluginApi) {
     ensureProjectArtifacts,
     runHelper,
     projectRoot,
+  };
+}
+
+/** The decision client and the track catalog the surfaces reach for. */
+function createDecisionAndTrackCore(
+  bb: BbPluginApi,
+  db: ReturnType<BbPluginApi["storage"]["database"]>,
+  now: () => number,
+  services: ReturnType<typeof createRuntimeServices>,
+) {
+  return {
+    decision: createDecisionSurface({
+      db,
+      bb,
+      now,
+      judgeViaPreset: services.judgeViaPreset,
+      presetExists: (id: string) => services.presetServer.getPresetById(id) !== null,
+    }),
+    trackCapabilities: createTrackCapabilities(),
   };
 }

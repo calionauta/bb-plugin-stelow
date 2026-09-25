@@ -29,62 +29,57 @@ export type ClaimCoordinationDeps = {
   now: () => number;
 };
 
+function lockBlockedSummary(
+  deps: ClaimCoordinationDeps,
+  file: string,
+  holderName: string,
+  expiresAt: number,
+): string {
+  const when = new Date(expiresAt).toLocaleString();
+  const resumeNotice = "no action needed; the host resumes this card on release.";
+  return `Waiting on ${file} (held by card "${holderName}"). Releases automatically when that card finishes the file or by ${when} — ${resumeNotice}`;
+}
+async function releaseCardClaimsAndNotify(
+  deps: ClaimCoordinationDeps,
+cardId: string): Promise<void> {
+  let released: Array<{ workspacePath: string; file: string }>;
+  try {
+    released = releaseAllCardClaims(deps.db, cardId);
+  } catch {
+    return;
+  }
+  if (released.length === 0) return;
+  const byWorkspace = new Map<string, string[]>();
+  for (const row of released) {
+    const list = byWorkspace.get(row.workspacePath) ?? [];
+    list.push(row.file);
+    byWorkspace.set(row.workspacePath, list);
+  }
+  for (const [workspacePath, files] of byWorkspace) {
+    await deps.notifyClaimWaiters(workspacePath, files);
+  }
+}
+function escalateIfStalled(
+  deps: ClaimCoordinationDeps,
+cardId: string): void {
+  const fresh = deps.getCard(cardId);
+  if (!fresh || fresh.activity !== "idle") return;
+  try {
+    const touched =
+      refreshStalledPaused(deps.db, { cardId, nowMs: deps.now() }) +
+      refreshEventSeverity(deps.db, { cardId, nowMs: deps.now() });
+    if (touched > 0) deps.bb.realtime.publish("inbox-changed", { cardId });
+  } catch {
+    /* advisory only */
+  }
+}
+
 export function createClaimCoordination(deps: ClaimCoordinationDeps) {
-  /** What a waiting card is told: who holds the file, and what frees it. */
-  function lockBlockedSummary(
-    file: string,
-    holderName: string,
-    expiresAt: number,
-  ): string {
-    const when = new Date(expiresAt).toLocaleString();
-    const resumeNotice = "no action needed; the host resumes this card on release.";
-    return `Waiting on ${file} (held by card "${holderName}"). Releases automatically when that card finishes the file or by ${when} — ${resumeNotice}`;
-  }
-
-  /**
-   * Release everything a finished card held and wake exactly the cards that
-   * were parked on those files. A failed release is a no-op: the TTL still
-   * frees the claims, and a half-released workspace must not page anyone.
-   */
-  async function releaseCardClaimsAndNotify(cardId: string): Promise<void> {
-    let released: Array<{ workspacePath: string; file: string }>;
-    try {
-      released = releaseAllCardClaims(deps.db, cardId);
-    } catch {
-      return;
-    }
-    if (released.length === 0) return;
-    const byWorkspace = new Map<string, string[]>();
-    for (const row of released) {
-      const list = byWorkspace.get(row.workspacePath) ?? [];
-      list.push(row.file);
-      byWorkspace.set(row.workspacePath, list);
-    }
-    for (const [workspacePath, files] of byWorkspace) {
-      await deps.notifyClaimWaiters(workspacePath, files);
-    }
-  }
-
-  /**
-   * Stalled cards keep their column; their open paused event carries the age
-   * instead. Shared by all three track syncs so paused means paused
-   * everywhere. Guarded to idle cards and wrapped: escalation is advisory and
-   * must never break a sync (e.g. dispose closing the DB mid-poll).
-   */
-  function escalateIfStalled(cardId: string): void {
-    const fresh = deps.getCard(cardId);
-    if (!fresh || fresh.activity !== "idle") return;
-    try {
-      const touched =
-        refreshStalledPaused(deps.db, { cardId, nowMs: deps.now() }) +
-        refreshEventSeverity(deps.db, { cardId, nowMs: deps.now() });
-      if (touched > 0) deps.bb.realtime.publish("inbox-changed", { cardId });
-    } catch {
-      /* advisory only */
-    }
-  }
-
-  return { lockBlockedSummary, releaseCardClaimsAndNotify, escalateIfStalled };
+  return {
+    lockBlockedSummary: lockBlockedSummary.bind(null, deps),
+    releaseCardClaimsAndNotify: releaseCardClaimsAndNotify.bind(null, deps),
+    escalateIfStalled: escalateIfStalled.bind(null, deps),
+  };
 }
 
 export type ClaimCoordination = ReturnType<typeof createClaimCoordination>;
