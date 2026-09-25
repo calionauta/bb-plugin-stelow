@@ -25,6 +25,8 @@ Unknown modes, missing routes, low confidence, timeouts, malformed answers, and 
 
 These points are centralized so the UI, persistence, thresholds, and call sites share one contract.
 
+Two read-only CLI commands judge through the `artifact-criteria` point rather than registering their own: `bb stelow verify-tasks` (one atomic Score per completed task against the working diff, after deterministic per-task verify commands run first) and `bb stelow gap-triage` (one atomic Score per escalated gap for genuineness, against the critique plus the working diff). Both degrade to `unverifiable` below the point floor, and neither gates anything — deterministic verify output and the gap impact×effort matrix stay authoritative.
+
 ## Current gaps and exceptions
 
 The policy is not yet applied uniformly to every model-assisted judgment. The known exceptions are:

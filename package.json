@@ -79,7 +79,7 @@
     "test:bands": "node test_bands.mjs",
     "test:composer-execution": "node tests/composer-execution.test.mjs",
     "test:preset-ui": "node tests/preset-ui.test.mjs && node tests/preset-execution-picker.test.mjs && node tests/reliable-preset.test.mjs && node tests/preset-staleness.test.mjs",
-    "test:decision": "node tests/decision-api.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/decision-api-factory.test.mjs && node tests/decision-routers.test.mjs && node tests/decision-point-route.test.mjs && node tests/preset-judge.test.mjs && node tests/score-verdicts.test.mjs && node tests/task-evidence.test.mjs",
+    "test:decision": "node tests/decision-api.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs tests/decision-api-factory.test.mjs && node tests/decision-routers.test.mjs && node tests/decision-point-route.test.mjs && node tests/preset-judge.test.mjs && node tests/score-verdicts.test.mjs && node tests/task-evidence.test.mjs && node tests/decision-router-triage.test.mjs && node tests/artifact-criteria-judge.test.mjs && node tests/auto-continue-veto.test.mjs && node tests/inbox-severity-bump.test.mjs && node tests/gap-triage-readonly.test.mjs && node tests/verify-tasks-judged.test.mjs",
     "test:paths": "node tests/plugin-paths.test.mjs && node tests/panel-routes.test.mjs",
     "test:about": "node tests/about-logo.test.mjs && node tests/plugin-update.test.mjs && node tests/host-tools.test.mjs && node tests/about-ui-contract.test.mjs",
     "test:app-support": "node tests/app-support-helpers.test.mjs",
