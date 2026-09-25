@@ -23,12 +23,15 @@ test("server.ts is a composition root with no upward slice imports", () => {
 
 test("runtime composition keeps extracted capabilities wired into registration", () => {
   const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+  const core = readFileSync(join(root, "server/runtime/runtime-core.ts"), "utf8");
+  const reads = readFileSync(join(root, "server/runtime/read-runtime.ts"), "utf8");
   const mentions = readFileSync(join(root, "server/runtime/mentions.ts"), "utf8");
-  assert.match(source, /const platform = createPlatformHandlers\(/, "platform handlers are constructed once");
+  const wired = source + core + reads;
+  assert.match(wired, /createPlatformHandlers\(/, "platform handlers are constructed once");
   assert.equal((source.match(/\.\.\.platform,/g) ?? []).length, 1, "platform handlers are spread into RPC registration once");
-  assert.match(source, /const researchArtifacts = createResearchArtifactRuntime\(/, "research capabilities are constructed");
+  assert.match(wired, /createResearchArtifactRuntime\(/, "research capabilities are constructed");
   for (const symbol of ["researchRoundFiles", "readResearchIndex", "researchReadiness", "exploreArtifact"]) {
-    assert.match(source, new RegExp(`\\b${symbol}\\b`), `${symbol} remains reachable from runtime consumers`);
+    assert.match(wired, new RegExp(`\\b${symbol}\\b`), `${symbol} remains reachable from runtime consumers`);
   }
   assert.match(
     source + mentions,

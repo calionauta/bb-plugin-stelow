@@ -13,6 +13,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const drafting = readFileSync(join(root, "server", "drafting.ts"), "utf8");
 const protocols = readFileSync(join(root, "server", "runtime", "plugin-protocols.ts"), "utf8");
+const disposableSpawn = readFileSync(join(root, "server", "runtime", "disposable-spawn.ts"), "utf8");
 const presetJudge = readFileSync(join(root, "server/decisions/preset-judge-runner.ts"), "utf8");
 const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
 const workerBackend = readdirSync(join(root, "server"))
@@ -21,7 +22,7 @@ const workerBackend = readdirSync(join(root, "server"))
   .map((file) => readFileSync(join(root, "server", file), "utf8"))
   .join("\n");
 const reviewCli = readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8");
-const spawnSources = `${server}\n${drafting}\n${presetJudge}\n${reviewPreflight}\n${reviewCli}\n${workerBackend}`;
+const spawnSources = `${server}\n${disposableSpawn}\n${drafting}\n${presetJudge}\n${reviewPreflight}\n${reviewCli}\n${workerBackend}`;
 
 // One worker SDK spawn, one preset-judge spawn, and two fallback calls inside
 // the disposable helper remain. All card-worker paths use the worker seam.
@@ -129,11 +130,15 @@ assert.ok(drafting.slice(titleAt, titleAt + 1200).includes('"card-title"'), "tit
 // Older daemons that reject the field instead of stripping it get one retry
 // without it, so disposables never break on strict hosts.
 assert.match(
-  server,
+  disposableSpawn,
   /async function spawnDisposable\(\s*args: SpawnArgs,\s*site: string,/,
   "disposable spawns go through the registry-validated helper",
 );
-assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-field rejection retries once without the owner");
+assert.match(
+  disposableSpawn,
+  /unrecognized key\/i\.test\(message\)/,
+  "an unrecognized-field rejection retries once without the owner",
+);
 
 // The owner rule teaches fresh delegation: full task in the call, never a
 // fork, never sibling chatter.

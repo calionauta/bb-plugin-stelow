@@ -161,7 +161,7 @@ assert.match(
 );
 assert.match(
   server,
-  /const stalenessForQuestions = createQuestionStaleness\(/,
+  /stalenessForQuestions: createQuestionStaleness\(/,
   "the composition root wires the question-staleness evidence reader",
 );
 assert.match(

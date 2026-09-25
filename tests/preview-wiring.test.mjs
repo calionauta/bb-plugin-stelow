@@ -14,7 +14,7 @@ const previewCli = readFileSync(
   "utf8",
 );
 const source = [
-  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/preview-host.ts"), "utf8"),
   previewCli,
   readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/composition.ts"), "utf8"),
@@ -27,50 +27,54 @@ const exploreSource = readFileSync(join(root, "components/detail/explore-detail-
 const buildSource = readFileSync(join(import.meta.dirname, "../components/detail/build-detail-workspace.tsx"), "utf8");
 const detailSource = `${appSource}\n${buildSource}\n${researchSource}\n${exploreSource}`;
 const previewSource = readFileSync(join(root, "components/detail/preview-section.tsx"), "utf8");
+const seams = readFileSync(join(root, "server/runtime/card-seams.ts"), "utf8");
 
 /** The text between two markers, failing loudly if either is gone. */
 function slice(start, end) {
   const from = source.indexOf(start);
-  assert.notEqual(from, -1, `server/plugin-runtime.ts no longer contains ${JSON.stringify(start)} — this contract needs updating, not deleting`);
+  assert.notEqual(from, -1, `server/runtime/preview-host.ts no longer contains ${JSON.stringify(start)} — this contract needs updating, not deleting`);
   const to = source.indexOf(end, from);
   assert.notEqual(to, -1, `${start} no longer ends at ${end}`);
   return source.slice(from, to);
 }
 
 // --- The host hands the runtime real effects, or nothing works. -------------
-const wiring = slice("const preview = createPreviewRuntime({", "registerPreviewDisposal(");
-assert.match(wiring, /readFile:\s*\(path\)\s*=>\s*bb\.sdk\.files\s*\.read\(\{\s*path\s*\}\)/, "the runtime must read files through the host");
+const wiring = slice("  const preview = createPreviewRuntime({", "  registerPreviewDisposal(");
+assert.match(wiring, /readFile:\s*\(path\)\s*=>\s*deps\.bb\.sdk\.files\s*\.read\(\{\s*path\s*\}\)/, "the runtime must read files through the host");
 assert.match(wiring, /listDirs: \(dir\) =>/, "the runtime must be able to list a directory");
 assert.match(
   wiring,
   /spawnProcess:\s*\(command, options\)\s*=>\s*spawn\("bash", \["-lc", command\]/,
   "the dev server runs through a login shell in the app directory",
 );
-assert.match(wiring, /runConnect,/);
+assert.match(wiring, /runConnect: \(args\) => runConnect\(resolveLocalBin, args\)/, "the client goes through the same resolver as every host binary");
 assert.match(wiring, /baseEnv: process\.env/, "the dev server inherits the server's own environment");
 
 // --- A reload or disable must not leave a dev server behind. ---------------
 // The runtime cannot know when the plugin goes away, so this wiring is the
 // only thing standing between a plugin update and an orphaned process holding
 // a port.
-assert.match(source, /registerPreviewDisposal\(bb, \(\) => preview\.dispose\(\)\)/, "dispose must be wired to the plugin lifetime");
+assert.match(source, /registerPreviewDisposal\(deps\.bb, \(\) => preview\.dispose\(\)\)/, "dispose must be wired to the plugin lifetime");
 
 // --- The lifecycle lives in the library, not back in a handler. ------------
 // AGENTS.md: new state logic belongs in lib/ with a node test. A second state
 // machine here would be untestable and would drift from the tested one.
 for (const leaked of ["previewSessions", "killPreview", "connectUnexpose", "absorb"]) {
-  assert.ok(!source.includes(leaked), `server/plugin-runtime.ts must not re-implement the lifecycle (${leaked})`);
+  assert.ok(!source.includes(leaked), `server/runtime/preview-host.ts must not re-implement the lifecycle (${leaked})`);
 }
 
 // --- The worker's own checkout wins over the project source. --------------
 // A `new-worktree` preset runs the agent in a bb-managed worktree, while
 // cardWorkspace() reports the project source. Reading files from the source
 // would preview the wrong code, and the user would be looking at mainline.
-const checkout = slice("async function cardCheckout(", "async function cardStageSlug(");
+const checkout = seams.slice(
+  seams.indexOf("async function cardCheckout("),
+  seams.indexOf("async function cardStageSlug("),
+);
 // Both markers are required to exist first: a missing one makes indexOf -1,
 // and -1 < n would pass the comparison below with the call deleted entirely.
-const workerFirst = checkout.indexOf("workers.workerEnvironmentOf(card)");
-const sourceFallback = checkout.indexOf("cardWorkspace(card)");
+const workerFirst = checkout.indexOf("deps.workerEnvironmentOf(card)");
+const sourceFallback = checkout.indexOf("deps.cardWorkspace(card)");
 assert.notEqual(workerFirst, -1, "cardCheckout must consult the worker's environment");
 assert.notEqual(sourceFallback, -1, "cardCheckout must fall back to the project source");
 assert.ok(workerFirst < sourceFallback, "the worker's environment must be tried before the project source");
@@ -113,7 +117,7 @@ assert.match(
   /deps\.preview\.stop\(cardId\)/,
   "the RPC must reach the runtime's stop",
 );
-assert.match(source, /createPreviewRuntime/, "server/plugin-runtime.ts must construct the runtime");
+assert.match(source, /createPreviewRuntime/, "the preview host must construct the runtime");
 
 // --- The extracted panel owns its complete preview seam. ------------------
 // These are topology guards, not snapshots: a copy left in app.tsx would split

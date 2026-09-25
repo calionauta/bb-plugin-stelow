@@ -24,7 +24,10 @@ assert.throws(() => assertDisposableSpawn({ site: "preset-judge", args: hiddenRe
 // Topology: every direct spawn carries a marker, every marker names a
 // registered site, and disposable callers pass registered disposable ids.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const serverRoot = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const serverRoot = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/disposable-spawn.ts"), "utf8"),
+].join("\n");
 const workerFiles = readdirSync(join(root, "server"))
   .filter((file) => /^workers.*\.ts$/.test(file))
   .sort();

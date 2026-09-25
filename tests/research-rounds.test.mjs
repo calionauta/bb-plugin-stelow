@@ -43,6 +43,7 @@ assert.equal(parseRoundPath("plans/spec-product_v1.md", "pricing"), null, "non-r
 // neither an empty placeholder nor whitespace may render as an artifact.
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../", "server/runtime/card-seams.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/research-artifacts.ts"), "utf8"),
 ].join("\n");
 assert.match(serverSource, /if \(!artifact \|\| !isPublishableArtifactContent\(artifact\.content\)\) continue;/, "empty sub-step artifacts are skipped");

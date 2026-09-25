@@ -12,7 +12,10 @@ import { ensureInboxSeverityColumns, insertInboxEvent, listInboxEvents, refreshE
 // reasons, or lets ordering touch the badge.
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/claim-coordination.ts"), "utf8"),
+].join("\n");
 const serverInbox = readFileSync(join(root, "server/inbox.ts"), "utf8");
 const app = readFileSync(join(root, "components/panels/inbox-panel.tsx"), "utf8");
 
@@ -81,7 +84,7 @@ assert.equal(countsForInboxBadge({ kind: "question", archivedAt: 1, resolvedAt: 
 // Wiring: the feature migration owns the columns, the sweep recomputes beside
 // stall escalation, and the extracted contract feeds severity to the panel.
 assert.match(serverInbox, /export function runInboxMigrations/, "the feature migration is owned by the inbox slice");
-assert.match(server, /refreshEventSeverity\(db, \{ cardId, nowMs: now\(\) \}\)/, "the sweep recomputes tiers beside the stall escalation");
+assert.match(server, /refreshEventSeverity\(deps\.db, \{ cardId, nowMs: deps\.now\(\) \}\)/, "the sweep recomputes tiers beside the stall escalation");
 assert.match(serverInbox, /ensureInboxSeverityColumns\(db\);/, "the feature module owns severity migrations");
 assert.match(serverInbox, /severity: z\.number\(\),/, "the snapshot contract carries severity");
 assert.match(serverInbox, /severityReasons: z\.array\(z\.string\(\)\)/, "the snapshot contract carries reasons");

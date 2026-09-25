@@ -12,6 +12,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/runtime-services.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/git-evidence.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/build-thread-sync.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/reconciler.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
@@ -350,7 +352,7 @@ assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(batchBody), "the 
 // One working-diff extractor for both advisory judges: verify-tasks and
 // gap-triage cannot drift into two different notions of "the evidence".
 assert.equal(server.match(/"git",\s*\n\s*\["diff", "HEAD"/g)?.length, 1, "exactly one working-diff extractor exists");
-assert.ok(server.slice(server.indexOf("const workingDiffFor")).includes("workingDiffFor"), "the extractor is shared, not inlined per command");
+assert.match(server, /function workingDiffFor\(/, "the extractor is shared, not inlined per command");
 assert.match(
   taskBody,
   /const diff = await deps\.workingDiffFor\(workspace\.path, TASK_EVIDENCE_DIFF_CHARS\);/,

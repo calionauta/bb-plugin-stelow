@@ -10,6 +10,7 @@ import { CLAIM_TTL_MS } from "../lib/card-claims.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/claim-coordination.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-lock.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
 ].join("\n");

@@ -46,6 +46,7 @@ assert.equal(gateEvidenceGate({ ...bareAtPlanGate, groups: [] }).allowed, false,
 // inside the shared dispatcher (precedence pinned in ask-gate.test.mjs).
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/ask-artifacts.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8"),
 ].join("\n");
 assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher (evidence gate inside)");

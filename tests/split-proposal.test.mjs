@@ -70,6 +70,8 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-split.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-seams.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/track-projection.ts"), "utf8"),
 ].join("\n");
 assert.match(serverSource, /recorded as STANDARD — its answer is text only and executes nothing/, "the ask result names the standard consequence");
 assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the reminder gives the exact repair while still in time");
