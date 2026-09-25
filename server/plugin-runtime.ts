@@ -134,16 +134,11 @@ import {
   reviewCoversFingerprint,
 } from "../lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "../lib/delegation-map.mjs";
-import {
-  judgeArtifactCriteria,
-  groupCriteriaByKind,
-  parseCriteriaBlock,
-} from "../lib/skill-criteria.mjs";
+import { judgeArtifactCriteria } from "../lib/skill-criteria.mjs";
 import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
 import {
   resolveDecisionApiKey,
   normalizeDecisionApiModel,
-  evaluateDecisionCall,
   isDecisionApiDisabled,
   normalizeDecisionProvider,
   providerRequiresKey,
@@ -157,18 +152,11 @@ import {
   normalizeThresholds,
 } from "../lib/decision-points.mjs";
 import {
-  buildPresetJudgePrompt,
-  parsePresetJudgeOutput,
-  PRESET_JUDGE_TIMEOUT_MS,
-  PRESET_JUDGE_POLL_MS,
-} from "../lib/preset-judge.mjs";
-import {
   tasksToScoreQuestions,
   resolveScopeVerdicts,
   taskVerifyCommand,
   TASK_EVIDENCE_DIFF_CHARS,
 } from "../lib/task-evidence.mjs";
-import { resolveScoredVerdicts } from "../lib/score-verdicts.mjs";
 import {
   countDelegations,
   summarizeDelegationEvidence,
@@ -243,7 +231,6 @@ import {
   formatReviewGates,
   legacyLabelForGates,
   normalizeReviewGates,
-  preReviewArtifactKind,
 } from "../lib/review-gates.mjs";
 import { requiredForStage } from "../lib/question-contracts.mjs";
 import { checkAdvanceContracts } from "../lib/advance-contracts.mjs";
@@ -282,6 +269,10 @@ import {
   recoveredCheckoutIntegrity,
 } from "./workspaces-recovery.js";
 import { createDecisionApi } from "./decision-api.js";
+import { createPresetJudgeRunner } from "./decisions/preset-judge-runner.js";
+import { createArtifactCriteriaJudge } from "./decisions/artifact-criteria-judge.js";
+import { createScoredBatchJudge } from "./decisions/scored-batch-judge.js";
+import { createGatePreReview } from "./review-preflight.js";
 import {
   createGithubAutomation,
   githubIssuesEnabled,
@@ -1386,323 +1377,6 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     draftProtocol: DRAFT_PROTOCOL,
   });
 
-  // Preset judgment runner: one hidden thread on the pinned preset answers a
-  // strict-JSON question. Always cleans up (stop + archive); every failure
-  // returns ok:false so callers fall back to built-in rules or refuse with
-  // the fix named. Burns a full provider turn — only wired to low-frequency
-  // points (triage seed, explicit criteria calls).
-  async function judgeViaPreset({
-    presetId,
-    projectId,
-    title,
-    prompt,
-    timeoutMs = PRESET_JUDGE_TIMEOUT_MS,
-  }: {
-    presetId: string;
-    projectId: string | null;
-    title: string;
-    prompt: string;
-    timeoutMs?: number;
-  }): Promise<{ ok: boolean; text: string | null; error: string | null }> {
-    const fail = (error: string) => ({ ok: false as const, text: null, error });
-    const preset = getPresetById(presetId);
-    if (!preset) return fail(`Unknown preset "${presetId}".`);
-    if (!projectId) return fail("Preset judging needs a project.");
-    let threadId: string | null = null;
-    try {
-      // delegation-site: preset-judge
-      const thread = await bb.sdk.threads.spawn({
-        projectId,
-        environment: { type: "project-default" },
-        visibility: "hidden",
-        title,
-        providerId: preset.provider_id,
-        model: preset.model_id,
-        reasoningLevel: preset.reasoning_level as
-          | "low"
-          | "medium"
-          | "high"
-          | "xhigh"
-          | "max"
-          | "none"
-          | "ultra"
-          | "ultracode",
-        permissionMode: preset.permission_mode as
-          | "accept-edits"
-          | "auto"
-          | "full",
-        input: [{ type: "text", mentions: [], text: prompt }],
-      });
-      threadId = thread.id;
-      const deadline = Date.now() + timeoutMs;
-      for (;;) {
-        const live = await bb.sdk.threads.get({ threadId }).catch(() => null);
-        const status = (live as { status?: string } | null)?.status ?? null;
-        if (status === "idle" || status === "error") break;
-        if (Date.now() >= deadline) {
-          // No explicit stop here: the finally below owns all cleanup, so a
-          // timeout archives the runaway through the same path as every exit.
-          return fail("Preset judge timed out.");
-        }
-        await new Promise((resolve) =>
-          setTimeout(resolve, PRESET_JUDGE_POLL_MS),
-        );
-      }
-      const text =
-        (await bb.sdk.threads.output({ threadId }).catch(() => null))?.output ??
-        null;
-      if (typeof text !== "string" || text.length === 0)
-        return fail("Preset judge returned no output.");
-      return { ok: true, text, error: null };
-    } catch (error) {
-      return fail(
-        error instanceof Error ? error.message : "Preset judge failed.",
-      );
-    } finally {
-      if (threadId) {
-        await bb.sdk.threads.stop({ threadId }).catch(() => null);
-        await bb.sdk.threads.archive({ threadId }).catch(() => null);
-      }
-    }
-  }
-
-  // Map preset criteria verdicts onto the findings shape the Jev path
-  // returns, so criteria callers downstream never branch on the judge.
-  // The confidence floor applies like the Jev routeAt: a missing or low
-  // confidence degrades to unverifiable, never to a guessed verdict.
-  function presetCriteriaFindings({
-    verdicts,
-    semantic,
-    routeAt,
-  }: {
-    verdicts: Array<{ id: string; status: string; confidence: number | null }>;
-    semantic: Array<{ id: string; text: string }>;
-    routeAt: number;
-  }) {
-    const byId = new Map(
-      semantic.map((criterion) => [criterion.id, criterion.text]),
-    );
-    return verdicts
-      .filter((verdict) => byId.has(verdict.id))
-      .map((verdict) => {
-        const confident =
-          typeof verdict.confidence === "number" &&
-          verdict.confidence >= routeAt;
-        return {
-          id: verdict.id,
-          kind: "semantic" as const,
-          text: byId.get(verdict.id) ?? verdict.id,
-          score: null as number | null,
-          confidence: verdict.confidence,
-          verdict:
-            !confident || verdict.status === "unverifiable"
-              ? ("unverifiable" as const)
-              : (verdict.status as "met" | "unmet"),
-          error: null as string | null,
-        };
-      });
-  }
-
-  // Preset variant of artifact-criteria judging for explicit calls
-  // (criteria): one spawned judgment per artifact, mapped onto the Jev
-  // findings shape so downstream never branches on the judge.
-  // One findings shape for every judge path (Jev or preset): the verbose
-  // literal lives here once, so the three early returns cannot drift apart.
-  type PresetFinding = {
-    id: string;
-    kind: "semantic";
-    text: string;
-    score: number | null;
-    confidence: number | null;
-    verdict: "met" | "unmet" | "unverifiable";
-    error: string | null;
-  };
-  async function judgePresetCriteria({
-    presetId,
-    projectId,
-    skillText,
-    artifactText,
-    routeAt,
-  }: {
-    presetId: string;
-    projectId: string | null;
-    skillText: string;
-    artifactText: string;
-    routeAt: number;
-  }) {
-    const semantic = groupCriteriaByKind(
-      parseCriteriaBlock(skillText),
-    ).semantic;
-    if (semantic.length === 0)
-      return {
-        ok: true as const,
-        findings: [] as Array<PresetFinding>,
-        evaluated: 0,
-      };
-    const prompt = buildPresetJudgePrompt({
-      kind: "criteria",
-      state: artifactText,
-      questions: semantic.map((criterion) => ({
-        id: criterion.id,
-        text: criterion.text,
-      })),
-    });
-    const judged = await judgeViaPreset({
-      presetId,
-      projectId,
-      title: "Stelow judge: artifact criteria",
-      prompt,
-    });
-    if (!judged.ok || !judged.text)
-      return {
-        ok: false as const,
-        findings: [] as Array<PresetFinding>,
-        evaluated: 0,
-        error: judged.error ?? "judge failed",
-      };
-    const parsed = parsePresetJudgeOutput({
-      kind: "criteria",
-      text: judged.text,
-    });
-    if (
-      !parsed.ok ||
-      !("verdicts" in parsed) ||
-      (parsed.verdicts.length === 0 && semantic.length > 0)
-    )
-      return {
-        ok: false as const,
-        findings: [] as Array<PresetFinding>,
-        evaluated: 0,
-        error: !parsed.ok
-          ? parsed.error
-          : "judge verdicts match no known criteria",
-      };
-    const findings = presetCriteriaFindings({
-      verdicts: parsed.verdicts,
-      semantic,
-      routeAt,
-    });
-    return { ok: true as const, findings, evaluated: findings.length };
-  }
-
-  // Shared Score-batch judge for the advisory verify-* commands (tasks,
-  // gap triage): one atomic question per item through the artifact-criteria
-  // point — Jev API or preset judge — resolved onto the shared findings
-  // shape. Both callers differ only in items, questions, and the diff/text
-  // they judge against, so the plumbing lives here once.
-  type ScoredBatchFinding = {
-    id: string;
-    name: string;
-    score: number | null;
-    confidence: number | null;
-    verdict: string;
-    error: string | null;
-  };
-  async function judgeScoredBatch({
-    items,
-    questions,
-    keyPrefix,
-    state,
-    mode,
-    presetId,
-    projectId,
-    title,
-    provider,
-    endpoint,
-    apiKey,
-    model,
-    routeAt,
-  }: {
-    items: Array<{ id: string; text: string }>;
-    questions: Record<string, unknown>;
-    keyPrefix: string;
-    state: string;
-    mode: string;
-    presetId: string | null;
-    projectId: string | null;
-    title: string;
-    provider: string;
-    endpoint: string;
-    apiKey: string;
-    model: string;
-    routeAt: number;
-  }): Promise<
-    | { ok: true; findings: Array<ScoredBatchFinding> }
-    | { ok: false; error: string }
-  > {
-    if (mode === "preset") {
-      if (!presetId)
-        return { ok: false, error: "preset mode needs a judge preset" };
-      const judged = await judgeViaPreset({
-        presetId,
-        projectId,
-        title,
-        prompt: buildPresetJudgePrompt({
-          kind: "criteria",
-          state,
-          questions: items.map((item) => ({ id: item.id, text: item.text })),
-        }),
-      });
-      if (!judged.ok || !judged.text)
-        return { ok: false, error: judged.error ?? "judge failed" };
-      const parsed = parsePresetJudgeOutput({
-        kind: "criteria",
-        text: judged.text,
-      });
-      if (!parsed.ok || !("verdicts" in parsed))
-        return {
-          ok: false,
-          error: parsed.ok ? "judge verdict shape mismatch" : parsed.error,
-        };
-      const byId: Record<
-        string,
-        { status: string; confidence: number | null }
-      > = {};
-      for (const verdict of parsed.verdicts)
-        byId[verdict.id] = {
-          status: verdict.status,
-          confidence: verdict.confidence,
-        };
-      return {
-        ok: true,
-        findings: resolveScoredVerdicts({
-          items,
-          verdicts: byId,
-          keyPrefix,
-          routeAt,
-        }),
-      };
-    }
-    const judged = await Promise.all(
-      items.map(async (item) => {
-        const single: Record<string, unknown> = {};
-        single[`${keyPrefix}:${item.id}`] =
-          questions[`${keyPrefix}:${item.id}`];
-        const result = await evaluateDecisionCall({
-          provider,
-          endpoint,
-          apiKey,
-          model,
-          state,
-          questions: single as never,
-        });
-        return { item, result };
-      }),
-    );
-    const answers: Record<
-      string,
-      { type?: string; score?: number; confidence?: number } | null
-    > = {};
-    for (const { item, result } of judged)
-      answers[`${keyPrefix}:${item.id}`] = (
-        result.ok ? (result.answers?.[`${keyPrefix}:${item.id}`] ?? null) : null
-      ) as { type?: string; score?: number; confidence?: number } | null;
-    return {
-      ok: true,
-      findings: resolveScoredVerdicts({ items, answers, keyPrefix, routeAt }),
-    };
-  }
-
   // Working-tree patch text for the advisory verify-* judges: raw evidence
   // to judge against, capped by the caller's own budget. Fail-soft — a
   // non-Git workspace or a git error reads as no evidence, never as an
@@ -1724,129 +1398,6 @@ structured questions, card state changes, lifecycle commands, or the canonical r
         },
       );
     });
-
-  // Independent pre-review on gate entry (see advance hook): same reviewer
-  // machinery as the review command, but advisory-only — findings land as
-  // a card comment, never a reviews/ file, and every miss is silent.
-  async function requestGatePreReview(
-    cardId: string,
-    stage: string,
-  ): Promise<void> {
-    try {
-      const kind = preReviewArtifactKind(stage);
-      if (!kind) return;
-      const card = getCard(cardId);
-      if (!card || card.kind !== "build" || isArchivedCard(card)) return;
-      const designated = getReviewPresetId();
-      const reviewPreset = designated ? getPresetById(designated) : null;
-      if (!reviewPreset) return;
-      const workspace = await cardWorkspace(card).catch(() => null);
-      if (!workspace?.path) return;
-      const board = await boardFromRoot(
-        bb,
-        workspace.path,
-        card.dir_hash,
-      ).catch(() => null);
-      const artifact =
-        board?.workflows
-          .find((item) => item.id === card.dir_hash)
-          ?.artifacts.find((entry) => entry.kind === kind) ?? null;
-      if (!artifact) return;
-      const full = resolveArtifactPath(workspace.path, artifact.path);
-      const content = full
-        ? await bb.sdk.files
-            .read({ path: full })
-            .then((f) => f.content)
-            .catch(() => null)
-        : null;
-      if (typeof content !== "string" || !content.trim()) return;
-      const contract = contractForBuildArtifact(artifact.path, content);
-      const depth = contract ? validateArtifact(content, contract) : null;
-      if (!depth || !depth.pass) return;
-      const params = presetAttachmentParams(reviewPreset);
-      const prompt = buildReviewPrompt({
-        cardName: card.display_name ?? card.name,
-        request: card.prompt,
-        contractLabel: `pre-review for ${stage}`,
-        artifactContent: content,
-        deterministicFailures: [],
-        evidence: "verified",
-      });
-      let preThread: { id: string };
-      try {
-        preThread = await spawnDisposable(
-          {
-            projectId: card.project_id,
-            environment: { type: "project-default" },
-            visibility: "hidden",
-            ...(card.worker_thread_id
-              ? { lifecycleOwnerThreadId: card.worker_thread_id }
-              : {}),
-            title: `Stelow pre-review (${stage}): ${card.display_name ?? card.name}`,
-            providerId: params.providerId,
-            model: params.modelId,
-            reasoningLevel: params.reasoningLevel as
-              | "low"
-              | "medium"
-              | "high"
-              | "xhigh"
-              | "max"
-              | "none"
-              | "ultra"
-              | "ultracode",
-            permissionMode: (params.permissionMode === "full"
-              ? "accept-edits"
-              : params.permissionMode) as "accept-edits" | "auto" | "full",
-            executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-            prompt,
-          },
-          "review",
-        );
-      } catch {
-        return;
-      }
-      for (let poll = 0; poll < 60; poll++) {
-        await new Promise((resolve) => setTimeout(resolve, 10000));
-        const thread = await bb.sdk.threads
-          .get({ threadId: preThread.id })
-          .catch(() => null);
-        const status = (thread as { status?: unknown } | null)?.status;
-        if (
-          status === "idle" ||
-          status === "stopping" ||
-          status === "archived" ||
-          status === "deleted"
-        )
-          break;
-        if (status === "failed" || status === "error" || poll === 59) {
-          await workers.stop(preThread.id).catch(() => undefined);
-          return;
-        }
-      }
-      const output = await bb.sdk.threads
-        .output({ threadId: preThread.id })
-        .then((result) => result.output ?? "")
-        .catch(() => "");
-      await workers.stop(preThread.id).catch(() => undefined);
-      const parsed = parseReviewOutput(output, content);
-      if (
-        !parsed ||
-        !Array.isArray(parsed.findings) ||
-        parsed.findings.length === 0
-      )
-        return;
-      logCardComment(
-        cardId,
-        "card",
-        cardId,
-        "agent",
-        `Independent pre-review (${stage}, ${reviewPreset.name}):\n\n${reviewSummary(parsed)}`,
-      );
-      bb.realtime.publish("card-state", { cardId });
-    } catch {
-      // Advisory path: silence is the status quo ante.
-    }
-  }
 
   // Decision API execution seams live in the server/decision-api-* modules. These thin
   // adapters keep call sites explicit while the feature owns its behavior.
@@ -1886,6 +1437,9 @@ structured questions, card state changes, lifecycle commands, or the canonical r
   const getReliablePresetForBand = presetServer.getReliablePresetForBand;
   const presetAttachmentParams = presetServer.presetAttachmentParams;
   const getReviewPresetId = presetServer.getReviewPresetId;
+  const judgeViaPreset = createPresetJudgeRunner({ bb, getPresetById });
+  const judgePresetCriteria = createArtifactCriteriaJudge(judgeViaPreset);
+  const judgeScoredBatch = createScoredBatchJudge(judgeViaPreset);
   const pinCardPreset = presetServer.pinCardPreset;
   const removeCardPreset = presetServer.removeCardPreset;
   const recordInboxEvent = inbox.record;
@@ -2101,6 +1655,18 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       cardArchived: "This card is archived.",
       presetNotFound: "Preset not found.",
     },
+  });
+  const requestGatePreReview = createGatePreReview({
+    bb,
+    getCard,
+    getReviewPresetId,
+    getPresetById,
+    presetAttachmentParams,
+    cardWorkspace,
+    boardFromRoot,
+    spawnDisposable,
+    stopThread: (threadId) => workers.stop(threadId),
+    logCardComment,
   });
   const drafting = createDraftingServer({
     db,

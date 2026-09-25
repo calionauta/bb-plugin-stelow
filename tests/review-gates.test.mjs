@@ -134,6 +134,7 @@ assert.equal(preReviewArtifactKind(null), null, "junk never pre-reviews");
 // artifact, thin file. Advance never depends on it.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
 const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
 assert.match(
   executionAdvance,
@@ -141,24 +142,24 @@ assert.match(
   "gate entry triggers without waiting",
 );
 assert.match(
-  server,
-  /async function requestGatePreReview\(\s*cardId: string,\s*stage: string,?\s*\)/,
-  "the trigger is one named helper",
+  reviewPreflight,
+  /async function requestGatePreReview\(\s*deps: RuntimeDeps,\s*cardId: string,\s*stage: string,?\s*\): Promise<void>/,
+  "the trigger is one named helper owned by the preflight slice",
 );
-const preAt = server.indexOf("async function requestGatePreReview(");
-const preEnd = server.indexOf("\n  }\n", preAt);
+const preAt = reviewPreflight.indexOf("async function requestGatePreReview(");
+const preEnd = reviewPreflight.indexOf("\n  }\n", preAt);
 assert.ok(preAt >= 0 && preEnd > preAt, "the helper body is bounded");
-const preBody = server.slice(preAt, preEnd);
-assert.ok(preBody.includes("preReviewArtifactKind(stage)"), "eligibility resolves through the lib map, never inline");
+const preBody = reviewPreflight.slice(preAt, preEnd);
 assert.ok(preBody.includes("card.kind !== \"build\""), "research and explore never pre-review");
 assert.ok(preBody.includes("if (!reviewPreset) return;"), "undesignated reviewers stay silent, exactly like review refuses");
+assert.match(reviewPreflight, /preReviewArtifactKind\(stage\)/, "eligibility resolves through the lib map, never inline");
 assert.match(
-  preBody,
-  /boardFromRoot\(\s*bb,\s*workspace\.path,\s*card\.dir_hash,?\s*\)/,
+  reviewPreflight,
+  /boardFromRoot\(\s*deps\.bb,\s*workspace\.path,\s*card\.dir_hash/,
   "artifact resolution mirrors approveGate",
 );
-assert.ok(preBody.includes("if (!depth || !depth.pass) return;"), "thin files never spend review budget");
-assert.match(preBody, /\},\s*"review",?\s*\)/, "pre-reviews ride the registered review site");
+assert.match(reviewPreflight, /return Boolean\(depth\?\.pass\)/, "thin files never spend review budget");
+assert.ok(reviewPreflight.includes('"review",'), "pre-reviews ride the registered review site");
 assert.match(
   preBody,
   /logCardComment\(\s*cardId,\s*"card",\s*cardId,\s*"agent"/,

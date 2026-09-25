@@ -28,26 +28,32 @@ const serverRoot = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const workerFiles = readdirSync(join(root, "server"))
   .filter((file) => /^workers.*\.ts$/.test(file))
   .sort();
+const decisionSource = [
+  readFileSync(join(root, "server/decisions/preset-judge-runner.ts"), "utf8"),
+  readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
+].join("\n");
 const workerSource = workerFiles
   .map((file) => readFileSync(join(root, "server", file), "utf8"))
   .join("\n");
-const server = `${serverRoot}\n${workerSource}`;
+const server = `${serverRoot}\n${decisionSource}\n${workerSource}`;
 const directSpawns = [
   ...(serverRoot.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []),
+  ...(decisionSource.match(/(?:deps\.)?bb\.sdk\.threads\.spawn\(\{/g) ?? []),
   ...(workerSource.match(/bb\.sdk\.threads\.spawn\(/g) ?? []),
 ];
 assert.doesNotMatch(serverRoot, /delegation-site: worker-spawn/, "server.ts cannot reintroduce a direct worker spawn");
 assert.doesNotMatch(server, /workers\.spawn\(\{/, "the worker facade has no generic spawn escape hatch");
-assert.equal((serverRoot.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []).length, 1, "only the preset judge remains in server.ts");
+assert.equal((serverRoot.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length, 2, "the composition runtime owns the disposable spawn and its compatibility retry");
+assert.equal((decisionSource.match(/(?:deps\.)?bb\.sdk\.threads\.spawn\(/g) ?? []).length, 1, "the preset judge owns one direct SDK spawn");
 assert.equal((workerSource.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length, 1, "worker support modules own one SDK spawn implementation");
-assert.equal((server.match(/bb\.sdk\.threads\.spawn\(/g) ?? []).length, 4, "two disposable-helper calls, one judge, and one worker implementation are pinned");
+assert.equal(directSpawns.length, 2, "the judge and worker implementation remain pinned as marked direct sites");
 const markers = [...server.matchAll(/\/\/ delegation-site: (\S+)/g)].map((match) => match[1]);
 assert.equal(markers.length, directSpawns.length, "every direct spawn carries exactly one site marker");
 for (const site of markers) {
   assert.ok(getDelegationSite(site), `${site} is registered`);
 }
 const disposableCalls = [...server.matchAll(
-  /spawnDisposable\s*\(\s*\{[\s\S]*?\}\s*,\s*"([a-z-]+)"\s*,?\s*\)/g,
+  /spawnDisposable\s*\(\s*(?:\{[\s\S]*?\}|[\w.]+\([\s\S]*?\))\s*,\s*"([a-z-]+)"\s*,?\s*\)/g,
 )].map((match) => match[1]);
 assert.ok(disposableCalls.length >= 2, "disposable callers name their site");
 for (const site of disposableCalls) {

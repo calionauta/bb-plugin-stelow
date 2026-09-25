@@ -96,6 +96,7 @@ const server = [
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create-persist.ts"), "utf8"),
@@ -117,7 +118,14 @@ for (const method of ["createCard", "createResearchCard", "createExploreCard"]) 
 }
 assert.match(server, /composerPresetOverride\(/, "creation resolves the override through the shared helper");
 assert.match(server, /composerSpawnInput\(/, "the spawn carries the shared spawn input");
-const directExplicitSources = /executionInputSources: \{ providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" \}/g;
+const directExplicitSources = new RegExp(
+  "executionInputSources: \\{\\s*"
+    + 'providerId: "explicit"(?: as const)?,\\s*'
+    + 'model: "explicit"(?: as const)?,\\s*'
+    + 'reasoningLevel: "explicit"(?: as const)?,\\s*'
+    + 'permissionMode: "explicit"(?: as const)?,?\\s*\\}',
+  "g",
+);
 assert.equal(
   (server.match(directExplicitSources) ?? []).length,
   4,

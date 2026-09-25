@@ -12,12 +12,14 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const drafting = readFileSync(join(root, "server", "drafting.ts"), "utf8");
+const presetJudge = readFileSync(join(root, "server/decisions/preset-judge-runner.ts"), "utf8");
+const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
 const workerBackend = readdirSync(join(root, "server"))
   .filter((file) => /^workers.*\.ts$/.test(file))
   .sort()
   .map((file) => readFileSync(join(root, "server", file), "utf8"))
   .join("\n");
-const spawnSources = `${server}\n${drafting}\n${workerBackend}`;
+const spawnSources = `${server}\n${drafting}\n${presetJudge}\n${reviewPreflight}\n${workerBackend}`;
 
 // One worker SDK spawn, one preset-judge spawn, and two fallback calls inside
 // the disposable helper remain. All card-worker paths use the worker seam.
@@ -33,7 +35,7 @@ assert.equal(
 );
 assert.doesNotMatch(server, /delegation-site: worker-spawn/, "server.ts owns no direct worker spawn");
 assert.equal(
-  (spawnSources.match(/(?:await )?(?:deps\.)?spawnDisposable\(\s*\{/g) ?? []).length,
+  (spawnSources.match(/(?:await )?(?:deps\.)?spawnDisposable\(\s*(?:\{|[\w.]+\()/g) ?? []).length,
   4,
   "four disposable spawns pinned (review, draft, card-title, gate pre-review); a fifth updates this contract deliberately",
 );
@@ -91,12 +93,16 @@ assert.match(drafting, /buildDraftPrompt\(\{\s*cardName:/, "draft prompts go thr
 for (const [source, name] of [
   [server, "reviewThread = await spawnDisposable("],
   [drafting, "return deps.spawnDisposable("],
-  [server, "preThread = await spawnDisposable("],
 ]) {
   const at = source.indexOf(name);
   assert.ok(at >= 0, `${name} exists`);
   assert.ok(source.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
 }
+assert.ok(
+  reviewPreflight.includes("const preThread = await deps.spawnDisposable("),
+  "gate pre-review uses the disposable seam",
+);
+assert.ok(reviewPreflight.includes('visibility: "hidden" as const'), "gate pre-review stays hidden");
 assert.ok(drafting.includes("lifecycleOwnerThreadId: card.worker_thread_id"), "drafts die with their worker");
 assert.match(drafting, /return deps\.spawnDisposable\(\s*\{/, "drafting owns delegated draft spawns");
 // Card titles are ownerless by design: they need no worker, and the

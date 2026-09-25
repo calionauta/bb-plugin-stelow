@@ -19,6 +19,8 @@ const server = [
 const decisionServer = readFileSync(join(root, "server", "decision-api.ts"), "utf8");
 const decisionSeams = readFileSync(join(root, "server", "decision-api-seams.ts"), "utf8");
 const decisionContract = readFileSync(join(root, "server", "decision-api-contract.ts"), "utf8");
+const presetJudgeRunner = readFileSync(join(root, "server", "decisions", "preset-judge-runner.ts"), "utf8");
+const scoredBatchJudge = readFileSync(join(root, "server", "decisions", "scored-batch-judge.ts"), "utf8");
 const app = readFileSync(join(root, "app.tsx"), "utf8");
 const managerShell = readFileSync(join(root, "components/settings/preset-manager-shell.tsx"), "utf8");
 const decisionEntry = readFileSync(join(root, "components/settings/decision-api.tsx"), "utf8");
@@ -185,15 +187,15 @@ assert.match(server, /Auto-continue vetoed the resume: the last output showed no
 assert.ok(decisionSeams.includes("const routeConfig = (point"), "api judgments resolve the point route in one module seam");
 assert.ok(vetBody.includes("ignores preset mode"), "the veto names why preset mode never burns a turn");
 assert.ok(decisionSeams.includes("inbox severity ignores preset mode"), "severity names why preset mode never burns a turn");
-assert.ok(server.includes("async function judgeViaPreset({"), "one runner spawns every preset judgment");
-const judgeAt = server.indexOf("async function judgeViaPreset({");
-assert.ok(judgeAt >= 0, "the judge runner exists");
-const judgeEnd = server.indexOf("\n  }\n", judgeAt);
+assert.ok(server.includes("createPresetJudgeRunner({ bb, getPresetById })"), "composition installs one preset judge runner");
+const judgeAt = presetJudgeRunner.indexOf("function judgeWithPreset(");
+assert.ok(judgeAt >= 0, "the judge runner exists in the decision slice");
+const judgeEnd = presetJudgeRunner.indexOf("\n}\n", judgeAt);
 assert.ok(judgeEnd > judgeAt, "the judge runner body is bounded");
-const judgeBody = server.slice(judgeAt, judgeEnd);
-assert.ok(judgeBody.includes("visibility: \"hidden\""), "judge threads never surface in the sidebar");
-assert.ok(judgeBody.includes("threads.stop({ threadId })"), "timeouts stop the runaway before cleanup");
-assert.ok(judgeBody.includes("threads.archive({ threadId })"), "every judgment thread is archived after reading");
+const judgeBody = presetJudgeRunner.slice(judgeAt, judgeEnd);
+assert.ok(presetJudgeRunner.includes("visibility: \"hidden\""), "judge threads never surface in the sidebar");
+assert.ok(presetJudgeRunner.includes("threads.stop({ threadId })"), "timeouts stop the runaway before cleanup");
+assert.ok(presetJudgeRunner.includes("threads.archive({ threadId })"), "every judgment thread is archived after reading");
 assert.ok(judgeBody.includes("PRESET_JUDGE_TIMEOUT_MS"), "the wait is bounded by the lib timeout, not an inline magic number");
 
 // Severity bump wiring: bounded, gated, promotion-only, idempotent. A
@@ -340,11 +342,11 @@ assert.ok(!taskBody.includes("logCardComment"), "verify-tasks leaves no comments
 
 // The shared Score-batch judge owns both judge paths once (Jev api and
 // preset), so verify-tasks and gap-triage cannot drift apart.
-const batchAt = server.indexOf("async function judgeScoredBatch(");
-assert.ok(batchAt >= 0, "the shared Score-batch judge exists");
-const batchBody = server.slice(batchAt, server.indexOf("\n  }\n", batchAt));
+const batchAt = scoredBatchJudge.indexOf("async function judgeWithPreset(");
+assert.ok(batchAt >= 0, "the shared Score-batch judge exists in the decision slice");
+const batchBody = scoredBatchJudge.slice(batchAt);
 assert.ok(batchBody.includes("judgeViaPreset({"), "preset mode judges through the shared judge runner");
-assert.ok(batchBody.includes("evaluateDecisionCall({"), "api mode judges through the shared decision call");
+assert.ok(batchBody.includes("evaluateCall({"), "api mode judges through the shared decision call");
 assert.ok(batchBody.includes("resolveScoredVerdicts({"), "both paths resolve through the shared resolver");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(batchBody), "the shared judge writes nothing");
 
