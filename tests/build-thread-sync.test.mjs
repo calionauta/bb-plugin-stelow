@@ -44,23 +44,13 @@ function card(overrides = {}) {
   };
 }
 
-function harness(row, options = {}) {
-  const calls = [];
-  let current = row;
-  const state = options.state ?? "name: Useful\nintent: feature\ncurrent_stage: planning\n";
-  const db = {
-    prepare(sql) {
-      return {
-        run(...args) {
-          calls.push(["run", sql, ...args]);
-        },
-      };
-    },
-  };
-  const bb = {
+function createThreadApi(calls, options) {
+  return {
     sdk: {
       files: {
-        read: async () => ({ content: state }),
+        read: async () => ({
+          content: options.state ?? "name: Useful\nintent: feature\ncurrent_stage: planning\n",
+        }),
       },
       threads: {
         get: async () => {
@@ -83,8 +73,21 @@ function harness(row, options = {}) {
       },
     },
   };
-  const deps = {
-    bb,
+}
+
+function createSyncDeps(calls, getCurrent, options) {
+  let current = getCurrent();
+  const db = {
+    prepare(sql) {
+      return {
+        run(...args) {
+          calls.push(["run", sql, ...args]);
+        },
+      };
+    },
+  };
+  return {
+    bb: createThreadApi(calls, options),
     db,
     now: () => options.now ?? 100_000,
     getCard: () => current,
@@ -110,7 +113,13 @@ function harness(row, options = {}) {
     auditDoneNudge: "Run bb stelow done.",
     idleAttentionMs: 90_000,
   };
-  return { calls, deps, sync: createBuildThreadSync(deps), row: () => current };
+}
+
+function harness(row, options = {}) {
+  const calls = [];
+  let current = row;
+  const deps = createSyncDeps(calls, () => current, options);
+  return { calls, deps, sync: createBuildThreadSync(deps), row: deps.getCard };
 }
 
 test("active build sync projects state metadata and running activity", async () => {
