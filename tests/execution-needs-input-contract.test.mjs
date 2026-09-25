@@ -39,11 +39,13 @@ assert.match(realSource, /contractId/, "real Interface Contrast renderer propaga
 assert.match(realSource, /boundaryId/, "real Interface Contrast renderer propagates the boundary ID");
 assert.match(realSource, /answerSchema/, "real Interface Contrast renderer propagates the answer schema");
 
-const server = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
-assert.match(server, /normalized === "needs_input" \? nativeNeedsInput\(native\)/, "server reads boundaries from needs_input states");
-assert.doesNotMatch(server, /normalized === "succeeded" \? nativeNeedsInput\(native\)/, "server does not misclassify needs_input as succeeded");
-assert.match(server, /resumeArtifactRoot\(run\.artifactRoot\)/, "native resume keeps completed outputs in the original artifact root");
-assert.match(server, /boundaryContract/, "server persists the full native boundary contract");
-assert.match(server, /validateHumanBoundary/, "server rejects malformed native boundaries");
+const reconcileSource = readFileSync(new URL("../server/execution-reconcile.ts", import.meta.url), "utf8");
+const lifecycleSource = readFileSync(new URL("../server/execution-lifecycle.ts", import.meta.url), "utf8");
+assert.match(reconcileSource, /normalized === "needs_input"/, "reconciler reads boundaries from needs_input states");
+assert.doesNotMatch(reconcileSource, /normalized === "succeeded"[\s\S]{0,80}nativeNeedsInput/, "reconciler does not misclassify needs_input as succeeded");
+assert.match(reconcileSource, /boundaryRunPatch/, "reconciler persists the full native boundary contract");
+assert.match(reconcileSource, /invalid-native-boundary/, "reconciler rejects malformed native boundaries");
+assert.match(lifecycleSource, /resumeArtifactRoot\(run\.artifactRoot\)/, "native resume keeps completed outputs in the original artifact root");
+assert.match(lifecycleSource, /boundaryAnswerError/, "resume validates the answered boundary before creating a child run");
 
 console.log("execution needs-input contract test ok: durable boundary fields, schema propagation, server routing");

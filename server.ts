@@ -128,6 +128,8 @@ import { countDelegations, summarizeDelegationEvidence } from "./lib/delegation-
 import { contractForStrategy, contractForBuildArtifact } from "./lib/artifact-contracts.mjs";
 import { BOARD_MOVE_COLUMNS, CARD_KINDS, bandForKind, describeCardEnvironment, isLightweightKind, normalizeKind } from "./lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "./lib/stage-catalog.mjs";
+import { buildScopeXray, parseCurrentShapeVersion } from "./lib/scope-xray.mjs";
+import { validateScopeMap, type ScopeMap } from "./lib/scope-map.mjs";
 import { parseResearchIndex, checkIndexItems } from "./lib/research-index.mjs";
 import { isResearchReadyForReview, researchReadyFingerprint } from "./lib/research-ready.mjs";
 import { evidenceStatus } from "./lib/research-evidence.mjs";
@@ -184,6 +186,7 @@ import {
   executionRunSchema,
   runExecutionMigrations,
 } from "./server/execution-contract.js";
+import { createBoundaryVersionReader } from "./server/execution-boundary.js";
 import { createExecutionNative } from "./server/execution-native.js";
 import { createExecutionLifecycle } from "./server/execution-lifecycle.js";
 import { createExecutionReconcile } from "./server/execution-reconcile.js";
@@ -585,6 +588,27 @@ export const rpcContract = defineRpcContract({
       // scopes actually synced. Null on non-build cards; the panel reads the
       // state to name an untracked card instead of rendering it empty.
       scopeSync: z.object({ state: z.enum(["ok", "no-spec", "no-blocks", "human-dialect", "unsynced"]), syncedScopes: z.number(), machineBlocks: z.number(), humanBlocks: z.number(), specFile: z.string().nullable() }).nullable(),
+      scopeXray: z.object({
+        source: z.literal("server-projection"),
+        mutable: z.literal(false),
+        mapId: z.string(),
+        mapVersion: z.string(),
+        freshness: z.enum(["current", "stale", "unknown"]),
+        nodes: z.array(z.object({
+          id: z.string(),
+          title: z.string(),
+          capabilities: z.array(z.string()),
+          state: z.enum(["current", "stale", "blocked", "unknown"]),
+          provenance: z.array(z.string()),
+        })),
+        edges: z.array(z.object({
+          from: z.string(),
+          to: z.string(),
+          kind: z.literal("depends-on"),
+          state: z.enum(["current", "stale", "blocked", "unknown"]),
+          provenance: z.array(z.string()),
+        })),
+      }).nullable(),
       artifacts: z.array(z.object({ stage: z.string(), kind: z.string(), role: z.enum(["deliverable", "evidence"]), path: z.string(), display: z.string(), generatedAt: z.string(), absolutePath: z.string(), hostId: z.string(), note: z.string().nullable().optional() })),
       workerHistory: z.array(z.object({ threadId: z.string(), presetName: z.string().nullable(), startedAt: z.number(), endedAt: z.number().nullable(), endedReason: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable(), children: z.array(z.object({ threadId: z.string(), title: z.string().nullable(), status: z.string(), providerId: z.string().nullable(), tokenUsage: z.number().nullable(), tokenBreakdown: z.object({ input: z.number().nullable(), output: z.number().nullable(), cached: z.number().nullable(), reasoning: z.number().nullable(), total: z.number().nullable() }).nullable() })) })),
       executionRuns: z.array(executionRunSchema),
@@ -1839,7 +1863,35 @@ ${prompt}`;
   // Explore runs ONE build-stage skill standalone — no triage, no Shape
   // Up sequence, no gates. The worker loads the stage's playbook, applies it
   // to the input, and saves a single artifact into the card's state dir.
-  function exploreWorkerPrompt({ displayName, prompt, stage, stateDirText, workspaceRoot, instructions, flavor, previousThreadId }: { displayName: string; prompt: string; stage: { id: string; label: string; skill: string }; stateDirText: string; workspaceRoot: string; instructions: string; flavor: "initial" | "restart" | "reseed"; previousThreadId: string | null }): string {
+  function exploreWorkerPrompt({
+    displayName,
+    prompt,
+    stage,
+    stateDirText,
+    workspaceRoot,
+    instructions,
+    flavor,
+    previousThreadId,
+  }: {
+    displayName: string;
+    prompt: string;
+    stage: { id: string; label: string; skill: string; primaryArtifact?: string };
+    stateDirText: string;
+    workspaceRoot: string;
+    instructions: string;
+    flavor: "initial" | "restart" | "reseed";
+    previousThreadId: string | null;
+  }): string {
+    const primaryArtifact = stage.primaryArtifact ?? `explore-${stage.id}.md`;
+    const deliverableStep = [
+      `Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/${primaryArtifact}`,
+      "(create it; overwrite any existing content with the fresh result).",
+      "Prefer your host's native file-write tool; if you must use a shell, write ONE file per command",
+      "with a direct path and read it back to verify it meets the stage contract",
+      "(required sections, tables, depth — never a condensed summary).",
+      "Self-check BEFORE finishing: run `bb stelow verify` — it prints PASS or the fix.",
+      "Do NOT end your turn on a FAIL.",
+    ].join(" ");
     const flavorLine = flavor === "initial"
       ? "This is a fresh single-stage exploration."
       : flavor === "restart"
@@ -1851,14 +1903,14 @@ Step 1 — load the stage skill: ${stage.label} (${stage.skill}) is bundled with
 
 Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \`bb stelow advance\`. Do NOT run the build workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-orchestrator) — only the stage skill above. You may read code, docs, or files in the workspace to ground the work; use the structured form below only if the input is genuinely ambiguous. Depth contract: the deliverable must meet its stage contract (required sections, tables, depth per the skill's Completeness contract — \`bb stelow verify\` enforces it and names the failing check). Full exploration: every variant the stage skill offers. Ask the user via the structured form whenever a choice affects the outcome — never auto-decide picks. But never park waiting for approval: there are no gates here, so a decision that would be a gate in the pipeline resolves via ask, then you finish.
 
-Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${stage.id}.md (create it; overwrite any existing content with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and read it back to verify it meets the stage contract (required sections, tables, depth — never a condensed summary). Self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or the fix. Do NOT end your turn on a FAIL.
+${deliverableStep}
 
 Step 4 — register the artifact so it renders on the card: append one block to <state-dir>/state.md (create the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append a duplicate):
 
     artifacts:
       - stage: explore
         kind: document
-        path: <explore-${stage.id}.md path relative to ${workspaceRoot}>
+        path: <${primaryArtifact} path relative to ${workspaceRoot}>
         label: ${stage.label}
 
 Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative to ${workspaceRoot}>" display="${stage.label}"}\` on its own line — bb renders these as clickable chips. Then emit \`::stelow-quality{path="<same relative path>"}\` on its own line — bb revalidates the file live and renders verified / hypothesis / needs-work / unverified.
@@ -3722,6 +3774,12 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     stateDir: (card, rootPath) => workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
     logComment: (cardId, targetId, body) => logCardComment(cardId, "card", targetId, "agent", body),
   });
+  const boundaryVersions = createBoundaryVersionReader({
+    bb,
+    getCard,
+    cardWorkspace,
+    stateDir: (card, rootPath) => workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+  });
   const executionLifecycle = createExecutionLifecycle({
     db,
     bb,
@@ -3729,6 +3787,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     getCard,
     logComment: (cardId, targetId, body) => logCardComment(cardId, "card", targetId, "agent", body),
     native: executionNative,
+    boundaryVersions,
   });
   const executionReconcile = createExecutionReconcile({
     db,
@@ -3743,6 +3802,19 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     native: executionNative,
     lifecycle: executionLifecycle,
   });
+  const scopeMapApproved = async (stateDir: string | null): Promise<boolean> => {
+    if (!stateDir) return false;
+    const file = await bb.sdk.files.read({ path: join(stateDir, "scope-map.json") })
+      .catch(() => null);
+    if (!file) return false;
+    try {
+      const map = JSON.parse(file.content) as unknown;
+      return validateScopeMap(map).length === 0
+        && (map as ScopeMap).status === "approved";
+    } catch {
+      return false;
+    }
+  };
   const executionAdvance = createExecutionAdvance({
     errors: { cardNotFound: ERR_CARD_NOT_FOUND, cardArchived: ERR_CARD_ARCHIVED, workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE },
     getCard,
@@ -3750,6 +3822,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     cardWorkspace,
     projectRoot: (projectId) => projectRoot(bb, projectId),
     stateDir: (card, rootPath) => workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    scopeMapApproved,
     ensureArtifacts: (rootPath, stateDir, requireOwnedState) => ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
     questionGate: (card, stateDir) => questionContractsGate(card, stateDir),
     runHelper,
@@ -4595,6 +4668,25 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           return { state: diagnosis.state, syncedScopes: scopes.length, machineBlocks: diagnosis.machine, humanBlocks: diagnosis.human, specFile: spec?.file ?? null };
         })()
         : null;
+      const scopeXray = card.kind === "build" && sourcePath
+        ? await (async () => {
+          const stateDir = card.dir_hash
+            ? await workflowStateDir(bb, sourcePath, card.id, card.dir_hash)
+            : null;
+          if (!stateDir) return null;
+          const [mapFile, stateFile] = await Promise.all([
+            bb.sdk.files.read({ path: join(stateDir, "scope-map.json") }).catch(() => null),
+            bb.sdk.files.read({ path: join(stateDir, "state.md") }).catch(() => null),
+          ]);
+          if (!mapFile) return null;
+          let map: unknown = null;
+          try { map = JSON.parse(mapFile.content) as unknown; } catch { return null; }
+          if (validateScopeMap(map).length > 0 || (map as ScopeMap).status !== "approved") return null;
+          return buildScopeXray(map as ScopeMap, {
+            currentShapeVersion: parseCurrentShapeVersion(stateFile?.content ?? null),
+          });
+        })()
+        : null;
       // Per-entry evidence through one composition (lib/trackable-evidence):
       // contracts, claims, and conditions for scopes and their tasks.
       // Non-build cards keep the contract shape with empty evidence.
@@ -4814,6 +4906,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
         splitAction,
         stageSkips,
         scopeSync,
+        scopeXray,
         artifacts,
         workerHistory,
         executionRuns: executionLifecycle.detailList(cardId),

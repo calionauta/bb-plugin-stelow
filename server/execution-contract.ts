@@ -17,6 +17,18 @@ export const executionStateSchema = z.enum([
   "cancelled",
 ]);
 
+export const boundaryContractSchema = z.object({
+  question: z.string(),
+  questionId: z.string().nullable(),
+  contractId: z.string(),
+  boundaryId: z.string(),
+  kind: z.enum(["reaction", "confirmation"]),
+  status: z.enum(["open", "answered"]),
+  shapeVersion: z.string(),
+  scopeMapVersion: z.string().nullable(),
+  answerSchema: z.unknown(),
+}).nullable();
+
 export const executionRunSchema = z.object({
   id: z.string(),
   cardId: z.string(),
@@ -35,6 +47,7 @@ export const executionRunSchema = z.object({
   errorCode: z.string().nullable(),
   previewDirective: z.string().nullable(),
   completionEventId: z.string().nullable(),
+  boundaryContract: boundaryContractSchema,
   createdAt: z.number(),
 });
 

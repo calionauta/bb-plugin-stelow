@@ -42,7 +42,7 @@ export interface ExecutionRun {
 export type PublicExecutionRun = Pick<ExecutionRun,
   "id" | "cardId" | "runId" | "recipeId" | "stage" | "sourceHash" | "adapter" | "workspaceId" |
   "originThreadId" | "nativeStatus" | "normalizedStatus" | "startedAt" | "completedAt" |
-  "resumeOf" | "errorCode" | "previewDirective" | "completionEventId" | "createdAt">;
+  "resumeOf" | "errorCode" | "previewDirective" | "completionEventId" | "boundaryContract" | "createdAt">;
 export function projectExecutionRun(value: ExecutionRun): PublicExecutionRun;
 export function ensureExecutionRunTable(db: any): void;
 export function createExecutionRun(db: any, input: Record<string, any>): ExecutionRun;

@@ -9,19 +9,19 @@
   "evidence": [
     {
       "path": "data/stelow-recipe-catalog.json",
-      "sha256": "44761e12dc0e167952dbe7095230ad66961e73ff3ef1d701b90b52581b525310"
+      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
     },
     {
       "path": "skills/stelow-workflow-orchestrator/recipe-catalog.json",
-      "sha256": "44761e12dc0e167952dbe7095230ad66961e73ff3ef1d701b90b52581b525310"
+      "sha256": "f5a7455a9a400f1f41781dfb3a8d2da5bac743bcadf17d0c1cf6d172e6f8333e"
     },
     {
       "path": "server/bb-workflow-bridge.ts",
-      "sha256": "a42118398d5743db086cea53dafce52febfa4cf6c38ccf9bc8bc846ac5fc30e6"
+      "sha256": "fc15053eb15c4ab99ef0f3cd720ee93da19c0f4d704671acfb73b3c3dc0cbab6"
     },
     {
       "path": "lib/execution-artifacts.mjs",
-      "sha256": "2641d0fa958d6b3fca60d7ee8189097cea62a96261ab5298aa5c77fdc44050b7"
+      "sha256": "9433eed404808662899f72dfe0e530cd15296c096c5430bda74d52525e8ff8ad"
     },
     {
       "path": "lib/execution-route.mjs",
@@ -39,7 +39,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "1582d8402f01a98abb63c4cf0962bc27c3cab40ff4af1df66eaf8e6e7efb67b5",
+      "source_sha256": "4f369a23cf6b5c653892fb77c381fb5f22f8dcb8814c385e8eb60f4162fed79b",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -51,7 +51,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "cf97293f089f4c574d3bd3bcc31dd90b7aad36c74caa9b8ba4e351d35cc465e0",
+      "source_sha256": "7c9677a80959a7b62652a60b494effd3637f67b8f3ead214c5b96de193a2c294",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -63,11 +63,23 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "9ba6c8a4469f50a7fa78f6e0c6234ac411476abfa669c5dfa73ab62dbe166c6a",
+      "source_sha256": "44d130280dcd030dd33ac4d632e2b8164ceafc00c5fb1e0c49f7eac49c72379b",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
       "outputs": ["interfaces/alternatives.json", "interfaces/alternatives-verification.json", "interfaces/interfaces.md"]
+    },
+    {
+      "id": "interface-contrast",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "1459371700eab5092e49b8fe596914cf47c67466857805401e4bafd372b31b1d",
+      "permission_profile": "inherit",
+      "failure_policies": ["fail"],
+      "human_boundaries": ["contrast"],
+      "outputs": ["interfaces/contrast.json", "interfaces/interfaces.md"]
     },
     {
       "id": "plan-critique",
@@ -75,7 +87,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "cb924f3c2dc446a5029f702ee18c685e6ccbd3a5bd2e72e52116ae43f7ca2522",
+      "source_sha256": "750c5951bbf5c3317074623c7729e5b02df10cbcee7b10c81d74983d5b69df69",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -87,7 +99,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "2554f46497b0f0eb1ae50ce4fcaa2ce44edd024c2c7135e920207fde495d73b4",
+      "source_sha256": "65a22f623e50ec3a67e459c426b7b2efe9616dc4bd4c9d5ab13ed29a09001217",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -99,7 +111,7 @@
       "expected_route": "coordinator-sequential",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "waived",
-      "source_sha256": "0e598cb3b0bb5e3c59795824603f294f5c2441f49d7d9c16fb65dcd1e93ca0a4",
+      "source_sha256": "6dc65a396d53483e31eb827f6e0316c9529f9471fbb028a2bbc5d903350deeb1",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": ["gap-escalation"],
@@ -107,12 +119,24 @@
       "waiver_id": "workspace-writing-scope-batch"
     },
     {
+      "id": "scope-map",
+      "classification": "low-risk-artifact",
+      "expected_route": "native",
+      "probe": "host-validation+artifact-contract",
+      "execution_claim": "validation-only",
+      "source_sha256": "297ee800cb4dcfab52b51f8aeb7f03eb7d8f71d197afd8e3d60255ea2c5c7ab6",
+      "permission_profile": "inherit",
+      "failure_policies": ["fail"],
+      "human_boundaries": [],
+      "outputs": ["scope-map.json"]
+    },
+    {
       "id": "setup-recon",
       "classification": "low-risk-artifact",
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "4a995e3d547005f31facfb9b1043af233a98c5d39dd12bf70905de4b5c4d38c5",
+      "source_sha256": "7745e05a8894f345e31dae7c8d0a4259e555d2d3f61e5ed81d11b40be19710a7",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -124,7 +148,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "6bcecf2a169dc507520886adf2ca217114d783705473a314c3faa191c6706ce4",
+      "source_sha256": "fc6fa558b7d6c56a29e8f0d4f4470e358cd5c354e849ea30c6ebb78f3a79966f",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -136,7 +160,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "95fbc7e4fdebd3139d1b9979641e1dcc81e99aea9fd26dae7d12bb52a3fbe870",
+      "source_sha256": "f56aa7f5d6928e7d3549d0da4d686f707ffbcd9a92af89ead30427e4c7da6499",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -148,7 +172,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "b52f4db42fec33db0429965a904046ccde804e1a98d340a3d99bf361937d98bf",
+      "source_sha256": "a0453c63eb4cb7bffeb7c29d25f102bc633a40d624eb04ef1a01690ec80dbb73",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -160,7 +184,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "db7e317236736834ef89e089cc2cd4f17322a42bab9d665dd86afd3056f9e346",
+      "source_sha256": "3bb4b8d834485c5ce20f094ff5a13effc2d649fe026be45e3da645e7154d2d42",
       "permission_profile": "inherit",
       "failure_policies": ["fail"],
       "human_boundaries": [],
@@ -172,7 +196,7 @@
       "expected_route": "native",
       "probe": "host-validation+artifact-contract",
       "execution_claim": "validation-only",
-      "source_sha256": "b98afee7169de3d39ea0ac107326a3d0e42aa0dc16255837a8e5a5fc3ee404ff",
+      "source_sha256": "da46b91c150855c65f092b5ea01b12e3af2c53a31481ca89afb4800efba595dd",
       "permission_profile": "inherit",
       "failure_policies": ["fail", "skip-with-reason"],
       "human_boundaries": [],

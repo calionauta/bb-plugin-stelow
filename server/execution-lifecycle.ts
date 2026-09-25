@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
   activeExecutionRun,
@@ -8,12 +7,14 @@ import {
   markExecutionResumeRequested,
   projectExecutionRun,
   resetExecutionBoundary,
+  resumeArtifactRoot,
   transitionExecutionRun,
   type ExecutionRun,
 } from "../lib/execution-run-ledger.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import { formatBatchContinuation } from "../lib/question-batch.mjs";
 import { recipeById } from "../lib/recipe-catalog.mjs";
+import { boundaryAnswerError, type BoundaryVersions } from "./execution-boundary.js";
 import type { ExecutionNative } from "./execution-native.js";
 import type { WorkerCard } from "./workers-types.js";
 
@@ -35,6 +36,7 @@ type LifecycleDeps = {
   getCard: (cardId: string) => WorkerCard | undefined;
   logComment: (cardId: string, targetId: string, body: string) => void;
   native: ExecutionNative;
+  boundaryVersions: (run: ExecutionRun) => Promise<BoundaryVersions | null>;
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -150,7 +152,7 @@ export function createExecutionLifecycle(deps: LifecycleDeps) {
       return { error: "The native run arguments are incomplete." };
     }
     const childId = `${run.id}-resume-${deps.randomId("run")}`;
-    const childRoot = join(run.artifactRoot, "resume", childId);
+    const childRoot = resumeArtifactRoot(run.artifactRoot);
     const args: ResumeArgs = {
       recipeId: parsed.recipeId,
       localRunId: childId,
@@ -200,6 +202,16 @@ export function createExecutionLifecycle(deps: LifecycleDeps) {
     run: ExecutionRun,
     decisions: AnswerDecision[],
   ): Promise<string | null> {
+    const boundaryDecision = decisions.find((decision) =>
+      decision.question.includes(`[Stelow boundary ${run.boundaryId}]`),
+    );
+    const currentVersions = await deps.boundaryVersions(run);
+    const answerError = boundaryAnswerError(
+      run.boundaryContract,
+      currentVersions,
+      boundaryDecision?.answers.join(", ") ?? "",
+    );
+    if (answerError) return answerError;
     let prepared: { childId: string; childRoot: string; args: ResumeArgs } | ResumeFailure;
     try {
       prepared = await prepareResume(run, decisions);

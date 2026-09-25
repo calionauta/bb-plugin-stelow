@@ -24,6 +24,7 @@ type AdvanceDeps = {
   cardWorkspace: (card: WorkerCard) => Promise<Workspace | null>;
   projectRoot: (projectId: string | null) => Promise<string | null>;
   stateDir: (card: WorkerCard, rootPath: string) => Promise<string | null>;
+  scopeMapApproved: (stateDir: string | null) => Promise<boolean>;
   ensureArtifacts: (rootPath: string, stateDir: string | null, requireOwnedState: boolean) => Promise<string | null>;
   questionGate: (card: WorkerCard, stateDir: string | null) => Promise<string | null>;
   runHelper: (args: string[], rootPath: string, stateDir?: string) => Promise<HelperResult>;
@@ -67,6 +68,7 @@ export function createExecutionAdvance(deps: AdvanceDeps) {
     const spec = latestSpecTech(rootPath, card.id)?.content ?? null;
     const registry = buildRegistry(scopes, { defaultKind: "scope" });
     const pending = scopes.filter((scope) => scope.status === "pending");
+    const hasScopeMap = await deps.scopeMapApproved(stateDir);
     const gate = advanceExecutionGates({
       kind: card.kind,
       stage: "execution",
@@ -75,6 +77,8 @@ export function createExecutionAdvance(deps: AdvanceDeps) {
       cycles: dependencyCycles(registry),
       hasUnstartablePending: pending.length > 0
         && !pending.some((scope) => canStart(registry, scope.id, isDoneStatus)),
+      intent: card.intent,
+      hasScopeMap,
     });
     const syncNote = syncedCount !== null && syncedCount > 0
       ? `\n(sync-scopes: synced ${syncedCount} scopes)`
