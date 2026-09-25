@@ -124,12 +124,43 @@ test("parked phase move writes the checkpoint before spawn and rolls it back on 
     await handlers.moveCard({ cardId: "card-1", status: "execution" }),
     { ok: false, error: "spawn failed" },
   );
-  assert.deepEqual(calls[0], ["update", "card-1", { stage: "execution", status: "in-progress" }]);
+  assert.deepEqual(calls[0], [
+    "update",
+    "card-1",
+    { stage: "execution", status: "in-progress" },
+  ]);
   assert.deepEqual(calls[1], ["fresh", "card-1", "start"]);
   assert.deepEqual(calls[2], [
     "update",
     "card-1",
     { stage: "triage", status: "draft" },
+  ]);
+});
+
+test("parked phase move publishes only after the worker starts", async () => {
+  const { handlers, calls, cardValue } = harness();
+  cardValue.worker_thread_id = null;
+
+  assert.deepEqual(
+    await handlers.moveCard({ cardId: "card-1", status: "analysis" }),
+    { ok: true, error: null },
+  );
+  assert.deepEqual(calls, [
+    ["update", "card-1", { stage: "analysis", status: "in-progress" }],
+    ["fresh", "card-1", "start"],
+    ["publish", "card-state", { cardId: "card-1" }],
+  ]);
+});
+
+test("active phase move updates the checkpoint without spawning or publishing", async () => {
+  const { handlers, calls } = harness();
+
+  assert.deepEqual(
+    await handlers.moveCard({ cardId: "card-1", status: "review" }),
+    { ok: true, error: null },
+  );
+  assert.deepEqual(calls, [
+    ["update", "card-1", { stage: "review", status: "in-progress" }],
   ]);
 });
 
