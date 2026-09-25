@@ -1,11 +1,12 @@
 # RFC: Ask-Gate Dispatcher + Per-Question Contract IDs
 
-Status: Phase 1 planned for immediate implementation; Phases 2–3 specified,
-not started. Goal: one decision point for every ask refusal, then exact
+Status: Phases 1–2 implemented. Phase 3 is intentionally deferred until real
+usage shows that exact contract-id enforcement is needed; ad-hoc questions
+remain supported. Goal: one decision point for every ask refusal, then exact
 matching of answers to question contracts — without breaking ad-hoc
 questions, standalone workers, or the fail-open doctrine.
 
-## 1. Current pipeline (verified, `server.ts` ask handler)
+## 1. Current pipeline (verified, `server/plugin-runtime.ts` ask branch)
 
 Ordered gates, first refusal wins:
 
@@ -24,9 +25,9 @@ Ordered gates, first refusal wins:
    (`split_proposals` row, question rewrite). NOT part of the dispatcher —
    it executes, the dispatcher only decides.
 
-## 2. Phase 1 — Dispatcher (mechanical, high confidence)
+## 2. Phase 1 — Dispatcher (implemented)
 
-New `lib/ask-gate.mjs`: `decideAskGate({ liveCount, expiredCount, kind,
+`lib/ask-gate.mjs`: `decideAskGate({ liveCount, expiredCount, kind,
 intent, stage, tag, forced, groups })` → `{ allowed: boolean, reason:
 string | null }`, applying duplicate → context → evidence in today's
 exact order (split stays inline in the handler: persistence is not a
@@ -42,9 +43,9 @@ non-build kinds and non-gate stages pass through. Wire as `test:ask-gate`.
 No behavior change, no schema change, no CLI change. Acceptance:
 existing ask/gate tests untouched and green.
 
-## 3. Phase 2 — Optional declaration + storage (no enforcement change)
+## 3. Phase 2 — Optional declaration + storage (implemented)
 
-- New `--contract <id>` flag on `bb stelow ask`, parsed in
+- `--contract <id>` on `bb stelow ask` is parsed in
   `lib/question-batch.mjs` per group (alongside `--question`/`--option`).
 - Validation at ask time against `requiredForStage` for the card's
   stage/mode/appetite: unknown id with a readable checklist refuses,
@@ -62,9 +63,10 @@ existing ask/gate tests untouched and green.
 - Acceptance: declaration round-trips ask→storage→advance-query in
   tests with a stubbed interaction id; undeclared flows byte-identical.
 
-## 4. Phase 3 — Enforcement with documented fallback
+## 4. Phase 3 — Exact-id enforcement (intentionally deferred)
 
-`advanceCard` + CLI advance consult recorded ids: a human-ask contract is
+If real usage justifies it, `advanceCard` plus CLI advance would consult
+recorded ids: a human-ask contract is
 satisfied by an answer carrying its id since stage entry. Fallback (kept
 deliberately): undeclared answers satisfy generally, exactly as today —
 otherwise ad-hoc clarifying questions would break. Unknown ids recorded

@@ -101,16 +101,18 @@ coordination on shared checkouts → 10/tick cap.
 ## Module map (for maintainers and agents)
 
 - `server/github-issues.ts` — contract fragment, migrations, matcher
-  wiring, scheduler, all 11 RPCs. `server.ts` only spreads the contract
-  and handlers, calls one migration function, and schedules two lines.
-  The seam is an explicit deps object (`db`, `bb`, clock, card ops).
+  wiring, scheduler entry point, and all 11 RPCs. `server/rpc-contract.ts`
+  composes the contract; `server/core-migrations.ts` calls
+  `runGithubMigrations`; `server/plugin-runtime.ts` spreads the handlers and
+  registers the `stelow-automation-rules` schedule. The capability seam is
+  an explicit deps object (`db`, `bb`, clock, preset and card operations).
 - `components/github/` — the dialog shell (`github-issues-dialog.tsx`),
   one state hook (`github-dialog-state.ts`: all tab state, RPC handlers,
   open/re-anchor/switch choreography), the tabs (`github-import-tab.tsx`,
   `github-automation-tab.tsx`), the chrome (`github-dialog-chrome.tsx`:
   tablist + footer), plus the completion write-back dialog
-  (`github-completion-dialog.tsx`). `BoardPanel` keeps the button and
-  the open flag; `BuildDetailBody` keeps the trigger and the open flag.
+  (`github-completion-dialog.tsx`). `BuildPanelDialogs` keeps the dialog
+  trigger; `BuildDetailBody` keeps the completion-draft trigger.
 - Pure core with node tests: `lib/automation-rules.mjs` (one decision
   function serves scheduler + dry-run), `lib/github-intent.mjs`
   (intent, authors, prompt threading, related issues),
@@ -128,10 +130,13 @@ checklist, not archaeology. To remove it entirely: delete
 `server/github-issues.ts`, `lib/github-issue-create.mjs`,
 `lib/github-issue-comments.mjs` (+ tests + `.d.mts` twins),
 `components/github-issues-dialog.tsx`, `components/isolated-worktree-check.tsx`,
-and `docs/github-issues.md`; drop the contract spread, the migration call,
-and the two schedule lines in `server.ts`; delete the `GithubIssuesDialog`
-mount, `GithubCreateRow` + `submitGithubTrailer`, `LinkedDiscussionSection`,
-and the done-draft dialog in `app.tsx`; drop the linked tables
+and `docs/github-issues.md`; remove its fragment from
+`server/rpc-contract.ts`, its migration call from `server/core-migrations.ts`,
+and its handler spread and schedule from `server/plugin-runtime.ts`; delete
+the `GithubIssuesDialog` mount from `components/panels/build-panel-dialogs.tsx`,
+`GithubCreateRow` from `components/creation/create-build-dialog.tsx`,
+`LinkedDiscussionSection` from the three detail bodies, and the done-draft
+dialog from `components/detail/build-detail-body.tsx`; drop the linked tables
 (`github_imports`, `github_issue_comments`, `automation_*`) with one
 migration. `STELOW_GITHUB_ISSUES=0` already disables everything without
 removing a line — prefer the switch unless the code itself must go.

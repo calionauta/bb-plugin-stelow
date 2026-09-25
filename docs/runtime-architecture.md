@@ -1,63 +1,150 @@
 # Server runtime architecture
 
-`server.ts` is a seven-line composition root. It exports the canonical RPC
-contract and delegates startup to `server/plugin-runtime.ts`.
+The server has two different boundaries. The package entry, `server.ts`, is a
+seven-line composition root. It re-exports the canonical RPC contract and
+default plugin from `server/plugin-runtime.ts`; capability code must not import
+the entry.
 
-## Current composition
+`server/plugin-runtime.ts` is still a large transitional runtime. It composes
+the extracted capability slices and registers their handlers, but it also
+retains card, question, artifact, publication, and CLI orchestration code. The
+architecture below records both the recovered seams and that remaining debt;
+it does not claim that every capability is fully extracted.
 
-`server/plugin-runtime.ts` constructs the host-facing capabilities and passes
-their handlers to `bb.rpc.register`:
+## Contract composition
 
-- `server/cards*.ts` owns card contracts, reads, creation, and detail seams.
-- `server/preset*.ts` owns preset persistence and card preset access.
-- `server/drafting.ts` owns draft command behavior and completion-note drafts.
-- `server/inbox.ts`, `server/decision-api.ts`, `server/github-issues.ts`, and
-  `server/artifacts-publication.ts` own their feature contracts, migrations,
-  handlers, and schedules.
-- `server/execution-native.ts` owns adapter selection and native run launch.
-- `server/execution-lifecycle.ts` owns run ownership, cancellation, answers,
-  and resume boundaries.
-- `server/execution-reconcile.ts` owns periodic status and artifact reconciliation.
-- `server/execution-advance.ts` owns stage preflight, route dispatch, and CLI
-  advance behavior.
-- `server/worktree-cleanup.ts` owns cleanup preview and confirmed removal.
-- `server/runtime/platform.ts` owns tool status/install probes, update state,
-  model discovery, and preview RPC delegation. Probe subprocesses receive an
-  explicit environment that excludes daemon credentials.
-- `server/runtime/research-artifacts.ts` owns research and exploration
-  artifact discovery and validation.
-- `server/runtime/flow-metrics.ts` owns completed-card flow aggregation and
-  current attention signals.
-- `server/runtime/mentions.ts` and `server/runtime/reconciler.ts` own mention
-  provider registration and periodic reconciliation.
+`server/rpc-contract.ts` composes the public contract from these existing
+fragments:
 
-Execution migrations run during startup. Reconciliation runs once after
-startup and on a named interval; the timer is cleared on disposal. Worker
-threads are never stopped by plugin disposal, because hot reload is not
-uninstall.
+- `server/card-rpc-contract.ts` and `server/card-detail-rpc-contract.ts` for
+  card reads, writes, board state, and detail projections.
+- `server/lifecycle-rpc-contract.ts` for card lifecycle, questions, worker
+  actions, and workflow actions.
+- `server/execution-contract.ts` for the durable native-run lifecycle.
+- `server/platform-rpc-contract.ts` for platform, tool, update, preview, and
+  CLI support methods.
+- `server/github-issues.ts`, `server/inbox.ts`,
+  `server/artifacts-publication.ts`, `server/workspaces-recovery.ts`, and
+  `server/decision-api.ts` for their feature-local contracts.
 
-## Contract and test topology
+`composeRpcFragments` rejects duplicate method names. Startup registers one
+handler for every composed method through `bb.rpc.register`.
 
-RPC contract fragments are composed in `server/rpc-contract.ts`. Startup tests
-assert that every contract method has a handler and exercise representative
-success, refusal, and disposal paths. The execution and worktree modules also
-have focused behavior tests. The source-shape checker compares changed source
-lines with `origin/master`; it has no inherited-baseline exemption. The budget
-checker applies the same branch comparison and reports inherited debt only
-when the current file is no larger than the base version.
+## Capability map
 
-## Known integration boundary
+The runtime constructs these modules and spreads or delegates their handlers:
 
-Merge commit `0795f04` brought current `origin/master` behavior into this branch,
-including the centralized execution modules and their UI-facing contract fields.
-The branch is merge-tree clean against the fetched `origin/master` tip.
+- `server/cards.ts` exposes `createCardStore` and `createCardsServer` for
+  card storage, board reads, creation, lifecycle, and detail seams.
+- `server/presets.ts` composes preset accessors, assignment, CRUD handlers,
+  and worker-facing preset resolution.
+- `server/inbox.ts` owns the inbox contract, migrations, recording,
+  resolution, reads, and per-kind presentation boundary.
+- `server/workers*.ts` owns worker spawn, respawn, retry, history, migration,
+  and lifecycle data. `createWorkers(...).dispose()` cancels host-owned retry
+  and deferred-respawn timers; it does not stop a live BB thread.
+- `server/drafting.ts` owns draft execution and completion-note drafts.
+- `server/decision-api*.ts` owns the decision router contract, migrations, and
+  API seams.
+- `server/github-issues.ts` owns GitHub tables, import claims, automation,
+  matching, the scheduler entry point, and all GitHub handlers.
+- `server/artifacts-publication*.ts` owns publication history, commit diff,
+  push terminals, and confirmed Git operations.
+- `server/workspaces-recovery*.ts` owns evidence-led exploratory checkout
+  recovery and recovery-audit creation.
+- `server/execution-native.ts`, `server/execution-lifecycle.ts`,
+  `server/execution-reconcile.ts`, and `server/execution-advance.ts` own
+  native launch, durable run state, reconciliation, and stage advance
+  respectively.
+- `server/worktree-cleanup.ts` owns confirmed worktree removal.
 
-The remaining large runtime entrypoint is real technical debt. The full
-capability split and line-budget cleanup are not complete: the source-shape gate
-currently reports 322 changed lines over 160 characters, all in
-`server/plugin-runtime.ts`. The budget checker also reports the 6,434-line runtime,
-numerous oversized runtime or handler functions, and the expanded 2,084-line
-lifecycle contract test. Copy detection does not exempt debt
-when old oversized code is moved into a new extraction slice. This note is
-therefore not a claim that the runtime is fully decomposed or that
-`npm run quality:shape` is green.
+The `server/runtime/` directory owns cross-capability host adapters:
+
+- `server/runtime/lifecycle-startup.ts` runs core and execution migrations and
+  registers the named plugin-update schedule.
+- `server/runtime/thread-lifecycle.ts` maps thread events to live-card
+  synchronization and registers the startup catch-up pass.
+- `server/runtime/reconciler.ts` owns the 45-second claim, scope-progress,
+  severity, and live-card reconciliation timer.
+- `server/runtime/pending-questions.ts` projects host interactions and durable
+  recovery questions into pending card questions.
+- `server/runtime/card-preview.ts` adapts the portable
+  `lib/preview-runtime.mjs` process owner to card workspace selection.
+  `server/runtime/platform.ts`, `server/runtime/plugin-update.ts`,
+  `server/runtime/research-artifacts.ts`, `server/runtime/flow-metrics.ts`,
+  `server/runtime/cli-registry.ts`, and `server/runtime/cli-dispatch.ts`
+  isolate their respective runtime seams.
+- `server/runtime/mentions.ts` registers the board and file mention
+  providers.
+
+Pure policy stays in `lib/`; the server modules are host adapters and
+composition boundaries.
+
+## Startup and registration order
+
+`server/runtime/lifecycle-startup.ts` is the first runtime seam. It constructs
+the update checker, registers `stelow-plugin-update-check`, and runs
+`runPluginMigrations` followed by `runExecutionMigrations` before the runtime
+registers the public contract.
+
+The remaining runtime then follows this order:
+
+1. Construct storage, card, preset, inbox, worker, drafting, preview, platform,
+   and research capability objects.
+2. Construct execution and cleanup capabilities with explicit dependencies.
+3. Register thread lifecycle handlers, reconcile live cards once, and start
+   the execution and general reconciliation timers.
+4. Construct decision, GitHub, and publication capabilities.
+5. Register the composed RPC contract, the `stelow` CLI, and mention
+   providers.
+6. Register agent skill visibility for Stelow worker threads.
+
+Named background schedules are host-owned. Capability schedulers do not run
+while their feature kill switch is disabled.
+
+## Disposal and hot reload
+
+Disposal is deliberately narrower than uninstall:
+
+- `preview.dispose()` stops preview processes and dev servers started by this
+  plugin instance.
+- The execution reconciliation interval and `startReconciler` interval are
+  cleared.
+- Worker retry and deferred-respawn timers are cancelled through
+  `workers.dispose()`.
+- Disposal never calls `threads.stop`; live worker threads survive hot reload.
+  Startup reconciliation resynchronizes their cards instead.
+
+`tests/plugin-startup.test.mjs` executes every registered disposer twice and
+fails if disposal tries to stop a live thread. `tests/runtime-reconciler.test.mjs`
+pins timer cleanup and closed-database behavior. These complement the
+capability behavior tests; they do not replace them.
+
+## Tests and current boundary
+
+`tests/server-composition-root.test.mjs` pins the thin root, one default plugin
+entrypoint, one canonical contract, the absence of upward imports, and the
+wiring of extracted runtime capabilities. The full suite also checks every RPC
+method has a handler and exercises representative success, refusal, and
+disposal paths.
+
+The shape gate compares changed source with `origin/master` and applies the
+same boundary to the budget gate. It reports inherited debt separately only
+when the current file is no larger than its base version. Moving oversized code
+into a new file does not reset that debt.
+
+The remaining technical debt is concrete: `server/plugin-runtime.ts` is still
+roughly 12.5k lines, and it still owns substantial RPC and CLI behavior beyond
+composition. New capabilities must use an explicit seam rather than growing
+that file. The extracted modules listed above are real architecture, not a
+claim that the transition is complete.
+
+## Portable blueprint evidence
+
+The upstream pattern is documented in
+[`calionauta/stelow/docs/host-plugin-blueprint.md`](https://github.com/calionauta/stelow/blob/main/docs/host-plugin-blueprint.md#14-host-runtime-composition-and-lifecycle-slices),
+section 14, “Host runtime composition and lifecycle slices.” It records the
+portable contract mirrored here: capability-owned contracts and lifecycle,
+explicit dependency injection, migrations before registration, named
+schedules, idempotent disposal, and the rule that hot reload must not stop live
+worker threads.
