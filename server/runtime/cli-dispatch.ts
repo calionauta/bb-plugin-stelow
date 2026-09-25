@@ -1,10 +1,10 @@
 import { stelowCliCommands, cliHelpResult, cliUnknownResult } from "./cli-registry.js";
 
-type CliRunContext = { projectId?: string | null; threadId?: string | null; signal?: AbortSignal };
+export type CliRunContext = { projectId?: string | null; threadId?: string | null; signal?: AbortSignal };
 
-type CliResult = { exitCode: number; stdout?: string; stderr?: string };
+export type CliResult = { exitCode: number; stdout?: string; stderr?: string };
 
-type CliDispatchDeps = {
+export type CliDispatchDeps = {
   run: (argv: string[], context: CliRunContext) => Promise<CliResult>;
 };
 

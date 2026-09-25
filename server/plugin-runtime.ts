@@ -202,7 +202,6 @@ import {
   freshStatusForReseed,
   resolveReseedIntent,
 } from "../lib/workflow-intent-policy.mjs";
-import { WORKFLOW_SKILLS } from "../lib/workflow-skills-sync.mjs";
 import { previewText } from "../lib/preview-session.mjs";
 import {
   cardWorkerSeedRefusal,
@@ -303,10 +302,9 @@ import {
   createGithubAutomation,
   githubIssuesEnabled,
 } from "./github-issues.js";
-import { createInboxServer } from "./inbox.js";
 import { createDraftingServer } from "./drafting.js";
-import { createCardsServer, createCardStore } from "./cards.js";
-import { createPresetServer, type PresetRow } from "./presets.js";
+import { createCardsServer } from "./cards.js";
+import type { PresetRow } from "./presets.js";
 import { createArtifactsPublication } from "./artifacts-publication.js";
 import {
   createWorkers,
@@ -316,7 +314,6 @@ import {
   type WorkerCard,
 } from "./workers.js";
 import {
-  createScopeProgressSync,
   latestSpecTech,
   loadCardScopes,
   normalizeStatus,
@@ -326,15 +323,19 @@ import {
 } from "./scopes.js";
 import { createPlatformHandlers } from "./runtime/platform.js";
 import { createCardPreview } from "./runtime/card-preview.js";
-import { cliUnknownResult, stelowCliCommands } from "./runtime/cli-registry.js";
+import { cliUnknownResult } from "./runtime/cli-registry.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
-import { startReconciler } from "./runtime/reconciler.js";
 import {
-  registerThreadLifecycle,
-  reconcileLiveCardsOnStartup,
-} from "./runtime/thread-lifecycle.js";
-import { createCliDispatch } from "./runtime/cli-dispatch.js";
+  CARD_ERRORS,
+  createCoreDependencies,
+  registerAutomationSchedule,
+  registerPreviewDisposal,
+  registerRpcHandlers,
+  registerRuntimeLifecycle,
+  registerStelowCli,
+  registerWorkerSkills,
+} from "./runtime/composition.js";
 import { startRuntimeServices } from "./runtime/lifecycle-startup.js";
 import { createExecutionNative } from "./execution-native.js";
 import { createExecutionLifecycle } from "./execution-lifecycle.js";
@@ -2087,27 +2088,22 @@ ${prompt}`;
     created_at: number;
   };
 
-  const cardStore = createCardStore(bb, db);
+  const { cardStore, presetServer, inbox } = createCoreDependencies({
+    bb,
+    db,
+    now,
+    randomId,
+  });
   const getCard = cardStore.getCard;
   const cardWorkspace = cardStore.cardWorkspace;
 
   // Shared refusal copy: identical wording everywhere so the same failure
   // reads the same on every surface, fixed in one place.
-  const ERR_CARD_NOT_FOUND = "Card not found.";
+  const ERR_CARD_NOT_FOUND = CARD_ERRORS.cardNotFound;
   const ERR_CARD_ARCHIVED = "This card is archived.";
   const ERR_WORKSPACE_UNAVAILABLE = "Workspace is unavailable.";
-  const ERR_PRESET_NOT_FOUND = "Preset not found.";
+  const ERR_PRESET_NOT_FOUND = CARD_ERRORS.presetNotFound;
 
-  const presetServer = createPresetServer({
-    db,
-    bb,
-    now,
-    errors: {
-      cardNotFound: ERR_CARD_NOT_FOUND,
-      presetNotFound: ERR_PRESET_NOT_FOUND,
-    },
-    getCard,
-  });
   const getDefaultPreset = presetServer.getDefaultPreset;
   const getPresetById = presetServer.getPresetById;
   const getPresetForCard = presetServer.getPresetForCard;
@@ -2117,14 +2113,6 @@ ${prompt}`;
   const getReviewPresetId = presetServer.getReviewPresetId;
   const pinCardPreset = presetServer.pinCardPreset;
   const removeCardPreset = presetServer.removeCardPreset;
-
-  const inbox = createInboxServer({
-    db,
-    now,
-    randomId,
-    publish: (event, payload) => bb.realtime.publish(event, payload),
-    listProjects: () => bb.sdk.projects.list(),
-  });
   const recordInboxEvent = inbox.record;
   const resolveInboxEvents = inbox.resolve;
   const syncPendingQuestionInbox = (
@@ -2952,7 +2940,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
 
   // A reload or disable must not leave a dev server running behind the user's
   // back: the processes are ours, so shutting them down is ours too.
-  bb.onDispose(() => preview.dispose());
+  registerPreviewDisposal(bb, () => preview.dispose());
 
   type PreviewEnvironment = {
     id?: string | null;
@@ -4942,20 +4930,6 @@ means the worker is waiting on input it never asked for.",
     escalateIfStalled(cardId);
   }
 
-  registerThreadLifecycle(bb, {
-    db,
-    syncThreadState,
-    applyFailed: (cardId, threadId, error) =>
-      workers.applyFailed(cardId, threadId, error),
-  });
-  reconcileLiveCardsOnStartup(db, syncThreadState);
-  void executionReconcile.reconcile();
-  const RECONCILE_MS = 45_000;
-  const executionReconcileTimer = setInterval(() => {
-    if ((db as unknown as { open?: boolean }).open)
-      void executionReconcile.reconcile();
-  }, RECONCILE_MS);
-
   // Deterministic sweep (bb 0.40 removed system/thread/interrupted from the
   // plugin event API): periodically reconcile live cards so interrupts,
   // missed transitions and stale states self-heal without event delivery.
@@ -4967,37 +4941,25 @@ means the worker is waiting on input it never asked for.",
   function maybeBumpSeverity(): Promise<void> {
     return decisionApi.maybeBumpSeverity();
   }
-  const reconciler = startReconciler({
+
+  registerRuntimeLifecycle({
+    bb,
     db,
     syncThreadState,
-    scopeProgress: createScopeProgressSync({
-      getCard,
-      cardWorkspace,
-      publish: (cardId) => bb.realtime.publish("card-state", { cardId }),
-    }),
+    applyFailed: (cardId, threadId, error) =>
+      workers.applyFailed(cardId, threadId, error),
+    executionReconcile,
+    getCard,
+    cardWorkspace,
     maybeBumpSeverity,
     notifyClaimWaiters,
-    now: Date.now,
-    onError: (phase, error) =>
-      bb.log.warn(
-        `Stelow reconciliation ${phase} failed: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-  });
-  bb.onDispose(() => {
-    clearInterval(executionReconcileTimer);
-    reconciler.dispose();
-    workers.dispose();
+    disposeWorkers: () => workers.dispose(),
   });
 
   // Workflow mechanics are private to workers created by the Build panel.
   // Manifest skills are static registrations in BB, so configure() is the
   // boundary that keeps them out of every other thread/session.
-  bb.agents.configure((context) => ({
-    tools: [],
-    skills: context.thread.title?.startsWith("Stelow: ")
-      ? [...WORKFLOW_SKILLS]
-      : [],
-  }));
+  registerWorkerSkills(bb);
 
   // The helper and skills are pinned to one upstream commit at plugin release
   // time. Do not mutate them at boot: a running plugin must remain able to
@@ -5069,9 +5031,7 @@ a bb stelow command fails, read its stderr once and continue — do not spend th
 
   // The scheduler lives with the feature it drives: disabling the module
   // (STELOW_GITHUB_ISSUES=0) stops the ticks along with the RPCs.
-  bb.background.schedule("stelow-automation-rules", "*/5 * * * *", () =>
-    github.runAutomationRules(),
-  );
+  registerAutomationSchedule(bb, () => github.runAutomationRules());
 
   const artifactsPublication = createArtifactsPublication({
     db,
@@ -5086,7 +5046,8 @@ a bb stelow command fails, read its stderr once and continue — do not spend th
     normalizeStatus,
   });
 
-  bb.rpc.register(
+  registerRpcHandlers(
+    bb,
     rpcContract,
     {
       ...decisionApi.handlers,
@@ -8091,21 +8052,9 @@ the normal build workflow.`,
 
       ...platform,
     },
-    // Opt into BB 0.43 RPC discovery so the described methods are listed.
-    { experimental_discoverable: true },
   );
 
-  const dispatchCli = createCliDispatch({
-    run: async (argv, ctx) => runCliCommand(argv, ctx),
-  });
-  bb.cli.register({
-    name: "stelow",
-    summary: "Inspect and interact with Stelow workflows",
-    commands: stelowCliCommands,
-    async run(argv, ctx) {
-      return dispatchCli(argv, ctx);
-    },
-  });
+  registerStelowCli(bb, (argv, context) => runCliCommand(argv, context));
 
   async function runCliCommand(
     argv: string[],

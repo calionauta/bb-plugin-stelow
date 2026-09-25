@@ -7,6 +7,7 @@ import { cliHelpText, cliUsageLine, nearestCommand } from "../lib/cli-suggest.mj
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/composition.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli-dispatch.ts"), "utf8"),
 ].join("\n");

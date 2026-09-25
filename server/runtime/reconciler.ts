@@ -5,7 +5,7 @@ import { isClaimTerminal } from "../../lib/card-terminal.mjs";
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type ReleasedFile = { workspacePath: string; file: string };
 const RECONCILE_MS = 45_000;
-type Scheduler = {
+export type Scheduler = {
   setInterval: typeof setInterval;
   clearInterval: typeof clearInterval;
 };

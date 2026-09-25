@@ -12,6 +12,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/composition.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/platform.ts"), "utf8"),
 ].join("\n");
 const workersSource = readFileSync(join(root, "server/workers.ts"), "utf8");
@@ -32,7 +33,7 @@ function slice(start, end) {
 }
 
 // --- The host hands the runtime real effects, or nothing works. -------------
-const wiring = slice("const preview = createPreviewRuntime({", "bb.onDispose(");
+const wiring = slice("const preview = createPreviewRuntime({", "registerPreviewDisposal(");
 assert.match(wiring, /readFile:\s*\(path\)\s*=>\s*bb\.sdk\.files\s*\.read\(\{\s*path\s*\}\)/, "the runtime must read files through the host");
 assert.match(wiring, /listDirs: \(dir\) =>/, "the runtime must be able to list a directory");
 assert.match(
@@ -47,7 +48,7 @@ assert.match(wiring, /baseEnv: process\.env/, "the dev server inherits the serve
 // The runtime cannot know when the plugin goes away, so this wiring is the
 // only thing standing between a plugin update and an orphaned process holding
 // a port.
-assert.match(source, /bb\.onDispose\(\(\) => preview\.dispose\(\)\)/, "dispose must be wired to the plugin lifetime");
+assert.match(source, /registerPreviewDisposal\(bb, \(\) => preview\.dispose\(\)\)/, "dispose must be wired to the plugin lifetime");
 
 // --- The lifecycle lives in the library, not back in a handler. ------------
 // AGENTS.md: new state logic belongs in lib/ with a node test. A second state

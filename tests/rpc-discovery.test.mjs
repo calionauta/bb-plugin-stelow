@@ -38,8 +38,4 @@ for (const { file, start, end } of contracts) {
 }
 
 
-// The contract opts into host-side discovery: descriptions alone leave
-// bb plugin rpc list empty, so this fails if the opt-in flag is dropped.
-const srv = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-assert.match(srv, /experimental_discoverable: true/, "register opts into discovery");
 console.log(`rpc discovery test ok: ${total} methods publish descriptions`);

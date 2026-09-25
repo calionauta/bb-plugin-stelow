@@ -60,6 +60,9 @@ The runtime constructs these modules and spreads or delegates their handlers:
 
 The `server/runtime/` directory owns cross-capability host adapters:
 
+- `server/runtime/composition.ts` assembles the shared card, preset, and inbox
+  dependencies and owns lifecycle, scheduler, skill-visibility, RPC, CLI, and
+  preview-disposal registration.
 - `server/runtime/lifecycle-startup.ts` runs core and execution migrations and
   registers the named plugin-update schedule.
 - `server/runtime/thread-lifecycle.ts` maps thread events to live-card
@@ -124,8 +127,10 @@ capability behavior tests; they do not replace them.
 
 `tests/server-composition-root.test.mjs` pins the thin root, one default plugin
 entrypoint, one canonical contract, the absence of upward imports, and the
-wiring of extracted runtime capabilities. The full suite also checks every RPC
-method has a handler and exercises representative success, refusal, and
+wiring of extracted runtime capabilities. `tests/runtime-composition.test.mjs`
+executes lifecycle events, scheduler cleanup, worker skill isolation, RPC
+registration, CLI help, and preview disposal. The full suite also checks every
+RPC method has a handler and exercises representative success, refusal, and
 disposal paths.
 
 The shape gate compares changed source with `origin/master` and applies the
