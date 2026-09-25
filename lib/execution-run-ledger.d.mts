@@ -1,3 +1,15 @@
+export interface BoundaryContract {
+  question: string;
+  questionId: string | null;
+  contractId: string;
+  boundaryId: string;
+  kind: "reaction" | "confirmation";
+  status: "open" | "answered";
+  shapeVersion: string;
+  scopeMapVersion: string | null;
+  answerSchema: unknown;
+}
+
 export interface ExecutionRun {
   id: string;
   cardId: string;
@@ -24,6 +36,7 @@ export interface ExecutionRun {
   resumeRequestedAt: number | null;
   boundaryId: string | null;
   boundaryQuestion: string | null;
+  boundaryContract: BoundaryContract | null;
   createdAt: number;
 }
 export type PublicExecutionRun = Pick<ExecutionRun,
@@ -40,5 +53,6 @@ export function transitionExecutionRun(db: any, id: string, next: string, patch?
 export function recordExecutionCompletion(db: any, id: string, eventId: string, status: string, patch?: Record<string, any>): { run: ExecutionRun; duplicate: boolean };
 export function markExecutionNeedsInputSent(db: any, id: string, at?: number): ExecutionRun;
 export function markExecutionResumeRequested(db: any, id: string, at?: number): ExecutionRun;
+export function resumeArtifactRoot(artifactRoot: string): string;
 export function resetExecutionBoundary(db: any, id: string): ExecutionRun;
 export function cancelExecutionRuns(db: any, cardId: string, reason?: string): number;

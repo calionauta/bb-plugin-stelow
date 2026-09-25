@@ -84,15 +84,45 @@ function sample(schema) {
     return Object.fromEntries(Object.entries(schema.properties ?? {}).map(([key, child]) => [key, sample(child)]));
   }
   if (schema.type === "array") return Array.from({ length: Math.max(1, schema.minItems ?? 0) }, () => sample(schema.items));
+  if (schema.type === "number") return schema.const ?? 0;
   if (schema.type === "string") return "pilot evidence";
   if (schema.type === "boolean") return true;
   assert.fail(`matrix cannot synthesize unsupported schema type: ${schema.type}`);
 }
 
 function validContents(recipe) {
+  const scopeMap = {
+    schemaVersion: 1,
+    mapId: "map-pilot",
+    status: "approved",
+    shapeVersion: "v1",
+    provenance: ["simulation:pilot"],
+    approval: { receiptId: "approval-pilot", approvedBy: "simulation" },
+    openDecisions: [],
+    scopes: [{ id: "scope-1", title: "Pilot scope", outcome: "Pilot outcome", capabilities: ["pilot"], inScope: ["pilot behavior"], outOfScope: [], dependsOn: [], status: "current" }],
+  };
+  const contrast = {
+    schemaVersion: 1,
+    receiptId: "contrast-pilot",
+    route: "interface-refinement",
+    briefStatus: "generation-ready",
+    authority: "agent",
+    disposition: "continue",
+    shapeVersion: "v1",
+    scopeMapVersion: "map-pilot",
+    decisionQuestion: "Which pilot interface should be selected?",
+    primaryDimension: "focus",
+    fixedConstraints: [{ name: "safety", value: "preserve warning", source: "simulation" }],
+    criteria: ["scan cost", "accessibility"],
+    evidence: [{ source: "simulation", reference: "pilot", claim: "split view is testable" }],
+    options: [{ id: "split", primaryValue: "split view", relatedValues: [], compatibility: "valid" }],
+    nextAction: "Record the pilot selection.",
+  };
   return Object.fromEntries(recipe.tasks.map((task) => [
     task.output,
-    task.output.endsWith(".json") ? JSON.stringify(sample(task.output_schema_contract)) : "# Pilot evidence\n",
+    task.output === "scope-map.json" ? JSON.stringify(scopeMap)
+      : ["interfaces/contrast.json", "interfaces/selection-receipt.json"].includes(task.output) ? JSON.stringify(contrast)
+        : task.output.endsWith(".json") ? JSON.stringify(sample(task.output_schema_contract)) : "# Pilot evidence\n",
   ]));
 }
 

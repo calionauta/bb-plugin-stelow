@@ -166,6 +166,22 @@ Source of truth for "what can this plugin do"; see `AGENTS.md`
   pull request via the provider or BB's native flow.
   The viewer is restricted to commits recorded in that
   card’s publication history, so it never becomes an arbitrary Git browser.
+- **Interface Contrast contracts.** Validated decision receipts distinguish
+  agent-authored evidence from human authority, preserve Shape and Scope Map
+  versions, and carry explicit disposition routes. Scope X-ray is a read-only
+  server projection of approved nodes, dependency edges, provenance, and
+  freshness. Scope-map challenges name
+  their destination and stale artifact set. Native `needs_input` boundaries
+  preserve contract ID, boundary ID, versions, and answer schema so a stale
+  answer cannot silently resume a run. Refactors with more than one delivery
+  scope require an approved Scope Map before execution; one-scope refactors stay
+  lightweight.
+- **Scope Mapping in Explore** (`scope-mapping`). Explore can run the
+  `stelow-product-scope-mapping` method as one focused technique. It writes the
+  readable `explore-scope-map.md` artifact first and may include validated
+  `scope-map.json` evidence. The result stays a draft until an approval receipt
+  exists; Explore never creates a second Build stage or execution lifecycle.
+  See the [Interface Contrast and Scope Map guide](docs/interface-contrast.md).
 - **Exploratory cards** (`createCardInternal`). "Don't work in a project"
   gets an isolated persistent workspace under
   `~/.bb/stelow/exploratory/<cardId>` backed by the container project

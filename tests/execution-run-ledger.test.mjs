@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
-import { createExecutionRun, ensureExecutionRunTable, getExecutionRun, activeExecutionRun, projectExecutionRun, recordExecutionCompletion, transitionExecutionRun, cancelExecutionRuns } from "../lib/execution-run-ledger.mjs";
+import { createExecutionRun, ensureExecutionRunTable, getExecutionRun, activeExecutionRun, projectExecutionRun, recordExecutionCompletion, resumeArtifactRoot, transitionExecutionRun, cancelExecutionRuns } from "../lib/execution-run-ledger.mjs";
 
 const db = new Database(":memory:");
 db.exec("CREATE TABLE cards (id TEXT PRIMARY KEY)");
@@ -14,8 +14,11 @@ assert.equal(activeExecutionRun(db, "card-1").runId, "run-1");
 assert.throws(() => transitionExecutionRun(db, run.id, "succeeded"), /invalid execution transition/);
 assert.equal(transitionExecutionRun(db, run.id, "running", { nativeStatus: "running", runId: "run-resumed", now: 101 }).normalizedStatus, "running");
 assert.equal(getExecutionRun(db, run.id).runId, "run-resumed");
-assert.equal(transitionExecutionRun(db, run.id, "needs_input", { boundaryId: "boundary-1", boundaryQuestion: "Approve?" }).normalizedStatus, "needs_input");
+const boundaryContract = { question: "Approve?", questionId: "question-1", contractId: "contract-1", boundaryId: "boundary-1", kind: "confirmation", status: "open", shapeVersion: "v1", scopeMapVersion: "map-1", answerSchema: { type: "object" } };
+assert.equal(transitionExecutionRun(db, run.id, "needs_input", { boundaryId: "boundary-1", boundaryQuestion: "Approve?", boundaryContract }).normalizedStatus, "needs_input");
 assert.equal(getExecutionRun(db, run.id).boundaryId, "boundary-1");
+assert.deepEqual(getExecutionRun(db, run.id).boundaryContract, boundaryContract, "needs_input persists the full boundary contract");
+assert.equal(resumeArtifactRoot(run.artifactRoot), run.artifactRoot, "resume keeps completed artifacts in the original root");
 assert.equal(transitionExecutionRun(db, run.id, "running").normalizedStatus, "running");
 const completed = recordExecutionCompletion(db, run.id, "event-1", "succeeded", { nativeStatus: "succeeded" });
 assert.equal(completed.duplicate, false);
@@ -27,7 +30,7 @@ assert.equal(activeExecutionRun(db, "card-1"), null);
 assert.equal(second.normalizedStatus, "queued");
 const detailRun = projectExecutionRun(second);
 const detailRunKeys = [
-  "adapter", "cardId", "completedAt", "completionEventId", "createdAt", "errorCode", "id", "nativeStatus",
+  "adapter", "boundaryContract", "cardId", "completedAt", "completionEventId", "createdAt", "errorCode", "id", "nativeStatus",
   "normalizedStatus", "originThreadId", "previewDirective", "recipeId", "resumeOf", "runId", "sourceHash", "stage",
   "startedAt", "workspaceId",
 ].sort();
