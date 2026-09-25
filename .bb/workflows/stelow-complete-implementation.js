@@ -14,9 +14,11 @@ const task = args?.task || "Implement the full Stelow roadmap in order: Decision
 const constraints = args?.constraints || "Work only in the current repository checkout. Do not edit skills/ or data/stelow. Keep coordinator-sequential wherever safety is unproven. Never declare a pass without runtime evidence. Do not commit, push, open PRs, merge releases, restart the BB daemon, or touch unrelated worktrees.";
 
 function blocked(final, phase) {
-  const text = JSON.stringify(final ?? {});
-  const negative = /block|reject|fail|not ready|do not merge|don't merge/i.test(text);
-  return { phase, negative, text };
+  const f = final ?? {};
+  const status = String(f.status ?? "");
+  const verdicts = [(f.mergeRecommendation ?? ""), ...((f.reviews ?? []).map((r) => r?.verdict ?? "")), ...((f.phases ?? []).map((p) => String(p ?? "")))].join(" ");
+  const negative = /blocked|rejected|failed|not ready|do not merge|don't merge|not merge-ready/i.test(status + " " + verdicts);
+  return { phase, negative, text: JSON.stringify({ status, verdicts: verdicts.slice(0, 500) }) };
 }
 
 phase("Phase1");
