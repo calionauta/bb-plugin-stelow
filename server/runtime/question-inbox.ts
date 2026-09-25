@@ -32,7 +32,8 @@ export type QuestionInboxDeps = {
 
 function openExpiredQuestionIds(
   deps: QuestionInboxDeps,
-cardId: string): string[] {
+  cardId: string,
+): string[] {
   return (
     deps.db
       .prepare(

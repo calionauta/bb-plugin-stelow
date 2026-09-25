@@ -41,7 +41,8 @@ function lockBlockedSummary(
 }
 async function releaseCardClaimsAndNotify(
   deps: ClaimCoordinationDeps,
-cardId: string): Promise<void> {
+  cardId: string,
+): Promise<void> {
   let released: Array<{ workspacePath: string; file: string }>;
   try {
     released = releaseAllCardClaims(deps.db, cardId);
@@ -61,7 +62,8 @@ cardId: string): Promise<void> {
 }
 function escalateIfStalled(
   deps: ClaimCoordinationDeps,
-cardId: string): void {
+  cardId: string,
+): void {
   const fresh = deps.getCard(cardId);
   if (!fresh || fresh.activity !== "idle") return;
   try {

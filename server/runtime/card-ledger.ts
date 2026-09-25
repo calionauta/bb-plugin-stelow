@@ -25,7 +25,9 @@ export type CardLedgerDeps = {
 
 function recordStageEvent(
   deps: CardLedgerDeps,
-cardId: string, stage: string): void {
+  cardId: string,
+  stage: string,
+): void {
   try {
     deps.db.prepare(
       "INSERT INTO card_stage_events (card_id, stage, entered_at) VALUES (?, ?, ?)",
@@ -71,7 +73,8 @@ function flowTimesForCard(
 }
 function verifiedHeadShaForCard(
   deps: CardLedgerDeps,
-cardId: string): string | null {
+  cardId: string,
+): string | null {
   try {
     const row = deps.db
       .prepare(
@@ -87,7 +90,8 @@ cardId: string): string | null {
 }
 function getCardByWorkerThread(
   deps: CardLedgerDeps,
-threadId: string): WorkerCard | undefined {
+  threadId: string,
+): WorkerCard | undefined {
   return deps.db
     .prepare("SELECT * FROM cards WHERE worker_thread_id = ?")
     .get(threadId) as WorkerCard | undefined;

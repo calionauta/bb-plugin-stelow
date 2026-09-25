@@ -59,7 +59,8 @@ export type CardSeamsDeps = {
 
 async function stateDirFor(
   deps: CardSeamsDeps,
-card: WorkerCard): Promise<string | null> {
+  card: WorkerCard,
+): Promise<string | null> {
   if (!card.dir_hash) return null;
   const workspace = await deps.cardWorkspace(card).catch(() => null);
   if (!workspace?.path) return null;
@@ -72,7 +73,8 @@ card: WorkerCard): Promise<string | null> {
 }
 async function cardCheckout(
   deps: CardSeamsDeps,
-card: WorkerCard): Promise<CardCheckout | null> {
+  card: WorkerCard,
+): Promise<CardCheckout | null> {
   // A legacy exploratory card may have a user-confirmed, evidence-backed
   // external checkout. Prefer that audited target for read-only diff and
   // preview surfaces; publication still requires a live BB environment.
@@ -115,7 +117,8 @@ card: WorkerCard): Promise<CardCheckout | null> {
 }
 async function cardStageSlug(
   deps: CardSeamsDeps,
-card: WorkerCard): Promise<string | null> {
+  card: WorkerCard,
+): Promise<string | null> {
   try {
     const dir = await stateDirFor(deps, card);
     const blob = dir
