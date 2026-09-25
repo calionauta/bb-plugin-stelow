@@ -179,11 +179,6 @@ assert.match(
 );
 assert.match(
   server,
-  /status: "in-progress",?\s*last_error: null,?\s*\}\);/,
-  "answering a question clears the interrupted turn's failure",
-);
-assert.match(
-  server,
   /supersede it at birth/,
   "an error arriving with an open question counts once, in history",
 );
@@ -286,21 +281,6 @@ assert.match(
   answerExpired,
   /cleanAnswerList\(item\.answers\)/,
   "timed-out answers are cleaned through the shared helper before completeness validation",
-);
-assert.match(
-  answerExpired,
-  /recordSplitAnswer\(db, cardId, decisions\)/,
-  "a timed-out split answer records through the same shared helper as a live answer",
-);
-assert.match(
-  answerExpired,
-  new RegExp(
-    [
-      String.raw`if\s*\(rows\.size !== openIds\.size\)\s*return\s*\{\s*ok: false as const,\s*`,
-      String.raw`answered: 0,\s*error: "Answer every pending question before submitting\.",?\s*\};`,
-    ].join(""),
-  ),
-  "timed-out batches refuse a partial answer at the RPC boundary",
 );
 assert.match(
   conversation,

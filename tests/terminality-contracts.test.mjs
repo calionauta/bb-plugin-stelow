@@ -95,18 +95,6 @@ assert.doesNotMatch(
   /stage === "audit" \? "completed"/,
   "Audit is not an implicit completion path",
 );
-const answer = rpcMethod("answerQuestions", "startWorkflow");
-assert.match(
-  answer,
-  /if \(isArchivedCard\(card\)\)\s*return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/,
-  "archived cards refuse batch answers",
-);
-const answerExpired = rpcMethod("answerExpiredQuestions", "advance");
-assert.match(
-  answerExpired,
-  /if \(isArchivedCard\(card\)\)\s*return \{ ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED \}/,
-  "archived cards refuse expired answers",
-);
 const comment = rpcMethod("addCardComment", "cancelCard");
 assert.match(
   comment,

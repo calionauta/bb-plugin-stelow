@@ -61,6 +61,8 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-detail.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-detail-presentation.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/question-contracts-gate.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/question-answers.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/execution-native.ts"), "utf8"),
@@ -90,7 +92,7 @@ assert.match(serverSource, /withStandardSplitDisclosure\(group\.question\)/, "ev
 
 // Both answer paths record through the shared helper — no duplicated
 // SELECT/UPDATE block may reappear.
-assert.equal((serverSource.match(/recordSplitAnswer\(db, cardId, decisions\)/g) ?? []).length, 2, "live and expired answers share one recording");
+assert.equal((serverSource.match(/recordSplitAnswer\(deps\.db/g) ?? []).length, 2, "live and expired answers share one recording");
 assert.ok(!serverSource.includes("SELECT question FROM split_proposals"), "no inline proposal SELECT survives in the handlers");
 
 // The protocol forbids hedging: a grouping is either proposed with the tag

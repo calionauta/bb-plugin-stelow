@@ -63,15 +63,11 @@ import {
   askFinishedUpdates,
 } from "../lib/card-question-state.mjs";
 import {
-  expandInteractionQuestions,
-  formatBatchContinuation,
-  groupBatchAnswers,
   inheritAskArtifact,
   normalizeAskArtifactPath,
   parseAskGroups,
 } from "../lib/question-batch.mjs";
 import { decideAskGate } from "../lib/ask-gate.mjs";
-import { cleanAnswerList } from "../lib/expired-question-answers.mjs";
 import {
   consumeAskContract,
   recordAskContracts,
@@ -106,12 +102,9 @@ import {
   normalizeHistory,
   roundTimestamp,
   roundFileName,
-  parseRoundPath,
   ROUNDS_DIR,
 } from "../lib/research-rounds.mjs";
 import {
-  isValidRoundContent,
-  isValidExploreContent,
   exploreArtifactFile,
   researchVerifyReport,
   researchVerifyText,
@@ -120,11 +113,7 @@ import {
 } from "../lib/research-artifacts.mjs";
 import {
   validateArtifact,
-  validateSubstep,
-  validateVariant,
-  validateExplore,
   buildDocDepths,
-  sealStatus,
 } from "../lib/artifact-validation.mjs";
 import {
   buildReviewPrompt,
@@ -160,14 +149,10 @@ import {
   countDelegations,
   summarizeDelegationEvidence,
 } from "../lib/delegation-evidence.mjs";
-import {
-  contractForStrategy,
-  contractForBuildArtifact,
-} from "../lib/artifact-contracts.mjs";
+import { contractForBuildArtifact } from "../lib/artifact-contracts.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
-import { evidenceStatus } from "../lib/research-evidence.mjs";
 import {
   isArchivedCard,
   stripArchivedResuscitation,
@@ -232,7 +217,6 @@ import {
   normalizeReviewGates,
 } from "../lib/review-gates.mjs";
 import { requiredForStage } from "../lib/question-contracts.mjs";
-import { checkAdvanceContracts } from "../lib/advance-contracts.mjs";
 import { createPreviewRuntime } from "../lib/preview-runtime.mjs";
 import { publicationSource } from "../lib/vcs-publication.mjs";
 import {
@@ -255,9 +239,6 @@ import {
   sumTokenBreakdowns,
 } from "../lib/token-usage.mjs";
 import {
-  escalatedGaps,
-  summarizeGaps,
-  validateGapRegistry,
   gapsToTriageBatch,
   buildGapTriageState,
 } from "../lib/gap-registry.mjs";
@@ -330,6 +311,11 @@ import { createBuildThreadSync } from "./runtime/build-thread-sync.js";
 import { createWorkerRespawnPreparation } from "./runtime/worker-respawn-preparation.js";
 import { createQuestionStaleness } from "./runtime/question-staleness.js";
 import { createDiscardEvidence } from "./runtime/discard-evidence.js";
+import { createQuestionContractsGate } from "./runtime/question-contracts-gate.js";
+import { createCritiqueGapState } from "./runtime/critique-gap-state.js";
+import { createGapSummary } from "./runtime/gap-summary.js";
+import { createQualitySeal } from "./runtime/quality-seal.js";
+import { createQuestionAnswers } from "./runtime/question-answers.js";
 
 const pluginDir = resolvePluginRoot(
   dirname(fileURLToPath(import.meta.url)),
@@ -1967,16 +1953,6 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     }
   }
 
-  function stageEnteredAt(state: string): number | null {
-    // `advance` appends the completed stage with `at:` as it enters the next
-    // one. Therefore the final history timestamp is the current stage's entry
-    // boundary (and is the only real format the helper writes).
-    const values = [...state.matchAll(/^\s+at:\s*([^\n]+)$/gm)];
-    const value = values.at(-1)?.[1]?.trim().replace(/["']/g, "") ?? "";
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
   // Stage checklist for --contract validation. Mirrors the advance
   // guard's read (state.md slug truth + strict config, fail-open nulls);
   // kept separate so guard refactors never shift ask-time validation
@@ -2013,94 +1989,6 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     } catch {
       return null;
     }
-  }
-
-  async function questionContractsGate(
-    card: CardRow,
-    stateDir: string | null,
-  ): Promise<string | null> {
-    if (!stateDir) return null;
-    const stateFile = await bb.sdk.files
-      .read({ path: join(stateDir, "state.md") })
-      .catch(() => null);
-    const state =
-      typeof stateFile?.content === "string" ? stateFile.content : null;
-    if (!state) return null; // unreadable state fails open
-    const stage = text(state.match(/^current_stage:\s*(\S+)/m)?.[1]);
-    // Strict parse: missing keys yield nulls (never assumed defaults) — a
-    // guard must not enforce against a mode the file never declared.
-    // Gate-aware: an explicit set enforces directly, a ladder string
-    // resolves through the compat map.
-    const { appetite, reviewMode, reviewGates } = parseWorkflowConfig(state, {
-      strict: true,
-    });
-    if (!stage || !appetite || (!reviewMode && !reviewGates)) return null; // config is not trustworthy
-    // A corrupt or unreadable contract source must never deadlock every
-    // advance: fail open here, the pin test guards the source itself.
-    let required;
-    try {
-      required = requiredForStage({
-        stage,
-        appetite,
-        reviewMode: reviewGates ?? reviewMode ?? [],
-      }).filter((entry) => entry.kind !== "skip");
-    } catch {
-      return null;
-    }
-    if (required.length === 0) return null;
-    const enteredAt = stageEnteredAt(state);
-    if (!enteredAt) return null; // legacy history has no entry boundary
-    const paths = await bb.sdk.files
-      .listPaths({
-        path: stateDir,
-        includeFiles: true,
-        includeDirectories: false,
-        limit: 500,
-      })
-      .catch(() => null);
-    if (!paths) return null;
-    const allPaths = array(record(paths).paths)
-      .map((entry) =>
-        typeof entry === "string" ? entry : text(record(entry).path),
-      )
-      .filter(Boolean);
-    const receipts = await Promise.all(
-      allPaths.map(async (receiptPath) => {
-        const receipt = await bb.sdk.files
-          .read({ path: receiptPath })
-          .catch(() => null);
-        return {
-          path: receiptPath.startsWith(`${stateDir}/`)
-            ? receiptPath.slice(stateDir.length + 1)
-            : receiptPath,
-          content: typeof receipt?.content === "string" ? receipt.content : "",
-          modifiedAtMs:
-            typeof receipt?.modifiedAtMs === "number" &&
-            Number.isFinite(receipt.modifiedAtMs)
-              ? receipt.modifiedAtMs
-              : null,
-        };
-      }),
-    );
-    // Synchronize the durable inbox before asking it for evidence. A provider
-    // read failure remains fail-open inside the collector rather than becoming
-    // proof that no answer exists.
-    const synced = await syncOpenQuestionInbox(card);
-    if (synced === null) return null;
-    const answered = Boolean(
-      db
-        .prepare(
-          "SELECT 1 FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_reason = 'answered' AND resolved_at >= ? LIMIT 1",
-        )
-        .get(card.id, enteredAt),
-    );
-    return checkAdvanceContracts({
-      stage,
-      enteredAt,
-      contracts: required,
-      receipts,
-      answered,
-    });
   }
 
   const cardPreview = createCardPreview({
@@ -2218,132 +2106,6 @@ structured questions, card state changes, lifecycle commands, or the canonical r
       );
     }
     return buildDocDepths(stateBlob, (path) => contents.get(path) ?? null);
-  }
-
-  // Gap-registry state for the ESCALATED → scopes → re-execution loop
-  // (upstream stelow-workflow-execution-critique criteria 7-9). Reads every
-  // matched Execution Critique Report: registry failures block, escalate
-  // rows must each link an audit-gap scope, and linked scopes must be done
-  // before the card completes. No matched critique means no enforcement —
-  // unknown shapes never block.
-  async function critiqueGapState(card: CardRow): Promise<{
-    matched: boolean;
-    failures: string[];
-    totals: {
-      total: number;
-      fixed: number;
-      documented: number;
-      escalated: number;
-    };
-    escalated: Array<{ description: string }>;
-    auditGapScopes: Array<{
-      id: string;
-      name: string;
-      status: string;
-      gap: string | null;
-    }>;
-    critiqueText: string;
-  }> {
-    const empty = {
-      matched: false,
-      failures: [] as string[],
-      totals: { total: 0, fixed: 0, documented: 0, escalated: 0 },
-      escalated: [] as Array<{ description: string }>,
-      auditGapScopes: [] as Array<{
-        id: string;
-        name: string;
-        status: string;
-        gap: string | null;
-      }>,
-      critiqueText: "",
-    };
-    const workspace = await cardWorkspace(card).catch(() => null);
-    if (!workspace?.path || !card.dir_hash) return empty;
-    const stateDir = await workflowStateDir(
-      bb,
-      workspace.path,
-      card.id,
-      card.dir_hash,
-    ).catch(() => null);
-    if (!stateDir) return empty;
-    const stateBlob = await bb.sdk.files
-      .read({ path: join(stateDir, "state.md") })
-      .then((f) => f.content)
-      .catch(() => null);
-    if (!stateBlob) return empty;
-    const failures: string[] = [];
-    const totals = { total: 0, fixed: 0, documented: 0, escalated: 0 };
-    const escalated: Array<{ description: string }> = [];
-    const critiqueTexts: string[] = [];
-    let matched = false;
-    for (const fields of parseArtifactManifest(stateBlob)) {
-      if (typeof fields.path !== "string" || !fields.path.endsWith(".md"))
-        continue;
-      const full = resolveArtifactPath(workspace.path, fields.path);
-      const content = full
-        ? await bb.sdk.files
-            .read({ path: full })
-            .then((f) => f.content)
-            .catch(() => null)
-        : null;
-      if (typeof content !== "string" || !content.trim()) continue;
-      if (
-        contractForBuildArtifact(fields.path, content)?.id !==
-        "execution-critique"
-      )
-        continue;
-      matched = true;
-      // The judge that triages these gaps reads the critique itself — the
-      // routing stays deterministic, but the second opinion needs evidence.
-      critiqueTexts.push(content);
-      for (const failure of validateGapRegistry(content))
-        failures.push(`FAIL ${fields.label ?? fields.path}: ${failure.detail}`);
-      const summary = summarizeGaps(content);
-      if (summary.found) {
-        totals.total += summary.total;
-        totals.fixed += summary.fixed;
-        totals.documented += summary.documented;
-        totals.escalated += summary.escalated;
-      }
-      for (const gap of escalatedGaps(content)) {
-        const description = String(gap.description ?? "").trim();
-        if (
-          description &&
-          !escalated.some((entry) => entry.description === description)
-        )
-          escalated.push({ description });
-      }
-    }
-    if (!matched) return empty;
-    const auditGapScopes: Array<{
-      id: string;
-      name: string;
-      status: string;
-      gap: string | null;
-    }> = [];
-    try {
-      for (const scope of loadCardScopes(workspace.path, card.id)) {
-        const source = (scope as { source?: unknown }).source;
-        if (source !== "audit-gap") continue;
-        const gap = (scope as { gap?: unknown }).gap;
-        auditGapScopes.push({
-          id: scope.id,
-          name: scope.name,
-          status: scope.status,
-          gap: typeof gap === "string" ? gap : null,
-        });
-      }
-    } catch {
-      /* stelow.json unreadable reads as no scopes; done names the fix */
-    }
-    return {
-      matched,
-      failures,
-      totals,
-      escalated,
-      auditGapScopes,
-      critiqueText: critiqueTexts.join("\n\n"),
-    };
   }
 
   // Passing review covering this fingerprint (policy gate). Lists the
@@ -2924,6 +2686,56 @@ still need, then continue the scope — do not re-claim files you no longer touc
       : openExpiredQuestionIds(cardId).length > 0;
   }
 
+  const questionContractsGate = createQuestionContractsGate({
+    bb,
+    db,
+    syncOpenQuestionInbox,
+  });
+  const critiqueGapState = createCritiqueGapState({
+    bb,
+    cardWorkspace,
+    workflowStateDir: (card, rootPath) =>
+      workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    loadCardScopes,
+  });
+  const { answerQuestions, answerExpiredQuestions } = createQuestionAnswers({
+    bb,
+    db,
+    errors: {
+      cardNotFound: ERR_CARD_NOT_FOUND,
+      cardArchived: ERR_CARD_ARCHIVED,
+    },
+    getCard,
+    isArchivedCard,
+    pendingAsks: async (threadId) =>
+      pendingAsks(await bb.sdk.threads.interactions.list({ threadId })),
+    openExpiredQuestionIds,
+    syncPendingQuestionInbox,
+    syncOpenQuestionInbox,
+    markInboxQuestionsAnswered,
+    recordSplitAnswer,
+    consumeAskContract,
+    logCardComment,
+    updateCard,
+    hasOpenQuestions,
+  });
+  const gapSummary = createGapSummary({
+    getCard,
+    stageEvents,
+    summarizeTimeline,
+    critiqueGapState,
+    isDoneStatus,
+    now,
+  });
+  const qualitySeal = createQualitySeal({
+    bb,
+    getCard,
+    getCardByWorkerThread,
+    cardWorkspace,
+    strategyRounds,
+    readResearchIndex,
+  });
+
   // Resolve a worker-authored artifact path (workspace-relative) into the
   // viewer-ready shape. Fail-soft by design: an unresolvable path yields
   // null and the option stays fully answerable — a bad path never blocks
@@ -3495,135 +3307,7 @@ still need, then continue the scope — do not re-claim files you no longer touc
         return { approved: true, receiptPath, error: null };
       },
 
-      async answerQuestions({ cardId, answers }) {
-        // Atomic batch answer: one worker continuation and one Inbox
-        // reconciliation — no fragmented pings.
-        const card = getCard(cardId);
-        if (!card?.worker_thread_id)
-          return {
-            ok: false as const,
-            answered: 0,
-            error: "This card has no worker thread.",
-          };
-        if (isArchivedCard(card))
-          return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
-        try {
-          const list = await bb.sdk.threads.interactions.list({
-            threadId: card.worker_thread_id,
-          });
-          const pendingById = new Map(
-            pendingAsks(list).map((entry) => [entry.id, entry]),
-          );
-          const questionText = new Map<string, string>();
-          for (const entry of pendingById.values()) {
-            for (const item of expandInteractionQuestions({
-              id: entry.id,
-              title: entry.payload?.title,
-              payload: entry.payload,
-            })) {
-              questionText.set(item.questionId, item.question);
-            }
-          }
-          const grouped = groupBatchAnswers(answers);
-          const decisions: Array<{ question: string; answers: string[] }> = [];
-          const answeredInteractionIds = new Set<string>();
-          for (const [interactionId, value] of grouped) {
-            if (!pendingById.has(interactionId)) continue;
-            await bb.sdk.threads.interactions.respond({
-              threadId: card.worker_thread_id,
-              interactionId,
-              value: { answers: value.answers },
-            });
-            answeredInteractionIds.add(interactionId);
-            if (value.kind === "single") {
-              decisions.push({
-                question: questionText.get(interactionId) ?? "",
-                answers: value.answers,
-              });
-            } else {
-              value.answers.forEach((slot, index) => {
-                decisions.push({
-                  question: questionText.get(`${interactionId}#${index}`) ?? "",
-                  answers: slot,
-                });
-              });
-            }
-          }
-          if (decisions.length === 0)
-            return {
-              ok: false as const,
-              answered: 0,
-              error: "No open question awaits an answer on this card.",
-            };
-          // Split proposals answered on the card land here instead of the
-          // blocking call above — one shared recording (lib/split-proposal).
-          recordSplitAnswer(db, cardId, decisions);
-          // A structured interaction resumes the waiting command but not a new
-          // agent turn. Exactly one continuation for the whole batch.
-          await bb.sdk.threads.send({
-            threadId: card.worker_thread_id,
-            mode: "auto",
-            input: [
-              {
-                type: "text",
-                text: formatBatchContinuation(decisions),
-                mentions: [],
-              },
-            ],
-          });
-          const unansweredIds = [...pendingById.keys()].filter(
-            (id) => !answeredInteractionIds.has(id),
-          );
-          const openQuestionIds = [
-            ...unansweredIds,
-            ...openExpiredQuestionIds(cardId),
-          ];
-          // Name the answered ones BEFORE the sync: disappearance alone would
-          // mislabel them superseded.
-          markInboxQuestionsAnswered(cardId, [...answeredInteractionIds]);
-          syncPendingQuestionInbox(card, openQuestionIds);
-          // Contract provenance: answers that match a declared contract id
-          // name it in the trail. Undeclared answers behave exactly as before.
-          const contractNotes: string[] = [];
-          for (const decision of decisions) {
-            const matched = decision.question
-              ? consumeAskContract(db, cardId, decision.question)
-              : null;
-            if (matched)
-              contractNotes.push(
-                `Q: ${decision.question}\nA: ${decision.answers.join(", ")} [contract: ${matched}]`,
-              );
-          }
-          if (contractNotes.length > 0) {
-            logCardComment(
-              cardId,
-              "card",
-              cardId,
-              "user",
-              `Answer to a pending question:\n\n${contractNotes.join("\n\n")}`,
-            );
-          }
-          // A fresh human answer resumes the worker: a stale provider error
-          // from the interrupted turn must not linger as "Failed" beside the
-          // recovery path. Failure history stays in the event log.
-          updateCard(cardId, {
-            activity:
-              openQuestionIds.length > 0 ? "awaiting-answer" : "running",
-            status: "in-progress",
-            last_error: null,
-          });
-          return { ok: true as const, answered: decisions.length, error: null };
-        } catch (error) {
-          return {
-            ok: false as const,
-            answered: 0,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Unable to answer the questions.",
-          };
-        }
-      },
+      answerQuestions,
 
       async startWorkflow({ projectId, prompt }) {
         const thread = await workers.spawnWorkflow({
@@ -3675,186 +3359,8 @@ advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserv
 
       createCard: cards.handlers.createCard,
 
-      async gapSummary({ cardId }) {
-        // Build gap panel backing: resolved live from the matched execution
-        // critique plus the stage-event ledger — counts, per-escalation
-        // scope linkage, and lead/cycle time. No matched critique reads as
-        // matched:false, never as zero gaps.
-        const card = getCard(cardId);
-        const empty = {
-          matched: false,
-          total: 0,
-          fixed: 0,
-          documented: 0,
-          escalated: 0,
-          items: [] as Array<{
-            description: string;
-            scopeStatus: string | null;
-          }>,
-          pendingScopes: 0,
-          unscoped: 0,
-          leadMs: null as number | null,
-          cycleMs: null as number | null,
-          done: false,
-        };
-        if (!card) return empty;
-        const events = stageEvents(cardId);
-        const doneEvent =
-          [...events].reverse().find((event) => event.stage === "done") ?? null;
-        const endAt = doneEvent ? doneEvent.entered_at : now();
-        const timeline = summarizeTimeline(events, {
-          createdAt: card.created_at,
-          endAt,
-        });
-        const gapState = await critiqueGapState(card).catch(() => null);
-        if (!gapState?.matched) {
-          return {
-            ...empty,
-            leadMs: timeline.leadMs,
-            cycleMs: timeline.cycleMs,
-            done: card.status === "completed",
-          };
-        }
-        const totals = gapState.totals;
-        const items = gapState.escalated.map((gap) => {
-          const scope =
-            gapState.auditGapScopes.find(
-              (entry) => entry.gap === gap.description,
-            ) ?? null;
-          return {
-            description: gap.description,
-            scopeStatus: scope ? scope.status : null,
-          };
-        });
-        return {
-          matched: true,
-          total: totals.total,
-          fixed: totals.fixed,
-          documented: totals.documented,
-          escalated: totals.escalated,
-          items,
-          pendingScopes: gapState.auditGapScopes.filter(
-            (scope) => !isDoneStatus(scope.status),
-          ).length,
-          unscoped: gapState.escalated.filter(
-            (gap) =>
-              !gapState.auditGapScopes.some(
-                (scope) => scope.gap === gap.description,
-              ),
-          ).length,
-          leadMs: timeline.leadMs,
-          cycleMs: timeline.cycleMs,
-          done: card.status === "completed",
-        };
-      },
-
-      async qualitySeal({ cardId, threadId, path }) {
-        // Chat seal backing (docs/phase6-independent-review-plan.md): resolve
-        // the card (directly or via worker thread), revalidate the artifact
-        // live, and report provenance. Never trusts directive attributes —
-        // unknown shapes and unreadable files read as unverified.
-        const unverified = {
-          status: "unverified" as const,
-          failures: [] as string[],
-          evidence: null as string | null,
-          label: null as string | null,
-        };
-        const card =
-          (cardId ? getCard(cardId) : null) ??
-          (threadId ? (getCardByWorkerThread(threadId) ?? null) : null);
-        if (!card) return unverified;
-        const workspace = await cardWorkspace(card).catch(() => null);
-        if (!workspace?.path) return unverified;
-        const full = resolveArtifactPath(workspace.path, path);
-        const content = full
-          ? await bb.sdk.files
-              .read({ path: full })
-              .then((f) => f.content)
-              .catch(() => null)
-          : null;
-        if (typeof content !== "string" || !content.trim()) return unverified;
-        let failures: string[] = [];
-        let label: string | null = null;
-        let matched = false;
-        let evidence: string | null = "verified";
-        if (card.kind === "research") {
-          const history = strategyRounds(card);
-          const primary = history.find((entry) => entry.file === path);
-          if (primary) {
-            matched = true;
-            label = researchStrategyById(primary.id)?.label ?? primary.id;
-            const result = validateVariant(
-              content,
-              contractForStrategy(primary.id),
-            );
-            failures = result.pass
-              ? []
-              : result.failures.map((failure) => failure.detail).slice(0, 3);
-          } else {
-            for (const entry of history) {
-              const parsed = parseRoundPath(path, entry.id);
-              if (parsed?.subskill) {
-                matched = true;
-                label = `${researchStrategyById(entry.id)?.label ?? entry.id} — ${parsed.subskill}`;
-                const index = await readResearchIndex(card).catch(() => null);
-                const indexBlob =
-                  index &&
-                  index.ok === true &&
-                  typeof index.content === "string"
-                    ? index.content
-                    : null;
-                if (!isValidRoundContent(content, indexBlob)) {
-                  failures = [
-                    "missing, thin, or mirrors the index — rewrite it",
-                  ];
-                } else {
-                  failures = validateSubstep(parsed.subskill, content)
-                    .failures.map((failure) => failure.detail)
-                    .slice(0, 3);
-                }
-                break;
-              }
-            }
-          }
-          const index = await readResearchIndex(card).catch(() => null);
-          if (index && index.ok === true && typeof index.content === "string")
-            evidence = evidenceStatus(index.content);
-        } else if (card.kind === "explore") {
-          if (path.endsWith(exploreArtifactFile(card.explore_stage ?? ""))) {
-            matched = true;
-            label =
-              techniqueById(card.explore_stage ?? "")?.label ??
-              card.explore_stage;
-            if (!isValidExploreContent(content)) {
-              failures = ["missing or thin — write the stage deliverable"];
-            } else {
-              failures = validateExplore(card.explore_stage ?? "", content)
-                .failures.map((failure) => failure.detail)
-                .slice(0, 3);
-            }
-          }
-        } else {
-          const contract = contractForBuildArtifact(path, content);
-          if (contract) {
-            matched = true;
-            label = contract.id;
-            const result = validateArtifact(content, contract);
-            failures = result.pass
-              ? []
-              : result.failures.map((failure) => failure.detail).slice(0, 3);
-          }
-        }
-        if (!matched) return unverified;
-        return {
-          status: sealStatus(
-            failures.length === 0 ? { pass: true } : { pass: false },
-            evidence ?? "verified",
-          ),
-          failures,
-          evidence,
-          label,
-        };
-      },
+      gapSummary,
+      qualitySeal,
 
       async reseedCard({ cardId, presetId, intent: requestedIntent }) {
         const card = getCard(cardId);
@@ -4997,111 +4503,7 @@ the normal build workflow.`,
         return { ok: true, strategy: picked.id, error: null };
       },
 
-      async answerExpiredQuestions({ cardId, answers }) {
-        // Timed-out questions remain one atomic blocking decision. Never resume
-        // the worker with a subset: later answers may reverse its direction.
-        const card = getCard(cardId);
-        if (!card)
-          return { ok: false as const, answered: 0, error: ERR_CARD_NOT_FOUND };
-        if (isArchivedCard(card))
-          return { ok: false as const, answered: 0, error: ERR_CARD_ARCHIVED };
-        const openRows = db
-          .prepare(
-            "SELECT id, thread_id, question FROM expired_questions WHERE card_id = ? AND answered = 0",
-          )
-          .all(cardId) as Array<{
-          id: string;
-          thread_id: string;
-          question: string;
-        }>;
-        const openIds = new Set(openRows.map((row) => row.id));
-        const rows = new Map<
-          string,
-          { thread_id: string; question: string; answers: string[] }
-        >();
-        for (const item of answers) {
-          const row = openRows.find((entry) => entry.id === item.questionId);
-          const cleanAnswers = cleanAnswerList(item.answers);
-          if (row && !rows.has(item.questionId) && cleanAnswers.length > 0)
-            rows.set(item.questionId, {
-              thread_id: row.thread_id,
-              question: row.question,
-              answers: cleanAnswers,
-            });
-        }
-        if (openIds.size === 0)
-          return {
-            ok: false as const,
-            answered: 0,
-            error: "Questions not found or already answered.",
-          };
-        if (rows.size !== openIds.size)
-          return {
-            ok: false as const,
-            answered: 0,
-            error: "Answer every pending question before submitting.",
-          };
-        const decisions: Array<{ question: string; answers: string[] }> = [];
-        // Resume the CURRENT worker: the row's thread may be stale (restart /
-        // reseed archives the thread but keeps its expired questions).
-        const threadId =
-          card.worker_thread_id ??
-          rows.values().next().value?.thread_id ??
-          null;
-        db.transaction(() => {
-          for (const [questionId, row] of rows) {
-            const matched = consumeAskContract(db, cardId, row.question);
-            logCardComment(
-              cardId,
-              "card",
-              cardId,
-              "user",
-              `Answer to a pending question${matched ? ` (contract: ${matched})` : ""}:\n\nQ: ${row.question}\nA: ${row.answers.join(", ")}`,
-            );
-            db.prepare(
-              "UPDATE expired_questions SET answered = 1 WHERE id = ?",
-            ).run(questionId);
-            decisions.push({ question: row.question, answers: row.answers });
-          }
-        })();
-        // Recovered split asks record through the same shared helper as live
-        // asks; otherwise a valid response would resume the worker but make
-        // `bb stelow split` refuse as unanswered.
-        recordSplitAnswer(db, cardId, decisions);
-        markInboxQuestionsAnswered(
-          cardId,
-          [...rows.keys()].map((questionId) => `expired:${questionId}`),
-        );
-        const openQuestionIds = await syncOpenQuestionInbox(card);
-        // Same stale-error rule as live answers: answering clears the
-        // interrupted turn's failure so the recovered card reads coherent.
-        updateCard(cardId, {
-          activity: hasOpenQuestions(cardId, openQuestionIds)
-            ? "awaiting-answer"
-            : "running",
-          status: "in-progress",
-          last_error: null,
-        });
-        bb.realtime.publish("card-state", { cardId });
-        if (threadId) {
-          try {
-            await bb.sdk.threads.send({
-              threadId,
-              mode: "auto",
-              input: [
-                {
-                  type: "text",
-                  text: formatBatchContinuation(decisions),
-                  mentions: [],
-                },
-              ],
-            });
-          } catch {
-            // Thread may be stopped; the comments still record the answers.
-          }
-        }
-        return { ok: true as const, answered: decisions.length, error: null };
-      },
+      answerExpiredQuestions,
 
       async advanceCard({ cardId, stage }) {
         const card = getCard(cardId);

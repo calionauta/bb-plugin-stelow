@@ -129,12 +129,14 @@ assert.match(
   "titling rides the disposable path as a registered site",
 );
 
-const byThread = rpcMethod("cardByWorkerThread", "gapSummary");
+const byThread = rpcMethod("cardByWorkerThread", "readCardFile");
 assert.doesNotMatch(
   byThread,
   /row\.status === "archived"/,
   "an archived card's thread still links back to its card",
 );
+assert.match(server, /const gapSummary = createGapSummary\(/, "gap reporting is wired through its runtime slice");
+assert.match(server, /gapSummary,\s*qualitySeal,/, "gap and quality RPCs keep their adjacent contract order");
 assert.match(
   serverInbox,
   /function createGetHandler\(/,
