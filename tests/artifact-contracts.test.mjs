@@ -5,6 +5,7 @@ import {
   serverRecovery,
   serverInbox,
   serverWorkerRetry,
+  cliDone,
   cardsPersist,
   app,
   navigation,
@@ -161,13 +162,13 @@ assert.match(
   "both receipts are labelled where they are listed",
 );
 assert.match(
-  server,
-  /auditTrailGate\(\{\s*build: trail,\s*check: trailCheck,\s*verifiedGit: gitEvidence,?\s*\}\)/,
+  cliDone,
+  /auditTrailGate\(\{\s*build: trail,\s*check: trailCheck,\s*verifiedGit: git,?\s*\}\)/,
   "the trail is bound to the Git identity the audit receipt was verified at",
 );
 assert.match(
-  server,
-  /sameGitEvidence\(gitEvidence, postTrailGitEvidence\)/,
+  cliDone,
+  /sameGitEvidence\(finish\.git, postTrail\)/,
   "Done re-samples Git after the portable receipt validates",
 );
 assert.match(

@@ -66,11 +66,14 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/execution-native.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-split.ts"), "utf8"),
 ].join("\n");
 assert.match(serverSource, /recorded as STANDARD — its answer is text only and executes nothing/, "the ask result names the standard consequence");
 assert.match(serverSource, /re-ask it now with --tag split --multiple/, "the reminder gives the exact repair while still in time");
-assert.match(serverSource, /splitEligibility\(\{ kind: askCard\.kind, stage: askStage \}\)/, "the reminder decides through the shared gate");
-assert.match(serverSource, /const askStage = askCard \? await cardStageSlug\(askCard\) : null/, "the reminder reads slug truth, not the DB cache");
+assert.match(serverSource, /splitEligibility\(\{ kind: card\.kind, stage \}\)/, "the reminder decides through the shared gate");
+assert.match(serverSource, /const stage = card \? await deps\.cardStageSlug\(card\) : null/, "the reminder reads slug truth, not the DB cache");
 
 // All four gates decide through splitEligibility — no pasted stage pair
 // or error string may reappear at any call site.

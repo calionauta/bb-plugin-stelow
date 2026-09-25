@@ -5,7 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const source = readFileSync(join(root, "server/execution-advance.ts"), "utf8");
-const runtime = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const runtime = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-dispatcher.ts"), "utf8"),
+].join("\n");
 
 const prepareStart = source.indexOf("async function prepareAdvance");
 const prepareEnd = source.indexOf("async function dispatchAdvance", prepareStart);
@@ -29,7 +32,7 @@ assert.ok(coordinator >= 0 && native > coordinator, "coordinator fallback is rec
 assert.ok(cliPrepare >= 0 && cliPrepare < cliMutate && cliMutate < cliDispatch, "CLI route preflight precedes helper mutation and dispatch");
 assert.match(
   runtime,
-  /if \(argv\[0\] === "advance"\)[\s\S]*return executionAdvance\.cli\(argv/,
-  "the runtime composition root delegates CLI advance to the module",
+  /argv\[0\] === "advance"[\s\S]*deps\.advanceCli\(argv, \{ threadId: ctx\.threadId, projectId: ctx\.projectId \}\)/,
+  "the CLI dispatcher delegates advance to the module through the injected contract",
 );
 console.log("execution dispatch contract ok: route, mutation, coordinator, native order");

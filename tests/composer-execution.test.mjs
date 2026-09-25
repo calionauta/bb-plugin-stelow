@@ -96,6 +96,7 @@ const server = [
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
   readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),

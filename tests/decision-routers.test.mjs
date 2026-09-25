@@ -294,13 +294,10 @@ assert.match(
   /"criteria",[\s\S]*?Score an artifact against its skill's semantic criteria/,
   "the command is listed in the extracted CLI registry",
 );
-const criteriaAt = server.indexOf('if (argv[0] === "criteria") {');
-assert.ok(criteriaAt >= 0, "the criteria branch exists");
-const criteriaEnd = server.indexOf('if (argv[0] === "draft") {', criteriaAt);
-assert.ok(criteriaEnd > criteriaAt, "the criteria branch is bounded");
-const criteriaBody = server.slice(criteriaAt, criteriaEnd);
+const criteriaBody = readFileSync(join(root, "server/runtime/cli/cli-criteria.ts"), "utf8");
+assert.match(criteriaBody, /argv\[0\] !== "criteria"\) return null;/, "the criteria family claims exactly its verb");
 assert.ok(criteriaBody.includes("judgeArtifactCriteria({"), "the branch judges through the lib cascade");
-assert.ok(criteriaBody.includes("resolveArtifactPath(PLUGIN_SKILLS_DIR, skillRel)"), "skill reads stay inside the vendored skills dir");
+assert.ok(criteriaBody.includes("resolveArtifactPath(deps.skillsDir, skillRel)"), "skill reads stay inside the vendored skills dir");
 assert.ok(criteriaBody.includes("resolveArtifactPath(workspace.path, artifactArg)"), "artifact reads stay inside the card workspace");
 assert.ok(criteriaBody.includes("Set it to Decision API or preset judging in Manage agent presets"), "rules-mode refuses with the UI path named");
 assert.ok(criteriaBody.includes("advisory only, never blocking"), "reports state their advisory nature");
@@ -318,15 +315,12 @@ assert.match(
   /"verify-tasks",[\s\S]*?Judge completed tasks against the working diff/,
   "the command is listed in the extracted CLI registry",
 );
-const taskAt = server.indexOf('if (argv[0] === "verify-tasks") {');
-assert.ok(taskAt >= 0, "the verify-tasks branch exists");
-const taskEnd = server.indexOf('if (argv[0] === "draft") {', taskAt);
-assert.ok(taskEnd > taskAt, "the verify-tasks branch is bounded");
-const taskBody = server.slice(taskAt, taskEnd);
+const taskBody = readFileSync(join(root, "server/runtime/cli/cli-verify-tasks.ts"), "utf8");
+assert.match(taskBody, /argv\[0\] !== "verify-tasks"\) return null;/, "the verify-tasks family claims exactly its verb");
 assert.ok(taskBody.includes("judgeScoredBatch({"), "verdicts resolve through the shared Score-batch judge");
 assert.match(
   taskBody,
-  /resolveScopeVerdicts\(\{[\s\S]*?scopes: taskScopes,[\s\S]*?taskFindings,[\s\S]*?\}\)/,
+  /resolveScopeVerdicts\(\{ scopes, taskFindings: findings \}\)/,
   "scopes roll up deterministically from task verdicts",
 );
 // Tasks with their own verify command run deterministically first (exit 0
@@ -334,7 +328,10 @@ assert.match(
 // no preset or key required for a fully-declared board.
 assert.ok(taskBody.includes("taskVerifyCommand(task)"), "verify commands resolve per task");
 assert.ok(taskBody.includes("doneTasks.filter((task) => task.verify !== null)"), "declared tasks partition to the deterministic path");
-assert.ok(taskBody.includes("if (judgedTasks.length === 0) {"), "fully-declared boards skip the judge entirely");
+assert.ok(
+  taskBody.includes("if (judgedTasks.length === 0) return commandFindings;"),
+  "fully-declared boards skip the judge entirely",
+);
 assert.ok(taskBody.includes("advisory only, never blocking"), "the report states its advisory nature");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(taskBody), "verify-tasks makes zero database writes");
 assert.ok(!taskBody.includes("realtime.publish"), "verify-tasks publishes nothing");
@@ -355,8 +352,8 @@ assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(batchBody), "the 
 assert.equal(server.match(/"git",\s*\n\s*\["diff", "HEAD"/g)?.length, 1, "exactly one working-diff extractor exists");
 assert.ok(server.slice(server.indexOf("const workingDiffFor")).includes("workingDiffFor"), "the extractor is shared, not inlined per command");
 assert.match(
-  server,
-  /const taskDiff = await workingDiffFor\(\s*taskWorkspace\.path,\s*TASK_EVIDENCE_DIFF_CHARS,?\s*\)/,
+  taskBody,
+  /const diff = await deps\.workingDiffFor\(workspace\.path, TASK_EVIDENCE_DIFF_CHARS\);/,
   "verify-tasks reads its evidence through the shared helper",
 );
 
@@ -367,21 +364,20 @@ assert.match(
   /"gap-triage",[\s\S]*?Second-opinion escalated critique gaps/,
   "the gap-triage command is listed in the extracted CLI registry",
 );
-const gapAt = server.indexOf('if (argv[0] === "gap-triage") {');
-assert.ok(gapAt >= 0, "the gap-triage branch exists");
-const gapBody = server.slice(gapAt, server.indexOf('if (argv[0] === "draft") {', gapAt));
-assert.ok(gapBody.includes("critiqueGapState(gapCard)"), "escalated gaps come from the shared registry reader");
-assert.ok(gapBody.includes("gapsToTriageBatch(gapState.escalated)"), "the batch maps ids and questions once");
+const gapBody = readFileSync(join(root, "server/runtime/cli/cli-gap-triage.ts"), "utf8");
+assert.match(gapBody, /argv\[0\] !== "gap-triage"\) return null;/, "the gap-triage family claims exactly its verb");
+assert.ok(gapBody.includes("deps.gapState(card)"), "escalated gaps come from the shared registry reader");
+assert.ok(gapBody.includes("gapsToTriageBatch("), "the batch maps ids and questions once");
 assert.ok(gapBody.includes("judgeScoredBatch({"), "gap triage reuses the shared Score-batch judge");
 assert.match(
   gapBody,
-  /const gapEvidence = buildGapTriageState\(\{[\s\S]*?critiqueText: gapState\.critiqueText,[\s\S]*?diff: gapDiff,[\s\S]*?\}\)/,
+  /const evidence = buildGapTriageState\(\{ critiqueText, diff \}\);/,
   "the judge state is exactly the critique plus the diff",
 );
-assert.ok(gapBody.includes("state: gapEvidence,"), "the evidence reaches the judge, not a bare list of gap wordings");
+assert.ok(gapBody.includes("state: evidence,"), "the evidence reaches the judge, not a bare list of gap wordings");
 assert.match(
   gapBody,
-  /workingDiffFor\(\s*gapWorkspace\.path/,
+  /workingDiffFor\(workspace\.path, TASK_EVIDENCE_DIFF_CHARS\)/,
   "genuineness is judged against the working diff",
 );
 assert.ok(gapBody.includes("no working-tree diff"), "a missing diff is named, never silently ignored");

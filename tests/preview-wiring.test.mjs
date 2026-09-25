@@ -9,8 +9,13 @@ import { fileURLToPath } from "node:url";
 // are about what the host provides and how the host is torn down. Each
 // assertion names the bug it prevents.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const previewCli = readFileSync(
+  join(root, "server/runtime/cli/cli-preview.ts"),
+  "utf8",
+);
 const source = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  previewCli,
   readFileSync(join(root, "server/platform-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/composition.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/platform.ts"), "utf8"),
@@ -79,8 +84,8 @@ assert.match(workerEnv, /status === "ready"/, "a retired or destroyed environmen
 assert.match(workerEnv, /\?\.catch\(\(\) => null\)|catch \{/, "a removed environment must fall back, not throw");
 
 // --- One renderer, so the panel and the CLI cannot diverge. ---------------
-const cli = slice('if (argv[0] === "preview") {', 'if (argv[0] === "fan-out") {');
-assert.match(cli, /previewView\(card\.id\)/, "the CLI renders the same view the panel does");
+const cli = previewCli;
+assert.match(cli, /deps\.preview\.view\(card\.id\)/, "the CLI renders the same view the panel does");
 assert.match(cli, /previewText\(view\)/, "the CLI prints the shared renderer's text");
 assert.ok(!cli.includes("available:"), "the CLI must not build its own view");
 assert.match(cli, /--card/, "a worker must be able to name the card it is previewing");

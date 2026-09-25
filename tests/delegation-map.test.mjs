@@ -35,7 +35,8 @@ const decisionSource = [
 const workerSource = workerFiles
   .map((file) => readFileSync(join(root, "server", file), "utf8"))
   .join("\n");
-const server = `${serverRoot}\n${decisionSource}\n${workerSource}`;
+const reviewCli = readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8");
+const server = `${serverRoot}\n${decisionSource}\n${workerSource}\n${reviewCli}`;
 const directSpawns = [
   ...(serverRoot.match(/bb\.sdk\.threads\.spawn\(\{/g) ?? []),
   ...(decisionSource.match(/(?:deps\.)?bb\.sdk\.threads\.spawn\(\{/g) ?? []),

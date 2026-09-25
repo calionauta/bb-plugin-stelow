@@ -25,6 +25,9 @@ const server = [
   publicationOperations,
   readFileSync(join(root, "server/artifacts-publication-terminals.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-verify.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8"),
 ].join("\n");
 const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
 const actions = readFileSync(join(root, "components/detail/build-publication-actions.tsx"), "utf8");
@@ -134,14 +137,23 @@ assert.match(
 );
 assert.match(commitDiff, /commitFileState\(file\)/, "the commit viewer delegates tested file-state labels to presentation logic");
 assert.match(server, /recordPublication\(deps, cardId, "squash_merge", message, verdict\.sha\)/, "only a verified squash SHA enters publication history");
-assert.match(server, /cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
+assert.match(server, /deps\.cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
+assert.match(
+  server,
+  /checkout: \(card\) => cardCheckout\(card as CardRow\)/,
+  "the composition root injects the one worker-first checkout resolver",
+);
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
 assert.match(
   server,
   /selectCardEnvironment\(input\.environment, workerEnvironment/,
   "a card forwards the BB composer environment instead of replacing it with a preset",
 );
-assert.match(server, /workers\.continuingEnvironment\(\s*card\s*,/, "later workers reuse the card's selected BB environment");
+assert.match(
+  server,
+  /(?:deps\.)?workers\.continuingEnvironment\(\s*card\s*,/,
+  "later workers reuse the card's selected BB environment",
+);
 assert.match(server, /agentText\(deps\.auditDoneNudge\)/, "automatic audit recovery uses private agent text");
 assert.match(
   server,

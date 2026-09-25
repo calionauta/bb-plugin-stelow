@@ -10,9 +10,26 @@ import { fileURLToPath } from "node:url";
 // consts, and every spawn site must reference them: a new spawn path that
 // forgets a clause fails here instead of shipping a weaker worker.
 
+const cliSplit = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-split.ts"),
+  "utf8",
+);
+const cliAsk = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"),
+  "utf8",
+);
+const cliPreset = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-draft.ts"),
+  "utf8",
+);
+const cliDone = [
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-build.ts"), "utf8"),
+].join("\n");
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/track-prompts.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create-prompt.ts"), "utf8"),
@@ -175,54 +192,54 @@ for (const track of ["researchWorkerPrompt", "exploreWorkerPrompt"]) {
 
 // Worker verbs: done + playbook are registered, card-resolved, and listed;
 // preset mutation refuses card workers with the Manage redirect.
-assert.match(serverSource, /if \(argv\[0\] === "done"\) \{/, "the done handler exists");
+assert.match(cliDone, /argv\[0\] !== "done"\) return null;/, "the done family claims exactly its verb");
 assert.match(cliRegistry, /"done",[\s\S]*?"bb stelow done/, "the CLI registers done with its contract");
 assert.match(cliRegistry, /"playbook",[\s\S]*?"bb stelow playbook/, "the CLI registers playbook with its contract");
 assert.match(cliRegistry, /"split",[\s\S]*?"bb stelow split/, "the CLI registers split with its contract");
 assert.match(
-  serverSource,
-  /doneEligibility\(\{[\s\S]*?kind: "build",[\s\S]*?stage: currentStage/,
+  cliDone,
+  /doneEligibility\(\{\s*kind: "build",\s*stage: currentStage,/,
   "build completion is gated in code, not prose",
 );
 const auditBuildPattern = new RegExp([
-  String.raw`runHelper\(\s*\[\s*"audit-trail",\s*"build",`,
+  String.raw`deps\.runHelper\(\s*\[\s*"audit-trail",\s*"build",`,
   String.raw`\s*"--strict",\s*"--json"`,
 ].join(""));
 const auditCheckPattern = new RegExp([
-  String.raw`runHelper\(\s*\[\s*"audit-trail",\s*"check",`,
+  String.raw`deps\.runHelper\(\s*\[\s*"audit-trail",\s*"check",`,
   String.raw`\s*"--strict",\s*"--json"`,
 ].join(""));
 const auditEvidencePattern = new RegExp([
   String.raw`auditTrailGate\(\{[\s\S]*?build: trail,`,
-  String.raw`[\s\S]*?check: trailCheck,[\s\S]*?verifiedGit: gitEvidence`,
+  String.raw`[\s\S]*?check: trailCheck,[\s\S]*?verifiedGit: git,`,
 ].join(""));
 assert.match(
-  serverSource,
+  cliDone,
   auditBuildPattern,
   "build completion creates the upstream portable audit trail behind the strict gate",
 );
 assert.match(
-  serverSource,
+  cliDone,
   auditCheckPattern,
   "build completion re-validates the portable audit trail it just wrote",
 );
 assert.match(
-  serverSource,
+  cliDone,
   auditEvidencePattern,
   "the trail is bound to the Git identity the audit receipt was verified at",
 );
-assert.match(serverSource, /trail\.code === 0\s*\?\s*await runHelper/, "check runs only after a build that succeeded");
+assert.match(cliDone, /trail\.code === 0\s*\?\s*await deps\.runHelper/, "check runs only after a build that succeeded");
 assert.match(
-  serverSource,
-  /researchVerifyReport\(\s*cardId,\s*strategyRounds\(card\)\.length/,
+  cliDone,
+  /researchVerifyReport\(\s*card\.id,\s*deps\.strategyRounds\(card\)\.length/,
   "research completion requires a passing verify",
 );
 assert.match(
-  serverSource,
-  /exploreVerifyReport\(\s*cardId,\s*card\.explore_stage,\s*artifact\.ready/,
+  cliDone,
+  /exploreVerifyReport\(\s*card\.id,\s*card\.explore_stage,\s*artifact\.ready/,
   "explore completion requires a passing verify",
 );
-assert.match(serverSource, /presets are managed from the card's Agent preset section/, "preset mutation refuses worker threads");
+assert.match(cliPreset, /presets are managed from the card's Agent preset section/, "preset mutation refuses worker threads");
 
 // Explicit completion is enforced, not inferred: the old audit+idle ⇒
 // completed one-liner is gone (research/explore keep their own artifact
@@ -261,8 +278,8 @@ for (const [site, anchor] of Object.entries(splitSites)) {
 // (completion is explicit through `done` — the audit+idle inference and the
 // worker advance shortcut are both gone; the panel's manual override keeps
 // its human-explicit move).
-assert.match(serverSource, /if \(argv\[0\] === "split"\) \{/, "the split handler exists");
-assert.match(serverSource, /No content args by design/, "split takes no content args");
+assert.match(cliSplit, /argv\[0\] !== "split"\) return null;/, "the split handler exists");
+assert.match(cliSplit, /No content args by design/, "split takes no content args");
 assert.match(serverSource, /CREATE TABLE IF NOT EXISTS split_proposals/, "split proposals persist host-side");
 assert.match(serverSource, /split_from/, "children link their parent");
 assert.match(serverSource, /Split is exceptional, not a checklist decomposition/, "the worker defaults to one focused card");
@@ -272,9 +289,9 @@ assert.match(
   /Do NOT split merely because the request has\s*\\\s*bullets, files, UI\/API pieces, sequential steps, or small fixes/,
   "the split threshold names common false positives",
 );
-assert.match(serverSource, /A split ask must use --multiple/, "the host enforces multi-select for an approved split");
-const splitStop = /if \(archiveParent\) \{\s*\/\/ Full split parks[\s\S]*?await workers\.stop\(card\.worker_thread_id\);/;
-assert.match(serverSource, splitStop, "a fully split parent stops its worker before archiving");
+assert.match(cliAsk, /A split ask must use --multiple/, "the host enforces multi-select for an approved split");
+const splitStop = /if \(archiveParent\) \{\s*\/\/ Full split parks[\s\S]*?await deps\.workers\.stop\(card\.worker_thread_id\);/;
+assert.match(cliSplit, splitStop, "a fully split parent stops its worker before archiving");
 assert.ok(!serverSource.includes('updateCard(cliCard.id, { stage, status: stage === "audit" ? "completed"'), "the worker advance never completes — done does");
 
 console.log("prompt contracts test ok: single-source clauses, all build spawn paths covered, no seed invitation, done/playbook/split verbs, preset fence, no audit inference, explicit split");

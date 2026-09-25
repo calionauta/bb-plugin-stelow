@@ -16,6 +16,8 @@ const server = [
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/core-migrations.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-split.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
 ].join("\n");
 const cardsCreate = readFileSync(join(root, "server/cards-create.ts"), "utf8");
 const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
@@ -208,7 +210,7 @@ assert.match(cardsCreate, /Build cards require a project workspace with a Git so
 assert.match(server, /Cannot split a Build workflow from an exploratory workspace/, "split cannot recreate an unverifiable Build child");
 assert.match(
   server,
-  /auditReceiptReadiness\(\s*receiptContent/,
+  /auditReceiptReadiness\(\s*await receiptContent\(deps, stateDir\)/,
   "Build done checks the durable audit receipt before becoming Done",
 );
 

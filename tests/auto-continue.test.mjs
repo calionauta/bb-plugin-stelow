@@ -165,6 +165,7 @@ const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 
 const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
 const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
+const askGateSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8");
 const autoStart = threadSyncSource.indexOf("const input = buildContinueInput");
 const autoEnd = threadSyncSource.indexOf("function persistStandardIdle", autoStart);
 const autoBlock = threadSyncSource.slice(autoStart, autoEnd);
@@ -190,11 +191,21 @@ assert.match(autoBlock, /autoContinueFields\(next, snapshot\.lastOutput\)/, "the
 assert.match(serverSource, /buildContinueNudge\(interfacePick\)/, "manual build Retry shares the extracted nudge");
 assert.match(retryBlock, /deps\.buildContinueInput\(deps\.buildNudge\(card\), "public"\)/, "manual Retry stays public");
 assert.doesNotMatch(retryBlock, /agent-only/, "manual Retry never inherits private visibility");
-assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
-assert.match(serverSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
-assert.match(serverSource, /expiredCount: openExpiredQuestionIds\(cardRow\.id\)\.length,/, "the dispatcher receives the recoverable expired count");
-const resets = `${serverSource}\n${operationsSource}`.match(/resetAutoContinue\(\)/g) ?? [];
-assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
+assert.match(askGateSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
+assert.match(askGateSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
+assert.match(askGateSource, /expiredCount: deps\.openExpiredQuestionIds\(cardId\)\.length,/, "the dispatcher receives the recoverable expired count");
+const doneSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-done-track.ts"),
+  "utf8",
+);
+const reseedSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-reseed.ts"), "utf8");
+assert.match(operationsSource, /const reset = deps\.resetAutoContinue\(\)/, "manual retry resets the budget");
+assert.match(reseedSource, /const reset = deps\.resetAutoContinue\(\)/, "reseed resets the budget");
+assert.equal(
+  (doneSource.match(/resetAutoContinue\(\)/g) ?? []).length,
+  1,
+  "every done track resets the budget through one shared completion writer",
+);
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
 assert.match(threadSyncSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");

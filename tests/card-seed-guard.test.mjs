@@ -23,15 +23,13 @@ assert.match(noDir, /already seeded/, "the fallback still states the workflow ex
 // Server contract: the seed CLI resolves the calling card worker and
 // refuses through the guard instead of minting a project-root workflow.
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
-const seedStart = serverSource.indexOf('if (argv[0] === "seed") {');
-const seedEnd = serverSource.indexOf('if (argv[0] === "advance") {', seedStart);
-const seedBlock = serverSource.slice(seedStart, seedEnd);
-assert.ok(seedStart >= 0 && seedEnd > seedStart, "the seed CLI handler exists");
-assert.match(seedBlock, /getCardByWorkerThread\(\s*ctx\.threadId\s*\)/, "the seed handler resolves the calling card worker like advance/doctor do");
+const seedBlock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-seed.ts"), "utf8");
+assert.match(seedBlock, /argv\[0\] === "seed" \? runSeed\(deps, argv, ctx\) : null/, "the seed family claims exactly its verb");
+assert.match(seedBlock, /getCardByWorkerThread\(ctx\.threadId\)/, "the seed handler resolves the calling card worker like advance/doctor do");
 assert.match(seedBlock, /cardWorkerSeedRefusal\(/, "a card worker seed is refused through the guard");
 assert.match(
   seedBlock,
-  /workflowStateDir\(\s*bb,\s*seedRoot,\s*seedCard\.id,\s*seedCard\.dir_hash,?\s*\)/,
+  /deps\.workflowStateDir\(\s*seedRoot,\s*seedCard\.id,\s*seedCard\.dir_hash,\s*\)/,
   "the refusal redirects to the card's own state dir",
 );
 

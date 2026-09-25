@@ -5,6 +5,10 @@ import {
   root,
   server,
   serverOperations,
+  threadProjection,
+  cliDone,
+  cliAsk,
+  cliAskRun,
   cardDiff,
   cardState,
   cardPromotion,
@@ -111,9 +115,14 @@ assert.match(
   "a card comment reopens completed work through the shared lifecycle helper",
 );
 assert.match(
-  server,
-  /statusForNewCardWork\(\{[\s\S]*?kind: card\.kind,[\s\S]*?status: card\.status,[\s\S]*?stage: currentStage[\s\S]*?\}\)/,
-  "a direct thread message reopens completed work through the same helper",
+  threadProjection,
+  /status: statusForNewCardWork\(\{\s*kind: card\.kind,\s*status: card\.status,\s*stage,\s*\}\)\.status,/,
+  "a direct thread message reopens completed work through the same helper, on the projected stage",
+);
+assert.equal(
+  (server.match(/statusForNewCardWork\(\{/g) ?? []).length,
+  2,
+  "the reopen helper has exactly two call sites: the card comment and the thread projection",
 );
 assert.match(
   serverRecovery,
@@ -126,8 +135,8 @@ assert.match(
   "recovered diffs fail closed when their attached Git root changes",
 );
 assert.match(
-  server,
-  /verificationReadiness\([\s\S]*?verificationRun,[\s\S]*?gitEvidence[\s\S]*?\)/,
+  cliDone,
+  /verificationReadiness\(verificationRun, evidence\.git\)/,
   "Build completion requires a host-recorded test result at the current Git identity",
 );
 assert.match(
@@ -146,8 +155,8 @@ assert.match(
   "asked documents keep an ask-time baseline for staleness notices",
 );
 assert.match(
-  server,
-  /snapshotQuestionEvidence\([\s\S]*?cardRow\.id,[\s\S]*?groups\.flatMap/,
+  cliAskRun,
+  /void deps\.snapshotQuestionEvidence\(\s*cardId,\s*groups\.flatMap/,
   "asking snapshots its documents before the blocking wait, never blocking the ask",
 );
 assert.match(
@@ -165,9 +174,15 @@ assert.match(
   /<StalenessNotice staleness=\{current\.staleness\} \/>/,
   "each open question carries its own notice",
 );
+const receiptArgs = new RegExp([
+  String.raw`auditReceiptReadiness\(`,
+  String.raw`\s*await receiptContent\(deps, stateDir\),`,
+  String.raw`\s*stateBlob \? parseArtifactManifest\(stateBlob\) : \[\],`,
+  String.raw`\s*evidence\.checkoutPath,\s*evidence\.git,\s*verificationRun,`,
+].join(""));
 assert.match(
-  server,
-  /auditReceiptReadiness\([\s\S]*?receiptContent,[\s\S]*?stateBlob[\s\S]*?checkout\?\.path[\s\S]*?gitEvidence[\s\S]*?verificationRun[\s\S]*?\)/,
+  cliDone,
+  receiptArgs,
   "Build completion passes host-sampled Git and test evidence into receipt validation",
 );
 
@@ -187,8 +202,8 @@ assert.match(
   "sync polls never touch archived cards",
 );
 assert.match(
-  server,
-  /if \(cardRow\.status === "archived"\)\s*return \{ exitCode: 2, stderr: "This card is archived\." \}/,
+  cliAsk,
+  /if \(cardRow\.status === "archived"\)\s*return refuse\(\{ exitCode: 2, stderr: "This card is archived\." \}\);/,
   "ask on an archived thread names the state",
 );
 // Stage truth is state.md: every sync converges the DB cache once, upfront,

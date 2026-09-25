@@ -8,6 +8,8 @@ import {
   serverRecovery,
   serverInbox,
   serverWorkerRetry,
+  cliAsk,
+  cliAskRun,
   cardsPersist,
   app,
   navigation,
@@ -208,22 +210,22 @@ assert.doesNotMatch(
   "the cramped select is gone, not duplicated",
 );
 assert.match(
-  server,
+  cliAsk,
   /Questions are English-only/,
   "the worker cannot opt a structured card question into another locale",
 );
 assert.match(
-  server,
-  /englishQuestionContentError\(\s*group\.question,\s*group\.options,?\s*\)/,
+  cliAsk,
+  /englishQuestionContentError\(\s*group\.question,\s*group\.options,\s*\)/,
   "the CLI rejects Portuguese structured question content before it can create a mismatched card form",
 );
 assert.match(
-  server,
-  /presentation:\s*\{\s*label:\s*askTimelineLabels\(\{\s*batched,\s*count:\s*groups\.length,?\s*\}\),?\s*\},?/,
+  cliAskRun,
+  /presentation:\s*\{\s*label:\s*askTimelineLabels\(\{\s*batched: intent\.batched,\s*count: intent\.groups\.length,\s*\}\),?\s*\},?/,
   "the blocking ask names its wait on BB's timeline row instead of a generic label",
 );
 assert.match(
-  server,
+  cliAskRun,
   /describeSubmission: \(value: unknown\) => describeAskSubmission\(value\)/,
   "the settled row keeps decisions only — BB never stores the payload or raw value",
 );
@@ -263,8 +265,8 @@ assert.doesNotMatch(
   "no detached Show label explains the read filter",
 );
 assert.match(
-  server,
-  /splitQuestionText\(groups\[0\]!\.question\)/,
+  cliAsk,
+  /group\.question = splitQuestionText\(group\.question\)/,
   "the split question is host-enriched in English before it reaches the user",
 );
 assert.match(

@@ -19,7 +19,8 @@ const workerBackend = readdirSync(join(root, "server"))
   .sort()
   .map((file) => readFileSync(join(root, "server", file), "utf8"))
   .join("\n");
-const spawnSources = `${server}\n${drafting}\n${presetJudge}\n${reviewPreflight}\n${workerBackend}`;
+const reviewCli = readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8");
+const spawnSources = `${server}\n${drafting}\n${presetJudge}\n${reviewPreflight}\n${reviewCli}\n${workerBackend}`;
 
 // One worker SDK spawn, one preset-judge spawn, and two fallback calls inside
 // the disposable helper remain. All card-worker paths use the worker seam.
@@ -88,15 +89,22 @@ for (const line of server.split("\n")) {
 // Disposable spawns build their prompt through the leashed lib builders —
 // the leash (no files, no commands, no questions) is tested where it lives,
 // and this pins the wiring: no hand-rolled draft/review prompt may bypass it.
-assert.match(server, /buildReviewPrompt\(\{\s*cardName:/, "review prompts go through the lib builder");
+assert.match(reviewCli, /buildReviewPrompt\(\{\s*cardName:/, "review prompts go through the lib builder");
 assert.match(drafting, /buildDraftPrompt\(\{\s*cardName:/, "draft prompts go through the lib builder");
 for (const [source, name] of [
-  [server, "reviewThread = await spawnDisposable("],
+  [reviewCli, "const thread = await deps.spawnDisposable("],
   [drafting, "return deps.spawnDisposable("],
 ]) {
   const at = source.indexOf(name);
   assert.ok(at >= 0, `${name} exists`);
-  assert.ok(source.slice(at, at + 600).includes('visibility: "hidden"'), "disposable spawns stay hidden");
+  assert.ok(
+    source.slice(at, at + 600).includes('visibility: "hidden"') ||
+      // The review site builds its args in a named helper next to the call;
+      // the helper is the one that must keep the reviewer hidden.
+      source.includes('reviewSpawnArgs(card, prompt, params, environment)') &&
+        source.includes('visibility: "hidden" as const'),
+    "disposable spawns stay hidden",
+  );
 }
 assert.ok(
   reviewPreflight.includes("const preThread = await deps.spawnDisposable("),

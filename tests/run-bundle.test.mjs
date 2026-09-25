@@ -108,20 +108,26 @@ console.log("run bundle test ok: stable names, manifest round-trip, changed/miss
 // Wiring: every done path refreshes the bundle before completing, export
 // failures refuse with a retry, and --check exists for drift between dones.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const done = [
+  readFileSync(join(root, "server/runtime/cli/cli-done.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
+].join("\n");
+const exportCommand = readFileSync(join(root, "server/runtime/cli/cli-export.ts"), "utf8");
+const writer = readFileSync(join(root, "server/runtime/cli/cli-bundle-writer.ts"), "utf8");
+const doneTrack = readFileSync(join(root, "server/runtime/cli/cli-done-track.ts"), "utf8");
+const server = [done, exportCommand, writer, doneTrack].join("\n");
 assert.equal(
-  (server.match(/await exportRunBundle\(card, \{\}\)/g) ?? []).length,
+  (done.match(/await exportRunBundle\(card, \{\}\)/g) ?? []).length,
   3,
   "build, research, and explore done each refresh the bundle before completing",
 );
 assert.match(server, /run-bundle export failed \(.*\) — retry done\./, "a failed bundle refresh refuses done with its retry");
-assert.match(server, /Run bundle refreshed at \$\{bundle\.dir\}/, "completion output names the refreshed bundle dir");
-assert.match(server, /paste below the commit subject:`?, \.\.\.bundle\.trailer/, "completion output carries the paste-ready trailer");
-assert.match(server, /stelow export \[--json\] \[--check\] \[--card <card_id>\]/, "export usage advertises --check");
-assert.match(server, /`bb stelow export --check` reports changed/, "the done protocol teaches drift-checking between completions");
-assert.match(server, /\["status", "--porcelain", "--", targetRel\]/, "commit-awareness is a read-only git status on the bundle dir");
-assert.match(server, /differs from HEAD — commit it with the work/, "an uncommitted bundle names its fix");
-assert.match(server, /No registered artifacts — nothing to bundle\./, "an empty registration skips the write instead of committing noise");
-assert.match(server, /committed: bundle\.committed/, "--check JSON carries the commit dimension alongside freshness");
+assert.match(doneTrack, /Run bundle refreshed at \$\{bundle\.dir\}/, "completion output names the refreshed bundle dir");
+assert.match(doneTrack, /paste below the commit subject:`?,?\s*\n?\s*\.\.\.bundle\.trailer/, "completion output carries the paste-ready trailer");
+assert.match(exportCommand, /stelow export \[--json\] \[--check\] \[--card <card_id>\]/, "export usage advertises --check");
+assert.match(writer, /"status",\n\s*"--porcelain",\n\s*"--",\n\s*targetRel,/, "commit-awareness is a read-only git status on the bundle dir");
+assert.match(exportCommand, /differs from HEAD — commit it with the work/, "an uncommitted bundle names its fix");
+assert.match(exportCommand, /No registered artifacts — nothing to bundle\./, "an empty registration skips the write instead of committing noise");
+assert.match(exportCommand, /committed: bundle\.committed/, "--check JSON carries the commit dimension alongside freshness");
 
 console.log("run bundle wiring test ok: done refreshes on all tracks, failure refuses, --check advertised");

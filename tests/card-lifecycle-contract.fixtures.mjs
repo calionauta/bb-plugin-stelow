@@ -26,6 +26,22 @@ export const server = [
   readFileSync(join(root, "server", "core-migrations.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
 ].join("\n");
+export const cliAsk = readFileSync(
+  join(root, "server", "runtime", "cli", "cli-ask-gate.ts"),
+  "utf8",
+);
+export const cliAskRun = readFileSync(
+  join(root, "server", "runtime", "cli", "cli-ask.ts"),
+  "utf8",
+);
+export const cliDone = [
+  readFileSync(join(root, "server", "runtime", "cli", "cli-done.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "cli", "cli-done-build.ts"), "utf8"),
+].join("\n");
+export const threadProjection = readFileSync(
+  join(root, "server", "runtime", "thread-state-projection.ts"),
+  "utf8",
+);
 export const serverOperations = readFileSync(
   join(root, "server", "runtime", "card-operations.ts"),
   "utf8",
