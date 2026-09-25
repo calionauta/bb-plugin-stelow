@@ -5,11 +5,10 @@ seven-line composition root. It re-exports the canonical RPC contract and
 default plugin from `server/plugin-runtime.ts`; capability code must not import
 the entry.
 
-`server/plugin-runtime.ts` is still a large transitional runtime. It composes
-the extracted capability slices and registers their handlers, but it also
-retains card, question, artifact, publication, and CLI orchestration code. The
-architecture below records both the recovered seams and that remaining debt;
-it does not claim that every capability is fully extracted.
+`server/plugin-runtime.ts` is the plugin's own composition root. It builds the
+runtime core and the five wiring layers and registers their handlers; it holds
+no card, question, artifact, publication, or CLI behavior. The architecture
+below records the recovered seams and the debt that remains outside them.
 
 ## Contract composition
 
@@ -126,8 +125,12 @@ capability behavior tests; they do not replace them.
 ## Tests and current boundary
 
 `tests/server-composition-root.test.mjs` pins the thin root, one default plugin
-entrypoint, one canonical contract, the absence of upward imports, and the
-wiring of extracted runtime capabilities. `tests/runtime-composition.test.mjs`
+entrypoint, one canonical contract, the absence of upward imports, the
+assembly order, and the rule that no surface is built inside the root.
+`tests/runtime-wiring.test.mjs` executes the seams the root depends on — the
+thread→card link, the workflow spawn prompt, the deferred wiring cycle — and
+checks that each layer imports only the layers below it.
+`tests/runtime-composition.test.mjs`
 executes lifecycle events, scheduler cleanup, worker skill isolation, RPC
 registration, CLI help, and preview disposal. The full suite also checks every
 RPC method has a handler and exercises representative success, refusal, and
@@ -138,13 +141,15 @@ same boundary to the budget gate. It reports inherited debt separately only
 when the current file is no larger than its base version. Moving oversized code
 into a new file does not reset that debt.
 
-The remaining technical debt is concrete: `server/plugin-runtime.ts` is still
-roughly 10.3k lines, and the budget check currently rejects 26 of its
-functions. It also retains substantial RPC and CLI behavior beyond composition. New
-capabilities must use an explicit seam rather than growing that file. The
-budget check is authoritative; the current failures are listed in the branch
-review rather than waived in this document. The extracted modules listed above
-are real architecture, not a claim that the transition is complete.
+The composition root is now 54 lines and owns no surface: it builds the runtime
+core and the five wiring layers, in order, and nothing else. The budget check
+reports no file or function over its limit among the changed sources. The debt
+it still reports is inherited and named here rather than waived: the GitHub
+issue automation (`server/github-issues.ts`, 939 lines), the CLI bundle writer
+and review subject, the workflow seed, and one oversized test callback. Those
+predate the extraction; the gate lists them with their baseline so a change that
+grows them is rejected. New capabilities must use an explicit seam rather than
+growing an existing file.
 
 ## Portable blueprint evidence
 
