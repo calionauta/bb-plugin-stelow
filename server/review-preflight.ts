@@ -113,7 +113,7 @@ async function eligibleArtifact(
     : null;
   return typeof content === "string" &&
     content.trim() &&
-    deps.reviewable(path ?? "", content)
+    deps.reviewable(artifact.path, content)
     ? { path: path ?? "", content }
     : null;
 }
