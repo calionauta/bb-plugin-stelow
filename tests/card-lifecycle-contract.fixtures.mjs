@@ -13,6 +13,8 @@ export const server = [
   readFileSync(join(root, "server", "runtime", "card-detail-presentation.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-detail-artifacts.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-mutations.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-state.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-audit-trail.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-lifecycle.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-operations.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "research-track-sync.ts"), "utf8"),
@@ -26,6 +28,22 @@ export const server = [
 ].join("\n");
 export const serverOperations = readFileSync(
   join(root, "server", "runtime", "card-operations.ts"),
+  "utf8",
+);
+export const cardReseed = readFileSync(
+  join(root, "server", "runtime", "card-reseed.ts"),
+  "utf8",
+);
+export const cardDiff = readFileSync(
+  join(root, "server", "runtime", "card-diff.ts"),
+  "utf8",
+);
+export const cardState = readFileSync(
+  join(root, "server", "runtime", "card-state.ts"),
+  "utf8",
+);
+export const cardPromotion = readFileSync(
+  join(root, "server", "runtime", "card-promotion.ts"),
   "utf8",
 );
 export const serverRecovery = readFileSync(

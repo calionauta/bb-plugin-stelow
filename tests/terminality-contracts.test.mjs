@@ -4,6 +4,10 @@ import { join } from "node:path";
 import {
   root,
   server,
+  serverOperations,
+  cardDiff,
+  cardState,
+  cardPromotion,
   serverRecovery,
   serverInbox,
   serverWorkerRetry,
@@ -61,7 +65,7 @@ import {
 
 // Archived terminality binds every worker-touching or state-moving RPC, not
 // just the poll path: each refuses upfront with the named exit.
-const move = rpcMethod("moveCard", "promoteCard");
+const move = serverOperations;
 assert.match(
   move,
   /if \(isArchivedCard\(card\)\)\s*return \{ ok: false, error: deps\.errors\.cardArchived \}/,
@@ -117,8 +121,8 @@ assert.match(
   "recovered checkouts have a dedicated integrity check before diffing",
 );
 assert.match(
-  server,
-  /const recoveryError = await recoveredCheckoutIntegrity\([\s\S]*?recoveryIntegrityDeps,[\s\S]*?card,[\s\S]*?workspace\.path[\s\S]*?\)/,
+  cardDiff,
+  /const recoveryError = await deps\.recoveredIntegrity\(card, checkout\.path\)/,
   "recovered diffs fail closed when their attached Git root changes",
 );
 assert.match(
@@ -171,8 +175,8 @@ assert.match(
 // read-time snapshot and, for async callers whose write lands after Archive,
 // against a fresh write-time read.
 assert.match(
-  server,
-  /stripArchivedResuscitation\([\s\S]*?latest\?\.status,[\s\S]*?write[\s\S]*?\)/,
+  cardState,
+  /stripArchivedResuscitation\([\s\S]*?deps\.getCard\(cardId\)\?\.status,[\s\S]*?write[\s\S]*?\)/,
   "mid-flight archives cannot resuscitate at write time",
 );
 // The sync entry skips archived cards before any thread read, and the ask
@@ -240,9 +244,9 @@ assert.doesNotMatch(
 
 // Promotion is a true ownership handoff: a new project worker takes over only
 // after it starts, and a failed handoff restores the exploratory card.
-const promote = rpcMethod("promoteCard", "researchStrategies");
+const promote = cardPromotion;
 const promotionRespawn =
-  /workers\.respawn\([\s\S]*?cardId,[\s\S]*?preset\.id,[\s\S]*?"project-promotion",[\s\S]*?previousProjectId: card\.project_id[\s\S]*?\)/;
+  /deps\.respawn\(card\.id, preset\.id, "project-promotion", [\s\S]*?previousProjectId: card\.project_id[\s\S]*?\)/;
 assert.match(
   promote,
   promotionRespawn,

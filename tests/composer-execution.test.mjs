@@ -96,6 +96,7 @@ const server = [
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
   readFileSync(join(root, "server/review-preflight.ts"), "utf8"),
   readFileSync(join(root, "server/workers.ts"), "utf8"),
   readFileSync(join(root, "server/cards-create.ts"), "utf8"),
@@ -128,8 +129,13 @@ const directExplicitSources = new RegExp(
 );
 assert.equal(
   (server.match(directExplicitSources) ?? []).length,
-  4,
-  "restart/reseed/review/gate-pre-review keep hardcoded explicit sources",
+  3,
+  "restart/review/gate-pre-review keep hardcoded explicit sources",
+);
+assert.match(
+  server,
+  /executionInputSources: explicitSources\(\)/,
+  "the reseed spawn declares explicit sources through its own helper",
 );
 assert.match(
   drafting,

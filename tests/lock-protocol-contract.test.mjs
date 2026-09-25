@@ -13,6 +13,10 @@ const operations = readFileSync(
   join(root, "server/runtime/card-operations.ts"),
   "utf8",
 );
+const cardState = readFileSync(
+  join(root, "server/runtime/card-state.ts"),
+  "utf8",
+);
 
 /** The text between two markers, failing loudly if either is gone. */
 function slice(start, end) {
@@ -42,7 +46,9 @@ assert.match(source, /`lock-blocked:\$\{cliCard\.id\}:\$\{entry\.file\}`/, "paus
 assert.match(source, /no action needed; the host resumes this card on release/i, "paused copy promises automatic resume");
 
 // Release: waiters resolve as resumed and get an agent-only re-acquire nudge.
-const notify = slice("async function notifyClaimWaiters(", "async function releaseCardClaimsAndNotify(");
+const notifyFrom = cardState.indexOf("export function createClaimWaiterNotifier(");
+assert.notEqual(notifyFrom, -1, "the waiter notifier lives in the card-state runtime slice");
+const notify = cardState.slice(notifyFrom);
 assert.match(notify, /\["paused"\], "resumed"/, "waiters resolve paused as resumed");
 assert.match(notify, /Re-run \\`bb stelow lock acquire/, "waiters get a re-acquire nudge");
 assert.match(notify, /visibility: "agent-only"/, "the nudge never pages the human");
@@ -63,6 +69,6 @@ assert.match(operations, /if \(isClaimTerminal\(status\)\) await deps\.releaseCl
 // a completed/blocked holder must not park a live card behind it.
 assert.match(source, /return !holder \|\| isClaimTerminal\(holder\.status\);/, "acquire-path ghost reap covers every terminal state");
 assert.match(source, /return holder !== undefined && !isClaimTerminal\(holder\.status\);/, "live-holder filters cover every terminal state");
-assert.match(source, /if \(!waiting \|\| isClaimTerminal\(waiting\.status\)\) \{/, "waiter resume skips every terminal waiter");
+assert.match(cardState, /if \(!card \|\| isClaimTerminal\(card\.status\)\) \{/, "waiter resume skips every terminal waiter");
 
 console.log("lock-protocol-contract: ok");

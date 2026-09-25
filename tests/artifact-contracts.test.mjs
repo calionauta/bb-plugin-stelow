@@ -177,7 +177,7 @@ assert.match(
 );
 assert.match(
   server,
-  /recon: reconReceiptStatus\(/,
+  /recon: await reconStatus\(/,
   "the host derives reconnaissance evidence from the portable receipt, never UI state",
 );
 assert.match(

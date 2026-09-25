@@ -19,6 +19,7 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/worker-continuation.mjs"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-reseed-prompt.ts"), "utf8"),
 ].join("\n");
 const cliRegistry = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli-registry.ts"), "utf8");
 const restartPromptSource = readFileSync(
@@ -36,7 +37,8 @@ assert.equal((serverSource.match(/const\s+INTERFACE_PICK\s*=\s*"/g) ?? []).lengt
 assert.equal((serverSource.match(/Interface-pick discipline: check review_gates/g) ?? []).length, 1, "the interface-pick prose lives in the const only");
 assert.equal(
   (serverSource.match(/\$\{INTERFACE_PICK\}/g) ?? []).length
-    + (restartPromptSource.match(/protocols\.interfacePick/g) ?? []).length,
+    + (restartPromptSource.match(/protocols\.interfacePick/g) ?? []).length
+    + (serverSource.match(/protocols\.interfacePick/g) ?? []).length,
   3,
   "restart, nudge, and ask copy reference the interface-pick protocol",
 );
@@ -52,9 +54,6 @@ assert.equal((serverSource.match(/const\s+RECON_PROTOCOL\s*=\s*"/g) ?? []).lengt
 // each site by the next anchor instead.
 const sites = {
   spawn: "Step 1 — verify intent first",
-  // The reseed template opens with the same sentence as restart, so anchor
-  // on the site's unique const assignment instead (it precedes the template).
-  reseed: "researchReseed ??",
 };
 const ordered = Object.entries(sites).map(([site, anchor]) => {
   const at = serverSource.indexOf(anchor);
@@ -63,7 +62,6 @@ const ordered = Object.entries(sites).map(([site, anchor]) => {
 }).sort((a, b) => a.at - b.at);
 const siteEnds = {
   spawn: "%REQUEST%`;",
-  reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const { site, at } of ordered) {
   const stop = serverSource.indexOf(siteEnds[site], at);
@@ -88,7 +86,44 @@ for (const protocol of [
     restartPromptSource.includes(`protocols.${protocol}`),
     `the restart prompt references ${protocol}`,
   );
+  assert.ok(
+    serverSource.includes(`protocols.${protocol}`),
+    `the reseed prompt references ${protocol}`,
+  );
 }
+
+// The reseed build template is bounded by its own helpers, so a deleted or
+// reordered clause inside the template fails instead of hiding behind a
+// reference that lives in a different function.
+const reseedPrompt = serverSource.slice(
+  serverSource.indexOf("function buildWorkflowPrompt("),
+  serverSource.indexOf("function presetInstructions("),
+);
+assert.ok(reseedPrompt.length > 0, "the reseed build template is bounded by its helpers");
+for (const clause of [
+  "protocols.cardOwnerRules",
+  "protocols.neverSeed",
+  "protocols.cliEquivalents",
+  "protocols.reconProtocol",
+  "protocols.draftProtocol",
+  "protocols.turnDiscipline",
+  "protocols.commitStyle",
+  "protocols.interfacePick",
+  "protocols.doneProtocol",
+  "protocols.splitProtocol",
+]) {
+  assert.ok(reseedPrompt.includes(clause), `the reseed template references ${clause}`);
+}
+assert.match(
+  reseedPrompt,
+  /Batch independent questions into ONE ask call/,
+  "the reseed ask contract explains why questions batch",
+);
+assert.match(
+  reseedPrompt,
+  /ask via the form below/,
+  "the reseed ask contract keeps the structured-form requirement",
+);
 
 // The shared CLI copy must never invite a card worker to seed: that exact
 // sentence produced the project-root orphan.
@@ -112,10 +147,6 @@ const doneSites = {
   // next-anchor bounding breaks where a template closes after the next
   // anchor opens (research closes past explore's first line).
   spawn: { anchor: "Step 1 — verify intent first", end: "%REQUEST%`;" },
-  reseed: {
-    anchor: "in the re-seeded state.md",
-    end: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
-  },
 };
 for (const [site, { anchor, end }] of Object.entries(doneSites)) {
   const at = serverSource.indexOf(anchor);
@@ -211,11 +242,9 @@ assert.equal(splitDefs.length, 1, "SPLIT_PROTOCOL is defined once, not pasted pe
 assert.equal((serverSource.match(/run `bb stelow split` \(no args/g) ?? []).length, 1, "the split invocation prose lives in the const only");
 const splitSites = {
   spawn: "Step 1 — verify intent first",
-  reseed: "researchReseed ??",
 };
 const splitEnds = {
   spawn: "%REQUEST%`;",
-  reseed: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
 };
 for (const [site, anchor] of Object.entries(splitSites)) {
   const at = serverSource.indexOf(anchor);

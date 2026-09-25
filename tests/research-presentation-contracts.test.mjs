@@ -178,11 +178,6 @@ assert.match(
   "completed cards refuse Retry instead of nudging a finished worker",
 );
 assert.match(
-  server,
-  /supersede it at birth/,
-  "an error arriving with an open question counts once, in history",
-);
-assert.match(
   boardCard,
   /cardCanResume\(card\)/,
   "build board cards use the shared terminal retry guard",

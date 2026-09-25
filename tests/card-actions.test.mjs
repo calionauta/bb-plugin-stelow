@@ -3,6 +3,7 @@ import {
   root,
   server,
   serverOperations,
+  cardReseed,
   serverRecovery,
   serverInbox,
   serverWorkerRetry,
@@ -149,22 +150,18 @@ assert.match(
   "retry, restart, split-request, and board moves share one operations boundary",
 );
 
-const reseed = rpcMethod("reseedCard", "promoteCard");
-assert.match(
-  reseed,
-  /resolveReseedIntent\(card, requestedIntent\)/,
-  "fresh restarts are the only route reclassification path",
-);
-assert.match(
-  reseed,
-  /freshStatusForReseed\(card, reclassified\)/,
-  "reclassification reopens the card at a coherent status",
-);
-assert.match(
-  reseed,
-  /publish\("card-state", \{ cardId \}\)/,
-  "reclassification refreshes open card surfaces",
-);
+assert.match(cardReseed, /export function createCardReseed\(/,
+  "reseed owns one runtime factory boundary");
+assert.match(server, /const reseedCard = createCardReseed\(/,
+  "the composition root wires the reseed factory once");
+assert.match(server, /\n      reseedCard,\n/,
+  "the reseed factory result is the registered RPC handler");
+assert.match(cardReseed, /resolveReseedIntent\(card, input\.intent\)/,
+  "fresh restarts are the only route reclassification path");
+assert.match(cardReseed, /freshStatusForReseed\(card, reclassified\)/,
+  "reclassification reopens the card at a coherent status");
+assert.match(cardReseed, /publishCard\(input\.cardId\)/,
+  "reclassification refreshes open card surfaces");
 
 const archive = rpcMethod("cancelCard", "deleteCard");
 assert.match(

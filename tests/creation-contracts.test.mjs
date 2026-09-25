@@ -193,7 +193,7 @@ assert.match(
 );
 assert.match(
   server,
-  /current\.kind\s*===\s*"build"\s*&&\s*!opts\?\.suppressCompletionEvent/,
+  /if \(current\.kind !== "build" \|\| options\?\.suppressCompletionEvent\) return;/,
   "exactly one completion notification per finished Build card",
 );
 

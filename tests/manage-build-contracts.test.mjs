@@ -116,7 +116,7 @@ assert.doesNotMatch(
 // Archive button honors a refused archive instead of celebrating it.
 assert.match(
   server,
-  /stripArchivedResuscitation\(\s*previous\?\.status,\s*fields/,
+  /stripArchivedResuscitation\(\s*previous\?\.status,\s*fields as/,
   "every status write passes the archived-terminal rule",
 );
 assert.match(

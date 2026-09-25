@@ -104,7 +104,10 @@ assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'wo
 // Preset server wiring: every mutating RPC fans out through the extracted
 // feature seam. A new write path that skips re-evaluation fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-reseed.ts"), "utf8"),
+].join("\n");
 const presetAccessors = [
   readFileSync(join(root, "server/preset-accessors.ts"), "utf8"),
   readFileSync(join(root, "server/preset-workers.ts"), "utf8"),
@@ -134,6 +137,10 @@ assert.match(
   /refreshRestartPending\([\s\S]*effective\.id/,
   "band and reliable mutations recompute restart-pending",
 );
-assert.match(server, /preset = getReliablePresetForBand\(bandForCardKindStage\(card\.kind, card\.stage\), cardId\);/, "reseed resolves the reliable-tier preset like any fresh start");
+assert.match(
+  server,
+  /return deps\.getReliablePreset\(bandForCardKindStage\(card\.kind, card\.stage\), cardId\);/,
+  "reseed resolves the reliable-tier preset like any fresh start",
+);
 
 console.log("preset staleness test ok: band mapping, live filtering, cascade composition, RPC fan-out");

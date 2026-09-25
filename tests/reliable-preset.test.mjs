@@ -21,6 +21,7 @@ const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-promotion.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-migrations.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-accessors.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-handlers.ts"), "utf8"),
@@ -217,7 +218,7 @@ assert.match(
 );
 assert.match(
   server,
-  /\? getReliablePresetForBand\(STAGE_TO_BAND\[card\.stage\] \?\? "analysis", cardId\)/,
+  /deps\.getReliablePreset\(STAGE_TO_BAND\[card\.stage\] \?\? "analysis", card\.id\)/,
   "promotion handoff resolves reliable-aware",
 );
 assert.match(

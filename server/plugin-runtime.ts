@@ -30,13 +30,7 @@ import {
   staleBundleEntries,
   unbundledSources,
 } from "../lib/run-bundle.mjs";
-import {
-  PHASE_ENTRY_STAGES,
-  STAGE_TO_BAND,
-} from "../lib/workflow-vocabulary.mjs";
-import { splitDiffByFile, MAX_DIFF_FILES } from "../lib/diff-split.mjs";
-import { summarizeSemDiff } from "../lib/sem-summary.mjs";
-import { summarizeCymbalChanged } from "../lib/cymbal-changed.mjs";
+import { PHASE_ENTRY_STAGES } from "../lib/workflow-vocabulary.mjs";
 import {
   refreshEventSeverity,
   refreshStalledPaused,
@@ -46,10 +40,8 @@ import {
   addClaimWaiters,
   CLAIM_TTL_MS,
   checkWorkspaceClaims,
-  clearClaimWaiters,
   releaseAllCardClaims,
   releaseWorkspaceClaims,
-  waitersForFiles,
 } from "../lib/card-claims.mjs";
 import { isClaimTerminal } from "../lib/card-terminal.mjs";
 import { resolveClaimKey } from "../lib/card-claim-key.mjs";
@@ -79,10 +71,6 @@ import {
   discardEligibility,
   discardTrail,
 } from "../lib/discard-policy.mjs";
-import {
-  normalizePromoteName,
-  findAdoptableProject,
-} from "../lib/promote-card.mjs";
 import { STATE_TEMPLATE } from "../lib/state-template.mjs";
 import {
   ownsWorkflowState,
@@ -123,7 +111,7 @@ import {
 } from "../lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "../lib/delegation-map.mjs";
 import { judgeArtifactCriteria } from "../lib/skill-criteria.mjs";
-import { bandForCardKindStage } from "../lib/preset-staleness.mjs";
+
 import {
   resolveDecisionApiKey,
   normalizeDecisionApiModel,
@@ -153,28 +141,14 @@ import { contractForBuildArtifact } from "../lib/artifact-contracts.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
-import {
-  isArchivedCard,
-  stripArchivedResuscitation,
-} from "../lib/worker-action-policy.mjs";
-import {
-  freshStatusForReseed,
-  resolveReseedIntent,
-} from "../lib/workflow-intent-policy.mjs";
+import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import { previewText } from "../lib/preview-session.mjs";
 import {
   cardWorkerSeedRefusal,
   withRuntimeIgnoreEntry,
 } from "../lib/card-seed-guard.mjs";
+import { resetAutoContinue } from "../lib/auto-continue.mjs";
 import {
-  lastTurnAdvancedStages,
-  nextAutoContinue,
-  resetAutoContinue,
-  shouldAutoContinue,
-  shouldDoneNudge,
-} from "../lib/auto-continue.mjs";
-import {
-  autoContinueFields,
   buildContinueInput,
   buildContinueNudge,
 } from "../lib/worker-continuation.mjs";
@@ -209,7 +183,6 @@ import {
   AUDIT_RECEIPT_NOTE,
   auditReceiptReadiness,
 } from "../lib/audit-receipt.mjs";
-import { statusForNewCardWork } from "../lib/card-work-resume.mjs";
 import { parseWorkflowConfig } from "../lib/workflow-config.mjs";
 import {
   formatReviewGates,
@@ -228,12 +201,7 @@ import {
   AUDIT_TRAIL_FILE,
   AUDIT_TRAIL_NOTE,
   auditTrailGate,
-  auditTrailOutcome,
 } from "../lib/audit-trail-contract.mjs";
-import {
-  RECON_RECEIPT_FILE,
-  reconReceiptStatus,
-} from "../lib/recon-receipt.mjs";
 import {
   tokenBreakdownFromEvents,
   sumTokenBreakdowns,
@@ -316,6 +284,15 @@ import { createCritiqueGapState } from "./runtime/critique-gap-state.js";
 import { createGapSummary } from "./runtime/gap-summary.js";
 import { createQualitySeal } from "./runtime/quality-seal.js";
 import { createQuestionAnswers } from "./runtime/question-answers.js";
+import {
+  createCardUpdater,
+  createClaimWaiterNotifier,
+} from "./runtime/card-state.js";
+import { createCardAdvance, createGateHandlers } from "./runtime/card-gates.js";
+import { createAuditTrailStatus } from "./runtime/card-audit-trail.js";
+import { createCardDiff } from "./runtime/card-diff.js";
+import { createCardReseed } from "./runtime/card-reseed.js";
+import { createCardPromotion } from "./runtime/card-promotion.js";
 
 const pluginDir = resolvePluginRoot(
   dirname(fileURLToPath(import.meta.url)),
@@ -1438,6 +1415,21 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     cardId: string,
     interactionIds: string[],
   ) => inbox.markAnswered(cardId, interactionIds);
+  const updateCard = createCardUpdater({
+    db,
+    bb,
+    now,
+    getCard,
+    recordInbox: recordInboxEvent,
+    resolveInbox: resolveInboxEvents,
+  });
+  const notifyClaimWaiters = createClaimWaiterNotifier({
+    db,
+    bb,
+    now,
+    getCard,
+    resolveInbox: resolveInboxEvents,
+  });
 
   const prepareWorkerRespawn = createWorkerRespawnPreparation({
     bb,
@@ -2367,127 +2359,34 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     return normalizeHistory(row.research_strategies);
   }
 
+  async function readReseedConfig(
+    card: CardRow,
+    rootPath: string,
+  ): Promise<ReturnType<typeof parseWorkflowConfig> | null> {
+    if (!card.dir_hash) return null;
+    try {
+      const stateDir = await workflowStateDir(
+        bb,
+        rootPath,
+        card.id,
+        card.dir_hash,
+      );
+      if (!stateDir) return null;
+      const content = await bb.sdk.files
+        .read({ path: join(stateDir, "state.md") })
+        .then((file) => file.content)
+        .catch(() => null);
+      return typeof content === "string" ? parseWorkflowConfig(content) : null;
+    } catch {
+      return null;
+    }
+  }
+
   function getCardByWorkerThread(threadId: string): CardRow | undefined {
     return db
       .prepare("SELECT * FROM cards WHERE worker_thread_id = ?")
       .get(threadId) as CardRow | undefined;
   }
-  function updateCard(
-    cardId: string,
-    fields: Partial<
-      Omit<
-        CardRow,
-        "id" | "project_id" | "intent" | "prompt" | "name" | "created_at"
-      >
-    >,
-    opts?: { suppressCompletionEvent?: boolean },
-  ): void {
-    // Hot-reload race: bb closes the plugin DB while syncThreadState callbacks
-    // are still in flight; writing then crashes the whole server process.
-    if (!(db as unknown as { open?: boolean }).open) return;
-    const previous = getCard(cardId);
-    // Archived is terminal: strip any status change that would resuscitate
-    // the card (a stopping worker settling after Archive is the classic
-    // case). Archiving itself always passes through.
-    const effective = stripArchivedResuscitation(
-      previous?.status,
-      fields as Record<string, unknown>,
-    ) as typeof fields;
-    const keys = Object.keys(effective);
-    if (keys.length === 0) return;
-    // No-op guard: sync polls call updateCard every cycle, usually with
-    // identical values. Writing anyway would bump updated_at (reshuffling
-    // board order and "Idle since" labels) and publish card-state
-    // (reloading every panel) for zero visual change.
-    const asRecord = (value: unknown): Record<string, unknown> =>
-      value as Record<string, unknown>;
-    const changed = previous
-      ? keys.filter((k) => asRecord(previous)[k] !== asRecord(effective)[k])
-      : keys;
-    if (previous && changed.length === 0) return;
-    const write: Record<string, unknown> = { updated_at: now() };
-    for (const k of changed) write[k] = asRecord(effective)[k];
-    // Write-time terminal re-check: async callers read the card, await
-    // network, then write — Archive may have landed in between. Re-strip
-    // against a fresh read so a pre-archive snapshot can never resuscitate.
-    const latest = getCard(cardId);
-    const finalWrite = stripArchivedResuscitation(
-      latest?.status,
-      write,
-    ) as Record<string, unknown>;
-    if (Object.keys(finalWrite).every((k) => k === "updated_at")) return;
-    db.prepare(
-      `UPDATE cards SET ${Object.keys(finalWrite)
-        .map((k) => `${k} = @${k}`)
-        .join(", ")} WHERE id = @id`,
-    ).run({ id: cardId, ...finalWrite });
-    const current = getCard(cardId);
-    if (previous && current) {
-      if (current.status === "archived" || current.status === "completed")
-        resolveInboxEvents(
-          cardId,
-          current.updated_at,
-          ["question", "error", "paused"],
-          current.status === "archived" ? "archived" : "completed",
-        );
-      else if (current.activity === "running")
-        resolveInboxEvents(
-          cardId,
-          current.updated_at,
-          ["error", "paused"],
-          "resumed",
-        );
-      // Research and Explore cards emit their own completion events and a
-      // manual board move needs no "Completed" ping — the human just did it.
-      // Only agent-driven build completions notify.
-      // One completion event per card, whichever path finishes it. A drag to
-      // Done is a board move, so it suppresses this; `bb stelow done` does not,
-      // because there the completion IS the outcome. The copy names the thing
-      // the human has to look at, since a finished Build card carries evidence
-      // rather than a result to read.
-      if (
-        previous.status !== "completed" &&
-        current.status === "completed" &&
-        current.kind === "build" &&
-        !opts?.suppressCompletionEvent
-      )
-        recordInboxEvent(
-          current,
-          "completed",
-          "Build complete — audit evidence is ready to review in Done.",
-          `completed:${cardId}:${current.updated_at}`,
-          current.updated_at,
-        );
-      if (previous.activity !== "error" && current.activity === "error") {
-        recordInboxEvent(
-          current,
-          "error",
-          current.last_error || "Worker failed and needs attention.",
-          `error:${cardId}:${current.updated_at}`,
-          current.updated_at,
-        );
-        // A fresh failure that lands while a specific question is already
-        // open is context, not a second action: supersede it at birth so
-        // one card never counts twice. The row survives in Resolved
-        // history, and the open card shows the error text beside the
-        // question it must answer.
-        const openQuestion = db
-          .prepare(
-            "SELECT 1 FROM inbox_events WHERE card_id = ? AND kind = 'question' AND resolved_at IS NULL AND archived_at IS NULL LIMIT 1",
-          )
-          .get(cardId);
-        if (openQuestion)
-          resolveInboxEvents(
-            cardId,
-            current.updated_at,
-            ["error"],
-            "superseded",
-          );
-      }
-    }
-    bb.realtime.publish("card-state", { cardId });
-  }
-
   // Workspace claim coordination (lib/card-claims). A card that hits a file
   // held by another live card parks that scope, not the thread: the worker
   // gets a BB-LOCK-BLOCKED stderr, the user gets a paused inbox event naming
@@ -2503,60 +2402,6 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     const when = new Date(expiresAt).toLocaleString();
     const resumeNotice = "no action needed; the host resumes this card on release.";
     return `Waiting on ${file} (held by card "${holderName}"). Releases automatically when that card finishes the file or by ${when} — ${resumeNotice}`;
-  }
-  async function notifyClaimWaiters(
-    workspacePath: string,
-    files: string[],
-  ): Promise<void> {
-    if (files.length === 0 || !workspacePath) return;
-    const at = now();
-    let waiterRows: Array<{ card_id: string; scope: string | null }>;
-    try {
-      waiterRows = waitersForFiles(db, { workspacePath, files });
-    } catch {
-      return;
-    }
-    const seen = new Set<string>();
-    for (const waiter of waiterRows) {
-      if (seen.has(waiter.card_id)) continue;
-      seen.add(waiter.card_id);
-      const waiting = getCard(waiter.card_id);
-      if (!waiting || isClaimTerminal(waiting.status)) {
-        try {
-          clearClaimWaiters(db, { cardId: waiter.card_id });
-        } catch {
-          /* advisory */
-        }
-        continue;
-      }
-      resolveInboxEvents(waiter.card_id, at, ["paused"], "resumed");
-      try {
-        clearClaimWaiters(db, { cardId: waiter.card_id, workspacePath, files });
-      } catch {
-        /* advisory */
-      }
-      if (waiting.worker_thread_id) {
-        const nudge = `Files you waited on are now free (${files.join(", ")}). Re-run \`bb stelow lock acquire --scope <id>\` for the files you \
-still need, then continue the scope — do not re-claim files you no longer touch.`;
-        try {
-          await bb.sdk.threads.send({
-            threadId: waiting.worker_thread_id,
-            mode: "auto",
-            input: [
-              {
-                type: "text",
-                text: nudge,
-                mentions: [],
-                visibility: "agent-only",
-              },
-            ],
-          });
-        } catch {
-          /* a dead thread stays parked; the user resumes by hand */
-        }
-      }
-      bb.realtime.publish("card-state", { cardId: waiter.card_id });
-    }
   }
   async function releaseCardClaimsAndNotify(cardId: string): Promise<void> {
     let released: Array<{ workspacePath: string; file: string }>;
@@ -2734,6 +2579,138 @@ still need, then continue the scope — do not re-claim files you no longer touc
     cardWorkspace,
     strategyRounds,
     readResearchIndex,
+  });
+  const gateHandlers = createGateHandlers({
+    db,
+    bb,
+    getCard,
+    cardWorkspace,
+    boardFromRoot,
+    loadBoard,
+  });
+  const advanceCard = createCardAdvance({
+    getCard,
+    cardWorkspace,
+    workflowStateDir: (rootPath, card) =>
+      workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    ensureArtifacts: (rootPath, stateDir, requireOwnedState) =>
+      ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
+    questionGate: questionContractsGate,
+    runHelper,
+    getReliablePreset: getReliablePresetForBand,
+    getCardPreset: getPresetForCard,
+    respawn: (cardId, presetId) => workers.respawn(cardId, presetId),
+    updateCard: (cardId, fields) =>
+      updateCard(cardId, fields as Parameters<typeof updateCard>[1]),
+    publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
+    errors: {
+      cardNotFound: ERR_CARD_NOT_FOUND,
+      cardArchived: ERR_CARD_ARCHIVED,
+      workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE,
+    },
+  });
+  const auditTrailStatus = createAuditTrailStatus({
+    bb,
+    getCard,
+    cardWorkspace,
+    workflowStateDir: (rootPath, card) =>
+      workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    runHelper,
+    errors: {
+      cardNotFound: ERR_CARD_NOT_FOUND,
+      workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE,
+    },
+  });
+  const cardDiff = createCardDiff({
+    execFile,
+    getCard,
+    cardCheckout,
+    recoveredIntegrity: (card, path) =>
+      recoveredCheckoutIntegrity(recoveryIntegrityDeps, card, path),
+    resolveLocalBin,
+    errors: {
+      cardNotFound: ERR_CARD_NOT_FOUND,
+      workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE,
+    },
+  });
+  const reseedCard = createCardReseed({
+    db,
+    bb,
+    now,
+    getCard,
+    cardWorkspace,
+    workflowStateDir: (rootPath, card) =>
+      workflowStateDir(bb, rootPath, card.id, card.dir_hash!),
+    readStateConfig: async (rootPath, card) => readReseedConfig(card, rootPath),
+    seedWorkflow: ({ rootPath, card, intent, appetite, reviewGates }) =>
+      seedWorkflow(
+        bb,
+        rootPath,
+        card.id,
+        card.name,
+        intent,
+        appetite,
+        reviewGates,
+        true,
+      ),
+    getPresetById,
+    pinCardPreset,
+    getReliablePreset: getReliablePresetForBand,
+    presetParams: presetAttachmentParams,
+    strategyList,
+    strategyRounds,
+    roundFile: (strategyId, roundNo, stamp) =>
+      roundFileName(strategyId, roundNo, stamp),
+    roundStamp: roundTimestamp,
+    roundRelativePath: roundRelPath,
+    ensureArtifactParent,
+    researchPrompt: researchWorkerPrompt,
+    explorePrompt: exploreWorkerPrompt,
+    attachments: cardAttachments,
+    continuingEnvironment: workers.continuingEnvironment,
+    workerEnvironment,
+    replacePrepared: workers.replacePrepared,
+    resetAutoContinue,
+    updateCard: (cardId, fields) =>
+      updateCard(cardId, fields as Parameters<typeof updateCard>[1]),
+    recordThread: workers.recordThread,
+    lineage: workers.lineage,
+    publishCard: (cardId) => bb.realtime.publish("card-state", { cardId }),
+    protocols: {
+      cardOwnerRules: CARD_OWNER_RULES,
+      neverSeed: NEVER_SEED,
+      cliEquivalents: CLI_EQUIVALENTS,
+      reconProtocol: RECON_PROTOCOL,
+      draftProtocol: DRAFT_PROTOCOL,
+      turnDiscipline: TURN_DISCIPLINE,
+      commitStyle: COMMIT_STYLE,
+      interfacePick: INTERFACE_PICK,
+      doneProtocol: DONE_PROTOCOL,
+      splitProtocol: SPLIT_PROTOCOL,
+    },
+    errors: {
+      cardNotFound: ERR_CARD_NOT_FOUND,
+      cardArchived: ERR_CARD_ARCHIVED,
+      workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE,
+      presetNotFound: ERR_PRESET_NOT_FOUND,
+    },
+  });
+  const promoteCard = createCardPromotion({
+    db,
+    bb,
+    now,
+    getCard,
+    cardWorkspace,
+    recoverySnapshot,
+    getReliablePreset: getReliablePresetForBand,
+    getCardPreset: getPresetForCard,
+    respawn: workers.respawn,
+    logComment: (cardId, body) => logCardComment(cardId, "card", cardId, "agent", body),
+    errors: {
+      cardNotFound: ERR_CARD_NOT_FOUND,
+      cardArchived: ERR_CARD_ARCHIVED,
+      workspaceUnavailable: ERR_WORKSPACE_UNAVAILABLE,
+    },
   });
 
   // Resolve a worker-authored artifact path (workspace-relative) into the
@@ -3248,65 +3225,13 @@ still need, then continue the scope — do not re-claim files you no longer touc
         };
       },
 
-      async approveGate({ projectId, workflowId, gate }) {
-        // Resolve via the owning card first: the project-root board has no
-        // stelow.json for exploratory work, so board-only lookup fails there.
-        // dir_hash is unique per card, hence a reliable key for both modes.
-        const owner = db
-          .prepare("SELECT * FROM cards WHERE dir_hash = ?")
-          .get(workflowId) as CardRow | undefined;
-        const board = owner
-          ? await (async () => {
-              const workspace = await cardWorkspace(owner);
-              if (!workspace?.path)
-                return {
-                  rootPath: null as string | null,
-                  workflows: [] as Workflow[],
-                  error: "Workspace is unavailable for this card.",
-                };
-              return boardFromRoot(bb, workspace.path, owner.dir_hash);
-            })()
-          : await loadBoard(bb, projectId);
-        const workflow = board.workflows.find((item) => item.id === workflowId);
-        if (!board.rootPath || !workflow?.dirHash)
-          return {
-            approved: false,
-            receiptPath: null,
-            error: "Workflow directory metadata is unavailable.",
-          };
-        const spec = GATES[gate];
-        if (
-          gate !== "diff-gate" &&
-          !workflow.artifacts.some(
-            (artifact) => artifact.kind === spec.artifact,
-          )
-        ) {
-          return {
-            approved: false,
-            receiptPath: null,
-            error: "The gate artifact does not exist yet.",
-          };
-        }
-        const receiptPath = `.stelow/approvals/${workflow.dirHash}/${spec.receipt}`;
-        const absolute = join(board.rootPath, receiptPath);
-        await bb.sdk.files.mkdir({
-          path: join(board.rootPath, `.stelow/approvals/${workflow.dirHash}`),
-          rootPath: board.rootPath,
-          recursive: true,
-        });
-        const now = new Date().toISOString();
-        const result = await bb.sdk.files.write({
-          path: absolute,
-          rootPath: board.rootPath,
-          expectedSha256: null,
-          content: `---\napproved: true\napproved_at: ${now}\napproved_via: bb-plugin-stelow\ngate: ${gate}\nworkflow: ${workflow.name}\n---\n`,
-        });
-        if (result.outcome === "conflict")
-          return { approved: true, receiptPath, error: null };
-        bb.realtime.publish("board-changed", { workflowId, gate });
-        return { approved: true, receiptPath, error: null };
-      },
+      ...gateHandlers,
 
+      cardDiff,
+      auditTrailStatus,
+      reseedCard,
+      promoteCard,
+      advanceCard,
       answerQuestions,
 
       async startWorkflow({ projectId, prompt }) {
@@ -3361,495 +3286,6 @@ advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserv
 
       gapSummary,
       qualitySeal,
-
-      async reseedCard({ cardId, presetId, intent: requestedIntent }) {
-        const card = getCard(cardId);
-        if (!card)
-          return {
-            reseeded: false,
-            error: ERR_CARD_NOT_FOUND,
-            reclassified: false,
-          };
-        if (isArchivedCard(card))
-          return {
-            reseeded: false,
-            error: ERR_CARD_ARCHIVED,
-            reclassified: false,
-          };
-        const intentDecision = resolveReseedIntent(card, requestedIntent);
-        if (!intentDecision)
-          return {
-            reseeded: false,
-            error: "Only Build cards use a workflow type.",
-            reclassified: false,
-          };
-        const { intent, reclassified } = intentDecision;
-        const workspace = await cardWorkspace(card);
-        const source =
-          workspace?.hostId && workspace.path
-            ? { path: workspace.path, hostId: workspace.hostId }
-            : null;
-        if (!source)
-          return {
-            reseeded: false,
-            error: `${ERR_WORKSPACE_UNAVAILABLE} Archive this card to remove it.`,
-            reclassified: false,
-          };
-        // Re-seed into a fresh per-workflow dir so the card gets a clean state file.
-        // A reseed restarts the workflow, not the human's review choices: the
-        // card's current appetite and gate set carry over instead of the
-        // hardcoded Core/Auto.
-        const currentConfig = await (async () => {
-          try {
-            if (!card.dir_hash) return null;
-            const stateDir = await workflowStateDir(
-              bb,
-              source.path,
-              card.id,
-              card.dir_hash,
-            ).catch(() => null);
-            if (!stateDir) return null;
-            const content = await bb.sdk.files
-              .read({ path: join(stateDir, "state.md") })
-              .then((f) => f.content)
-              .catch(() => null);
-            if (typeof content !== "string") return null;
-            return parseWorkflowConfig(content);
-          } catch {
-            return null;
-          }
-        })();
-        const seed = await seedWorkflow(
-          bb,
-          source.path,
-          card.id,
-          card.name,
-          intent,
-          currentConfig?.appetite ?? "Core",
-          currentConfig?.reviewGates ?? [],
-          true,
-        );
-        if (seed.error)
-          return { reseeded: false, error: seed.error, reclassified: false };
-        if (seed.dirHash) {
-          db.prepare(
-            "UPDATE cards SET dir_hash = ?, updated_at = ? WHERE id = ?",
-          ).run(seed.dirHash, now(), cardId);
-          // A fresh workflow is a fresh episode: stale declarations must not
-          // attribute future answers to the previous attempt's contracts.
-          db.prepare("DELETE FROM ask_contracts WHERE card_id = ?").run(cardId);
-        }
-        let preset: PresetRow;
-        if (presetId) {
-          const found = getPresetById(presetId);
-          if (!found)
-            return {
-              reseeded: false,
-              error: ERR_PRESET_NOT_FOUND,
-              reclassified: false,
-            };
-          preset = found;
-          if (!pinCardPreset(cardId, preset.id)) {
-            return {
-              reseeded: false,
-              error: ERR_PRESET_NOT_FOUND,
-              reclassified: false,
-            };
-          }
-        } else {
-          // No explicit preset: reseed resolves the reliable-tier preset like
-          // any fresh start (card pin, reliable override, band, default) —
-          // never the bare card default under an active band policy.
-          preset = getReliablePresetForBand(bandForCardKindStage(card.kind, card.stage), cardId);
-        }
-        const previousThreadId = card.worker_thread_id;
-        const params = presetAttachmentParams(preset);
-        const researchStrategy =
-          card.kind === "research"
-            ? researchStrategyById(card.research_strategy ?? "")
-            : null;
-        if (card.kind === "research" && !researchStrategy)
-          return {
-            reseeded: false,
-            error:
-              "This research has no known strategy. Archive it and start a new one.",
-            reclassified: false,
-          };
-        const exploreStage =
-          card.kind === "explore"
-            ? techniqueById(card.explore_stage ?? "")
-            : null;
-        if (card.kind === "explore" && !exploreStage)
-          return {
-            reseeded: false,
-            error:
-              "This explore card has no known technique. Archive it and start a new one.",
-            reclassified: false,
-          };
-        // Reseed wipes the state dir: reuse the round's own file path so the
-        // re-run recreates exactly what the rounds list expects.
-        const reseedRoundNo = Math.max(1, strategyList(card).length);
-        const reseedStamp = roundTimestamp();
-        let reseedFile = "";
-        if (researchStrategy) {
-          reseedFile =
-            [...strategyRounds(card)]
-              .reverse()
-              .find((entry) => entry.id === researchStrategy.id)?.file ??
-            (seed.stateDir
-              ? roundRelPath(
-                  seed.stateDir,
-                  source.path,
-                  roundFileName(
-                    researchStrategy.id,
-                    reseedRoundNo,
-                    reseedStamp,
-                  ),
-                )
-              : "");
-          if (reseedFile) await ensureArtifactParent(source.path, reseedFile);
-        }
-        // The stage path stays deterministic after reseed; workers create it
-        // only once they have reviewable content.
-        const researchReseed = researchStrategy
-          ? researchWorkerPrompt({
-              displayName: card.display_name ?? card.name,
-              prompt: card.prompt,
-              strategyLabel: researchStrategy.label,
-              strategyId: researchStrategy.id,
-              strategySkill: researchStrategy.skill,
-              stateDirText: text(
-                seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>",
-              ),
-              workspaceRoot: source.path,
-              instructions: params.instructions,
-              flavor: "reseed",
-              previousThreadId,
-              roundNo: reseedRoundNo,
-              roundStamp: reseedStamp,
-              roundFile: reseedFile,
-            })
-          : null;
-        const exploreReseed = exploreStage
-          ? exploreWorkerPrompt({
-              displayName: card.display_name ?? card.name,
-              prompt: card.prompt,
-              stage: exploreStage,
-              stateDirText: text(
-                seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>",
-              ),
-              workspaceRoot: source.path,
-              instructions: params.instructions,
-              flavor: "reseed",
-              previousThreadId,
-            })
-          : null;
-        const nextEnvironment = await workers.continuingEnvironment(
-          card,
-          workerEnvironment(
-            source,
-            params,
-            card.workspace_kind === "exploratory",
-          ),
-        );
-        const newThread = await workers.replacePrepared(
-          {
-            projectId: card.project_id,
-            environment: nextEnvironment,
-            visibility: "hidden",
-            title: `Stelow: ${card.display_name ?? card.name}`,
-            providerId: params.providerId,
-            model: params.modelId,
-            reasoningLevel: params.reasoningLevel as
-              | "low"
-              | "medium"
-              | "high"
-              | "xhigh"
-              | "max"
-              | "none"
-              | "ultra"
-              | "ultracode",
-            permissionMode: params.permissionMode as
-              | "accept-edits"
-              | "auto"
-              | "full",
-            executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", permissionMode: "explicit" },
-            input: [
-              {
-                type: "text",
-                mentions: [],
-                text:
-                  researchReseed ??
-                  exploreReseed ??
-                  `You are running a Stelow workflow inside the bb-plugin-stelow panel. The host re-seeded your per-workflow state, transitions.md, \
-and stelow.json. Your workflow owns its own state dir (${text(seed.stateDir ?? "<project>/.stelow/<date>/<dirHash>")}) — its state.md holds name, \
-intent, current_stage, status. ${CARD_OWNER_RULES} The Stelow workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-*) \
-are provided by this plugin — start by loading them (they live under the plugin's skills directory; \`bb skill list\` shows them). The product \
-strategy playbooks (stelow-product-*) are also provided by this plugin \u2014 check \`bb skill list\` first, and only fetch via \`npx skills \
-add calionauta/stelow\` if one is missing. Use \`bb stelow advance <stage>\` to change stages (do NOT hand-edit current_stage). ${NEVER_SEED} \
-Preserve every gate (product, interface, tech plan, diff). ${CLI_EQUIVALENTS} ${RECON_PROTOCOL} ${DRAFT_PROTOCOL}
-
-${TURN_DISCIPLINE}
-
-${COMMIT_STYLE}
-
-Intent is currently \`${intent}\` in the re-seeded state.md. ${
-      intent === "unknown"
-        ? "It is still unknown, so your FIRST job is triage: classify it (new-product, feature, \
-bugfix, refactor, or investigate), write it to state.md immediately, and only then continue — \
-ask via the form below only if genuinely ambiguous."
-        : "Use it — do NOT ask the user to pick or confirm intent again."
-    } \
- \
-Order of work, always: (1) settle intent; (2) load the workflow skills; (3) advance stages and do the \
-work. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the turn debugging \
-the CLI; report the exact error and move on.
-
-CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form:
-
-    bb stelow ask --thread "$BB_THREAD_ID" \ \
-      --question "<a single clear question>" \ \
-      --option "<label 1>" --option "<label 2>" [--option "<label 3>" ...] [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers \
-them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the \
-human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, \
---preview for the inline glance, --artifact for the workspace-relative file they can open.
-
-Before asking a question, first summarize what you read (files, plan, codebase) so the user can answer \
-with context — never dump a raw file list as the only content of a question. Do not skip the triage stage. \
-Each bb stelow ask call blocks until the user submits; the card stays in its column and signals it is \
-waiting for an answer. If an ask returns "No response after Ns" (timeout), STOP and wait: do NOT proceed \
-with the workflow. The question stays pending on the card and remains answerable; when the user answers \
-it on the card, the answer is delivered to you as a message and you continue from there. Never re-ask \
-the same question — wait for the card answer. ${INTERFACE_PICK} For unselected gates, write the approval \
-receipt yourself (.stelow/approvals/{dirHash}/{file}.approved.md) and advance; for selected gates, open \
-a structured ask instead. Stop when the user archives the card or the workflow reaches \`audit\`.
-
-${DONE_PROTOCOL}
-
-${SPLIT_PROTOCOL}
-
-${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Request:
-${card.prompt}`,
-              },
-              ...cardAttachments(card.attachments),
-            ],
-          },
-          previousThreadId,
-        );
-        db.prepare(
-          "UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?",
-        ).run(intent, now(), cardId);
-        const reseedReset = resetAutoContinue();
-        updateCard(cardId, {
-          stage:
-            card.kind === "research"
-              ? "research"
-              : card.kind === "explore"
-                ? "explore"
-                : "triage",
-          status: freshStatusForReseed(card, reclassified),
-          activity: "running",
-          last_error: null,
-          worker_thread_id: newThread.id,
-          worker_preset_id: preset.id,
-          preset_restart_pending: 0,
-          last_assistant_text: null,
-          auto_continue_count: reseedReset.count,
-          auto_continue_stage: reseedReset.stage,
-        });
-        workers.recordThread(cardId, newThread.id, preset.id, "reseed");
-        if (seed.dirHash)
-          void workers.lineage(
-            source.path,
-            seed.dirHash,
-            newThread.id,
-            preset.id,
-            "reseed",
-          );
-        bb.realtime.publish("card-state", { cardId });
-        return { reseeded: true, error: null, reclassified };
-      },
-
-      async promoteCard({ cardId, name }) {
-        // Promotion is a worker handoff, not only a workspace relabel. Files
-        // remain in place, but the old exploratory worker is replaced by a new
-        // worker belonging to the new project. That makes Open thread truthful
-        // and prevents two workers from writing the same workflow state.
-        const card = getCard(cardId);
-        if (!card)
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: ERR_CARD_NOT_FOUND,
-          };
-        if (card.workspace_kind !== "exploratory") {
-          const projectName = await bb.sdk.projects
-            .get({ projectId: card.project_id })
-            .then((p) => p.name)
-            .catch(() => card.project_id);
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: `This card already lives in project "${projectName}" — nothing to promote.`,
-          };
-        }
-        if (card.status === "archived")
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: ERR_CARD_ARCHIVED,
-          };
-        const workspace = await cardWorkspace(card);
-        if (!workspace?.path)
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: ERR_WORKSPACE_UNAVAILABLE,
-          };
-        if (!workspace.hostId)
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: "Workspace host is unavailable.",
-          };
-        const recovery = await recoverySnapshot(card);
-        if (recovery.kind !== "promote") {
-          // Every refusal names the exit, so a refusal is never a deadlock.
-          const refusal: Record<typeof recovery.kind, string> = {
-            attached:
-              "This card already has a reviewed checkout attached. Use that checkout to review, test, and commit.",
-            "external-project":
-              "This card has an evidenced external project checkout. Review and attach that checkout instead of promoting the empty exploratory folder.",
-            ambiguous:
-              "Several registered checkouts match the worker's report. Review them in Workspace recovery and attach the right one.",
-            "documents-only":
-              "This exploratory workspace holds workflow documents only — there is no source material to turn into a project.",
-          };
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: refusal[recovery.kind],
-          };
-        }
-        const projectName = normalizePromoteName(
-          name,
-          card.display_name ?? card.name,
-        );
-        const projects = await bb.sdk.projects.list().catch(() => []);
-        const decision = findAdoptableProject(
-          projects,
-          projectName,
-          workspace.path,
-        );
-        if (decision.action === "conflict") {
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: `A project named "${projectName}" already exists — pick another name.`,
-          };
-        }
-        let projectId: string;
-        try {
-          projectId =
-            decision.action === "adopt" && decision.project
-              ? decision.project.id
-              : (
-                  await bb.sdk.projects.create({
-                    name: projectName,
-                    source: {
-                      type: "local_path",
-                      hostId: workspace.hostId,
-                      path: workspace.path,
-                    },
-                  })
-                ).id;
-        } catch (error) {
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Could not create the project.",
-          };
-        }
-        // Temporarily bind the card to the target project so the common respawn
-        // helper uses the exact project source and projectId. If that spawn
-        // fails, revert this ownership change: the old worker was never stopped
-        // and the card stays coherent in its exploratory workspace.
-        db.prepare(
-          "UPDATE cards SET project_id = ?, workspace_kind = 'project', workspace_path = NULL, workspace_host_id = NULL, updated_at = ? WHERE id = ?",
-        ).run(projectId, now(), cardId);
-        const preset =
-          card.kind === "build"
-            ? getReliablePresetForBand(STAGE_TO_BAND[card.stage] ?? "analysis", cardId)
-            : getPresetForCard(cardId);
-        const handoff = await workers.respawn(
-          cardId,
-          preset.id,
-          "project-promotion",
-          { previousProjectId: card.project_id },
-        );
-        if (!handoff.ok || !handoff.threadId) {
-          db.prepare(
-            "UPDATE cards SET project_id = ?, workspace_kind = 'exploratory', workspace_path = ?, workspace_host_id = ?, activity = ?, last_error \
-= ?, updated_at = ? WHERE id = ?",
-          ).run(
-            card.project_id,
-            workspace.path,
-            workspace.hostId,
-            card.activity,
-            card.last_error,
-            now(),
-            cardId,
-          );
-          bb.realtime.publish("card-state", { cardId });
-          bb.realtime.publish("board-changed", { cardId });
-          return {
-            ok: false,
-            projectId: null,
-            projectName: null,
-            threadId: null,
-            error: `Could not start the project worker. The card remains exploratory; its existing worker is still active. ${handoff.error ?? "Try again."}`,
-          };
-        }
-        logCardComment(
-          cardId,
-          "card",
-          cardId,
-          "agent",
-          `Moved into project "${projectName}". Files stayed in place; a new project worker continues from the current stage. The exploratory \
-worker is archived in Worker history.`,
-        );
-        bb.realtime.publish("card-state", { cardId });
-        bb.realtime.publish("board-changed", { cardId });
-        return {
-          ok: true,
-          projectId,
-          projectName,
-          threadId: handoff.threadId,
-          error: null,
-        };
-      },
 
       async researchStrategies() {
         return { strategies: RESEARCH_STRATEGIES };
@@ -4112,310 +3548,6 @@ the normal build workflow.`,
         return { ok: true, created, error: null };
       },
 
-      // Working-tree diff for the diff-gate/audit review moment. Read-only:
-      // never stages, never mutates the index. Tracked modifications come
-      // from `git diff`; untracked files list as openable entries (no patch
-      // invented for them). Everything is capped; failures degrade to an
-      // explicit shape, never a throw past the contract.
-      async cardDiff({ cardId }) {
-        const empty = {
-          found: false,
-          isRepo: false,
-          files: [],
-          truncated: false,
-          entitySummary: null as ReturnType<typeof summarizeSemDiff>,
-          changedSymbols: null as ReturnType<typeof summarizeCymbalChanged>,
-          error: null as string | null,
-        };
-        const card = getCard(cardId);
-        if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
-        const workspace = await cardCheckout(card).catch(() => null);
-        if (!workspace?.path)
-          return { ...empty, error: ERR_WORKSPACE_UNAVAILABLE };
-        // A recovered checkout is a read-only audit target, never a fuzzy path
-        // alias. If its Git root changed since the human attached it, stop here
-        // rather than showing a convincing diff from a different repository.
-        const recoveryError = await recoveredCheckoutIntegrity(
-          recoveryIntegrityDeps,
-          card,
-          workspace.path,
-        );
-        if (recoveryError)
-          return { ...empty, found: true, error: recoveryError };
-        const runGit = (
-          args: string[],
-          cwd?: string,
-        ): Promise<{ ok: boolean; stdout: string }> =>
-          new Promise((resolve) => {
-            execFile(
-              "git",
-              args,
-              {
-                cwd: cwd ?? workspace.path,
-                timeout: 15000,
-                maxBuffer: 8 * 1024 * 1024,
-              },
-              (error, stdout) => {
-                resolve({
-                  ok: !error,
-                  stdout: typeof stdout === "string" ? stdout : "",
-                });
-              },
-            );
-          });
-        const top = await runGit(["rev-parse", "--show-toplevel"]);
-        if (!top.ok || !top.stdout.trim())
-          return { ...empty, found: true, error: "Not a git repository." };
-        const toplevel = top.stdout.trim();
-        const hostId = workspace.hostId ?? "";
-        const files: Array<{
-          path: string;
-          display: string;
-          patch: string | null;
-          isNew: boolean;
-          absolutePath: string;
-          hostId: string;
-        }> = [];
-        let truncated = false;
-        // HEAD (not bare `diff`) so staged changes review too. Fresh repos
-        // without HEAD fail here — untracked listing below still covers them.
-        // cwd=toplevel so every path resolves root-relative.
-        const diff = await runGit(
-          ["diff", "HEAD", "--no-color", "--no-ext-diff", "--unified=3", "--"],
-          toplevel,
-        );
-        if (diff.ok && diff.stdout.trim()) {
-          const split = splitDiffByFile(diff.stdout);
-          truncated = truncated || split.truncated;
-          for (const entry of split.files) {
-            const absolute = resolveArtifactPath(toplevel, entry.path);
-            if (!absolute) continue;
-            files.push({
-              path: entry.path,
-              display: entry.path.split("/").pop() || entry.path,
-              patch: entry.patch,
-              isNew: false,
-              absolutePath: absolute,
-              hostId,
-            });
-          }
-        }
-        if (files.length < MAX_DIFF_FILES) {
-          // -uall expands collapsed dirs (normal lists `skills/` — unopenable)
-          // into individual files; quotepath=false avoids octal escapes the
-          // JSON.parse fallback below could misread.
-          const status = await runGit(
-            [
-              "-c",
-              "core.quotepath=false",
-              "-c",
-              "status.relativePaths=false",
-              "status",
-              "--porcelain=v1",
-              "-z",
-              "--untracked-files=all",
-            ],
-            toplevel,
-          );
-          if (status.ok && status.stdout) {
-            for (const line of status.stdout.split("\0")) {
-              if (files.length >= MAX_DIFF_FILES) {
-                truncated = true;
-                break;
-              }
-              const match = /^\?\? (.+)$/.exec(line);
-              if (!match) continue;
-              let rel = match[1].trim().replace(/^\.\//, "");
-              if (rel.startsWith('"') && rel.endsWith('"')) {
-                try {
-                  rel = JSON.parse(rel);
-                } catch {
-                  rel = rel.slice(1, -1);
-                }
-              }
-              if (!rel || typeof rel !== "string") continue;
-              const absolute = resolveArtifactPath(toplevel, rel);
-              if (!absolute) continue;
-              if (files.some((f) => f.path === rel)) continue;
-              files.push({
-                path: rel,
-                display: rel.split("/").pop() || rel,
-                patch: null,
-                isNew: true,
-                absolutePath: absolute,
-                hostId,
-              });
-            }
-          }
-        } else {
-          truncated = true;
-        }
-        // Entity-level summary via `sem` when installed (server-wide binary at
-        // ~/.local/bin/sem, PATH fallback). Same HEAD baseline as the git diff
-        // above; untracked files are excluded by sem itself. Strictly additive:
-        // any failure (missing binary, timeout, off-shape JSON) yields null
-        // and the git patch list below still renders on its own.
-        let entitySummary: ReturnType<typeof summarizeSemDiff> = null;
-        try {
-          const semOut = await new Promise<string | null>((resolve) => {
-            execFile(
-              resolveLocalBin("sem"),
-              [
-                "diff",
-                "-C",
-                toplevel,
-                "HEAD",
-                "--format",
-                "json",
-                "--color",
-                "never",
-              ],
-              { timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
-              (error, stdout) => {
-                resolve(!error && typeof stdout === "string" ? stdout : null);
-              },
-            );
-          });
-          if (semOut) {
-            try {
-              entitySummary = summarizeSemDiff(JSON.parse(semOut));
-            } catch {
-              entitySummary = null;
-            }
-          }
-        } catch {
-          entitySummary = null;
-        }
-        // Changed symbols with caller impact via `cymbal` when installed.
-        // Same HEAD baseline; cwd=toplevel (cymbal only operates on the
-        // current worktree). Strictly additive like the sem summary above.
-        let changedSymbols: ReturnType<typeof summarizeCymbalChanged> = null;
-        try {
-          const cymOut = await new Promise<string | null>((resolve) => {
-            execFile(
-              resolveLocalBin("cymbal"),
-              [
-                "changed",
-                "--base",
-                "HEAD",
-                "--json",
-                "--max-symbols",
-                "20",
-                "--max-impact",
-                "100",
-              ],
-              { cwd: toplevel, timeout: 30000, maxBuffer: 4 * 1024 * 1024 },
-              (error, stdout) => {
-                resolve(!error && typeof stdout === "string" ? stdout : null);
-              },
-            );
-          });
-          if (cymOut) {
-            try {
-              changedSymbols = summarizeCymbalChanged(JSON.parse(cymOut));
-            } catch {
-              changedSymbols = null;
-            }
-          }
-        } catch {
-          changedSymbols = null;
-        }
-        return {
-          found: true,
-          isRepo: true,
-          files,
-          truncated,
-          entitySummary,
-          changedSymbols,
-          error: null,
-        };
-      },
-
-      async auditTrailStatus({ cardId }) {
-        // Freshness of Stelow's portable receipt, asked for on demand instead of
-        // computed on every board read: `check` re-derives the whole projection,
-        // which reads the workflow state and samples the worktree, so it is a
-        // deliberate request rather than a listing cost. The answer is the
-        // helper's own classification — this RPC never decides staleness itself,
-        // and the path is the CLI's fixed contract, not a second lookup.
-        const card = getCard(cardId);
-        if (!card)
-          return {
-            state: "unavailable" as const,
-            detail: ERR_CARD_NOT_FOUND,
-            head: null,
-            path: null,
-            contract: null,
-            recon: null,
-          };
-        if (card.kind !== "build")
-          return {
-            state: "unavailable" as const,
-            detail: "Only Build cards carry an audit trail.",
-            head: null,
-            path: null,
-            contract: null,
-            recon: null,
-          };
-        const workspace = await cardWorkspace(card).catch(() => null);
-        const projectPath = workspace?.path ?? null;
-        if (!projectPath)
-          return {
-            state: "unavailable" as const,
-            detail: ERR_WORKSPACE_UNAVAILABLE,
-            head: null,
-            path: null,
-            contract: null,
-            recon: null,
-          };
-        const stateDir = card.dir_hash
-          ? await workflowStateDir(
-              bb,
-              projectPath,
-              card.id,
-              card.dir_hash,
-            ).catch(() => null)
-          : null;
-        if (!stateDir)
-          return {
-            state: "unavailable" as const,
-            detail:
-              "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
-            head: null,
-            path: null,
-            contract: null,
-            recon: null,
-          };
-        // This is the same completion contract, not a softer display-only
-        // verdict: a trail with any unregistered durable output is refused.
-        const run = await runHelper(
-          ["audit-trail", "check", "--strict", "--json"],
-          projectPath,
-          stateDir,
-        );
-        const outcome = auditTrailOutcome(run);
-        return {
-          state: outcome.state,
-          detail: outcome.detail,
-          head:
-            typeof outcome.result?.snapshot?.head === "string"
-              ? outcome.result.snapshot.head
-              : null,
-          path: nodeJoin(stateDir, AUDIT_TRAIL_FILE),
-          contract:
-            typeof outcome.result?.contract === "string"
-              ? outcome.result.contract
-              : null,
-          recon: reconReceiptStatus(
-            await bb.sdk.files
-              .read({ path: join(stateDir, RECON_RECEIPT_FILE) })
-              .then((file) => file.content)
-              .catch(() => null),
-            stateDir,
-          ),
-        };
-      },
-
       async runResearchStrategy({ cardId, strategy }) {
         // Composite research: run another strategy round on the same card.
         // Spawns a fresh worker on the new playbook that APPENDS a new ###
@@ -4504,79 +3636,6 @@ the normal build workflow.`,
       },
 
       answerExpiredQuestions,
-
-      async advanceCard({ cardId, stage }) {
-        const card = getCard(cardId);
-        if (!card) return { ok: false, stdout: "", error: ERR_CARD_NOT_FOUND };
-        if (isArchivedCard(card))
-          return { ok: false, stdout: "", error: ERR_CARD_ARCHIVED };
-        if (card.kind === "research") {
-          return {
-            ok: false,
-            stdout: "",
-            error:
-              "Research cards don't use stages — a completed index moves them to Done automatically.",
-          };
-        }
-        if (card.kind === "explore") {
-          return {
-            ok: false,
-            stdout: "",
-            error:
-              "Explore cards don't use stages — a completed artifact moves them to Done automatically.",
-          };
-        }
-        const workspace = await cardWorkspace(card);
-        if (!workspace?.path)
-          return { ok: false, stdout: "", error: ERR_WORKSPACE_UNAVAILABLE };
-        const stateDir = card.dir_hash
-          ? await workflowStateDir(bb, workspace.path, card.id, card.dir_hash)
-          : null;
-        const source = { path: workspace.path, hostId: workspace.hostId };
-        const guard = await ensureProjectArtifacts(
-          bb,
-          source.path,
-          stateDir,
-          Boolean(card.dir_hash),
-        );
-        if (guard) return { ok: false, stdout: "", error: guard };
-        // Check the stage being left before the helper mutates state.md. The
-        // workflow file is slug truth, so a refusal leaves both it and the DB
-        // card at the same stage.
-        const questionGuard = await questionContractsGate(card, stateDir);
-        if (questionGuard)
-          return { ok: false, stdout: "", error: questionGuard };
-        const result = await runHelper(
-          ["advance", stage],
-          source.path,
-          stateDir ?? undefined,
-        );
-        if (result.code !== 0)
-          return {
-            ok: false,
-            stdout: result.stdout,
-            error: result.stderr || "stelow advance failed",
-          };
-        // Band-preset swap, mirroring the CLI advance path: if the phase of the
-        // stage just advanced to defines a preset different from this worker's,
-        // respawn with the phase preset on the same state dir.
-        const band = STAGE_TO_BAND[stage];
-        const bandPreset = band
-          ? getReliablePresetForBand(band, card.id)
-          : null;
-        const currentPresetId =
-          card.worker_preset_id ?? getPresetForCard(card.id).id;
-        if (band && bandPreset && bandPreset.id !== currentPresetId) {
-          await workers.respawn(card.id, bandPreset.id);
-        }
-        // Reaching audit is still unfinished work. Only `bb stelow done` may
-        // record completion after the host verifies its terminal conditions.
-        // A manual advance is therefore never a way to bypass that invariant.
-        const nextStatus = stage === "triage" ? "draft" : "in-progress";
-        updateCard(cardId, { stage, status: nextStatus, activity: "running" });
-        bb.realtime.publish("card-state", { cardId });
-        return { ok: true, stdout: result.stdout, error: null };
-      },
 
       async advance({ projectId, stage }) {
         const rootPath = await projectRoot(bb, projectId);
