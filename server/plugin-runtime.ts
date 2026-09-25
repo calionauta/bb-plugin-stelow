@@ -139,8 +139,7 @@ import {
 } from "../lib/delegation-evidence.mjs";
 import { contractForBuildArtifact } from "../lib/artifact-contracts.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
-import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
-import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
+import { techniqueById } from "../lib/stage-catalog.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
 import { previewText } from "../lib/preview-session.mjs";
 import {
@@ -275,6 +274,7 @@ import { createCardDetailHandler } from "./runtime/card-detail.js";
 import { createCardMutationHandlers } from "./runtime/card-mutations.js";
 import { createCardLifecycleHandlers } from "./runtime/card-lifecycle.js";
 import { createCardOperationsHandlers } from "./runtime/card-operations.js";
+import { createResearchTrackHandlers } from "./runtime/research-track-handlers.js";
 import { createBuildThreadSync } from "./runtime/build-thread-sync.js";
 import { createWorkerRespawnPreparation } from "./runtime/worker-respawn-preparation.js";
 import { createQuestionStaleness } from "./runtime/question-staleness.js";
@@ -3165,6 +3165,29 @@ structured questions, card state changes, lifecycle commands, or the canonical r
     errors: { cardNotFound: ERR_CARD_NOT_FOUND, cardArchived: ERR_CARD_ARCHIVED },
   });
 
+  const researchTrack = createResearchTrackHandlers({
+    db,
+    bb,
+    now,
+    getCard,
+    cardWorkspace,
+    createCard: createCardInternal,
+    readResearchIndex,
+    researchRoundFiles,
+    strategyRounds,
+    strategyList,
+    workflowStateDir: (rootPath, workflowId, dirHash) =>
+      workflowStateDir(bb, rootPath, workflowId, dirHash),
+    roundRelPath,
+    ensureParent: ensureArtifactParent,
+    logCardComment,
+    reliablePreset: (band, cardId) => getReliablePresetForBand(band, cardId),
+    presetName: (presetId) => getPresetById(presetId)?.name,
+    respawn: (cardId, presetId, reason, options) =>
+      workers.respawn(cardId, presetId, reason, options),
+    errors: { cardNotFound: ERR_CARD_NOT_FOUND, cardArchived: ERR_CARD_ARCHIVED },
+  });
+
   registerRpcHandlers(
     bb,
     rpcContract,
@@ -3287,353 +3310,7 @@ advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserv
       gapSummary,
       qualitySeal,
 
-      async researchStrategies() {
-        return { strategies: RESEARCH_STRATEGIES };
-      },
-
-      async createResearchCard({
-        projectId,
-        environment,
-        prompt,
-        attachments,
-        strategy,
-        presetId,
-        start,
-        execution,
-      }) {
-        const picked = researchStrategyById(strategy);
-        if (!picked) {
-          throw new Error(
-            `Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`,
-          );
-        }
-        return createCardInternal({
-          projectId,
-          environment,
-          prompt,
-          attachments,
-          intent: "investigate",
-          appetite: "Lean",
-          reviewMode: "Auto",
-          kind: "research",
-          strategy: picked.id,
-          presetId: presetId ?? null,
-          start,
-          execution: execution ?? null,
-        });
-      },
-
-      async createExploreCard({
-        projectId,
-        environment,
-        prompt,
-        attachments,
-        stageId,
-        presetId,
-        start,
-        execution,
-      }) {
-        const picked = techniqueById(stageId);
-        if (!picked) {
-          throw new Error(
-            `Unknown explore technique "${stageId}". Pick one of: ${TECHNIQUE_CATALOG.map((entry) => entry.id).join(", ")}.`,
-          );
-        }
-        return createCardInternal({
-          projectId,
-          environment,
-          prompt,
-          attachments,
-          intent: "explore",
-          appetite: "Complete",
-          reviewMode: "Product Spec + Interface + Tech Review + Code Diff",
-          kind: "explore",
-          stageId: picked.id,
-          presetId: presetId ?? null,
-          start,
-          execution: execution ?? null,
-        });
-      },
-
-      async stageCatalog() {
-        return {
-          stages: TECHNIQUE_CATALOG.map(
-            ({ id, label, skill, emoji, blurb, keywords }) => ({
-              id,
-              label,
-              skill,
-              emoji,
-              blurb,
-              keywords,
-            }),
-          ),
-        };
-      },
-
-      // Resolve the research index file for a card. Shared by researchIndex
-      // (read) and fanOutResearch (read + flip). Returns the error instead of
-      // throwing so every refusal names its exit.
-      async researchIndex({ cardId }) {
-        const card = getCard(cardId);
-        const empty = {
-          found: false,
-          indexPath: null,
-          content: null,
-          truncated: false,
-          opportunities: [],
-          rounds: [],
-          error: "",
-        };
-        if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
-        if (card.kind !== "research")
-          return {
-            ...empty,
-            error:
-              "Only research cards have results to review. Build cards track scopes instead.",
-          };
-        const resolved = await readResearchIndex(card);
-        if (!resolved.ok) return { ...empty, error: resolved.error };
-        const history = strategyRounds(card);
-        const live = ["running", "awaiting-answer"].includes(card.activity);
-        const workspace = await cardWorkspace(card).catch(() => null);
-        const stateDir =
-          card.dir_hash && workspace?.path
-            ? await workflowStateDir(
-                bb,
-                workspace.path,
-                card.id,
-                card.dir_hash,
-              ).catch(() => null)
-            : null;
-        const { rounds } = await researchRoundFiles(
-          workspace?.path ?? null,
-          workspace?.hostId ?? null,
-          stateDir,
-          history,
-          live,
-        );
-        const parsed = parseResearchIndex(resolved.content);
-        if (!parsed.found)
-          return {
-            ...empty,
-            indexPath: resolved.display,
-            rounds,
-            error: "Research results are still being prepared.",
-          };
-        const LIMIT = 100_000;
-        return {
-          found: true,
-          indexPath: resolved.display,
-          content: resolved.content.slice(0, LIMIT),
-          truncated: resolved.content.length > LIMIT,
-          opportunities: parsed.opportunities.map(
-            ({ id, title, checked, group }) => ({ id, title, checked, group }),
-          ),
-          rounds,
-          error: null,
-        };
-      },
-
-      async fanOutResearch({ cardId, opportunityIds }) {
-        const card = getCard(cardId);
-        if (!card) return { ok: false, created: [], error: ERR_CARD_NOT_FOUND };
-        if (card.kind !== "research")
-          return {
-            ok: false,
-            created: [],
-            error: "Only research cards fan out. This is already a build card.",
-          };
-        if (card.status === "archived")
-          return { ok: false, created: [], error: ERR_CARD_ARCHIVED };
-        const resolved = await readResearchIndex(card);
-        if (!resolved.ok)
-          return { ok: false, created: [], error: resolved.error };
-        const parsed = parseResearchIndex(resolved.content);
-        if (!parsed.found)
-          return {
-            ok: false,
-            created: [],
-            error: "Research results are still being prepared.",
-          };
-        const wanted = new Set(opportunityIds);
-        const matched = parsed.opportunities.filter(
-          (item) => wanted.has(item.id) && !item.checked,
-        );
-        if (matched.length === 0)
-          return {
-            ok: false,
-            created: [],
-            error:
-              "None of the selected opportunities are still available — reopen the index; they may already have been fanned out.",
-          };
-        const strategyLabel =
-          researchStrategyById(card.research_strategy ?? "")?.label ??
-          "research";
-        // Exploratory research fans out into fresh exploratory build cards (each
-        // owns its isolated workspace) instead of piling every card's state
-        // into the shared container directory. Project research stays in its
-        // project.
-        const targetProjectId =
-          card.workspace_kind === "exploratory"
-            ? "proj_personal"
-            : card.project_id;
-        const created: Array<{ cardId: string; title: string }> = [];
-        const createdOpportunityIds: string[] = [];
-        let failure: string | null = null;
-        for (const item of matched) {
-          try {
-            const spawned = await createCardInternal({
-              projectId: targetProjectId,
-              prompt: `Spawned from research "${card.display_name ?? card.name}" (${strategyLabel}).\n\nOpportunity: ${item.title}\n\nResearch context: \
-full index at \
-${resolved.absolute} — read its ## Summary before triage. Treat the opportunity above as the request; classify intent first, then work it through \
-the normal build workflow.`,
-              attachments: [],
-              intent: "unknown",
-              appetite: "Lean",
-              reviewMode: "Auto",
-              kind: "build",
-            });
-            const spawnedCard = getCard(spawned.cardId);
-            created.push({
-              cardId: spawned.cardId,
-              title:
-                spawnedCard?.display_name ?? spawnedCard?.name ?? item.title,
-            });
-            createdOpportunityIds.push(item.id);
-          } catch (error) {
-            failure =
-              error instanceof Error
-                ? error.message
-                : "Could not spawn a build card.";
-            break;
-          }
-        }
-        // Persist exactly the successfully spawned opportunities before
-        // reporting a partial failure, so retrying does not duplicate them.
-        const flipped = checkIndexItems(
-          resolved.content,
-          createdOpportunityIds,
-        );
-        if (flipped.checked.length > 0) {
-          try {
-            await bb.sdk.files.write({
-              path: resolved.absolute,
-              content: flipped.updated,
-            });
-          } catch {
-            /* boxes stay unchecked; the comment below still trails */
-          }
-        }
-        if (created.length > 0) {
-          logCardComment(
-            cardId,
-            "card",
-            cardId,
-            "agent",
-            `Fanned out ${created.length} ${
-              created.length === 1 ? "opportunity" : "opportunities"
-            } into build: ${created.map((entry) => entry.title).join("; ")}.`,
-          );
-        }
-        bb.realtime.publish("card-state", { cardId });
-        bb.realtime.publish("board-changed", { cardId });
-        if (failure) {
-          const prefix =
-            created.length > 0
-              ? `Created ${created.length} ${created.length === 1 ? "build card" : "build cards"} before the remaining opportunities could not be created. `
-              : "";
-          return { ok: false, created, error: `${prefix}${failure}` };
-        }
-        return { ok: true, created, error: null };
-      },
-
-      async runResearchStrategy({ cardId, strategy }) {
-        // Composite research: run another strategy round on the same card.
-        // Spawns a fresh worker on the new playbook that APPENDS a new ###
-        // section to the index — existing items are never rewritten. The
-        // previous worker retires only after the new one is live (same safe
-        // order as every respawn).
-        const card = getCard(cardId);
-        if (!card)
-          return { ok: false, strategy: null, error: ERR_CARD_NOT_FOUND };
-        if (card.kind !== "research")
-          return {
-            ok: false,
-            strategy: null,
-            error:
-              "Only research cards run strategies. Build cards advance stages instead.",
-          };
-        if (card.status === "archived")
-          return { ok: false, strategy: null, error: ERR_CARD_ARCHIVED };
-        const picked = researchStrategyById(strategy);
-        if (!picked) {
-          return {
-            ok: false,
-            strategy: null,
-            error: `Unknown research strategy "${strategy}". Pick one of: ${RESEARCH_STRATEGIES.map((entry) => entry.id).join(", ")}.`,
-          };
-        }
-        const effective = getReliablePresetForBand("research", cardId);
-        const roundNo = strategyList(card).length + 1;
-        const roundStamp = roundTimestamp();
-        const roundAt = new Date(now()).toISOString();
-        const fanoutWorkspace = await cardWorkspace(card).catch(() => null);
-        const fanoutStateDir =
-          card.dir_hash && fanoutWorkspace?.path
-            ? await workflowStateDir(
-                bb,
-                fanoutWorkspace.path,
-                card.id,
-                card.dir_hash,
-              ).catch(() => null)
-            : null;
-        const roundFile =
-          fanoutStateDir && fanoutWorkspace?.path
-            ? roundRelPath(
-                fanoutStateDir,
-                fanoutWorkspace.path,
-                roundFileName(picked.id, roundNo, roundStamp),
-              )
-            : "";
-        if (roundFile && fanoutWorkspace?.path)
-          await ensureArtifactParent(fanoutWorkspace.path, roundFile);
-        const result = await workers.respawn(
-          cardId,
-          effective.id,
-          "strategy-add",
-          {
-            strategyId: picked.id,
-            flavor: "append",
-            roundNo,
-            roundStamp,
-            roundFile,
-          },
-        );
-        if (!result.ok)
-          return {
-            ok: false,
-            strategy: null,
-            error: result.error ?? "Could not start the strategy round.",
-          };
-        const history = [
-          ...strategyRounds(card),
-          { id: picked.id, at: roundAt, file: roundFile },
-        ];
-        db.prepare(
-          "UPDATE cards SET research_strategies = ?, updated_at = ? WHERE id = ?",
-        ).run(JSON.stringify(history), now(), cardId);
-        const presetName = getPresetById(effective.id)?.name ?? effective.id;
-        logCardComment(
-          cardId,
-          "card",
-          cardId,
-          "agent",
-          `Started a ${picked.label} research round on preset "${presetName}". Results will be added to this card. Previous worker archived.`,
-        );
-        bb.realtime.publish("card-state", { cardId });
-        return { ok: true, strategy: picked.id, error: null };
-      },
+      ...researchTrack,
 
       answerExpiredQuestions,
 

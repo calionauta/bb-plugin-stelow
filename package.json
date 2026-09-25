@@ -101,6 +101,7 @@
     "test:question-staleness": "node tests/question-staleness.test.mjs",
     "test:question-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-question-answers.test.mjs",
     "test:card-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-card-state.test.mjs tests/runtime-card-handlers.test.mjs tests/runtime-card-promotion.test.mjs",
+    "test:research-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-research-index.test.mjs tests/runtime-research-fanout.test.mjs tests/runtime-research-strategy.test.mjs",
     "test:draft": "node tests/draft-burst.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/server-drafting.test.mjs",
     "test:spawn-freshness": "node tests/spawn-freshness.test.mjs",
     "test:worktree-storage": "node tests/worktree-storage.test.mjs",

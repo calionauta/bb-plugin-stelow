@@ -22,6 +22,10 @@ const server = [
   readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-detail.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-promotion.ts"), "utf8"),
+  readFileSync(
+    join(root, "server", "runtime", "research-strategy-rounds.ts"),
+    "utf8",
+  ),
   readFileSync(join(root, "server", "preset-migrations.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-accessors.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-handlers.ts"), "utf8"),
@@ -213,8 +217,8 @@ assert.match(
 );
 assert.match(
   server,
-  /const effective = getReliablePresetForBand\("research", cardId\);/,
-  "research fan-out resolves reliable-aware",
+  /const effective = deps\.reliablePreset\("research", cardId\);/,
+  "a strategy round respawn resolves reliable-aware",
 );
 assert.match(
   server,

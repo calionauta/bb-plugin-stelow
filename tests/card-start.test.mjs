@@ -177,7 +177,19 @@ assert.match(workflowVocabulary, /export function buildBoardColumnFor\(card\)/, 
 // Leaving the Bucket starts through the same starter on every track, and the
 // starter resolves creation-time choices: the pinned preset override
 // (provider/model) and the card's own project workspace — never ambient defaults.
-assert.match(server, /const effective = getReliablePresetForBand\(/, "Bucket exits spawn through the override-aware preset resolution");
+// Regression this catches: a card-start spawn site that resolves its own
+// preset instead of delegating to workers.fresh would silently ignore the
+// user's board-level reliable override. Every start in this module must go
+// through the single starter, where the backend resolves the override.
+const startPaths = server.match(/deps\.workers\.fresh\(cardId, "start"\)/g) ?? [];
+assert.equal(
+  startPaths.length,
+  3,
+  "every Bucket-exit start delegates to the single override-aware starter",
+);
+// The override-aware resolution itself inside the starter is pinned against
+// workers.ts in tests/reliable-preset.test.mjs; this file only guards that
+// nothing here spawns around it.
 assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choice pinned at creation wins over band defaults at spawn");
 assert.match(
   server,
