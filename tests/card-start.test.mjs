@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-detail-presentation.ts"), "utf8"),
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server/core-migrations.ts"), "utf8"),

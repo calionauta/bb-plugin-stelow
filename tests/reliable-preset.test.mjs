@@ -20,6 +20,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-detail.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-migrations.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-accessors.ts"), "utf8"),
   readFileSync(join(root, "server", "preset-handlers.ts"), "utf8"),
@@ -249,7 +250,7 @@ assert.match(
 );
 assert.match(
   server,
-  /const preset = getReliablePresetForBand\(presetBand, card\.id\);/,
+  /const preset = deps\.getReliablePreset\(presetBand\(card\), card\.id\);/,
   "the card detail shows the effective preset",
 );
 assert.match(

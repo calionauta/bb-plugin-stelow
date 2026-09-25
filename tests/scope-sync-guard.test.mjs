@@ -121,6 +121,8 @@ assert.equal(reseeded[0].tasks[0].status, "done", "seeded status survives the me
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-detail-presentation.ts"), "utf8"),
   readFileSync(join(root, "server/card-detail-rpc-contract.ts"), "utf8"),
 ].join("\n");
 const executionAdvance = readFileSync(join(root, "server/execution-advance.ts"), "utf8");

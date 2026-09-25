@@ -59,6 +59,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
   readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-detail-presentation.ts"), "utf8"),
   readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server", "card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server", "cards.ts"), "utf8"),
@@ -74,11 +75,11 @@ const buildProgress = readFileSync(join(root, "components", "detail", "build-pro
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
 assert.match(server, /flowMetrics: \(input\) => flowMetrics\(db, input\)/, "RPC dispatch uses the measured flow runtime");
-assert.match(server, /leadMs: flowTimesForCard\(card\)\.leadMs/, "detail reuses the one helper for lead time");
-assert.match(server, /cycleMs: flowTimesForCard\(card\)\.cycleMs/, "detail reuses the one helper for cycle time");
+assert.match(server, /leadMs: flow\.leadMs/, "detail reuses the one helper for lead time");
+assert.match(server, /cycleMs: flow\.cycleMs/, "detail reuses the one helper for cycle time");
 const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;
 assert.match(server, detailTimesContract, "detail schema carries times, doing names, and the verified HEAD as nullable");
-assert.match(server, /executionRuns: executionLifecycle\.detailList\(cardId\)/, "card detail uses the public execution-run projection");
+assert.match(server, /executionRuns: deps\.executionLifecycle\.detailList\(card\.id\)/, "card detail uses the public execution-run projection");
 assert.doesNotMatch(server, /executionRuns: executionLifecycle\.list\(cardId\)/, "card detail never exposes raw ledger rows");
 assert.match(executionContract, /executionRuns: \{/, "execution runs remain available through their dedicated RPC");
 assert.match(buildProgress, /const flow = \{ leadMs: detail\.card\.leadMs \?\? null, cycleMs: detail\.card\.cycleMs \?\? null \}/, "detail progress reads the card times");

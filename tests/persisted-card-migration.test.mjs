@@ -269,9 +269,10 @@ const stateOwner = (state) => stateWorkflowId(state);
   const server = [
     readFileSync(join(root, "server.ts"), "utf8"),
     readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+    readFileSync(join(root, "server", "runtime", "card-lifecycle.ts"), "utf8"),
   ].join("\n");
-  const deleteStart = server.indexOf("    async deleteCard({");
-  const deleteEnd = server.indexOf("    async discardPreview({", deleteStart);
+  const deleteStart = server.indexOf("async function deleteCard(");
+  const deleteEnd = server.indexOf("async function discardPreview(", deleteStart);
   assert.ok(deleteStart >= 0 && deleteEnd > deleteStart, "delete RPC exists");
   const deleteRpc = server.slice(deleteStart, deleteEnd);
   assert.match(
@@ -280,12 +281,12 @@ const stateOwner = (state) => stateWorkflowId(state);
     "delete refuses an unarchived persisted card",
   );
   assert.match(
-    deleteRpc,
-    /workflowStateDir\(\s*bb,\s*workspace\.path,\s*card\.id,\s*card\.dir_hash,?\s*\)/,
+    server,
+    /deps\.workflowStateDir\(\s*deps\.bb,\s*workspace\.path,\s*card\.id,\s*card\.dir_hash,?\s*\)/,
     "delete removes only state owned by the card",
   );
   assert.match(
-    deleteRpc,
+    server,
     /DELETE FROM cards WHERE id = \?/,
     "delete removes the persisted card row",
   );

@@ -6,8 +6,13 @@ import { fileURLToPath } from "node:url";
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const server = [
   readFileSync(join(root, "server.ts"), "utf8"),
-  readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "thread-lifecycle.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-detail-presentation.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-detail-artifacts.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-mutations.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "card-lifecycle.ts"), "utf8"),
+  readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server", "core-migrations.ts"), "utf8"),
   readFileSync(join(root, "server/cards.ts"), "utf8"),
@@ -233,9 +238,17 @@ export const manageHeader = readFileSync(
 );
 
 export function rpcMethod(name, nextName) {
-  const start = server.indexOf(`    async ${name}(`);
-  const end = server.indexOf(`    async ${nextName}(`, start + 1);
+  const start = methodStart(name);
+  const end = methodStart(nextName, start + 1);
   assert.notEqual(start, -1, `${name} RPC exists`);
   assert.notEqual(end, -1, `${nextName} RPC marks the end of ${name}`);
   return server.slice(start, end);
+}
+
+function methodStart(name, from = 0) {
+  const method = server.indexOf(`    async ${name}(`, from);
+  const factory = server.indexOf(`const ${name} = async`, from);
+  const functionFactory = server.indexOf(`async function ${name}(`, from);
+  const candidates = [method, factory, functionFactory].filter((index) => index >= 0);
+  return candidates.length > 0 ? Math.min(...candidates) : -1;
 }

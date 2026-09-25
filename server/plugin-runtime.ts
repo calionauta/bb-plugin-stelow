@@ -6,7 +6,6 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import {
@@ -25,7 +24,6 @@ import {
   parseArtifactManifest,
   renderBundleManifest,
   resolveArtifactPath,
-  unregisteredArtifactPaths,
 } from "../lib/artifact-manifest.mjs";
 import {
   assignBundleNames,
@@ -35,15 +33,12 @@ import {
 } from "../lib/run-bundle.mjs";
 import {
   PHASE_ENTRY_STAGES,
-  STAGE_SEQUENCE,
   STAGE_TO_BAND,
 } from "../lib/workflow-vocabulary.mjs";
 import { splitDiffByFile, MAX_DIFF_FILES } from "../lib/diff-split.mjs";
 import { summarizeSemDiff } from "../lib/sem-summary.mjs";
 import { summarizeCymbalChanged } from "../lib/cymbal-changed.mjs";
-import { skippedStages } from "../lib/stage-skips.mjs";
 import {
-  hasPendingReview,
   refreshEventSeverity,
   refreshStalledPaused,
 } from "../lib/inbox-events.mjs";
@@ -53,13 +48,11 @@ import {
   CLAIM_TTL_MS,
   checkWorkspaceClaims,
   clearClaimWaiters,
-  lapsedScopeClaims,
-  liveClaimsForWorkspace,
   releaseAllCardClaims,
   releaseWorkspaceClaims,
   waitersForFiles,
 } from "../lib/card-claims.mjs";
-import { isClaimTerminal, errorNeedsAttention } from "../lib/card-terminal.mjs";
+import { isClaimTerminal } from "../lib/card-terminal.mjs";
 import { resolveClaimKey } from "../lib/card-claim-key.mjs";
 import {
   classifyAskCancel,
@@ -71,7 +64,6 @@ import {
   askFinishedUpdates,
 } from "../lib/card-question-state.mjs";
 import {
-  cleanOptions,
   expandInteractionQuestions,
   formatBatchContinuation,
   groupBatchAnswers,
@@ -92,7 +84,7 @@ import {
   discardEligibility,
   discardTrail,
 } from "../lib/discard-policy.mjs";
-import { stallCount, healPresetStaleness } from "../lib/worker-ledger.mjs";
+import { healPresetStaleness } from "../lib/worker-ledger.mjs";
 import {
   normalizePromoteName,
   findAdoptableProject,
@@ -143,7 +135,6 @@ import {
   reviewCoversFingerprint,
 } from "../lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "../lib/delegation-map.mjs";
-import { heuristicDisplayName } from "../lib/draft-burst.mjs";
 import {
   judgeArtifactCriteria,
   groupCriteriaByKind,
@@ -166,7 +157,6 @@ import {
   defaultThresholdsFor,
   normalizeThresholds,
 } from "../lib/decision-points.mjs";
-import { doingNowNames } from "../lib/doing-now.mjs";
 import {
   buildPresetJudgePrompt,
   parsePresetJudgeOutput,
@@ -198,7 +188,6 @@ import {
   stripArchivedResuscitation,
 } from "../lib/worker-action-policy.mjs";
 import {
-  canEditWorkflowIntent,
   freshStatusForReseed,
   resolveReseedIntent,
 } from "../lib/workflow-intent-policy.mjs";
@@ -244,11 +233,7 @@ import {
 } from "../lib/worktree-storage.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { recordTrackableEvent } from "../lib/trackable-events.mjs";
-import { enrichEntriesForDetail } from "../lib/trackable-evidence.mjs";
-import {
-  countScopeDialects,
-  diagnoseScopeSync,
-} from "../lib/spec-scope-reader.mjs";
+import { countScopeDialects } from "../lib/spec-scope-reader.mjs";
 import { doneBuildGates } from "../lib/build-gates.mjs";
 import {
   AUDIT_RECEIPT_FILE,
@@ -278,7 +263,6 @@ import {
   auditTrailGate,
   auditTrailOutcome,
 } from "../lib/audit-trail-contract.mjs";
-import { artifactRole } from "../lib/artifact-roles.mjs";
 import {
   RECON_RECEIPT_FILE,
   reconReceiptStatus,
@@ -296,7 +280,6 @@ import {
   buildGapTriageState,
 } from "../lib/gap-registry.mjs";
 import { formatDuration, summarizeTimeline } from "../lib/card-metrics.mjs";
-import { totalScopeElapsedMs } from "../lib/scope-elapsed.mjs";
 import {
   createWorkspacesRecovery,
   recoveredCheckoutIntegrity,
@@ -322,7 +305,6 @@ import {
   loadCardScopes,
   normalizeStatus,
   runScopeCommand,
-  trackingEntryForCard,
   workflowScopes,
 } from "./scopes.js";
 import { createPlatformHandlers } from "./runtime/platform.js";
@@ -349,6 +331,9 @@ import { createExecutionAdvance } from "./execution-advance.js";
 import { createWorktreeCleanup } from "./worktree-cleanup.js";
 import { flowMetrics } from "./runtime/flow-metrics.js";
 import { createPendingQuestions } from "./runtime/pending-questions.js";
+import { createCardDetailHandler } from "./runtime/card-detail.js";
+import { createCardMutationHandlers } from "./runtime/card-mutations.js";
+import { createCardLifecycleHandlers } from "./runtime/card-lifecycle.js";
 
 const pluginDir = resolvePluginRoot(
   dirname(fileURLToPath(import.meta.url)),
@@ -2083,15 +2068,6 @@ ${prompt}`;
   }
 
   type CardRow = WorkerCard;
-  type CommentRow = {
-    id: string;
-    card_id: string;
-    target: string;
-    target_id: string;
-    author: string;
-    body: string;
-    created_at: number;
-  };
 
   const { cardStore, presetServer, inbox } = createCoreDependencies({
     bb,
@@ -5030,6 +5006,69 @@ code and refuses with the fix when something is missing. Never just announce com
     normalizeStatus,
   });
 
+  const cardDetail = createCardDetailHandler({
+    db,
+    bb,
+    now,
+    idleAttentionMs: IDLE_ATTENTION_MS,
+    getCard,
+    cardWorkspace,
+    syncThreadState,
+    fetchPendingQuestions,
+    resolveAskOptions,
+    cardAttachments,
+    detectMentionedFiles,
+    workspaceRelative,
+    parseNextStages,
+    getReliablePreset: getReliablePresetForBand,
+    strategyList,
+    flowTimes: flowTimesForCard,
+    verifiedHeadSha: verifiedHeadShaForCard,
+    workers,
+    executionLifecycle,
+    stalenessForQuestions,
+    stateDir: (sourcePath, card) =>
+      card.dir_hash
+        ? workflowStateDir(bb, sourcePath, card.id, card.dir_hash)
+        : Promise.resolve(null),
+    fileTimestamp,
+    auditReceiptNote,
+    cardNotFound: ERR_CARD_NOT_FOUND,
+  });
+  const cardMutations = createCardMutationHandlers({
+    db,
+    bb,
+    now,
+    getCard,
+    cardWorkspace,
+    workflowStateDir,
+    logCardComment,
+    updateCard,
+    errors: {
+      cardNotFound: ERR_CARD_NOT_FOUND,
+      cardArchived: ERR_CARD_ARCHIVED,
+    },
+  });
+  const cardLifecycle = createCardLifecycleHandlers({
+    db,
+    bb,
+    getCard,
+    cardWorkspace,
+    workflowStateDir,
+    workers,
+    updateCard,
+    releaseClaims: releaseCardClaimsAndNotify,
+    removeCardPreset,
+    logCardComment,
+    runGitIn,
+    exploratoryScope: EXPLORATORY_SCOPE,
+    discardEvidence,
+    discardEligibility,
+    discardConfirm,
+    discardTrail,
+    errors: { cardNotFound: ERR_CARD_NOT_FOUND },
+  });
+
   registerRpcHandlers(
     bb,
     rpcContract,
@@ -5043,6 +5082,9 @@ code and refuses with the fix when something is missing. Never just announce com
       ...executionReconcile.handlers,
       ...executionAdvance.handlers,
       ...worktreeCleanup.handlers,
+      ...cardMutations,
+      ...cardLifecycle,
+      cardDetail: cardDetail as never,
       draftDoneComment: ({ cardId }: { cardId: string }) =>
         drafting.draftDoneComment(cardId),
       board: cards.handlers.board as never,
@@ -5504,970 +5546,6 @@ advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserv
           evidence,
           label,
         };
-      },
-
-      async cardDetail({ cardId }) {
-        const initial = getCard(cardId);
-        if (!initial) throw new Error(ERR_CARD_NOT_FOUND);
-        // Reconcile with the live thread before reading: a worker stopped from
-        // outside (or a missed transition) would otherwise render stale until
-        // the next reconcile sweep.
-        if (initial.worker_thread_id)
-          await syncThreadState(cardId).catch(() => undefined);
-        const card = getCard(cardId);
-        if (!card) throw new Error(ERR_CARD_NOT_FOUND);
-        const comments = db
-          .prepare(
-            "SELECT * FROM comments WHERE card_id = ? ORDER BY created_at ASC",
-          )
-          .all(cardId) as CommentRow[];
-        const pending = await fetchPendingQuestions(card.worker_thread_id);
-        const expiredRows = db
-          .prepare(
-            "SELECT * FROM expired_questions WHERE card_id = ? AND answered = 0 ORDER BY expired_at DESC",
-          )
-          .all(cardId) as Array<{
-          id: string;
-          question: string;
-          multiple: number;
-          kind: string;
-          locale: string | null;
-          options: string;
-          expired_at: number;
-        }>;
-        const expiredQuestions: Awaited<
-          ReturnType<typeof rpcContract.cardDetail.output.parse>
-        >["expiredQuestions"] = [];
-        for (const row of expiredRows) {
-          let parsed: unknown = null;
-          try {
-            parsed = JSON.parse(row.options);
-          } catch {
-            parsed = null;
-          }
-          const storedOptions = cleanOptions(parsed);
-          const options = await resolveAskOptions(card, storedOptions);
-          expiredQuestions.push({
-            id: row.id,
-            question: row.question,
-            multiple: Boolean(row.multiple),
-            kind: row.kind === "split" ? "split" : "standard",
-            options,
-            expiredAt: row.expired_at,
-          });
-        }
-        let projectName = card.project_id;
-        const workspace = await cardWorkspace(card);
-        let sourcePath: string | null = workspace?.path ?? null;
-        let sourceHostId: string | null = workspace?.hostId ?? null;
-        if (card.workspace_kind === "project") {
-          try {
-            projectName = (
-              await bb.sdk.projects.get({ projectId: card.project_id })
-            ).name;
-          } catch {
-            /* project removed; keep card viewable */
-          }
-        }
-        const mentionedFiles = (
-          await detectMentionedFiles(bb, sourcePath, card.prompt)
-        ).flatMap((file) =>
-          sourceHostId
-            ? [
-                {
-                  ...file,
-                  hostId: sourceHostId,
-                  relPath: sourcePath
-                    ? (workspaceRelative(sourcePath, file.absolutePath) ??
-                      (isAbsolute(file.path) ? null : file.path))
-                    : null,
-                },
-              ]
-            : [],
-        );
-        const attachments = cardAttachments(card.attachments).map(
-          (attachment) => {
-            const absolute = sourcePath
-              ? isAbsolute(attachment.path)
-                ? attachment.path
-                : join(sourcePath, attachment.path)
-              : attachment.path;
-            return {
-              ...attachment,
-              display:
-                workspaceRelative(sourcePath ?? "", attachment.path) ??
-                basename(attachment.path),
-              relPath: sourcePath
-                ? workspaceRelative(sourcePath, absolute)
-                : null,
-              absolutePath: absolute,
-              hostId: sourceHostId,
-            };
-          },
-        );
-        // Environment backing the worker thread's worktree. A recovered
-        // exploratory card is the exception: its original worker environment
-        // can be gone while its user-confirmed checkout remains readable on the
-        // host. Do not send the client to that stale environment (which yields a
-        // 404 for an otherwise listed artifact); host links are the honest
-        // read-only target until the card has a live BB workspace again.
-        const hasRecoveryCheckout =
-          card.workspace_kind === "exploratory" &&
-          Boolean(
-            db
-              .prepare("SELECT 1 FROM workspace_recoveries WHERE card_id = ?")
-              .get(cardId),
-          );
-        const fileEnvironmentId =
-          !hasRecoveryCheckout && card.worker_thread_id
-            ? await bb.sdk.threads
-                .get({ threadId: card.worker_thread_id })
-                .then((thread) => {
-                  const environmentId = (thread as { environmentId?: unknown })
-                    .environmentId;
-                  return typeof environmentId === "string" && environmentId
-                    ? environmentId
-                    : null;
-                })
-                .catch(() => null)
-            : null;
-        const nextStages = parseNextStages(sourcePath, card.stage);
-        const scopes = loadCardScopes(sourcePath, card.id);
-        // Scope-sync health, computed on read: the spec-tech the writer parses
-        // against how many scopes actually synced. A silent 0 with blocks in
-        // the spec is the invisible-scopes incident — the panel names it
-        // instead of rendering an empty card.
-        const scopeSync =
-          card.kind === "build" && sourcePath
-            ? (() => {
-                const spec = latestSpecTech(sourcePath, card.id);
-                const diagnosis = diagnoseScopeSync({
-                  specContent: spec?.content ?? null,
-                  syncedCount: scopes.length,
-                });
-                return {
-                  state: diagnosis.state,
-                  syncedScopes: scopes.length,
-                  machineBlocks: diagnosis.machine,
-                  humanBlocks: diagnosis.human,
-                  specFile: spec?.file ?? null,
-                };
-              })()
-            : null;
-        // Per-entry evidence through one composition (lib/trackable-evidence):
-        // contracts, claims, and conditions for scopes and their tasks.
-        // Non-build cards keep the contract shape with empty evidence.
-        const bareScopes = scopes.map((scope) => ({
-          ...scope,
-          tasks: (Array.isArray(scope.tasks) ? scope.tasks : []).map(
-            (task) => ({ ...task, conditions: [] }),
-          ),
-          conditions: [],
-          claimed: null as boolean | null,
-        }));
-        const enrichedScopes =
-          card.kind === "build" && sourcePath
-            ? await (async () => {
-                const entry = trackingEntryForCard(sourcePath, card.id);
-                const stateRel = entry ? workflowStateRelativeDir(entry) : null;
-                if (!stateRel) return bareScopes;
-                let live: Array<{
-                  file_path: string;
-                  card_id: string;
-                  scope: string | null;
-                  expires_at: number;
-                }> = [];
-                try {
-                  live = liveClaimsForWorkspace(db, {
-                    workspacePath: sourcePath,
-                  }) as typeof live;
-                } catch {
-                  live = [];
-                }
-                const at = Date.now();
-                return await enrichEntriesForDetail({
-                  entries: scopes,
-                  defaultKind: "scope",
-                  stateRelDir: stateRel,
-                  ownerId: card.id,
-                  liveClaims: live,
-                  isLapsed: (target: {
-                    id?: string;
-                    targetFiles?: unknown;
-                  }) => {
-                    try {
-                      const files = Array.isArray(target.targetFiles)
-                        ? (target.targetFiles as unknown[]).filter(
-                            (file): file is string => typeof file === "string",
-                          )
-                        : [];
-                      return lapsedScopeClaims(db, {
-                        cardId: card.id,
-                        workspacePath: sourcePath,
-                        scope: target.id ?? null,
-                        files,
-                        nowMs: at,
-                      });
-                    } catch {
-                      return false;
-                    }
-                  },
-                  readContract: (rel: string) =>
-                    bb.sdk.files
-                      .read({ path: join(sourcePath, rel) })
-                      .then((file) => file.content)
-                      .catch(() => null),
-                  nowMs: at,
-                });
-              })()
-            : bareScopes;
-        const presetBand =
-          card.kind === "research"
-            ? "research"
-            : card.kind === "explore"
-              ? "explore"
-              : (STAGE_TO_BAND[card.stage] ?? "analysis");
-        const preset = getReliablePresetForBand(presetBand, card.id);
-        // The helper owns the typed artifact manifest. Its stage is the durable
-        // producer attribution rendered beside the workflow timeline.
-        const artifacts = await (async () => {
-          if (!sourcePath) return [];
-          let stateDir: string | null = null;
-          const stateBlob = await (async () => {
-            if (card.dir_hash) {
-              stateDir = await workflowStateDir(
-                bb,
-                sourcePath,
-                card.id,
-                card.dir_hash,
-              );
-              if (stateDir)
-                return await bb.sdk.files
-                  .read({ path: join(stateDir, "state.md") })
-                  .then((f) => f.content)
-                  .catch(() => null);
-              return null;
-            }
-            return await bb.sdk.files
-              .read({ path: join(sourcePath, "state.md") })
-              .then((f) => f.content)
-              .catch(() => null);
-          })();
-          if (!stateBlob) return [];
-          const list: Array<{
-            stage: string;
-            kind: string;
-            role: "deliverable" | "evidence";
-            path: string;
-            display: string;
-            generatedAt: string;
-            absolutePath: string;
-            hostId: string;
-            note: string | null;
-          }> = [];
-          const seen = new Set<string>();
-          for (const fields of parseArtifactManifest(stateBlob)) {
-            const stage = fields.stage;
-            const relPath = fields.path;
-            if (!stage || !relPath) continue;
-            // Artifact manifests are agent-produced input. Resolve only a strict
-            // project-relative path; absolute paths and traversal are rejected.
-            const full = resolveArtifactPath(sourcePath, relPath);
-            if (!full) continue;
-            const artifact = await bb.sdk.files
-              .read({ path: full })
-              .catch(() => null);
-            if (
-              artifact &&
-              isPublishableArtifactContent(artifact.content) &&
-              sourceHostId
-            )
-              list.push({
-                stage,
-                kind: fields.kind ?? "document",
-                role: artifactRole({
-                  kind: fields.kind ?? "document",
-                  path: relPath,
-                }),
-                path: relPath,
-                display: fields.label ?? basename(full),
-                generatedAt: fileTimestamp(
-                  artifact,
-                  new Date(card.updated_at).toISOString(),
-                ),
-                absolutePath: full,
-                hostId: sourceHostId,
-                note: auditReceiptNote(full),
-              });
-            if (full) seen.add(full);
-          }
-          // The audit trail must not depend on an agent remembering to declare
-          // its own output. Every other document the workflow wrote is listed
-          // too, in its own group, so a produced artifact can never be invisible
-          // just because it was never registered. Precedent for `.md` is
-          // findArtifacts (the board); the workflow's own state is not an
-          // artifact and stays out.
-          const stateRoot = stateDir;
-          if (stateRoot && sourceHostId) {
-            // Explicit, generous limit: the default is small and a truncated
-            // listing would hide produced documents, which is the one thing this
-            // listing exists to prevent.
-            const listing = await bb.sdk.files
-              .listPaths({
-                path: stateRoot,
-                includeFiles: true,
-                includeDirectories: false,
-                limit: 500,
-              })
-              .catch(() => null);
-            // The listing's path shape is not contractual: it may come back
-            // absolute (under the project or the state dir) or relative to the
-            // state dir, with or without a leading slash. Resolve every shape
-            // before reading, so a produced document is never dropped because of
-            // a path form we failed to recognize.
-            const absolutePaths = array(record(listing).paths)
-              .map((entry) =>
-                typeof entry === "string" ? entry : text(record(entry).path),
-              )
-              .filter(Boolean)
-              .map((raw) =>
-                raw === stateRoot || raw.startsWith(`${stateRoot}/`)
-                  ? raw
-                  : raw === sourcePath || raw.startsWith(`${sourcePath}/`)
-                    ? raw
-                    : join(stateRoot, raw.replace(/^\/+/, "")),
-              );
-            for (const absolute of unregisteredArtifactPaths(absolutePaths, [
-              ...seen,
-            ])) {
-              const relPath = workspaceRelative(sourcePath, absolute);
-              if (!relPath) continue;
-              const artifact = await bb.sdk.files
-                .read({ path: absolute })
-                .catch(() => null);
-              if (!artifact || !isPublishableArtifactContent(artifact.content))
-                continue;
-              // The portable receipt is Audit evidence, not stray output: it is
-              // listed under the stage whose audit produced it.
-              const isTrail = basename(absolute) === AUDIT_TRAIL_FILE;
-              list.push({
-                stage: isTrail ? "audit" : "unregistered",
-                kind: isTrail ? "audit-trail" : "unregistered",
-                role: artifactRole({
-                  kind: isTrail ? "audit-trail" : "unregistered",
-                  path: relPath,
-                }),
-                path: relPath,
-                display: basename(absolute),
-                generatedAt: fileTimestamp(
-                  artifact,
-                  new Date(card.updated_at).toISOString(),
-                ),
-                absolutePath: absolute,
-                hostId: sourceHostId,
-                note: auditReceiptNote(absolute),
-              });
-              seen.add(absolute);
-            }
-          }
-          return list;
-        })();
-        // Surface pending stelow ask interactions regardless of the stored activity:
-        // an ask parks the card awaiting an answer even when the thread is idle.
-        const effectiveActivity =
-          card.activity === "error"
-            ? "error"
-            : pending.length > 0 || expiredQuestions.length > 0
-              ? "awaiting-answer"
-              : (card.activity as
-                  | "idle"
-                  | "running"
-                  | "awaiting-answer"
-                  | "error");
-        const termStatus = isClaimTerminal(card.status);
-        const idleAt =
-          card.last_idle_at && card.last_idle_at > 0
-            ? card.last_idle_at
-            : card.updated_at;
-        const idleCandidate =
-          effectiveActivity === "idle" &&
-          card.worker_thread_id !== null &&
-          !termStatus &&
-          now() - idleAt >= IDLE_ATTENTION_MS;
-        const idleStuck = idleCandidate;
-        const attentionKind = (
-          idleStuck
-            ? "idle"
-            : effectiveActivity === "awaiting-answer"
-              ? "question"
-              : errorNeedsAttention(
-                    card.status,
-                    card.last_error,
-                    effectiveActivity,
-                  )
-                ? "error"
-                : null
-        ) as "question" | "error" | "idle" | null;
-        // Worker ledger, newest first. The open row (endedAt null) is the live
-        // worker; older rows are archived threads replaced along the way.
-        const workerHistory = await workers.history(cardId);
-        // Imported-issue link for the Done-card write-back affordance. The URL
-        // is deterministic (github.com/<repo>/issues/<number>), so no extra
-        // GitHub round-trip is needed to render it.
-        const githubRow = db
-          .prepare(
-            "SELECT repo, number, commented_at FROM github_imports WHERE card_id = ?",
-          )
-          .get(cardId) as
-          | { repo: string; number: number; commented_at: number | null }
-          | undefined;
-        const githubLink = githubRow
-          ? {
-              repo: githubRow.repo,
-              number: githubRow.number,
-              url: `https://github.com/${githubRow.repo}/issues/${githubRow.number}`,
-              postedAt: githubRow.commented_at ?? null,
-            }
-          : null;
-        // Workflow config for the skip model: review gates/appetite live in
-        // the card's own state.md (seeded at creation, same source the
-        // worker reads). Parsed through the shared helper (indented
-        // `config:` block, no truncation) — missing state or fields fail
-        // open to Lean/Auto, and unknown modes/intents yield no skips,
-        // never invented ones. Skips resolve from the explicit set.
-        const workflowConfig = await (async () => {
-          const fallback = {
-            appetite: "Lean",
-            reviewMode: "Auto",
-            reviewGates: [] as string[],
-          };
-          try {
-            if (!sourcePath || !card.dir_hash) return fallback;
-            const stateDir = await workflowStateDir(
-              bb,
-              sourcePath,
-              card.id,
-              card.dir_hash,
-            ).catch(() => null);
-            if (!stateDir) return fallback;
-            const content = await bb.sdk.files
-              .read({ path: join(stateDir, "state.md") })
-              .then((f) => f.content)
-              .catch(() => null);
-            if (typeof content !== "string") return fallback;
-            return parseWorkflowConfig(content);
-          } catch {
-            return fallback;
-          }
-        })();
-        const stageSkips = skippedStages({
-          kind: normalizeKind(card.kind),
-          intent: card.intent,
-          reviewMode: workflowConfig.reviewMode,
-          reviewGates: workflowConfig.reviewGates,
-          sequence: STAGE_SEQUENCE,
-        });
-        // Split affordance from the shared rule. Stage is the DB value, just
-        // converged with state.md by syncThreadState above — the trigger RPC
-        // re-resolves the slug itself before acting, so this flag never moves
-        // a card, it only decides whether to offer the button.
-        const splitOpen = db
-          .prepare(
-            "SELECT 1 FROM split_proposals WHERE card_id = ? AND selected IS NULL",
-          )
-          .get(cardId);
-        const splitAction = splitActionState({
-          kind: normalizeKind(card.kind),
-          stage: card.stage,
-          status: normalizeStatus(card.status),
-          archived: isArchivedCard(card),
-          openProposal: Boolean(splitOpen),
-          openQuestions: pending.length + expiredQuestions.length,
-          hasWorker: card.worker_thread_id !== null,
-        });
-        // Staleness notices, computed on read: each questioned document against
-        // its ask-time baseline. Advisory only — questions stay answerable.
-        const questionStaleness = await stalenessForQuestions(cardId, [
-          ...pending,
-          ...expiredQuestions,
-        ]);
-        const withStaleness = <T extends { id: string }>(
-          questions: T[],
-        ): (T & {
-          staleness: {
-            docRevised: boolean;
-            docRemoved: boolean;
-            checkoutMoved: boolean;
-            commitCount: number;
-            touchedPaths: string[];
-          } | null;
-        })[] =>
-          questions.map((question) => ({
-            ...question,
-            staleness: questionStaleness.get(question.id) ?? null,
-          }));
-        const detailCard = {
-          id: card.id,
-          name: card.name,
-          displayName: card.display_name ?? card.name,
-          prompt: card.prompt,
-          intent: card.intent,
-          projectId: card.project_id,
-          projectName:
-            card.workspace_kind === "exploratory"
-              ? "Exploratory work"
-              : projectName,
-          workspaceKind: card.workspace_kind,
-          workspacePath: card.workspace_path,
-          environmentLabel: card.environment_label ?? null,
-          kind: normalizeKind(card.kind),
-          researchStrategy: card.research_strategy,
-          researchStrategies: strategyList(card),
-          exploreStage: card.explore_stage ?? null,
-          status: normalizeStatus(card.status),
-          stage: card.stage,
-          workerThreadId: card.worker_thread_id,
-          activity: effectiveActivity,
-          lastError: card.last_error,
-          needsAttention: attentionKind !== null,
-          hasPendingReview: hasPendingReview(db, cardId),
-          presetName: preset.name,
-          presetProviderId: preset.provider_id,
-          presetModelId: preset.model_id,
-          presetOverridden: Boolean(
-            db
-              .prepare("SELECT preset_id FROM card_presets WHERE card_id = ?")
-              .get(cardId),
-          ),
-          updatedAt: card.updated_at,
-          stallCount: stallCount(db, cardId),
-          scopeSummary: {
-            scopesTotal: scopes.length,
-            scopesDone: scopes.filter((scope) => isDoneStatus(scope.status))
-              .length,
-            tasksTotal: scopes.reduce(
-              (total, scope) => total + scope.tasks.length,
-              0,
-            ),
-            tasksDone: scopes.reduce(
-              (total, scope) =>
-                total +
-                scope.tasks.filter((task) => isDoneStatus(task.status)).length,
-              0,
-            ),
-            elapsedMs: totalScopeElapsedMs(scopes),
-          },
-          presetId: preset.id,
-          workerPresetId: card.worker_preset_id,
-          presetRestartPending: (card.preset_restart_pending ?? 0) === 1,
-          leadMs: flowTimesForCard(card).leadMs,
-          cycleMs: flowTimesForCard(card).cycleMs,
-          doingNow: doingNowNames(scopes),
-          executingScope:
-            scopes.find((scope) => scope.status === "in-progress")?.name ??
-            null,
-          verifiedHeadSha: verifiedHeadShaForCard(card.id),
-        };
-        return {
-          card: detailCard,
-          attachments,
-          mentionedFiles,
-          scopes: enrichedScopes,
-          comments: comments.map(
-            ({ id, target, target_id, author, body, created_at }) => ({
-              id,
-              target: target as "card" | "scope" | "task",
-              targetId: target_id,
-              author: author as "user" | "agent",
-              body,
-              createdAt: created_at,
-            }),
-          ),
-          pendingQuestions: withStaleness(pending),
-          expiredQuestions: withStaleness(expiredQuestions),
-          splitAction,
-          stageSkips,
-          scopeSync,
-          artifacts,
-          workerHistory,
-          executionRuns: executionLifecycle.detailList(cardId),
-          fileEnvironmentId,
-          nextStages,
-          githubLink,
-        };
-      },
-
-      async updateCardIntent({ cardId, intent }) {
-        const card = getCard(cardId);
-        if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-        if (!canEditWorkflowIntent(card))
-          return {
-            ok: false,
-            error:
-              card.kind !== "build"
-                ? "Only Build cards use a workflow type."
-                : "This workflow has already left triage. Reclassify it from Card actions to restart from triage.",
-          };
-        const ts = now();
-        db.prepare(
-          "UPDATE cards SET intent = ?, updated_at = ? WHERE id = ?",
-        ).run(intent, ts, cardId);
-        // Keep state.md intent in sync so the agent sees the corrected intent.
-        try {
-          const workspace = await cardWorkspace(card);
-          if (workspace?.path) {
-            const stateDir = card.dir_hash
-              ? await workflowStateDir(
-                  bb,
-                  workspace.path,
-                  card.id,
-                  card.dir_hash,
-                )
-              : null;
-            if (card.dir_hash && !stateDir)
-              return {
-                ok: false,
-                error:
-                  "Workflow state ownership cannot be verified. Reseed this card before changing its workflow type.",
-              };
-            const statePath = stateDir
-              ? join(stateDir, "state.md")
-              : join(workspace.path, "state.md");
-            const existing = await bb.sdk.files
-              .read({ path: statePath })
-              .catch(() => null);
-            if (existing) {
-              await bb.sdk.files.write({
-                path: statePath,
-                content: existing.content.replace(
-                  /^intent:.*$/m,
-                  `intent: ${intent}`,
-                ),
-              });
-            }
-          }
-        } catch {
-          /* state.md sync is best-effort */
-        }
-        bb.realtime.publish("card-state", { cardId });
-        return { ok: true, error: null };
-      },
-
-      async renameCard({ cardId, name }) {
-        const card = getCard(cardId);
-        if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-        // Blank restores the prompt-derived heuristic instead of refusing —
-        // a title must always resolve to something readable.
-        const next =
-          name.trim().slice(0, 120) ||
-          heuristicDisplayName(card.prompt, card.name);
-        const ts = now();
-        db.prepare(
-          "UPDATE cards SET display_name = ?, updated_at = ? WHERE id = ?",
-        ).run(next, ts, cardId);
-        bb.realtime.publish("card-state", { cardId });
-        return { ok: true, error: null };
-      },
-
-      async addCardComment({ cardId, target, targetId, body }) {
-        const card = getCard(cardId);
-        if (!card) return { commentId: "", error: ERR_CARD_NOT_FOUND };
-        if (isArchivedCard(card))
-          return { commentId: "", error: ERR_CARD_ARCHIVED };
-        const commentId = logCardComment(
-          cardId,
-          target,
-          targetId,
-          "user",
-          body,
-        );
-        if (target === "card" && card.worker_thread_id) {
-          try {
-            await bb.sdk.threads.send({
-              threadId: card.worker_thread_id,
-              mode: "auto",
-              input: [
-                {
-                  type: "text",
-                  text: `User comment on card "${card.name}":\n\n${body}`,
-                  mentions: [],
-                },
-              ],
-            });
-            const resume = statusForNewCardWork({
-              kind: card.kind,
-              status: card.status,
-              stage: card.stage,
-            });
-            updateCard(cardId, {
-              activity: "running",
-              status: resume.status as CardRow["status"],
-            });
-          } catch (error) {
-            return {
-              commentId,
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to route comment to worker thread.",
-            };
-          }
-        }
-        bb.realtime.publish("card-state", { cardId });
-        return { commentId, error: null };
-      },
-
-      async cancelCard({ cardId }) {
-        const card = getCard(cardId);
-        if (!card) return { archived: false };
-        await workers.stop(card.worker_thread_id);
-        updateCard(cardId, { status: "archived", activity: "idle" });
-        await releaseCardClaimsAndNotify(cardId);
-        bb.realtime.publish("card-state", { cardId });
-        bb.realtime.publish("board-changed", { cardId });
-        return { archived: true };
-      },
-
-      async deleteCard({ cardId }) {
-        // Hard delete is terminal hygiene, not a workflow move: only archived
-        // cards qualify (archive stays the reversible exit; delete is the
-        // deliberate erasure). Foreign keys are declared but not enforced by
-        // the driver, so child rows are removed explicitly.
-        const card = getCard(cardId);
-        if (!card) return { deleted: false, error: ERR_CARD_NOT_FOUND };
-        if (card.status !== "archived")
-          return {
-            deleted: false,
-            error: "Only archived cards can be deleted. Archive it first.",
-          };
-        await workers.stop(card.worker_thread_id);
-        await releaseCardClaimsAndNotify(cardId);
-        // Files follow the row: the card's workflow state dir (.stelow run
-        // artifacts) is removed too, or orphaned runs pile up on disk.
-        // Git checkouts are never touched — committed and uncommitted code
-        // changes survive the delete; only Stelow's own bookkeeping goes.
-        // workflowStateDir returns a path only for state this card owns.
-        try {
-          const workspace = await cardWorkspace(card).catch(() => null);
-          const stateDir =
-            workspace?.path && card.dir_hash
-              ? await workflowStateDir(
-                  bb,
-                  workspace.path,
-                  card.id,
-                  card.dir_hash,
-                ).catch(() => null)
-              : null;
-          if (stateDir) rmSync(stateDir, { recursive: true, force: true });
-        } catch {
-          /* bookkeeping rows below still delete */
-        }
-        db.prepare("DELETE FROM comments WHERE card_id = ?").run(cardId);
-        removeCardPreset(cardId);
-        db.prepare("DELETE FROM expired_questions WHERE card_id = ?").run(
-          cardId,
-        );
-        db.prepare("DELETE FROM ask_contracts WHERE card_id = ?").run(cardId);
-        db.prepare("DELETE FROM inbox_events WHERE card_id = ?").run(cardId);
-        workers.deleteCard(cardId);
-        db.prepare(
-          "UPDATE github_imports SET card_id = NULL WHERE card_id = ?",
-        ).run(cardId);
-        db.prepare("DELETE FROM cards WHERE id = ?").run(cardId);
-        bb.realtime.publish("card-state", { cardId });
-        bb.realtime.publish("board-changed", { cardId });
-        return { deleted: true, error: null };
-      },
-
-      async discardPreview({ cardId }) {
-        const empty = {
-          eligible: false,
-          action: null as
-            | "worktree-drop"
-            | "branch-reset"
-            | "dir-delete"
-            | null,
-          reason: null as string | null,
-          branch: null as string | null,
-          files: [] as string[],
-          fileCount: 0,
-          commitCount: 0,
-          sharedWith: 0,
-          confirmTitle: null as string | null,
-          confirmBody: null as string | null,
-          error: null as string | null,
-        };
-        const card = getCard(cardId);
-        if (!card) return { ...empty, error: ERR_CARD_NOT_FOUND };
-        const evidence = await discardEvidence(card);
-        const decision = discardEligibility(evidence);
-        if (!decision.eligible || !decision.action)
-          return { ...empty, reason: decision.reason, branch: evidence.branch };
-        const copy = discardConfirm(evidence, decision.action);
-        const files = [...evidence.changed, ...evidence.untracked];
-        return {
-          eligible: true,
-          action: decision.action,
-          reason: null,
-          branch: evidence.branch,
-          files: files.slice(0, 50),
-          fileCount: files.length,
-          commitCount: evidence.unpushedCommits,
-          sharedWith: evidence.sharedWith,
-          confirmTitle: copy.title,
-          confirmBody: copy.body,
-          error: null,
-        };
-      },
-      async discardCardChanges({ cardId }) {
-        const card = getCard(cardId);
-        if (!card)
-          return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
-        if (card.status === "completed" || card.status === "blocked")
-          return {
-            ok: false,
-            summary: null,
-            error: "Completed work is history — reset it by hand.",
-          };
-        const evidence = await discardEvidence(card);
-        const decision = discardEligibility(evidence);
-        if (!decision.eligible || !decision.action)
-          return {
-            ok: false,
-            summary: null,
-            error: decision.reason ?? "Nothing safe to discard.",
-          };
-        // Stop first: discarding under a live worker races its next write.
-        await workers.stop(card.worker_thread_id);
-        // Re-validate after the stop landed: a push, a cleanup, or a delete
-        // may have changed the checkout under this discard.
-        const live = getCard(cardId);
-        if (!live)
-          return { ok: false, summary: null, error: ERR_CARD_NOT_FOUND };
-        const fresh = await discardEvidence(live);
-        const confirm = discardEligibility(fresh);
-        if (!confirm.eligible || confirm.action !== decision.action) {
-          return {
-            ok: false,
-            summary: null,
-            error:
-              confirm.reason ??
-              "The checkout changed under this discard — review it again.",
-          };
-        }
-        if (
-          (decision.action === "worktree-drop" ||
-            decision.action === "branch-reset") &&
-          !fresh.branch
-        ) {
-          return {
-            ok: false,
-            summary: null,
-            error:
-              "The checkout lost its branch mid-discard — review it by hand.",
-          };
-        }
-        if (decision.action === "branch-reset" && !fresh.resetTarget) {
-          return {
-            ok: false,
-            summary: null,
-            error:
-              "No safe reset point could be determined — reset it by hand.",
-          };
-        }
-        try {
-          if (decision.action === "dir-delete") {
-            const target = fresh.checkoutPath ?? "";
-            if (
-              target !== EXPLORATORY_SCOPE &&
-              !target.startsWith(`${EXPLORATORY_SCOPE}/`)
-            ) {
-              throw new Error(
-                "Refusing to delete outside the exploratory scope.",
-              );
-            }
-            rmSync(target, { recursive: true, force: true });
-            if (existsSync(target))
-              throw new Error("The folder survived deletion.");
-          } else if (decision.action === "worktree-drop") {
-            const common = await runGitIn(fresh.checkoutPath ?? "", [
-              "rev-parse",
-              "--git-common-dir",
-            ]);
-            const mainDir =
-              common.ok && common.stdout.trim() ? common.stdout.trim() : "";
-            const mainAbs = mainDir
-              ? isAbsolute(mainDir)
-                ? mainDir
-                : nodeJoin(fresh.checkoutPath ?? "", mainDir)
-              : "";
-            if (!mainAbs) throw new Error("Cannot locate the main checkout.");
-            // Best-effort: a locked worktree refuses removal until unlocked.
-            await runGitIn(mainAbs, [
-              "worktree",
-              "unlock",
-              fresh.checkoutPath ?? "",
-            ]);
-            const removed = await runGitIn(mainAbs, [
-              "worktree",
-              "remove",
-              "--force",
-              fresh.checkoutPath ?? "",
-            ]);
-            if (!removed.ok) throw new Error("Could not remove the worktree.");
-            const pruned = await runGitIn(mainAbs, [
-              "branch",
-              "-D",
-              fresh.branch ?? "",
-            ]);
-            if (!pruned.ok)
-              throw new Error(
-                "Worktree removed, but the branch survived — delete it by hand.",
-              );
-            if (fresh.checkoutPath && existsSync(fresh.checkoutPath))
-              throw new Error("The worktree folder survived removal.");
-          } else {
-            const reset = await runGitIn(fresh.checkoutPath ?? "", [
-              "reset",
-              "--hard",
-              fresh.resetTarget ?? "",
-            ]);
-            if (!reset.ok) throw new Error("Could not reset the branch.");
-            const cleaned = await runGitIn(fresh.checkoutPath ?? "", [
-              "clean",
-              "-fd",
-            ]);
-            if (!cleaned.ok)
-              throw new Error(
-                "Branch reset, but untracked files survived — remove them by hand.",
-              );
-            const verify = await runGitIn(fresh.checkoutPath ?? "", [
-              "status",
-              "--porcelain=v1",
-              "--untracked-files=all",
-            ]);
-            if (!verify.ok || verify.stdout.trim())
-              throw new Error(
-                "The checkout is not clean after discard — review it by hand.",
-              );
-          }
-        } catch (error) {
-          return {
-            ok: false,
-            summary: null,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Discard failed midway — review the checkout by hand.",
-          };
-        }
-        const summary = discardTrail(decision.action, fresh);
-        logCardComment(cardId, "card", cardId, "agent", summary);
-        if (!isArchivedCard(live))
-          updateCard(cardId, { status: "archived", activity: "idle" });
-        bb.realtime.publish("card-state", { cardId });
-        bb.realtime.publish("board-changed", { cardId });
-        return { ok: true, summary, error: null };
       },
 
       async retryWorker({ cardId }) {

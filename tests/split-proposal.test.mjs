@@ -58,6 +58,8 @@ assert.equal(total.archiveParent, true, "full approval archives the parent");
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-detail.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-detail-presentation.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/lifecycle-rpc-contract.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/execution-native.ts"), "utf8"),
@@ -107,7 +109,7 @@ assert.match(serverSource, /splitActionState\(\{/, "the trigger decides through 
 assert.match(serverSource, /openQuestions: live\.length \+ openExpiredQuestionIds\(cardId\)\.length/, "the trigger counts live plus expired questions before nudging");
 assert.match(serverSource, /SPLIT_REQUEST_NUDGE, mentions: \[\]/, "the trigger delivers the shared nudge to the worker thread");
 assert.match(serverSource, /splitAction: z\.object\(\{ show:/, "cardDetail exposes the dumb-UI split flag");
-assert.match(serverSource, /const splitAction = splitActionState\(\{/, "cardDetail computes the flag from the shared rule");
+assert.match(serverSource, /splitAction: splitActionState\(\{/, "cardDetail computes the flag from the shared rule");
 
 const heroSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/build-detail-hero.tsx"), "utf8");
 const buildLifecycleSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../components/detail/use-build-detail-lifecycle.ts"), "utf8");
