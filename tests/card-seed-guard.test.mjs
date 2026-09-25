@@ -25,6 +25,7 @@ assert.match(noDir, /already seeded/, "the fallback still states the workflow ex
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const seedBlock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-seed.ts"), "utf8");
 const seedingSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/workflow-seeding.ts"), "utf8");
+const protocolsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8");
 assert.match(seedBlock, /argv\[0\] === "seed" \? runSeed\(deps, argv, ctx\) : null/, "the seed family claims exactly its verb");
 assert.match(seedBlock, /getCardByWorkerThread\(ctx\.threadId\)/, "the seed handler resolves the calling card worker like advance/doctor do");
 assert.match(seedBlock, /cardWorkerSeedRefusal\(/, "a card worker seed is refused through the guard");
@@ -38,7 +39,7 @@ assert.match(
 // worker never reaches for seed in the first place. The clause lives in
 // the NEVER_SEED const and every spawn path references it — covered by
 // tests/prompt-contracts.test.mjs; here just pin the single definition.
-assert.match(serverSource, /const NEVER_SEED\s*=\s*"/, "the seed ban is a single-source const");
+assert.match(protocolsSource, /const NEVER_SEED\s*=\s*"/, "the seed ban is a single-source const");
 
 // Seed-time hygiene: .stelow/ (live runs) stays out of git; the committed
 // record is the exported docs/runs/<card>/ bundle.

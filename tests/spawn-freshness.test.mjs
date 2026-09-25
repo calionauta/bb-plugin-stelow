@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
 const drafting = readFileSync(join(root, "server", "drafting.ts"), "utf8");
+const protocols = readFileSync(join(root, "server", "runtime", "plugin-protocols.ts"), "utf8");
 const presetJudge = readFileSync(join(root, "server/decisions/preset-judge-runner.ts"), "utf8");
 const reviewPreflight = readFileSync(join(root, "server/review-preflight.ts"), "utf8");
 const workerBackend = readdirSync(join(root, "server"))
@@ -136,6 +137,6 @@ assert.match(server, /unrecognized key\/i\.test\(message\)/, "an unrecognized-fi
 
 // The owner rule teaches fresh delegation: full task in the call, never a
 // fork, never sibling chatter.
-assert.match(server, /Delegate fresh: package the full task in the call itself/, "CARD_OWNER_RULES teaches fresh delegation");
+assert.match(protocols, /Delegate fresh: package the full task in the call itself/, "CARD_OWNER_RULES teaches fresh delegation");
 
 console.log("spawn freshness test ok: worker seam and judge pinned, no fork path, leashed builders, fresh rule taught");

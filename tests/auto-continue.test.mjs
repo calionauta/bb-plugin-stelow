@@ -165,6 +165,7 @@ const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 
 const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
 const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
 const cardCopySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-copy.ts"), "utf8");
+const protocolsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8");
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
 const askGateSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8");
 const autoStart = threadSyncSource.indexOf("const input = buildContinueInput");
@@ -207,7 +208,7 @@ assert.equal(
   1,
   "every done track resets the budget through one shared completion writer",
 );
-assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
+assert.match(protocolsSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
 assert.match(threadSyncSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
 const advanceEventPattern = new RegExp([

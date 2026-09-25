@@ -31,6 +31,7 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
 
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/plugin-protocols.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/track-prompts.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create-prompt.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
@@ -38,6 +39,10 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../lib/worker-continuation.mjs"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-reseed-prompt.ts"), "utf8"),
 ].join("\n");
+const attentionSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/attention-window.ts"),
+  "utf8",
+);
 const cliRegistry = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli-registry.ts"), "utf8");
 const restartPromptSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/worker-restart-prompt.ts"),
@@ -246,7 +251,10 @@ assert.match(cliPreset, /presets are managed from the card's Agent preset sectio
 // gates; build completes only through `done`), and the audit resume carries
 // one shared nudge.
 assert.ok(!serverSource.includes('updateCard(cardId, { status: "completed", activity: "idle", last_assistant_text: lastOutput, last_idle_at: now(), last_error: null, stage: currentStage })'), "no audit-idle branch marks completed");
-const nudgeDefs = serverSource.match(/const\s+AUDIT_DONE_NUDGE\s*=\s*"/g) ?? [];
+const nudgeDefs = [
+  ...serverSource.match(/const\s+AUDIT_DONE_NUDGE\s*=\s*"/g) ?? [],
+  ...attentionSource.match(/const\s+AUDIT_DONE_NUDGE\s*=\s*"/g) ?? [],
+];
 assert.equal(nudgeDefs.length, 1, "AUDIT_DONE_NUDGE is defined once, not pasted per branch");
 assert.match(serverSource, /shouldDoneNudge\(\{/, "the audit branch resumes through the done-nudge budget");
 
