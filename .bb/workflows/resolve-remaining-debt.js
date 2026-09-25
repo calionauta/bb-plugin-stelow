@@ -26,12 +26,6 @@ const common = [
   "Do not claim completion without repository evidence.",
 ].join("\n");
 
-const agentOptions = {
-  provider: "acp-opencode",
-  model: "opencode/space-bunny-free",
-  reasoningLevel: "medium",
-};
-
 const phases = [
   [
     "audit",
@@ -97,14 +91,16 @@ Goal: ${goal}
 Prior phase report: ${previous}
 Complete only this phase with a bounded acceptance criterion.
 Do not broaden scope or loop on formatting.
-Commit and push the green phase.`, { ...agentOptions, label: `implement:${id}`, phase: phaseName });
+Commit and push the green phase.`, { provider: "acp-opencode", model: "opencode/space-bunny-free", reasoningLevel: "medium", label: `implement:${id}`, phase: phaseName });
   const review = await agent(`${common}
 Fresh adversarial review of phase ${id}.
 Inspect the actual diff and repository, not the implementation report.
 Verify behavior parity, source budgets, test value, import direction, cycles, and no gaming.
 Run focused tests and one negative control.
 Fix real issues, commit and push, and report exact before/after counts.`, {
-    ...agentOptions,
+    provider: "acp-opencode",
+    model: "opencode/space-bunny-free",
+    reasoningLevel: "medium",
     label: `review:${id}`,
     phase: phaseName,
   });
@@ -119,7 +115,9 @@ State which remaining debt is closed, exact line/function counts, all gate resul
 integration worktree status, commit/push evidence, working-tree state,
 and any genuine blocker.
 Do not call inherited debt resolved without a real split.`, {
-  ...agentOptions,
+  provider: "acp-opencode",
+  model: "opencode/space-bunny-free",
+  reasoningLevel: "medium",
   label: "final-debt-report",
   phase: "FinalAudit",
 });
