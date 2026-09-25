@@ -28,8 +28,9 @@ const fileBaseline = new Map([
 
 // The debt this branch is working through, in the two named areas (GitHub
 // automation and the decision API) plus the rest of the tree the diff-scoped
-// gate never sees. Keys are the census identifiers, so a refactor that renames
-// one of these fails here and has to be recorded deliberately.
+// gate never sees. All 56 oversized functions are pinned, so this map is the
+// whole census: a rename, a deletion, or growth in any of them fails here and
+// has to be recorded deliberately. Keys are the census identifiers.
 const functionBaseline = new Map([
   // Github
   ["server/github-issues.ts:createGithubAutomation", 701],
@@ -38,6 +39,9 @@ const functionBaseline = new Map([
   ["server/github-issues.ts:createGithubAutomation/runSingleAutomationRule", 53],
   ["server/github-issues.ts:runGithubMigrations", 64],
   ["components/github/github-dialog-state.ts:useGithubDialogState", 229],
+  ["components/github/github-linked-discussion.tsx:LinkedDiscussionSection", 116],
+  ["components/github/github-done-draft-dialog.tsx:GithubDoneDraftDialog", 89],
+  ["components/github/github-completion-dialog.tsx:GithubCompletionDialog", 60],
   // DecisionApi
   ["server/decision-api.ts:createDecisionApi", 319],
   ["server/decision-api.ts:createDecisionApi/setDecisionPoint", 84],
@@ -47,27 +51,53 @@ const functionBaseline = new Map([
   ["lib/preview-runtime.mjs:createPreviewRuntime", 264],
   ["lib/preview-runtime.mjs:createPreviewRuntime/start", 77],
   ["lib/trackable-evidence.mjs:evidenceConditions", 74],
+  ["lib/card-checks.mjs:groupCardChecks", 57],
+  ["lib/gap-registry.mjs:validateGapRegistry", 53],
+  ["lib/question-batch.mjs:parseAskGroups", 80],
+  ["lib/workflow-skills-sync.mjs:syncWorkflowSkills", 112],
   ["server/execution-reconcile.ts:createExecutionReconcile", 261],
   ["server/execution-native.ts:createExecutionNative", 249],
   ["server/execution-native.ts:createExecutionNative/prepareStart", 69],
   ["server/execution-lifecycle.ts:createExecutionLifecycle", 223],
   ["server/execution-lifecycle.ts:createExecutionLifecycle/resumeAfterAnswers", 53],
   ["server/execution-advance.ts:createExecutionAdvance", 203],
+  ["server/bb-workflow-bridge.ts:renderInlineWorkflowScript", 57],
   ["server/runtime/workflow-seeding.ts:seedWorkflow", 72],
   ["server/runtime/cli/cli-review-subject.ts:deliverableSubject", 69],
   ["server/runtime/cli/cli-bundle-writer.ts:writeBundle", 68],
   ["server/runtime/cli/cli-split.ts:reportSplit", 61],
+  ["components/conversation/question-batch.tsx:useBatchSelection", 53],
   ["components/creation/create-build-dialog.tsx:useCreateBuildSubmit", 65],
-  ["components/github/github-done-draft-dialog.tsx:GithubDoneDraftDialog", 89],
-  ["components/github/github-completion-dialog.tsx:GithubCompletionDialog", 60],
+  ["components/detail/build-diff.tsx:DiffFile", 54],
+  ["components/detail/execution-runs-section.tsx:ExecutionRunsSection", 56],
+  ["components/panels/build-panel-dialogs.tsx:BuildPanelDialogs", 55],
+  ["components/panels/inbox-panel.tsx:InboxEntry", 74],
   ["components/panels/inbox-panel.tsx:InboxPanel", 119],
+  ["components/settings/host-tools-section.tsx:HostToolCard", 54],
+  ["components/settings/plugin-update-status.tsx:PluginUpdateStatus", 54],
+  ["components/settings/preset-manager-band-routing.tsx:PresetManagerBandRouting", 68],
+  ["components/settings/preset-manager-band-routing.tsx:PresetManagerDelegatedWork", 84],
+  ["components/settings/preset-manager-form.tsx:PresetManagerFormView", 73],
+  ["components/settings/preset-manager-list.tsx:PresetManagerList", 74],
   ["components/settings/preset-manager-shell.tsx:PresetManagerDialog", 223],
+  ["components/settings/preset-onboarding.tsx:PresetOnboardingDialog", 53],
+  ["components/ui/dialog.tsx:callback#4", 57],
   ["components/ui/dialog.tsx:callback#5", 76],
   ["components/ui/dialog.tsx:Dialog", 62],
+  ["components/ui/hooks/use-persistent-drawer-drag.ts:usePersistentDrawerDrag", 101],
+  ["components/ui/mobile-trigger.tsx:callback", 59],
+  [
+    "components/ui/persistent-responsive-drawer-shell.tsx:PersistentResponsiveDrawerShell",
+    177,
+  ],
+  ["components/worktree-cleanup-suggestion.tsx:WorktreeCleanupSuggestion", 58],
   ["app.tsx:callback", 56],
   ["tests/server-cards.test.mjs:callback#4", 82],
+  ["tests/server-drafting.test.mjs:harness", 83],
 ]);
 
+// Every oversized function above is pinned, so this count only has to catch a
+// fifty-seventh one appearing.
 const functionCountBaseline = 56;
 
 const inheritedBaseline = [
@@ -108,16 +138,25 @@ function sourceLines(source) {
   return source.split(/\r?\n/).length - (source.endsWith("\n") ? 1 : 0);
 }
 
+// These two must stay the same width as the budget checker's own copies in
+// scripts/check-source-budgets.mjs: the census is the only gate that sees an
+// untouched file, so a node kind it fails to count is a debt nothing reports.
+// `syntheticNodeKinds` below is the control for that width.
 function isFunction(node) {
   return ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)
-    || ts.isArrowFunction(node) || ts.isMethodDeclaration(node);
+    || ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
+    || ts.isConstructorDeclaration(node)
+    || ts.isGetAccessorDeclaration(node)
+    || ts.isSetAccessorDeclaration(node);
 }
 
 function functionLabel(node) {
+  if (ts.isFunctionDeclaration(node) && node.name) return node.name.getText();
   if (node.name && ts.isIdentifier(node.name)) return node.name.getText();
   if (ts.isVariableDeclaration(node.parent) || ts.isPropertyAssignment(node.parent)) {
     return node.parent.name.getText();
   }
+  if (ts.isExportAssignment(node.parent)) return "default";
   if (ts.isCallExpression(node.parent)) return "callback";
   return "anonymous";
 }
@@ -149,6 +188,34 @@ function oversizedFunctions(file, source) {
   visit(tree, []);
   return found.filter((entry) => entry.lines > maxFunctionLines);
 }
+
+function padded(count, expression) {
+  return Array.from({ length: count }, (_, index) => `    ${expression}${index} = ${index};`).join("\n");
+}
+
+// The owned tree happens to hold no oversized constructor, accessor, or default
+// export today, so a census that quietly dropped those node kinds would still
+// report 56 and look correct. This synthetic source is the only thing that
+// fails when it does: every member below is over the function budget and each
+// one needs a node kind of its own to be counted.
+function syntheticNodeKinds() {
+  const source = [
+    "export default (input) => {", padded(60, "const line"), "  return input;", "};",
+    "class Synthetic {",
+    "  constructor(value) {", padded(60, "this.step"), "    this.value = value;", "  }",
+    "  get large() {", padded(60, "const read"), "    return this.value;", "  }",
+    "  set large(value) {", padded(60, "const write"), "    this.value = value;", "  }",
+    "  small() {", padded(4, "const tiny"), "    return this.value;", "  }",
+    "}",
+  ].join("\n");
+  return oversizedFunctions("synthetic.ts", source).map((entry) => entry.key.replace("synthetic.ts:", ""));
+}
+
+assert.deepEqual(
+  syntheticNodeKinds(),
+  ["default", "anonymous", "large", "large#2"],
+  "the census must count the same node kinds as scripts/check-source-budgets.mjs",
+);
 
 const files = ownedSourceFiles();
 const sources = new Map(files.map((file) => [file, readFileSync(join(repositoryRoot, file), "utf8")]));

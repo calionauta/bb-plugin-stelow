@@ -11,12 +11,15 @@ that gate's traversal. Master values come from `git show origin/master:<path>`.
 The two must agree, or the census does not describe the same shapes the gate
 measures.
 
+The adversarial review of this phase re-measured every symbol and line range in
+the tables and corrected four of them, listed under *Review corrections*.
+
 ## How to read the deltas
 
 `check-source-budgets.mjs` scores two different references, and both matter:
 
 - **New violations** are scoped to the *merge-base* with `origin/master`,
-  currently `1f968be` — 199 commits behind the branch tip.
+  currently `1f968be` — 200 commits behind the branch tip.
 - **Inherited debt** is scored against the *target tip* of `origin/master`,
   currently `12c6664`.
 
@@ -42,7 +45,7 @@ removed lines, net zero.
 | `useGithubDialogState` | 229 | `components/github/github-dialog-state.ts` 125-353 | 229 | 229 | 0 |
 | `GithubDoneDraftDialog` | 89 | `components/github/github-done-draft-dialog.tsx` 16-104 | 89 | 89 | 0 |
 | `GithubCompletionDialog` | 60 | `components/github/github-completion-dialog.tsx` 24-83 | 60 | 60 | 0 |
-| `LinkedDiscussionSection` | 116 | `components/github/github-linked-discussion.tsx` 20-135 | 135 | 135 | 0 |
+| `LinkedDiscussionSection` | 116 | `components/github/github-linked-discussion.tsx` 20-135 | 116 | 116 | 0 |
 
 Eight of nine symbols have not moved. The single -8 on the factory is the whole
 of 199 commits of effort in this area.
@@ -61,9 +64,10 @@ functions of the factory have no behavior test:
   Those are UI call sites, not server behavior.
 
 `server/github-issues.ts` is otherwise the best-factored file in the branch:
-of its 25 nested functions, 22 are already under 50 lines, and the seams for
-labels, claims, intent, issue creation, comments, lists, and release already
-live in `lib/github-*.mjs`. Only the factory shell is oversized.
+the factory holds 91 nested functions and 88 of them are already under 50 lines,
+and the seams for labels, claims, intent, issue creation, comments, lists, and
+release already live in `lib/github-*.mjs`. Only the factory shell and the three
+named inner functions are oversized.
 
 ## 2. Decision API area
 
@@ -73,6 +77,7 @@ partially-reduced ratchet.
 
 | Symbol | Lines | Range | master | HEAD | delta |
 | --- | --- | --- | --- | --- | --- |
+| `server/decision-api-contract.ts` (file) | 108 | 1-108 | 108 | 108 | 0 |
 | `server/decision-api.ts` (file) | **400** | 1-400 | 400 | 400 | 0 |
 | `createDecisionApi` | 319 | 82-400 | 319 | 319 | 0 |
 | `setDecisionPoint` | 84 | 289-372 | 84 | 84 | 0 |
@@ -132,8 +137,15 @@ but it is the reason the gate is the slowest script in `quality:shape`.
 
 ## 4. origin/master delta
 
-`199` commits ahead, `6` behind. The merge-base is `1f968be`; the branch adds
-269 changed files, +35155/-9337.
+`200` commits ahead, `6` behind, measured at `1409058`. The merge-base is
+`1f968be`; against it the branch changed `295` files, `+36899/-9415`. Both
+figures drift as the branch grows, so re-derive them rather than trusting this
+line:
+
+```bash
+git rev-list --left-right --count origin/master...HEAD
+git diff --shortstat "$(git merge-base origin/master HEAD)" HEAD
+```
 
 The 6 missing commits are not workflow-only — they touch owned source, so every
 later phase re-measures against a base that moves:
@@ -185,12 +197,44 @@ prerequisite: R2 cannot be done honestly without it.
    belongs after the repair list has been executed against the current gate, not
    during.
 
+## Review corrections
+
+The adversarial review of this phase re-derived every symbol length, line range,
+and branch count from `origin/master` and HEAD rather than from the tables above.
+Four claims did not survive:
+
+- `LinkedDiscussionSection` is 116 lines on master and on HEAD, not 135. The
+  `20-135` range in the same row had been copied into both count columns.
+- The factory holds 91 nested functions, 88 of them under 50 lines — not "25
+  nested functions, 22 under 50". The conclusion is unchanged: only the shell and
+  the three named inner functions are oversized.
+- The branch is 200 commits ahead, not 199, and the section 4 diffstat was stale
+  in both directions. It now names the commit it was measured at and the
+  commands that re-derive it, because the figure changes with every phase.
+- `server/decision-api-contract.ts` (108 lines) is the third file the section 2
+  sentence claims are byte-identical to master but was missing from the table.
+
+Two defects in the census itself were found the same way and fixed:
+
+- The census copied the budget checker's traversal *narrower* than the gate
+  copies it: it counted function declarations, expressions, arrows, and methods,
+  but not class constructors, getters, setters, or the `default` label the gate
+  gives a default-exported arrow. On a synthetic source holding one of each, the
+  gate found four oversized members and the census found one. Because the census
+  is the only gate that reads untouched files, that gap was a class of debt no
+  gate could see. `syntheticNodeKinds` in `tests/debt-baseline.test.mjs` is the
+  control: it fails if the census ever narrows again.
+- The census pinned 32 of the 56 oversized functions, so growth in the other 24
+  was bounded only by the total count. All 56 are pinned now; growing
+  `lib/question-batch.mjs:parseAskGroups` from 80 to 110 lines fails the test
+  with its own name, where before it passed.
+
 The remaining inherited set outside these two areas
 (`lib/preview-runtime.mjs`, `lib/trackable-evidence.mjs`,
 `server/execution-*.ts`, `server/runtime/**`, `components/panels/inbox-panel.tsx`,
 `components/settings/preset-manager-shell.tsx`, `components/creation/create-build-dialog.tsx`,
 `components/ui/dialog.tsx`, `app.tsx`, `tests/server-cards.test.mjs`) is
-unchanged by this audit and stays in `tests/debt-baseline.test.mjs` as before.
+unchanged by this audit and stays pinned in `tests/debt-baseline.test.mjs`.
 
 ## Gate repairs shipped by this phase
 
