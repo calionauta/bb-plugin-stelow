@@ -86,7 +86,11 @@ assert.equal(contractForTrackable(null), null, "junk resolves null");
 // Rewiring pins: no finished-check may keep its own copy of the
 // vocabulary — server, panel, and lib all read the central machine.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/gate-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/execution-surfaces.ts"), "utf8"),
+].join("\n");
 assert.doesNotMatch(server, /\["done", "completed"\]\.includes/, "server finished-checks read the machine");
 assert.match(server, /isDoneStatus\(/, "server consults the machine");
 const app = readFileSync(join(root, "app.tsx"), "utf8");

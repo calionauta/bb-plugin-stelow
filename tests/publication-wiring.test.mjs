@@ -28,6 +28,7 @@ const server = [
   readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-verify.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-review.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/host-surfaces.ts"), "utf8"),
 ].join("\n");
 const publication = readFileSync(join(root, "components/detail/build-publication.tsx"), "utf8");
 const actions = readFileSync(join(root, "components/detail/build-publication-actions.tsx"), "utf8");
@@ -140,8 +141,8 @@ assert.match(server, /recordPublication\(deps, cardId, "squash_merge", message, 
 assert.match(server, /deps\.cardCheckout\(card\)/, "diff/preview/publication share the worker-first checkout resolver");
 assert.match(
   server,
-  /checkout: \(card\) => cardCheckout\(card as CardRow\)/,
-  "the composition root injects the one worker-first checkout resolver",
+  /checkout: \(card\) => seams\.cardCheckout\(card as WorkerCard\)/,
+  "the host wiring injects the one worker-first checkout resolver",
 );
 assert.doesNotMatch(server, /execFile\("git", \["commit"/, "publication never shells out to a local Git commit");
 assert.match(

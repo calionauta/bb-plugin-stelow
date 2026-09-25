@@ -235,6 +235,9 @@ function execGh(path: string, args: string[]): Promise<string> {
   });
 }
 
+/** The assembled issue automation: its scheduler, its RPCs, and its status. */
+export type GithubAutomation = ReturnType<typeof createGithubAutomation>;
+
 export function createGithubAutomation(ctx: GithubAutomationDeps) {
   const { db, bb } = ctx;
   const now = () => ctx.now();

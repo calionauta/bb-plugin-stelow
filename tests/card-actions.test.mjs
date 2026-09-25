@@ -57,6 +57,8 @@ import {
   detailViewer,
   manageHeader,
   rpcMethod,
+  rpcRegistry,
+  gateWiring,
 } from "./card-lifecycle-contract.fixtures.mjs";
 
 const updateIntent = rpcMethod("updateCardIntent", "addCardComment");
@@ -130,14 +132,22 @@ assert.match(
   "titling rides the disposable path as a registered site",
 );
 
-const byThread = rpcMethod("cardByWorkerThread", "readCardFile");
-assert.doesNotMatch(
-  byThread,
-  /row\.status === "archived"/,
-  "an archived card's thread still links back to its card",
+// The thread→card link's own rule (an archived card's thread still resolves)
+// is executed in tests/runtime-seams.test.mjs; here only the wiring is pinned.
+assert.match(
+  rpcRegistry,
+  /cardByWorkerThread: createCardByWorkerThread\(/,
+  "the thread→card handler is the seam's owner, not a handler body in the registry",
 );
-assert.match(server, /const gapSummary = createGapSummary\(/, "gap reporting is wired through its runtime slice");
-assert.match(server, /gapSummary,\s*qualitySeal,/, "gap and quality RPCs keep their adjacent contract order");
+assert.match(
+  rpcRegistry,
+  /cardByWorkerThread:[\s\S]{0,400}readCardFile/,
+  "the thread→card handler keeps its adjacent contract order",
+);
+assert.match(gateWiring, /gapSummary: buildGapSummary\(core, critiqueGapState\),/,
+  "gap reporting is wired through its runtime slice");
+assert.match(rpcRegistry, /gapSummary: gates\.gapSummary,\s*\n\s*qualitySeal: gates\.qualitySeal,/,
+  "gap and quality RPCs keep their adjacent contract order");
 assert.match(
   serverInbox,
   /function createGetHandler\(/,
@@ -152,9 +162,9 @@ assert.match(
 
 assert.match(cardReseed, /export function createCardReseed\(/,
   "reseed owns one runtime factory boundary");
-assert.match(server, /const reseedCard = createCardReseed\(/,
-  "the composition root wires the reseed factory once");
-assert.match(server, /\n      reseedCard,\n/,
+assert.match(gateWiring, /reseedCard: buildReseedCard\(core\),/,
+  "the gate wiring builds the reseed factory once");
+assert.match(rpcRegistry, /\n    reseedCard: gates\.reseedCard,\n/,
   "the reseed factory result is the registered RPC handler");
 assert.match(cardReseed, /resolveReseedIntent\(card, input\.intent\)/,
   "fresh restarts are the only route reclassification path");

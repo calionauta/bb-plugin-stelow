@@ -63,6 +63,7 @@ const server = [
   readFileSync(join(root, "server", "card-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server", "card-detail-rpc-contract.ts"), "utf8"),
   readFileSync(join(root, "server", "cards.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "rpc-surfaces.ts"), "utf8"),
 ].join("\n");
 const executionContract = readFileSync(join(root, "server", "execution-contract.ts"), "utf8");
 const buildPanelState = readFileSync(join(root, "components", "panels", "build-panel-state.ts"), "utf8");
@@ -74,7 +75,7 @@ const flowStrip = readFileSync(join(root, "components", "board", "flow-strip.tsx
 const buildProgress = readFileSync(join(root, "components", "detail", "build-progress.tsx"), "utf8");
 const workerHistory = readFileSync(join(root, "components", "worker-history", "worker-history.tsx"), "utf8");
 assert.match(server, /flowMetrics: \{/, "the flow RPC is contracted");
-assert.match(server, /flowMetrics: \(input\) => flowMetrics\(db, input\)/, "RPC dispatch uses the measured flow runtime");
+assert.match(server, /flowMetrics: \(input: FlowMetricsInput\) => flowMetrics\(core\.db, input\)/, "RPC dispatch uses the measured flow runtime");
 assert.match(server, /leadMs: flow\.leadMs/, "detail reuses the one helper for lead time");
 assert.match(server, /cycleMs: flow\.cycleMs/, "detail reuses the one helper for cycle time");
 const detailTimesContract = /leadMs:[\s\S]*?cycleMs:[\s\S]*?doingNow:[\s\S]*?verifiedHeadSha: z\s*\.string\(\)\s*\.nullable\(\)/;

@@ -18,8 +18,10 @@ import { createQuestionInbox } from "./question-inbox.js";
 import { createClaimCoordination } from "./claim-coordination.js";
 import { createCardSeams } from "./card-seams.js";
 import { createAskArtifacts } from "./ask-artifacts.js";
+import { createPendingQuestions } from "./pending-questions.js";
 import { createPreviewHost } from "./preview-host.js";
 import { createTrackProjection, strategyRounds } from "./track-projection.js";
+import { roundFileName, roundTimestamp } from "../../lib/research-rounds.mjs";
 import { workspaceRelative } from "./card-files.js";
 import { join } from "./root-paths.js";
 import { workflowStateDir } from "./workflow-state.js";
@@ -84,6 +86,7 @@ function createCardReads(
     seams,
     asks,
     previewHost,
+    ...questionProjection(deps, workspace, asks),
     stalenessForQuestions: createQuestionStaleness({
       db,
       recoveryGitEvidence: git.recoveryGitEvidence,
@@ -106,6 +109,31 @@ function createCardReads(
       syncOpenQuestionInbox: questions.syncOpenQuestionInbox,
     }),
     researchArtifacts: createResearchArtifacts(deps),
+  };
+}
+
+/**
+ * The question projection, and the round vocabulary it travels with.
+ *
+ * Both are owned here rather than by whichever surface needed them first: the
+ * pending-question read uses only core seams, so the card server, the detail
+ * RPC, and the CLI can share one projection without any of them deferring the
+ * others' boot. The round pair is quoted by every surface that writes or reads
+ * a research round, so it is exported once and named the same everywhere.
+ */
+function questionProjection(
+  deps: ReadRuntimeDeps,
+  workspace: WorkspaceReads,
+  asks: ReturnType<typeof createAskArtifacts>,
+) {
+  return {
+    fetchPendingQuestions: createPendingQuestions({
+      fetchPendingAsks: workspace.questions.fetchPendingAsks,
+      getCardByWorkerThread: deps.ledger.getCardByWorkerThread,
+      resolveAskOptions: asks.resolveAskOptions,
+    }),
+    roundFileName,
+    roundTimestamp,
   };
 }
 

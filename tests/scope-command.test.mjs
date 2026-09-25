@@ -36,6 +36,7 @@ assert.ok(parseScopeArgs(["done", "--scope", "scope-1", "--json", "--json"]).err
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/cli-surfaces.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-helper-passthrough.ts"), "utf8"),
 ].join("\n");
 const scopeModule = readFileSync(join(root, "server/scopes.ts"), "utf8");
@@ -43,7 +44,8 @@ const cliRegistry = readFileSync(join(root, "server/runtime/cli-registry.ts"), "
 const helperFamily = readFileSync(join(root, "server/runtime/cli/cli-helper-passthrough.ts"), "utf8");
 assert.match(helperFamily, /argv\[0\] === "scope" \? deps\.scopeCommand\(argv, ctx\) : null/, "the scope branch exists");
 // The delegated command's dependencies are wired once, at the composition root.
-assert.match(server, /scopeCommand: \(argv, context\) =>\s*\n?\s*runScopeCommand\(argv, context, \{/, "the server delegates scope transitions");
+assert.match(server, /scopeCommand: scopeCommand\(deps\),/, "the CLI wiring hands the dispatcher the scope command it built");
+assert.match(server, /return \(argv, context\) => runScopeCommand\(argv, context, scopeDeps\);/, "the wiring delegates scope transitions");
 assert.match(
   server,
   /runHelper,\n\s*recordTrackableEvent: \(event\) => \{/,

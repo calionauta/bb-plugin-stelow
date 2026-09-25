@@ -119,7 +119,20 @@ export function createCardLedger(deps: CardLedgerDeps) {
     verifiedHeadShaForCard: verifiedHeadShaForCard.bind(null, deps),
     getCardByWorkerThread: getCardByWorkerThread.bind(null, deps),
     logCardComment: logCardComment.bind(null, deps),
+    // A comment on a card itself, which is what every surface writes. The
+    // four-argument form stays available for the surfaces that comment on a
+    // scope or an execution instead.
+    commentCard: commentCard.bind(null, deps),
   };
+}
+
+/** The card-level comment, with the target fixed, that every trail uses. */
+function commentCard(
+  deps: CardLedgerDeps,
+  cardId: string,
+  body: string,
+): string {
+  return logCardComment(deps, cardId, "card", cardId, "agent", body);
 }
 
 export type CardLedger = ReturnType<typeof createCardLedger>;

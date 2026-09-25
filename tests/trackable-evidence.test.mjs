@@ -199,6 +199,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/execution-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/cli-surfaces.ts"), "utf8"),
 ].join("\n");
 assert.match(server, /enrichEntriesForDetail\(/, "card detail enriches through one composition");
 assert.match(server, /liveClaimsForWorkspace\(/, "claims derive read-only, never touching TTL");

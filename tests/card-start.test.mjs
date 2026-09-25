@@ -9,6 +9,13 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/host-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/card-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/card-creator.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/gate-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/execution-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/rpc-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/wiring/cli-surfaces.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-operations.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/worker-respawn-preparation.ts"), "utf8"),
@@ -19,6 +26,10 @@ const server = [
   readFileSync(join(root, "server/runtime/cli/cli-split.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8"),
 ].join("\n");
+const rpcRegistry = readFileSync(
+  join(root, "server/runtime/wiring/rpc-surfaces.ts"),
+  "utf8",
+);
 const cardsCreate = readFileSync(join(root, "server/cards-create.ts"), "utf8");
 const cardsPersist = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
 const workers = readFileSync(join(root, "server/workers.ts"), "utf8");
@@ -150,7 +161,7 @@ assert.match(githubServer, /const marker = markerFor\(cardId\)/, "write-back mar
 assert.match(githubServer, /carriesMarker\(after\.issue\.comments, marker\)/, "posted output is verified back on the remote");
 assert.match(githubServer, /GitHub issues are disabled on this host \(STELOW_GITHUB_ISSUES=0\)/, "disabled RPCs name the variable");
 assert.match(server, /STELOW_GITHUB_ISSUES/, "server.ts only names the switch, never its logic");
-assert.match(server, /\.\.\.github\.handlers/, "server.ts only spreads the feature handlers");
+assert.match(rpcRegistry, /\.\.\.host\.github\.handlers/, "the registry only spreads the feature handlers");
 assert.match(server, /runGithubMigrations\(db\)/, "server.ts delegates the feature migrations in one call");
 assert.doesNotMatch(githubServer, /card_id, fired_at\) VALUES/, "fires rows always carry their outcome");
 // environment_label is pinned by count in card-insert-contract (25

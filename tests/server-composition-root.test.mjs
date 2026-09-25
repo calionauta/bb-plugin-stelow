@@ -26,18 +26,69 @@ test("runtime composition keeps extracted capabilities wired into registration",
   const core = readFileSync(join(root, "server/runtime/runtime-core.ts"), "utf8");
   const reads = readFileSync(join(root, "server/runtime/read-runtime.ts"), "utf8");
   const mentions = readFileSync(join(root, "server/runtime/mentions.ts"), "utf8");
-  const wired = source + core + reads;
+  const hostWiring = readFileSync(
+    join(root, "server/runtime/wiring/host-surfaces.ts"),
+    "utf8",
+  );
+  const registry = readFileSync(
+    join(root, "server/runtime/wiring/rpc-surfaces.ts"),
+    "utf8",
+  );
+  const cardWiring = readFileSync(
+    join(root, "server/runtime/wiring/card-surfaces.ts"),
+    "utf8",
+  );
+  const cliWiring = readFileSync(
+    join(root, "server/runtime/wiring/cli-surfaces.ts"),
+    "utf8",
+  );
+  const wired = source + core + reads + hostWiring + cardWiring + cliWiring;
   assert.match(wired, /createPlatformHandlers\(/, "platform handlers are constructed once");
-  assert.equal((source.match(/\.\.\.platform,/g) ?? []).length, 1, "platform handlers are spread into RPC registration once");
+  assert.equal((registry.match(/\.\.\.host\.platform,/g) ?? []).length, 1, "platform handlers are spread into RPC registration once");
   assert.match(wired, /createResearchArtifactRuntime\(/, "research capabilities are constructed");
   for (const symbol of ["researchRoundFiles", "readResearchIndex", "researchReadiness", "exploreArtifact"]) {
     assert.match(wired, new RegExp(`\\b${symbol}\\b`), `${symbol} remains reachable from runtime consumers`);
   }
   assert.match(
-    source + mentions,
-    /registerMentionProviders\(bb, \{[\s\S]*?db,[\s\S]*?loadBoard: \(projectId\) => loadBoard\(bb, projectId\)[\s\S]*?\}\);/,
-    "both mention providers are registered by the runtime composition root",
+    hostWiring,
+    /registerMentionProviders\([\s\S]*?db:[\s\S]*?loadBoard: \(projectId\) => [\s\S]*?\}\);/,
+    "both mention providers are registered by the host wiring layer",
   );
+  assert.match(mentions, /export function registerMentionProviders\(/, "the mention providers still have one owner");
+});
+
+test("the composition root only assembles; no surface is built inside it", () => {
+  const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+  for (const factory of [
+    "createCardsServer",
+    "createPlatformHandlers",
+    "createGithubAutomation",
+    "createCardDetailHandler",
+    "registerRpcHandlers",
+    "registerStelowCli",
+  ]) {
+    assert.doesNotMatch(
+      source,
+      new RegExp(`${factory}\\(`),
+      `${factory} is wired by a layer, not by the composition root`,
+    );
+  }
+  // The layers are wired in dependency order, and nothing reaches back up.
+  const order = [
+    "createRuntimeCore(bb)",
+    "createGateSurfaces(core)",
+    "createExecutionSurfaces({ core, gates })",
+    "createCardSurfaces({",
+    "createHostSurfaces({ core, cards, github: github.bind })",
+    "registerStelowRpc({",
+    "registerStelowCommand({",
+  ];
+  let cursor = -1;
+  for (const step of order) {
+    const at = source.indexOf(step, cursor + 1);
+    assert.ok(at > cursor, `the root assembles ${step} after the layer it depends on`);
+    cursor = at;
+  }
 });
 
 test("the thin root and relocated runtime keep one default plugin entrypoint", () => {

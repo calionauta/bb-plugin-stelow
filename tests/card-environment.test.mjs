@@ -56,12 +56,15 @@ assert.match(
 // Wiring pin: creation surfaces the substitution (log plus card comment),
 // shared by build/research/explore through createCardInternal.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8");
+const cardCreator = readFileSync(
+  join(root, "server/runtime/wiring/card-creator.ts"),
+  "utf8",
+);
 const cardsCreate = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
 assert.match(cardsCreate, /environmentFallbackNotice\(input\.environment, prepared\.environment\)/, "creation checks the substitution");
 assert.match(
-  server,
-  /comment:\s*\(cardId, body\)\s*=>\s*\{\s*logCardComment\(cardId, "card", cardId, "agent", body\);\s*\}\s*,?/,
+  cardCreator,
+  /comment:\s*\(cardId, body\)\s*=>\s*\{\s*core\.ledger\.logCardComment\(cardId, "card", cardId, "agent", body\);\s*\}\s*,?/,
   "substitutions page the card",
 );
 

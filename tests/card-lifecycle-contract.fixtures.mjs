@@ -22,6 +22,16 @@ export const server = [
   readFileSync(join(root, "server", "runtime", "track-prompts.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "track-capabilities.ts"), "utf8"),
   readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "rpc-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "gate-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "card-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "card-creator.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "execution-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "host-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "cli-surfaces.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "wiring", "deferred.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "start-workflow-prompt.ts"), "utf8"),
+  readFileSync(join(root, "server", "runtime", "pending-questions.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "read-runtime.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "card-seams.ts"), "utf8"),
   readFileSync(join(root, "server", "runtime", "track-projection.ts"), "utf8"),
@@ -282,6 +292,42 @@ export const detailViewer = readFileSync(
 );
 export const manageHeader = readFileSync(
   join(root, "components", "manage", "card-detail-header.tsx"),
+  "utf8",
+);
+
+/**
+ * The RPC registry. Handlers that live in their own module are pinned against
+ * that module; only the ones still declared inline in a table are sliced out
+ * of the registry by name.
+ */
+export const rpcRegistry = readFileSync(
+  join(root, "server", "runtime", "wiring", "rpc-surfaces.ts"),
+  "utf8",
+);
+
+/** The gate wiring: the layers between the runtime core and the registry. */
+export const gateWiring = readFileSync(
+  join(root, "server", "runtime", "wiring", "gate-surfaces.ts"),
+  "utf8",
+);
+export const cardWiring = readFileSync(
+  join(root, "server", "runtime", "wiring", "card-surfaces.ts"),
+  "utf8",
+);
+export const executionWiring = readFileSync(
+  join(root, "server", "runtime", "wiring", "execution-surfaces.ts"),
+  "utf8",
+);
+export const hostWiring = readFileSync(
+  join(root, "server", "runtime", "wiring", "host-surfaces.ts"),
+  "utf8",
+);
+export const cliWiring = readFileSync(
+  join(root, "server", "runtime", "wiring", "cli-surfaces.ts"),
+  "utf8",
+);
+export const threadCardLookup = readFileSync(
+  join(root, "server", "runtime", "thread-card-lookup.ts"),
   "utf8",
 );
 
