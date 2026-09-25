@@ -84,7 +84,6 @@ import {
   discardEligibility,
   discardTrail,
 } from "../lib/discard-policy.mjs";
-import { healPresetStaleness } from "../lib/worker-ledger.mjs";
 import {
   normalizePromoteName,
   findAdoptableProject,
@@ -312,6 +311,13 @@ import { createCardPreview } from "./runtime/card-preview.js";
 import { createInspectionCommand } from "./runtime/cli-inspection.js";
 import { cliUnknownResult } from "./runtime/cli-registry.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
+import { createResearchTrackSync } from "./runtime/research-track-sync.js";
+import {
+  createTrackPrompts,
+  type ExploreWorkerPromptInput,
+  type ResearchWorkerPromptInput,
+} from "./runtime/track-prompts.js";
+import { createTrackCapabilities } from "./runtime/track-capabilities.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
 import {
   CARD_ERRORS,
@@ -462,22 +468,6 @@ export type PreviewInfo = z.infer<typeof rpcContract.previewState.output>;
 type FilesApi = BbPluginApi["sdk"]["files"];
 type Workflow = z.infer<typeof workflowSchema>;
 type LooseRecord = Record<string, unknown>;
-
-interface ResearchWorkerPromptInput {
-  displayName: string;
-  prompt: string;
-  strategyLabel: string;
-  strategyId: string;
-  strategySkill: string;
-  stateDirText: string;
-  workspaceRoot: string;
-  instructions: string;
-  flavor: "initial" | "restart" | "reseed" | "append";
-  previousThreadId: string | null;
-  roundNo: number;
-  roundStamp: string;
-  roundFile: string;
-}
 
 const GATES = {
   gate: { artifact: "product-spec", receipt: "gate-approved.md" },
@@ -1371,227 +1361,12 @@ into subagents. You may delegate only independent work with a distinct input and
 structured questions, card state changes, lifecycle commands, or the canonical result. Delegate fresh: package the full task in the call itself \
 (brief plus every file path and fact the delegate needs) — never fork a thread, inherit history, or let siblings talk to each other.";
 
-  function researchWorkerPrompt(input: ResearchWorkerPromptInput): string {
-    const {
-      displayName,
-      prompt,
-      strategyLabel,
-      strategyId: _strategyId,
-      strategySkill,
-      stateDirText,
-      workspaceRoot,
-      instructions,
-      flavor,
-      previousThreadId,
-      roundNo,
-      roundStamp,
-      roundFile,
-    } = input;
-    const flavorLine =
-      flavor === "initial"
-        ? "This is a fresh research task."
-        : flavor === "append"
-          ? "A previous strategy round already wrote to research-index.md. Load the playbook below and APPEND a new ### section for it — never \
-rewrite, delete, or re-check existing items."
-          : flavor === "restart"
-            ? "You are being restarted mid-research with a fresh worker. Re-read your research-index.md and CONTINUE the research — do not start \
-over unless the index is empty."
-            : "The host re-seeded your state dir: start the research over with a fresh research-index.md.";
-    return `You are running a Stelow research task inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside \
-the workspace (${workspaceRoot}). ${CARD_OWNER_RULES} ${flavorLine}${
-      previousThreadId
-        ? ` Previous worker thread: ${previousThreadId} (archived). If the index is thin, its turn \
-history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.`
-        : ""
-    }
-
-Step 1 — load the strategy playbook: the ${strategyLabel} method (${strategySkill}) is provided by this \
-plugin \u2014 use \`bb skill list\` to confirm it (fetch via \`npx skills add calionauta/stelow\` only \
-if missing), then follow that playbook — not the stelow-workflow-* \
-build skills, which do not apply here.
-
-Step 2 — research the request below inside this workspace. Research happens primarily on the WEB using your search tools — the playbook expects \
-real-time sources (LinkedIn, X/Twitter, Reddit practitioner communities, industry reports), not prior knowledge. You may also read code and docs. \
-If you genuinely have no web search tools available, say so explicitly in the index instead of inventing findings — never fabricate market data, \
-quotes, or statistics. You MUST NOT write product code or open pull requests. Research only.
-
-Step 3 — write your findings to <state-dir>/research-index.md (create it) in EXACTLY this shape (headings verbatim — the plugin parses them deterministically \
-for review and fan-out):
-
-    # Research index: ${displayName}
-
-    ## Summary
-    <concise cross-strategy synthesis, evidence limits, key decisions — keep it short>
-
-    ## Outputs
-    | Strategy | Round | Output | Artifact | Notes |
-    | --- | --- | --- | --- | --- |
-    | ${strategyLabel} | ${roundNo} | <what this output is> | <path relative to ${workspaceRoot}> | <notes> |
-
-    ## Opportunities
-    ### ${strategyLabel} — <today's YYYY-MM-DD date>
-    - [ ] <opportunity title> — <one-line why it matters>
-
-Unchecked boxes mean "available for fan-out" and NOTHING else — they are not task state. NEVER check \
-a box yourself — the plugin checks the ones the user turns into build cards. If you run another strategy \
-later, APPEND a new ### section under ## Opportunities plus new rows under ## Outputs; never rewrite \
-existing items.
-
-Step 3b — write this round's native output NEXT TO the index, never instead of it. Contract (the plugin enforces it in code — \
-a round that fails these checks blocks Done and is flagged in the inbox, so treat this as a hard requirement, not advice):
-- target: <workspaceRoot>/${roundFile} — this is the deterministic destination reserved for this round. Create it with the playbook's \
-full result VERBATIM. Do NOT add a manifest block for it: the card discovers this canonical round file once it has content.
-- one file per write command with a direct path; never combine round + index + state.md writes in one heredoc/command chain. Prefer \
-your host's native file-write tool.
-- verify by reading ${roundFile} back: it must hold the playbook's FULL result VERBATIM — every required section, item, table, \
-and score the playbook asks for — never the research index, never empty, never a condensed summary. If the read-back fails any \
-check, rewrite immediately before finishing.
-- fan-out sub-steps (e.g. JTBD's numbered prompts): save EACH beside it as <strategyId>-<substep-slug>-r${roundNo}-${roundStamp}.md \
-(same stamp; <substep-slug> is the lowercase-hyphenated sub-step name), each with its own full prompt output — the host validates \
-every substep file individually and blocks Done on any missing or thin one.
-- scoping before broad Full Mapping: when the request names no audience, problem/job, or geography, ask \
-FIRST via \`bb stelow ask\` (Targeted prompt vs Full Mapping vs Recommend) before running all ten prompts. \
-Proceeding on assumptions is allowed only as explicitly \
-marked hypotheses.
-- self-check BEFORE finishing: run \`bb stelow verify\` — it prints PASS or names each failing round with the fix. Do NOT end your turn on a \
-FAIL; rewrite and re-verify until PASS.
-
-Step 4 — register the index plus any EXTRA sub-step files so each renders on the card: append one block per file to <state-dir>/state.md (create \
-the artifacts: section if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do \
-NOT append a duplicate):
-
-    artifacts:
-      - stage: research
-        kind: document
-        path: <research-index.md path relative to ${workspaceRoot}>
-        label: Research index
-(one more block per sub-step file, with label "Round ${roundNo} — ${strategyLabel} (<substep-slug>)" \
-and its own path. The round's own file needs no block — it is pre-registered.)
-
-Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative \
-to ${workspaceRoot}>" display="<short file name>"}\` once per file (the index, the round \
-file, and every sub-step file), each directive on its own line — bb renders these as clickable chips so the user can open, read, \
-and comment on each output directly from the thread. Then emit one quality seal per produced file: \`::stelow-quality{path="<same \
-relative path>"}\` once per file, each on its own line — bb revalidates each file live and renders verified \
-/ hypothesis / needs-work / unverified (the seal resolves from the host, never from your claim).
-
-CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
-
-    bb stelow ask --thread "$BB_THREAD_ID" \ \
-      --question "<a single clear question>" \ \
-      --option "<label 1>" --option "<label 2>" [--multiple]
-
-Batch independent questions into ONE ask call by repeating --question groups (each with its own --option labels) — the user answers \
-them together instead of being pinged one by one. Ask dependent questions (where Q2 needs Q1's answer) one at a time. When the \
-human must compare artifacts to decide (interface picks, plan reviews), attach each option's evidence: --desc for trade-offs, \
---preview for the inline glance, --artifact for the workspace-relative file they can open.
-
-On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never \
-re-ask the same question. There are no stages and no gates here: NEVER run \`bb stelow advance\`. When \
-the index is complete with ranked opportunities, STOP and end your turn — the user reviews the index, \
-marks the card Done, and fans opportunities out into build cards. If the user instead confirms specific \
-opportunities in-thread, fan them out yourself ONLY after that structured confirmation: \`bb stelow fan-out \
---opportunity <id> [--opportunity ...]\` (ids from the index, never prose — the command refuses unknown \
-ids). Stop early when the user archives the card.
-
-${DONE_PROTOCOL}
-
-${REVIEW_PROTOCOL}
-
-${DRAFT_PROTOCOL}
-
-${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
-${prompt}`;
-  }
-
-  // Explore runs ONE build-stage skill standalone — no triage, no Shape
-  // Up sequence, no gates. The worker loads the stage's playbook, applies it
-  // to the input, and saves a single artifact into the card's state dir.
-  function exploreWorkerPrompt({
-    displayName: _displayName,
-    prompt,
-    stage,
-    stateDirText,
-    workspaceRoot,
-    instructions,
-    flavor,
-    previousThreadId,
-  }: {
-    displayName: string;
-    prompt: string;
-    stage: { id: string; label: string; skill: string };
-    stateDirText: string;
-    workspaceRoot: string;
-    instructions: string;
-    flavor: "initial" | "restart" | "reseed";
-    previousThreadId: string | null;
-  }): string {
-    const flavorLine =
-      flavor === "initial"
-        ? "This is a fresh single-stage exploration."
-        : flavor === "restart"
-          ? "You are being restarted mid-exploration with a fresh worker. Re-read your artifact and CONTINUE — do not start over unless it is empty."
-          : "The host re-seeded your state dir: run the stage again from scratch.";
-    return `You are running a SINGLE-STAGE Stelow exploration inside the bb-plugin-stelow panel. Your work owns its own state dir (${stateDirText}) inside \
-the workspace (${workspaceRoot}). ${CARD_OWNER_RULES} ${flavorLine}${
-      previousThreadId
-        ? ` Previous worker thread: ${previousThreadId} (archived). If the artifact is thin, its turn \
-history may hold missing context; retrieve it with \`bb thread output ${previousThreadId}\`.`
-        : ""
-    }
-
-Step 1 — load the stage skill: ${stage.label} (${stage.skill}) is bundled with this plugin (\`bb skill \
-list\` shows it). Load it and follow its instructions exactly.
-
-Step 2 — apply the stage to the request below. Work STANDALONE: there is no triage, no Shape Up pipeline, no stage machine, no gates, and no \
-\`bb stelow advance\`. Do NOT run the build workflow skills (stelow-workflow-entry, stelow-workflow-router, stelow-workflow-orchestrator) — only \
-the stage skill above. You may read code, docs, or files in the workspace to ground the work; use the structured form below only if the input \
-is genuinely ambiguous. Depth contract: the deliverable must meet its stage contract (required sections, tables, depth per the skill's Completeness \
-contract — \`bb stelow verify\` enforces it and names the failing check). Full exploration: every variant the stage skill offers. Ask the user \
-via the structured form whenever a choice affects the outcome — never auto-decide picks. But never park waiting for approval: there are no gates \
-here, so a decision that would be a gate in the pipeline resolves via ask, then you finish.
-
-Step 3 — produce the stage's deliverable as ONE Markdown file: <state-dir>/explore-${stage.id}.md (create it; overwrite any existing content \
-with the fresh result). Prefer your host's native file-write tool; if you must use a shell, write ONE file per command with a direct path and \
-read it back to verify it meets the stage contract (required sections, tables, depth — never a condensed summary). Self-check BEFORE finishing: \
-run \`bb stelow verify\` — it prints PASS or the fix. Do NOT end your turn on a FAIL.
-
-Step 4 — register the artifact so it renders on the card: append one block to <state-dir>/state.md (create the artifacts: section \
-if missing; paths relative to the workspace root ${workspaceRoot}; if a block with the same path is already there, do NOT append \
-a duplicate):
-
-    artifacts:
-      - stage: explore
-        kind: document
-        path: <explore-${stage.id}.md path relative to ${workspaceRoot}>
-        label: ${stage.label}
-
-Step 5 — end your turn with one file chip per produced file: emit \`::stelow-artifact{path="<path relative \
-to ${workspaceRoot}>" display="${stage.label}"}\` on its own line — bb renders these as \
-clickable chips. Then emit \`::stelow-quality{path="<same relative path>"}\` on its own line — bb revalidates \
-the file live and renders verified / hypothesis / needs-work / unverified.
-
-CRITICAL — User input contract:
-ANY time you need user input, you MUST call the structured form, NEVER just write text like "waiting for your choice":
-
-    bb stelow ask --thread "$BB_THREAD_ID" \ \
-      --question "<a single clear question>" \ \
-      --option "<label 1>" --option "<label 2>" [--multiple]
-
-On timeout ("No response after Ns"), STOP and wait — the question stays answerable on the card. Never \
-re-ask the same question. When the stage deliverable is complete, STOP and end your turn — the user reviews \
-the artifact and marks the card Done. Stop early when the user archives the card.
-
-${DONE_PROTOCOL}
-
-${REVIEW_PROTOCOL}
-
-${DRAFT_PROTOCOL}
-
-${instructions ? `Preset instructions:\n${instructions}\n` : ""}Request:
-${prompt}`;
-  }
+  const { researchWorkerPrompt, exploreWorkerPrompt } = createTrackPrompts({
+    cardOwnerRules: CARD_OWNER_RULES,
+    doneProtocol: DONE_PROTOCOL,
+    reviewProtocol: REVIEW_PROTOCOL,
+    draftProtocol: DRAFT_PROTOCOL,
+  });
 
   // Preset judgment runner: one hidden thread on the pinned preset answers a
   // strict-JSON question. Always cleans up (stop + archive); every failure
@@ -3197,6 +2972,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     },
   });
 
+  const trackCapabilities = createTrackCapabilities();
   const researchArtifacts = createResearchArtifactRuntime({
     bb,
     cardWorkspace,
@@ -3496,287 +3272,6 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
     }
   }
 
-  // Research cards have no stages: sync only worker activity and attention.
-  // A freshly-spawned research worker moves To-Do (pending) to Doing
-  // (in-progress) on its first active poll. A completed index moves directly
-  // to Done; a later user comment reopens the card through addCardComment.
-  async function syncResearchThreadState(card: CardRow): Promise<void> {
-    // Terminal cards stay untouched: no failure, idle, or completion write
-    // may land after Done.
-    if (
-      card.status === "completed" ||
-      card.status === "archived" ||
-      card.status === "blocked"
-    )
-      return;
-    try {
-      const thread = await bb.sdk.threads.get({
-        threadId: card.worker_thread_id!,
-      });
-      const status = thread.status as string;
-      try {
-        const threadBorn = (thread as { createdAt?: number }).createdAt;
-        healPresetStaleness(
-          db,
-          card.id,
-          threadBorn,
-          card.preset_restart_pending,
-        );
-      } catch {
-        /* staleness stays best-effort */
-      }
-      const lastOutput =
-        (
-          await bb.sdk.threads
-            .output({ threadId: card.worker_thread_id! })
-            .catch(() => null)
-        )?.output ?? null;
-      if (status === "active" || status === "starting") {
-        await markThreadRunning(card, lastOutput);
-      } else if (status === "idle" || status === "stopping") {
-        const questionIds = await syncOpenQuestionInbox(card);
-        if (questionIds === null) return;
-        if (questionIds.length > 0) {
-          updateCard(card.id, questionWaitUpdates(lastOutput));
-        } else {
-          // Readiness already gates on artifact integrity: ready means the
-          // index is reviewable AND every round file is valid. An index with
-          // invalid rounds is not done — each invalid round is named as an
-          // inbox error so the human knows exactly what to re-run.
-          const readiness = await researchReadiness(card).catch(() => ({
-            ready: false as const,
-            fingerprint: null as string | null,
-            evidence: "verified" as const,
-            invalid: [] as Array<{
-              n: number;
-              label: string;
-              slug?: string;
-              reason?: string;
-              detail?: string;
-            }>,
-          }));
-          if (readiness.ready) {
-            const readyIdleAt =
-              card.activity !== "idle" || !card.last_idle_at
-                ? now()
-                : card.last_idle_at;
-            updateCard(card.id, {
-              status: "completed",
-              activity: "idle",
-              last_assistant_text: lastOutput,
-              last_idle_at: readyIdleAt,
-            });
-            // Quiet completions record the trail too: a Done-column card
-            // without a done event is invisible to flow metrics.
-            recordStageEvent(card.id, "done");
-            resolveInboxEvents(card.id, now(), ["paused"], "completed");
-            const readyCurrent = getCard(card.id);
-            const hypothesisSuffix =
-              readiness.evidence === "hypothesis-only"
-                ? " Marked hypothesis-only: web research was unavailable — requires human validation."
-                : "";
-            if (readyCurrent) {
-              recordInboxEvent(
-                readyCurrent,
-                "completed",
-                `Research complete — results ready to review in Done.${hypothesisSuffix}`,
-                `completed:${card.id}:index:${readiness.fingerprint ?? "ready"}`,
-                now(),
-              );
-            }
-          } else {
-            const idleAt =
-              card.activity !== "idle" || !card.last_idle_at
-                ? now()
-                : card.last_idle_at;
-            updateCard(card.id, {
-              activity: "idle",
-              last_assistant_text: lastOutput,
-              last_idle_at: idleAt,
-            });
-            const current = getCard(card.id);
-            if (
-              current &&
-              current.status !== "archived" &&
-              current.status !== "completed"
-            ) {
-              for (const round of readiness.invalid) {
-                const item = round.slug
-                  ? `${round.label} — ${round.slug}`
-                  : round.label;
-                const why =
-                  round.reason === "needs-depth" && round.detail
-                    ? `needs depth: ${round.detail}`
-                    : round.reason === "missing"
-                      ? "missing — write it"
-                      : round.reason === "mirrors-index"
-                        ? "mirrors the index — write the playbook output"
-                        : round.reason === "thin"
-                          ? "thin — write the full playbook output"
-                          : "incomplete";
-                const key = round.slug
-                  ? `round-invalid:${card.id}:${round.n}:${round.slug}`
-                  : `round-invalid:${card.id}:${round.n}`;
-                recordInboxEvent(
-                  current,
-                  "error",
-                  `Round ${round.n} (${item}) ${why} — restart it to regenerate the result.`,
-                  key,
-                  now(),
-                );
-              }
-              if (idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
-                recordInboxEvent(
-                  current,
-                  "paused",
-                  "Idle with unfinished research — retry continues in place, restart begins fresh.",
-                  `paused:${card.id}:${idleAt}`,
-                  idleAt,
-                );
-              }
-            }
-          }
-        }
-        noteAgentOutput(card, lastOutput);
-      } else if (status === "failed" || status === "error") {
-        await workers.applyFailed(card.id, card.worker_thread_id!, null);
-      }
-    } catch (error) {
-      updateCard(card.id, {
-        activity: "error",
-        last_error:
-          error instanceof Error
-            ? error.message
-            : "Unable to read worker thread.",
-      });
-    }
-    escalateIfStalled(card.id);
-  }
-
-  // Explore cards have no stages and no index: Done means the stage skill
-  // produced its artifact (explore-<stage>.md with real content). Mirrors the
-  // research sync minus the index contract.
-  async function syncExploreThreadState(card: CardRow): Promise<void> {
-    // Terminal cards stay untouched: no failure, idle, or completion write
-    // may land after Done.
-    if (
-      card.status === "completed" ||
-      card.status === "archived" ||
-      card.status === "blocked"
-    )
-      return;
-    try {
-      const thread = await bb.sdk.threads.get({
-        threadId: card.worker_thread_id!,
-      });
-      const status = thread.status as string;
-      try {
-        const threadBorn = (thread as { createdAt?: number }).createdAt;
-        healPresetStaleness(
-          db,
-          card.id,
-          threadBorn,
-          card.preset_restart_pending,
-        );
-      } catch {
-        /* staleness stays best-effort */
-      }
-      const lastOutput =
-        (
-          await bb.sdk.threads
-            .output({ threadId: card.worker_thread_id! })
-            .catch(() => null)
-        )?.output ?? null;
-      if (status === "active" || status === "starting") {
-        await markThreadRunning(card, lastOutput);
-      } else if (status === "idle" || status === "stopping") {
-        const questionIds = await syncOpenQuestionInbox(card);
-        if (questionIds === null) return;
-        if (questionIds.length > 0) {
-          updateCard(card.id, questionWaitUpdates(lastOutput));
-        } else {
-          const artifact = await exploreArtifact(card).catch(() => ({
-            ready: false as const,
-            fingerprint: null as string | null,
-            failures: [] as string[],
-          }));
-          const completing = artifact.ready && card.status !== "completed";
-          if (completing) {
-            const readyIdleAt =
-              card.activity !== "idle" || !card.last_idle_at
-                ? now()
-                : card.last_idle_at;
-            updateCard(card.id, {
-              status: "completed",
-              activity: "idle",
-              last_assistant_text: lastOutput,
-              last_idle_at: readyIdleAt,
-            });
-            // Same trail contract as the research sweep above.
-            recordStageEvent(card.id, "done");
-            resolveInboxEvents(card.id, now(), ["paused"], "completed");
-            const readyCurrent = getCard(card.id);
-            if (readyCurrent)
-              recordInboxEvent(
-                readyCurrent,
-                "completed",
-                "Exploration complete — result ready to review in Done.",
-                `explore-completed:${card.id}:${artifact.fingerprint ?? "ready"}`,
-                now(),
-              );
-          } else if (!artifact.ready) {
-            const idleAt =
-              card.activity !== "idle" || !card.last_idle_at
-                ? now()
-                : card.last_idle_at;
-            updateCard(card.id, {
-              activity: "idle",
-              last_assistant_text: lastOutput,
-              last_idle_at: idleAt,
-            });
-            const current = getCard(card.id);
-            if (
-              current &&
-              current.status !== "archived" &&
-              current.status !== "completed"
-            ) {
-              if (artifact.failures.length > 0) {
-                recordInboxEvent(
-                  current,
-                  "error",
-                  `Explore ${card.explore_stage} needs depth — ${artifact.failures.join("; ")} — rewrite it, then run verify again.`,
-                  `explore-invalid:${card.id}`,
-                  now(),
-                );
-              }
-              if (idleAt && now() - idleAt >= IDLE_ATTENTION_MS) {
-                recordInboxEvent(
-                  current,
-                  "paused",
-                  "Idle with unfinished explore — retry continues in place, restart begins fresh.",
-                  `paused:${card.id}:${idleAt}`,
-                  idleAt,
-                );
-              }
-            }
-          }
-        }
-        noteAgentOutput(card, lastOutput);
-      } else if (status === "failed" || status === "error") {
-        await workers.applyFailed(card.id, card.worker_thread_id!, null);
-      }
-    } catch (error) {
-      updateCard(card.id, {
-        activity: "error",
-        last_error:
-          error instanceof Error
-            ? error.message
-            : "Unable to read worker thread.",
-      });
-    }
-    escalateIfStalled(card.id);
-  }
-
   // Single writer for card conversation rows (agent trail, user notes,
   // worker transitions). Returns the comment id for callers that reference it.
   function logCardComment(
@@ -3842,10 +3337,10 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
           appetite,
           reviewGates,
         ),
-      researchStrategy: researchStrategyById,
-      exploreStage: techniqueById,
-      researchIds: () => RESEARCH_STRATEGIES.map((entry) => entry.id),
-      exploreIds: () => TECHNIQUE_CATALOG.map((entry) => entry.id),
+      researchStrategy: trackCapabilities.researchStrategy,
+      exploreStage: trackCapabilities.exploreStage,
+      researchIds: trackCapabilities.researchIds,
+      exploreIds: trackCapabilities.exploreIds,
       defaultPreset: getDefaultPreset,
       getPreset: getPresetById,
       getBandPresetId: presetServer.getBandPresetId,
@@ -3866,7 +3361,7 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       researchPrompt: (input) =>
         researchWorkerPrompt(input as unknown as ResearchWorkerPromptInput),
       explorePrompt: (input) =>
-        exploreWorkerPrompt(input as Parameters<typeof exploreWorkerPrompt>[0]),
+        exploreWorkerPrompt(input as unknown as ExploreWorkerPromptInput),
       rules: {
         cardOwnerRules: CARD_OWNER_RULES,
         neverSeed: NEVER_SEED,
@@ -4483,6 +3978,29 @@ still need, then continue the scope — do not re-claim files you no longer touc
 " +
     "code and refuses with the fix when something is missing. Never just announce completion and stop: only done completes the card.";
 
+  // Research and explore share one lightweight poll; only the per-track
+  // completion contract differs (valid index vs valid stage artifact).
+  const trackSync = createResearchTrackSync({
+    bb,
+    db,
+    now,
+    getCard,
+    updateCard,
+    recordInboxEvent,
+    resolvePausedEvents: (cardId, at) =>
+      resolveInboxEvents(cardId, at, ["paused"], "completed"),
+    recordStageEvent,
+    markThreadRunning,
+    syncQuestions: syncOpenQuestionInbox,
+    noteAgentOutput,
+    applyFailed: (cardId, threadId, error) =>
+      workers.applyFailed(cardId, threadId, error),
+    escalateIfStalled,
+    researchReadiness,
+    exploreArtifact,
+    idleAttentionMs: IDLE_ATTENTION_MS,
+  });
+
   const syncThreadState = createBuildThreadSync({
     bb,
     db,
@@ -4491,8 +4009,8 @@ still need, then continue the scope — do not re-claim files you no longer touc
     cardWorkspace,
     workflowStateDir,
     updateCard,
-    syncResearch: syncResearchThreadState,
-    syncExplore: syncExploreThreadState,
+    syncResearch: trackSync.syncResearch,
+    syncExplore: trackSync.syncExplore,
     syncQuestions: syncOpenQuestionInbox,
     applyFailed: (cardId, threadId, error) => workers.applyFailed(cardId, threadId, error),
     logComment: (cardId, body) =>
@@ -6735,13 +6253,8 @@ the normal build workflow.`,
         .read({ path })
         .then((file) => file.content)
         .catch(() => null),
-    researchStrategySkill: (id) => researchStrategyById(id)?.skill ?? null,
-    exploreTechnique: (id) => {
-      const technique = techniqueById(id);
-      return technique
-        ? { skill: technique.skill, artifactFile: exploreArtifactFile(technique.id) }
-        : null;
-    },
+    researchStrategySkill: trackCapabilities.researchStrategySkill,
+    exploreTechnique: trackCapabilities.exploreTechnique,
   });
 
   registerStelowCli(bb, (argv, context) => runCliCommand(argv, context));

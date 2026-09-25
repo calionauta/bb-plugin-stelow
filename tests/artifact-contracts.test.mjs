@@ -190,10 +190,16 @@ assert.match(
 // done command, both quiet auto-complete sweeps, and manual moves into
 // Done. A Done-column card without one is invisible to flow metrics —
 // that was the whole "N finished vs N in Done" confusion.
+//
+// The two quiet auto-completions (research, explore) no longer each carry
+// their own line: they share one completion writer, so the trail cannot
+// drift between them. tests/runtime-research-track-sync.test.mjs asserts
+// executably that BOTH tracks reach it; this pin only keeps the count at
+// one shared site.
 assert.equal(
   (server.match(/recordStageEvent\(card\.id, "done"\)/g) ?? []).length,
-  2,
-  "both quiet auto-completions record the done event",
+  1,
+  "the quiet auto-completions share one done-trail writer",
 );
 assert.match(
   server,

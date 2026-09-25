@@ -14,6 +14,7 @@ const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/track-prompts.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create-prompt.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8"),
@@ -95,18 +96,11 @@ const doneSites = {
     anchor: "researchRestart ??",
     end: "return { prompt, projectPath, workspace };",
   },
-  reseed: { anchor: "in the re-seeded state.md", end: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")" },
-  research: { anchor: "function researchWorkerPrompt", end: "function exploreWorkerPrompt" },
-  explore: { anchor: "SINGLE-STAGE Stelow exploration", end: "export function createCardInternal" },
+  reseed: {
+    anchor: "in the re-seeded state.md",
+    end: "workers.recordThread(cardId, newThread.id, preset.id, \"reseed\")",
+  },
 };
-// Paid review is offered, never auto-run: both lightweight prompts reference
-// the single REVIEW_PROTOCOL const.
-for (const site of ["research", "explore"]) {
-  const { anchor, end } = doneSites[site];
-  const at = serverSource.indexOf(anchor);
-  const window = serverSource.slice(at, serverSource.indexOf(end, at));
-  assert.ok(window.includes("${REVIEW_PROTOCOL}"), `the ${site} prompt offers paid review as opt-in only`);
-}
 for (const [site, { anchor, end }] of Object.entries(doneSites)) {
   const at = serverSource.indexOf(anchor);
   assert.ok(at >= 0, `the ${site} prompt exists`);
@@ -115,6 +109,21 @@ for (const [site, { anchor, end }] of Object.entries(doneSites)) {
   const window = serverSource.slice(at, stop);
   const doneToken = site === "spawn" ? "%DONE_PROTOCOL%" : "${DONE_PROTOCOL}";
   assert.ok(window.includes(doneToken), `the ${site} prompt references DONE_PROTOCOL`);
+}
+
+// The standalone tracks share one protocol renderer. Pin that renderer and
+// both entry points: a copied protocol block or a track that stops calling the
+// shared renderer fails here before either worker loses the host-owned clauses.
+const protocolFooter = serverSource.slice(
+  serverSource.indexOf("function protocolFooter"),
+  serverSource.indexOf("function researchFlavorLine"),
+);
+assert.match(protocolFooter, /\$\{protocols\.doneProtocol\}/);
+assert.match(protocolFooter, /\$\{protocols\.reviewProtocol\}/);
+for (const track of ["researchWorkerPrompt", "exploreWorkerPrompt"]) {
+  const at = serverSource.indexOf(`function ${track}`);
+  const stop = serverSource.indexOf("\n}", at);
+  assert.match(serverSource.slice(at, stop), /protocolFooter\(protocols\)/);
 }
 
 // Worker verbs: done + playbook are registered, card-resolved, and listed;

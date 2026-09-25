@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   root,
   server,
@@ -115,23 +117,35 @@ assert.match(
   /card\.status === "completed" \|\| card\.status === "blocked"/,
   "sync polls never touch completed/blocked cards",
 );
-const researchSync = server.slice(
-  server.indexOf("async function syncResearchThreadState"),
-  server.indexOf("async function syncExploreThreadState"),
+// Research and explore now share one sweep, so the terminal guard is a single
+// predicate instead of two pasted conditions. The executable coverage lives in
+// tests/runtime-research-track-sync.test.mjs; this pin only constrains the
+// topology that makes the sharing safe — both tracks must enter through the
+// one sweep that consults the one predicate, so a new track handler that
+// polls a thread directly (and forgets the guard) fails here.
+const trackSyncSource = readFileSync(
+  join(root, "server", "runtime", "research-track-sync.ts"),
+  "utf8",
+);
+assert.equal(
+  (trackSyncSource.match(/isTerminalTrackStatus\(/g) ?? []).length,
+  1,
+  "the terminal guard is consulted in exactly one place, the shared sweep",
 );
 assert.match(
-  researchSync,
-  /card\.status === "completed"\s*\|\|\s*card\.status === "archived"\s*\|\|\s*card\.status === "blocked"/,
-  "research sync never writes terminal cards",
+  trackSyncSource,
+  /async function sweepTrack\([\s\S]*?if \(isTerminalTrackStatus\(card\.status\)\) return;/,
+  "the shared sweep refuses terminal cards before it reads the thread",
 );
-const exploreSync = server.slice(
-  server.indexOf("async function syncExploreThreadState"),
-  server.indexOf("async function exploreArtifact"),
+assert.equal(
+  (trackSyncSource.match(/sdk\.threads\.get\(/g) ?? []).length,
+  1,
+  "only the shared sweep reads a worker thread for these tracks",
 );
-assert.match(
-  exploreSync,
-  /card\.status === "completed"\s*\|\|\s*card\.status === "archived"\s*\|\|\s*card\.status === "blocked"/,
-  "explore sync never writes terminal cards",
+assert.equal(
+  (trackSyncSource.match(/return \{[\s\S]*?syncResearch[\s\S]*?syncExplore/gi) ?? []).length,
+  1,
+  "research and explore are exported from the one module entry",
 );
 const failedWriter = serverWorkerRetry.slice(
   serverWorkerRetry.indexOf("async function applyFailed"),
