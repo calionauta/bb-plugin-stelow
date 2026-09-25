@@ -20,40 +20,28 @@ function blocked(final, phase) {
 }
 
 phase("Phase1");
-const phase1 = await workflow({
-  name: "implement-decision-router-recommendation",
-  args: { task, constraints },
-});
+const phase1 = await workflow("implement-decision-router-recommendation", { task, constraints });
 const gate1 = blocked(phase1?.final, "Phase1");
 if (gate1.negative) {
   return { status: "blocked", blockedAt: "Phase1", gate: gate1.text, phase1 };
 }
 
 phase("Phase2");
-const phase2 = await workflow({
-  name: "scope-batch-safety-contract",
-  args: { task, constraints },
-});
+const phase2 = await workflow("scope-batch-safety-contract", { task, constraints });
 const gate2 = blocked(phase2?.final, "Phase2");
 if (gate2.negative) {
   return { status: "blocked", blockedAt: "Phase2", gate: gate2.text, phase1, phase2 };
 }
 
 phase("Phase3");
-const phase3 = await workflow({
-  name: "native-fanout-pilot",
-  args: { task, constraints },
-});
+const phase3 = await workflow("native-fanout-pilot", { task, constraints });
 const gate3 = blocked(phase3?.final, "Phase3");
 if (gate3.negative) {
   return { status: "blocked", blockedAt: "Phase3", gate: gate3.text, phase1, phase2, phase3 };
 }
 
 phase("Phase4");
-const phase4 = await workflow({
-  name: "e2e-closure-validation",
-  args: { task, constraints },
-});
+const phase4 = await workflow("e2e-closure-validation", { task, constraints });
 
 phase("Synthesize");
 const final = await agent(`Synthesize the complete implementation report across all four phases. For each phase state: completed behavior with file and test evidence, remaining gaps, and whether its output is merge-ready. End with one ordered merge/rollout recommendation and the exact validation each step still needs. Do not edit files.\n\nPhase1: ${JSON.stringify(phase1)}\nPhase2: ${JSON.stringify(phase2)}\nPhase3: ${JSON.stringify(phase3)}\nPhase4: ${JSON.stringify(phase4)}`, {
