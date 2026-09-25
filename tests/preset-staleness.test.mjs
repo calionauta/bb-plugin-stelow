@@ -105,8 +105,15 @@ assert.equal(db.prepare("SELECT preset_restart_pending FROM cards WHERE id = 'wo
 // feature seam. A new write path that skips re-evaluation fails here.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-const presetAccessors = readFileSync(join(root, "server/preset-accessors.ts"), "utf8");
-const presetHandlers = readFileSync(join(root, "server/preset-handlers.ts"), "utf8");
+const presetAccessors = [
+  readFileSync(join(root, "server/preset-accessors.ts"), "utf8"),
+  readFileSync(join(root, "server/preset-workers.ts"), "utf8"),
+].join("\n");
+const presetHandlers = [
+  readFileSync(join(root, "server/preset-handlers.ts"), "utf8"),
+  readFileSync(join(root, "server/preset-handler-assignments.ts"), "utf8"),
+  readFileSync(join(root, "server/preset-handler-crud.ts"), "utf8"),
+].join("\n");
 assert.match(
   presetHandlers,
   /table === "reliable_preset"\) accessors\.refreshLiveWorkers\(null\)/,

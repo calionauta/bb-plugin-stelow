@@ -31,14 +31,17 @@ const presetMigrations = readFileSync(
   join(root, "server", "preset-migrations.ts"),
   "utf8",
 );
-const presetHandlers = readFileSync(
-  join(root, "server", "preset-handlers.ts"),
-  "utf8",
-);
-const presetAccessors = readFileSync(
-  join(root, "server", "preset-accessors.ts"),
-  "utf8",
-);
+const presetHandlers = [
+  readFileSync(join(root, "server", "preset-handlers.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-handler-assignments.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-handler-crud.ts"), "utf8"),
+].join("\n");
+const presetAccessors = [
+  readFileSync(join(root, "server", "preset-accessors.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-lookups.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-assignments.ts"), "utf8"),
+  readFileSync(join(root, "server", "preset-workers.ts"), "utf8"),
+].join("\n");
 const cardsCreate = readFileSync(
   join(root, "server", "cards-create.ts"),
   "utf8",
@@ -150,7 +153,7 @@ assert.match(
 );
 assert.match(
   presetAccessors,
-  /reliableOverride: singletonPresetId\(db, "reliable_preset"\)/,
+  /reliableOverride: lookups\.getReliablePresetId\(\)/,
   "the resolver reads the reliable singleton",
 );
 assert.match(
@@ -163,7 +166,7 @@ assert.match(
 // draft-burst band fallback keeps resolving the pure band preset.
 assert.match(
   presetAccessors,
-  /getReliablePresetForBand = \(band: string, cardId: string\): PresetRow =>/,
+  /getReliablePresetForBand\(band: string, cardId: string\): PresetRow/,
   "the reliable resolver exists beside the band resolver",
 );
 assert.match(
@@ -172,8 +175,8 @@ assert.match(
   "the pure band resolver still exists",
 );
 const reliableResolver = presetAccessors.slice(
-  presetAccessors.indexOf("getReliablePresetForBand ="),
-  presetAccessors.indexOf("const presetAttachmentParams"),
+  presetAccessors.indexOf("getReliablePresetForBand("),
+  presetAccessors.indexOf("presetAttachmentParams("),
 );
 assert.ok(
   reliableResolver.includes("resolveReliablePreset({"),
@@ -181,7 +184,7 @@ assert.ok(
 );
 const bandResolver = presetAccessors.slice(
   presetAccessors.indexOf("getPresetForBand ="),
-  presetAccessors.indexOf("getReliablePresetForBand ="),
+  presetAccessors.indexOf("getReliablePresetForBand("),
 );
 assert.ok(
   !bandResolver.includes("reliable"),
@@ -246,12 +249,13 @@ assert.match(
 );
 assert.match(
   server,
-  new RegExp(
-    'const preset = getReliablePresetForBand\\(card\\.kind === \\"research\\" ' +
-      '\\? \\"research\\" : card\\.kind === \\"explore\\" \\? \\"explore\\" : ' +
-      'STAGE_TO_BAND\\[card\\.stage\\] \\?\\? \\"analysis\\", card\\.id\\);',
-  ),
+  /const preset = getReliablePresetForBand\(presetBand, card\.id\);/,
   "the card detail shows the effective preset",
+);
+assert.match(
+  server,
+  /STAGE_TO_BAND\[card\.stage\] \?\? "analysis"/,
+  "the card detail maps the current stage to its band",
 );
 
 // Manager dialog: the Reliable row is a real override select (same

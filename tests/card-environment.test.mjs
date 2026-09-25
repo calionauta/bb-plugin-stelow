@@ -59,6 +59,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = readFileSync(join(root, "server", "plugin-runtime.ts"), "utf8");
 const cardsCreate = readFileSync(join(root, "server/cards-create-persist.ts"), "utf8");
 assert.match(cardsCreate, /environmentFallbackNotice\(input\.environment, prepared\.environment\)/, "creation checks the substitution");
-assert.match(server, /comment: \(cardId, body\) => \{ logCardComment\(cardId, "card", cardId, "agent", body\); \}/, "substitutions page the card");
+assert.match(
+  server,
+  /comment:\s*\(cardId, body\)\s*=>\s*\{\s*logCardComment\(cardId, "card", cardId, "agent", body\);\s*\}\s*,?/,
+  "substitutions page the card",
+);
 
 console.log("card environment test ok: explicit pass-through, honest fallback, creation notice");

@@ -41,8 +41,12 @@ function explicitFiles() {
   });
 }
 
-function resolveComparisonBase() {
-  return optionValue("--base") || process.env.SOURCE_SHAPE_BASE || "origin/master";
+function comparisonBase() {
+  const requested = optionValue("--base") || process.env.SOURCE_SHAPE_BASE || "origin/master";
+  git("rev-parse", "--verify", `${requested}^{commit}`);
+  const target = git("rev-parse", requested).trim();
+  if (target === "HEAD") return git("rev-parse", "HEAD^").trim();
+  return git("merge-base", target, "HEAD").trim();
 }
 
 function assertCommit(ref, label) {
@@ -104,7 +108,7 @@ function inspectFile(file, base) {
 
 function main() {
   assertKnownArguments();
-  const base = resolveComparisonBase();
+  const base = comparisonBase();
   assertCommit(base, "comparison base");
   const requestedFiles = explicitFiles();
   const candidates = requestedFiles.length > 0 ? requestedFiles.filter(isSource) : changedFiles(base);

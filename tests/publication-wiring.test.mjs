@@ -139,9 +139,9 @@ assert.match(
   /selectCardEnvironment\(input\.environment, workerEnvironment/,
   "a card forwards the BB composer environment instead of replacing it with a preset",
 );
-assert.match(server, /workers\.continuingEnvironment\(card/, "later workers reuse the card's selected BB environment");
-assert.match(server, /text: AUDIT_DONE_NUDGE, mentions: \[\], visibility: "agent-only"/, "automatic audit recovery stays out of the user conversation");
-assert.match(server, /text: buildContinueNudge\(\), mentions: \[\], visibility: "agent-only"/, "automatic continuations stay out of the user conversation");
+assert.match(server, /workers\.continuingEnvironment\(\s*card\s*,/, "later workers reuse the card's selected BB environment");
+assert.match(server, /text: AUDIT_DONE_NUDGE,\s*mentions: \[\],\s*visibility: "agent-only"/, "automatic audit recovery stays out of the user conversation");
+assert.match(server, /text: buildContinueNudge\(\),\s*mentions: \[\],\s*visibility: "agent-only"/, "automatic continuations stay out of the user conversation");
 
 assert.match(publication, /title="Git changes"/, "Done cards have a dedicated Git changes panel");
 assert.match(publication, /Commit workspace…/, "commit requires an explicit user action");

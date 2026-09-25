@@ -118,9 +118,16 @@ const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
 assert.match(serverSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
 assert.match(serverSource, /cardStatus: card\.status/, "the audit watchdog receives the persisted card completion state");
+const privateContinuePattern = new RegExp([
+  String.raw`bb\.sdk\.threads\s*\n?\s*\.send\(\{`,
+  String.raw`[\s\S]*?threadId: card\.worker_thread_id,`,
+  String.raw`[\s\S]*?mode: "auto",`,
+  String.raw`[\s\S]*?input: \[[\s\S]*?text: buildContinueNudge\(\),`,
+  String.raw`[\s\S]*?mentions: \[\],[\s\S]*?visibility: "agent-only"`,
+].join(""));
 assert.match(
   serverSource,
-  /bb\.sdk\.threads\s*\n?\s*\.send\(\{[\s\S]*?threadId: card\.worker_thread_id,[\s\S]*?mode: "auto",[\s\S]*?input: \[[\s\S]*?text: buildContinueNudge\(\),[\s\S]*?mentions: \[\],[\s\S]*?visibility: "agent-only"/,
+  privateContinuePattern,
   "auto-continue sends the shared continue nudge privately in place",
 );
 assert.match(
@@ -142,9 +149,14 @@ assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${re
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");
 assert.match(serverSource, /lastTurnAdvancedStages\(recent\)/, "a silent stop scans the finished turn for an advance");
+const advanceEventPattern = new RegExp([
+  String.raw`threads\.events\.list\(\{[\s\S]*?threadId: card\.worker_thread_id,`,
+  String.raw`[\s\S]*?order: "desc",[\s\S]*?limit: "100",`,
+  String.raw`[\s\S]*?types: \["turn\/completed", "turn\/started", "item\/completed"\]`,
+].join(""));
 assert.match(
   serverSource,
-  /threads\.events\.list\(\{[\s\S]*?threadId: card\.worker_thread_id,[\s\S]*?order: "desc",[\s\S]*?limit: "100",[\s\S]*?types: \["turn\/completed", "turn\/started", "item\/completed"\]/,
+  advanceEventPattern,
   "the scan reads turn boundaries and completions only",
 );
 

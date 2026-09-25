@@ -44,10 +44,17 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-assert.match(server, /name: "verify-delegation", summary: "Count worker subagent delegations/, "the delegation tripwire is listed");
-assert.match(server, /if \(argv\[0\] === "verify-delegation"\) \{/, "the tripwire branch exists");
-assert.match(server, /threads\.timeline\(\{ threadId: delegationCard\.worker_thread_id, segmentLimit: "100" \}\)/, "the tripwire reads the worker timeline, never the provider session");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8"),
+].join("\n");
+assert.match(server, /verify-delegation[\s\S]*Count worker subagent delegations/, "the delegation tripwire is listed");
+assert.match(server, /if\s*\(argv\[0\]\s*===\s*"verify-delegation"\)\s*\{/, "the tripwire branch exists");
+assert.match(
+  server,
+  /threads\s*\.timeline\(\{\s*threadId: delegationCard\.worker_thread_id,\s*segmentLimit: "100",?\s*\}\)/,
+  "the tripwire reads the worker timeline, never the provider session",
+);
 assert.match(server, /countDelegations\(timeline\)/, "delegation counting rides the prose-proof lib counter");
 assert.ok(!/db\.prepare\("(INSERT|UPDATE|DELETE|REPLACE)/.test(server.slice(server.indexOf('if (argv[0] === "verify-delegation") {'), server.indexOf('if (argv[0] === "draft") {'))), "verify-delegation makes zero database writes");
 

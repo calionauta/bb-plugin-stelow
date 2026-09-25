@@ -31,10 +31,13 @@ assert.equal(isStaleEnvironment(null), false, "junk reads live, never condemns")
 // Wiring pins: the storage readout is read-only, bounded per path,
 // attributed by thread, and registered beside metrics.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const server = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
-assert.match(server, /\{ name: "storage", summary: "[^"]*read-only/, "the command is registered read-only");
+const server = [
+  readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/cli-registry.ts"), "utf8"),
+].join("\n");
+assert.match(server, /command\("storage", "[^"]*read-only/, "the command is registered read-only");
 assert.match(server, /if \(argv\[0\] === "storage"\) \{/, "the storage branch exists");
-assert.match(server, /bb\.sdk\.environments\.list\(\)/, "rows come from the host registry, never a hand scan");
+assert.match(server, /bb\.sdk\.environments\s*\n\s*\.list\(\)/, "rows come from the host registry, never a hand scan");
 assert.match(server, /unattributed/, "unattributed rows list instead of hiding");
 assert.match(server, /timeout: 8000/, "sizing is bounded per path");
 assert.doesNotMatch(server, /environments\.delete\(/, "the readout never deletes");

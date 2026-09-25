@@ -33,9 +33,13 @@ function slice(start, end) {
 
 // --- The host hands the runtime real effects, or nothing works. -------------
 const wiring = slice("const preview = createPreviewRuntime({", "bb.onDispose(");
-assert.match(wiring, /readFile: \(path\) => bb\.sdk\.files\.read\(\{ path \}\)/, "the runtime must read files through the host");
+assert.match(wiring, /readFile:\s*\(path\)\s*=>\s*bb\.sdk\.files\s*\.read\(\{\s*path\s*\}\)/, "the runtime must read files through the host");
 assert.match(wiring, /listDirs: \(dir\) =>/, "the runtime must be able to list a directory");
-assert.match(wiring, /spawnProcess: \(command, options\) => spawn\("bash", \["-lc", command\]/, "the dev server runs through a login shell in the app directory");
+assert.match(
+  wiring,
+  /spawnProcess:\s*\(command, options\)\s*=>\s*spawn\("bash", \["-lc", command\]/,
+  "the dev server runs through a login shell in the app directory",
+);
 assert.match(wiring, /runConnect,/);
 assert.match(wiring, /baseEnv: process\.env/, "the dev server inherits the server's own environment");
 

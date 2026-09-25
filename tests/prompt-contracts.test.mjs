@@ -127,9 +127,33 @@ assert.match(
   /doneEligibility\(\{[\s\S]*?kind: "build",[\s\S]*?stage: currentStage/,
   "build completion is gated in code, not prose",
 );
-assert.match(serverSource, /runHelper\(\s*\[\s*"audit-trail",\s*"build",\s*"--strict",\s*"--json"/, "build completion creates the upstream portable audit trail behind the strict gate");
-assert.match(serverSource, /runHelper\(\s*\[\s*"audit-trail",\s*"check",\s*"--strict",\s*"--json"/, "build completion re-validates the portable audit trail it just wrote");
-assert.match(serverSource, /auditTrailGate\(\{[\s\S]*?build: trail,[\s\S]*?check: trailCheck,[\s\S]*?verifiedGit: gitEvidence/, "the trail is bound to the Git identity the audit receipt was verified at");
+const auditBuildPattern = new RegExp([
+  String.raw`runHelper\(\s*\[\s*"audit-trail",\s*"build",`,
+  String.raw`\s*"--strict",\s*"--json"`,
+].join(""));
+const auditCheckPattern = new RegExp([
+  String.raw`runHelper\(\s*\[\s*"audit-trail",\s*"check",`,
+  String.raw`\s*"--strict",\s*"--json"`,
+].join(""));
+const auditEvidencePattern = new RegExp([
+  String.raw`auditTrailGate\(\{[\s\S]*?build: trail,`,
+  String.raw`[\s\S]*?check: trailCheck,[\s\S]*?verifiedGit: gitEvidence`,
+].join(""));
+assert.match(
+  serverSource,
+  auditBuildPattern,
+  "build completion creates the upstream portable audit trail behind the strict gate",
+);
+assert.match(
+  serverSource,
+  auditCheckPattern,
+  "build completion re-validates the portable audit trail it just wrote",
+);
+assert.match(
+  serverSource,
+  auditEvidencePattern,
+  "the trail is bound to the Git identity the audit receipt was verified at",
+);
 assert.match(serverSource, /trail\.code === 0\s*\?\s*await runHelper/, "check runs only after a build that succeeded");
 assert.match(
   serverSource,

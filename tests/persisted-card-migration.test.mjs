@@ -276,12 +276,12 @@ const stateOwner = (state) => stateWorkflowId(state);
   const deleteRpc = server.slice(deleteStart, deleteEnd);
   assert.match(
     deleteRpc,
-    /if \(card\.status !== "archived"\) return \{ deleted: false, error: "Only archived cards can be deleted\./,
+    /if\s*\(card\.status\s*!==\s*"archived"\)\s*return\s*\{\s*deleted: false,\s*error: "Only archived cards can be deleted\./,
     "delete refuses an unarchived persisted card",
   );
   assert.match(
     deleteRpc,
-    /workflowStateDir\(bb, workspace\.path, card\.id, card\.dir_hash\)/,
+    /workflowStateDir\(\s*bb,\s*workspace\.path,\s*card\.id,\s*card\.dir_hash,?\s*\)/,
     "delete removes only state owned by the card",
   );
   assert.match(
