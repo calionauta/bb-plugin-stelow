@@ -10,7 +10,9 @@ const root = join(import.meta.dirname, "..");
 
 test("server.ts is a composition root with no upward slice imports", () => {
   const source = readFileSync(join(root, "server.ts"), "utf8");
-  assert.ok(source.split("\n").length - 1 <= 600, "composition root stays at or below 600 lines");
+  // 400 is the repository's file budget (scripts/check-source-budgets.mjs).
+  // A looser number here would let the entrypoint regrow unnoticed.
+  assert.ok(source.split("\n").length - 1 <= 400, "composition root stays within the file budget");
   assert.match(source, /plugin-runtime\.js/, "the root wires the runtime entrypoint");
   assert.match(source, /rpc-contract\.js/, "the root exports the canonical RPC surface");
   assert.equal(rootRpcContract, rpcContract, "the root re-exports the canonical contract");
@@ -89,6 +91,16 @@ test("the composition root only assembles; no surface is built inside it", () =>
     assert.ok(at > cursor, `the root assembles ${step} after the layer it depends on`);
     cursor = at;
   }
+
+  // A fallback constant parked here is how a shape drifts into a second copy:
+  // the root once held the "GitHub is not there" status beside its wiring.
+  const moduleLevel = [...source.matchAll(/^(?:const|let|function|class)\s+(\w+)/gm)]
+    .map((match) => match[1]);
+  assert.deepEqual(
+    moduleLevel,
+    [],
+    "the root declares no module-level value: a constant here is behavior that belongs to a layer",
+  );
 });
 
 test("the thin root and relocated runtime keep one default plugin entrypoint", () => {

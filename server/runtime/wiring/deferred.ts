@@ -1,10 +1,12 @@
 /**
  * A value that is not built yet.
  *
- * Two surfaces genuinely depend on each other: the board's GitHub status
- * column reads the issue automation, and the issue automation imports cards
- * the card server creates. Breaking that with a module-level variable would
- * hide the cycle; this names it, and makes it a value the reader can see.
+ * The host layer builds the GitHub issue automation, and the board's status
+ * column — a card read — asks for it. Those two are built in that order, so
+ * the earlier one cannot hold the later one as a value. There is no import
+ * cycle here to name: this is a construction order, and a module-level
+ * variable would hide it behind a mutable global. This names it, and makes it
+ * a value the reader can see — `undefined` until the binder runs.
  */
 export type Deferred<T> = {
   /** The value, or undefined while it is still being built. */

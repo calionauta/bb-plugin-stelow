@@ -12,6 +12,9 @@
  * is visible: gates depend on the core, execution depends on the gates, cards
  * depend on the execution layer, and the host depends on the cards. Nothing
  * reaches back up.
+ *
+ * Every line below is wiring. There is no behavior here — not a constant, not
+ * a fallback, not a shape.
  */
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { createRuntimeCore } from "./runtime/runtime-core.js";
@@ -27,26 +30,15 @@ import { registerStelowCommand } from "./runtime/wiring/cli-surfaces.js";
 import { deferred } from "./runtime/wiring/deferred.js";
 import type { GithubAutomation } from "./github-issues.js";
 
-/** The shape the board's status column reads, before the automation answers. */
-const GITHUB_UNAVAILABLE = {
-  ok: false,
-  pluginAvailable: false,
-  ghOk: false,
-  repos: [],
-};
-
 export default async function plugin(bb: BbPluginApi) {
   const core = createRuntimeCore(bb);
   const gates = createGateSurfaces(core);
   const execution = createExecutionSurfaces({ core, gates });
-  // The issue automation imports cards, and the board's status column reads
-  // the automation — one cycle, named rather than smuggled through a variable.
+  // The host layer builds the issue automation, and the board's status column
+  // reads it — so it is not built yet when the card layer is wired. The seam
+  // names that order: the card layer gets a reader, the host layer a binder.
   const github = deferred<GithubAutomation>();
-  const cards = createCardSurfaces({
-    core,
-    execution,
-    githubStatus: async () => (await github.read()?.githubStatus()) ?? GITHUB_UNAVAILABLE,
-  });
+  const cards = createCardSurfaces({ core, execution, githubAutomation: github.read });
   registerExecutionLifecycle(core, execution);
   const host = createHostSurfaces({ core, cards, github: github.bind });
   registerStelowRpc({ bb, core, gates, execution, cards, host });

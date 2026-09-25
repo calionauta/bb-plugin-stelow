@@ -7,8 +7,10 @@ the entry.
 
 `server/plugin-runtime.ts` is the plugin's own composition root. It builds the
 runtime core and the five wiring layers and registers their handlers; it holds
-no card, question, artifact, publication, or CLI behavior. The architecture
-below records the recovered seams and the debt that remains outside them.
+no card, question, artifact, publication, or CLI behavior, and no data — the
+one fallback constant that once sat beside its wiring moved to the module that
+owns the shape. The architecture below records the recovered seams and the debt
+that remains outside them.
 
 ## Contract composition
 
@@ -47,6 +49,8 @@ The runtime constructs these modules and spreads or delegates their handlers:
   API seams.
 - `server/github-issues.ts` owns GitHub tables, import claims, automation,
   matching, the scheduler entry point, and all GitHub handlers.
+  `server/github-status.ts` owns the status shape the board's GitHub column
+  reads, including the one value every unavailable answer falls back to.
 - `server/artifacts-publication*.ts` owns publication history, commit diff,
   push terminals, and confirmed Git operations.
 - `server/workspaces-recovery*.ts` owns evidence-led exploratory checkout
@@ -141,15 +145,31 @@ same boundary to the budget gate. It reports inherited debt separately only
 when the current file is no larger than its base version. Moving oversized code
 into a new file does not reset that debt.
 
-The composition root is now 54 lines and owns no surface: it builds the runtime
-core and the five wiring layers, in order, and nothing else. The budget check
-reports no file or function over its limit among the changed sources. The debt
-it still reports is inherited and named here rather than waived: the GitHub
-issue automation (`server/github-issues.ts`, 939 lines), the CLI bundle writer
-and review subject, the workflow seed, and one oversized test callback. Those
-predate the extraction; the gate lists them with their baseline so a change that
-grows them is rejected. New capabilities must use an explicit seam rather than
-growing an existing file.
+The composition root is now 46 lines and owns no surface: it builds the runtime
+core and the five wiring layers, in order, and nothing else.
+`tests/server-composition-root.test.mjs` fails if it grows a module-level
+constant, because a fallback parked beside the wiring is how a shape drifts
+into a second copy.
+
+The budget check reports no file or function over its limit among the changed
+sources. Everything it still reports is inherited, and the gate prints it with
+the baseline it matched so the number can be checked. The full inherited set is
+thirteen entries across six files: the GitHub issue automation
+(`server/github-issues.ts`, 939 lines, plus `runGithubMigrations` and the four
+functions inside `createGithubAutomation`), the CLI bundle writer, review
+subject and split reporter, the workflow seed, the Build dialog's submit
+handler, `lib/trackable-evidence.mjs`'s evidence conditions, and one oversized
+test callback in `tests/server-cards.test.mjs`. Those predate the extraction.
+
+One caveat, because the gate is a heuristic and not a lineage record: when a
+function has no same-named baseline it is matched to the most similar function
+in the base tree, and that match alone can waive it. `deliverableSubject` in
+`server/runtime/cli/cli-review-subject.ts` is currently waived that way — its
+real ancestor was named differently on `master`, and the match it scored
+against is an unrelated function. So "inherited" means "not worse than something
+comparable", not "provably relocated and shrunk", and a change that grows one of
+these may still be accepted. New capabilities must use an explicit seam rather
+than growing an existing file.
 
 ## Portable blueprint evidence
 

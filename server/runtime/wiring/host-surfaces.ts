@@ -7,8 +7,9 @@
  * together because the scheduler belongs to the feature it drives: disabling
  * the module (STELOW_GITHUB_ISSUES=0) stops the ticks along with the RPCs.
  *
- * This layer sits above the card surfaces only because the GitHub automation
- * imports cards. Nothing else here depends on a card existing.
+ * This layer sits above the card surfaces because the issue automation it
+ * builds needs the card server, and it is the only thing here that does.
+ * Nothing else depends on a card existing.
  */
 import { createGithubAutomation } from "../../github-issues.js";
 import { createArtifactsPublication } from "../../artifacts-publication.js";
@@ -36,7 +37,7 @@ export type HostSurfaces = ReturnType<typeof createHostSurfaces>;
 export type HostSurfaceDeps = {
   core: RuntimeCore;
   cards: CardSurfaces;
-  /** Bind the built automation to the cycle the card surfaces read through. */
+  /** Bind the built automation to the seam the card surfaces read through. */
   github: (automation: GithubAutomation) => void;
 };
 

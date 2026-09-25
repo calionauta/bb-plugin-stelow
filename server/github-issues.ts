@@ -21,6 +21,7 @@ import { applyRulePrompt, findRelatedIssues, githubIntentFor, normalizeGithubAut
 import { carriesMarker, markerFor } from "../lib/github-writeback.mjs";
 import { matchAutomationIssues, previewAutomationMatches } from "../lib/automation-rules.mjs";
 import { sortedUnion } from "../lib/github-lists.mjs";
+import { githubUnavailableStatus } from "./github-status.js";
 
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -317,7 +318,9 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       const pluginMissing = /plugin.*(not.*found|missing|unavailable)|github.*not/i.test(message);
-      return { ok: pluginMissing, pluginAvailable: false, ghOk: false, repos: [] as Array<{ repo: string; projectId: string | null }> };
+      // A plugin that is genuinely missing is an answer, not a failure: `ok`
+      // stays true so the board can say "not installed" over "not reachable".
+      return { ...githubUnavailableStatus(), ok: pluginMissing };
     }
   }
 
@@ -803,7 +806,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
       // Idempotent: a linked card returns its link instead of creating twice.
       const existing = db.prepare("SELECT repo, number FROM github_imports WHERE card_id = ?").get(cardId) as { repo: string; number: number } | undefined;
       if (existing) return { ok: true, url: `https://github.com/${existing.repo}/issues/${existing.number}`, number: existing.number, error: null };
-      const status = await githubStatusResolved().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] as Array<{ repo: string; projectId: string | null }> }));
+      const status = await githubStatusResolved().catch(() => githubUnavailableStatus());
       if (!status.ghOk) return { ok: false, url: null, number: null, error: "GitHub is not connected — set up GitHub auth first." };
       const mapped = status.repos.filter((entry) => entry.projectId === card.project_id).map((entry) => entry.repo);
       const resolved = resolveTargetRepo({ mapped, requested: repo ?? null });
@@ -846,7 +849,7 @@ export function createGithubAutomation(ctx: GithubAutomationDeps) {
         if (!card || ctx.cards.normalizeStatus(card.status) === "archived") {
           return { linked: false, repo: null, number: null, url: null, comments: [], updatedAt: null, canCreate: false, repos: [] as string[] };
         }
-        const status = await githubStatusResolved().catch(() => ({ ok: false, pluginAvailable: false, ghOk: false, repos: [] as Array<{ repo: string; projectId: string | null }> }));
+        const status = await githubStatusResolved().catch(() => githubUnavailableStatus());
         const repos = status.ghOk ? status.repos.filter((entry) => entry.projectId === card.project_id).map((entry) => entry.repo) : [];
         return { linked: false, repo: null, number: null, url: null, comments: [], updatedAt: null, canCreate: repos.length > 0, repos };
       }

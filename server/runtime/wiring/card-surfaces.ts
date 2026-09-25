@@ -19,7 +19,8 @@ import {
 import { resetAutoContinue } from "../../../lib/auto-continue.mjs";
 import { buildContinueInput } from "../../../lib/worker-continuation.mjs";
 import { createCardsServer } from "../../cards.js";
-import { githubIssuesEnabled } from "../../github-issues.js";
+import { githubIssuesEnabled, type GithubAutomation } from "../../github-issues.js";
+import { githubUnavailableStatus } from "../../github-status.js";
 import { createWorkspacesRecovery } from "../../workspaces-recovery.js";
 import { createCardDetailHandler } from "../card-detail.js";
 import { createCardMutationHandlers } from "../card-mutations.js";
@@ -46,16 +47,16 @@ export type CardSurfaceDeps = {
   core: RuntimeCore;
   execution: ExecutionSurfaces;
   /**
-   * The board's GitHub status column. The automation that owns it is built
-   * after the card server it can import cards into, so this is a call, not a
-   * value: the read happens per request, long after both are wired.
+   * The issue automation, read late. The host layer builds it, and the host
+   * layer is built after this one, so this is a call rather than a value: the
+   * board's status column is asked per request, long after both are wired.
    */
-  githubStatus: () => Promise<unknown>;
+  githubAutomation: () => GithubAutomation | undefined;
 };
 
 export function createCardSurfaces(deps: CardSurfaceDeps) {
   const { core, execution } = deps;
-  const cards = buildCardsServer(core, deps.githubStatus);
+  const cards = buildCardsServer(core, deps.githubAutomation);
   const workspacesRecovery = buildWorkspacesRecovery(core, cards);
   return {
     cards,
@@ -77,7 +78,7 @@ export function createCardSurfaces(deps: CardSurfaceDeps) {
  */
 function buildCardsServer(
   core: RuntimeCore,
-  githubStatus: () => Promise<unknown>,
+  githubAutomation: () => GithubAutomation | undefined,
 ) {
   const { bb, db, now, presetServer } = core;
   const ERRORS = core.ERRORS;
@@ -92,7 +93,10 @@ function buildCardsServer(
     },
     idleAttentionMs: 90_000,
     loadBoard: (projectId) => core.loadBoard(bb, projectId),
-    githubStatus,
+    // A board read must answer even when the automation is not there yet, so
+    // the unavailable status is this feature's own, not a literal repeated
+    // per caller. It never throws: the column is a column, not a gate.
+    githubStatus: async () => (await githubAutomation()?.githubStatus()) ?? githubUnavailableStatus(),
     githubAutomationEnabled: githubIssuesEnabled,
     strategyList: core.strategyList,
     getReliablePreset: presetServer.getReliablePresetForBand,
