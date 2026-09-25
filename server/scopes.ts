@@ -12,6 +12,7 @@ import {
 import { isSpecTechFile, plansRelDir } from "../lib/tracking-paths.mjs";
 import { mergePlannedTasks } from "../lib/spec-scope-reader.mjs";
 import { workflowEntryForOwner, workflowStateRelativeDir } from "../lib/workflow-state-identity.mjs";
+import { array, record, text, type LooseRecord } from "./runtime/values.js";
 
 export type ScopeStatus =
   | "draft"
@@ -27,7 +28,6 @@ export type ScopeStatus =
   | "escalated"
   | "failed";
 
-type LooseRecord = Record<string, unknown>;
 
 export interface ScopeTask {
   id: string;
@@ -75,20 +75,6 @@ const STATUSES = new Set<ScopeStatus>([
   "escalated",
   "failed",
 ]);
-
-function record(value: unknown): LooseRecord {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as LooseRecord
-    : {};
-}
-
-function text(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
-}
-
-function array(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
 
 function strings(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;

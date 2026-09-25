@@ -85,11 +85,17 @@ assert.match(
   "helper cwd/state stays on the source",
 );
 
-// Terminal release is total: every path funnels through one function.
-assert.ok(
-  doneFamily.includes("await deps.releaseCardClaims(card.id);"),
-  "every done track releases the card's claims",
-);
+// Terminal release is total: every done track releases the card's claims.
+// The count is the contract — research, explore, and build each write one
+// release, so a track that drops it (or a fourth track that forgets) fails
+// here instead of leaving a completed card holding its claims.
+const releaseSites = [
+  ...doneFamily.matchAll(/await deps\.releaseCardClaims\(card\.id\);/g),
+  ...readFileSync(join(root, "server/runtime/cli/cli-done-build.ts"), "utf8").matchAll(
+    /await deps\.releaseCardClaims\(card\.id\);/g,
+  ),
+];
+assert.equal(releaseSites.length, 3, "every done track releases the card's claims");
 assert.match(operations, /if \(isClaimTerminal\(status\)\) await deps\.releaseClaims\(cardId\)/, "board moves release on every terminal status");
 
 // Ghost holders are terminal-or-gone everywhere, never archived-only:

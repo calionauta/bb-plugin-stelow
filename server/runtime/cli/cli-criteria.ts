@@ -28,7 +28,6 @@ const MODE_REFUSAL =
 type CriteriaInput = {
   skillArg: string;
   artifactArg: string;
-  content: string;
   json: boolean;
 };
 
@@ -61,7 +60,6 @@ export function createCriteriaCommand(deps: CliDeps): CliCommandFn {
     return runCriteria(deps, card, {
       skillArg: scanned.flags.skill,
       artifactArg: scanned.flags.artifact,
-      content: "",
       json,
     });
   };

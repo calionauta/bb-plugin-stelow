@@ -1,9 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildCard, callsNamed, cliHarness, firstCall } from "./helpers/cli-harness.mjs";
+import {
+  buildCard,
+  callsNamed,
+  cliHarness,
+  firstCall,
+} from "./helpers/cli-harness.mjs";
+import { stelowCliCommands } from "../server/runtime/cli-registry.ts";
 
 /** The dispatcher contract: which family owns which verb, what an unknown
  * verb says, and that help stays with the registry. */
+
+test("every advertised verb below the inspector is claimed by a command family", async () => {
+  // A verb the help text advertises but the table never claims is a command
+  // that answers "Unknown command" while looking documented. The inspector
+  // verbs and help are answered above the table, so they are out of scope.
+  const aboveTable = new Set(["status", "playbook", "doctor", "schema", "help"]);
+  const { invoke } = cliHarness();
+  const unclaimed = [];
+  for (const { name } of stelowCliCommands) {
+    if (aboveTable.has(name)) continue;
+    // A family that claims the verb may still need host surface the harness
+    // does not fake; a throw still proves the verb was claimed, since an
+    // unclaimed verb falls through to the unknown-command refusal.
+    try {
+      const result = await invoke([name]);
+      if (/Unknown command/.test(result.stderr ?? "")) unclaimed.push(name);
+    } catch {
+      continue;
+    }
+  }
+  assert.deepEqual(unclaimed, [], "every advertised verb has exactly one owner");
+});
 
 test("the dispatcher answers each verb from exactly one family", async () => {
   const { invoke, calls } = cliHarness();

@@ -7,13 +7,7 @@ import {
   readdirSync,
   writeFileSync,
 } from "node:fs";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join as nodeJoin,
-  relative,
-} from "node:path";
+import { basename, dirname, isAbsolute, join as nodeJoin } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
@@ -243,6 +237,8 @@ import { createPlatformHandlers } from "./runtime/platform.js";
 import { createCardPreview } from "./runtime/card-preview.js";
 import { createInspectionCommand } from "./runtime/cli-inspection.js";
 import { createStelowCliRun } from "./runtime/cli/cli-dispatcher.js";
+import { cardAttachments, workspaceRelative } from "./runtime/card-files.js";
+import { array, record, text, type LooseRecord } from "./runtime/values.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { createResearchTrackSync } from "./runtime/research-track-sync.js";
 import {
@@ -403,11 +399,7 @@ function readPinnedStelowVersion(): string | null {
 // have an explicit preset default independent of the build analysis phase.
 // Bands live in lib/workflow-vocabulary.mjs (single source shared with the panel).
 
-import {
-  attachmentSchema,
-  boardWorkflowDefaultsSchema,
-  workflowSchema,
-} from "./contracts.js";
+import { boardWorkflowDefaultsSchema, workflowSchema } from "./contracts.js";
 export { rpcContract } from "./rpc-contract.js";
 import { rpcContract } from "./rpc-contract.js";
 
@@ -419,7 +411,6 @@ export type PreviewInfo = z.infer<typeof rpcContract.previewState.output>;
 
 type FilesApi = BbPluginApi["sdk"]["files"];
 type Workflow = z.infer<typeof workflowSchema>;
-type LooseRecord = Record<string, unknown>;
 
 const GATES = {
   gate: { artifact: "product-spec", receipt: "gate-approved.md" },
@@ -427,16 +418,6 @@ const GATES = {
   "plan-gate": { artifact: "tech-plan", receipt: "plan-gate-approved.md" },
   "diff-gate": { artifact: "other", receipt: "diff-gate-approved.md" },
 } as const;
-
-function record(value: unknown): LooseRecord {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as LooseRecord)
-    : {};
-}
-
-function text(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
-}
 
 function recoveryNudge(card: WorkerCard, interfacePick: string): string {
   if (card.kind === "research") {
@@ -455,10 +436,6 @@ stage deliverable is complete, STOP and end your turn. If a \`bb stelow\` comman
 turn debugging the CLI; report the exact error and move on.`;
   }
   return buildContinueNudge(interfacePick);
-}
-
-function array(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
 }
 
 // Short human status for the GitHub completion summary (English).
@@ -529,17 +506,6 @@ function fileTimestamp(
     modifiedAtMs > 0
     ? new Date(modifiedAtMs).toISOString()
     : fallback;
-}
-
-function safeRelative(path: string): string {
-  if (
-    !path ||
-    path.startsWith("/") ||
-    path.split("/").some((part) => part === "..")
-  ) {
-    throw new Error("Path must stay inside the project workspace.");
-  }
-  return path;
 }
 
 async function seedWorkflow(
@@ -717,25 +683,6 @@ async function seedWorkflow(
 }
 
 import { isManagedWorktreeEnvironment } from "../lib/card-environment.mjs";
-
-function cardAttachments(
-  raw: string | null,
-): Array<z.infer<typeof attachmentSchema>> {
-  try {
-    return z.array(attachmentSchema).parse(JSON.parse(raw ?? "[]"));
-  } catch {
-    return [];
-  }
-}
-
-function workspaceRelative(rootPath: string, path: string): string | null {
-  const value = isAbsolute(path) ? relative(rootPath, path) : path;
-  try {
-    return safeRelative(value);
-  } catch {
-    return null;
-  }
-}
 
 // Round-artifact validity lives in lib/research-artifacts (pure, unit-tested):
 // researchRoundMirrorsIndex + isValidRoundContent + findInvalidRounds. The

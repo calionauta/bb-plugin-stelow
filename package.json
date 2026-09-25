@@ -101,7 +101,7 @@
     "test:question-staleness": "node tests/question-staleness.test.mjs",
     "test:question-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-question-answers.test.mjs",
     "test:card-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-card-state.test.mjs tests/runtime-card-handlers.test.mjs tests/runtime-card-promotion.test.mjs",
-    "test:cli-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-cli-commands.test.mjs tests/runtime-cli-ask.test.mjs tests/runtime-cli-advisory.test.mjs tests/runtime-cli-review.test.mjs",
+    "test:cli-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-cli-commands.test.mjs tests/runtime-cli-ask.test.mjs tests/runtime-cli-advisory.test.mjs tests/runtime-cli-review.test.mjs tests/runtime-cli-done-gates.test.mjs",
     "test:research-runtime": "node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/runtime-research-index.test.mjs tests/runtime-research-fanout.test.mjs tests/runtime-research-strategy.test.mjs",
     "test:draft": "node tests/draft-burst.test.mjs && node --experimental-strip-types --import ./tests/register-ts-source.mjs --test tests/server-drafting.test.mjs",
     "test:spawn-freshness": "node tests/spawn-freshness.test.mjs",

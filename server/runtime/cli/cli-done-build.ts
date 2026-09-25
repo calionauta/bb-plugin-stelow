@@ -6,6 +6,7 @@ import { parseArtifactManifest } from "../../../lib/artifact-manifest.mjs";
 import { doneBuildGates } from "../../../lib/build-gates.mjs";
 import { doneEligibility } from "../../../lib/completion.mjs";
 import { countScopeDialects } from "../../../lib/spec-scope-reader.mjs";
+import { isDoneStatus } from "../../../lib/trackables.mjs";
 import { recordTrackableEvent } from "../../../lib/trackable-events.mjs";
 import { latestSpecTech, loadCardScopes } from "../../scopes.js";
 import { refuse, type CliResult, type Refusal } from "./cli-contract.js";
@@ -66,6 +67,10 @@ export async function doneBuild(
   if (specRefusal) return { exitCode: 1, stderr: specRefusal };
   const evidence = await checkoutEvidence(deps, card);
   if ("refusal" in evidence) return evidence.refusal;
+  const shallow = await documentRefusal(deps, card);
+  if (shallow) return { exitCode: 1, stderr: shallow };
+  const rework = await reworkLoopRefusal(deps, card);
+  if (rework) return { exitCode: 1, stderr: rework };
   const verificationRun = latestVerificationRun(deps, card.id);
   const verification = verificationReadiness(verificationRun, evidence.git);
   if (!verification.ready) return { exitCode: 1, stderr: verification.error };
@@ -202,6 +207,56 @@ async function checkoutEvidence(
   if (checkout?.path && (!git?.isGit || !git.gitRoot || !git.headSha))
     return refuse({ exitCode: 1, stderr: GIT_EVIDENCE_LOST });
   return { checkoutPath: checkout?.path ?? null, git };
+}
+
+/** Recognized workflow documents (spec-product, spec-tech, interfaces,
+ * testing-strategy, critique reports) must meet their stage contract
+ * (lib/artifact-contracts): unknown files, audit.md, and receipts never block
+ * — only a matched document that fails depth does. */
+async function documentRefusal(
+  deps: CliDeps,
+  card: WorkerCard,
+): Promise<string | null> {
+  const shallow = await deps.docDepths(card).catch(() => []);
+  if (shallow.length === 0) return null;
+  return shallow
+    .map(
+      (doc) =>
+        `FAIL ${doc.label} (${doc.path}): needs depth — ${doc.failures.join("; ")} — rewrite it, then run done again.`,
+    )
+    .join("\n");
+}
+
+/** Gap-registry loop: a matched execution critique with escalate rows must
+ * link every row to an audit-gap scope, and every linked scope must be done —
+ * otherwise done would certify known rework as complete. No matched critique
+ * means no enforcement. */
+async function reworkLoopRefusal(
+  deps: CliDeps,
+  card: WorkerCard,
+): Promise<string | null> {
+  const gapState = await deps.gapState(card).catch(() => null);
+  if (!gapState?.matched) return null;
+  if (gapState.failures.length > 0) return gapState.failures.join("\n");
+  const linked = new Set(
+    gapState.auditGapScopes
+      .map((scope) => scope.gap)
+      .filter((gap): gap is string => typeof gap === "string"),
+  );
+  const unscoped = gapState.escalated.filter((gap) => !linked.has(gap.description));
+  if (unscoped.length > 0) {
+    return `Build completion is blocked: ${unscoped.length} escalated gap(s) have no rework scope — this card is not done, it loops back: \
+run \`bb stelow gap-scopes\`, \`bb stelow advance execution\`, execute the new scopes, re-run \
+the critique, then run done again:\n${unscoped.map((gap) => `- ${gap.description}`).join("\n")}`;
+  }
+  const pendingRework = gapState.auditGapScopes.filter(
+    (scope) => !isDoneStatus(scope.status),
+  );
+  if (pendingRework.length === 0) return null;
+  return `Build completion is blocked: ${pendingRework.length} audit-gap rework \
+scope(s) still open — finish them, then run done again:\n${
+    pendingRework.map((scope) => `- ${scope.name} (${scope.status})`).join("\n")
+  }`;
 }
 
 /** Invisible-scopes companion: audit with zero synced scopes but scope

@@ -30,7 +30,7 @@ export const NOW = 1_700_000_000_000;
 
 /** The empty gap registry: no critique on the card, so every gap-driven gate
  * refuses instead of inventing rows. */
-const NO_GAPS = {
+export const NO_GAPS = {
   matched: false,
   failures: [],
   escalated: [],
@@ -88,34 +88,56 @@ function fakeBb(calls, options = {}) {
       },
     },
     sdk: {
-      files: {
-        read: async ({ path }) => {
-          calls.push(["read", path]);
-          const content = options.files?.[path];
-          if (content === undefined) throw new Error("ENOENT");
-          return { content };
-        },
-        write: async (payload) => calls.push(["write", payload]),
-        mkdir: async (payload) => calls.push(["mkdir", payload]),
-      },
+      files: fakeFiles(calls, options),
       environments: {
         list: async () => {
           calls.push(["environments"]);
           return options.environments ?? [];
         },
       },
-      threads: {
-        get: async ({ threadId }) => {
-          calls.push(["thread.get", threadId]);
-          return options.reviewerThread ?? { status: "idle" };
-        },
-        output: async () => ({ output: options.reviewerOutput ?? "" }),
-      },
+      threads: fakeThreads(calls, options),
       plugins: {
         callRpc: async (input) => {
           calls.push(["callRpc", input]);
           return options.rpcResult ?? { ok: true, created: [], error: null };
         },
+      },
+    },
+  };
+}
+
+/** Workspace files: reads answer from the option map and fail like the host
+ * does, so a missing file exercises the same fail-soft path. */
+function fakeFiles(calls, options) {
+  return {
+    read: async ({ path }) => {
+      calls.push(["read", path]);
+      const content = options.files?.[path];
+      if (content === undefined) throw new Error("ENOENT");
+      return { content };
+    },
+    write: async (payload) => calls.push(["write", payload]),
+    mkdir: async (payload) => calls.push(["mkdir", payload]),
+  };
+}
+
+/** Threads: the reviewer's status and output, the worker's timeline, and the
+ * token-usage events the run bundle sums. */
+function fakeThreads(calls, options) {
+  return {
+    get: async ({ threadId }) => {
+      calls.push(["thread.get", threadId]);
+      return options.reviewerThread ?? { status: "idle" };
+    },
+    output: async () => ({ output: options.reviewerOutput ?? "" }),
+    timeline: async ({ threadId }) => {
+      calls.push(["thread.timeline", threadId]);
+      return options.timeline ?? { segments: [] };
+    },
+    events: {
+      list: async ({ threadId }) => {
+        calls.push(["thread.events", threadId]);
+        return options.tokenEvents ?? [];
       },
     },
   };
@@ -262,7 +284,9 @@ function commandDeps(calls, options) {
     },
     draftingCommand: async (argv) => {
       calls.push(["drafting", argv]);
-      return options.draftingResult ?? null;
+      // The drafting server answers its own verbs and returns null for
+      // anything else, so the default claims `draft` and nothing more.
+      return options.draftingResult ?? { exitCode: 0, stdout: "drafted" };
     },
     advanceCli: async () => {
       calls.push(["advance"]);
@@ -297,6 +321,68 @@ export function cliHarness(options = {}) {
 
 export function callsNamed(calls, name) {
   return calls.filter(([entry]) => entry === name);
+}
+
+const HEAD = "a".repeat(40);
+const STATE = `${WORKSPACE}/.stelow/state`;
+const TEST_COMMAND = "npm test";
+
+/** A Build card that has earned Done: the state file owns the stage and
+ * registers the audit receipt, the receipt names this exact checkout, Git
+ * identity, and the host-run test command, the last test run matches that
+ * identity, and the portable trail attests the same tree. Everything a gate
+ * could refuse on is satisfied here, so a test can single out one gate. */
+export function auditableBuildDone(overrides = {}) {
+  return {
+    files: {
+      [`${STATE}/state.md`]: `current_stage: audit\nartifacts:\n  - stage: audit\n    path: docs/audit.md\n`,
+      [`${STATE}/audit.md`]: auditReceipt(),
+      [`${WORKSPACE}/docs/audit.md`]: "# Audit\n\nThe receipt body lives in the state dir.\n",
+    },
+    rows: {
+      verification_runs: {
+        command: TEST_COMMAND,
+        git_root: WORKSPACE,
+        head_sha: HEAD,
+        exit_code: 0,
+      },
+    },
+    helper: {
+      code: 0,
+      stderr: "",
+      stdout: JSON.stringify({
+        contract: "v3",
+        ok: true,
+        snapshot: { head: HEAD, root: WORKSPACE },
+      }),
+    },
+    ...overrides,
+  };
+}
+
+/** A receipt the readiness predicate accepts: every required section, over the
+ * minimum length, naming the checkout, the Git identity, and the test run. */
+function auditReceipt() {
+  return [
+    "# Audit",
+    "",
+    "## Acceptance criteria",
+    "Checkout accepts a promo code and shows the discounted total.",
+    "",
+    "## Verification",
+    "Manual pass on the staged build, plus the host-recorded test run.",
+    "",
+    "## Tests",
+    `Ran ${TEST_COMMAND} in the execution checkout; the run is recorded against this HEAD.`,
+    "",
+    "## Git evidence",
+    `Git root: ${WORKSPACE}`,
+    `HEAD: ${HEAD}`,
+    "",
+    "## Execution context",
+    `Executed in ${WORKSPACE}, the checkout the worker changed for this card.`,
+    "",
+  ].join("\n");
 }
 
 export function firstCall(calls, name) {
