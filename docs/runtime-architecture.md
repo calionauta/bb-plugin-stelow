@@ -139,8 +139,8 @@ when the current file is no larger than its base version. Moving oversized code
 into a new file does not reset that debt.
 
 The remaining technical debt is concrete: `server/plugin-runtime.ts` is still
-roughly 10.3k lines, and 29 of its functions exceed the 50-line source budget.
-It also retains substantial RPC and CLI behavior beyond composition. New
+roughly 10.3k lines, and the budget check currently rejects 26 of its
+functions. It also retains substantial RPC and CLI behavior beyond composition. New
 capabilities must use an explicit seam rather than growing that file. The
 budget check is authoritative; the current failures are listed in the branch
 review rather than waived in this document. The extracted modules listed above
