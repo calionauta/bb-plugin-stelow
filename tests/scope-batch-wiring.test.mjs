@@ -11,6 +11,8 @@ import {
   admitScopeBatchRun,
   cancelScopeBatchRun,
   claimScopeBatchRun,
+  collectScopeBatchPilotReceiptsRun,
+  evaluateScopeBatchPilotRun,
   finishScopeBatchRun,
   guardScopeBatchWrite,
   mergeScopeBatchRun,
@@ -214,6 +216,137 @@ assert.match(scopesSource, /scopeDoneGate\(deps\.db/, "scope done passes through
   const lapsed = await runScopeCommand(["scope", "done", "--scope", "scope-a"], { threadId: "t-1" }, deps);
   assert.equal(lapsed.exitCode, 1, "a lapsed done refuses");
   assert.match(lapsed.stderr ?? "", /CLAIM_REQUIRED/, "lapse names the missing claim");
+}
+
+// Pilot boundary: native fan-out ONLY for disjoint scopes with
+// satisfied claims, proven capabilities, and the pilot flag on.
+// Every gate failure falls back to coordinator-sequential with no
+// partial fan-out; overlapping scopes never fan out.
+{
+  const disjoint = [
+    { scopeId: "scope-a", targetFiles: ["src/a.ts"] },
+    { scopeId: "scope-b", targetFiles: ["src/b.ts"] },
+  ];
+  const capable = { "file-claims": true, "isolated-workspace": true };
+  const admitted = evaluateScopeBatchPilotRun({
+    scopes: disjoint,
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: capable,
+    nativePilotAllowed: true,
+  });
+  assert.equal(admitted.decision.mode, "native", "pilot admits disjoint satisfied-claims batch");
+  assert.equal(admitted.admission.admitted, true, "pilot admission passes disjoint partitions");
+
+  const overlapping = evaluateScopeBatchPilotRun({
+    scopes: [
+      { scopeId: "scope-a", targetFiles: ["src/shared.ts"] },
+      { scopeId: "scope-b", targetFiles: ["src/shared.ts"] },
+    ],
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: capable,
+    nativePilotAllowed: true,
+  });
+  assert.equal(overlapping.decision.mode, "coordinator-sequential", "overlapping scopes never fan out");
+  assert.equal(overlapping.decision.code, "PARTITION_OVERLAP", "overlap fallback names its gate");
+
+  for (const [name, args, code] of [
+    [
+      "flag off rolls back",
+      {
+        scopes: disjoint,
+        satisfiedScopeIds: ["scope-a", "scope-b"],
+        nativeCapabilities: capable,
+        nativePilotAllowed: false,
+      },
+      "PILOT_DISABLED",
+    ],
+    [
+      "live host capabilities force sequential",
+      {
+        scopes: disjoint,
+        satisfiedScopeIds: ["scope-a", "scope-b"],
+        nativeCapabilities: {},
+        nativePilotAllowed: true,
+      },
+      "PILOT_CAPABILITY_GATE",
+    ],
+    [
+      "missing claim rejects the batch",
+      {
+        scopes: disjoint,
+        satisfiedScopeIds: ["scope-a"],
+        nativeCapabilities: capable,
+        nativePilotAllowed: true,
+      },
+      "PILOT_ADMISSION_GATE",
+    ],
+  ]) {
+    const fallback = evaluateScopeBatchPilotRun(args);
+    assert.equal(fallback.decision.mode, "coordinator-sequential", `pilot falls back: ${name}`);
+    assert.equal(fallback.decision.code, code, `fallback names its gate: ${name}`);
+  }
+
+  // One-flag rollback: the recorded waiver value restores sequential
+  // for the exact batch the pilot just admitted.
+  const rolledBack = evaluateScopeBatchPilotRun({
+    scopes: disjoint,
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: capable,
+    nativePilotAllowed: false,
+  });
+  assert.equal(rolledBack.decision.mode, "coordinator-sequential", "one flag restores sequential");
+}
+
+// Pilot receipts land per scope: every scope returns claim
+// verification, files touched, and an artifact manifest; the merge
+// stays refused until all receipts collect, then post-merge
+// verification still gates success.
+{
+  const scopes = [
+    { scopeId: "scope-a", targetFiles: ["src/a.ts"] },
+    { scopeId: "scope-b", targetFiles: ["src/b.ts"] },
+  ];
+  const complete = collectScopeBatchPilotReceiptsRun(
+    [
+      { scopeId: "scope-a", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: ["a.md"] },
+      { scopeId: "scope-b", claimVerified: true, filesTouched: ["src/b.ts"], artifacts: ["b.md"] },
+    ],
+    scopes,
+  );
+  assert.equal(complete.ok, true, "per-scope receipts collect");
+  assert.deepEqual(Object.keys(complete.receiptsByScope).sort(), ["scope-a", "scope-b"], "receipts land per scope");
+
+  const incomplete = collectScopeBatchPilotReceiptsRun(
+    [{ scopeId: "scope-a", claimVerified: true, filesTouched: ["src/a.ts"], artifacts: ["a.md"] }],
+    scopes,
+  );
+  assert.equal(incomplete.ok, false, "a missing receipt refuses the merge");
+  assert.equal(incomplete.code, "RECEIPT_MISSING", "missing receipt falls back to sequential retry");
+
+  const unverified = collectScopeBatchPilotReceiptsRun(
+    [
+      { scopeId: "scope-a", claimVerified: false, filesTouched: ["src/a.ts"], artifacts: ["a.md"] },
+      { scopeId: "scope-b", claimVerified: true, filesTouched: ["src/b.ts"], artifacts: ["b.md"] },
+    ],
+    scopes,
+  );
+  assert.equal(unverified.ok, false, "an unverified receipt refuses the merge");
+
+  // Parent merge gate: receipts collected, then the coordinator merges
+  // only clean scopes and verifies the parent before success.
+  const merged = mergeScopeBatchRun("batch-pilot", [
+    { scopeId: "scope-a", files: { "src/a.ts": "a" }, status: "succeeded" },
+    { scopeId: "scope-b", files: { "src/b.ts": "b" }, status: "succeeded" },
+  ], {});
+  assert.equal(merged.ok, true, "clean pilot scopes merge");
+  const verified = verifyScopeBatchRun(
+    "batch-pilot",
+    { batchId: "batch-pilot", mergeCommit: "m", verifiedAt: 2, mergeAt: 1 },
+    "m",
+  );
+  assert.equal(verified.ok, true, "post-merge verification gates pilot success");
+  const stale = verifyScopeBatchRun("batch-pilot", { batchId: "batch-other", mergeCommit: "m", verifiedAt: 2, mergeAt: 1 }, "m");
+  assert.equal(stale.ok, false, "stale verification refuses pilot success and forces sequential retry");
 }
 
 console.log("scope-batch-wiring: ok");

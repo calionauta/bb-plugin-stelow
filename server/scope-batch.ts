@@ -4,6 +4,13 @@ import {
   ensureCardClaimsTables,
 } from "../lib/card-claims.mjs";
 import { checkScopeWrite } from "../lib/execution-route.mjs";
+import {
+  NATIVE_SCOPE_BATCH_PILOT_ALLOWED,
+  SCOPE_BATCH_PILOT_MAX_CONCURRENCY,
+  SCOPE_BATCH_PILOT_TIMEOUT_MS,
+  collectScopeBatchPilotReceipts,
+  evaluateScopeBatchPilot,
+} from "../lib/execution-route.mjs";
 import { cancelBatch } from "../lib/scope-batch-cancel.mjs";
 import { finishScope } from "../lib/scope-batch-cleanup.mjs";
 import {
@@ -67,6 +74,72 @@ function scopeIdOf(scope: BatchScope): string | null {
  */
 export function admitScopeBatchRun(scopes: BatchScope[]) {
   return computeScopePartitions(scopes);
+}
+
+export { NATIVE_SCOPE_BATCH_PILOT_ALLOWED, SCOPE_BATCH_PILOT_MAX_CONCURRENCY, SCOPE_BATCH_PILOT_TIMEOUT_MS };
+
+export interface ScopeBatchPilotScope {
+  scopeId: string;
+  files: string[];
+}
+
+export interface ScopeBatchPilotReceipt {
+  scopeId: string;
+  claimVerified: boolean;
+  filesTouched: string[];
+  artifacts: string[] | Record<string, string>;
+}
+
+/**
+ * Pilot route evaluation for scope-batch: native fan-out ONLY for
+ * independent disjoint scopes with satisfied claims, proven
+ * file-claims + isolated-workspace capabilities, and bounded
+ * concurrency. Every gate failure falls back to coordinator-sequential
+ * with no partial fan-out. The coordinator spawn loop below stays
+ * sequential (NO_FANOUT); this function only decides the route.
+ */
+export function evaluateScopeBatchPilotRun(args: {
+  scopes: BatchScope[];
+  satisfiedScopeIds?: string[];
+  nativeCapabilities?: Record<string, boolean>;
+  nativePilotAllowed?: boolean;
+  maxConcurrency?: number;
+}) {
+  const admission = admitScopeBatchRun(args.scopes);
+  const partitions = admission.partitions as Record<string, string[]>;
+  const satisfied = new Set(args.satisfiedScopeIds ?? []);
+  const decision = evaluateScopeBatchPilot({
+    scopes: args.scopes,
+    satisfiedScopeIds: [...satisfied],
+    nativeCapabilities: args.nativeCapabilities ?? {},
+    nativePilotAllowed: args.nativePilotAllowed ?? NATIVE_SCOPE_BATCH_PILOT_ALLOWED,
+    maxConcurrency: args.maxConcurrency ?? SCOPE_BATCH_PILOT_MAX_CONCURRENCY,
+  });
+  return { admission, partitions, decision };
+}
+
+/**
+ * Pilot receipt collection: each child must return claim verification,
+ * files touched, and an artifact manifest; receipts land per scope and
+ * stay disjoint. Any failure refuses the merge so the coordinator can
+ * retry sequentially or escalate to inbox.
+ */
+export function collectScopeBatchPilotReceiptsRun(
+  receipts: ScopeBatchPilotReceipt[],
+  scopes: BatchScope[],
+) {
+  const admission = admitScopeBatchRun(scopes);
+  if (!admission.admitted) {
+    return {
+      ok: false as const,
+      code: "PARTITION_OVERLAP" as const,
+      overlaps: admission.overlaps,
+    };
+  }
+  return collectScopeBatchPilotReceipts(
+    receipts,
+    admission.partitions as Record<string, string[]>,
+  );
 }
 
 /**

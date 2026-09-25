@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { BB_NATIVE_CAPABILITIES } from "../lib/bb-workflow-capabilities.mjs";
 import { EXECUTION_CAPABILITIES, assertCapabilities } from "../lib/execution-adapter.mjs";
 import { requiredOutputPaths, safeArtifactPath, validateExecutionArtifacts } from "../lib/execution-artifacts.mjs";
-import { resolveExecutionRoute } from "../lib/execution-route.mjs";
+import { evaluateScopeBatchPilot, resolveExecutionRoute } from "../lib/execution-route.mjs";
 import { renderInlineWorkflowScript } from "../server/bb-workflow-bridge.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -214,5 +214,36 @@ assert.deepEqual(waiver, {
   preserves: ["artifact", "claims", "parent-verification"],
 }, "scope-batch waiver is explicit and complete");
 assert.equal(rows.get("scope-batch").waiver_id, waiver.id, "scope-batch matrix row references its waiver");
+
+// One-flag rollback pin: the recorded waiver value keeps scope-batch
+// coordinator-sequential, and the pilot evaluator honors the same flag
+// for a batch that would otherwise admit.
+assert.equal(waiver.native_pilot_allowed, false, "the scope-batch waiver ships with the pilot off");
+assert.equal(waiver.required_route, "coordinator-sequential", "flag off requires coordinator-sequential");
+{
+  const disjoint = [
+    { scopeId: "scope-a", targetFiles: ["src/a.ts"] },
+    { scopeId: "scope-b", targetFiles: ["src/b.ts"] },
+  ];
+  const capable = { "file-claims": true, "isolated-workspace": true };
+  const rolledBack = evaluateScopeBatchPilot({
+    scopes: disjoint,
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: capable,
+    nativePilotAllowed: waiver.native_pilot_allowed,
+  });
+  assert.equal(rolledBack.mode, waiver.required_route, "waiver flag off restores sequential in the pilot evaluator");
+  assert.equal(rolledBack.code, "PILOT_DISABLED", "rollback names the disabled pilot");
+  const overlapping = evaluateScopeBatchPilot({
+    scopes: [
+      { scopeId: "scope-a", targetFiles: ["src/shared.ts"] },
+      { scopeId: "scope-b", targetFiles: ["src/shared.ts"] },
+    ],
+    satisfiedScopeIds: ["scope-a", "scope-b"],
+    nativeCapabilities: capable,
+    nativePilotAllowed: true,
+  });
+  assert.equal(overlapping.mode, "coordinator-sequential", "overlapping scopes never fan out, flag or not");
+}
 
 console.log(`recipe pilot matrix test ok: ${recipes.length} recipes, ${manifest.waivers.length} contextual waiver`);
