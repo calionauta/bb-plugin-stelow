@@ -126,6 +126,24 @@ test("a completed research card is never polled or written", async () => {
   assert.deepEqual(calls.escalated, [], "a terminal card never re-escalates");
 });
 
+test("both track sweeps refuse every terminal card before reading its thread", async () => {
+  for (const status of ["completed", "archived", "blocked"]) {
+    for (const [track, syncTrack] of [
+      ["research", "syncResearch"],
+      ["explore", "syncExplore"],
+    ]) {
+      const { sync, calls, state } = harness({
+        card: { kind: track, status },
+      });
+      await sync[syncTrack](state.card);
+      assert.equal(calls.reads, 0, `${track} ${status} never reads its thread`);
+      assert.deepEqual(calls.updates, [], `${track} ${status} never writes`);
+      assert.deepEqual(calls.inbox, [], `${track} ${status} never creates inbox work`);
+      assert.deepEqual(calls.escalated, [], `${track} ${status} never re-escalates`);
+    }
+  }
+});
+
 test("a valid index completes the research card and records the review trail", async () => {
   const { sync, calls, state } = harness({ now: 500_000 });
   await sync.syncResearch(state.card);
