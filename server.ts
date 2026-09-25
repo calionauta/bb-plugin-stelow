@@ -205,6 +205,10 @@ import {
   type WorkerCard,
 } from "./server/workers.js";
 import {
+  batchIdsForCard,
+  cancelScopeBatchRun,
+} from "./server/scope-batch.js";
+import {
   createScopeProgressSync,
   latestSpecTech,
   loadCardScopes,
@@ -4979,6 +4983,15 @@ ${params.instructions ? `Preset instructions:\n${params.instructions}\n` : ""}Re
       await workers.stop(card.worker_thread_id);
       if (!await executionLifecycle.stopOwned(cardId, "card-archived")) return { archived: false };
       updateCard(cardId, { status: "archived", activity: "idle" });
+      // Scope-batch whole-batch cancel (1 card x N scopes): sweep every
+      // batch the card still holds — claims, parked waiters, and the
+      // in-flight run — before the generic claim release below. Fail-soft:
+      // archiving must never fail because a batch ledger hiccuped.
+      try {
+        for (const batchId of batchIdsForCard(db, cardId)) {
+          cancelScopeBatchRun(db, { batchId, cardId, reason: "card-archived" });
+        }
+      } catch { /* the generic release below still runs */ }
       await releaseCardClaimsAndNotify(cardId);
       bb.realtime.publish("card-state", { cardId });
       bb.realtime.publish("board-changed", { cardId });
@@ -7300,6 +7313,7 @@ ${card.prompt}` }, ...cardAttachments(card.attachments)],
             ensureProjectArtifacts(bb, rootPath, stateDir, requireOwnedState),
           runHelper,
           recordTrackableEvent: (event) => { recordTrackableEvent(db, event); },
+          db,
         });
       }
       if (argv[0] === "lock") {
