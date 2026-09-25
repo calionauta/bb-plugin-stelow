@@ -24,6 +24,7 @@ assert.match(noDir, /already seeded/, "the fallback still states the workflow ex
 // refuses through the guard instead of minting a project-root workflow.
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const seedBlock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-seed.ts"), "utf8");
+const seedingSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/workflow-seeding.ts"), "utf8");
 assert.match(seedBlock, /argv\[0\] === "seed" \? runSeed\(deps, argv, ctx\) : null/, "the seed family claims exactly its verb");
 assert.match(seedBlock, /getCardByWorkerThread\(ctx\.threadId\)/, "the seed handler resolves the calling card worker like advance/doctor do");
 assert.match(seedBlock, /cardWorkerSeedRefusal\(/, "a card worker seed is refused through the guard");
@@ -48,7 +49,7 @@ assert.equal(withRuntimeIgnoreEntry("/.stelow"), null, "leading-slash variant co
 assert.equal(withRuntimeIgnoreEntry("node_modules/"), "node_modules/\n# Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)\n.stelow/\n", "appends after existing content");
 assert.equal(withRuntimeIgnoreEntry("node_modules"), "node_modules\n# Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)\n.stelow/\n", "missing trailing newline handled");
 assert.equal(withRuntimeIgnoreEntry("# stelow stuff\n"), "# stelow stuff\n# Stelow runtime state (live per-card runs — commit docs/runs/<card>/ instead)\n.stelow/\n", "a mere substring never counts as covered");
-assert.match(serverSource, /withRuntimeIgnoreEntry\(/, "seedWorkflow applies the ignore guard");
-assert.match(serverSource, /existsSync\(join\(rootPath, "\.git"\)\)/, "guard runs in git checkouts only");
+assert.match(seedingSource, /withRuntimeIgnoreEntry\(/, "seedWorkflow applies the ignore guard");
+assert.match(seedingSource, /existsSync\(join\(rootPath, "\.git"\)\)/, "guard runs in git checkouts only");
 
 console.log("card seed guard test ok: refusal copy, card-worker seed refusal, pre-seeded prompts");

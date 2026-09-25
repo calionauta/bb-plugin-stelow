@@ -2,208 +2,62 @@ import { spawn, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
   readdirSync,
-  writeFileSync,
 } from "node:fs";
-import { basename, dirname, isAbsolute, join as nodeJoin } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, isAbsolute, join as nodeJoin } from "node:path";
 import { type BbPluginApi } from "@get-bb/plugin-sdk";
-import { z } from "zod";
 import {
-  buildArtifactTrailer,
   isPublishableArtifactContent,
   parseArtifactManifest,
-  renderBundleManifest,
   resolveArtifactPath,
 } from "../lib/artifact-manifest.mjs";
-import {
-  assignBundleNames,
-  parseBundleManifest,
-  staleBundleEntries,
-  unbundledSources,
-} from "../lib/run-bundle.mjs";
 import { PHASE_ENTRY_STAGES } from "../lib/workflow-vocabulary.mjs";
 import {
   refreshEventSeverity,
   refreshStalledPaused,
 } from "../lib/inbox-events.mjs";
-import {
-  acquireWorkspaceClaims,
-  addClaimWaiters,
-  CLAIM_TTL_MS,
-  checkWorkspaceClaims,
-  releaseAllCardClaims,
-  releaseWorkspaceClaims,
-} from "../lib/card-claims.mjs";
-import { isClaimTerminal } from "../lib/card-terminal.mjs";
-import { resolveClaimKey } from "../lib/card-claim-key.mjs";
-import {
-  classifyAskCancel,
-  interruptionWhy,
-  isRetryablePersistError,
-} from "../lib/ask-cancel.mjs";
-import {
-  questionWaitUpdates,
-  askFinishedUpdates,
-} from "../lib/card-question-state.mjs";
+import { releaseAllCardClaims } from "../lib/card-claims.mjs";
+import { questionWaitUpdates } from "../lib/card-question-state.mjs";
 import {
   inheritAskArtifact,
   normalizeAskArtifactPath,
-  parseAskGroups,
 } from "../lib/question-batch.mjs";
-import { decideAskGate } from "../lib/ask-gate.mjs";
-import {
-  consumeAskContract,
-  recordAskContracts,
-  validateAskContracts,
-} from "../lib/ask-contracts.mjs";
-import { resolvePluginRoot } from "../lib/plugin-paths.mjs";
+import { consumeAskContract } from "../lib/ask-contracts.mjs";
 import {
   discardConfirm,
   discardEligibility,
   discardTrail,
 } from "../lib/discard-policy.mjs";
-import { STATE_TEMPLATE } from "../lib/state-template.mjs";
-import {
-  ownsWorkflowState,
-  upsertWorkflowEntry,
-  workflowDirHash,
-  workflowEntryForOwner,
-  workflowIdForName,
-  workflowStateRelativeDir,
-} from "../lib/workflow-state-identity.mjs";
-import {
-  RESEARCH_STRATEGIES,
-  researchStrategyById,
-  parseStrategyList,
-  mergeStrategyContracts,
-} from "../lib/research-strategies.mjs";
+import { workflowIdForName } from "../lib/workflow-state-identity.mjs";
+import { parseStrategyList } from "../lib/research-strategies.mjs";
 import {
   normalizeHistory,
   roundTimestamp,
   roundFileName,
   ROUNDS_DIR,
 } from "../lib/research-rounds.mjs";
-import {
-  exploreArtifactFile,
-  researchVerifyReport,
-  researchVerifyText,
-  exploreVerifyReport,
-  exploreVerifyText,
-} from "../lib/research-artifacts.mjs";
-import {
-  validateArtifact,
-  buildDocDepths,
-} from "../lib/artifact-validation.mjs";
-import {
-  buildReviewPrompt,
-  parseReviewOutput,
-  reviewSummary,
-  reviewCoversFingerprint,
-} from "../lib/review-verdict.mjs";
+import { buildDocDepths } from "../lib/artifact-validation.mjs";
+import { reviewCoversFingerprint } from "../lib/review-verdict.mjs";
 import { assertDisposableSpawn } from "../lib/delegation-map.mjs";
-import { judgeArtifactCriteria } from "../lib/skill-criteria.mjs";
 
-import {
-  resolveDecisionApiKey,
-  normalizeDecisionApiModel,
-  isDecisionApiDisabled,
-  normalizeDecisionProvider,
-  providerRequiresKey,
-  defaultEndpointFor,
-  defaultModelFor,
-} from "../lib/decision-api.mjs";
-import {
-  DECISION_POINT_ARTIFACT_CRITERIA,
-  normalizePointMode,
-  defaultThresholdsFor,
-  normalizeThresholds,
-} from "../lib/decision-points.mjs";
-import {
-  tasksToScoreQuestions,
-  resolveScopeVerdicts,
-  taskVerifyCommand,
-  TASK_EVIDENCE_DIFF_CHARS,
-} from "../lib/task-evidence.mjs";
-import {
-  countDelegations,
-  summarizeDelegationEvidence,
-} from "../lib/delegation-evidence.mjs";
-import { contractForBuildArtifact } from "../lib/artifact-contracts.mjs";
 import { normalizeKind } from "../lib/tracks.mjs";
-import { techniqueById } from "../lib/stage-catalog.mjs";
 import { isArchivedCard } from "../lib/worker-action-policy.mjs";
-import { previewText } from "../lib/preview-session.mjs";
-import {
-  cardWorkerSeedRefusal,
-  withRuntimeIgnoreEntry,
-} from "../lib/card-seed-guard.mjs";
 import { resetAutoContinue } from "../lib/auto-continue.mjs";
-import {
-  buildContinueInput,
-  buildContinueNudge,
-} from "../lib/worker-continuation.mjs";
-import {
-  SPLIT_KEEP_LABEL,
-  SPLIT_PROPOSAL_TTL_MS,
-  recordSplitAnswer,
-  splitEligibility,
-  splitOutcome,
-  splitRemainder,
-  validateSplitSlices,
-  withStandardSplitDisclosure,
-} from "../lib/split-proposal.mjs";
-import { splitQuestionText } from "../lib/split-question-presentation.mjs";
-import {
-  askTimelineLabels,
-  describeAskSubmission,
-  englishQuestionContentError,
-} from "../lib/question-presentation.mjs";
-import { doneEligibility } from "../lib/completion.mjs";
-import {
-  formatBytes,
-  threadIdFromWorktreePath,
-  isStaleEnvironment,
-} from "../lib/worktree-storage.mjs";
+import { buildContinueInput } from "../lib/worker-continuation.mjs";
+import { recordSplitAnswer } from "../lib/split-proposal.mjs";
 import { isDoneStatus } from "../lib/trackables.mjs";
 import { recordTrackableEvent } from "../lib/trackable-events.mjs";
-import { countScopeDialects } from "../lib/spec-scope-reader.mjs";
-import { doneBuildGates } from "../lib/build-gates.mjs";
-import {
-  AUDIT_RECEIPT_FILE,
-  AUDIT_RECEIPT_NOTE,
-  auditReceiptReadiness,
-} from "../lib/audit-receipt.mjs";
 import { parseWorkflowConfig } from "../lib/workflow-config.mjs";
 import {
-  formatReviewGates,
   legacyLabelForGates,
   normalizeReviewGates,
 } from "../lib/review-gates.mjs";
 import { requiredForStage } from "../lib/question-contracts.mjs";
 import { createPreviewRuntime } from "../lib/preview-runtime.mjs";
 import { publicationSource } from "../lib/vcs-publication.mjs";
-import {
-  detectedTestCommand,
-  sameGitEvidence,
-  verificationReadiness,
-} from "../lib/audit-verification.mjs";
-import {
-  AUDIT_TRAIL_FILE,
-  AUDIT_TRAIL_NOTE,
-  auditTrailGate,
-} from "../lib/audit-trail-contract.mjs";
-import {
-  tokenBreakdownFromEvents,
-  sumTokenBreakdowns,
-} from "../lib/token-usage.mjs";
-import {
-  gapsToTriageBatch,
-  buildGapTriageState,
-} from "../lib/gap-registry.mjs";
-import { formatDuration, summarizeTimeline } from "../lib/card-metrics.mjs";
+import { detectedTestCommand } from "../lib/audit-verification.mjs";
+import { summarizeTimeline } from "../lib/card-metrics.mjs";
 import {
   createWorkspacesRecovery,
   recoveredCheckoutIntegrity,
@@ -227,18 +81,16 @@ import {
   type WorkerCard,
 } from "./workers.js";
 import {
-  latestSpecTech,
   loadCardScopes,
   normalizeStatus,
   runScopeCommand,
-  workflowScopes,
 } from "./scopes.js";
 import { createPlatformHandlers } from "./runtime/platform.js";
 import { createCardPreview } from "./runtime/card-preview.js";
 import { createInspectionCommand } from "./runtime/cli-inspection.js";
 import { createStelowCliRun } from "./runtime/cli/cli-dispatcher.js";
 import { cardAttachments, workspaceRelative } from "./runtime/card-files.js";
-import { array, record, text, type LooseRecord } from "./runtime/values.js";
+import { array, record, text } from "./runtime/values.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { createResearchTrackSync } from "./runtime/research-track-sync.js";
 import {
@@ -290,784 +142,30 @@ import { createCardDiff } from "./runtime/card-diff.js";
 import { createCardReseed } from "./runtime/card-reseed.js";
 import { createCardPromotion } from "./runtime/card-promotion.js";
 
-const pluginDir = resolvePluginRoot(
-  dirname(fileURLToPath(import.meta.url)),
-  existsSync,
-);
-const HELPER_SCRIPT = (() => {
-  const candidates = [
-    nodeJoin(pluginDir, "data", "stelow"),
-    nodeJoin(pluginDir, "..", "data", "stelow"),
-  ];
-  for (const candidate of candidates) {
-    try {
-      if (readFileSync(candidate, "utf8").length > 0) return candidate;
-    } catch {
-      /* try next */
-    }
-  }
-  return candidates[0]!;
-})();
-const PLUGIN_SKILLS_DIR = nodeJoin(pluginDir, "skills");
-const PLUGIN_ORCHESTRATOR_REF = nodeJoin(
-  PLUGIN_SKILLS_DIR,
-  "stelow-workflow-orchestrator",
-  "references",
-);
-
-// Transitions contract: always the vendored upstream copy (kept fresh by
-// the skills sync). No root-mirror fallbacks — a missing vendored copy is
-// a broken install and must fail closed, not silently use a stale mirror.
-const TRANSITIONS_REF = nodeJoin(PLUGIN_ORCHESTRATOR_REF, "transitions.md");
-
-// Strategy contracts: neutral per-strategy data (skill, contract, substeps)
-// comes from upstream `product-strategies.json` (synced to
-// data/product-strategies.json); presentation (label, blurb, emoji,
-// keywords) stays local. Merged in place so every existing consumer
-// (researchStrategyById, expectedSubsteps, RPC payloads) sees one list.
-// Missing/unparseable registry → embedded contracts stand (works against
-// older stelow checkouts).
-try {
-  const registry = JSON.parse(
-    readFileSync(
-      nodeJoin(pluginDir, "data", "product-strategies.json"),
-      "utf8",
-    ),
-  );
-  const merged = mergeStrategyContracts(RESEARCH_STRATEGIES, registry);
-  RESEARCH_STRATEGIES.splice(0, RESEARCH_STRATEGIES.length, ...merged);
-} catch {
-  // Embedded contracts stand; import-time has no bb.log yet. The sync
-  // schedule keeps data/product-strategies.json fresh on a live daemon.
-}
-
-// Ground-truth freshness signal, written by scripts/postbuild.mjs. The panel
-// bundle and bb's plugin row are both sticky caches; the About tab renders
-// this so "did the reload take effect?" is checkable instead of vibes.
-// stelowVersion is the UPSTREAM release (synced data/stelow-package.json),
-// kept separate so the two versions can never be mistaken for each other.
-// Note the candidates assume the UNIFIED root (see resolvePluginRoot):
-// version.json only exists under dist/, package.json at the root.
-const BUILD_INFO = (() => {
-  const fallback = { version: "dev", builtAt: null as string | null };
-  let version = fallback.version;
-  let builtAt = fallback.builtAt;
-  for (const candidate of [
-    nodeJoin(pluginDir, "version.json"),
-    nodeJoin(pluginDir, "dist", "version.json"),
-    nodeJoin(pluginDir, "package.json"),
-  ]) {
-    try {
-      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
-        version?: unknown;
-        builtAt?: unknown;
-      };
-      if (typeof parsed.version === "string") {
-        version = parsed.version;
-        builtAt = typeof parsed.builtAt === "string" ? parsed.builtAt : null;
-        break;
-      }
-    } catch {
-      /* try next */
-    }
-  }
-  return { version, builtAt };
-})();
-
-/** The upstream version shipped with this plugin release. */
-function readPinnedStelowVersion(): string | null {
-  for (const candidate of [
-    nodeJoin(pluginDir, "data", "stelow-package.json"),
-    nodeJoin(pluginDir, "..", "data", "stelow-package.json"),
-  ]) {
-    try {
-      const parsed = JSON.parse(readFileSync(candidate, "utf8")) as {
-        version?: unknown;
-      };
-      if (typeof parsed.version === "string") return parsed.version;
-    } catch {
-      /* try next */
-    }
-  }
-  return null;
-}
-
-// Stage bands: groups of workflow stages that share a worker preset. A card's
-// worker swaps presets only at band boundaries (analysis -> planning -> execution
-// -> review), so context continuity is preserved within a band. Research and
-// explore cards run single stages with their own band so lightweight tracks
-// have an explicit preset default independent of the build analysis phase.
-// Bands live in lib/workflow-vocabulary.mjs (single source shared with the panel).
-
-import { boardWorkflowDefaultsSchema, workflowSchema } from "./contracts.js";
-export { rpcContract } from "./rpc-contract.js";
+// The composition root wires slices; every path, board read, and state
+// projection it consumes is owned by the module imported here.
+import { boardWorkflowDefaultsSchema } from "./contracts.js";
 import { rpcContract } from "./rpc-contract.js";
-
-/**
- * The preview view the panel renders. Derived from the RPC contract itself, so
- * the frontend type cannot drift from what the server actually validates.
- */
-export type PreviewInfo = z.infer<typeof rpcContract.previewState.output>;
-
-type FilesApi = BbPluginApi["sdk"]["files"];
-type Workflow = z.infer<typeof workflowSchema>;
-
-const GATES = {
-  gate: { artifact: "product-spec", receipt: "gate-approved.md" },
-  "int-gate": { artifact: "interfaces", receipt: "int-gate-approved.md" },
-  "plan-gate": { artifact: "tech-plan", receipt: "plan-gate-approved.md" },
-  "diff-gate": { artifact: "other", receipt: "diff-gate-approved.md" },
-} as const;
-
-function recoveryNudge(card: WorkerCard, interfacePick: string): string {
-  if (card.kind === "research") {
-    return `Continue the Stelow research now. Re-read your research-index.md first, then keep researching with the strategy playbook. If a \
-question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if you genuinely need NEW input from the \
-user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — research has no stages. When \
-the index is complete with ranked opportunities, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue \
-— do NOT spend the turn debugging the CLI; report the exact error and move on.`;
-  }
-  if (card.kind === "explore") {
-    return `Continue the Stelow explore task now. Re-read your explore artifact and the stage skill, then keep working on the stage deliverable. \
-If a question \
-is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the stage genuinely needs NEW input from the user \
-that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — explore has no stages. When the \
-stage deliverable is complete, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the \
-turn debugging the CLI; report the exact error and move on.`;
-  }
-  return buildContinueNudge(interfacePick);
-}
-
-// Short human status for the GitHub completion summary (English).
-function statusLabelForSummary(status: string): string {
-  if (status === "in-progress") return "in progress";
-  if (status === "done" || status === "completed") return "done";
-  return status;
-}
-
-async function projectRoot(
-  bb: BbPluginApi,
-  projectId: string | null,
-): Promise<string | null> {
-  if (!projectId) return null;
-  try {
-    const project = await bb.sdk.projects.get({ projectId });
-    const source =
-      project.sources.find((entry) => entry.isDefault) ?? project.sources[0];
-    return source?.path ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// Resolve a card's state only when both persisted ownership records agree.
-// A matching name or dirHash alone is deliberately insufficient: projects can
-// contain repeated requests and converted exploratory workspaces.
-async function workflowStateDir(
-  bb: BbPluginApi,
-  rootPath: string,
-  workflowId: string,
-  dirHash: string,
-): Promise<string | null> {
-  try {
-    const tracking = await readJson(
-      bb.sdk.files,
-      join(rootPath, "stelow.json"),
-    );
-    const workflow = workflowEntryForOwner(
-      array(tracking?.workflows),
-      workflowId,
-      dirHash,
-    );
-    const relativeDir = workflowStateRelativeDir(workflow);
-    if (!relativeDir) return null;
-    const stateDir = join(rootPath, relativeDir);
-    const state = await bb.sdk.files
-      .read({ path: join(stateDir, "state.md") })
-      .then((file) => file.content)
-      .catch(() => null);
-    return ownsWorkflowState(state, workflowId) ? stateDir : null;
-  } catch {
-    return null;
-  }
-}
-
-function join(root: string, relative: string): string {
-  return `${root.replace(/\/$/, "")}/${relative.replace(/^\//, "")}`;
-}
-
-function fileTimestamp(
-  file: { modifiedAtMs?: unknown } | null,
-  fallback: string,
-): string {
-  const modifiedAtMs = file?.modifiedAtMs;
-  return typeof modifiedAtMs === "number" &&
-    Number.isFinite(modifiedAtMs) &&
-    modifiedAtMs > 0
-    ? new Date(modifiedAtMs).toISOString()
-    : fallback;
-}
-
-async function seedWorkflow(
-  bb: BbPluginApi,
-  rootPath: string,
-  workflowId: string,
-  name: string,
-  intent: string,
-  appetite = "Core",
-  reviewMode: string | string[] = "Auto",
-  fresh = false,
-): Promise<{
-  statePath: string | null;
-  stateDir: string | null;
-  dirHash: string | null;
-  error: string | null;
-}> {
-  const transitionsPath = join(
-    rootPath,
-    "skills/stelow-workflow-orchestrator/references/transitions.md",
-  );
-  const trackingPath = join(rootPath, "stelow.json");
-  try {
-    mkdirSync(join(rootPath, ".stelow/approvals"), { recursive: true });
-    mkdirSync(
-      join(rootPath, "skills/stelow-workflow-orchestrator/references"),
-      { recursive: true },
-    );
-    // Live runs stay out of git: a worker `git add -A` must never sweep
-    // `.stelow/` into the project history — the committed record is the
-    // exported docs/runs/<card>/ bundle. Best-effort, git checkouts only,
-    // never blocks seeding.
-    try {
-      if (existsSync(join(rootPath, ".git"))) {
-        const ignorePath = join(rootPath, ".gitignore");
-        let current = "";
-        try {
-          current = readFileSync(ignorePath, "utf8");
-        } catch {
-          /* created below */
-        }
-        const next = withRuntimeIgnoreEntry(current);
-        if (next !== null) writeFileSync(ignorePath, next, "utf8");
-      }
-    } catch {
-      /* hygiene never blocks seeding */
-    }
-
-    let trackingData: LooseRecord = {};
-    try {
-      trackingData = JSON.parse(
-        readFileSync(trackingPath, "utf8"),
-      ) as LooseRecord;
-    } catch {
-      /* create fresh */
-    }
-    if (!Array.isArray(trackingData.workflows)) trackingData.workflows = [];
-
-    // A name is a label, not an identity. Reuse is reserved for this exact
-    // immutable owner (a card id for panel work) and requires both the index
-    // and the state file to agree. An entry that carries no owner id is never
-    // adopted, and neither is a state file that names someone else.
-    const workflows = trackingData.workflows as unknown[];
-    const entry = workflowEntryForOwner(workflows, workflowId);
-    const entryDir = workflowStateRelativeDir(entry);
-    const reusable =
-      !fresh &&
-      entry &&
-      entryDir &&
-      (await bb.sdk.files
-        .read({ path: join(rootPath, `${entryDir}/state.md`) })
-        .then((file) => ownsWorkflowState(file.content, workflowId))
-        .catch(() => false));
-    // Seeding an owner that is already seeded is a no-op: it returns the
-    // workflow's own paths and leaves its entry, stage, and progress alone.
-    if (reusable && entryDir) {
-      const existingDir = join(rootPath, entryDir);
-      return {
-        statePath: join(existingDir, "state.md"),
-        stateDir: existingDir,
-        dirHash: text(record(entry).dirHash),
-        error: null,
-      };
-    }
-    const dirHash = workflowDirHash(workflowId, fresh);
-    // One function owns the path shape, so what is written here is exactly what
-    // workflowStateDir() later resolves. `created` pins the path's date segment
-    // to the workflow's first seed, so a re-seed never moves its directory.
-    const created = text(record(entry).created) || new Date().toISOString();
-    const relativeDir = workflowStateRelativeDir({ created, dirHash });
-    if (!relativeDir)
-      return {
-        statePath: null,
-        stateDir: null,
-        dirHash: null,
-        error: "Unable to derive the workflow state directory.",
-      };
-    const stateDir = join(rootPath, relativeDir);
-    mkdirSync(stateDir, { recursive: true });
-    const statePath = join(stateDir, "state.md");
-    const stateBlob = await bb.sdk.files
-      .read({ path: statePath })
-      .then((f) => f.content)
-      .catch(() => "");
-    if (
-      !stateBlob.includes("current_stage:") ||
-      !ownsWorkflowState(stateBlob, workflowId)
-    ) {
-      // Canonical storage is the gate set (`review_gates: [spec, …]`, empty
-      // ≡ Auto). The legacy `review_mode:` ladder label is kept for
-      // upstream readers; novel sets have no rung, so they read back as
-      // Auto there — the worker prompt names `review_gates` first.
-      const gates = normalizeReviewGates(reviewMode);
-      const rung = legacyLabelForGates(gates) ?? "Auto";
-      const body = STATE_TEMPLATE.replace("<workflow-id>", workflowId)
-        .replace("<workflow-name>", name)
-        .replace(
-          "<new-product|feature|bugfix|refactor|investigate|unknown>",
-          intent,
-        );
-      writeFileSync(
-        statePath,
-        body
-          .replace("appetite: Core", `appetite: ${appetite}`)
-          .replace(
-            "review_mode: Auto",
-            `review_gates: ${formatReviewGates(gates)}\n  review_mode: ${rung}`,
-          ),
-        "utf8",
-      );
-    }
-
-    if (!existsSync(transitionsPath)) {
-      writeFileSync(
-        transitionsPath,
-        readFileSync(TRANSITIONS_REF, "utf8"),
-        "utf8",
-      );
-    }
-
-    trackingData.workflows = upsertWorkflowEntry(workflows, {
-      workflowId,
-      name,
-      description: "",
-      status: "in-progress",
-      cwd: rootPath,
-      dirHash,
-      created,
-      updated: new Date().toISOString(),
-      stage: {
-        current_stage: "triage",
-        previous_stage: null,
-        transitioned_at: new Date().toISOString(),
-        history: [{ stage: "triage", entered_at: new Date().toISOString() }],
-      },
-      phases: [],
-      config: {
-        appetite,
-        review_mode:
-          legacyLabelForGates(normalizeReviewGates(reviewMode)) ?? "Auto",
-        review_gates: normalizeReviewGates(reviewMode),
-      },
-    });
-    writeFileSync(trackingPath, JSON.stringify(trackingData, null, 2), "utf8");
-    return { statePath, stateDir, dirHash, error: null };
-  } catch (error) {
-    return {
-      statePath: null,
-      stateDir: null,
-      dirHash: null,
-      error:
-        error instanceof Error ? error.message : "Unable to seed workflow.",
-    };
-  }
-}
-
 import { isManagedWorktreeEnvironment } from "../lib/card-environment.mjs";
+import {
+  BUILD_INFO,
+  PLUGIN_SKILLS_DIR,
+  pluginDir,
+  readPinnedStelowVersion,
+} from "./plugin-paths.js";
+import { fileTimestamp, join, projectRoot } from "./runtime/root-paths.js";
+import {
+  ensureProjectArtifacts,
+  parseNextStages,
+  workflowStateDir,
+} from "./runtime/workflow-state.js";
+import { seedWorkflow } from "./runtime/workflow-seeding.js";
+import { boardFromRoot, loadBoard } from "./runtime/board-read.js";
+import { runHelper } from "./runtime/helper-script.js";
+import { auditReceiptNote } from "./runtime/audit-receipts.js";
+import { detectMentionedFiles } from "./runtime/mentioned-files.js";
+import { recoveryNudge, statusLabelForSummary } from "./runtime/card-copy.js";
 
-// Round-artifact validity lives in lib/research-artifacts (pure, unit-tested):
-// researchRoundMirrorsIndex + isValidRoundContent + findInvalidRounds. The
-// round listing, the readiness gate, and the completion check all share them,
-// so the three can never diverge on what counts as a valid round artifact.
-
-async function detectMentionedFiles(
-  bb: BbPluginApi,
-  rootPath: string | null,
-  text: string,
-): Promise<Array<{ path: string; display: string; absolutePath: string }>> {
-  if (!rootPath) return [];
-  const candidates = new Set<string>();
-  // Match file-ish tokens: path/to/file.ext (no spaces, may include -_./)
-  for (const match of text.matchAll(
-    /\b(?:(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:md|markdown|txt|json|yaml|yml|toml|ts|tsx|js|jsx|py|go|rs|sh|css|html|env))(?:\b|(?=[\s,.;:)]))/g,
-  )) {
-    const token = match[0]!.replace(/[.,;:)]+$/, "");
-    if (token.length >= 3 && token.length <= 120) candidates.add(token);
-  }
-  const found: Array<{ path: string; display: string; absolutePath: string }> =
-    [];
-  // Exact paths only. A basename "search" used to run when nothing matched,
-  // which surfaced files the request never named (a split card's prompt names
-  // the PARENT card's state.md, and the search matched its own). An unfaithful
-  // suggestion is worse than none, so a miss simply lists nothing.
-  for (const candidate of candidates) {
-    try {
-      await bb.sdk.files.read({ path: join(rootPath, candidate) });
-      found.push({
-        path: candidate,
-        display: candidate,
-        absolutePath: join(rootPath, candidate),
-      });
-    } catch {
-      /* not found at that exact path — never guess */
-    }
-  }
-  return found.slice(0, 6);
-}
-
-function parseNextStages(
-  rootPath: string | null,
-  currentStage: string,
-): string[] {
-  if (!rootPath) return [];
-  const transitionsPath = join(
-    rootPath,
-    "skills/stelow-workflow-orchestrator/references/transitions.md",
-  );
-  if (!existsSync(transitionsPath)) return [];
-  let content: string;
-  try {
-    content = readFileSync(transitionsPath, "utf8");
-  } catch {
-    return [];
-  }
-  // NOTE: do not use a `(?=^### |\Z)`-style regex here — `\Z` is an
-  // end-of-string anchor in Python but a literal "Z" in JavaScript, which
-  // silently broke parsing of the last stage block (`audit`). Splitting on
-  // headers avoids the dialect trap and any regex injection via stage names.
-  const sections = content.split(/^### /m);
-  const section = sections.find(
-    (entry) =>
-      entry === currentStage ||
-      entry.startsWith(`${currentStage}\n`) ||
-      entry.startsWith(`${currentStage} `),
-  );
-  if (!section) return [];
-  const stages = new Set<string>();
-  for (const raw of section.split("\n")) {
-    const line = raw.trim();
-    for (const key of ["next", "accept", "reject", "rework"] as const) {
-      const match = line.match(new RegExp(`^${key}:\\s*(.*)$`));
-      if (!match) continue;
-      // Trailing "(...)" segments are human comments ("(none — stays at
-      // triage)", "shape (shape rework — same stage)"), not stages. Without
-      // stripping, a comment either leaks words (comma split keeps them) or
-      // hides a real target (the whole token contains "(" and is dropped).
-      const value = match[1].split("(")[0];
-      for (const token of value.split(",")) {
-        const stage = token.replace(/[[\]\s"']/g, "");
-        if (stage && /^[a-z][a-z0-9-]*$/.test(stage)) stages.add(stage);
-      }
-    }
-  }
-  return Array.from(stages);
-}
-
-async function ensureProjectArtifacts(
-  bb: BbPluginApi,
-  rootPath: string,
-  stateDir?: string | null,
-  requireOwnedState = false,
-): Promise<string | null> {
-  const tracking = join(rootPath, "stelow.json");
-  const transitions = join(
-    rootPath,
-    "skills/stelow-workflow-orchestrator/references/transitions.md",
-  );
-  if (requireOwnedState && !stateDir) {
-    return "This card's workflow state cannot be verified. Reseed the card; Stelow will not use project-root state as a fallback.";
-  }
-  const state = stateDir
-    ? join(stateDir, "state.md")
-    : join(rootPath, "state.md");
-  if (!existsSync(transitions)) {
-    mkdirSync(dirname(transitions), { recursive: true });
-    writeFileSync(transitions, readFileSync(TRANSITIONS_REF, "utf8"), "utf8");
-  }
-  if (
-    !existsSync(state) ||
-    !(await bb.sdk.files
-      .read({ path: state })
-      .then((file) => file.content.includes("current_stage:"))
-      .catch(() => false))
-  ) {
-    return "state.md is missing for the Stelow workflow. Reseed the workflow.";
-  }
-  if (!existsSync(tracking)) {
-    return "stelow.json is missing for the Stelow workflow. Reseed the workflow.";
-  }
-  return null;
-}
-
-function runHelper(
-  args: string[],
-  cwd: string,
-  stateDir?: string,
-): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolveRun) => {
-    const env: Record<string, string> = {
-      ...(process.env as Record<string, string>),
-      STELOW_TRANSITIONS: nodeJoin(
-        cwd,
-        "skills/stelow-workflow-orchestrator/references/transitions.md",
-      ),
-    };
-    if (stateDir) {
-      env.STELOW_STATEDIR = stateDir;
-      env.STELOW_STATE = nodeJoin(stateDir, "state.md");
-    } else {
-      // Project-root mode: single state.md for workflows without a
-      // per-workflow state dir.
-      env.STELOW_STATE = nodeJoin(cwd, "state.md");
-    }
-    const child = spawn("bash", [HELPER_SCRIPT, ...args], {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "",
-      stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (error) =>
-      resolveRun({ code: null, stdout, stderr: error.message }),
-    );
-    child.on("close", (code) => resolveRun({ code, stdout, stderr }));
-  });
-}
-
-// A completed Build card carries two receipts and their names differ by one
-// word, so neither is self-explaining. The host's `audit.md` is the record of
-// what was verified, by which tests, at which checkout; Stelow's portable
-// `audit-trail.md` is the deterministic lineage projection the CLI owns. The
-// CLI never registers its own output (it would have to digest itself), so the
-// host is the one that attributes the trail to Audit and labels both — instead
-// of showing a receipt the audit produced as an unregistered document.
-function auditReceiptNote(absolute: string): string | null {
-  const name = basename(absolute);
-  if (name === AUDIT_RECEIPT_FILE) return AUDIT_RECEIPT_NOTE;
-  if (name === AUDIT_TRAIL_FILE) return AUDIT_TRAIL_NOTE;
-  return null;
-}
-
-async function readJson(
-  files: FilesApi,
-  path: string,
-): Promise<LooseRecord | null> {
-  try {
-    const file = await files.read({ path });
-    return record(JSON.parse(file.content));
-  } catch {
-    return null;
-  }
-}
-
-async function findArtifacts(
-  files: FilesApi,
-  root: string,
-  workflow: LooseRecord,
-): Promise<Workflow["artifacts"]> {
-  const created = text(workflow.created).slice(0, 10);
-  const dirHash = text(workflow.dirHash);
-  if (!created || !dirHash) return [];
-  const workflowRoot = join(root, `.stelow/${created}/${dirHash}`);
-  let paths: string[] = [];
-  try {
-    const result = await files.listPaths({
-      path: workflowRoot,
-      includeFiles: true,
-      includeDirectories: false,
-    });
-    paths = array(record(result).paths)
-      .map((entry) =>
-        typeof entry === "string" ? entry : text(record(entry).path),
-      )
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-  const receipts = new Set<string>();
-  try {
-    const receiptResult = await files.listPaths({
-      path: join(root, `.stelow/approvals/${dirHash}`),
-      includeFiles: true,
-      includeDirectories: false,
-    });
-    for (const entry of array(record(receiptResult).paths))
-      receipts.add(
-        typeof entry === "string"
-          ? entry.split("/").pop()!
-          : text(record(entry).path).split("/").pop()!,
-      );
-  } catch {
-    /* no approvals yet */
-  }
-
-  const candidates = await Promise.all(
-    paths
-      .filter((path) => path.endsWith(".md"))
-      .map(async (path) => {
-        const content = await files
-          .read({ path })
-          .then((file) => file.content)
-          .catch(() => null);
-        if (!isPublishableArtifactContent(content)) return null;
-        const relative = path.startsWith(root)
-          ? path.slice(root.length + 1)
-          : `.stelow/${created}/${dirHash}/${path.replace(/^\//, "")}`;
-        const filename = relative.split("/").pop() ?? relative;
-        const kind: Workflow["artifacts"][number]["kind"] = filename.startsWith(
-          "spec-product",
-        )
-          ? "product-spec"
-          : filename.startsWith("interfaces")
-            ? "interfaces"
-            : filename.startsWith("spec-tech")
-              ? "tech-plan"
-              : filename.includes("critique")
-                ? "critique"
-                : "other";
-        const receipt =
-          kind === "product-spec"
-            ? GATES.gate.receipt
-            : kind === "interfaces"
-              ? GATES["int-gate"].receipt
-              : kind === "tech-plan"
-                ? GATES["plan-gate"].receipt
-                : "";
-        return {
-          kind,
-          label: filename,
-          path: relative,
-          approved: receipt ? receipts.has(receipt) : false,
-        };
-      }),
-  );
-  return candidates
-    .filter(
-      (artifact): artifact is Workflow["artifacts"][number] =>
-        artifact !== null,
-    )
-    .sort((a, b) => a.path.localeCompare(b.path));
-}
-
-async function loadBoard(bb: BbPluginApi, projectId: string | null) {
-  const rootPath = await projectRoot(bb, projectId);
-  if (!rootPath)
-    return {
-      rootPath: null,
-      workflows: [],
-      error: projectId
-        ? "Project workspace path is unavailable."
-        : "Select a bb project to view its Stelow board.",
-    };
-  return boardFromRoot(bb, rootPath);
-}
-
-// Board scoped to an explicit workspace root (project source, or a single
-// exploratory card dir). onlyDirHash restricts the listing to one workflow —
-// used when a card worker asks for status: its project's source root holds no
-// stelow.json (each exploratory card owns its own file), so resolving by
-// project alone yields a misleading "not found".
-async function boardFromRoot(
-  bb: BbPluginApi,
-  rootPath: string,
-  onlyDirHash?: string | null,
-) {
-  const trackingPath = join(rootPath, "stelow.json");
-  const tracking = await readJson(bb.sdk.files, trackingPath);
-  if (!tracking)
-    return {
-      rootPath,
-      workflows: [],
-      error: `No stelow.json found (looked in ${trackingPath}). Start a Stelow workflow first — card workers: your file lives in your own state dir, not the \
-project root.`,
-    };
-  const entries = array(tracking.workflows).filter(
-    (value) => !onlyDirHash || text(record(value).dirHash) === onlyDirHash,
-  );
-  if (onlyDirHash && entries.length === 0)
-    return {
-      rootPath,
-      workflows: [],
-      error: `No workflow ${onlyDirHash} in ${trackingPath}. The card may have been reseeded — read the state dir from your spawn prompt.`,
-    };
-
-  const workflows: Workflow[] = [];
-  for (const [index, value] of entries.entries()) {
-    const raw = record(value);
-    const config = record(raw.config);
-    const stage = record(raw.stage);
-    const phases = array(raw.phases).map((entry, phaseIndex) => {
-      const phase = record(entry);
-      return {
-        id: text(phase.id, `phase-${phaseIndex + 1}`),
-        name: text(phase.name, text(phase.id, `Phase ${phaseIndex + 1}`)),
-        status: normalizeStatus(phase.status),
-      };
-    });
-    // Each workflow owns its own state.md (per-card); read it for the real
-    // stage instead of a single project-level stateStage.
-    let workflowStage = "";
-    const dirHash = text(raw.dirHash);
-    if (dirHash) {
-      const created = text(raw.created).slice(0, 10);
-      if (created) {
-        try {
-          const stateBlob = await bb.sdk.files.read({
-            path: join(rootPath, `.stelow/${created}/${dirHash}/state.md`),
-          });
-          workflowStage = text(
-            stateBlob.content.match(/current_stage:\s*(\S+)/)?.[1],
-          );
-        } catch {
-          /* no per-workflow state yet */
-        }
-      }
-    }
-    workflows.push({
-      id: text(raw.dirHash, text(raw.name, `workflow-${index + 1}`)),
-      name: text(raw.name, `Workflow ${index + 1}`),
-      description: text(raw.description),
-      status: normalizeStatus(raw.status),
-      stage:
-        workflowStage ||
-        text(
-          stage.current_stage,
-          phases.find((phase) => phase.status === "in-progress")?.name ??
-            "Not started",
-        ),
-      appetite: text(config.appetite, "Core"),
-      reviewMode: text(config.review_mode, "Auto"),
-      reviewGates: normalizeReviewGates(
-        Array.isArray(config.review_gates)
-          ? config.review_gates.filter(
-              (entry): entry is string => typeof entry === "string",
-            )
-          : config.review_mode,
-      ) as Array<"spec" | "interface" | "scope" | "tech" | "diff">,
-      ...(typeof raw.dirHash === "string" ? { dirHash: raw.dirHash } : {}),
-      ...(typeof raw.cwd === "string" ? { cwd: raw.cwd } : {}),
-      phases,
-      scopes: workflowScopes(raw),
-      artifacts: await findArtifacts(bb.sdk.files, rootPath, raw),
-    });
-  }
-  return { rootPath, workflows, error: null };
-}
 
 export default async function plugin(bb: BbPluginApi) {
   // Shared worker copy: the vendored skills show `scripts/stelow ...`

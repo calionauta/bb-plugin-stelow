@@ -59,6 +59,11 @@ const serverSource = [
   ),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards-create.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/cards.ts"), "utf8"),
+  // The seed owns its own module; the composition root only calls it.
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/workflow-seeding.ts"),
+    "utf8",
+  ),
 ].join("\n");
 const scopeReads = [...serverSource.matchAll(/(?<!function )loadCardScopes\(([^,]+),\s*([^,)]+)/g)].map((match) => match[2].trim());
 assert.ok(scopeReads.length > 0, "the card-scope read sites are covered by this contract");

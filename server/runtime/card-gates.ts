@@ -4,14 +4,7 @@ import { isArchivedCard } from "../../lib/worker-action-policy.mjs";
 import type { WorkerCard } from "../workers-types.js";
 import type { PresetRow } from "../presets.js";
 
-const GATES = {
-  gate: { artifact: "product-spec", receipt: "gate-approved.md" },
-  "int-gate": { artifact: "interfaces", receipt: "int-gate-approved.md" },
-  "plan-gate": { artifact: "tech-plan", receipt: "plan-gate-approved.md" },
-  "diff-gate": { artifact: "other", receipt: "diff-gate-approved.md" },
-} as const;
-
-type Gate = keyof typeof GATES;
+import { GATES, type Gate } from "./gate-vocabulary.js";
 type Db = ReturnType<BbPluginApi["storage"]["database"]>;
 type Workspace = { path: string; hostId: string | null };
 type Workflow = {

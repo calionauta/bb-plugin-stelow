@@ -164,6 +164,7 @@ assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing"
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
 const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
 const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
+const cardCopySource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-copy.ts"), "utf8");
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
 const askGateSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/cli/cli-ask-gate.ts"), "utf8");
 const autoStart = threadSyncSource.indexOf("const input = buildContinueInput");
@@ -188,7 +189,7 @@ const successOrder = [
 assert.ok(successOrder.every((position) => position >= 0), "successful auto-continue records through every step");
 assert.deepEqual(successOrder, [...successOrder].sort((a, b) => a - b), "budget recording follows a successful send");
 assert.match(autoBlock, /autoContinueFields\(next, snapshot\.lastOutput\)/, "the recovery budget uses shared fields");
-assert.match(serverSource, /buildContinueNudge\(interfacePick\)/, "manual build Retry shares the extracted nudge");
+assert.match(cardCopySource, /buildContinueNudge\(interfacePick\)/, "manual build Retry shares the extracted nudge");
 assert.match(retryBlock, /deps\.buildContinueInput\(deps\.buildNudge\(card\), "public"\)/, "manual Retry stays public");
 assert.doesNotMatch(retryBlock, /agent-only/, "manual Retry never inherits private visibility");
 assert.match(askGateSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
