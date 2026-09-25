@@ -251,7 +251,6 @@ import {
   auditReceiptReadiness,
 } from "../lib/audit-receipt.mjs";
 import { statusForNewCardWork } from "../lib/card-work-resume.mjs";
-import { playbookEntries, renderPlaybook } from "../lib/playbook.mjs";
 import { parseWorkflowConfig } from "../lib/workflow-config.mjs";
 import {
   formatReviewGates,
@@ -323,6 +322,7 @@ import {
 } from "./scopes.js";
 import { createPlatformHandlers } from "./runtime/platform.js";
 import { createCardPreview } from "./runtime/card-preview.js";
+import { createInspectionCommand } from "./runtime/cli-inspection.js";
 import { cliUnknownResult } from "./runtime/cli-registry.js";
 import { createResearchArtifactRuntime } from "./runtime/research-artifacts.js";
 import { registerMentionProviders } from "./runtime/mentions.js";
@@ -8054,6 +8054,37 @@ the normal build workflow.`,
     },
   );
 
+  const runInspection = createInspectionCommand({
+    skillsDir: PLUGIN_SKILLS_DIR,
+    errors: {
+      archived: ERR_CARD_ARCHIVED,
+      workspace: ERR_WORKSPACE_UNAVAILABLE,
+    },
+    getCard,
+    getCardForThread: getCardByWorkerThread,
+    cardWorkspace,
+    loadBoard: (projectId) => loadBoard(bb, projectId),
+    boardFromRoot: (root, dirHash) => boardFromRoot(bb, root, dirHash),
+    projectRoot: (projectId) => projectRoot(bb, projectId),
+    workflowStateDir: (root, cardId, dirHash) =>
+      workflowStateDir(bb, root, cardId, dirHash),
+    ensureProjectArtifacts: (root, stateDir, hasOwnedState) =>
+      ensureProjectArtifacts(bb, root, stateDir, hasOwnedState),
+    runHelper: (args, root, stateDir) => runHelper(args, root, stateDir),
+    readText: (path) =>
+      bb.sdk.files
+        .read({ path })
+        .then((file) => file.content)
+        .catch(() => null),
+    researchStrategySkill: (id) => researchStrategyById(id)?.skill ?? null,
+    exploreTechnique: (id) => {
+      const technique = techniqueById(id);
+      return technique
+        ? { skill: technique.skill, artifactFile: exploreArtifactFile(technique.id) }
+        : null;
+    },
+  });
+
   registerStelowCli(bb, (argv, context) => runCliCommand(argv, context));
 
   async function runCliCommand(
@@ -8064,51 +8095,8 @@ the normal build workflow.`,
       signal?: AbortSignal;
     },
   ): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
-    if (argv[0] === "status") {
-      const projectFlag = argv.indexOf("--project");
-      const projectId =
-        projectFlag >= 0 ? argv[projectFlag + 1] : ctx.projectId;
-      // A card worker's project source root holds no stelow.json (each
-      // exploratory card owns its own file), so resolve the owning card
-      // first — same pattern as the advance command.
-      const cliCard = ctx.threadId
-        ? getCardByWorkerThread(ctx.threadId)
-        : undefined;
-      if (cliCard) {
-        const workspace = await cardWorkspace(cliCard);
-        if (!workspace?.path)
-          return {
-            exitCode: 1,
-            stderr: "Workspace path is unavailable for this card.",
-          };
-        const board = await boardFromRoot(bb, workspace.path, cliCard.dir_hash);
-        if (argv.includes("--json"))
-          return { exitCode: 0, stdout: JSON.stringify(board, null, 2) };
-        if (board.error) return { exitCode: 1, stderr: board.error };
-        return {
-          exitCode: 0,
-          stdout: board.workflows
-            .map(
-              (workflow) =>
-                `${workflow.name}\t${workflow.status}\t${workflow.stage}`,
-            )
-            .join("\n"),
-        };
-      }
-      const board = await loadBoard(bb, projectId ?? null);
-      if (argv.includes("--json"))
-        return { exitCode: 0, stdout: JSON.stringify(board, null, 2) };
-      if (board.error) return { exitCode: 1, stderr: board.error };
-      return {
-        exitCode: 0,
-        stdout: board.workflows
-          .map(
-            (workflow) =>
-              `${workflow.name}\t${workflow.status}\t${workflow.stage}`,
-          )
-          .join("\n"),
-      };
-    }
+    const inspection = await runInspection(argv, ctx);
+    if (inspection) return inspection;
     if (argv[0] === "ask") {
       const flag = (name: string) => {
         const index = argv.indexOf(name);
@@ -9972,99 +9960,6 @@ only with a reviewer you trust on adversarial spot-checks; see docs/phase6-indep
         stderr: `Unknown card kind "${card.kind}". Archive this card and start a new one.`,
       };
     }
-    if (argv[0] === "playbook") {
-      // Host-served reading list (lib/playbook): the exact state file,
-      // transitions, and stage playbook paths for this card. Workers read
-      // what they are given instead of discovering skills through shell
-      // pipelines over content-hashed ids.
-      const args = argv.slice(1);
-      let cardId = ctx.threadId
-        ? getCardByWorkerThread(ctx.threadId)?.id
-        : undefined;
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === "--card") {
-          cardId = args[i + 1];
-          i++;
-          continue;
-        }
-        return {
-          exitCode: 2,
-          stderr: "Usage: bb stelow playbook [--card <card_id>]",
-        };
-      }
-      if (!cardId)
-        return {
-          exitCode: 2,
-          stderr:
-            "No card in context (run from the worker thread or pass --card <card_id>).",
-        };
-      const card = getCard(cardId);
-      if (!card) return { exitCode: 2, stderr: `Unknown card "${cardId}".` };
-      if (isArchivedCard(card))
-        return { exitCode: 1, stderr: ERR_CARD_ARCHIVED };
-      const workspace = await cardWorkspace(card);
-      const rootPath = workspace?.path ?? null;
-      if (!rootPath) return { exitCode: 1, stderr: ERR_WORKSPACE_UNAVAILABLE };
-      let stateDir: string | null = null;
-      if (card.dir_hash) {
-        stateDir = await workflowStateDir(bb, rootPath, card.id, card.dir_hash);
-        if (!stateDir)
-          return {
-            exitCode: 1,
-            stderr:
-              "Workflow state ownership cannot be verified. Reseed this card; project-root state is intentionally ignored.",
-          };
-      }
-      const statePath = stateDir
-        ? join(stateDir, "state.md")
-        : join(rootPath, "state.md");
-      let stage: string | null = card.stage;
-      if (card.kind === "build") {
-        const blob = await bb.sdk.files
-          .read({ path: statePath })
-          .then((f) => f.content)
-          .catch(() => null);
-        if (blob)
-          stage =
-            text(blob.match(/current_stage:\s*(\S+)/m)?.[1]) || card.stage;
-      }
-      let strategySkill: string | null = null;
-      let researchIndexPath: string | null = null;
-      if (card.kind === "research") {
-        strategySkill =
-          researchStrategyById(card.research_strategy ?? "")?.skill ?? null;
-        if (stateDir) researchIndexPath = join(stateDir, "research-index.md");
-      }
-      let exploreSkill: string | null = null;
-      let exploreArtifactPath: string | null = null;
-      if (card.kind === "explore") {
-        const technique = techniqueById(card.explore_stage ?? "");
-        exploreSkill = technique?.skill ?? null;
-        if (stateDir && technique)
-          exploreArtifactPath = join(
-            stateDir,
-            exploreArtifactFile(technique.id),
-          );
-      }
-      const entries = playbookEntries(
-        {
-          kind: card.kind,
-          stage,
-          statePath,
-          transitionsPath: join(
-            rootPath,
-            "skills/stelow-workflow-orchestrator/references/transitions.md",
-          ),
-          skillsDir: PLUGIN_SKILLS_DIR,
-          strategySkill,
-          exploreSkill,
-          researchIndexPath,
-          exploreArtifactPath,
-        },
-        existsSync,
-      );
-      return { exitCode: 0, stdout: renderPlaybook(entries) };
-    }
     if (argv[0] === "split") {
       // No content args by design (lib/split-proposal): the host executes
       // the recorded, human-approved proposal from `ask --tag split`. A
@@ -10317,65 +10212,6 @@ The parent card is archived — stop: your workflow ends here.`,
         exitCode: 0,
         stdout: `Split into ${created.length} build ${created.length === 1 ? "card" : "cards"}: ${created.map((entry) => entry.slice).join("; ")}. \
 The parent keeps the remainder (${remaining.map((slice) => text(slice.title)).join("; ")}) — continue it narrowed to that.`,
-      };
-    }
-    if (argv[0] === "doctor") {
-      const args = argv.slice(1);
-      const json = args.includes("--json");
-      const projectId = args[args.indexOf("--project") + 1] ?? ctx.projectId;
-      const stray = args.find(
-        (arg) => !arg.startsWith("--") && arg !== projectId,
-      );
-      if (stray)
-        return {
-          exitCode: 2,
-          stderr: "Usage: bb stelow doctor [--project <proj_id>] [--json]",
-        };
-      const cliCard = ctx.threadId
-        ? getCardByWorkerThread(ctx.threadId)
-        : undefined;
-      const workspace = cliCard ? await cardWorkspace(cliCard) : null;
-      const rootPath = workspace?.path ?? (await projectRoot(bb, projectId));
-      if (!rootPath)
-        return { exitCode: 1, stderr: "Workspace path is unavailable." };
-      const stateDir = cliCard?.dir_hash
-        ? await workflowStateDir(bb, rootPath, cliCard.id, cliCard.dir_hash)
-        : null;
-      const guard = await ensureProjectArtifacts(
-        bb,
-        rootPath,
-        stateDir,
-        Boolean(cliCard?.dir_hash),
-      );
-      if (guard) return { exitCode: 1, stderr: guard };
-      const result = await runHelper(
-        json ? ["doctor", "--json"] : ["doctor"],
-        rootPath,
-        stateDir ?? undefined,
-      );
-      if (result.code !== 0)
-        return {
-          exitCode: result.code ?? 1,
-          stderr: result.stderr || "doctor found drift",
-          stdout: result.stdout,
-        };
-      return { exitCode: 0, stdout: result.stdout };
-    }
-    if (argv[0] === "schema") {
-      const sub = argv[1];
-      if (sub && sub.startsWith("--"))
-        return { exitCode: 2, stderr: "Usage: bb stelow schema [command]" };
-      const rootPath = await projectRoot(bb, ctx.projectId ?? null);
-      if (!rootPath)
-        return { exitCode: 1, stderr: "Workspace path is unavailable." };
-      const result = await runHelper(
-        sub ? ["schema", sub] : ["schema"],
-        rootPath,
-      );
-      return {
-        exitCode: result.code ?? 1,
-        stdout: result.stdout,
-        stderr: result.stderr,
       };
     }
     if (argv[0] === "sync-scopes") {

@@ -118,7 +118,6 @@ for (const [site, { anchor, end }] of Object.entries(doneSites)) {
 // Worker verbs: done + playbook are registered, card-resolved, and listed;
 // preset mutation refuses card workers with the Manage redirect.
 assert.match(serverSource, /if \(argv\[0\] === "done"\) \{/, "the done handler exists");
-assert.match(serverSource, /if \(argv\[0\] === "playbook"\) \{/, "the playbook handler exists");
 assert.match(cliRegistry, /"done",[\s\S]*?"bb stelow done/, "the CLI registers done with its contract");
 assert.match(cliRegistry, /"playbook",[\s\S]*?"bb stelow playbook/, "the CLI registers playbook with its contract");
 assert.match(cliRegistry, /"split",[\s\S]*?"bb stelow split/, "the CLI registers split with its contract");
