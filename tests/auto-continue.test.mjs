@@ -162,14 +162,15 @@ assert.equal(lastTurnAdvancedStages([]), false, "empty history advances nothing"
 // Server contract: the idle branch sends the shared nudge privately only after
 // a successful send, while manual recovery sends the same transport publicly.
 const serverSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8");
+const operationsSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8");
 const threadSyncSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/build-thread-sync.ts"), "utf8");
 const coreMigrations = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/core-migrations.ts"), "utf8");
 const autoStart = threadSyncSource.indexOf("const input = buildContinueInput");
 const autoEnd = threadSyncSource.indexOf("function persistStandardIdle", autoStart);
 const autoBlock = threadSyncSource.slice(autoStart, autoEnd);
-const retryStart = serverSource.indexOf("async retryWorker({ cardId })");
-const retryEnd = serverSource.indexOf("async startWorker({ cardId })", retryStart);
-const retryBlock = serverSource.slice(retryStart, retryEnd);
+const retryStart = operationsSource.indexOf("async function retryWorker(");
+const retryEnd = operationsSource.indexOf("function startWorker(", retryStart);
+const retryBlock = operationsSource.slice(retryStart, retryEnd);
 assert.match(threadSyncSource, /shouldAutoContinue\(\{/, "the idle branch consults the auto-continue guard");
 assert.match(threadSyncSource, /cardStatus: snapshot\.card\.status/, "the audit watchdog receives persisted completion state");
 assert.match(
@@ -186,13 +187,13 @@ const successOrder = [
 assert.ok(successOrder.every((position) => position >= 0), "successful auto-continue records through every step");
 assert.deepEqual(successOrder, [...successOrder].sort((a, b) => a - b), "budget recording follows a successful send");
 assert.match(autoBlock, /autoContinueFields\(next, snapshot\.lastOutput\)/, "the recovery budget uses shared fields");
-assert.match(retryBlock, /: buildContinueNudge\(INTERFACE_PICK\);/, "manual build Retry shares the extracted nudge");
-assert.match(retryBlock, /input: buildContinueInput\(nudge, "public"\)/, "manual Retry stays public");
+assert.match(serverSource, /buildContinueNudge\(interfacePick\)/, "manual build Retry shares the extracted nudge");
+assert.match(retryBlock, /deps\.buildContinueInput\(deps\.buildNudge\(card\), "public"\)/, "manual Retry stays public");
 assert.doesNotMatch(retryBlock, /agent-only/, "manual Retry never inherits private visibility");
 assert.match(serverSource, /decideAskGate\(\{/, "the ask handler decides through the shared dispatcher");
 assert.match(serverSource, /liveCount: liveAsks\.length,/, "the dispatcher receives the live interaction count");
 assert.match(serverSource, /expiredCount: openExpiredQuestionIds\(cardRow\.id\)\.length,/, "the dispatcher receives the recoverable expired count");
-const resets = serverSource.match(/resetAutoContinue\(\)/g) ?? [];
+const resets = `${serverSource}\n${operationsSource}`.match(/resetAutoContinue\(\)/g) ?? [];
 assert.ok(resets.length >= 2, `manual retry/restart reset the budget, found ${resets.length} reset sites`);
 assert.match(serverSource, /Turn discipline: never end a turn with a bare progress report/, "the spawn prompt teaches turn discipline");
 assert.match(coreMigrations, /ensureAutoContinueColumns\(db\)/, "the migration composition ensures the budget columns");

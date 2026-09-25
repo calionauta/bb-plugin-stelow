@@ -181,7 +181,6 @@ import { normalizeKind } from "../lib/tracks.mjs";
 import { TECHNIQUE_CATALOG, techniqueById } from "../lib/stage-catalog.mjs";
 import { parseResearchIndex, checkIndexItems } from "../lib/research-index.mjs";
 import { evidenceStatus } from "../lib/research-evidence.mjs";
-import { resolveCardMove } from "../lib/card-move.mjs";
 import {
   isArchivedCard,
   stripArchivedResuscitation,
@@ -211,7 +210,6 @@ import {
   SPLIT_KEEP_LABEL,
   SPLIT_PROPOSAL_TTL_MS,
   recordSplitAnswer,
-  splitActionState,
   splitEligibility,
   splitOutcome,
   splitRemainder,
@@ -340,6 +338,7 @@ import { createPendingQuestions } from "./runtime/pending-questions.js";
 import { createCardDetailHandler } from "./runtime/card-detail.js";
 import { createCardMutationHandlers } from "./runtime/card-mutations.js";
 import { createCardLifecycleHandlers } from "./runtime/card-lifecycle.js";
+import { createCardOperationsHandlers } from "./runtime/card-operations.js";
 import { createBuildThreadSync } from "./runtime/build-thread-sync.js";
 
 const pluginDir = resolvePluginRoot(
@@ -484,6 +483,25 @@ function record(value: unknown): LooseRecord {
 
 function text(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
+}
+
+function recoveryNudge(card: WorkerCard, interfacePick: string): string {
+  if (card.kind === "research") {
+    return `Continue the Stelow research now. Re-read your research-index.md first, then keep researching with the strategy playbook. If a \
+question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if you genuinely need NEW input from the \
+user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — research has no stages. When \
+the index is complete with ranked opportunities, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue \
+— do NOT spend the turn debugging the CLI; report the exact error and move on.`;
+  }
+  if (card.kind === "explore") {
+    return `Continue the Stelow explore task now. Re-read your explore artifact and the stage skill, then keep working on the stage deliverable. \
+If a question \
+is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the stage genuinely needs NEW input from the user \
+that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — explore has no stages. When the \
+stage deliverable is complete, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the \
+turn debugging the CLI; report the exact error and move on.`;
+  }
+  return buildContinueNudge(interfacePick);
 }
 
 function array(value: unknown): unknown[] {
@@ -4183,6 +4201,25 @@ still need, then continue the scope — do not re-claim files you no longer touc
     discardTrail,
     errors: { cardNotFound: ERR_CARD_NOT_FOUND },
   });
+  const cardOperations = createCardOperationsHandlers({
+    db,
+    bb,
+    getCard,
+    workers,
+    updateCard,
+    releaseClaims: releaseCardClaimsAndNotify,
+    recordStageEvent,
+    cardStageSlug,
+    fetchPendingAsks,
+    openExpiredQuestionIds,
+    logCardComment,
+    resetAutoContinue,
+    buildNudge: (card) => recoveryNudge(card, INTERFACE_PICK),
+    buildContinueInput,
+    splitRequestNudge: SPLIT_REQUEST_NUDGE,
+    phaseEntryStages: PHASE_ENTRY_STAGES,
+    errors: { cardNotFound: ERR_CARD_NOT_FOUND, cardArchived: ERR_CARD_ARCHIVED },
+  });
 
   registerRpcHandlers(
     bb,
@@ -4199,6 +4236,7 @@ still need, then continue the scope — do not re-claim files you no longer touc
       ...worktreeCleanup.handlers,
       ...cardMutations,
       ...cardLifecycle,
+      ...cardOperations,
       cardDetail: cardDetail as never,
       draftDoneComment: ({ cardId }: { cardId: string }) =>
         drafting.draftDoneComment(cardId),
@@ -4663,147 +4701,6 @@ advance <stage>\` to change stages; do NOT hand-write stage transitions. Preserv
         };
       },
 
-      async retryWorker({ cardId }) {
-        // First-line recovery for stuck workers (error OR idle with nothing
-        // pending): the plugin SDK exposes no thread-retry, but delivering a
-        // message starts a new turn — exactly what typing into the thread does.
-        // Non-destructive: same worker, same state dir. Reseed stays available
-        // for cases where the worker itself is broken.
-        const card = getCard(cardId);
-        if (!card?.worker_thread_id)
-          return { ok: false, error: "This card has no worker thread." };
-        if (card.status === "archived")
-          return { ok: false, error: ERR_CARD_ARCHIVED };
-        // Done is terminal for Retry too: reopening happens through a card
-        // comment (statusForNewCardWork) or a fresh restart, never by nudging
-        // the finished worker back to running behind Done's back.
-        if (card.status === "completed" || card.status === "blocked")
-          return {
-            ok: false,
-            error:
-              "This card is completed — comment on it to reopen, or restart fresh.",
-          };
-        // Research workers never advance stages: a build-flavored nudge
-        // would instruct them to run a machine that does not exist here.
-        const nudge =
-          card.kind === "research"
-            ? `Continue the Stelow research now. Re-read your research-index.md first, then keep researching with the strategy playbook. If a \
-question is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if you genuinely need NEW input from the \
-user that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — research has no stages. When \
-the index is complete with ranked opportunities, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue \
-— do NOT spend the turn debugging the CLI; report the exact error and move on.`
-            : card.kind === "explore"
-              ? `Continue the Stelow explore task now. Re-read your explore artifact and the stage skill, then keep working on the stage deliverable. \
-If a question \
-is already pending on the card, do NOT re-ask it — the answer arrives here on its own. But if the stage genuinely needs NEW input from the user \
-that was never asked, ask it now via bb stelow ask; silence is not progress. NEVER run \`bb stelow advance\` — explore has no stages. When the \
-stage deliverable is complete, STOP and end your turn. If a \`bb stelow\` command fails, read its stderr once and continue — do NOT spend the \
-turn debugging the CLI; report the exact error and move on.`
-              : buildContinueNudge(INTERFACE_PICK);
-        try {
-          await bb.sdk.threads.send({
-            threadId: card.worker_thread_id,
-            mode: "auto",
-            input: buildContinueInput(nudge, "public"),
-          });
-          // A manual resume is a fresh human verdict that the worker should be
-          // working: reset the auto-continue budget with it, or the next fresh
-          // stop would fall straight through to paused on an exhausted budget.
-          const retryReset = resetAutoContinue();
-          updateCard(cardId, {
-            activity: "running",
-            last_error: null,
-            auto_continue_count: retryReset.count,
-            auto_continue_stage: retryReset.stage,
-          });
-          bb.realtime.publish("card-state", { cardId });
-          return { ok: true, error: null };
-        } catch (error) {
-          return {
-            ok: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Could not reach the worker thread.",
-          };
-        }
-      },
-
-      async startWorker({ cardId }) {
-        return workers.fresh(cardId, "start");
-      },
-
-      async restartWorker({ cardId }) {
-        // Applies a pending preset change (or escapes a broken worker) by
-        // spawning a FRESH worker on the same state dir that CONTINUES from the
-        // current stage — unlike reseed (restarts triage) and retry (same
-        // thread, same model: provider/model are fixed at spawn and can never
-        // change on a live thread). Uses the override-aware effective preset.
-        return workers.fresh(cardId, "restart");
-      },
-
-      async requestSplitProposal({ cardId }) {
-        // Human trigger for the split protocol: the user, not the worker,
-        // decides a proposal is wanted. Decided by the shared splitActionState
-        // (lib/split-proposal) — the same rule the card UI reads — so the
-        // button can never promise what `bb stelow split` would refuse. Stage
-        // is slug truth (state.md), never the DB cache.
-        const card = getCard(cardId);
-        if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-        if (isArchivedCard(card))
-          return { ok: false, error: ERR_CARD_ARCHIVED };
-        if (!card.worker_thread_id)
-          return { ok: false, error: "This card has no worker thread." };
-        const open = db
-          .prepare(
-            "SELECT 1 FROM split_proposals WHERE card_id = ? AND selected IS NULL",
-          )
-          .get(cardId);
-        // Live read returns null on failure (unknown, not proof of absence):
-        // fail open here, the ask-time questionGuard stays the backstop.
-        const live = (await fetchPendingAsks(card.worker_thread_id)) ?? [];
-        const action = splitActionState({
-          kind: card.kind,
-          stage: await cardStageSlug(card),
-          status: card.status,
-          archived: false,
-          openProposal: Boolean(open),
-          openQuestions: live.length + openExpiredQuestionIds(cardId).length,
-          hasWorker: card.worker_thread_id !== null,
-        });
-        if (!action.ok)
-          return {
-            ok: false,
-            error:
-              action.reason ??
-              "A split cannot be proposed on this card right now.",
-          };
-        try {
-          await bb.sdk.threads.send({
-            threadId: card.worker_thread_id,
-            mode: "auto",
-            input: [{ type: "text", text: SPLIT_REQUEST_NUDGE, mentions: [] }],
-          });
-        } catch (error) {
-          return {
-            ok: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Could not reach the worker thread.",
-          };
-        }
-        logCardComment(
-          cardId,
-          "card",
-          cardId,
-          "agent",
-          "Split proposal requested — the worker will ask with --tag split.",
-        );
-        bb.realtime.publish("card-state", { cardId });
-        return { ok: true, error: null };
-      },
-
       async reseedCard({ cardId, presetId, intent: requestedIntent }) {
         const card = getCard(cardId);
         if (!card)
@@ -5113,86 +5010,6 @@ ${card.prompt}`,
           );
         bb.realtime.publish("card-state", { cardId });
         return { reseeded: true, error: null, reclassified };
-      },
-
-      async moveCard({ cardId, status }) {
-        const card = getCard(cardId);
-        if (!card) return { ok: false, error: ERR_CARD_NOT_FOUND };
-        if (isArchivedCard(card))
-          return { ok: false, error: ERR_CARD_ARCHIVED };
-        // Track routing lives in lib/card-move (unit-tested): research moves
-        // statuses, build moves phases + terminals, each side refuses the
-        // other's columns with the valid exit named.
-        const decision = resolveCardMove(card.kind, status, {
-          hasWorker: Boolean(card.worker_thread_id),
-        });
-        if (!decision.ok) return { ok: false, error: decision.error };
-        if (decision.move.type === "status") {
-          // User-initiated moves never ping the inbox with a completion: the
-          // human performed the action and already knows. Open action items
-          // still resolve (the card's state changed). Drag-to-archived stops
-          // the worker exactly like the Archive button — parking a card must
-          // never orphan a running worker.
-          if (decision.move.status === "archived")
-            await workers.stop(card.worker_thread_id);
-          // Drag-to-Doing on a threadless card starts it: Doing means working,
-          // so the move spawns through the shared starter instead of parking
-          // a lie on the board. A failed start blocks the move, not silently.
-          // (Only lightweight tracks reach this status branch; build moves
-          // phases, never bare statuses.)
-          if (
-            decision.move.status === "in-progress" &&
-            !card.worker_thread_id
-          ) {
-            const started = await workers.fresh(cardId, "start");
-            if (!started.ok) return { ok: false, error: started.error };
-          }
-          updateCard(
-            cardId,
-            {
-              status: decision.move.status as
-                | "draft"
-                | "pending"
-                | "in-progress"
-                | "completed"
-                | "archived",
-            },
-            { suppressCompletionEvent: true },
-          );
-          // A manual move into Done is a completion like any other: without
-          // the trail event the card sits in Done invisible to flow metrics.
-          if (decision.move.status === "completed")
-            recordStageEvent(cardId, "done");
-          // Terminal columns release workspace claims so parked cards never
-          // hold files hostage; waiters are notified on the same path.
-          if (isClaimTerminal(decision.move.status)) await releaseCardClaimsAndNotify(cardId);
-          return { ok: true, error: null };
-        }
-        // A phase move sets the card's stage to that phase's entry stage
-        // (stage drives the column). Terminals already returned above.
-        const entry =
-          PHASE_ENTRY_STAGES[
-            decision.move.phase as keyof typeof PHASE_ENTRY_STAGES
-          ];
-        if (!entry) return { ok: false, error: "Unknown phase." };
-        const previous = { stage: card.stage, status: card.status };
-        updateCard(cardId, {
-          stage: entry,
-          status: entry === "triage" ? "draft" : "in-progress",
-        });
-        // A parked card has no worker, so leaving the Inbox is what starts it.
-        // The phase is written first so the fresh worker continues from the
-        // right checkpoint, and reverted if the spawn fails — a card must never
-        // be left parked in a phase with nothing running behind it.
-        if (!card.worker_thread_id) {
-          const started = await workers.fresh(cardId, "start");
-          if (!started.ok) {
-            updateCard(cardId, previous);
-            return { ok: false, error: started.error };
-          }
-          bb.realtime.publish("card-state", { cardId });
-        }
-        return { ok: true, error: null };
       },
 
       async promoteCard({ cardId, name }) {

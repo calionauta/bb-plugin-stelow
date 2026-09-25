@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   root,
   server,
+  serverOperations,
   serverRecovery,
   serverInbox,
   serverWorkerRetry,
@@ -140,7 +141,13 @@ assert.match(
   "notification detail lives with the extracted inbox feature",
 );
 
-const reseed = rpcMethod("reseedCard", "moveCard");
+assert.match(
+  serverOperations,
+  /export function createCardOperationsHandlers/,
+  "retry, restart, split-request, and board moves share one operations boundary",
+);
+
+const reseed = rpcMethod("reseedCard", "promoteCard");
 assert.match(
   reseed,
   /resolveReseedIntent\(card, requestedIntent\)/,

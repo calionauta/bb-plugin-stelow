@@ -58,6 +58,7 @@ assert.equal(total.archiveParent, true, "full approval archives the parent");
 const serverSource = [
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-operations.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-detail.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/runtime/card-detail-presentation.ts"), "utf8"),
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../server/lifecycle-rpc-contract.ts"), "utf8"),
@@ -103,11 +104,15 @@ assert.match(serverSource, /Never hedge with a standard question/, "the spawn pr
 assert.match(serverSource, /const\s+SPLIT_REQUEST_NUDGE\s*=\s*["']Split requested/, "the request nudge is a single-source const");
 assert.match(serverSource, /Follow SPLIT_PROTOCOL in your system prompt/, "the nudge points at the protocol instead of re-teaching it");
 assert.match(serverSource, /requestSplitProposal: \{/, "the RPC contract names the trigger");
-assert.match(serverSource, /async requestSplitProposal\(\{ cardId \}\)/, "the handler resolves the card");
-assert.match(serverSource, /stage: await cardStageSlug\(card\)/, "the trigger reads slug truth, not the DB cache");
+assert.match(serverSource, /async function requestSplitProposal\(/, "the handler resolves the card");
+assert.match(serverSource, /stage: await deps\.cardStageSlug\(card\)/, "the trigger reads slug truth, not the DB cache");
 assert.match(serverSource, /splitActionState\(\{/, "the trigger decides through the shared action state");
-assert.match(serverSource, /openQuestions: live\.length \+ openExpiredQuestionIds\(cardId\)\.length/, "the trigger counts live plus expired questions before nudging");
-assert.match(serverSource, /SPLIT_REQUEST_NUDGE, mentions: \[\]/, "the trigger delivers the shared nudge to the worker thread");
+assert.match(
+  serverSource,
+  /openQuestions: live\.length \+ deps\.openExpiredQuestionIds\(card\.id\)\.length/,
+  "the trigger counts live plus expired questions before nudging",
+);
+assert.match(serverSource, /text: deps\.splitRequestNudge, mentions: \[\]/, "the trigger delivers the shared nudge to the worker thread");
 assert.match(serverSource, /splitAction: z\.object\(\{ show:/, "cardDetail exposes the dumb-UI split flag");
 assert.match(serverSource, /splitAction: splitActionState\(\{/, "cardDetail computes the flag from the shared rule");
 

@@ -9,6 +9,10 @@ import { CLAIM_TTL_MS } from "../lib/card-claims.mjs";
 // drift must break this build loudly, not users silently.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = readFileSync(join(root, "server/plugin-runtime.ts"), "utf8");
+const operations = readFileSync(
+  join(root, "server/runtime/card-operations.ts"),
+  "utf8",
+);
 
 /** The text between two markers, failing loudly if either is gone. */
 function slice(start, end) {
@@ -53,7 +57,7 @@ assert.match(lockBranch, /runHelper\(\["lock", op, \.\.\.rest\], rootPath/, "hel
 for (const site of ["await releaseCardClaimsAndNotify(cardId);"]) {
   assert.ok(source.includes(site), `terminal path releases: ${site}`);
 }
-assert.match(source, /if \(isClaimTerminal\(decision\.move\.status\)\) await releaseCardClaimsAndNotify/, "board moves release on every terminal status");
+assert.match(operations, /if \(isClaimTerminal\(status\)\) await deps\.releaseClaims\(cardId\)/, "board moves release on every terminal status");
 
 // Ghost holders are terminal-or-gone everywhere, never archived-only:
 // a completed/blocked holder must not park a live card behind it.

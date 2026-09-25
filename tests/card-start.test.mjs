@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = [
   readFileSync(join(root, "server/plugin-runtime.ts"), "utf8"),
+  readFileSync(join(root, "server/runtime/card-operations.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-detail.ts"), "utf8"),
   readFileSync(join(root, "server/runtime/card-detail-presentation.ts"), "utf8"),
   readFileSync(join(root, "server/card-rpc-contract.ts"), "utf8"),
@@ -51,11 +52,11 @@ assert.equal(forcedParks.length, 0, "no hardcoded park remains — GitHub start 
 assert.match(githubServer, /start: decision\.start/, "automation passes the worktree-gated start policy through the shared GitHub path");
 assert.match(server, /start: z\.boolean\(\)\.default\(true\)/, "the creation RPCs accept the human choice");
 assert.match(server, /startWorker: \{/, "the start trigger is a named RPC");
-assert.match(server, /async startWorker\(\{ cardId \}\)/, "the handler resolves the card");
+assert.match(server, /function startWorker\(/, "the handler resolves the card");
 assert.match(workers, /async function fresh\(/, "the worker seam owns the fresh-spawn body");
-assert.match(server, /workers\.fresh\(cardId, "start"\)/, "starting shares the fresh-spawn body");
-assert.match(server, /return workers\.fresh\(cardId, "restart"\)/, "restart shares the same body — one spawn, never pasted");
-assert.match(server, /Drag-to-Doing on a threadless card starts it/, "dragging inbox to Doing spawns instead of lying");
+assert.match(server, /deps\.workers\.fresh\(cardId, "start"\)/, "starting shares the fresh-spawn body");
+assert.match(server, /deps\.workers\.fresh\(cardId, "restart"\)/, "restart shares the same body — one spawn, never pasted");
+assert.match(server, /status === "in-progress" && !card\.worker_thread_id/, "dragging inbox to Doing spawns instead of lying");
 assert.match(cardsPersist, /thread\?\.id \?\? null/, "an unstarted card stores a null thread, never a placeholder");
 
 // Split children are approved work: they inherit the spawn default and
@@ -167,9 +168,9 @@ assert.match(
   /const decision = resolveCardMove\(\s*card\.kind,\s*status,\s*\{\s*hasWorker: Boolean\(card\.worker_thread_id\),\s*\}\s*\)/,
   "the move policy knows whether the card already started",
 );
-const parkedStart = /if \(!card\.worker_thread_id\) \{\s*const started = await workers\.fresh\(cardId, "start"\);/;
+const parkedStart = /if \(card\.worker_thread_id\) return[\s\S]*?const started = await deps\.workers\.fresh\(cardId, "start"\);/;
 assert.match(server, parkedStart, "entering a build phase starts a parked card");
-assert.match(server, /updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
+assert.match(server, /deps\.updateCard\(cardId, previous\)/, "a failed start reverts the phase instead of parking a lie");
 assert.match(workflowVocabulary, /export function buildBoardColumnFor\(card\)/, "the board projection keeps thread state, so a parked card reaches the Bucket");
 
 // Leaving the Bucket starts through the same starter on every track, and the
@@ -180,7 +181,7 @@ assert.match(server, /SELECT preset_id FROM card_presets WHERE card_id/, "a choi
 assert.match(server, /const workspace = await cardWorkspace\(row\);/, "respawns run in the card's own project workspace");
 assert.match(
   server,
-  /if \(\s*decision\.move\.status === "in-progress" &&\s*!card\.worker_thread_id\s*\)/,
+  /if \(\s*status === "in-progress" && !card\.worker_thread_id\s*\)/,
   "dragging a lightweight card to Doing starts it too",
 );
 

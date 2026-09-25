@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   root,
   server,
+  serverOperations,
   serverRecovery,
   serverInbox,
   serverWorkerRetry,
@@ -166,7 +167,11 @@ assert.match(
   /errorNeedsAttention\(\s*card\.status,\s*card\.last_error,\s*effectiveActivity,?\s*\)/,
   "detail attention shares the same predicate — badge and card cannot disagree",
 );
-const retry = rpcMethod("retryWorker", "restartWorker");
+const retryStart = serverOperations.indexOf("async function retryWorker(");
+const retry = serverOperations.slice(
+  retryStart,
+  serverOperations.indexOf("function startWorker(", retryStart),
+);
 assert.match(
   retry,
   /card\.status === "completed" \|\| card\.status === "blocked"/,

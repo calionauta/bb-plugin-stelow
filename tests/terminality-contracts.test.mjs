@@ -64,7 +64,7 @@ import {
 const move = rpcMethod("moveCard", "promoteCard");
 assert.match(
   move,
-  /if \(isArchivedCard\(card\)\)\s*return \{ ok: false, error: ERR_CARD_ARCHIVED \}/,
+  /if \(isArchivedCard\(card\)\)\s*return \{ ok: false, error: deps\.errors\.cardArchived \}/,
   "archived cards refuse board moves",
 );
 const advance = readFileSync(

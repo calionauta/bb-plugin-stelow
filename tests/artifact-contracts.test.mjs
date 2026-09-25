@@ -203,7 +203,7 @@ assert.equal(
 );
 assert.match(
   server,
-  /if\s*\(decision\.move\.status\s*===\s*"completed"\)\s*recordStageEvent\(cardId,\s*"done"\)/,
+  /if\s*\(status\s*===\s*"completed"\)\s*deps\.recordStageEvent\(cardId,\s*"done"\)/,
   "manual moves into Done record the done event",
 );
 
