@@ -44,11 +44,25 @@ export function createCardUpdater(deps: CardUpdaterDeps) {
     fields: CardFields,
     options?: UpdateOptions,
   ): void {
+    // Hot-reload race: bb closes the plugin DB while sync callbacks are still
+    // in flight; writing then crashes the whole server process.
     if (!isDatabaseOpen(deps.db)) return;
     const previous = deps.getCard(cardId);
-    const changed = changedFields(previous, fields);
+    // Archived is terminal: strip any status change that would resuscitate the
+    // card (a stopping worker settling after Archive is the classic case).
+    // Archiving itself always passes through.
+    const effective = stripArchivedResuscitation(
+      previous?.status,
+      fields as Record<string, unknown>,
+    ) as Record<string, unknown>;
+    const keys = Object.keys(effective);
+    if (keys.length === 0) return;
+    // No-op guard: sync polls call updateCard every cycle, usually with
+    // identical values. Writing anyway would bump updated_at (reshuffling board
+    // order and "Idle since" labels) and publish card-state for zero change.
+    const changed = changedKeys(previous, keys, effective);
     if (previous && changed.length === 0) return;
-    const finalWrite = finalCardWrite(deps, cardId, changed, fields);
+    const finalWrite = finalCardWrite(deps, cardId, changed, effective);
     if (!Object.keys(finalWrite).some((key) => key !== "updated_at")) return;
     writeCard(deps.db, cardId, finalWrite);
     const current = deps.getCard(cardId);
@@ -61,30 +75,27 @@ function isDatabaseOpen(db: Db): boolean {
   return Boolean((db as unknown as { open?: boolean }).open);
 }
 
-function changedFields(
+function changedKeys(
   previous: WorkerCard | undefined,
-  fields: CardFields,
+  keys: string[],
+  effective: Record<string, unknown>,
 ): string[] {
-  const effective = stripArchivedResuscitation(
-    previous?.status,
-    fields as Record<string, unknown>,
-  ) as Record<string, unknown>;
-  const keys = Object.keys(effective);
   if (!previous) return keys;
   const before = previous as unknown as Record<string, unknown>;
   return keys.filter((key) => before[key] !== effective[key]);
 }
 
+// The written values come from the same snapshot the changed keys were derived
+// from; only the terminal re-check reads again. Deriving keys from the first
+// read and values from the second would let a card archived during an awaited
+// call re-enter the write as a stripped status key holding undefined, which is
+// exactly the resurrection this re-check exists to prevent.
 function finalCardWrite(
   deps: CardUpdaterDeps,
   cardId: string,
   changed: string[],
-  fields: CardFields,
+  effective: Record<string, unknown>,
 ): Record<string, unknown> {
-  const effective = stripArchivedResuscitation(
-    deps.getCard(cardId)?.status,
-    fields as Record<string, unknown>,
-  ) as Record<string, unknown>;
   const write: Record<string, unknown> = { updated_at: deps.now() };
   for (const key of changed) write[key] = effective[key];
   return stripArchivedResuscitation(
@@ -188,12 +199,17 @@ export function createClaimWaiterNotifier(deps: ClaimWaiterDeps) {
     files: string[],
   ): Promise<void> {
     if (files.length === 0 || !workspacePath) return;
+    // One timestamp for the whole sweep. Waiters freed by a single release are
+    // one event, so their resolved inbox rows must share a timestamp; a
+    // per-waiter clock read would order them by scheduling jitter and split
+    // the sweep into several.
+    const resumedAt = deps.now();
     const waiters = claimWaiters(deps, workspacePath, files);
     const seen = new Set<string>();
     for (const waiter of waiters) {
       if (seen.has(waiter.card_id)) continue;
       seen.add(waiter.card_id);
-      await resumeWaiter(deps, workspacePath, files, waiter.card_id, deps.now());
+      await resumeWaiter(deps, workspacePath, files, waiter.card_id, resumedAt);
     }
   };
 }
