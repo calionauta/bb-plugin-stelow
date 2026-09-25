@@ -80,30 +80,36 @@ Report exact remaining blockers.`,
   ],
 ];
 
+const agentOptions = {
+  provider: "acp-opencode",
+  model: "opencode/space-bunny-free",
+  reasoningLevel: "medium",
+};
+
 const results = [];
 let previous = "No prior phase.";
 for (let index = 0; index < phases.length; index += 1) {
   const [id, phaseName, goal] = phases[index];
   phase(phaseName);
-  const implementation = await agent(`${common}
+  const implementation = await agent(
+    `${common}
 Phase ${index + 1}/${phases.length}: ${id}.
 Goal: ${goal}
 Prior phase report: ${previous}
 Complete only this phase with a bounded acceptance criterion.
 Do not broaden scope or loop on formatting.
-Commit and push the green phase.`, { provider: "acp-opencode", model: "opencode/space-bunny-free", reasoningLevel: "medium", label: `implement:${id}`, phase: phaseName });
-  const review = await agent(`${common}
+Commit and push the green phase.`,
+    { ...agentOptions, label: `implement:${id}`, phase: phaseName },
+  );
+  const review = await agent(
+    `${common}
 Fresh adversarial review of phase ${id}.
 Inspect the actual diff and repository, not the implementation report.
 Verify behavior parity, source budgets, test value, import direction, cycles, and no gaming.
 Run focused tests and one negative control.
-Fix real issues, commit and push, and report exact before/after counts.`, {
-    provider: "acp-opencode",
-    model: "opencode/space-bunny-free",
-    reasoningLevel: "medium",
-    label: `review:${id}`,
-    phase: phaseName,
-  });
+Fix real issues, commit and push, and report exact before/after counts.`,
+    { ...agentOptions, label: `review:${id}`, phase: phaseName },
+  );
   results.push({ id, implementation, review });
   previous = review;
 }
@@ -114,11 +120,7 @@ Synthesize the final evidence.
 State which remaining debt is closed, exact line/function counts, all gate results,
 integration worktree status, commit/push evidence, working-tree state,
 and any genuine blocker.
-Do not call inherited debt resolved without a real split.`, {
-  provider: "acp-opencode",
-  model: "opencode/space-bunny-free",
-  reasoningLevel: "medium",
-  label: "final-debt-report",
-  phase: "FinalAudit",
-});
+Do not call inherited debt resolved without a real split.`,
+  { ...agentOptions, label: "final-debt-report", phase: "FinalAudit" },
+);
 return { phases: results, final };

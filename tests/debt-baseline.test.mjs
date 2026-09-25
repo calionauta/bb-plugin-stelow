@@ -206,7 +206,30 @@ if (budget.status === 0) {
   assert.fail(`the budget gate must stay runnable for this baseline: ${budget.stderr || budget.stdout}`);
 }
 
+// The census above cannot see line length, and the shape gate only ran in CI
+// (`quality:shape`), so a single over-long line reached a green local `npm test`
+// and only failed the merge. Running it here makes a phase unable to end with
+// the shape gate red. It shares this script's diff-scoped base, so a file that
+// is not a changed line is still never reported.
+const shape = spawnSync(process.execPath, ["scripts/check-source-shape.mjs"], {
+  cwd: repositoryRoot,
+  encoding: "utf8",
+  maxBuffer: 64 * 1024 * 1024,
+});
+if (shape.status === 0) {
+  const line = shape.stdout.trim();
+  assert.match(
+    line,
+    /no changed line over 160 characters$/,
+    `the shape gate reported an unexpected success line: ${line}`,
+  );
+} else {
+  assert.fail(
+    `the shape gate must stay green: ${shape.stderr.trim() || shape.stdout.trim()}`,
+  );
+}
+
 console.log(
   `debt baseline ok: ${observedFiles.length} oversized file(s) and ${oversized.length} oversized function(s), `
-  + `${inheritedBaseline.length} inherited entries`,
+  + `${inheritedBaseline.length} inherited entries, shape gate green`,
 );

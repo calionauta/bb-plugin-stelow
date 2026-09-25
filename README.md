@@ -34,6 +34,9 @@ workflow itself — the board reads them, never replaces them. Details live in
 
 Maintainers can find the current server module map, lifecycle boundary, and
 remaining extraction work in [docs/runtime-architecture.md](./docs/runtime-architecture.md).
+The measured size debt in the GitHub automation and decision API areas, with
+its ordered repair list, is audited in
+[docs/remaining-debt-audit.md](./docs/remaining-debt-audit.md).
 
 ## Strategies and techniques
 
